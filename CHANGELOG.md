@@ -206,6 +206,55 @@ stress; all 709 HAL tests pass 5/5 runs in default execution.
 **Items deferred past v1.0.0 with correctness impact**: NONE
 new from this audit pass.
 
+### Deep audit pass (post-initial-landing)
+
+A deep audit pass through the SM2.E deliverables and the MCS-RW
+protocol fix surfaced and closed the following issues:
+
+* **LoC estimate correction** in `LockPrimitives.lean` Decision
+  #13 rationale and `docs/spec/SELE4N_SPEC.md` §10.2: the original
+  plan estimate of "~3,500 LoC of Lean spec + proofs; ~1,500 LoC
+  of Rust impl" significantly understated the delivered code size.
+  Updated to actual delivered cost — ~12,000 LoC of Lean spec +
+  proofs (per-module breakdown listed), ~5,200 LoC of Rust impl
+  (including the SM2.C-defer D-5 queued variant).
+* **Decision #2 citation correction**: the SM2 plan
+  (`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §4.4) references
+  "Decision #2" as the no-upgrade/downgrade decision, but the
+  master plan's Decision #2 is about target version + WS-RC
+  merge.  Updated `LockPrimitives.lean` and `SELE4N_SPEC.md`
+  §10.2 to label the no-upgrade decision as "SM2-plan-local"
+  rather than mis-cite it as a master-plan decision.
+* **`Locks/Refinement.lean` marker theorem actually references
+  F-theorems**: the initial `refl`-based marker did not actually
+  reference `rust_ticketLock_refines_lean` /
+  `rust_rwLock_refines_lean`, so the Tier-3 anchor could
+  not have detected their removal.  Refactored
+  `refinementMethodology_covers_sm2_inventory` to use `let`
+  bindings that force elaboration of both F-theorems by name —
+  if either is removed/renamed, the methodology hub fails to
+  build.
+* **`Locks/Refinement.lean` docstring inaccuracy fix**: the
+  `refinementMethodologyMarker` docstring claimed a
+  `scan_lock_refinement_methodology_intact` build.rs scanner
+  existed that did not.  Replaced with the actual protection
+  mechanism: Tier-3 surface anchor + staged-module allowlist.
+* **NONE-path self-admit spin race fix (acquire_read,
+  acquire_write)**: replaced the unconditional
+  `parked.store(ADMITTED)` after `try_admit_as_*` success with
+  a `parked.compare_exchange(WAITING, ADMITTED)` CAS-claim
+  pattern.  This closes a theoretical race where signal
+  targeting our slot via a STALE chain pointer from a prior
+  iteration could double-increment state (ghost +1) — signal's
+  unconditional state increment plus our state increment, both
+  for the same slot.  The CAS-claim ensures only one of
+  signal/self successfully marks parked, with the loser undoing
+  its state change.
+
+Audit verification: 49/50 stress runs pass cross_thread_tests
+(98%); 709/709 HAL tests pass full lib test 29/30 runs.  Zero
+clippy warnings.  Full Tier 0-3 green.
+
 ---
 
 ## Unreleased — WS-SM SM2.D (FFI bridge + integration for verified lock primitives)

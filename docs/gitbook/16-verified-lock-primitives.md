@@ -66,7 +66,7 @@ The two verified primitives serve disjoint roles:
 | **Acquisition primitive** | LDADDA (LSE) | CAS-retry with WFE backoff |
 | **FIFO order** | Yes (by ticket value) | Spec yes, impl no (documented divergence) |
 | **Lean spec LoC** | ~1,900 | ~6,600 |
-| **Rust impl LoC** | ~500 | ~500 |
+| **Rust impl LoC** | ~910 | ~1,220 (+ ~1,860 in `queued_rw_lock.rs` for the FIFO-strict variant) |
 | **Substantive theorems** | 6 (T-01..T-06) | 10 (R-01..R-10) |
 
 Kernel paths that need strict FIFO writer admission (a handful of

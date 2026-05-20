@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-lock-primitives-docs-umtsc",
-      "commit_sha": "6866a2e260470eda53c394a849f4cb5d6c6d064e",
-      "tree_sha": "021fef662e78edb33d9ad5a2aa12753530cceeeb",
-      "committed_at_utc": "2026-05-19T19:10:10-04:00"
+      "commit_sha": "98afa66d740714f93b32ca63fbdee415de7dee10",
+      "tree_sha": "f28ea0bc342a10ffe6b006ea582b18cb5b9c7450",
+      "committed_at_utc": "2026-05-20T03:30:02+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f265414fe909903167c4e76156c7f84f693b31a67eda1216d5e5142be1fce1f8"
+    "source_digest": "b5d166bcc356f432e22b95cf768995a758ecb977a1e9dc52daef3ad3e00e77de"
   },
   "summary": {
     "module_count": 223,
@@ -27,7 +27,7 @@
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 186,
-    "production_loc": 128431,
+    "production_loc": 128469,
     "test_files": 37,
     "test_loc": 25163,
     "proved_theorem_lemma_decls": 3712,
@@ -14416,19 +14416,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 245,
+          "line": 258,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "LockPrimitiveCategory",
-          "line": 248,
+          "line": 261,
           "called": []
         },
         {
           "kind": "structure",
           "name": "LockPrimitiveTheorem",
-          "line": 263,
+          "line": 276,
           "called": [
             "LockPrimitiveCategory"
           ]
@@ -14436,7 +14436,7 @@
         {
           "kind": "def",
           "name": "lockPrimitives",
-          "line": 277,
+          "line": 290,
           "called": [
             "LockPrimitiveTheorem",
             "happensBefore_antisymmetric",
@@ -14466,7 +14466,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_count",
-          "line": 361,
+          "line": 374,
           "called": [
             "length",
             "lockPrimitives"
@@ -14475,7 +14475,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_memoryModel_count",
-          "line": 366,
+          "line": 379,
           "called": [
             "filter",
             "length",
@@ -14485,7 +14485,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_ticketLock_count",
-          "line": 372,
+          "line": 385,
           "called": [
             "filter",
             "length",
@@ -14495,7 +14495,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_rwLock_count",
-          "line": 378,
+          "line": 391,
           "called": [
             "filter",
             "length",
@@ -14505,7 +14505,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_refinement_count",
-          "line": 384,
+          "line": 397,
           "called": [
             "filter",
             "length",
@@ -14515,7 +14515,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_partition_sum",
-          "line": 391,
+          "line": 404,
           "called": [
             "filter",
             "length"
@@ -14524,7 +14524,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_identifiers_nodup",
-          "line": 409,
+          "line": 422,
           "called": [
             "lockPrimitives"
           ]
@@ -14532,7 +14532,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_descriptions_nodup",
-          "line": 417,
+          "line": 430,
           "called": [
             "lockPrimitives"
           ]
@@ -14726,15 +14726,17 @@
         {
           "kind": "def",
           "name": "refinementMethodologyMarker",
-          "line": 255,
+          "line": 263,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "refinementMethodology_covers_sm2_inventory",
-          "line": 266,
+          "line": 282,
           "called": [
-            "refinementMethodologyMarker"
+            "refinementMethodologyMarker",
+            "rust_rwLock_refines_lean",
+            "rust_ticketLock_refines_lean"
           ]
         }
       ]

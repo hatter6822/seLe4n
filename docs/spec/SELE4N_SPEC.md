@@ -2674,11 +2674,21 @@ transfer, mintage) use `TicketLock`.
 The primitives are first-class verified artefacts.  Lock bugs are
 notorious at exactly the operations the kernel performs most
 frequently; treating them as unverified trusted code defeats the
-rest of the proof effort.  The cost (16-22 weeks calendar; ~3,500
-LoC of Lean spec + proofs; ~1,500 LoC of Rust impl) is amortised
-across every kernel object that uses a lock.
+rest of the proof effort.  Delivered cost: 16-22 weeks calendar
+per the SM2 plan; ~12,000 LoC of Lean spec + proofs across the
+nine SM2 modules (MemoryModel + TicketLock + RwLock + the two
+refinement bridges + LockBridge + LockPrimitives + Refinement
+methodology + Locks/Kind); ~5,200 LoC of Rust impl across
+`ticket_lock.rs`, `rw_lock.rs`, `queued_rw_lock.rs`, and
+`lock_bridge.rs`.  Cost is amortised across every kernel object
+that uses a lock.
 
-#### Decision #2 (carry-over) — no upgrade/downgrade in v1.0.0
+#### SM2-local scope decision — no upgrade/downgrade in v1.0.0
+
+A scope decision local to the SM2 plan
+([`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](../planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§4.4), not one of the 13 master-plan decisions in
+`SMP_MULTICORE_COMPLETION_PLAN.md` §10:
 
 The v1.0.0 `RwLock` supports only plain acquire/release.  Upgrade
 and downgrade semantics require a fairness-with-progress assumption

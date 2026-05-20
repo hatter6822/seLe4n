@@ -248,22 +248,47 @@ namespace SeLe4n.Kernel.Concurrency
     The marker is a `Unit`-typed definition rather than a theorem
     because the methodology itself is documentation, not a logical
     claim.  The marker's job is to prevent the methodology
-    documentation from being accidentally deleted: if this file is
-    removed from the build, the build-script scanner
-    `scan_lock_refinement_methodology_intact` (in
-    `rust/sele4n-hal/build.rs`) fails. -/
+    documentation from being accidentally deleted: two layered
+    gates protect it:
+
+    1. **Tier-3 surface anchor** in
+       `scripts/test_tier3_invariant_surface.sh` — every CI run
+       does `#check @SeLe4n.Kernel.Concurrency.refinementMethodologyMarker`,
+       which fails to elaborate if this declaration is removed.
+    2. **Staged-module allowlist** in
+       `scripts/staged_module_allowlist.txt` — the module is
+       listed there and is reached from `SeLe4n/Platform/Staged.lean`,
+       so a removal that doesn't update the allowlist fails the
+       Tier-0 production/staged partition gate. -/
 def refinementMethodologyMarker : Unit := ()
 
 /-- **WS-SM SM2.E.5**: every refinement bridge currently in the
     SM2 inventory follows the six-step methodology.
 
-    This theorem packages the two F-theorems
-    (`rust_ticketLock_refines_lean`, `rust_rwLock_refines_lean`) into
-    a single conjunction so a single Tier-3 surface anchor scans
-    both refinement bridges from one site.  The actual content is
-    the conjunction of the two F-theorems' content; the marker
-    aspect is the existence and naming of this aggregator. -/
+    This theorem references both F-theorems
+    (`rust_ticketLock_refines_lean`, `rust_rwLock_refines_lean`)
+    by name so a single Tier-3 surface anchor on this aggregator
+    fails to elaborate if either F-theorem is removed or renamed.
+
+    The two F-theorems have different parameter shapes — F-01 is
+    a closed conjunction over `ticketLockSim`, while F-02
+    (`rust_rwLock_refines_lean`) takes an initial-state pair and
+    a block-bisimulation hypothesis as parameters — so we cannot
+    directly conjoin their statements.  Instead, we package them
+    as **name references** inside the proof term: if either
+    F-theorem is removed, this theorem fails to elaborate at
+    `lake build` time, exactly matching the docstring's claim of
+    "single anchor scans both refinement bridges from one site". -/
 theorem refinementMethodology_covers_sm2_inventory :
-    refinementMethodologyMarker = refinementMethodologyMarker := rfl
+    refinementMethodologyMarker = refinementMethodologyMarker := by
+  -- Reference F-01 (`rust_ticketLock_refines_lean`) by name.  Lean
+  -- infers the full type at elaboration; if the theorem is removed
+  -- or renamed, this `let` binding fails to elaborate.
+  let _f01 := rust_ticketLock_refines_lean
+  -- Reference F-02 (`rust_rwLock_refines_lean`) by name via `@`
+  -- syntax (it is parameterised; `@` exposes the full signature
+  -- for the elaboration check).
+  let _f02 := @rust_rwLock_refines_lean
+  rfl
 
 end SeLe4n.Kernel.Concurrency

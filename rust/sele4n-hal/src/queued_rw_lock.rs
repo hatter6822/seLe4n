@@ -371,30 +371,71 @@ impl QueuedRwLock {
                 return;
             }
             // **WS-SM SM2.E MCS-RW protocol fix — NONE-path self-admit
-            // spin**: try_admit_as_reader failed (state has WRITER_BIT).
-            // We took the NONE_SENTINEL path so no predecessor will
-            // signal us via the slot[prev].next chain.  Without this
-            // self-admit spin, we'd be orphaned forever.
+            // spin with CAS-claim ordering**: try_admit_as_reader failed
+            // (state has WRITER_BIT).  We took the NONE_SENTINEL path so
+            // no predecessor will signal us via the slot[prev].next
+            // chain — without this self-admit spin, we'd be orphaned.
             //
-            // Spin until either:
-            // (a) state allows reader admission (no WRITER_BIT) — we
-            //     self-admit via try_admit_as_reader retry, OR
-            // (b) some signal explicitly sets our parked to ADMITTED.
+            // The naive design `state-CAS, then parked.store(ADMITTED)`
+            // has a race against signal targeting us via a STALE
+            // slot[X].next = us link from a previous iteration:
+            //  1. We try_admit (state += 1).
+            //  2. Concurrent signal walks slot[X].next = us, CAS-loops
+            //     state += 1, CAS parked WAITING → ADMITTED success
+            //     (parked is still WAITING from our store).
+            //  3. Signal returns.  We parked.store(ADMITTED).
+            // Net: state has +2 for one holder.  Ghost +1.
             //
-            // Both paths exit cleanly; the parked.store(ADMITTED) at
-            // self-admit is the publication for any concurrent signal
-            // observer (signal would observe parked != WAITING and
-            // walk past).
+            // **Fix: CAS-claim parked BEFORE updating state.**  If our
+            // CAS-claim wins, signal's CAS parked WAITING → ADMITTED
+            // fails (parked is now ADMITTED), and signal's state
+            // increment is undone by its own fetch_sub.  Net: signal
+            // contributes 0 to state.  Our state CAS then increments
+            // by 1.  Single admission.
+            //
+            // If our CAS-claim loses (signal got there first), we
+            // observe parked = ADMITTED at the top of the loop and
+            // return — signal owns the admission and has already
+            // incremented state.
             slot.parked.store(PARKED_WAITING, Ordering::Release);
             loop {
                 if slot.parked.load(Ordering::Acquire) == PARKED_ADMITTED {
+                    // Signal beat us to the admission.  State has
+                    // signal's +1 for us; nothing more to do beyond
+                    // cascade.
                     self.cascade_admit_readers(core_id);
                     return;
                 }
-                if self.try_admit_as_reader() {
-                    slot.parked.store(PARKED_ADMITTED, Ordering::Release);
-                    self.cascade_admit_readers(core_id);
-                    return;
+                // CAS-claim parked first.  Only the CAS-winner is
+                // allowed to increment state for this slot.
+                if slot.parked.compare_exchange(
+                    PARKED_WAITING, PARKED_ADMITTED,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ).is_ok() {
+                    // Claimed.  Now atomically increment state.  If
+                    // state has WRITER_BIT, we cannot admit right
+                    // now — revert parked to WAITING and continue
+                    // spinning.
+                    loop {
+                        let cur = self.state.load(Ordering::Acquire);
+                        if (cur & WRITER_BIT) != 0 {
+                            // Writer admitted between our parked-CAS
+                            // and our state-CAS.  Revert parked so
+                            // future signal can re-claim us.
+                            slot.parked.store(PARKED_WAITING, Ordering::Release);
+                            break;
+                        }
+                        let new_state = cur + 1;
+                        if self.state.compare_exchange(
+                            cur, new_state,
+                            Ordering::AcqRel, Ordering::Acquire,
+                        ).is_ok() {
+                            self.cascade_admit_readers(core_id);
+                            return;
+                        }
+                        // CAS lost a race with another state mutator.
+                        // Retry the inner loop to re-load and re-CAS.
+                    }
                 }
                 crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
             }
@@ -592,18 +633,31 @@ impl QueuedRwLock {
                 return;
             }
             // **WS-SM SM2.E MCS-RW protocol fix — NONE-path self-admit
-            // spin (writer variant)**: try_admit_as_writer failed
-            // (state has reader bits or another writer bit).  We took
-            // the NONE_SENTINEL path so no predecessor will signal us.
-            // Spin until state allows or someone signals.
+            // spin (writer variant) with CAS-claim ordering**: same
+            // rationale as `acquire_read`'s NONE-path self-admit spin.
+            // For writers, the state CAS is `state.CAS(0, WRITER_BIT)`
+            // (cannot use fetch_add — would corrupt to mixed state).
+            //
+            // CAS-claim parked first; if won, attempt state CAS; if
+            // state CAS fails (state non-zero), revert parked.
             slot.parked.store(PARKED_WAITING, Ordering::Release);
             loop {
                 if slot.parked.load(Ordering::Acquire) == PARKED_ADMITTED {
                     return;
                 }
-                if self.try_admit_as_writer() {
-                    slot.parked.store(PARKED_ADMITTED, Ordering::Release);
-                    return;
+                if slot.parked.compare_exchange(
+                    PARKED_WAITING, PARKED_ADMITTED,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ).is_ok() {
+                    // Claimed.  Try state CAS.
+                    if self.state.compare_exchange(
+                        0, WRITER_BIT,
+                        Ordering::AcqRel, Ordering::Acquire,
+                    ).is_ok() {
+                        return;
+                    }
+                    // State non-zero (other holders).  Revert parked.
+                    slot.parked.store(PARKED_WAITING, Ordering::Release);
                 }
                 crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
             }

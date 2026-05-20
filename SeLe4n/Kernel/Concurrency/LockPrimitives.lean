@@ -125,16 +125,27 @@ inventory it produced rather than chasing it through planning docs.
   distinguishes seLe4n from seL4.  Lock primitives are notorious for
   subtle bugs at exactly the operations the kernel performs most
   frequently; treating them as unverified trusted code defeats the
-  rest of the proof effort.  The cost (16-22 weeks calendar; ~3,500
-  LoC of Lean spec + proofs; ~1,500 LoC of Rust impl) is amortised
-  across every kernel object that uses a lock — the v1.0.0 kernel
-  has ~50 distinct critical sections that all benefit.  The
+  rest of the proof effort.  Delivered cost: 16-22 weeks calendar
+  per the SM2 plan; ~12,000 LoC of Lean spec + proofs (MemoryModel
+  ~1,050, TicketLock ~1,900, RwLock ~6,600, TicketLockRefinement
+  ~260, RwLockRefinement ~940, LockBridge ~590, LockPrimitives
+  ~420, Refinement methodology ~270); ~5,200 LoC of Rust impl
+  (`ticket_lock.rs` ~910, `rw_lock.rs` ~1,220, `queued_rw_lock.rs`
+  ~1,860, `lock_bridge.rs` ~1,240).  Cost is amortised across
+  every kernel object that uses a lock — the v1.0.0 kernel has
+  ~50 distinct critical sections that all benefit.  The
   alternative would have required moving the BKL into the TCB and
   trusting it, then proving everything else above it; the per-
   primitive verification approach gives a smaller TCB and a more
   composable proof structure.
 
-### Decision #2 (carry-over) — no upgrade/downgrade in v1.0.0
+### Scope decision — no upgrade/downgrade in v1.0.0
+
+This is a scope decision local to the SM2 plan
+(`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §4.4), not
+one of the 13 master-plan decisions in
+`SMP_MULTICORE_COMPLETION_PLAN.md` §10.  Including it here keeps
+the rationale colocated with the typed inventory.
 
 * **Choice**: the v1.0.0 `RwLock` supports only plain
   acquire/release.  Reader → writer upgrades and writer → reader
@@ -151,7 +162,9 @@ inventory it produced rather than chasing it through planning docs.
   release-and-reacquire instead, paying one extra release-acquire
   pair (~25 ns on the RPi5 target) for vastly simpler proofs.
 
-These decisions are **binding** for v1.0.0.  Future deviations
+Decisions #1, #10, #11, #13 above are **binding master-plan
+decisions** for v1.0.0.  The scope decision above is **binding
+SM2-plan-local** for v1.0.0.  Future deviations on any of these
 require maintainer-led re-decisioning recorded in errata per the
 master overview §10.
 
