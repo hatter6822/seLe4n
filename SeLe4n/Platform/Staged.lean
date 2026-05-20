@@ -85,6 +85,12 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 -- `rust_ticketLock_refines_lean` for the SM2.D.7 lockPrimitives
 -- aggregator.
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
+-- WS-SM SM2.E.5: unified refinement-proof methodology documentation hub.
+-- Re-exports both per-lock refinement bridges and pins the methodology
+-- with marker theorems at the module level.  Required by the
+-- `scripts/test_tier3_invariant_surface.sh` Tier-3 surface scan so
+-- that the methodology file cannot be silently removed from the tree.
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 -- WS-SM SM2.D: typed lock FFI wrappers + RAII combinators.  Wraps the
 -- raw `Platform.FFI.ffi*` lock declarations into typed Lean APIs
 -- (`TicketLockHandle`, `RwLockHandle`, `withTicketLock`, `withReadLock`,
@@ -133,6 +139,7 @@ The staged modules are:
 20. `SeLe4n.Kernel.Concurrency.Locks.TicketLock` — WS-SM SM2.B abstract TicketLock spec
 21. `SeLe4n.Kernel.Concurrency.Locks.RwLock`    — WS-SM SM2.C abstract RwLock spec
 22. `SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement` — WS-SM SM2.C.20 refinement bridge
+23. `SeLe4n.Kernel.Concurrency.Locks.Refinement` — WS-SM SM2.E.5 unified refinement methodology hub
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

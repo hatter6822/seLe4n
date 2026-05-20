@@ -920,6 +920,109 @@ spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
 [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §§5.2..5.5.
 
+**WS-SM SM2.B LANDED post-v0.31.9** (verified TicketLock primitive
++ Rust impl). 16 sub-tasks; abstract operational spec in
+`SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1900 LoC,
+zero axioms, zero sorries); 8-conjunct `wf` invariant
+(INV-T1..T8 with the count-parity strengthening INV-T8 closing
+the plan's 7-invariant reachability gap); 6 substantive theorems
+(T-01 `ticketLock_mutex` to T-06 `ticketLock_reachability`).
+Rust impl at `rust/sele4n-hal/src/ticket_lock.rs` cache-line
+aligned with 21 cargo unit tests + cross-thread mutex/FIFO
+stress. Lean test suite at `tests/TicketLockSuite.lean`. See
+[`CHANGELOG.md`](../CHANGELOG.md) for the audit-pass-by-audit-
+pass detail.
+
+**WS-SM SM2.C LANDED post-v0.31.9** (verified RwLock primitive +
+Rust impl). 22 sub-tasks; abstract spec in
+`SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6600 LoC); 5-
+conjunct `wf` invariant (INV-R1..R5 with the FIFO-admission
+strengthening INV-R5 closing the plan's 4-invariant gap); 10
+substantive theorems (R-01 `rwLock_writer_readers_exclusion` to
+R-10 `rwLock_no_writer_starvation`). Bit-packed encoding with
+round-trip lemmas; Rust impl at `rust/sele4n-hal/src/rw_lock.rs`
++ refinement bridge at `Locks/RwLockRefinement.lean` documenting
+the FIFO divergence (F-02 caveat). 28 cargo unit tests. The
+SM2.C-defer plan
+([`SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md))
+adds D-1..D-6 post-v1.0.0 closure work (temporal FIFO, writer
+liveness, bisimulation extension, queued variant in
+`queued_rw_lock.rs`).
+
+**WS-SM SM2.D LANDED post-v0.31.9** (FFI bridge + integration
+for verified lock primitives). 8 sub-tasks; new modules
+`SeLe4n/Kernel/Concurrency/LockBridge.lean` (typed FFI wrappers
++ RAII combinators), `SeLe4n/Kernel/Concurrency/LockPrimitives.lean`
+(SM2.D.7 22-theorem aggregator with `lockPrimitives.length =
+22` size witness), and
+`SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean`
+(F-01 refinement bridge — implemented per the
+implement-the-improvement rule rather than aliasing to
+`ticketLock_release_acquire_pairing`). Rust side:
+`lock_bridge.rs` with 16 `#[no_mangle] pub extern "C"` exports,
+two static lock pools, and trace counters. Cross-language
+symmetry script `scripts/check_lock_ffi_symmetry.sh` enforces
+6-way bidirectional consistency between Lean declarations and
+Rust exports. 36+ new Rust tests; 80+ Lean surface anchors.
+
+**WS-SM SM2.E LANDED at this cut** (documentation phase for
+verified lock primitives; closes WS-SM Phase SM2 acceptance gate).
+Seven sub-tasks landed in one cut:
+
+* **SM2.E.1**: NEW `docs/spec/SELE4N_SPEC.md` §10 "Verified Lock
+  Primitives (WS-SM Phase SM2)" — normative reference covering
+  the 22-theorem catalogue, architectural decisions, refinement-
+  proof methodology summary, hardware-discipline limits, ARM ARM
+  citation map summary, axiom budget, test infrastructure, and
+  SMP-H4 closure note.  Existing §10..§12 renumbered to §11..§13.
+* **SM2.E.2**: NEW `docs/gitbook/16-verified-lock-primitives.md`
+  — handbook companion expanding the spec prose with module map,
+  intuition, source pointers, and test-infrastructure summary.
+* **SM2.E.3**: Expanded ARM ARM citation map in
+  `SeLe4n/Kernel/Concurrency/MemoryModel.lean` module docstring
+  with the canonical citation hierarchy (ordering/synchronisation
+  surface, ARMv8.1-A LSE atomic instruction surface, memory
+  barriers, wait-event coordination, consumer-obligation notes).
+  Pinned to ARM ARM revision DDI 0487K.a (July 2024).
+* **SM2.E.4**: Decision-rationale doc added to
+  `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` module
+  docstring — four binding maintainer decisions (#1+#10
+  per-object fine locks, #11 reader-writer locks, #13 verify
+  the primitives, #2 no upgrade/downgrade) with rationale and
+  rejected alternatives.
+* **SM2.E.5**: NEW MODULE
+  `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean` (~190 LoC)
+  — unified refinement-proof methodology hub.  Documents the
+  uniform six-step procedure (concrete state → initial state →
+  simulation φ → initial-state correspondence → per-operation
+  preservation → aggregator F-theorem) any future SM3+ verified
+  lock primitive must follow.  Two marker theorems pin the
+  methodology at the type level.
+* **SM2.E.6**: Hardware-discipline limits added to
+  `LockPrimitives.lean` module docstring — five structural
+  preconditions under which the lock-primitive theorems are
+  sound: single-cluster ISH domain, no mixed-shareability
+  lock-state access, bounded critical sections, no external
+  preemption during locking, no DMA into lock state.
+* **SM2.E.7**: CHANGELOG entry for SM2.E.
+
+Tier-3 anchor added in `scripts/test_tier3_invariant_surface.sh`
+for the new methodology marker theorems; module wired into
+`SeLe4n/Platform/Staged.lean` and
+`scripts/staged_module_allowlist.txt`.
+
+**SM2 closure**: with SM2.E landed, all five sub-phases (SM2.A
+memory model + SM2.B TicketLock + SM2.C RwLock + SM2.D FFI bridge
++ SM2.E documentation) are CLOSED.  WS-SM Phase SM2 acceptance
+gate green per
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§8.  Zero Lean axioms across all SM2 modules; zero sorries.
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+**Next**: SM3 (per-object locks) consumes the SM2 verified
+primitives per
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md).
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

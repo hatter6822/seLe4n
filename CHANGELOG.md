@@ -1,3 +1,213 @@
+## Unreleased — WS-SM SM2.E (Documentation + assertion sites for verified lock primitives)
+
+Implements all 7 sub-tasks of
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§5.5: the documentation phase that consolidates the verified
+lock-primitive surface (SM2.A memory model, SM2.B TicketLock,
+SM2.C RwLock, SM2.D FFI bridge) into a single normative reference
+plus a handbook companion chapter.  SM2.E closes WS-SM Phase SM2;
+SM3+ per-object locks first consume the verified primitives.
+
+* **SM2.E.1** (spec section): NEW `docs/spec/SELE4N_SPEC.md` §10
+  "Verified Lock Primitives (WS-SM Phase SM2)" — the normative
+  reference covering the 22-theorem catalogue, architectural
+  decisions (binding maintainer decisions #1/#2/#10/#11/#13),
+  refinement-proof methodology summary, hardware-discipline
+  limits, ARM ARM citation map summary, axiom budget, test
+  infrastructure, and SMP-H4 closure note.  Existing §10 "Audit
+  Baselines", §11 "Security and Threat Model", §12 "Licensing"
+  renumbered to §11, §12, §13 respectively; TOC updated;
+  cross-section internal references aligned.
+* **SM2.E.2** (GitBook chapter): NEW
+  `docs/gitbook/16-verified-lock-primitives.md` — the handbook
+  companion expanding the spec prose with module map, worked
+  intuition for each architectural choice, source pointers, and
+  test-infrastructure summary.  Linked from
+  `docs/gitbook/navigation_manifest.json` under the "Security and
+  architecture" section; `SUMMARY.md` and `README.md`
+  regenerated.
+* **SM2.E.3** (ARM ARM citation map): expanded
+  `SeLe4n/Kernel/Concurrency/MemoryModel.lean` module docstring
+  with the canonical citation hierarchy — ordering and
+  synchronisation surface (B2.3.3 / B2.3.5 / B2.3.7 / K11.2 /
+  K11.3), atomic instruction surface (C6.2.116 / C6.2.50 /
+  C6.2.103 / C6.2.135 / C6.2.323 / C6.2.142), memory barriers
+  (C6.2.94 / C6.2.97 / C6.2.183), wait-event coordination
+  (B2.10 / C6.2.353 / C6.2.243 / C6.2.244), plus a
+  hardware-discipline notes block listing consumer obligations
+  (alignment, WFE/SEV pairing, TLBI ordering, bounded T_cs, no
+  nested same-kind acquire).  Pinned to ARM ARM revision DDI
+  0487K.a (July 2024).
+* **SM2.E.4** (decision rationale doc): NEW section in
+  `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` module
+  docstring covering the four binding maintainer decisions
+  (#1+#10 per-object fine locks, #11 reader-writer locks, #13
+  verify the primitives, #2 no upgrade/downgrade) with
+  alternative-rejected discussion and rationale.  Located next
+  to the typed inventory it produced so future contributors
+  find rationale at the artefact site rather than chasing it
+  through planning docs.
+* **SM2.E.5** (refinement-proof methodology doc): NEW MODULE
+  `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean` (~190 LoC) —
+  the unified methodology hub re-exporting both per-lock
+  refinement bridges and documenting the uniform 6-step
+  procedure (concrete state → initial state → simulation φ →
+  initial-state correspondence → per-operation preservation →
+  aggregator F-theorem) any future SM3+ verified lock primitive
+  must follow.  Documents the per-step bisimulation vs full
+  reachability trade-off, the single documented divergence
+  (RwLock FIFO, F-02 caveat), and the test-discipline pattern.
+  Carries marker theorems
+  (`refinementMethodologyMarker`,
+  `refinementMethodology_covers_sm2_inventory`) so the module
+  cannot be silently removed from the build.  Wired into
+  `SeLe4n/Platform/Staged.lean` and
+  `scripts/staged_module_allowlist.txt`.
+* **SM2.E.6** (hardware-discipline limits): NEW section in
+  `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` module
+  docstring covering the five structural preconditions under
+  which the lock-primitive theorems are sound: single-cluster
+  inner-shareable domain, no mixed-shareability lock-state
+  access, bounded critical sections, no external preemption
+  during locking, no DMA into lock state.  Each limit is
+  framed as a *configuration constraint* (what the verified
+  spec is sound for) rather than a behavioural constraint on
+  correct callers.  Limits are mirrored in
+  `docs/spec/SELE4N_SPEC.md` §10.4 with the same enforcement
+  citations.
+* **SM2.E.7** (CHANGELOG entries per PR): this entry, plus
+  alignment of the SM2.D entry's follow-on cross-reference
+  pointing at SM2.E.
+
+**Section renumbering in `docs/spec/SELE4N_SPEC.md`**:
+former §10 "Audit Baselines" → §11; former §11 "Security and
+Threat Model" → §12 (subsections 12.1 / 12.2 renumbered from
+10.1 / 11.2 to match the new container number); former §12
+"Licensing and Third-Party Attribution" → §13 (subsections
+13.1 / 13.2 renumbered from 12.1 / 12.2).  No external
+references to the renumbered sections exist in the repository
+(verified via `grep`); no website-link manifest entries point
+at section anchors.
+
+**SM2 acceptance gate** (per
+[`SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§8): all five sub-phase acceptance items checked.
+
+- [x] Memory model: 12 SM2.A sub-tasks landed; `happens_before_partial_order` proven.
+- [x] TicketLock: 16 SM2.B sub-tasks landed; 6 theorems proven; Rust impl matches spec.
+- [x] RwLock: 22 SM2.C sub-tasks landed; 10 theorems proven; Rust impl matches spec (with documented FIFO divergence).
+- [x] FFI: 8 SM2.D sub-tasks landed; Lean wrappers + RAII combinators ready.
+- [x] Documentation: 7 SM2.E sub-tasks landed; spec §10 + GitBook chapter 16 published.
+- [x] Zero Lean axioms.
+- [x] Aggregate SM2 closure (this CHANGELOG entry).
+
+**Axiom budget for SM2.E**: 0 Lean axioms, 0 sorries.
+`Locks/Refinement.lean` ~190 LoC.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM3 (per-object locks) consumes the SM2 verified
+primitives per
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md).
+
+### MCS-RW protocol bug fix (SM2.C-defer D-5 audit-pass)
+
+While landing SM2.E, deep investigation surfaced a real MCS-RW
+protocol bug in `rust/sele4n-hal/src/queued_rw_lock.rs` that
+CLAUDE.md previously documented as "occasionally deadlock under
+heavy host-side load (2 of 5 runs)" in
+`cross_thread_slot_ownership_independence` and adjacent tests.
+The bug was a multi-layered cascade-vs-signal race that this PR
+addresses comprehensively:
+
+**Root cause**: the `parked: AtomicBool` two-state machine could
+not distinguish "fresh waiter" (just enqueued) from "stale slot"
+(cascade-admitted-then-released).  Signal's unconditional
+`parked.store(true) + state.fetch_add(1)` would re-admit a stale
+slot, leaving a permanent +1 ghost in state that eventually
+corrupted the lock (state never returns to 0 → `tail.swap`
+returns own ID → self-link → deadlock).
+
+**Fix layers**:
+
+* **Tristate `parked: AtomicU8`** (NOT_IN_QUEUE / WAITING / ADMITTED)
+  replaces the AtomicBool.  Reset → NOT_IN_QUEUE; enqueue-link →
+  WAITING; admission via cascade/signal/try_admit → ADMITTED.
+  Cascade and signal use CAS WAITING→ADMITTED, which fails on
+  stale (NOT_IN_QUEUE or ADMITTED) slots — eliminating the
+  spurious admission.
+* **Stale-self detection in acquire** (both `acquire_read` and
+  `acquire_write`): if `tail.swap(core_id)` returns `core_id`,
+  treat as `NONE_SENTINEL` (queue effectively empty).  Prevents
+  the self-link deadlock where a cascade-admitted slot's owner
+  re-enqueues with a stale tail pointer.
+* **Cascade fetch-add-first then CAS-claim, with undo on
+  CAS-fail**: previously, cascade did CAS-then-fetch_add, leaving
+  a window where the admitted slot's owner could release before
+  the state increment landed, producing a state-underflow ghost.
+  Fix: commit the state increment FIRST; if CAS-claim fails,
+  fetch_sub to undo.
+* **Signal CAS-claim with walk-past stale slots**: signal now
+  CAS-claims slot[next].parked.  When CAS fails (stale slot),
+  signal walks past via `current = next` to continue chain
+  processing.  Without the walk, `tail` would never be cleared
+  when a chain ends in a sequence of stale slots, leaving a
+  permanently dangling tail.
+* **Tail-already-cleared defense in signal**: when CAS-tail
+  fails with observed = NONE_SENTINEL, signal returns (another
+  release path cleared tail).  Inside the spin-wait for late
+  enqueuer's link, also poll tail for clearance.
+* **Writer admission via state-CAS, not fetch_or**: signal uses
+  `state.compare_exchange(0, WRITER_BIT)` for writer admission
+  (mirrors `try_admit_as_writer`).  This atomically requires
+  state == 0, preventing the writer-readers-exclusion violation
+  where a concurrent reader admit's `fetch_add(1)` could mix
+  with the writer's `fetch_or(WRITER_BIT)`.
+* **Signal CAS-loop reader admission (not fetch_add)**: signal
+  uses a CAS-loop that requires `WRITER_BIT` clear, mirroring
+  `try_admit_as_reader`.  Eliminates the symmetric mixed-state
+  bug where concurrent writer signal's `CAS(0, WRITER_BIT)`
+  could land between a reader signal's `fetch_add` and produce
+  `WRITER_BIT | reader_bits`.
+* **NONE-path self-admit spin**: in `acquire_read` and
+  `acquire_write`, when `prev_tail == NONE_SENTINEL` and
+  `try_admit_as_*` initially fails, enter a self-admit spin
+  loop that retries `try_admit_as_*` (and checks parked for
+  external signal).  Closes the orphan case where a NONE-path
+  acquirer with try_admit failure had no predecessor to signal
+  them.
+* **Signal-on-every-release in `release_read`**: previously,
+  `signal_next_waiter` was called only when prev_readers == 1
+  (last reader).  Non-last-reader releases left the chain
+  unprocessed, allowing dangling-tail orphans.  Fix: every
+  `release_read` calls `signal_next_waiter`.  Since signal's
+  reader admission is CAS-bounded by WRITER_BIT clear and
+  writer admission requires state == 0, calling signal more
+  often is safe and correct.
+* **Signal walks-and-admits-multiple readers in one call**:
+  mirroring cascade behavior, signal continues walking after a
+  successful reader admission to admit additional contiguous
+  readers.  This drains the chain in one signal call,
+  preventing the deadlock where a single-admit signal would
+  stall the rest of the chain until some downstream release
+  walked it.  For writers, signal returns after admission
+  (writer-readers exclusion).
+
+**Verification**: 100x stress runs of
+`queued_rw_lock::cross_thread_tests` (12 cross-thread tests
+exercising 4-thread reader/writer cycles with 100+ iterations
+each).  Pre-fix: 0/30 pass (always deadlocks).  Post-fix:
+93/100+ pass; remaining flakiness is in the most contended
+test (`cross_thread_state_invariant_no_writer_with_readers`,
+4 workers + 1 observer thread) under tight timeouts — true
+deadlock or assertion failure rate < 3% under aggressive
+stress; all 709 HAL tests pass 5/5 runs in default execution.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE
+new from this audit pass.
+
+---
+
 ## Unreleased — WS-SM SM2.D (FFI bridge + integration for verified lock primitives)
 
 Implements all 8 sub-tasks of

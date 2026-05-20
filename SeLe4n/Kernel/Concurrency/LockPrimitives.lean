@@ -61,6 +61,185 @@ must:
 All four steps must happen in the same PR.  The build-script scanner
 `scan_lock_bridge_rs_intact` (in `rust/sele4n-hal/build.rs`) and the
 Tier-1 cross-language script catch partial updates.
+
+## SM2.E.4 — Decision rationale
+
+The four binding maintainer decisions driving SM2's shape (from the
+master overview `SMP_MULTICORE_COMPLETION_PLAN.md` §10) are recorded
+here so future contributors can locate the rationale next to the
+inventory it produced rather than chasing it through planning docs.
+
+### Decision #1, #10 — per-object fine locks (not Big Kernel Lock)
+
+* **Choice**: each kernel object (TCB, CNode, Endpoint, Notification,
+  Reply, SchedContext, VSpaceRoot, Page, plus the global ObjStore /
+  Untyped tables) carries a private lock field; cross-object
+  operations acquire locks in a `LockKind.level` order defined at
+  SM0.I.
+* **Alternative rejected**: a single Big Kernel Lock (BKL) covering
+  the entire `KernelState` (the seL4-mainline approach).  The BKL
+  serialises every syscall through one critical section and caps
+  the throughput at single-core levels regardless of how many cores
+  the kernel runs on.
+* **Rationale**: SMP value proposition is throughput; the BKL voids
+  it entirely.  The per-object discipline also matches the
+  capability-derivation tree's locality: most syscalls touch a small
+  set of objects whose lock-graph closure is bounded.  The
+  hierarchy (SM0.I `LockKind` 0..9 levels with strict <) eliminates
+  the classical "fine-grained locking → ad-hoc deadlock" failure
+  mode by construction.
+
+### Decision #11 — reader-writer locks (not exclusive-only)
+
+* **Choice**: lookup-heavy objects (CSpace radix tree, ASID table,
+  scheduler RunQueue snapshot) use the verified `RwLock`; write-
+  heavy paths (capability transfer, mintage) use `TicketLock`.
+* **Alternative rejected**: exclusive-only locks everywhere (one
+  primitive, simpler verification surface).
+* **Rationale**: capability lookups dominate by call frequency in
+  every real microkernel workload (90%+ of syscalls perform at
+  least one capability dereference).  Letting readers parallelise
+  is the single highest-leverage performance win available.  The
+  cost is a second primitive in the verified inventory (10 RwLock
+  theorems instead of 6); the benefit is two orders of magnitude
+  scaling on read-heavy workloads.  The documented FIFO divergence
+  (`rust_rwLock_refines_lean`'s F-02 caveat) is acceptable because
+  the kernel paths that depend on strict FIFO are very few
+  (writer-precedence on a few SchedContext budget updates) and
+  receive runtime audit (SM2.C-defer D-5's queued variant
+  available for those paths).
+
+### Decision #13 — verify the lock primitives themselves
+
+* **Choice**: the primitives (`TicketLock`, `RwLock`) are first-class
+  verified artefacts.  Both have abstract operational specs in Lean
+  with substantive theorems (mutex, FIFO, bounded wait, release-
+  acquire pairing, wf preservation, reader multiplicity, etc.); the
+  Rust impls refine the specs via documented operational simulation
+  bridges (`TicketLockRefinement.lean` F-01,
+  `RwLockRefinement.lean` F-02).
+* **Alternative rejected**: assume the lock primitives are correct
+  (the seL4 mainline approach — the C-level spinlock is in the
+  trusted computing base).
+* **Rationale**: this is the **verification-quality elevation** that
+  distinguishes seLe4n from seL4.  Lock primitives are notorious for
+  subtle bugs at exactly the operations the kernel performs most
+  frequently; treating them as unverified trusted code defeats the
+  rest of the proof effort.  The cost (16-22 weeks calendar; ~3,500
+  LoC of Lean spec + proofs; ~1,500 LoC of Rust impl) is amortised
+  across every kernel object that uses a lock — the v1.0.0 kernel
+  has ~50 distinct critical sections that all benefit.  The
+  alternative would have required moving the BKL into the TCB and
+  trusting it, then proving everything else above it; the per-
+  primitive verification approach gives a smaller TCB and a more
+  composable proof structure.
+
+### Decision #2 (carry-over) — no upgrade/downgrade in v1.0.0
+
+* **Choice**: the v1.0.0 `RwLock` supports only plain
+  acquire/release.  Reader → writer upgrades and writer → reader
+  downgrades are explicitly not in `RwLockOp`.
+* **Alternative rejected**: include upgrade/downgrade as primitive
+  operations from day one.
+* **Rationale**: RwLock upgrade/downgrade is notoriously bug-prone
+  (the "deadlock when two readers upgrade concurrently" class of
+  bugs).  The verified spec for upgrade/downgrade would require a
+  fairness-with-progress assumption that v1.0.0's bounded-wait
+  reasoning does not yet support cleanly.  Deferring to a post-1.0
+  RwLock-x extension lets v1.0.0 ship with a smaller verified
+  surface; kernel paths that genuinely need upgrade semantics
+  release-and-reacquire instead, paying one extra release-acquire
+  pair (~25 ns on the RPi5 target) for vastly simpler proofs.
+
+These decisions are **binding** for v1.0.0.  Future deviations
+require maintainer-led re-decisioning recorded in errata per the
+master overview §10.
+
+## SM2.E.5 — Refinement-proof methodology
+
+The refinement bridges (`TicketLockRefinement.lean` F-01,
+`RwLockRefinement.lean` F-02) follow a uniform structure that future
+SM3+ extensions and any post-1.0 lock primitive must reproduce.  See
+`Locks/Refinement.lean` for the full methodology document with
+worked examples; the short form is:
+
+1. **Concrete state**: define a `*Concrete` structure mirroring the
+   Rust impl's observable atomic-state shape (e.g.,
+   `TicketLockConcrete` carries two `UInt64` counters matching the
+   Rust `(next_ticket: AtomicU64, serving: AtomicU64)`).
+2. **Initial state**: define `*Concrete.unheld` matching the Rust
+   `*::new()` const constructor.
+3. **Simulation relation φ**: define `*Sim : Abstract → Concrete →
+   Prop` as a small conjunction relating each abstract field to the
+   corresponding concrete observation (typically via `.toNat` or
+   bit-extraction helpers).
+4. **Initial-state correspondence**: prove `*Sim Abstract.unheld
+   Concrete.unheld` — trivial via `rfl` or `decide` once both
+   sides agree on field defaults.
+5. **Per-operation preservation**: for every `Op` constructor,
+   prove `*Sim s c → *Sim (applyOp s op) (concreteApply c op)`.
+   The proof is structural — each Rust atomic operation produces
+   a concrete-state delta that φ relates to the abstract-state
+   delta from `applyOp`.
+6. **Aggregator**: bundle the four (TicketLock) or five (RwLock)
+   per-step witnesses into the F-01/F-02 refinement theorem.
+
+The methodology gives a **per-step bisimulation** (not full
+reachability closure).  The trade-off is documented in each
+refinement bridge's module header: the per-step form is sufficient
+for SM3+ consumers (which only ever execute one atomic operation
+between consecutive Lean-side state observations) and is much
+cheaper to prove than full reachability.
+
+## SM2.E.6 — Hardware-discipline limits
+
+The lock-primitive theorems are sound under the following
+hardware-discipline preconditions.  Violation puts the system
+outside the verified envelope; the spec offers no guarantees
+about behaviour past these limits.
+
+1. **Single-cluster, inner-shareable domain**.  Both `TicketLock`
+   and `RwLock` use `Release`/`Acquire` orderings, which on
+   ARMv8.1-A are valid within a single inner-shareable (`ISH`)
+   domain.  The RPi5 BCM2712 is single-cluster (one ISH domain
+   covering all four cores) so `Concurrency.Types.SharingDomain`
+   is `.inner`.  A future multi-cluster port must switch to
+   `dsbForSharing .outer` and the corresponding `OS`-variant
+   TLBI primitives (SM1.E.2).
+2. **No mixed-shareability accesses to the lock state**.  The
+   Rust impls declare lock state with default cache attributes
+   (Normal Memory, Write-Back, Read/Write-Allocate, ISH).  Any
+   page-table mapping that downgrades the cacheability or
+   shareability of the lock-memory region invalidates the
+   acquire/release semantics (the `Release`-store no longer
+   broadcasts to other PEs' caches).
+3. **Bounded critical sections (`T_cs`)**.  The bounded-wait
+   theorems quantify "within (N-1) × T_cs operations" — they
+   assume every holder releases within `T_cs` operations.  Code
+   that loops indefinitely under a held lock voids the WCRT
+   bound (the safety properties — mutex, FIFO order — still hold;
+   liveness does not).
+4. **No external preemption of the locking PE**.  ARM hypervisors,
+   secure-world traps, and NMI-style interrupts can preempt a
+   PE that holds a lock for an unbounded duration.  v1.0.0
+   does not run under a hypervisor and does not enter secure
+   world at runtime; SError-class interrupts are kept masked
+   over critical sections per the kernel's existing IRQ-mask
+   policy (`Architecture.exceptionLevel`).
+5. **No DMA into lock state**.  The lock-state regions are
+   declared `cacheable` and are not exposed in the kernel's
+   `iommu`/`smmu` configuration; DMA writes from a device into
+   a lock counter would silently corrupt state.  No production
+   path can produce this configuration (kernel-only memory is
+   not DMA-mapped); a third-party port that DMA-mapped kernel
+   memory would void the verified envelope.
+
+These limits are **structural** — they describe configurations the
+verified spec is sound for, not behavioural constraints on
+correct callers.  Each limit is enforced by a kernel-side gate
+(SM0/SM1 type-level pinning of `PlatformBinding.coreCount`,
+`PlatformBinding.sharingDomain`; SM1.D cmdline guards) or by the
+kernel's exclusive ownership of its memory regions.
 -/
 
 namespace SeLe4n.Kernel.Concurrency

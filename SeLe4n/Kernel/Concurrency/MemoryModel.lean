@@ -33,32 +33,159 @@ foundation that every SM2.B / SM2.C lock-primitive proof rests on:
 * `happens_before_partial_order` — aggregate of the three above,
                                     the canonical surface anchor
 
-## ARM ARM citations
+## ARM ARM citation map (WS-SM SM2.E.3)
 
 The abstract memory model captures, operationally, the following
 hardware properties.  Each is sourced from a public ARMv8-A
-Architecture Reference Manual (ARM ARM) section and is encoded
-operationally (no `axioms` introduced) by the constraints on the
-`synchronizesWith` and `happensBefore` predicates.
+Architecture Reference Manual (ARM ARM, DDI 0487 family) section
+and is encoded operationally (no `axioms` introduced) by the
+constraints on the `synchronizesWith` and `happensBefore` predicates.
+
+This is the **canonical citation map** for SM2.  Every Rust HAL
+docstring (`ticket_lock.rs`, `rw_lock.rs`, `lock_bridge.rs`) and
+every per-lock Lean docstring (`Locks/TicketLock.lean`,
+`Locks/RwLock.lean`) cites entries by their section identifier
+(e.g., "ARM ARM B2.3.7") rather than restating the underlying
+hardware property — keep this map authoritative.
+
+### Ordering and synchronisation surface
 
 * **ARM ARM B2.3.7** (Release/Acquire ordering): a Release-store on
-  a location L synchronizes-with the next Acquire-load on L that
+  a location L synchronises-with the next Acquire-load on L that
   observes the released value.  Encoded by `synchronizesWith`'s
   conjuncts requiring `e_R.isWrite ∧ e_R.order.isRelease ∧
   ¬ e_A.isWrite ∧ e_A.order.isAcquire ∧ e_R.loc = e_A.loc ∧
-  e_R.value = e_A.value`.
-* **ARM ARM B2.10** (Local event register / WFE-SEV): captured at
-  the lock-primitive level (SM2.B), not in the abstract model.
-* **ARM ARM C6.2.* LDADD/STADD/CAS family** (ARMv8.1-A LSE): the
-  atomic RMW (Read-Modify-Write) instructions are modelled as two
-  back-to-back events (load + store) on the same `seqNum`; this
-  module exports the `MemoryEvent` shape so SM2.B's TicketLock can
-  encode `next_ticket.fetch_add(1, Acquire)` as a single trace
-  position with both events.
+  e_R.value = e_A.value`.  Consumers: every
+  `*_release_acquire_pairing` theorem in `Locks/TicketLock.lean`
+  and `Locks/RwLock.lean`.
+* **ARM ARM B2.3.3** (Single-Copy Atomicity): atomic operations
+  on naturally-aligned 8-byte locations are single-copy atomic.
+  Encoded implicitly by modelling each `MemoryEvent` as a single
+  point-in-time observation (no torn reads/writes).  Consumers:
+  every `AtomicU64`-backed lock counter in `ticket_lock.rs` /
+  `rw_lock.rs`; the bit-packed `state` field in `rw_lock.rs`.
+* **ARM ARM B2.3.5** (External Completion): a memory access has
+  externally completed for an observer when it is globally
+  visible to that observer.  Encoded operationally through the
+  trace's per-position observability — once an event sits at
+  position `p` in the trace, every event at position `> p` may
+  reference it via `synchronizesWith`.
 * **ARM ARM K11.2** (Memory model — happens-before): hb is
   irreflexive, transitive, antisymmetric on the events of a
   well-formed execution.  Encoded by Theorems 3.1.8.1 / 3.1.8.2 /
   3.1.8.3 below, aggregated into `happens_before_partial_order`.
+* **ARM ARM K11.3** (Coherence / per-location order): all writes
+  to a single location are totally ordered, observable in that
+  order by every PE.  Encoded by the trace's positional order
+  plus the wellFormed Nodup conjunct (no event appears twice).
+
+### Atomic instruction surface (ARMv8.1-A LSE)
+
+The ARM Large System Extension (LSE) introduces single-instruction
+atomic RMWs that the Rust impls use directly.  Each instruction
+family is modelled as one trace position holding two events (load
++ store) sharing a single `seqNum` (audit-pass refinement: the
+non-strict `≤` in `wellFormed.pairwise` accommodates this shape).
+
+* **ARM ARM C6.2.116** (`LDADD` family — `LDADD`, `LDADDA`,
+  `LDADDL`, `LDADDAL`): atomic add with optional acquire (`A`),
+  release (`L`), or both (`AL`) ordering.  Consumers:
+  `ticket_lock.rs`'s `next_ticket.fetch_add(1, Acquire)` →
+  `LDADDA`; `serving.fetch_add(1, Release)` → `LDADDL`;
+  `rw_lock.rs`'s `state.fetch_sub(1, Release)` → `LDADDL` with
+  negated operand.
+* **ARM ARM C6.2.50** (`CAS` family — `CAS`, `CASA`, `CASL`,
+  `CASAL`): atomic compare-and-swap with optional acquire/release
+  ordering.  Consumers: the rare CAS-retry paths in `rw_lock.rs`
+  on platforms without LSE (the v1.0.0 RPi5 target is LSE-capable;
+  pre-LSE platforms remain a port-time concern).
+* **ARM ARM C6.2.103** (`LDCLR` family — `LDCLR`, `LDCLRA`,
+  `LDCLRL`, `LDCLRAL`): atomic bit-clear with optional acquire/
+  release ordering.  Consumers: `rw_lock.rs`'s `release_write`
+  uses `state.fetch_and(READER_MASK, Release)` → `LDCLRL` with
+  the writer-bit mask negated (audit fix H-4 — the original
+  `store(0, Release)` would wipe reader bits on misuse).
+* **ARM ARM C6.2.135** (`LDXR` / `LDAXR` exclusive-load family):
+  load-exclusive with optional acquire ordering.  Pre-LSE
+  building block for CAS retry pairs.
+* **ARM ARM C6.2.323** (`STXR` / `STLXR` exclusive-store family):
+  store-exclusive with optional release ordering.  Pre-LSE
+  building block for CAS retry pairs.
+* **ARM ARM C6.2.142** (`LDAR` family — `LDAR`, `LDARH`, `LDARB`):
+  acquire-load.  Consumers: `ticket_lock.rs`'s
+  `serving.load(Acquire)` in the WFE spin loop;
+  `rw_lock.rs`'s `state.load(Acquire)` in the CAS-retry head.
+
+### Memory barriers
+
+The kernel-side barrier surface lives in `Architecture.BarrierKind`
+and `Concurrency.Types.dsbForSharing` (SM0.F).  The abstract memory
+model does not directly model barriers — they are implicit in the
+per-event acquire/release ordering.  Production-side citations:
+
+* **ARM ARM C6.2.94** (`DMB`): Data Memory Barrier; orders memory
+  accesses before/after the barrier within a shareability domain.
+* **ARM ARM C6.2.97** (`DSB`): Data Synchronisation Barrier;
+  stronger than DMB — completion barrier rather than ordering.
+  Consumers: the cross-core TLBI primitive (`Architecture.TlbiForSharing`,
+  SM1.E.4) emits `DSB ISH` before broadcast TLBI.
+* **ARM ARM C6.2.183** (`ISB`): Instruction Synchronisation Barrier;
+  flushes the pipeline.  Consumers: every TLBI / VBAR_EL1 /
+  SCTLR_EL1 write sequence in `rust/sele4n-hal/src/mmu.rs`.
+
+### Wait-event coordination (SEV/WFE)
+
+These hardware events are captured at the lock-primitive level
+(SM2.B) rather than in the abstract model because they are
+liveness primitives (bounded latency on wake-up), not safety
+primitives.
+
+* **ARM ARM B2.10** (Local event register): WFE/SEV semantics.
+  Each PE has a one-bit local event register that `WFE` waits on
+  and `SEV` sets globally.  Documented in `rust/sele4n-hal/src/cpu.rs`
+  module docstring per SM1.I.5.
+* **ARM ARM C6.2.353** (`WFE`): Wait For Event.  Consumers:
+  `cpu.rs::wfe_bounded` — bounded WFE; the bound is enforced via
+  the generic timer's `CNTPCT_EL0` register.
+* **ARM ARM C6.2.243** (`SEV`): Send Event (global broadcast).
+  Consumers: `ticket_lock.rs::release` emits `sev` after the
+  `serving.fetch_add(1, Release)`; same for `rw_lock.rs::release_*`.
+* **ARM ARM C6.2.244** (`SEVL`): Send Event Local — sets only the
+  calling PE's local event register.  Currently unused; reserved
+  for SM5+ idle-thread wake primitives.
+
+### Hardware-discipline notes (consumer obligations)
+
+The Lean spec models the hardware semantics operationally, but
+the **caller** must still respect ARM ARM-mandated rules.  These
+obligations are documented per-call-site in the Rust HAL but
+listed here for the SM2.E hardware-discipline closure (SM2.E.6):
+
+1. **8-byte alignment** for AtomicU64 (ARM ARM B2.3.3): both
+   `TicketLock` and `RwLock` declare `#[repr(C, align(64))]`,
+   over-aligning to the cache line.  False sharing is avoided as
+   a side effect.
+2. **WFE/SEV pairing** (B2.10): every `SEV` must be preceded by
+   a Release-store so observers see the published state before
+   they wake.  Both lock impls emit `SEV` AFTER the `Release`
+   atomic on `serving` / `state`.
+3. **TLBI ordering** (C6.2.97 DSB): cross-core TLB invalidates
+   must be DSB-bracketed.  Not part of SM2; covered by SM1.E
+   (`Architecture.TlbiForSharing`).
+4. **Bounded critical sections** (T_cs): the bounded-wait
+   theorems (`ticketLock_bounded_wait`,
+   `rwLock_bounded_wait_read/write`) assume the holder releases
+   within a bounded number of operations.  Application code that
+   holds a lock indefinitely violates the WCRT bound.
+5. **No nested same-kind acquire** (LockKind hierarchy, SM0.I):
+   `LockKind.level` defines a strict 0..9 hierarchy; SM3+
+   per-object locks must respect the order to avoid deadlock.
+   Not part of SM2's correctness theorems; covered by SM3.
+
+A single ARM ARM revision (DDI 0487K.a, July 2024 — the current
+"K" revision) is the authoritative source for every section
+above.  The section numbers are stable across revisions D..K;
+the rendered HTML edition is also accepted at the same number.
 
 ## Axiom budget
 

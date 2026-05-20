@@ -1762,6 +1762,19 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
 EOF'
 
+# WS-SM SM2.E.5 — unified refinement-proof methodology hub.  Surface
+# anchors both methodology markers so a regression that removes the
+# methodology docstring or its marker theorems fails here first.  Any
+# future SM3+ verified lock primitive that follows the six-step
+# methodology cross-references the markers in this module.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Refinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
+
+#check @SeLe4n.Kernel.Concurrency.refinementMethodologyMarker
+#check @SeLe4n.Kernel.Concurrency.refinementMethodology_covers_sm2_inventory
+EOF'
+
 # WS-SM SM2.D — Lean-side FFI declarations.  Covers every SM2.D
 # @[extern] declaration in Platform/FFI.lean so a regression that
 # removed a declaration without updating the cross-language

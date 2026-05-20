@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-ffi-bridge-plan-traAL",
-      "commit_sha": "cff485b0dd6a8f2414a91a159e1165b7992def52",
-      "tree_sha": "d300601490a3215082eb73ecdce90f81c308c62f",
-      "committed_at_utc": "2026-05-19T22:50:35+00:00"
+      "branch": "claude/review-lock-primitives-docs-umtsc",
+      "commit_sha": "6866a2e260470eda53c394a849f4cb5d6c6d064e",
+      "tree_sha": "021fef662e78edb33d9ad5a2aa12753530cceeeb",
+      "committed_at_utc": "2026-05-19T19:10:10-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4f67d02ffce87c205181d84e6ed3c1ff769492794002423f8676595fc5d728df"
+    "source_digest": "f265414fe909903167c4e76156c7f84f693b31a67eda1216d5e5142be1fce1f8"
   },
   "summary": {
-    "module_count": 222,
-    "declaration_count": 7377
+    "module_count": 223,
+    "declaration_count": 7380
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
-    "production_files": 185,
-    "production_loc": 127849,
+    "production_files": 186,
+    "production_loc": 128431,
     "test_files": 37,
     "test_loc": 25163,
-    "proved_theorem_lemma_decls": 3708,
+    "proved_theorem_lemma_decls": 3712,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14416,19 +14416,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 66,
+          "line": 245,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "LockPrimitiveCategory",
-          "line": 69,
+          "line": 248,
           "called": []
         },
         {
           "kind": "structure",
           "name": "LockPrimitiveTheorem",
-          "line": 84,
+          "line": 263,
           "called": [
             "LockPrimitiveCategory"
           ]
@@ -14436,7 +14436,7 @@
         {
           "kind": "def",
           "name": "lockPrimitives",
-          "line": 98,
+          "line": 277,
           "called": [
             "LockPrimitiveTheorem",
             "happensBefore_antisymmetric",
@@ -14466,7 +14466,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_count",
-          "line": 182,
+          "line": 361,
           "called": [
             "length",
             "lockPrimitives"
@@ -14475,7 +14475,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_memoryModel_count",
-          "line": 187,
+          "line": 366,
           "called": [
             "filter",
             "length",
@@ -14485,7 +14485,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_ticketLock_count",
-          "line": 193,
+          "line": 372,
           "called": [
             "filter",
             "length",
@@ -14495,7 +14495,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_rwLock_count",
-          "line": 199,
+          "line": 378,
           "called": [
             "filter",
             "length",
@@ -14505,7 +14505,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_refinement_count",
-          "line": 205,
+          "line": 384,
           "called": [
             "filter",
             "length",
@@ -14515,7 +14515,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_partition_sum",
-          "line": 212,
+          "line": 391,
           "called": [
             "filter",
             "length"
@@ -14524,7 +14524,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_identifiers_nodup",
-          "line": 230,
+          "line": 409,
           "called": [
             "lockPrimitives"
           ]
@@ -14532,7 +14532,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_descriptions_nodup",
-          "line": 238,
+          "line": 417,
           "called": [
             "lockPrimitives"
           ]
@@ -14708,6 +14708,33 @@
           "called": [
             "LockId",
             "LockId.le_total"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.Refinement",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/Refinement.lean",
+      "declaration_count": 3,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 237,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "refinementMethodologyMarker",
+          "line": 255,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "refinementMethodology_covers_sm2_inventory",
+          "line": 266,
+          "called": [
+            "refinementMethodologyMarker"
           ]
         }
       ]
@@ -18993,19 +19020,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 87,
+          "line": 214,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "MemoryOrder",
-          "line": 117,
+          "line": 244,
           "called": []
         },
         {
           "kind": "def",
           "name": "MemoryOrder.isAcquire",
-          "line": 128,
+          "line": 255,
           "called": [
             "MemoryOrder"
           ]
@@ -19013,7 +19040,7 @@
         {
           "kind": "def",
           "name": "MemoryOrder.isRelease",
-          "line": 135,
+          "line": 262,
           "called": [
             "MemoryOrder"
           ]
@@ -19021,7 +19048,7 @@
         {
           "kind": "theorem",
           "name": "MemoryOrder.acquire_isAcquire",
-          "line": 140,
+          "line": 267,
           "called": [
             "isAcquire"
           ]
@@ -19029,7 +19056,7 @@
         {
           "kind": "theorem",
           "name": "MemoryOrder.release_isRelease",
-          "line": 144,
+          "line": 271,
           "called": [
             "isRelease"
           ]
@@ -19037,7 +19064,7 @@
         {
           "kind": "theorem",
           "name": "MemoryOrder.acqRel_both",
-          "line": 148,
+          "line": 275,
           "called": [
             "isAcquire",
             "isRelease"
@@ -19046,7 +19073,7 @@
         {
           "kind": "theorem",
           "name": "MemoryOrder.seqCst_both",
-          "line": 156,
+          "line": 283,
           "called": [
             "isAcquire",
             "isRelease"
@@ -19055,7 +19082,7 @@
         {
           "kind": "theorem",
           "name": "MemoryOrder.relaxed_neither",
-          "line": 163,
+          "line": 290,
           "called": [
             "isAcquire",
             "isRelease"
@@ -19064,13 +19091,13 @@
         {
           "kind": "structure",
           "name": "AtomicLocation",
-          "line": 185,
+          "line": 312,
           "called": []
         },
         {
           "kind": "def",
           "name": "AtomicLocation.nextTicketOf",
-          "line": 199,
+          "line": 326,
           "called": [
             "AtomicLocation"
           ]
@@ -19078,7 +19105,7 @@
         {
           "kind": "def",
           "name": "AtomicLocation.servingOf",
-          "line": 204,
+          "line": 331,
           "called": [
             "AtomicLocation"
           ]
@@ -19086,7 +19113,7 @@
         {
           "kind": "def",
           "name": "AtomicLocation.rwLockStateOf",
-          "line": 209,
+          "line": 336,
           "called": [
             "AtomicLocation"
           ]
@@ -19094,7 +19121,7 @@
         {
           "kind": "theorem",
           "name": "AtomicLocation.ticketLock_fields_distinct",
-          "line": 214,
+          "line": 341,
           "called": [
             "AtomicLocation.nextTicketOf",
             "AtomicLocation.servingOf"
@@ -19103,7 +19130,7 @@
         {
           "kind": "structure",
           "name": "MemoryEvent",
-          "line": 254,
+          "line": 381,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -19113,7 +19140,7 @@
         {
           "kind": "structure",
           "name": "MemoryTrace",
-          "line": 282,
+          "line": 409,
           "called": [
             "MemoryEvent"
           ]
@@ -19121,7 +19148,7 @@
         {
           "kind": "def",
           "name": "MemoryTrace.empty",
-          "line": 289,
+          "line": 416,
           "called": [
             "MemoryTrace"
           ]
@@ -19129,7 +19156,7 @@
         {
           "kind": "def",
           "name": "MemoryTrace.append",
-          "line": 297,
+          "line": 424,
           "called": [
             "MemoryEvent",
             "MemoryTrace"
@@ -19138,13 +19165,13 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.empty_events",
-          "line": 301,
+          "line": 428,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "MemoryTrace.append_events",
-          "line": 304,
+          "line": 431,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19154,7 +19181,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.append_length",
-          "line": 308,
+          "line": 435,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19166,15 +19193,15 @@
         {
           "kind": "def",
           "name": "MemoryTrace.wellFormed",
-          "line": 353,
+          "line": 480,
           "called": [
             "MemoryTrace"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:368>",
-          "line": 368,
+          "name": "<anonymous:instance:495>",
+          "line": 495,
           "called": [
             "MemoryTrace",
             "MemoryTrace.wellFormed",
@@ -19184,7 +19211,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.empty_wellFormed",
-          "line": 374,
+          "line": 501,
           "called": [
             "MemoryTrace.empty",
             "wellFormed"
@@ -19193,7 +19220,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.singleton_wellFormed",
-          "line": 382,
+          "line": 509,
           "called": [
             "MemoryEvent",
             "MemoryTrace.append",
@@ -19205,7 +19232,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.wellFormed_append",
-          "line": 400,
+          "line": 527,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19216,7 +19243,7 @@
         {
           "kind": "theorem",
           "name": "pairwise_get_lt",
-          "line": 442,
+          "line": 569,
           "called": [
             "get",
             "length",
@@ -19226,7 +19253,7 @@
         {
           "kind": "def",
           "name": "MemoryTrace.eventPos",
-          "line": 484,
+          "line": 611,
           "called": [
             "MemoryEvent",
             "MemoryTrace"
@@ -19235,7 +19262,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_lt_length",
-          "line": 489,
+          "line": 616,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19246,7 +19273,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_eq_length_of_not_mem",
-          "line": 496,
+          "line": 623,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19257,7 +19284,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_get_eq",
-          "line": 508,
+          "line": 635,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19271,7 +19298,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_inj",
-          "line": 536,
+          "line": 663,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19285,7 +19312,7 @@
         {
           "kind": "def",
           "name": "synchronizesWith",
-          "line": 575,
+          "line": 702,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19297,7 +19324,7 @@
         {
           "kind": "theorem",
           "name": "synchronizesWith_relaxed_load_rejected",
-          "line": 592,
+          "line": 719,
           "called": [
             "MemoryEvent",
             "MemoryOrder.isAcquire",
@@ -19308,7 +19335,7 @@
         {
           "kind": "theorem",
           "name": "synchronizesWith_relaxed_store_rejected",
-          "line": 606,
+          "line": 733,
           "called": [
             "MemoryEvent",
             "MemoryOrder.isRelease",
@@ -19319,7 +19346,7 @@
         {
           "kind": "def",
           "name": "sequencedBefore",
-          "line": 627,
+          "line": 754,
           "called": [
             "MemoryEvent",
             "MemoryTrace"
@@ -19328,7 +19355,7 @@
         {
           "kind": "inductive",
           "name": "happensBefore",
-          "line": 650,
+          "line": 777,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19339,7 +19366,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_in_trace",
-          "line": 669,
+          "line": 796,
           "called": [
             "MemoryTrace",
             "happensBefore"
@@ -19348,7 +19375,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_strict_positional",
-          "line": 700,
+          "line": 827,
           "called": [
             "MemoryTrace",
             "eventPos",
@@ -19366,7 +19393,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_irreflexive",
-          "line": 751,
+          "line": 878,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19378,7 +19405,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_transitive",
-          "line": 772,
+          "line": 899,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19389,7 +19416,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_antisymmetric",
-          "line": 795,
+          "line": 922,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19401,7 +19428,7 @@
         {
           "kind": "theorem",
           "name": "happens_before_partial_order",
-          "line": 819,
+          "line": 946,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19415,7 +19442,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_no_cycle",
-          "line": 839,
+          "line": 966,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19427,7 +19454,7 @@
         {
           "kind": "theorem",
           "name": "happens_before_strict_partial_order",
-          "line": 848,
+          "line": 975,
           "called": [
             "MemoryTrace",
             "happensBefore",
@@ -19439,7 +19466,7 @@
         {
           "kind": "theorem",
           "name": "sequencedBefore_implies_happensBefore",
-          "line": 872,
+          "line": 999,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19450,7 +19477,7 @@
         {
           "kind": "theorem",
           "name": "synchronizesWith_implies_happensBefore",
-          "line": 883,
+          "line": 1010,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19461,7 +19488,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.wellFormed.nodup",
-          "line": 893,
+          "line": 1020,
           "called": [
             "MemoryTrace",
             "wellFormed"
@@ -19470,7 +19497,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.wellFormed.pairwise",
-          "line": 901,
+          "line": 1028,
           "called": [
             "MemoryTrace",
             "wellFormed"
@@ -19479,7 +19506,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_eventPos_lt",
-          "line": 911,
+          "line": 1038,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -19492,7 +19519,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_endpoints_in_trace_with_pos",
-          "line": 923,
+          "line": 1050,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -73078,13 +73105,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 149,
+          "line": 156,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 155,
+          "line": 162,
           "called": []
         }
       ]

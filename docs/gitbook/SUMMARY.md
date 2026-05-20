@@ -26,6 +26,7 @@
 ## Security and architecture
 
 - [Threat Model and Security Hardening](28-threat-model-and-security-hardening.md)
+- [Verified Lock Primitives (WS-SM SM2)](16-verified-lock-primitives.md)
 - [VSpace + Bounded Memory Model (ADR)](26-ws-b1-vspace-memory-adr.md)
 - [Model Structure and Maintainability (ADR)](30-ws-c7-model-structure-and-maintainability.md)
 - [CI Maturity and Telemetry Baseline](29-ci-maturity-and-telemetry-baseline.md)
