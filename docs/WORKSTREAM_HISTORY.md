@@ -920,6 +920,105 @@ spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
 [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §§5.2..5.5.
 
+**WS-SM SM2.E LANDED on branch `claude/serene-brown-hZk2T`**
+(Documentation + assertion sites — the SM2 closure cut).  Seven
+sub-tasks landed in one cut, making the verified-lock-primitive
+contract publicly referenceable through the canonical spec, a
+new GitBook chapter, an expanded ARM ARM citation map, and a
+unified refinement-proof methodology hub:
+
+- **SM2.E.1**: NEW `docs/spec/SELE4N_SPEC.md` §10
+  "Verified Lock Primitives (WS-SM Phase SM2)" — 9 sub-sections
+  covering the 22-theorem inventory, the SM2.A abstract memory
+  model, the SM2.B TicketLock spec, the SM2.C RwLock spec
+  (with the documented CAS-vs-queued FIFO divergence), the
+  SM2.D FFI bridge, the SM2.E.5 refinement methodology, the
+  SM2.E.6 hardware-discipline limits, the verification command
+  matrix, and the SM2 acceptance gate.  Renumbered existing
+  §10 (Audit Baselines) → §11, §11 (Security) → §12, §12
+  (Licensing) → §13; fixed the mis-numbered "§11.1 Trust
+  Boundaries" → "§12.1".  Table of contents updated.
+- **SM2.E.2**: NEW `docs/gitbook/16-verified-lock-primitives.md`
+  (~340 lines) — handbook mirror of spec §10 in narrative prose
+  with a four-layer architecture diagram, per-sub-phase
+  walk-through, decision-rationale highlights, and the full
+  verification command matrix.  Used chapter slot 16 (the
+  next free slot under Development-essentials) instead of
+  the plan's literal "chapter 17" because that slot was already
+  in use by "Project Usage and Value"; the plan literal updated
+  to match in the same PR.  Navigation manifest updated; the
+  regenerated `SUMMARY.md` / `README.md` were committed
+  alongside.
+- **SM2.E.3**: expanded the `MemoryModel.lean` module-level
+  docstring's ARM ARM citations into a comprehensive
+  **citation map (SM2.E.3)** with two sub-tables — memory-model
+  properties (B2.3.2 / B2.3.7 / B2.7.5 / B2.10 / K11 / K11.2 /
+  K12) and instruction encodings (`LDADDA` / `LDADDL` / `LDCLRL`
+  / `CASAL` / `LDAXR` / `STXR` / `LDAR` / `STLR` / `SEV` / `WFE`
+  / `SEVL` / `DSB ISH`).  Each citation maps explicitly to the
+  Lean construct that encodes it.  Stable across DDI 0487
+  revisions D..H.
+- **SM2.E.4**: added a new **WS-SM SM2.E.4 — Decision rationale**
+  block in `LockPrimitives.lean`'s module-level docstring covering
+  9 SM2-specific design decisions (D-SM2-1 through D-SM2-9):
+  operational vs. axiomatic memory model; TicketLock AND RwLock
+  both; 8-conjunct wf for TicketLock (INV-T1..T8); 5-conjunct wf
+  for RwLock (INV-R1..R5); bit-packed RwLock state; no upgrade/
+  downgrade in v1.0.0; per-step vs. full bisimulation refinement;
+  pool sizes structurally tied to `numCores`; 22-theorem
+  no-aliasing inventory.  Each decision documents the rejected
+  alternative and the rationale.
+- **SM2.E.5**: NEW MODULE
+  `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean` (~330 lines)
+  — canonical documentation hub bridging the two per-primitive
+  refinement modules.  Imports `TicketLockRefinement.lean` and
+  `RwLockRefinement.lean`; documents the per-step preservation
+  methodology, the per-step-vs-full-bisimulation asymmetry
+  between TicketLock and RwLock, the FIFO divergence between
+  the Lean spec and CAS-based Rust impl, the v1.0.0 refinement
+  contract scope, the SM2.E.6 hardware-discipline limits, and
+  the implications for kernel callers.  Two convenience
+  re-export `def`s (`ticketLockRefinementAggregator`,
+  `rwLockRefinementAggregator`) give a stable hub-level
+  identifier for downstream consumers.  Staged via
+  `Platform/Staged.lean` (entry #23 in the staged-module list)
+  with the corresponding allowlist row.
+- **SM2.E.6**: hardware-discipline limits documented in three
+  places — `Refinement.lean` §3 (the full enumeration), spec
+  §10.7 (the within-scope / out-of-scope tables), and the
+  GitBook chapter's "Hardware-discipline limits" section.  Per
+  the "Documentation rules", `Refinement.lean` is the
+  canonical Lean-level reference; spec §10.7 is the canonical
+  document; the GitBook chapter is the handbook mirror.  All
+  three cross-reference each other.
+- **SM2.E.7**: CHANGELOG entry recording the closure of all
+  seven sub-tasks plus the test coverage delta.
+
+**NEW test coverage**: `tests/LockRefinementSuite.lean` (~220
+lines) — SM2.E.5 refinement-hub test suite covering 20+ surface
+anchors, 10+ decidable examples for initial-state
+correspondences and per-step preservation lemma signatures, plus
+12 runtime structural assertions in `lake exe
+lock_refinement_suite`.  Wired into Tier 2 (negative state) and
+Tier 3 (invariant surface) via the new `Locks.Refinement`
+surface anchor block.  `tests/SmpSurfaceAnchors.lean` extended
+with two new `#check` lines for the SM2.E.5 hub's convenience
+aggregators.
+
+**SM2 acceptance gate**: with this cut, **SM2 CLOSES**.  All
+five sub-phases LANDED (SM2.A..SM2.E; 65 total sub-tasks); 22
+substantive theorems proven; zero `axioms`, zero `sorries`
+across SM2 modules.  The lock primitives are now **first-class
+proven artefacts** — the verification-quality elevation that
+distinguishes seLe4n from seL4 is complete at the lock-primitive
+layer.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM3 (per-object locks) consumes the SM2 primitives
+via the SM2.D FFI bridge.  See
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md).
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

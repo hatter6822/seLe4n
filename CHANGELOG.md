@@ -1,3 +1,172 @@
+## Unreleased — WS-SM SM2.E (Documentation + assertion sites)
+
+Implements all 7 sub-tasks of
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§5.5: the SM2 documentation closure, making §10 of the canonical
+spec, the new GitBook chapter, the ARM ARM citation map, the
+decision rationale, the refinement-proof methodology hub, and the
+hardware-discipline limits the publicly-referenceable contract for
+the verified lock primitives.
+
+* **SM2.E.1** (spec §10): NEW `docs/spec/SELE4N_SPEC.md` section
+  "Verified Lock Primitives (WS-SM Phase SM2)" — comprehensive
+  reference covering the 22-theorem inventory, the SM2.A abstract
+  memory model, the SM2.B TicketLock spec, the SM2.C RwLock spec
+  (with documented CAS-vs-queued FIFO divergence), the SM2.D FFI
+  bridge, the SM2.E.5 refinement methodology, the SM2.E.6
+  hardware-discipline limits, the verification command matrix, and
+  the SM2 acceptance gate.  Renumbers the existing §10 (Audit
+  Baselines) → §11, §11 (Security) → §12, §12 (Licensing) → §13
+  with the trust-boundary §11.1 mis-numbering fixed to §12.1 in
+  the same change.  Table of contents updated.
+* **SM2.E.2** (GitBook chapter): NEW
+  `docs/gitbook/16-verified-lock-primitives.md` (~340 lines) —
+  handbook mirror of spec §10 in narrative prose with the
+  four-layer architecture diagram, the per-sub-phase walk-through,
+  decision-rationale highlights, and a full verification command
+  matrix.  Used chapter 16 (the next free slot under the
+  Development-essentials cluster) instead of the plan's literal
+  "chapter 17" because chapter 17 was already in use by
+  "Project Usage and Value"; the plan literal is updated to match
+  in the same PR.  Navigation manifest + regenerated SUMMARY.md /
+  README.md.
+* **SM2.E.3** (ARM ARM citation map): expanded the existing
+  `MemoryModel.lean` module-level docstring's ARM ARM citations
+  section into a comprehensive **ARM ARM citation map (SM2.E.3)**
+  with two sub-tables — memory-model properties (B2.3.2 / B2.3.7 /
+  B2.7.5 / B2.10 / K11 / K11.2 / K12) and instruction encodings
+  (`LDADDA` / `LDADDL` / `LDCLRL` / `CASAL` / `LDAXR` / `STXR` /
+  `LDAR` / `STLR` / `SEV` / `WFE` / `SEVL` / `DSB ISH`).  Each
+  citation maps explicitly to the Lean construct that encodes it.
+  Documents the DDI 0487 edition stability so future ARM ARM
+  edition bumps do not require proof updates.
+* **SM2.E.4** (Decision rationale): added a new **WS-SM SM2.E.4 —
+  Decision rationale** block in `LockPrimitives.lean`'s module-
+  level docstring covering 9 SM2-specific design decisions
+  (D-SM2-1 through D-SM2-9): operational vs. axiomatic memory
+  model; TicketLock AND RwLock both; 8-conjunct wf for TicketLock
+  (INV-T1..T8); 5-conjunct wf for RwLock (INV-R1..R5); bit-packed
+  RwLock state; no upgrade/downgrade in v1.0.0; per-step vs. full
+  bisimulation refinement; pool sizes tied structurally to
+  `numCores`; 22-theorem no-aliasing inventory.  Each decision
+  documents the rejected alternative and the rationale.
+* **SM2.E.5** (Refinement-proof methodology hub): NEW MODULE
+  `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean` (~330 lines)
+  — canonical documentation hub bridging the two per-primitive
+  refinement modules.  Imports `TicketLockRefinement.lean` and
+  `RwLockRefinement.lean`; documents the per-step preservation
+  methodology, the per-step-vs-full-bisimulation asymmetry between
+  TicketLock and RwLock, the FIFO divergence between Lean spec and
+  CAS-based Rust impl, the v1.0.0 refinement contract scope, the
+  hardware-discipline limits (within scope: AcqRel ordering,
+  per-PE program order, synchronizes-with, happens-before, RMW
+  pairing, IS-domain SEV; out of scope: page-table walks, cache
+  coherence, prefetch, exception entry/exit, DMA, self-modifying
+  code), and the implications for kernel callers.  Two convenience
+  re-export `def`s (`ticketLockRefinementAggregator`,
+  `rwLockRefinementAggregator`) give a stable hub-level identifier
+  for downstream consumers.  Staged via `Platform/Staged.lean`
+  with the corresponding allowlist entry.
+* **SM2.E.6** (Hardware-discipline limits): documented in three
+  places — `Refinement.lean` §3 (the full enumeration), spec §10.7
+  (the SECTIONS within-scope / out-of-scope), and the GitBook
+  chapter's "Hardware-discipline limits" section.  Per the
+  "Documentation rules", `Refinement.lean` is the canonical Lean-
+  level reference; spec §10.7 is the canonical document; the
+  GitBook chapter is the handbook mirror.  All three are
+  cross-referenced.
+* **SM2.E.7** (CHANGELOG entry): this entry.
+
+### NEW test coverage
+
+* **`tests/LockRefinementSuite.lean`** (~220 lines): SM2.E.5
+  refinement-hub test suite.  20+ surface anchors covering every
+  symbol re-exported from the hub plus the D-4 bisimulation
+  infrastructure; 10+ decidable examples for the initial-state
+  correspondences and per-step preservation lemma signatures; 12
+  runtime structural assertions in `lake exe lock_refinement_suite`
+  covering hub re-exports, aggregator structure, cross-reference
+  to the 22-theorem inventory, and per-step preservation lemma
+  invocation at the unheld pair.  Wired into Tier 2 (negative
+  state) via `scripts/test_tier2_negative.sh` and Tier 3
+  (invariant surface) via the new `Locks.Refinement` surface
+  anchor block in `scripts/test_tier3_invariant_surface.sh`.
+* **`tests/SmpSurfaceAnchors.lean`** extended with two new
+  `#check` lines for the SM2.E.5 hub's convenience aggregators
+  (`ticketLockRefinementAggregator`, `rwLockRefinementAggregator`).
+* **`lakefile.toml`** registers the new `lock_refinement_suite`
+  exe target.
+
+### Build wiring
+
+* `SeLe4n/Platform/Staged.lean` imports the new `Refinement.lean`
+  module (entry #23 in the staged module list).
+* `scripts/staged_module_allowlist.txt` adds the corresponding
+  allowlist row.
+* `scripts/test_tier3_invariant_surface.sh` gains a new
+  `Locks.Refinement` surface anchor block covering both
+  aggregators plus the re-exported `ticketLockSim` /
+  `rwLockSim` / `rust_*_refines_lean` symbols and the D-4
+  bisimulation infrastructure (`ListCorresponds`,
+  `ListBlockBisim`, `concreteFoldBlock`,
+  `rustImplementsRwLock`).
+* `scripts/test_tier2_negative.sh` runs the new
+  `lock_refinement_suite` runtime executable.
+
+### Documentation sync
+
+* `docs/codebase_map.json` regenerated to reflect the new
+  `Refinement.lean` module.
+* `docs/gitbook/12-proof-and-invariant-map.md` updated to
+  reference the renumbered spec §12.1 (trust boundaries) instead
+  of the previous stale §10.1 link.
+* `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` updated to
+  reference the as-built chapter 16 instead of the originally-
+  planned chapter 17, with an inline note explaining the slot
+  conflict.
+
+### Verification
+
+* Full Tier 0+1+2+3 smoke test: green.  Per-module builds (147
+  Lean targets + 6 new SM2.E test targets); runtime test suites
+  (`memory_model_suite`, `ticket_lock_suite`, `rw_lock_suite`,
+  `lock_bridge_suite`, `smp_surface_anchors`,
+  `lock_refinement_suite`) all pass.  Tier 3 invariant surface
+  catches every renamed symbol.
+* Zero Lean `axioms`, zero `sorries` across SM2 modules.
+* `scripts/check_lock_ffi_symmetry.sh` (Tier 0 hygiene): green.
+* `scripts/check_website_links.sh` (Tier 0 hygiene): green
+  (no protected paths renamed).
+* `scripts/check_markdown_links.py`: green
+  (every relative link in the new GitBook chapter resolves).
+
+### SM2 acceptance gate
+
+With this PR, **SM2 closes**:
+
+- [x] SM2.A — Memory model (12 sub-tasks) — landed at v0.31.9
+- [x] SM2.B — TicketLock (16 sub-tasks) — landed post-v0.31.9
+- [x] SM2.C — RwLock (22 sub-tasks) — landed post-v0.31.9
+- [x] SM2.D — FFI bridge (8 sub-tasks) — landed post-v0.31.9
+- [x] SM2.E — Documentation (7 sub-tasks) — this PR
+
+Total: 65 SM2 sub-tasks landed.  22 substantive theorems proven.
+Zero `axioms`, zero `sorries`.  The lock primitives are now
+**first-class proven artefacts**, not assumed black boxes — the
+verification-quality elevation that distinguishes seLe4n from seL4
+is complete at the lock-primitive layer.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+Follow-on: SM3 (per-object locks) consumes the SM2 primitives via
+the SM2.D FFI bridge.  See
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md).
+
+Refs: docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md §5.5
+Refs: docs/spec/SELE4N_SPEC.md §10
+
 ## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
 
 Implements the

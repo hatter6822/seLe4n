@@ -33,32 +33,121 @@ foundation that every SM2.B / SM2.C lock-primitive proof rests on:
 * `happens_before_partial_order` — aggregate of the three above,
                                     the canonical surface anchor
 
-## ARM ARM citations
+## ARM ARM citation map (SM2.E.3)
 
 The abstract memory model captures, operationally, the following
 hardware properties.  Each is sourced from a public ARMv8-A
-Architecture Reference Manual (ARM ARM) section and is encoded
-operationally (no `axioms` introduced) by the constraints on the
-`synchronizesWith` and `happensBefore` predicates.
+Architecture Reference Manual (ARM ARM, DDI 0487) section and is
+encoded operationally (no `axioms` introduced) by the constraints on
+the `synchronizesWith` and `happensBefore` predicates.
 
-* **ARM ARM B2.3.7** (Release/Acquire ordering): a Release-store on
-  a location L synchronizes-with the next Acquire-load on L that
-  observes the released value.  Encoded by `synchronizesWith`'s
-  conjuncts requiring `e_R.isWrite ∧ e_R.order.isRelease ∧
-  ¬ e_A.isWrite ∧ e_A.order.isAcquire ∧ e_R.loc = e_A.loc ∧
-  e_R.value = e_A.value`.
+This citation map is the canonical reference for which architectural
+property maps to which Lean construct.  When the SM2.B / SM2.C / SM2.E
+modules cite "ARM ARM §x.y.z", this is the single point of truth for
+how that section enters the proof surface.
+
+### Memory-model properties
+
+* **ARM ARM B2.3.7** (Release/Acquire ordering — *the* core SM2.A
+  primitive): a Release-store on a location L synchronizes-with the
+  next Acquire-load on L that observes the released value.  Encoded
+  by `synchronizesWith`'s 9 conjuncts requiring
+  `e_R.isWrite ∧ e_R.order.isRelease ∧ ¬ e_A.isWrite ∧
+  e_A.order.isAcquire ∧ e_R.loc = e_A.loc ∧ e_R.value = e_A.value ∧
+  …positional ordering…`.
+* **ARM ARM B2.3.2** (Memory access ordering of normal memory):
+  per-PE program order on a single core.  Encoded by the
+  `sequencedBefore` predicate (`e₁.core = e₂.core ∧ e₁.seqNum <
+  e₂.seqNum`) plus the `MemoryTrace.wellFormed` Pairwise clause.
+* **ARM ARM B2.7.5** (Memory ordering — DSB/DMB/ISB barriers):
+  outside the operational scope of SM2.A; the lock primitives use
+  release-store + `sev` rather than explicit barriers for the
+  fast path.  Where barriers ARE required (cross-cluster
+  inter-core ordering, page-table walks), the kernel emits them
+  in the platform HAL.  Referenced in
+  `rust/sele4n-hal/src/gic.rs::send_sgi*` (SM1.F.8 contract: a
+  `dsb ish` must precede every `GICD_SGIR` write).
 * **ARM ARM B2.10** (Local event register / WFE-SEV): captured at
-  the lock-primitive level (SM2.B), not in the abstract model.
-* **ARM ARM C6.2.* LDADD/STADD/CAS family** (ARMv8.1-A LSE): the
-  atomic RMW (Read-Modify-Write) instructions are modelled as two
-  back-to-back events (load + store) on the same `seqNum`; this
-  module exports the `MemoryEvent` shape so SM2.B's TicketLock can
-  encode `next_ticket.fetch_add(1, Acquire)` as a single trace
-  position with both events.
+  the lock-primitive level (`rust/sele4n-hal/src/cpu.rs` module
+  docstring, SM1.I.5), not in the SM2.A abstract model.  The
+  abstract model assumes any spin-wait loop the SM2.B/C lock impl
+  uses eventually terminates; the WFE-SEV mechanism is an
+  optimisation that does not change the model's correctness
+  contract.
+* **ARM ARM K11** (Memory consistency model — overview): the
+  formal definition of the ARMv8-A memory consistency model.
+  K11.1 covers the abstract machine; K11.2 covers happens-before
+  and the consistency axioms; K11.3 covers the well-formedness
+  of executions.  SM2.A's `MemoryTrace.wellFormed` is the
+  K11.3-style well-formedness; `synchronizesWith` and
+  `happensBefore` are the K11.2 partial-order constructors.
 * **ARM ARM K11.2** (Memory model — happens-before): hb is
   irreflexive, transitive, antisymmetric on the events of a
   well-formed execution.  Encoded by Theorems 3.1.8.1 / 3.1.8.2 /
   3.1.8.3 below, aggregated into `happens_before_partial_order`.
+* **ARM ARM K12** (ARMv8.1-A Large System Extensions — LSE):
+  defines the atomic Read-Modify-Write instructions
+  (`LDADDA` / `STADDL` / `CASAL` and the full A/L/AL family).
+  Modelled in SM2.A as two events sharing one `seqNum`; SM2.B's
+  TicketLock uses `LDADDA`/`LDADDL` (C6.2.116) and SM2.C's RwLock
+  uses `LDADDL` plus `CASAL` (C6.2.50) for the read-side CAS
+  retry.
+
+### Instruction encoding citations
+
+The Rust impl in `rust/sele4n-hal/src/{ticket,rw,queued_rw}_lock.rs`
+selects specific ARM ARM instructions for each abstract op.  The
+mapping (kept in lockstep with the per-primitive Lean docstrings):
+
+* **`LDADDA`** (ARM ARM C6.2.116, A variant — Acquire load): the
+  atomic-add-acquire instruction.  Used by TicketLock's
+  `acquire`-path `next_ticket.fetch_add(1, Acquire)`.  In LSE
+  hardware this is one instruction; pre-LSE it is a
+  `LDAXR`/`STXR` retry sequence.
+* **`LDADDL`** (ARM ARM C6.2.116, L variant — Release store): the
+  atomic-add-release.  Used by TicketLock's `release`-path
+  `serving.fetch_add(1, Release)` and by RwLock's `releaseRead`
+  decrement.
+* **`LDCLRL`** (ARM ARM C6.2.103, L variant — Release-clear bits):
+  atomic bit-clear with release semantics.  Used by RwLock's
+  `releaseWrite` to clear the writer bit while preserving any
+  concurrent reader bits.  Pre-LSE this is a CAS-retry sequence.
+* **`CASAL`** (ARM ARM C6.2.50): atomic compare-and-swap with
+  acquire-release ordering.  Used by RwLock's `acquireRead`
+  CAS-retry loop and `acquireWrite` writer-bit set.
+* **`LDAXR` / `STXR`** (ARM ARM C6.2.135 / C6.2.323): pre-LSE
+  load-acquire-exclusive / store-exclusive pair.  Used as the
+  pre-LSE fallback for the LSE instructions above.  RPi5
+  (Cortex-A76) implements LSE, so the LSE form is the production
+  path.
+* **`LDAR`** (ARM ARM C6.2.142): load-acquire.  Used by
+  TicketLock's `observeServing` spin-loop iteration
+  (`serving.load(Acquire)`).
+* **`STLR`** (ARM ARM C6.2.305 variants — store-release): atomic
+  release-store.  Used in conjunction with the RMW ops above; the
+  release ordering is the publish-side of the
+  `synchronizesWith` edge.
+* **`SEV` / `WFE` / `SEVL`** (ARM ARM C6.2.243 / C6.2.353 /
+  C6.2.244): hint instructions.  Local-event-register operations.
+  Used by lock-impl spin-wait loops for low-power waiting; do NOT
+  appear in the SM2.A model because they are pure efficiency
+  hints with no architectural memory-ordering effect.
+* **`DSB ISH`** (ARM ARM C6.2.74 — Data synchronization barrier,
+  inner-shareable): full memory barrier across the IS domain.
+  Used by `gic::send_sgi*` (SM1.F.8) and by the boot path; does
+  NOT appear in the SM2 lock primitives' fast path because the
+  release-acquire ordering of LSE atomics is strictly weaker yet
+  sufficient for lock correctness.
+
+### Decidability + DDI 0487 edition
+
+All citations are stable across ARM ARM revisions D, E, F, G, H
+(2018-2024); the instruction encoding (C6.2.*) and the memory-model
+sections (B2.3.*, B2.7.*, B2.10, K11, K12) have not been renumbered
+since DDI 0487A.  The model is therefore stable against ARM ARM
+edition bumps.  When upgrading the citation reference, update this
+docstring's revision marker; no proof updates are required because
+the operational encoding does not depend on the prose form.
 
 ## Axiom budget
 

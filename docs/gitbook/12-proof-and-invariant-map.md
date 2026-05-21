@@ -2300,7 +2300,7 @@ from two comprehensive v0.18.7 audits. Key trust boundary documentation:
   `Cap::to_read_only()` return `Result<_, CapError>` (no panics). `Restricted::RIGHTS`
   fixed to store actual runtime rights. `#![deny(unsafe_code)]` enforced on `sele4n-abi`.
 
-See [`docs/spec/SELE4N_SPEC.md` §10.1](../spec/SELE4N_SPEC.md) for the canonical
+See [`docs/spec/SELE4N_SPEC.md` §12.1](../spec/SELE4N_SPEC.md) for the canonical
 trust boundary specification.
 
 ## 23. Hardware preparation — memory scrubbing and TLB enforcement (WS-S Phase S6)

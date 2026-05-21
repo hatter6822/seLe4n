@@ -97,6 +97,13 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- witness.  Used by the cross-language symmetry script
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
+-- WS-SM SM2.E.5: refinement-proof methodology hub.  Imports both
+-- per-primitive refinement modules and documents the shared
+-- methodology, hardware-discipline limits, and the v1.0.0 refinement
+-- contract.  Provides convenience re-exports for callers that want
+-- both `ticketLockSim` and `rwLockSim` (with their aggregators) in a
+-- single import seam.
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -133,6 +140,7 @@ The staged modules are:
 20. `SeLe4n.Kernel.Concurrency.Locks.TicketLock` — WS-SM SM2.B abstract TicketLock spec
 21. `SeLe4n.Kernel.Concurrency.Locks.RwLock`    — WS-SM SM2.C abstract RwLock spec
 22. `SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement` — WS-SM SM2.C.20 refinement bridge
+23. `SeLe4n.Kernel.Concurrency.Locks.Refinement` — WS-SM SM2.E.5 refinement-proof methodology hub
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

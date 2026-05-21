@@ -1762,6 +1762,39 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
 EOF'
 
+# WS-SM SM2.E.5 — Refinement-proof methodology hub surface anchors.
+# The hub re-exports `ticketLockSim` and `rwLockSim` (with their
+# aggregators) through a single import seam.  Anchoring the
+# `ticketLockRefinementAggregator` and `rwLockRefinementAggregator`
+# `def`s here catches a hub-level refactor that breaks the convenience
+# re-exports.  The two `def`s are inline aliases for
+# `rust_ticketLock_refines_lean` / `rust_rwLock_refines_lean`; their
+# presence in this anchor list pins the SM2.E.5 hub contract.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Refinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
+
+-- Both refinement aggregators reachable through the hub.
+#check @SeLe4n.Kernel.Concurrency.ticketLockRefinementAggregator
+#check @SeLe4n.Kernel.Concurrency.rwLockRefinementAggregator
+
+-- TicketLock refinement surface (re-exported via the hub).
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_unheld
+#check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
+
+-- RwLock refinement surface (re-exported via the hub).
+#check @SeLe4n.Kernel.Concurrency.rwLockSim
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_unheld
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean
+
+-- D-4 bisimulation infrastructure (reachable via the hub).
+#check @SeLe4n.Kernel.Concurrency.ListCorresponds
+#check @SeLe4n.Kernel.Concurrency.ListBlockBisim
+#check @SeLe4n.Kernel.Concurrency.concreteFoldBlock
+#check @SeLe4n.Kernel.Concurrency.rustImplementsRwLock
+EOF'
+
 # WS-SM SM2.D — Lean-side FFI declarations.  Covers every SM2.D
 # @[extern] declaration in Platform/FFI.lean so a regression that
 # removed a declaration without updating the cross-language

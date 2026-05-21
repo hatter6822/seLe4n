@@ -129,4 +129,10 @@ run_check_with_timeout "TRACE" lake exe smp_surface_anchors
 # round-trips and the peek decoder algebra.
 run_check_with_timeout "TRACE" lake exe lock_bridge_suite
 
+# WS-SM SM2.E.5 — Refinement-proof methodology hub suite.  Verifies
+# the SM2.E.5 hub's structural integrity (both `ticketLockSim` and
+# `rwLockSim` accessible via one import; aggregator structure pinned;
+# refinement-category count cross-checked against `lockPrimitives`).
+run_check_with_timeout "TRACE" lake exe lock_refinement_suite
+
 finalize_report

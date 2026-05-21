@@ -20,8 +20,10 @@ see [`docs/spec/SEL4_SPEC.md`](./SEL4_SPEC.md).
 7. [Acceptance Expectations](#7-acceptance-expectations)
 8. [Model Fidelity & Type Safety (WS-S Phase S4)](#8-model-fidelity--type-safety-ws-s-phase-s4)
 9. [Non-Negotiable Baseline Contracts](#9-non-negotiable-baseline-contracts)
-10. [Audit Baselines](#10-audit-baselines)
-11. [Security and Threat Model](#11-security-and-threat-model)
+10. [Verified Lock Primitives (WS-SM Phase SM2)](#10-verified-lock-primitives-ws-sm-phase-sm2)
+11. [Audit Baselines](#11-audit-baselines)
+12. [Security and Threat Model](#12-security-and-threat-model)
+13. [Licensing and Third-Party Attribution](#13-licensing-and-third-party-attribution)
 
 ---
 
@@ -2564,9 +2566,378 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 
 ---
 
-## 10. Audit Baselines
+## 10. Verified Lock Primitives (WS-SM Phase SM2)
 
-### 10.1 Active Baselines
+**Canonical reference for the SM2 lock-primitive contract.**
+
+SM2 is the *verification-quality elevation* that distinguishes seLe4n
+from seL4: the lock primitives themselves — TicketLock and RwLock —
+are formally specified in Lean against an abstract operational
+semantics of ARMv8.1-A LSE atomic operations and proven correct.
+The Rust implementations refine the Lean specifications via an
+operational simulation argument (per-step preservation lemmas
+aggregated into a per-primitive refinement theorem). seL4 historically
+left these primitives as assumptions (the C code is the trusted
+implementation); seLe4n makes them first-class proven artefacts.
+
+The §10 sub-sections below catalogue **what SM2 proves**, **what SM2
+assumes (with citation)**, **how the Lean specification refines the
+Rust implementation**, and **what hardware-discipline limits apply**.
+Per the "Documentation rules" (`CLAUDE.md`), this section is the
+canonical source — the GitBook chapter
+[`docs/gitbook/16-verified-lock-primitives.md`](../gitbook/16-verified-lock-primitives.md)
+mirrors it in handbook prose and the per-module docstrings cite back
+into §10 as the authoritative reference.
+
+### 10.1 The 22-theorem inventory (SM2.D.7)
+
+The 22 substantive SM2 theorems are aggregated into the
+`SeLe4n.Kernel.Concurrency.lockPrimitives` inventory in
+[`SeLe4n/Kernel/Concurrency/LockPrimitives.lean`](../../SeLe4n/Kernel/Concurrency/LockPrimitives.lean).
+The Lean-side `lockPrimitives.length = 22` size witness
+(`lockPrimitives_count`) mirrors the Rust-side `SM2_THEOREM_COUNT
+= 22` constant in `rust/sele4n-hal/src/lock_bridge.rs`; the
+cross-language symmetry script (`scripts/check_lock_ffi_symmetry.sh`,
+Tier 0 hygiene) verifies both sides agree on every theorem's
+`Lean.Name`.
+
+| # | Theorem | Category | Statement |
+|---|---------|----------|-----------|
+| M-01 | `happensBefore_irreflexive` | memory model | `∀ e ∈ wf trace, ¬ hb e e` |
+| M-02 | `happensBefore_transitive` | memory model | `hb a b → hb b c → hb a c` (immediate by ctor) |
+| M-03 | `happensBefore_antisymmetric` | memory model | `a ≠ b → ¬ (hb a b ∧ hb b a)` |
+| M-04 | `happens_before_partial_order` | memory model | Aggregate of M-01..M-03 |
+| T-01 | `ticketLock_mutex` | TicketLock | At most one holder |
+| T-02 | `ticketLock_fifo` | TicketLock | Earlier capture → smaller ticket |
+| T-03 | `ticketLock_bounded_wait` | TicketLock | `nextTicket ≤ serving + numCores` |
+| T-04 | `ticketLock_release_acquire_pairing` | TicketLock | Release-store sync-with Acquire-load |
+| T-05 | `ticketLock_wf_invariant` | TicketLock | wf preserved by every applyOp |
+| T-06 | `ticketLock_reachability` | TicketLock | every reachable state satisfies wf |
+| R-01 | `rwLock_writer_readers_exclusion` | RwLock | writer-held → no readers |
+| R-02 | `rwLock_reader_multiplicity` | RwLock | ∃ state with ≥ 2 readers |
+| R-03 | `rwLock_fifo_admission` | RwLock | head-of-queue admitted first |
+| R-04 | `rwLock_bounded_wait_read` | RwLock | `WCRT(acquireRead) ≤ (N-1) × T_cs` |
+| R-05 | `rwLock_bounded_wait_write` | RwLock | `WCRT(acquireWrite) ≤ (N-1) × T_cs` |
+| R-06 | `rwLock_release_acquire_pairing_read` | RwLock | Reader RA pairing |
+| R-07 | `rwLock_release_acquire_pairing_write` | RwLock | Writer RA pairing |
+| R-08 | `rwLock_wf_invariant` | RwLock | wf preserved |
+| R-09 | `rwLock_reader_batching` | RwLock | Contiguous readers acquire together |
+| R-10 | `rwLock_no_writer_starvation` | RwLock | Writer eventually admitted (under fair release) |
+| F-01 | `rust_ticketLock_refines_lean` | refinement | Operational simulation (per-step) |
+| F-02 | `rust_rwLock_refines_lean` | refinement | Operational simulation via D-4 bisimulation infrastructure |
+
+Per-category counts (each pinned by its own theorem in
+`LockPrimitives.lean`):
+
+* `lockPrimitives_memoryModel_count = 4`
+* `lockPrimitives_ticketLock_count = 6`
+* `lockPrimitives_rwLock_count = 10`
+* `lockPrimitives_refinement_count = 2`
+* `lockPrimitives_partition_sum`: 4 + 6 + 10 + 2 = 22 (structural cross-check)
+* `lockPrimitives_identifiers_nodup`: every `Lean.Name` is unique
+* `lockPrimitives_descriptions_nodup`: every human description is unique
+
+### 10.2 Abstract memory model (SM2.A)
+
+The Lean-side abstract memory model
+([`SeLe4n/Kernel/Concurrency/MemoryModel.lean`](../../SeLe4n/Kernel/Concurrency/MemoryModel.lean))
+captures enough of ARMv8.1-A LSE atomic semantics to prove the lock
+primitives correct.  The model is **operational**: a trace is a
+sequence of memory events on shared atomic locations; the
+synchronizes-with relation is derived from event order;
+happens-before is the inductive transitive closure.
+
+Per `MemoryModel.lean` §"ARM ARM citation map", the architectural
+properties captured are:
+
+| ARM ARM § | Property | Lean construct |
+|-----------|----------|----------------|
+| B2.3.2 | Per-PE program order | `sequencedBefore` + `wellFormed` Pairwise |
+| B2.3.7 | Release-Acquire ordering | `synchronizesWith` 9-conjunct predicate |
+| B2.10 | Local event register / WFE-SEV | (lock-impl level; not in abstract model) |
+| K11 / K11.2 | Memory consistency model / hb | `happensBefore` inductive + 4 partial-order theorems |
+| K12 | ARMv8.1-A LSE atomics | RMW modelled as 2 events sharing one `seqNum` |
+| C6.2.* | Instruction encodings | Per-op citations in `TicketLock.lean` / `RwLock.lean` |
+
+Decidability: `MemoryTrace.wellFormed` carries a `Decidable` instance
+so test fixtures can construct traces and `decide` their well-formedness
+at elaboration time.  `synchronizesWith` and `happensBefore` are
+propositions, not booleans — they are used to state lock-primitive
+theorems, not to drive runtime control flow.
+
+Axiom budget: **0 Lean axioms, 0 sorries** in SM2.A.  All hardware
+properties enter as operational constraints on the trace shape.
+
+### 10.3 TicketLock specification (SM2.B)
+
+Source: [`SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean`](../../SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean)
+(~1900 LoC including proofs).
+
+The TicketLock primitive is a FIFO spinlock with bounded wait,
+modelled abstractly as the 4-field `TicketLockState` struct
+(`nextTicket`, `serving`, `pending`, `held`).  The well-formedness
+invariant `TicketLockState.wf` has **eight** conjuncts (INV-T1..T8):
+
+| INV | Statement |
+|-----|-----------|
+| INV-T1 | `serving ≤ nextTicket` |
+| INV-T2 | Pending tickets lie in `(serving, nextTicket)` |
+| INV-T3 | Holder's ticket equals `serving` |
+| INV-T4 | Pending tickets are `Nodup` |
+| INV-T5 | Holder's ticket is not in `pending` |
+| INV-T6 | Pending cores are `Nodup` |
+| INV-T7 | Pending cores disjoint from holder |
+| INV-T8 | `nextTicket = serving + |pending| + heldCount` (count parity — *SM2.B strengthening over plan §3.2.2*) |
+
+INV-T8 closes a reachability gap in the plan's 7-invariant form; see
+§"Decision rationale" D-SM2-3 in `LockPrimitives.lean` for the
+counter-example state without it.
+
+The 6 substantive theorems exported are listed in §10.1 (T-01..T-06).
+Rust impl: `rust/sele4n-hal/src/ticket_lock.rs` (~540 LoC including
+21 unit tests).  Refines the Lean spec via the F-01 aggregator
+(`rust_ticketLock_refines_lean`) in
+`Locks/TicketLockRefinement.lean`.
+
+### 10.4 RwLock specification (SM2.C)
+
+Source: [`SeLe4n/Kernel/Concurrency/Locks/RwLock.lean`](../../SeLe4n/Kernel/Concurrency/Locks/RwLock.lean)
+(~6600 LoC including proofs).
+
+The RwLock primitive is a reader-writer lock with FIFO writer
+admission (in the spec; see §10.4.1 for the Rust-side FIFO
+divergence).  Modelled abstractly as the 3-field `RwLockState`
+struct (`writerHeld : Option CoreId`, `readers : List CoreId`,
+`waiters : List (CoreId × AccessMode)`).  The well-formedness
+invariant `RwLockState.wf` has **five** conjuncts (INV-R1..R5):
+
+| INV | Statement |
+|-----|-----------|
+| INV-R1 | Writer-readers exclusion (`writerHeld.isSome → readers = []`) |
+| INV-R2 | Readers don't double-acquire (`readers.Nodup`) |
+| INV-R3 | Waiter cores are `Nodup` |
+| INV-R4 | Waiters disjoint from current holders |
+| INV-R5 | No waiter core appears in `readers` ∪ `writer` (strict form — *SM2.C strengthening over plan §3.3.2*) |
+
+INV-R5 closes a reachability gap analogous to TicketLock's INV-T8.
+
+The 10 substantive theorems exported are listed in §10.1 (R-01..R-10).
+Rust impl: `rust/sele4n-hal/src/rw_lock.rs` (CAS-based, ~400 LoC).
+Refines the Lean spec via the F-02 aggregator
+(`rust_rwLock_refines_lean`) in `Locks/RwLockRefinement.lean`,
+which discharges the reachability-closure step via the D-4
+bisimulation infrastructure (`ListCorresponds`, `ListBlockBisim`,
+`concreteFoldBlock`, per-arm `blockBisim_*` lemmas).
+
+#### 10.4.1 FIFO divergence between spec and CAS-based impl
+
+The Lean spec's `rwLock_fifo_admission` theorem (R-03) states that
+earlier waiters are admitted before later waiters.  The CAS-based
+Rust impl (`rust/sele4n-hal/src/rw_lock.rs`) does NOT satisfy this
+property: a thread that just called `acquire_read` on a contended
+lock may observe the writer-bit clear and CAS-acquire BEFORE an
+earlier-arrived writer that is still parked on `wfe`.
+
+The mutex (R-01) and exclusion invariants ARE satisfied by the
+CAS-based impl; the FIFO ordering is NOT.  Kernel paths that require
+strict FIFO writer admission must instead use the **queued MCS-RW
+lock** at `rust/sele4n-hal/src/queued_rw_lock.rs`, which provides
+the stronger ordering via a per-core waiter queue with a four-state
+mode-encoded parked machine.  The queued primitive is the
+post-1.0 RwLock-x extension; SM3+ per-object lock review verifies
+per critical section which RwLock variant to use.
+
+The refinement bridge `rust_rwLock_refines_lean` explicitly documents
+this divergence in `Locks/RwLockRefinement.lean`; the abstract Lean
+spec is **stronger** than the CAS-based impl on FIFO ordering, and
+the refinement φ does not claim FIFO equivalence.
+
+### 10.5 Refinement Lean ↔ Rust (SM2.D + SM2.E.5)
+
+Source: [`SeLe4n/Kernel/Concurrency/Locks/Refinement.lean`](../../SeLe4n/Kernel/Concurrency/Locks/Refinement.lean)
+(SM2.E.5 methodology hub) + the two per-primitive refinement
+modules `Locks/TicketLockRefinement.lean` and
+`Locks/RwLockRefinement.lean`.
+
+Both refinement bridges follow the same shape:
+
+```
+  φ : AbstractState → ConcreteState → Prop
+
+  Initial-state correspondence:
+    φ AbstractState.unheld ConcreteState.unheld
+
+  Per-step preservation (one lemma per `applyOp` arm):
+    ∀ (a a' : AbstractState) (c c' : ConcreteState),
+      φ a c → step a = a' → step_concrete c = c' → φ a' c'
+```
+
+The two aggregator theorems (`rust_ticketLock_refines_lean` /
+`rust_rwLock_refines_lean`) package the initial-state witness plus
+the per-step preservation lemmas into a single named result.
+
+**Per-step vs. full bisimulation**:
+
+* TicketLock delivers per-step preservation at v1.0.0; the
+  reachability-closure form is structurally simple (one Rust atomic
+  op per abstract arm) and is a post-1.0 hardening candidate.
+* RwLock delivers per-step preservation PLUS the
+  reachability-closure form via the D-4.x infrastructure
+  (`ListBlockBisim`, `concreteFoldBlock`, per-arm `blockBisim_*`
+  lemmas).  The RwLock structure is more complex (each abstract op
+  corresponds to a *block* of concrete CAS-retry ops), so the
+  D-4 infrastructure is required.
+
+**What the refinement bridges DO NOT prove**:
+
+1. That `rustc`'s code generation is correct (compiler-trust
+   obligation handed off to LLVM).
+2. That the underlying hardware implements ARMv8.1-A LSE atomic
+   instructions to the ARM ARM spec (hardware-trust obligation).
+3. That every Rust function calls exactly the documented atomic op
+   (per-PR review obligation; build-script scanners pin contractual
+   patterns at elaboration time).
+
+See `Locks/Refinement.lean` §1.3 for the full methodology discussion.
+
+### 10.6 FFI bridge (SM2.D)
+
+Source: [`SeLe4n/Kernel/Concurrency/LockBridge.lean`](../../SeLe4n/Kernel/Concurrency/LockBridge.lean)
+(typed Lean wrappers) + `rust/sele4n-hal/src/lock_bridge.rs`
+(Rust-side FFI exports + static pools).
+
+The SM2.D FFI bridge connects the verified Lean lock-primitive
+specifications to the Rust HAL implementations:
+
+* 16 `@[extern]` declarations in `SeLe4n/Platform/FFI.lean`
+  (6 TicketLock + 10 RwLock).
+* Typed handles (`TicketLockHandle`, `RwLockHandle`) with structural
+  bound proofs (`raw.toNat < staticPoolSize`).
+* Smart constructors (`mkTicketLockHandle`, `mkRwLockHandle`) take a
+  `Fin` argument so a well-formed Lean caller cannot construct a
+  handle that the FFI's fail-closed bound check would reject.
+* RAII combinators (`withTicketLock`, `withReadLock`, `withWriteLock`)
+  bracket BaseIO actions with acquire/release.
+* Static pools (`STATIC_TICKET_LOCK_POOL[4]`, `STATIC_RW_LOCK_POOL[4]`,
+  one slot per RPi5 core) for SM3+ per-object lock attachment.
+* Per-pool-slot acquire/release counters (6 × 4 = 24 Relaxed
+  `AtomicU64`s) for SM2.D.8 cross-core test verification.
+
+The full SM2.D walk-through (Lean FFI declarations, typed wrappers,
+RAII combinators, refinement bridge wiring, 22-theorem aggregator,
+cross-language symmetry, test coverage) is documented in §2.7 of
+this document.
+
+### 10.7 Hardware-discipline limits (SM2.E.6)
+
+The SM2.A operational memory model intentionally captures a **bounded
+subset** of ARMv8.1-A hardware behaviour.  This subsection enumerates
+what is and is not within scope so kernel callers do not implicitly
+extend the model.
+
+**Within scope**:
+
+* Acquire / Release / acqRel ordering on atomic locations.
+* Sequenced-before within a single core (per-core program order).
+* Synchronizes-with edges (release-store ↦ matching acquire-load).
+* Happens-before partial order (transitive closure of seq-before +
+  sync-with).
+* RMW operations (LSE `LDADDA` / `STADDL` / `CASAL`) — modelled as
+  two events sharing one `seqNum`.
+* Inner-shareable broadcast of `sev` (operationally: any `sev`
+  issued on one core's release path is observable by every IS-domain
+  core's `wfe` waiters within bounded time).
+
+**Out of scope** (the lock primitives do NOT reason about these):
+
+* Page-table walk ordering (MMU hardware; handled by
+  `Architecture/VSpace.lean`).
+* Cache coherence protocol details (MESI/MOESI; assumed to honour
+  the IS coherence domain).
+* Cache-line prefetch effects (squashed speculation is invisible to
+  program semantics).
+* Memory access from exception entry / exit (FEAT_ExS controls some
+  of this; lock primitives release BEFORE returning to user-mode).
+* DMA / device-side memory accesses (bracketed by explicit cache
+  maintenance in the HAL).
+* Self-modifying code (kernel is statically linked; SCTLR_EL1.I=1
+  configured at boot).
+
+A kernel critical section protected by an SM2 lock primitive inherits
+**mutual exclusion** of its protected state, **cross-core visibility**
+of every write performed inside the critical section (via
+`release_acquire_pairing`), and **bounded wait** to acquire (modulo
+the FIFO-divergence carve-out for the CAS-based RwLock).  It does
+NOT inherit any guarantee about speculative reads outside the
+critical section, out-of-order completion of TLB walks, or
+hardware-error recovery — these are out-of-scope hardware concerns.
+
+See `Locks/Refinement.lean` §3 for the full hardware-discipline
+discussion.
+
+### 10.8 Verification command matrix
+
+Per `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` Appendix A:
+
+```bash
+source ~/.elan/env
+
+# Per-module build:
+lake build SeLe4n.Kernel.Concurrency.MemoryModel
+lake build SeLe4n.Kernel.Concurrency.Locks.TicketLock
+lake build SeLe4n.Kernel.Concurrency.Locks.RwLock
+lake build SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
+lake build SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+lake build SeLe4n.Kernel.Concurrency.Locks.Refinement  # SM2.E.5 hub
+lake build SeLe4n.Kernel.Concurrency.LockBridge
+lake build SeLe4n.Kernel.Concurrency.LockPrimitives
+
+# Test suites:
+lake exe memory_model_suite      # SM2.A surface anchors + decidable examples
+lake exe ticket_lock_suite       # SM2.B surface anchors + decidable examples
+lake exe rw_lock_suite           # SM2.C surface anchors + decidable examples
+lake exe rw_lock_deferred_suite  # SM2.C-defer D-1..D-4 infrastructure
+lake exe lock_bridge_suite       # SM2.D RAII combinator structural tests
+lake exe smp_surface_anchors     # SM2.D.6 + SM2.E surface anchors
+lake exe lock_refinement_suite   # SM2.E.5 refinement-methodology hub tests
+
+# Cargo:
+cargo test -p sele4n-hal --lib ticket_lock
+cargo test -p sele4n-hal --lib rw_lock
+cargo test -p sele4n-hal --lib lock_bridge
+
+# Tier 5 (new): cross-language correspondence
+./scripts/test_tier5_lock_correspondence.sh
+./scripts/check_lock_ffi_symmetry.sh
+```
+
+### 10.9 Acceptance gate
+
+SM2 is complete when all five sub-phases LAND:
+
+- [x] SM2.A — Memory model (12 sub-tasks).  Landed at v0.31.9.
+- [x] SM2.B — TicketLock (16 sub-tasks).  Landed post-v0.31.9.
+- [x] SM2.C — RwLock (22 sub-tasks).  Landed post-v0.31.9 (CAS-based
+      v1.0.0 path + queued MCS-RW lock for FIFO-strict paths).
+- [x] SM2.D — FFI bridge + integration (8 sub-tasks).  Landed
+      post-v0.31.9.
+- [x] SM2.E — Documentation + assertion sites (7 sub-tasks).  Landed
+      at the documentation cut after SM2.D.
+
+All four pre-flight contract checks must be green:
+
+- [x] Tier 0..5 tests green at HEAD.
+- [x] Zero Lean axioms across all SM2 modules.
+- [x] Zero `sorry` declarations across all SM2 modules.
+- [x] `lockPrimitives.length = 22` size witness pinned; Rust-side
+      `SM2_THEOREM_COUNT = 22` cross-checked by
+      `scripts/check_lock_ffi_symmetry.sh`.
+
+---
+
+## 11. Audit Baselines
+
+### 11.1 Active Baselines
 
 | Artifact | Path |
 |----------|------|
@@ -2574,7 +2945,7 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 | Codebase audit v2 (v0.12.2) | [`docs/audits/AUDIT_CODEBASE_v0.12.2_v2.md`](../dev_history/audits/AUDIT_CODEBASE_v0.12.2_v2.md) |
 | Execution baseline (WS-F) | [`docs/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md) |
 
-### 10.2 Prior Baselines (completed)
+### 11.2 Prior Baselines (completed)
 
 | Artifact | Path |
 |----------|------|
@@ -2583,13 +2954,13 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 | Findings baseline (v0.11.0) | [`docs/dev_history/audits/AUDIT_v0.11.0.md`](../dev_history/audits/AUDIT_v0.11.0.md) |
 | Execution baseline (WS-D) | [`docs/dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.11.0_WORKSTREAM_PLAN.md) |
 
-### 10.3 Historical Baselines
+### 11.3 Historical Baselines
 
 Prior audits and workstream plans are archived in [`docs/dev_history/audits/`](../dev_history/audits/).
 
 ---
 
-## 11. Security and Threat Model
+## 12. Security and Threat Model
 
 Security assumptions and trust boundaries are documented in
 [`docs/THREAT_MODEL.md`](../THREAT_MODEL.md).
@@ -2598,7 +2969,7 @@ The hardware-boundary contract policy governing test-only fixture separation and
 architecture-assumption interfaces is documented in
 [`docs/HARDWARE_BOUNDARY_CONTRACT_POLICY.md`](../HARDWARE_BOUNDARY_CONTRACT_POLICY.md).
 
-### 10.1 Trust Boundaries (WS-S/S1)
+### 12.1 Trust Boundaries (WS-S/S1)
 
 The following trust boundaries are documented as part of WS-S Phase S1:
 
@@ -2624,7 +2995,7 @@ enables `decide`/`native_decide` and `if`-expressions.
 WS-S/S1-G. The well-formedness predicate `bits < 2^5` ensures no spurious
 upper bits exist. `AccessRightSet.ofNat` masks inputs to the valid 5-bit range.
 
-### 11.2 Information Flow and Non-Interference Boundary (AD3-C/F-05)
+### 12.2 Information Flow and Non-Interference Boundary (AD3-C/F-05)
 
 The kernel's non-interference (NI) guarantees cover all kernel-primitive
 transitions via 35 `NonInterferenceStep` constructors in
@@ -2647,7 +3018,7 @@ service-layer flows independently of kernel NI guarantees. See
 [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) Section 3 for deployment
 implications.
 
-#### 11.2.1 Service-presence covert channels (AN6-E.1 / IF-M01)
+#### 12.2.1 Service-presence covert channels (AN6-E.1 / IF-M01)
 
 WS-AN Phase AN6-E.1 formalizes the scope of `serviceObservable`
 (`Kernel/InformationFlow/Projection.lean:139`): the predicate covers
@@ -2677,7 +3048,7 @@ that would invalidate the NI-L3 acceptance documentation.
 See `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01 for the
 audit-level classification.
 
-#### 11.2.2 Architecture assumption consumer index (AN6-B / H-08)
+#### 12.2.2 Architecture assumption consumer index (AN6-B / H-08)
 
 WS-AN Phase AN6-B adds a machine-searchable index
 (`archAssumptionConsumer` in `Kernel/Architecture/Assumptions.lean`)
@@ -2706,7 +3077,7 @@ Three complementary guards enforce the index cannot silently drift:
    If any consumer theorem is renamed or deleted, one of these
    references fails elaboration.
 
-#### 11.2.3 Single-core kernel model witness (AN6-F / CX-M03)
+#### 12.2.3 Single-core kernel model witness (AN6-F / CX-M03)
 
 WS-AN Phase AN6-F adds `bootFromPlatform_singleCore_witness` in
 `Kernel/CrossSubsystem.lean` proving that `SchedulerState.current` is a
@@ -2724,14 +3095,14 @@ invariant). Both paths force the SMP-bring-up workstream to retire the
 single-core witness explicitly rather than letting the assumption slip
 silently.
 
-## 12. Licensing and Third-Party Attribution
+## 13. Licensing and Third-Party Attribution
 
 seLe4n is distributed under the GNU General Public License v3.0 or later
 (GPLv3+), as stated in [`LICENSE`](../../LICENSE). Every Lean source file,
 Rust source file, and assembly file carries an SPDX-compatible copyright
 header identifying the project license.
 
-### 12.1 Runtime TCB composition
+### 13.1 Runtime TCB composition
 
 The final kernel binary contains **no third-party Rust crates**. Every
 crate in the runtime dependency tree (`sele4n-types`, `sele4n-abi`,
@@ -2742,7 +3113,7 @@ crate (e.g., the deprecated `mmio` crate or the newer `safe-mmio`). This
 keeps the trusted computing base minimal and under unified GPLv3+
 governance.
 
-### 12.2 Build-time dependencies
+### 13.2 Build-time dependencies
 
 A small number of external crates are required at **build time only** to
 assemble the ARM64 boot assembly files (`boot.S`, `vectors.S`, `trap.S`)

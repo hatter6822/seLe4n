@@ -84,6 +84,10 @@
         {
           "title": "Proof and Invariant Map",
           "path": "12-proof-and-invariant-map.md"
+        },
+        {
+          "title": "Verified Lock Primitives (WS-SM SM2)",
+          "path": "16-verified-lock-primitives.md"
         }
       ]
     },

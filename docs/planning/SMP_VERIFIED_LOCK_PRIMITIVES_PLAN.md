@@ -43,7 +43,9 @@ artefacts.
 8. **FFI bridge** (`SeLe4n/Platform/FFI.lean`): Lean wrappers and
    `withLock` / `withReadLock` / `withWriteLock` RAII combinators.
 9. **Documentation** (`docs/spec/SELE4N_SPEC.md` §10; new GitBook
-   chapter 17).
+   chapter — landed as `docs/gitbook/16-verified-lock-primitives.md`
+   since the originally-planned chapter 17 slot was already in use by
+   "Project Usage and Value" at landing time).
 
 **Closure**: SMP-H4 (foundationally — the lock primitives exist
 and are proven; their integration into kernel paths happens in
@@ -1067,7 +1069,7 @@ ordering.
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | SM2.E.1 | `docs/spec/SELE4N_SPEC.md` new §10 "Verified Lock Primitives" | Spec | M |
-| SM2.E.2 | New GitBook chapter 17 | GitBook | M |
+| SM2.E.2 | New GitBook chapter 16 (`16-verified-lock-primitives.md` — chapter 17 slot was already occupied by "Project Usage and Value" at landing time, so the next sensible slot was used) | GitBook | M |
 | SM2.E.3 | ARM ARM citation map in `MemoryModel.lean` | docstring | S |
 | SM2.E.4 | Decision rationale doc | Lean docstring | T |
 | SM2.E.5 | Refinement-proof methodology doc | `Locks/Refinement.lean` | S |
@@ -1135,7 +1137,7 @@ SM2 is complete when:
 - [ ] TicketLock: 16 SM2.B sub-tasks landed; 6 theorems proven; Rust impl matches spec.
 - [ ] RwLock: 22 SM2.C sub-tasks landed; 10 theorems proven; Rust impl matches spec (with documented FIFO divergence).
 - [ ] FFI: 8 SM2.D sub-tasks landed; Lean wrappers + RAII combinators ready.
-- [ ] Documentation: 7 SM2.E sub-tasks landed; spec §10 + GitBook chapter 17 published.
+- [x] Documentation: 7 SM2.E sub-tasks landed; spec §10 + GitBook chapter 16 (`16-verified-lock-primitives.md`) published.
 - [ ] Tier 0..5 tests green at HEAD.
 - [ ] Zero Lean axioms.
 - [ ] Aggregate SM2 closure CHANGELOG entry.

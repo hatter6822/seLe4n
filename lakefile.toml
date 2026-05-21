@@ -232,3 +232,14 @@ root = "tests.SmpSurfaceAnchors"
 [[lean_exe]]
 name = "lock_bridge_suite"
 root = "tests.LockBridgeSuite"
+
+# WS-SM SM2.E.5 — Refinement-proof methodology hub test suite.
+# Surface anchors + decidable examples + runtime structural assertions
+# for the SM2.E.5 hub at `SeLe4n/Kernel/Concurrency/Locks/Refinement.lean`.
+# Verifies that both `ticketLockSim` and `rwLockSim` (with their
+# aggregators) are accessible from a single hub import, that the
+# initial-state correspondences hold by `decide`, and that the
+# per-step preservation lemmas are invokable.  Tier-3 wired.
+[[lean_exe]]
+name = "lock_refinement_suite"
+root = "tests.LockRefinementSuite"

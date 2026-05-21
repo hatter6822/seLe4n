@@ -18,6 +18,7 @@
 - [Kernel Performance Optimization (WS-G)](08-kernel-performance-optimization.md)
 - [Codebase Reference](11-codebase-reference.md)
 - [Proof and Invariant Map](12-proof-and-invariant-map.md)
+- [Verified Lock Primitives (WS-SM SM2)](16-verified-lock-primitives.md)
 
 ## Audit and quality
 

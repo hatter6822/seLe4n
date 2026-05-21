@@ -14,6 +14,9 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+-- WS-SM SM2.E.5: refinement-proof methodology hub.  Re-exports both
+-- per-primitive refinement modules under a unified import seam.
+import SeLe4n.Kernel.Concurrency.Locks.Refinement
 import SeLe4n.Platform.FFI
 
 /-!
@@ -181,6 +184,11 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
+
+-- SM2.E.5 — Refinement-proof methodology hub re-exports.
+-- Both aggregators reachable from a single import of the hub.
+#check @SeLe4n.Kernel.Concurrency.ticketLockRefinementAggregator
+#check @SeLe4n.Kernel.Concurrency.rwLockRefinementAggregator
 
 -- ============================================================================
 -- §7 — Decidable structural examples
