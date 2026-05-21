@@ -30,8 +30,11 @@ variant — the MCS-style FIFO-preserving reader-writer lock):
 
 * **HANGS** — documented in CLAUDE.md and confirmed by PR #790 commit
   `98afa66d`: `queued_rw_lock::cross_thread_tests` deadlocks ~10 % per
-  iteration under heavy host-side load. Root cause: a tristate gap in
-  the per-slot `parked` machine that PR #790 closes.
+  iteration under heavy host-side load. Root cause: a state-machine
+  gap in the per-slot `parked` machine (no way to distinguish a
+  just-reset slot from a waiting slot) that PR #790 closes via the
+  four-state machine (NOT_IN_QUEUE / WAITING_READER /
+  WAITING_WRITER / ADMITTED).
 * **PANICS** — surfaced once PR #790 closes the hangs: a ~35 % rate
   of `release_write`'s `debug_assert!((_prev & WRITER_BIT) != 0)`
   firing in the new `cross_thread_state_invariant_no_writer_with_readers`
@@ -157,27 +160,51 @@ Group these into three semantic categories. Each entry below names
 the change, identifies the failure mode it closes, and points at
 the SM2.A invariant it preserves.
 
-#### Group A1 — tristate `parked` machine
+#### Group A1 — four-state mode-encoded `parked` machine
+
+*(Planning note: the initial draft of this section called for a
+3-state machine. During implementation, the writer-readers exclusion
+race surfaced a deeper requirement — the parked value must carry
+the mode atomically.  The as-built protocol uses 4 states.  The
+4-state form is described below; the historical 3-state sketch
+was abandoned mid-Stream-B.)*
 
 Replace `parked: AtomicBool` with `parked: AtomicU8` carrying one
-of three documented values:
+of four documented values:
 
 ```rust
-pub const PARKED_NOT_IN_QUEUE: u8 = 0; // slot reset, owner mid-enqueue
-pub const PARKED_WAITING:      u8 = 1; // owner published, eligible
-pub const PARKED_ADMITTED:     u8 = 2; // terminal; owner is holder
+pub const PARKED_NOT_IN_QUEUE: u8   = 0; // slot reset, owner mid-enqueue
+pub const PARKED_WAITING_READER: u8 = 1; // reader published, eligible
+pub const PARKED_WAITING_WRITER: u8 = 2; // writer published, eligible
+pub const PARKED_ADMITTED: u8       = 3; // terminal; owner is holder
 ```
 
-* **Closes**: cascade-vs-signal ghost-`+1` race where a 2-state
-  `bool` cannot distinguish a just-reset slot from a waiting slot,
-  so cascade/signal CAS WAITING→ADMITTED admits both real waiters
-  and reset slots, producing accumulating ghost state.
+* **Closes** (two races, not one):
+  - **Cascade-vs-signal ghost-`+1` race** where a 2-state
+    `bool` cannot distinguish a just-reset slot from a waiting
+    slot, so cascade/signal CAS WAITING→ADMITTED admits both
+    real waiters and reset slots, producing accumulating ghost
+    state.  Solved by NOT_IN_QUEUE.
+  - **Stale-mode-read race** where a stale-chain-link walker
+    reads `slot.mode` and observes the OLD iter K-1's value,
+    misdirecting the walker into the wrong admission code path
+    (reader CAS-loop vs writer state-CAS).  Solved by encoding
+    the mode atomically in the parked value:
+    WAITING_READER vs WAITING_WRITER.  The walker dispatches
+    purely on the parked value (read once, Acquire-ordered);
+    HB guarantees imply the parked value's mode is consistent
+    with the slot owner's iter-K reset.
 * **Soundness**: every parked transition observed by an admitter
-  is `WAITING → ADMITTED`. Reset transitions are owner-only and
-  Relaxed-ordered before the WAITING publish. The CAS direction
-  makes the admission unique per (slot, iteration).
-* **Test pin**: `parked_tristate_constants_distinct` (new) asserts
-  the three constants are pairwise distinct.
+  is `WAITING_READER → ADMITTED` or `WAITING_WRITER → ADMITTED`.
+  Reset transitions are owner-only and Relaxed-ordered before
+  the WAITING_* publish.  The CAS direction (with mode-encoded
+  source state) makes the admission unique per (slot, iteration,
+  mode).
+* **Test pin**: `parked_state_constants_pairwise_distinct`,
+  `parked_state_constants_values`, and `parked_state_count_is_four`
+  (all new) pin the 4-state machine.  A regression that
+  collapses WAITING_READER and WAITING_WRITER into one state
+  re-opens the stale-mode-read race.
 
 #### Group A2 — stale-self tail detection
 
@@ -897,21 +924,32 @@ regress.
 
 ### 7.1 Build-script regression scanners
 
-Add three new scanners to `rust/sele4n-hal/build.rs`. Each follows
-the pattern of the existing 11 scanners (e.g.,
+Add ONE new scanner (`scan_queued_rw_lock_protocol_intact`) to
+`rust/sele4n-hal/build.rs` covering three contractual patterns.
+The scanner follows the pattern of the existing 11 scanners (e.g.,
 `scan_gic_rs_send_sgi_emits_dsb_ish` at SM1.F.8).
 
-#### 7.1.1 `scan_queued_rw_lock_tristate_intact`
+*(Planning note: this section originally proposed three separate
+scanners — `_tristate_intact`, `_stale_self_intact`,
+`_writer_admit_via_cas_intact`.  Consolidated to one scanner with
+three internal checks for clarity and to match the as-built
+implementation.)*
+
+#### 7.1.1 Four-state parked machine pattern
 
 Grep `queued_rw_lock.rs` for the literal presence of:
 
-* `pub const PARKED_NOT_IN_QUEUE: u8 = 0;`
-* `pub const PARKED_WAITING: u8 = 1;`
-* `pub const PARKED_ADMITTED: u8 = 2;`
-* `parked: AtomicU8,` (within the `struct WaiterSlot` block).
+* `pub const PARKED_NOT_IN_QUEUE: u8`
+* `pub const PARKED_WAITING_READER: u8`
+* `pub const PARKED_WAITING_WRITER: u8`
+* `pub const PARKED_ADMITTED: u8`
 
-Fail with diagnostic "WS-SM SM2.E protocol regression: tristate
-parked machine removed" if any pattern is missing.
+Fail with diagnostic "WS-SM SM2.E protocol regression: four-state
+parked machine removed" if any pattern is missing.  The four-state
+form (with WAITING_READER vs WAITING_WRITER distinction) is
+essential to close the stale-mode-read race; a regression to
+three states (collapsing READER+WRITER) re-opens the residual
+writer-readers exclusion panic.
 
 #### 7.1.2 `scan_queued_rw_lock_stale_self_intact`
 
