@@ -534,39 +534,73 @@ impl QueuedRwLock {
             if next_mode != MODE_READ {
                 return; // Stop at writer — leave for normal release-signal.
             }
-            // **WS-SM SM2.E MCS-RW protocol fix — atomic admission via
-            // fetch-add-first**: previously, cascade did CAS-then-
-            // fetch-add, leaving a window between CAS success and the
-            // state increment.  Within that window, the admitted slot's
-            // owner could wake up, run its CS, and release, decrementing
-            // state BEFORE the cascade's fetch-add landed.  When the
-            // cascade's fetch-add eventually landed, state was bumped
-            // for a slot that had already left — producing a permanent
-            // ghost +1.
+            // **WS-SM SM2.E MCS-RW protocol fix — CAS-loop reader admit
+            // with WRITER_BIT check**:
             //
-            // Fix: commit the state increment FIRST, then CAS-claim.
-            // If CAS fails (another path already admitted this slot),
-            // undo the increment.  This makes the admission atomic from
-            // the perspective of any concurrent release: either the
-            // admitted slot's increment is visible BEFORE its release
-            // can fire (no ghost), or our undo cancels the bookkeeping
-            // entirely.
+            // Previously, cascade used unconditional `fetch_add(1)` then
+            // CAS parked.  This had TWO failure modes:
             //
-            // Concurrent safety:
-            // - If two cascades race on the same slot, both fetch_add,
-            //   only the CAS-winner keeps the increment, the loser
-            //   fetch_subs.  Net: +1 (single admission), as required.
-            // - If a release happens between our fetch_add and CAS,
-            //   state goes +1 (us) and -1 (release).  If CAS succeeds,
-            //   the admitted slot will release in turn, balancing the
-            //   accounting.  If CAS fails (another path admitted),
-            //   our fetch_sub restores the count.
-            // - If the slot's owner sees `parked = true` (set by our
-            //   CAS), they're guaranteed our fetch_add has already
-            //   committed (fetch_add happens-before CAS via program
-            //   order on this thread), so state observation by any
-            //   release path is consistent.
-            self.state.fetch_add(1, Ordering::AcqRel);
+            // (1) **Reader-during-writer admission** (writer-readers
+            // exclusion violation): cascade's `fetch_add` does not
+            // check WRITER_BIT.  If a writer is admitted between
+            // cascade's pre-admission check and its `fetch_add`, the
+            // state can become `WRITER_BIT | reader_bit` — both writer
+            // and reader appear to hold simultaneously.
+            //
+            // (2) **WRITER_BIT underflow on undo**: if cascade's
+            // `fetch_add` succeeds, then before `parked.CAS` runs,
+            // other releases drop state to 0 and a writer's
+            // `state.CAS(0, WRITER_BIT)` succeeds, state becomes
+            // WRITER_BIT.  Cascade's parked.CAS then fails (stale
+            // slot), and the undo `fetch_sub(1)` decrements from
+            // WRITER_BIT — underflowing into `0x7FFF...` (WRITER_BIT
+            // cleared, reader_count maxed).  The writer subsequently
+            // panics in `release_write` because WRITER_BIT is gone.
+            //
+            // **Fix: CAS-loop reader admit**, matching the
+            // `try_admit_as_reader` and `signal_next_waiter` patterns.
+            // If WRITER_BIT is set we return (no further cascade
+            // possible — a writer holds the lock).  If the CAS-loop
+            // exits with WRITER_BIT clear, the reader admit is atomic
+            // and there is no `fetch_add`-leaves-window-then-undo
+            // sequence to race with writer admission.
+            //
+            // Order: state-CAS FIRST (atomically increment reader
+            // count under WRITER_BIT-clear precondition), then
+            // parked.CAS.  If parked.CAS fails (stale slot), we
+            // undo via `fetch_sub(1)`.  Crucially, the undo can NOT
+            // underflow WRITER_BIT now: between our state.CAS-success
+            // and our `fetch_sub`, WRITER_BIT cannot be set because
+            // our state.CAS-success implies `cur & WRITER_BIT == 0`
+            // and any subsequent writer.state.CAS(0, WRITER_BIT) will
+            // fail (state has our +1, not 0).
+            loop {
+                let cur = self.state.load(Ordering::Acquire);
+                if (cur & WRITER_BIT) != 0 {
+                    // Writer admitted — cannot continue cascade.
+                    // The contiguous WAITING readers we leave behind
+                    // will be admitted later, when the writer's
+                    // `release_write` calls `signal_next_waiter`
+                    // and the chain is walked anew.
+                    return;
+                }
+                // Saturation guard: defend against hypothetical future
+                // ports with massive core counts.  Unreachable on
+                // 4-core hardware.
+                let reader_count = cur & READER_MASK;
+                if reader_count >= READER_MASK {
+                    return;
+                }
+                let new = cur + 1;
+                if self.state.compare_exchange(
+                    cur, new,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ).is_ok() {
+                    break;
+                }
+                // CAS lost a race; retry the load + check.
+                core::hint::spin_loop();
+            }
             match next_slot.parked.compare_exchange(
                 PARKED_WAITING, PARKED_ADMITTED,
                 Ordering::AcqRel, Ordering::Acquire,
@@ -581,6 +615,13 @@ impl QueuedRwLock {
                     // (slot owner reset for a new iteration but hasn't
                     // finished enqueue yet).  Either way, we must NOT
                     // admit.  Undo our state increment.
+                    //
+                    // The undo is safe (no WRITER_BIT underflow risk):
+                    // our state.CAS succeeded under WRITER_BIT-clear,
+                    // so state currently has our +1 contribution; any
+                    // concurrent writer.state.CAS(0, WRITER_BIT) would
+                    // have failed because state != 0.  `fetch_sub(1)`
+                    // here decrements only the reader count we added.
                     self.state.fetch_sub(1, Ordering::AcqRel);
                     return;
                 }
@@ -717,7 +758,13 @@ impl QueuedRwLock {
         // even when not last), the chain is continuously processed.
         // `signal_next_waiter` is designed to:
         // - Admit readers immediately when state allows (CAS-claim).
-        // - Walk past stale slots (already admitted, NOT_IN_QUEUE).
+        // - Walk past slots that are already-ADMITTED (e.g., by a
+        //   cascade or a concurrent signal).
+        // - On NOT_IN_QUEUE: the chain link is STALE from a prior
+        //   iteration and the target slot's owner is mid-reset.
+        //   `signal_next_waiter` returns; the slot will be admitted
+        //   via its real iter-K+1 predecessor's release.  See the
+        //   orphan-fix block comment inside `signal_next_waiter`.
         // - For writers, attempt `state.CAS(0, WRITER_BIT)`; if the
         //   state has reader bits, return without walking past the
         //   writer — the writer stays parked in the chain, and a
@@ -1058,54 +1105,90 @@ impl QueuedRwLock {
                     return;
                 }
             }
-            let claimed = next_slot.parked.compare_exchange(
+            // **WS-SM SM2.E MCS-RW orphan fix — distinguish NOT_IN_QUEUE
+            // from ADMITTED on parked CAS failure**:
+            //
+            // Previously, ANY parked CAS failure (NOT_IN_QUEUE OR ADMITTED)
+            // led to "undo state and walk past."  This is correct for
+            // ADMITTED (the slot is in-queue but already admitted by
+            // cascade/another signal — walk past to drain successors).
+            // But it is WRONG for NOT_IN_QUEUE.
+            //
+            // NOT_IN_QUEUE means the slot's owner is between `slot.reset()`
+            // (which Relaxed-stores NOT_IN_QUEUE) and `parked.store(WAITING)`.
+            // The chain link slot[Z].next = us we just traversed is
+            // STALE from a prior iteration: in iter K, us enqueued
+            // behind Z with `slot[Z].next.store(us, Release)`; after
+            // iter K's CS+release, Z hasn't yet done its own iter K+1
+            // reset (which would clear slot[Z].next).  Meanwhile, us
+            // started iter K+1 and ran `slot.reset()` (parked.Relaxed=
+            // NOT_IN_QUEUE).  Modification-order semantics allow our
+            // Acquire load of slot[us].parked to observe iter K+1's
+            // Relaxed NOT_IN_QUEUE even after observing iter K's link.
+            //
+            // Walking past in this case advances `current` to us and
+            // continues, potentially CAS-clearing tail to NONE — leaving
+            // us and any successor parked WAITING with no chain anchor.
+            // That orphan is the root cause of the
+            // `cross_thread_state_invariant_no_writer_with_readers`
+            // ~10%-rate hang.
+            //
+            // Fix: on NOT_IN_QUEUE, undo state and RETURN.  Us will
+            // be admitted by its REAL iter K+1 predecessor's release.
+            // (Us's iter K+1 enqueue did `slot[realPrev].next.store(us)`
+            // AFTER `parked.store(WAITING)`; the real predecessor's
+            // signal will observe parked=WAITING and CAS-claim us.)
+            //
+            // The single load below is the WAITING→ADMITTED CAS's
+            // Err(observed) value, distinguishing the two cases in
+            // a single round-trip.
+            match next_slot.parked.compare_exchange(
                 PARKED_WAITING, PARKED_ADMITTED,
                 Ordering::AcqRel, Ordering::Acquire,
-            ).is_ok();
-
-            if claimed {
-                // **WS-SM SM2.E MCS-RW protocol fix — keep walking
-                // after a successful admission to drain the chain**:
-                // mirror cascade's behavior so signal can admit
-                // multiple contiguous readers in one call.  This
-                // prevents the deadlock where, after a single signal
-                // admission, the rest of the chain stalls until
-                // some downstream release walks it.
-                //
-                // For writers (state.CAS already updated to
-                // WRITER_BIT): we should NOT keep walking because
-                // any subsequent reader/writer admission would
-                // violate writer-readers exclusion.  Return.
-                if next_mode == MODE_WRITE {
-                    return;
+            ) {
+                Ok(_) => {
+                    // Claimed.  Continue walking for readers (drain
+                    // contiguous reader successors); return for writers.
+                    //
+                    // For writers (state already at WRITER_BIT): we
+                    // MUST NOT keep walking because any subsequent
+                    // reader/writer admission would violate
+                    // writer-readers exclusion.
+                    if next_mode == MODE_WRITE {
+                        return;
+                    }
+                    // Reader admitted; continue.
+                    current = next;
+                    continue;
                 }
-                // Reader admitted; continue walking to admit
-                // additional contiguous readers.
-                current = next;
-                continue;
+                Err(observed) => {
+                    // CAS failed.  Undo our state update regardless of
+                    // reason; the dispositions below differ only in
+                    // whether we walk past or return.
+                    if next_mode == MODE_READ {
+                        self.state.fetch_sub(1, Ordering::AcqRel);
+                    } else {
+                        // Writer undo: state should be WRITER_BIT now.
+                        let _ = self.state.compare_exchange(
+                            WRITER_BIT, 0,
+                            Ordering::AcqRel, Ordering::Acquire,
+                        );
+                    }
+                    if observed == PARKED_NOT_IN_QUEUE {
+                        // Stale chain link from a prior iteration —
+                        // the slot's owner is mid-reset for iter K+1.
+                        // Returning leaves the chain partially-
+                        // processed; us will be admitted by its real
+                        // iter K+1 predecessor's release.  See block
+                        // comment above for the full HB argument.
+                        return;
+                    }
+                    // observed == PARKED_ADMITTED.  Cascade or another
+                    // signal already admitted us; walk past to drain
+                    // any contiguous successors.
+                    current = next;
+                }
             }
-            // CAS failed: the slot at `next` is stale (NOT_IN_QUEUE
-            // or ADMITTED).  Undo our state update and walk past.
-            //
-            // The state-CAS-undo uses fetch_sub for readers (safe
-            // because reader admission was done via CAS-loop above
-            // which guaranteed WRITER_BIT clear; fetch_sub here
-            // decrements the reader count we just added).  For writers,
-            // use a state-CAS (not fetch_and) to handle the case
-            // where reader bits accumulated during our window.
-            if next_mode == MODE_READ {
-                self.state.fetch_sub(1, Ordering::AcqRel);
-            } else {
-                // Writer undo: state should be WRITER_BIT now (we
-                // CAS'd 0→WRITER_BIT and no concurrent writer can
-                // have set it because we hold the only CAS slot).
-                // CAS back to 0.
-                let _ = self.state.compare_exchange(
-                    WRITER_BIT, 0,
-                    Ordering::AcqRel, Ordering::Acquire,
-                );
-            }
-            current = next;
         }
         // Walk-step bound exhausted.  In a well-formed queue this is
         // unreachable: the chain has at most `MAX_WAITERS` distinct
