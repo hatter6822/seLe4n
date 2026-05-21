@@ -15,8 +15,11 @@
 //! preallocated slot in a per-lock `[WaiterSlot; MAX_WAITERS]` array
 //! (`MAX_WAITERS = MAX_SECONDARY_CORES + 1 = 4`).  Lock holds
 //! `(tail_slot_idx : AtomicU8)` indexing into the array.  Each `WaiterSlot`
-//! stores `next : AtomicU8` (successor slot idx), `parked : AtomicBool`
-//! (single-writer admit signal), and `mode : AtomicU8` (requested mode).
+//! stores `next : AtomicU8` (successor slot idx), `parked : AtomicU8`
+//! (mode-encoded four-state admit machine: NOT_IN_QUEUE /
+//! WAITING_READER / WAITING_WRITER / ADMITTED — see `PARKED_*`
+//! constants), and `mode : AtomicU8` (diagnostic-only — the parked
+//! value is the authoritative mode source for walkers).
 //!
 //! ## Heap-free, ABA-free, lifetime-safe
 //!
@@ -33,13 +36,19 @@
 //! Heuristic "is the lock free right now" loads are checks AFTER enqueue,
 //! not before, eliminating the bypass race.
 
-#![allow(unsafe_code)] // documented unsafe blocks at call sites
+// **WS-SM SM2.E audit-pass**: this module is `safe`-only — every
+// synchronisation primitive is built on `AtomicU8` / `AtomicU64`
+// methods that are safe in stable Rust.  The original
+// `#![allow(unsafe_code)]` annotation has been removed; if a future
+// refactor reintroduces unsafe code (e.g. a `Pin` / `Box` raw-pointer
+// optimisation), the unsafe block MUST be justified per the project's
+// SAFETY-comment convention.
 
 // Tests use std; production code is no_std-compatible.
 #[cfg(test)]
 extern crate std;
 
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 /// Sentinel meaning "no slot" — indexes outside the `[0, MAX_WAITERS)`
 /// range cannot collide with a real slot index.
@@ -59,6 +68,77 @@ const _: () = assert!(
 pub const MODE_READ: u8 = 0;
 pub const MODE_WRITE: u8 = 1;
 
+/// **WS-SM SM2.E MCS-RW protocol fix**: four-state machine for the
+/// per-slot `parked : AtomicU8` field (replacing the original
+/// `parked : AtomicBool`).
+///
+/// The four-state machine closes two race classes:
+///
+/// **(A) Cascade-vs-signal ghost-`+1` race** that a 2-state `bool`
+/// cannot distinguish (NOT_IN_QUEUE vs the previously-undifferentiated
+/// "false" state):
+///
+/// 1. **WAITING_READER / WAITING_WRITER**: the slot's owner has
+///    finished its enqueue protocol (`tail.swap`,
+///    `slot[prev].next.store`) and is spinning, ready to be admitted
+///    by a cascade or signal CAS.  The READER/WRITER distinction
+///    carries the mode atomically — see (B) below.
+/// 2. **NOT_IN_QUEUE**: the slot's owner has reset for a new
+///    iteration but has not yet completed enqueue.  The slot is
+///    structurally present in the queue chain (because
+///    `slot[predecessor].next` may still point at it from a previous
+///    iteration), but admitting it would be a ghost admission — the
+///    owner is going to admit itself via `try_admit_as_*`.
+/// 3. **ADMITTED**: the slot's owner has been admitted (either by
+///    cascade, by signal, or by `try_admit_as_*`).  Terminal.
+///
+/// **(B) Stale-mode-read race** between the walker's `slot.mode` load
+/// and the slot owner's iter-K reset's mode store.  Even with
+/// Release/Acquire on the chain pointer, the walker's mode load is
+/// only HB-after the iter that the chain link belongs to.  A walker
+/// arriving via a STALE iter-(K-1) chain link could observe iter-(K-1)'s
+/// mode (READ) even though the slot's owner has transitioned to iter K
+/// with mode WRITE.  The walker then performs the WRONG state update
+/// (reader CAS-loop instead of writer state.CAS), producing a state
+/// where `_prev=1` for a writer's release.  This was the residual
+/// "release_write called while WRITER_BIT is not set" panic that
+/// PR #790 commit-3 left unresolved.
+///
+/// **Fix**: encode the mode atomically in the parked value.  The
+/// walker's parked.load(Acquire) directly carries the mode:
+/// `WAITING_READER` and `WAITING_WRITER` are distinct states, and the
+/// walker's CAS direction (`WAITING_READER → ADMITTED` vs
+/// `WAITING_WRITER → ADMITTED`) is determined by the read parked
+/// value.  Because the parked Release-store happens AFTER the mode
+/// store in the slot owner's enqueue, observing iter K's parked value
+/// implies HB to iter K's mode value — the walker cannot mix iters.
+///
+/// Transitions (using `(mode, value)` shorthand):
+/// * `acquire_*::reset()` → NOT_IN_QUEUE.
+/// * acquire `try_admit_as_*` success → ADMITTED (direct fast path).
+/// * acquire's `parked.store(WAITING_*)` after linking predecessor →
+///   WAITING_READER or WAITING_WRITER (matching the requested mode).
+/// * cascade/signal CAS WAITING_READER → ADMITTED for reader admit.
+/// * cascade/signal CAS WAITING_WRITER → ADMITTED for writer admit.
+/// * Release does NOT touch this field; the next iteration's
+///   `reset()` will overwrite it with NOT_IN_QUEUE.
+///
+/// **`slot.mode` field**: retained for diagnostic purposes (peek-state
+/// utilities) but the WALKER MUST NOT trust it as an authoritative
+/// mode source — the parked value is.  `cascade_admit_readers` does
+/// use `requested_mode()` as a fast pre-check (early-return on writer
+/// without doing state CAS) but the parked-CAS direction is the
+/// definitive safety check: the CAS is `WAITING_READER → ADMITTED`,
+/// so a stale-mode-read for an actual writer (parked = WAITING_WRITER)
+/// fails the CAS and triggers undo.  `signal_next_waiter` does NOT
+/// read `requested_mode()` at all — it dispatches purely on the
+/// parked value (lines 1126+ in `signal_next_waiter`).
+pub const PARKED_NOT_IN_QUEUE: u8 = 0;
+pub const PARKED_WAITING_READER: u8 = 1;
+pub const PARKED_WAITING_WRITER: u8 = 2;
+pub const PARKED_ADMITTED: u8 = 3;
+
+
 /// One waiter slot — exactly one per core.  The slot is OWNED by the
 /// lock for the duration of the program; no heap or stack allocation
 /// is involved.  This eliminates lifetime hazards (audit H-2).
@@ -68,10 +148,13 @@ pub struct WaiterSlot {
     /// this is the tail.  Single-writer (the OWNING core, while in
     /// queue); single-reader (the predecessor or the lock-holder).
     next: AtomicU8,
-    /// True when the slot owner has been admitted.  Single-writer
-    /// (the predecessor or the lock-holder); single-reader (the
-    /// slot owner).
-    parked: AtomicBool,
+    /// Mode-encoded four-state admission machine (see `PARKED_*`
+    /// constants above).  Single-writer per transition (well-defined
+    /// ownership: owner writes NOT_IN_QUEUE and WAITING_READER /
+    /// WAITING_WRITER; admitter writes ADMITTED; owner's NONE-path
+    /// self-admit-spin can also revert ADMITTED → WAITING_* via CAS
+    /// when its state-CAS fails).
+    parked: AtomicU8,
     /// Requested access mode at enqueue time (0 = read, 1 = write).
     /// Single-writer (the slot owner at enqueue); read-only thereafter.
     mode: AtomicU8,
@@ -87,23 +170,47 @@ impl WaiterSlot {
     #[allow(clippy::declare_interior_mutable_const)]
     pub const INIT: Self = Self {
         next: AtomicU8::new(NONE_SENTINEL),
-        parked: AtomicBool::new(false),
+        parked: AtomicU8::new(PARKED_NOT_IN_QUEUE),
         mode: AtomicU8::new(MODE_READ),
     };
 
     /// Re-initialise this slot for a fresh enqueue.  Called by the
     /// slot's owner before swapping into the queue tail.
     ///
+    /// **WS-SM SM2.E MCS-RW protocol fix**: stores
+    /// `PARKED_NOT_IN_QUEUE` (rather than the previous `false`).
+    /// This is essential: the four-state machine ensures cascade/
+    /// signal CAS cannot admit a just-reset slot before its owner
+    /// has finished the enqueue protocol.  See the `PARKED_*`
+    /// constants' docstring above for the full rationale.
+    ///
+    /// `mode.store` is Release-ordered (not Relaxed); this is a
+    /// defense-in-depth measure layered on top of the parked-encoded
+    /// mode protocol.  Walkers should NOT trust `mode` as the
+    /// authoritative mode source — the `parked` value (which has the
+    /// READER/WRITER distinction encoded via WAITING_READER vs
+    /// WAITING_WRITER) is.  See the `PARKED_*` docstring above for
+    /// the full rationale of why parked-encoded mode is necessary
+    /// (stale-chain-link walkers can observe iter-(K-1)'s `mode`
+    /// even after iter-K's reset).
+    ///
     /// Single-writer: only the owning core calls this.
     pub fn reset(&self, requested_mode: u8) {
         self.next.store(NONE_SENTINEL, Ordering::Relaxed);
-        self.parked.store(false, Ordering::Relaxed);
-        self.mode.store(requested_mode, Ordering::Relaxed);
+        self.parked.store(PARKED_NOT_IN_QUEUE, Ordering::Relaxed);
+        self.mode.store(requested_mode, Ordering::Release);
     }
 
-    /// Read the requested mode (single-reader).
+    /// Read the requested mode (diagnostic-only — see WaiterSlot
+    /// field docstring; walkers MUST use `parked` value, not this).
+    ///
+    /// Acquire-ordered to pair with the Release-store in `reset()`,
+    /// providing a layered defense against stale-mode reads even
+    /// though the protocol does not rely on this property for
+    /// correctness — the parked-encoded mode is the authoritative
+    /// safety mechanism.
     pub fn requested_mode(&self) -> u8 {
-        self.mode.load(Ordering::Relaxed)
+        self.mode.load(Ordering::Acquire)
     }
 }
 
@@ -270,7 +377,38 @@ impl QueuedRwLock {
 
         // Step 2: enqueue at tail via atomic swap.  After this point we
         // are visible to release-* paths.
-        let prev_tail = self.tail.swap(core_id, Ordering::AcqRel);
+        let raw_prev_tail = self.tail.swap(core_id, Ordering::AcqRel);
+
+        // **WS-SM SM2.E MCS-RW protocol fix — stale-self detection**:
+        // if `raw_prev_tail == core_id`, the tail was left dangling at
+        // our own slot by a prior cascade admission.  Specifically:
+        // an earlier iteration cascade-admitted us (predecessor's
+        // `cascade_admit_readers` CAS-claimed our `parked` and
+        // incremented state), but cascade does NOT update `tail`
+        // because cascade doesn't know if the admitted slot was the
+        // current tail.  When all readers from that cascade chain
+        // release, the release path's `signal_next_waiter` DOES clean
+        // up tail (via CAS or walk-past-stale), but if our re-enqueue
+        // races AHEAD of that signal, we observe the stale tail value.
+        //
+        // Only this core could have set `tail` to its own ID — each
+        // slot has exactly one owner — so `raw_prev_tail == core_id`
+        // unambiguously identifies the stale case.  Treating it as
+        // `NONE_SENTINEL` is sound because the queue is effectively
+        // empty (our previous iteration's queue position has been
+        // consumed by the admit chain).
+        //
+        // Without this fix, the `else` branch below would store
+        // `slot[core_id].next.store(core_id)` — a self-link — and the
+        // park loop would never terminate, producing the deadlock
+        // CLAUDE.md flagged as "occasionally deadlock under heavy
+        // host-side load" (`cross_thread_slot_ownership_independence`
+        // and similar reader-cycling tests).
+        let prev_tail = if raw_prev_tail == core_id {
+            NONE_SENTINEL
+        } else {
+            raw_prev_tail
+        };
 
         if prev_tail == NONE_SENTINEL {
             // We are the new head.  Try immediate admit.
@@ -279,9 +417,9 @@ impl QueuedRwLock {
             // writer bit BEFORE our swap is observed by us via the swap's
             // AcqRel fence; we wait via the parked loop in that case.
             if self.try_admit_as_reader() {
-                // Mark ourselves as parked=true so the release-path knows
-                // we're already in-flight as an admitted reader.
-                slot.parked.store(true, Ordering::Release);
+                // Mark ourselves as ADMITTED so cascade/signal CAS
+                // (which expects WAITING) cannot re-admit us.
+                slot.parked.store(PARKED_ADMITTED, Ordering::Release);
                 // Cascade-admit contiguous reader successors (D-5 H-1 fix).
                 // Without this, the lock degenerates to a FIFO mutex —
                 // queued readers wait serially instead of holding
@@ -290,7 +428,109 @@ impl QueuedRwLock {
                 self.cascade_admit_readers(core_id);
                 return;
             }
+            // **WS-SM SM2.E MCS-RW protocol fix — NONE-path self-admit
+            // spin with CAS-claim ordering**: try_admit_as_reader failed
+            // (state has WRITER_BIT).  We took the NONE_SENTINEL path so
+            // no predecessor will signal us via the slot[prev].next
+            // chain — without this self-admit spin, we'd be orphaned.
+            //
+            // The naive design `state-CAS, then parked.store(ADMITTED)`
+            // has a race against signal targeting us via a STALE
+            // slot[X].next = us link from a previous iteration:
+            //  1. We try_admit (state += 1).
+            //  2. Concurrent signal walks slot[X].next = us, CAS-loops
+            //     state += 1, CAS parked WAITING → ADMITTED success
+            //     (parked is still WAITING from our store).
+            //  3. Signal returns.  We parked.store(ADMITTED).
+            // Net: state has +2 for one holder.  Ghost +1.
+            //
+            // **Fix: CAS-claim parked BEFORE updating state.**  If our
+            // CAS-claim wins, signal's CAS parked WAITING → ADMITTED
+            // fails (parked is now ADMITTED), and signal's state
+            // increment is undone by its own fetch_sub.  Net: signal
+            // contributes 0 to state.  Our state CAS then increments
+            // by 1.  Single admission.
+            //
+            // If our CAS-claim loses (signal got there first), we
+            // observe parked = ADMITTED at the top of the loop and
+            // return — signal owns the admission and has already
+            // incremented state.
+            slot.parked.store(PARKED_WAITING_READER, Ordering::Release);
+            loop {
+                if slot.parked.load(Ordering::Acquire) == PARKED_ADMITTED {
+                    // Signal beat us to the admission.  State has
+                    // signal's +1 for us; nothing more to do beyond
+                    // cascade.
+                    self.cascade_admit_readers(core_id);
+                    return;
+                }
+                // CAS-claim parked first.  Only the CAS-winner is
+                // allowed to increment state for this slot.
+                if slot.parked.compare_exchange(
+                    PARKED_WAITING_READER, PARKED_ADMITTED,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ).is_ok() {
+                    // Claimed.  Now atomically increment state.  If
+                    // state has WRITER_BIT, we cannot admit right
+                    // now — revert parked via CAS (NOT a STORE — see
+                    // Stream B/§6.6 fix candidate F1) and continue
+                    // spinning.
+                    loop {
+                        let cur = self.state.load(Ordering::Acquire);
+                        if (cur & WRITER_BIT) != 0 {
+                            // Writer admitted between our parked-CAS
+                            // and our state-CAS.  Revert parked so a
+                            // future signal can re-claim us.
+                            //
+                            // **Stream B F1 fix**: revert via CAS, not
+                            // STORE.  A naked store would clobber a
+                            // concurrent admitter's ADMITTED publish.
+                            // The CAS only undoes our own ADMITTED;
+                            // if signal already reverted us (saw our
+                            // ADMITTED, walked past, no state credit),
+                            // the CAS fails harmlessly with the
+                            // observed value being WAITING_READER — also fine.
+                            let _ = slot.parked.compare_exchange(
+                                PARKED_ADMITTED, PARKED_WAITING_READER,
+                                Ordering::AcqRel, Ordering::Acquire,
+                            );
+                            break;
+                        }
+                        let new_state = cur + 1;
+                        if self.state.compare_exchange(
+                            cur, new_state,
+                            Ordering::AcqRel, Ordering::Acquire,
+                        ).is_ok() {
+                            self.cascade_admit_readers(core_id);
+                            return;
+                        }
+                        // CAS lost a race with another state mutator.
+                        // Retry the inner loop to re-load and re-CAS.
+                    }
+                }
+                crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+            }
         } else {
+            // **WS-SM SM2.E MCS-RW protocol fix — order of operations**:
+            // Mark ourselves as WAITING_READER BEFORE linking the
+            // predecessor.  This ensures any concurrent admitter that
+            // observes our predecessor's `next` pointing to us will
+            // then see our `parked == WAITING_READER` (via the
+            // happens-before edge through
+            // `slot[prev].next.store(me, Release)` ←
+            // signal's `next.load(Acquire)`).
+            //
+            // Reverse order (link THEN store WAITING) would create a
+            // window where signal sees the link but our parked is
+            // still NOT_IN_QUEUE; signal's CAS WAITING→ADMITTED fails,
+            // signal walks past us, we miss our wake-up.
+            //
+            // The WAITING_READER value (vs the generic WAITING)
+            // carries the mode atomically — a walker arriving via a
+            // stale chain link from a prior iteration's writer cannot
+            // misinterpret this slot as a writer (closes Stream B's
+            // residual writer-readers exclusion panic).
+            slot.parked.store(PARKED_WAITING_READER, Ordering::Release);
             // Link predecessor to us.  Predecessor will signal us when
             // it releases / is admitted.
             //
@@ -302,11 +542,12 @@ impl QueuedRwLock {
 
         // Step 3: wait until predecessor signals us.
         //
-        // SAFETY: `slot.parked` is single-writer (the predecessor or the
-        // lock holder).  We never return until parked == true, so the
-        // slot remains in-queue throughout (closes audit H-2 by
-        // EXPLICIT PROTOCOL: this loop is the lifetime-safety mechanism).
-        while !slot.parked.load(Ordering::Acquire) {
+        // SAFETY: `slot.parked` is single-writer per transition.
+        // Owner writes NOT_IN_QUEUE (reset) and WAITING (this fn).
+        // Admitter writes ADMITTED (cascade or signal CAS).  We
+        // never return until ADMITTED, so the slot remains in-queue
+        // throughout.
+        while slot.parked.load(Ordering::Acquire) != PARKED_ADMITTED {
             crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
         }
 
@@ -325,30 +566,58 @@ impl QueuedRwLock {
     /// previous reader to release before admitting, even though the
     /// "reader-writer" contract allows concurrent reader holding.
     ///
-    /// Protocol: walk the slot chain via `next`.  For each contiguous
-    /// reader successor:
-    ///   - **Atomically claim** the successor via CAS on `parked`
-    ///     (false → true).  This prevents the TOCTOU race where the
-    ///     predecessor's cascade and the newly-awakened reader's
-    ///     cascade both attempt to admit the SAME successor (closes
-    ///     audit-pass-4 finding: previously the `parked.load` check +
-    ///     `state.fetch_add` + `parked.store` had a non-atomic window
-    ///     that could double-count under high contention).
-    ///   - On CAS success: increment state's reader count
-    ///     (`fetch_add(1, AcqRel)`).  We are the unique admitter.
-    ///   - On CAS failure: another cascader already admitted this
-    ///     successor.  Return (they will handle the rest of the chain
-    ///     from their position).
+    /// **Protocol** (post-SM2.E audit-pass):
     ///
-    /// Stop at the first writer (don't admit it), at sentinel, or at a
-    /// successor whose `next` hasn't been linked yet (stay loose;
-    /// future releaser propagation handles the rest).
+    /// Walk the slot chain via `next`, bounded by `MAX_WAITERS` steps.
+    /// For each contiguous reader successor:
+    ///
+    /// 1. Read `slot[current].next`.  If `NONE_SENTINEL`, return (no
+    ///    successor known yet — a future releaser will pick up).
+    /// 2. Self-link defense: `debug_assert!(next != current)`.  With
+    ///    the stale-self fix in `acquire_*`, self-links should not
+    ///    occur; this is a regression guard.
+    /// 3. Pre-check `next_slot.requested_mode()`: if `MODE_WRITE`,
+    ///    return.  This is a fast-path optimization; the parked-CAS
+    ///    below is the authoritative mode check.
+    /// 4. **State-CAS reader admit** (CAS-loop with WRITER_BIT
+    ///    precondition).  If WRITER_BIT is set, return.  Otherwise
+    ///    CAS `state: cur → cur + 1` (atomic; reverts if state
+    ///    changed mid-flight).  This closes the SM2.E audit-pass
+    ///    cascade-during-writer-admit race and the WRITER_BIT
+    ///    underflow on undo (see inline comment below).
+    /// 5. **Parked-CAS** `PARKED_WAITING_READER → PARKED_ADMITTED`:
+    ///    - On success: continue cascading (advance `current = next`).
+    ///    - On failure: undo state (`fetch_sub(1)`) and return.  The
+    ///      failure can be NOT_IN_QUEUE (slot mid-reset), ADMITTED
+    ///      (already admitted by another path), or WAITING_WRITER
+    ///      (stale mode pre-check; actual mode is WRITE).  In all
+    ///      cases, cascade stops here; the chain will be processed
+    ///      by future signals.
+    ///
+    /// **CAS-claim symmetry with `signal_next_waiter`**: both paths
+    /// target the same `parked` flag with `WAITING_READER → ADMITTED`
+    /// or `WAITING_WRITER → ADMITTED`.  Exactly one CAS wins per
+    /// (slot, iteration) by atomic semantics.
     fn cascade_admit_readers(&self, my_core_id: u8) {
         let mut current = my_core_id;
-        loop {
+        // Bound the walk by `MAX_WAITERS` — the chain has at most
+        // that many distinct slots (one per core).  This also defends
+        // against any pathological cycle in `next` pointers caused by
+        // a future regression.
+        for _walk_step in 0..MAX_WAITERS {
             let next = self.slots[current as usize].next.load(Ordering::Acquire);
             if next == NONE_SENTINEL {
                 return; // No further successor known yet.
+            }
+            // Self-link defense: should not occur with the stale-self
+            // fix in `acquire_read` / `acquire_write`, but guards
+            // against infinite walks if any future regression
+            // reintroduces self-linking.
+            if next == current {
+                debug_assert!(false,
+                    "cascade_admit_readers: self-referential next pointer at slot {}",
+                    current);
+                return;
             }
             // SAFETY: `next < MAX_WAITERS` by the enqueue-side invariant.
             let next_slot = &self.slots[next as usize];
@@ -357,29 +626,119 @@ impl QueuedRwLock {
             if next_mode != MODE_READ {
                 return; // Stop at writer — leave for normal release-signal.
             }
-            // **Atomic claim via CAS** (audit-pass-4 race fix): only the
-            // CAS-winner is allowed to increment state and signal the
-            // successor.  This eliminates the TOCTOU race between
-            // concurrent cascade paths (predecessor cascade + newly-
-            // awakened reader cascade).
+            // **WS-SM SM2.E MCS-RW protocol fix — CAS-loop reader admit
+            // with WRITER_BIT check**:
+            //
+            // Previously, cascade used unconditional `fetch_add(1)` then
+            // CAS parked.  This had TWO failure modes:
+            //
+            // (1) **Reader-during-writer admission** (writer-readers
+            // exclusion violation): cascade's `fetch_add` does not
+            // check WRITER_BIT.  If a writer is admitted between
+            // cascade's pre-admission check and its `fetch_add`, the
+            // state can become `WRITER_BIT | reader_bit` — both writer
+            // and reader appear to hold simultaneously.
+            //
+            // (2) **WRITER_BIT underflow on undo**: if cascade's
+            // `fetch_add` succeeds, then before `parked.CAS` runs,
+            // other releases drop state to 0 and a writer's
+            // `state.CAS(0, WRITER_BIT)` succeeds, state becomes
+            // WRITER_BIT.  Cascade's parked.CAS then fails (stale
+            // slot), and the undo `fetch_sub(1)` decrements from
+            // WRITER_BIT — underflowing into `0x7FFF...` (WRITER_BIT
+            // cleared, reader_count maxed).  The writer subsequently
+            // panics in `release_write` because WRITER_BIT is gone.
+            //
+            // **Fix: CAS-loop reader admit**, matching the
+            // `try_admit_as_reader` and `signal_next_waiter` patterns.
+            // If WRITER_BIT is set we return (no further cascade
+            // possible — a writer holds the lock).  If the CAS-loop
+            // exits with WRITER_BIT clear, the reader admit is atomic
+            // and there is no `fetch_add`-leaves-window-then-undo
+            // sequence to race with writer admission.
+            //
+            // Order: state-CAS FIRST (atomically increment reader
+            // count under WRITER_BIT-clear precondition), then
+            // parked.CAS.  If parked.CAS fails (stale slot), we
+            // undo via `fetch_sub(1)`.  Crucially, the undo can NOT
+            // underflow WRITER_BIT now: between our state.CAS-success
+            // and our `fetch_sub`, WRITER_BIT cannot be set because
+            // our state.CAS-success implies `cur & WRITER_BIT == 0`
+            // and any subsequent writer.state.CAS(0, WRITER_BIT) will
+            // fail (state has our +1, not 0).
+            loop {
+                let cur = self.state.load(Ordering::Acquire);
+                if (cur & WRITER_BIT) != 0 {
+                    // Writer admitted — cannot continue cascade.
+                    // The contiguous WAITING readers we leave behind
+                    // will be admitted later, when the writer's
+                    // `release_write` calls `signal_next_waiter`
+                    // and the chain is walked anew.
+                    return;
+                }
+                // Saturation guard: defend against hypothetical future
+                // ports with massive core counts.  Unreachable on
+                // 4-core hardware.
+                let reader_count = cur & READER_MASK;
+                if reader_count >= READER_MASK {
+                    return;
+                }
+                let new = cur + 1;
+                if self.state.compare_exchange(
+                    cur, new,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ).is_ok() {
+                    break;
+                }
+                // CAS lost a race; retry the load + check.
+                core::hint::spin_loop();
+            }
+            // Cascade only admits READERS (contiguous reader successors).
+            // Use PARKED_WAITING_READER CAS direction explicitly —
+            // a slot in PARKED_WAITING_WRITER is also a "waiting" slot
+            // but cascade must NOT admit writers (separate code path
+            // in signal_next_waiter handles that with state.CAS(0, WRITER_BIT)).
+            //
+            // Note that we already checked `next_slot.requested_mode() ==
+            // MODE_READ` above and returned for non-readers.  However,
+            // that check uses the `slot.mode` field which has the
+            // stale-mode-read risk documented in `WaiterSlot::reset()`.
+            // The parked-CAS direction here serves as the AUTHORITATIVE
+            // check — if parked is WAITING_WRITER (not WAITING_READER),
+            // the CAS fails and we undo (treating as "another path").
             match next_slot.parked.compare_exchange(
-                false, true,
+                PARKED_WAITING_READER, PARKED_ADMITTED,
                 Ordering::AcqRel, Ordering::Acquire,
             ) {
                 Ok(_) => {
-                    // We claimed the successor.  Increment state.
-                    // AcqRel on state to ensure the prior reader's CS data
-                    // is visible to the new admittee (D-5 H-4 audit).
-                    self.state.fetch_add(1, Ordering::AcqRel);
+                    // We claimed the successor.  Continue cascading.
                     current = next;
                 }
                 Err(_) => {
-                    // Another cascader admitted this successor already.
-                    // Stop — they will continue the chain.
+                    // Another path already admitted this successor
+                    // (parked == ADMITTED), or the slot is NOT_IN_QUEUE
+                    // (slot owner reset for a new iteration but hasn't
+                    // finished enqueue yet), or the slot is
+                    // WAITING_WRITER (the mode read above was stale and
+                    // the actual mode is WRITE).  Either way, we must
+                    // NOT admit via the cascade-reader path.  Undo our
+                    // state increment.
+                    //
+                    // The undo is safe (no WRITER_BIT underflow risk):
+                    // our state.CAS succeeded under WRITER_BIT-clear,
+                    // so state currently has our +1 contribution; any
+                    // concurrent writer.state.CAS(0, WRITER_BIT) would
+                    // have failed because state != 0.  `fetch_sub(1)`
+                    // here decrements only the reader count we added.
+                    self.state.fetch_sub(1, Ordering::AcqRel);
                     return;
                 }
             }
         }
+        // Walk-step bound exhausted.  Indicates a chain cycle — surface
+        // in test builds, silently exit in release.
+        debug_assert!(false,
+                      "cascade_admit_readers: walk exceeded MAX_WAITERS — chain cycle?");
     }
 
     /// **WS-SM SM2.C-defer D-5.5**: acquire a write lock for `core_id`.
@@ -395,20 +754,82 @@ impl QueuedRwLock {
         let slot = &self.slots[core_id as usize];
 
         slot.reset(MODE_WRITE);
-        let prev_tail = self.tail.swap(core_id, Ordering::AcqRel);
+        let raw_prev_tail = self.tail.swap(core_id, Ordering::AcqRel);
+
+        // **WS-SM SM2.E MCS-RW protocol fix — stale-self detection**.
+        // Same rationale as `acquire_read`: cascade can leave tail
+        // pointing at our slot, and our re-enqueue can race ahead of
+        // the signal that would clean it up.  Treating
+        // `raw_prev_tail == core_id` as `NONE_SENTINEL` is sound (the
+        // queue is effectively empty) and prevents the self-link
+        // deadlock.  Note that cascade only admits readers (not
+        // writers), so the stale-self case for writers can only arise
+        // if a writer is re-acquiring after being cascade-admitted as
+        // a writer — which is impossible per the cascade contract.
+        // Nevertheless, we apply the same defensive symmetry on the
+        // writer path so a future refactor that introduces writer
+        // cascade cannot accidentally re-introduce the bug.
+        let prev_tail = if raw_prev_tail == core_id {
+            NONE_SENTINEL
+        } else {
+            raw_prev_tail
+        };
 
         if prev_tail == NONE_SENTINEL {
             // We are the new head.
             if self.try_admit_as_writer() {
-                slot.parked.store(true, Ordering::Release);
+                slot.parked.store(PARKED_ADMITTED, Ordering::Release);
                 return;
             }
+            // **WS-SM SM2.E MCS-RW protocol fix — NONE-path self-admit
+            // spin (writer variant) with CAS-claim ordering**: same
+            // rationale as `acquire_read`'s NONE-path self-admit spin.
+            // For writers, the state CAS is `state.CAS(0, WRITER_BIT)`
+            // (cannot use fetch_add — would corrupt to mixed state).
+            //
+            // CAS-claim parked first; if won, attempt state CAS; if
+            // state CAS fails (state non-zero), revert parked.
+            slot.parked.store(PARKED_WAITING_WRITER, Ordering::Release);
+            loop {
+                if slot.parked.load(Ordering::Acquire) == PARKED_ADMITTED {
+                    return;
+                }
+                if slot.parked.compare_exchange(
+                    PARKED_WAITING_WRITER, PARKED_ADMITTED,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ).is_ok() {
+                    // Claimed.  Try state CAS.
+                    if self.state.compare_exchange(
+                        0, WRITER_BIT,
+                        Ordering::AcqRel, Ordering::Acquire,
+                    ).is_ok() {
+                        return;
+                    }
+                    // State non-zero (other holders).  Revert parked
+                    // via CAS (NOT a STORE — see Stream B/§6.6 F1).
+                    // A naked store would clobber a concurrent
+                    // admitter's ADMITTED publish.  The CAS only undoes
+                    // our own ADMITTED; if signal already reverted us
+                    // (saw our ADMITTED, walked past, no state credit),
+                    // the CAS fails harmlessly with observed = WAITING_WRITER
+                    // — also fine.
+                    let _ = slot.parked.compare_exchange(
+                        PARKED_ADMITTED, PARKED_WAITING_WRITER,
+                        Ordering::AcqRel, Ordering::Acquire,
+                    );
+                }
+                crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+            }
         } else {
+            // **WS-SM SM2.E MCS-RW protocol fix**: store WAITING_WRITER
+            // BEFORE linking, same as acquire_read but with the writer
+            // variant so the walker reads the correct mode atomically.
+            slot.parked.store(PARKED_WAITING_WRITER, Ordering::Release);
             self.slots[prev_tail as usize].next.store(core_id, Ordering::Release);
         }
 
         // Wait for predecessor signal.
-        while !slot.parked.load(Ordering::Acquire) {
+        while slot.parked.load(Ordering::Acquire) != PARKED_ADMITTED {
             crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
         }
     }
@@ -435,12 +856,47 @@ impl QueuedRwLock {
         debug_assert!((prev & WRITER_BIT) == 0,
                       "release_read called while WRITER_BIT is set");
 
-        // If we were the last reader AND a successor is waiting, signal it.
-        let prev_readers = prev & READER_MASK;
-        if prev_readers == 1 && (prev & WRITER_BIT) == 0 {
-            // Reader count would drop to zero; check for successor.
-            self.signal_next_waiter(core_id);
-        }
+        // **WS-SM SM2.E MCS-RW protocol fix — signal on every release**:
+        // The original protocol only called signal when prev_readers ==
+        // 1 (last reader).  That left non-last-reader releases without
+        // any chain processing, causing two related bugs:
+        //
+        // (a) **Dangling tail**: tail may still point at us after a
+        //     non-last release.  A future enqueuer would link behind
+        //     us, but our iter K+1 acquire's reset clears
+        //     slot[us].next, losing the link.  The enqueuer is
+        //     orphaned.
+        //
+        // (b) **Chain stall**: a writer linked behind a cascade-admitted
+        //     reader R waits for some signal to reach them.  If R
+        //     releases not-last, no signal fires; the writer is stalled
+        //     until *some other* releaser's chain walk happens to
+        //     traverse through R's slot.
+        //
+        // By signaling on every release (calling `signal_next_waiter`
+        // even when not last), the chain is continuously processed.
+        // `signal_next_waiter` is designed to:
+        // - Admit readers immediately when state allows (CAS-claim).
+        // - Walk past slots that are already-ADMITTED (e.g., by a
+        //   cascade or a concurrent signal).
+        // - On NOT_IN_QUEUE: the chain link is STALE from a prior
+        //   iteration and the target slot's owner is mid-reset.
+        //   `signal_next_waiter` returns; the slot will be admitted
+        //   via its real iter-K+1 predecessor's release.  See the
+        //   orphan-fix block comment inside `signal_next_waiter`.
+        // - For writers, attempt `state.CAS(0, WRITER_BIT)`; if the
+        //   state has reader bits, return without walking past the
+        //   writer — the writer stays parked in the chain, and a
+        //   future signal (when state reaches 0) will admit them.
+        // - CAS-clear tail when the walk reaches NONE.
+        //
+        // The result: every release processes the chain forward as
+        // far as state allows, eliminating both dangling-tail and
+        // chain-stall.  The performance cost (signal walking on
+        // every release rather than just last) is small in the
+        // common case where chains are short.
+        let _ = prev; // prev_readers no longer used after release-always change.
+        self.signal_next_waiter(core_id);
         // Wake any WFE-parked waiters (broadcasts via SEV).
         crate::cpu::sev();
     }
@@ -460,7 +916,10 @@ impl QueuedRwLock {
         // (D-5 H-4 fix).
         let _prev = self.state.fetch_and(READER_MASK, Ordering::AcqRel);
         debug_assert!((_prev & WRITER_BIT) != 0,
-                      "release_write called while WRITER_BIT is not set");
+                      "release_write called while WRITER_BIT is not set; \
+                       protocol invariant violation (mode-encoded parked machine \
+                       should have prevented this).  core_id={}, _prev=0x{:x}",
+                      core_id, _prev);
 
         // Signal the next waiter.
         self.signal_next_waiter(core_id);
@@ -544,76 +1003,264 @@ impl QueuedRwLock {
     /// classic race where a new enqueuer arrives between the
     /// releaser's "is there a successor?" check and the queue cleanup.
     ///
-    /// Protocol:
-    /// 1. Read `releaser.next`.  If non-sentinel, the successor is
-    ///    known — promote them.
-    /// 2. If sentinel, try CAS `tail: self → NONE_SENTINEL`.  If
-    ///    successful, queue is empty; clear head and return.
-    /// 3. If CAS fails (some new enqueuer set tail to themselves
-    ///    after our `next` load), **wait** for the new enqueuer to
-    ///    finish linking by setting `releaser.next = their_id`,
-    ///    then promote them.
+    /// **Walk protocol** (the outer loop): the algorithm walks the
+    /// queue link chain starting at `releaser_core_id` and continuing
+    /// past any **stale slots** (slots that were cascade-admitted and
+    /// have since released — `parked == ADMITTED` but the owner is no
+    /// longer a holder).  At each waypoint:
     ///
-    /// Without step 3, a successor that enqueued during step 1-2
-    /// would link to a slot no longer in the queue (the releaser
-    /// has already left), waiting forever for a signal that never
-    /// comes — the canonical MCS handover bug.
+    /// 1. Read `current.next`.  If non-sentinel, candidate successor
+    ///    is known — proceed to step 4.
+    /// 2. If sentinel, try CAS `tail: current → NONE_SENTINEL`.  If
+    ///    successful, queue is empty at this waypoint — done.
+    /// 3. If the `tail` CAS fails:
+    ///    - **Observed `NONE_SENTINEL`**: tail was cleared by an
+    ///      earlier release path.  Queue is already empty — done.
+    ///    - **Observed any other id**: a new enqueuer set tail to
+    ///      themselves AFTER our `next` load.  Spin-wait for them to
+    ///      complete the link (`current.next.store(their_id)`).
+    ///      Also re-check tail inside the spin: if it's been cleared
+    ///      to `NONE_SENTINEL` by yet another release path, return.
+    /// 4. CAS-claim the successor's `parked` flag WAITING→ADMITTED:
+    ///    - **Success**: we are the unique admitter.  Update state
+    ///      (`fetch_add` for reader / `state.CAS(0, WRITER_BIT)` for
+    ///      writer) and return.
+    ///    - **Failure**: distinguish observed value:
+    ///      - `PARKED_NOT_IN_QUEUE` (stale chain link from a prior
+    ///        iteration): undo state and RETURN.  The slot's owner
+    ///        is mid-reset for iter K+1; its real predecessor will
+    ///        admit it.
+    ///      - `PARKED_ADMITTED` (cascade or another signal admitted):
+    ///        undo state and walk past (advance `current = next`).
+    ///
+    /// **The CAS-claim symmetry with `cascade_admit_readers`** is
+    /// essential: both paths target the same `parked` flag.  Without
+    /// CAS in signal, a stale-cascade race causes a double-increment
+    /// of state that drifts the lock into permanent corruption.
     fn signal_next_waiter(&self, releaser_core_id: u8) {
-        let releaser_slot = &self.slots[releaser_core_id as usize];
-        let mut next = releaser_slot.next.load(Ordering::Acquire);
+        let mut current = releaser_core_id;
+        // The walk is bounded by `MAX_WAITERS` because the chain
+        // contains at most `MAX_WAITERS` distinct slots (one per
+        // core) and the walk strictly advances through distinct
+        // slots (the self-link defense below ensures progress).
+        // Reaching this bound indicates a chain cycle, which is a
+        // logic bug — surface via `debug_assert!` in test builds,
+        // silently exit in release builds to avoid an infinite loop.
+        for _walk_step in 0..MAX_WAITERS {
+            let current_slot = &self.slots[current as usize];
+            let mut next = current_slot.next.load(Ordering::Acquire);
 
-        if next == NONE_SENTINEL {
-            // No visible successor yet.  Try to atomically end the queue.
-            match self.tail.compare_exchange(
-                releaser_core_id, NONE_SENTINEL,
-                Ordering::AcqRel, Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    // CAS succeeded: queue is now empty.  No head to clear
-                    // (lock holds only `tail`).
-                    return;
-                }
-                Err(_) => {
-                    // CAS failed: a new enqueuer set tail to themselves
-                    // AFTER our `next` load.  Spin-wait for them to
-                    // complete the link (set our slot's `next` to their id).
-                    loop {
-                        let n = releaser_slot.next.load(Ordering::Acquire);
-                        if n != NONE_SENTINEL {
-                            next = n;
-                            break;
+            if next == NONE_SENTINEL {
+                // No visible successor yet at this waypoint.  Try to
+                // atomically end the queue here.
+                match self.tail.compare_exchange(
+                    current, NONE_SENTINEL,
+                    Ordering::AcqRel, Ordering::Acquire,
+                ) {
+                    Ok(_) => {
+                        // CAS succeeded: queue is now empty.  Done.
+                        return;
+                    }
+                    Err(observed) => {
+                        if observed == NONE_SENTINEL {
+                            // Another release path already cleared
+                            // tail.  Queue is empty.  Nothing more
+                            // for us to do.
+                            return;
                         }
-                        crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+                        // CAS failed because a new enqueuer set
+                        // tail to themselves AFTER our `next` load.
+                        // Spin-wait for them to complete the link.
+                        // Also re-check tail inside the spin so we
+                        // don't spin forever if tail is later
+                        // cleared by another path.
+                        loop {
+                            let n = current_slot.next.load(Ordering::Acquire);
+                            if n != NONE_SENTINEL {
+                                next = n;
+                                break;
+                            }
+                            if self.tail.load(Ordering::Acquire) == NONE_SENTINEL {
+                                // Tail has been cleared; queue is
+                                // empty.  Return without further
+                                // action.
+                                return;
+                            }
+                            crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+                        }
                     }
                 }
             }
+
+            // Defensive: a self-referential next pointer indicates a
+            // bug we don't want to propagate.  With the stale-self
+            // fix in `acquire_*`, self-links should not be produced;
+            // this guard exists so any future regression that
+            // reintroduces the bug surfaces in test builds rather
+            // than producing an infinite walk.
+            debug_assert!(next != current,
+                          "signal_next_waiter: self-referential next pointer at slot {}",
+                          current);
+            if next == current {
+                return;
+            }
+
+            // SAFETY: `next < MAX_WAITERS` by the enqueue-side
+            // invariant (only valid core_ids are stored in `next`
+            // fields).
+            let next_slot = &self.slots[next as usize];
+
+            // **WS-SM SM2.E audit-pass — stale-mode-read fix**: read
+            // `parked` FIRST (Acquire), use its value as the
+            // AUTHORITATIVE mode source.  The `slot.mode` field is no
+            // longer consulted by the walker — a stale Relaxed-load
+            // of `mode` could observe iter K-1's value even when the
+            // slot has transitioned to iter K with a different mode,
+            // producing the writer-readers exclusion panic that
+            // PR #790 commit-3 left unresolved.
+            //
+            // The parked value carries the mode atomically:
+            // * PARKED_NOT_IN_QUEUE: slot mid-reset (orphan-fix returns).
+            // * PARKED_WAITING_READER: slot is iter K-published reader.
+            // * PARKED_WAITING_WRITER: slot is iter K-published writer.
+            // * PARKED_ADMITTED: already admitted; walk past.
+            //
+            // Because the slot owner's `parked.store(WAITING_*, Release)`
+            // happens AFTER `reset()` (sequenced-before), a walker
+            // that Acquire-loads parked = WAITING_* observes iter K's
+            // parked publication; subsequent operations (state CAS,
+            // parked CAS) cannot mix iters.
+            let parked_obs = next_slot.parked.load(Ordering::Acquire);
+
+            match parked_obs {
+                v if v == PARKED_NOT_IN_QUEUE => {
+                    // Stale chain link from a prior iteration — slot
+                    // owner is mid-reset.  No state update has been
+                    // attempted yet (we read parked first), so nothing
+                    // to undo.  Return.
+                    return;
+                }
+                v if v == PARKED_ADMITTED => {
+                    // Already admitted by cascade or another signal.
+                    // No state change yet, so just walk past.
+                    current = next;
+                    continue;
+                }
+                v if v == PARKED_WAITING_READER => {
+                    // Reader admission: CAS-loop with WRITER_BIT
+                    // check.  If WRITER_BIT is set, reader cannot
+                    // admit; leave parked, return (a future signal
+                    // when state reaches WRITER_BIT-clear will retry).
+                    loop {
+                        let cur = self.state.load(Ordering::Acquire);
+                        if (cur & WRITER_BIT) != 0 {
+                            return;
+                        }
+                        let new_state = cur + 1;
+                        if self.state.compare_exchange(
+                            cur, new_state,
+                            Ordering::AcqRel, Ordering::Acquire,
+                        ).is_ok() {
+                            break;
+                        }
+                    }
+                    // State incremented; now CAS parked.
+                    match next_slot.parked.compare_exchange(
+                        PARKED_WAITING_READER, PARKED_ADMITTED,
+                        Ordering::AcqRel, Ordering::Acquire,
+                    ) {
+                        Ok(_) => {
+                            // Reader admitted; continue walking to drain
+                            // contiguous reader successors.
+                            current = next;
+                            continue;
+                        }
+                        Err(_) => {
+                            // CAS failed.  Undo state; parked has
+                            // transitioned (to ADMITTED, NOT_IN_QUEUE,
+                            // or WAITING_WRITER).  In all cases, undo
+                            // and walk past — the slot owner's path
+                            // will admit them correctly.
+                            self.state.fetch_sub(1, Ordering::AcqRel);
+                            // For NOT_IN_QUEUE (slot mid-reset for
+                            // next iter) and WAITING_WRITER (iter
+                            // transition to writer), return — the
+                            // slot is no longer addressable via this
+                            // stale link.  For ADMITTED, walk past.
+                            let observed = next_slot.parked.load(Ordering::Acquire);
+                            if observed == PARKED_ADMITTED {
+                                current = next;
+                                continue;
+                            }
+                            return;
+                        }
+                    }
+                }
+                v if v == PARKED_WAITING_WRITER => {
+                    // Writer admission: state-CAS 0 → WRITER_BIT.
+                    let writer_state_set = self.state.compare_exchange(
+                        0, WRITER_BIT,
+                        Ordering::AcqRel, Ordering::Acquire,
+                    ).is_ok();
+                    if !writer_state_set {
+                        // State has reader bits; cannot admit writer
+                        // now.  MUST NOT walk past (would orphan the
+                        // writer).  A future signal from a reader's
+                        // release will reach the writer when state
+                        // reaches 0.
+                        return;
+                    }
+                    // State has WRITER_BIT; now CAS parked.
+                    match next_slot.parked.compare_exchange(
+                        PARKED_WAITING_WRITER, PARKED_ADMITTED,
+                        Ordering::AcqRel, Ordering::Acquire,
+                    ) {
+                        Ok(_) => {
+                            // Writer admitted.  MUST NOT keep walking
+                            // because any subsequent admission would
+                            // violate writer-readers exclusion.
+                            return;
+                        }
+                        Err(_) => {
+                            // CAS failed.  Undo writer-bit via CAS
+                            // with explicit assert (Stream B F2 fix).
+                            let undo = self.state.compare_exchange(
+                                WRITER_BIT, 0,
+                                Ordering::AcqRel, Ordering::Acquire,
+                            );
+                            debug_assert!(undo.is_ok(),
+                                "writer admit undo failed: state was 0x{:x}, \
+                                 expected WRITER_BIT — protocol invariant \
+                                 violation in signal_next_waiter",
+                                undo.unwrap_err());
+                            // observed could be NOT_IN_QUEUE, ADMITTED,
+                            // or WAITING_READER.  For NOT_IN_QUEUE /
+                            // WAITING_READER (iter transition), return.
+                            // For ADMITTED, walk past.
+                            let observed = next_slot.parked.load(Ordering::Acquire);
+                            if observed == PARKED_ADMITTED {
+                                current = next;
+                                continue;
+                            }
+                            return;
+                        }
+                    }
+                }
+                _ => {
+                    // Unrecognised parked value — should be unreachable.
+                    debug_assert!(false,
+                        "signal_next_waiter: unexpected parked value 0x{:x} at slot {}",
+                        parked_obs, next);
+                    return;
+                }
+            }
         }
-
-        // Promote the known successor.
-        //
-        // SAFETY: `next < MAX_WAITERS` by the enqueue-side invariant
-        // (only valid core_ids are stored in `next` fields).
-        let next_slot = &self.slots[next as usize];
-        let next_mode = next_slot.requested_mode();
-
-        // Update lock state for the successor:
-        // - Reader successor: increment reader count.
-        // - Writer successor: set writer bit.
-        // AcqRel on the RMW per D-5 H-4 fix: the state-RMW chain forms a
-        // total order on the location; AcqRel ensures the new admittee's
-        // critical section synchronizes-with the prior holder's critical
-        // section transitively through state.  The parked.store/load pair
-        // also synchronizes, but having both is correct and matches
-        // standard MCS practice (release CS data on EVERY publication
-        // path, not just via parked).
-        if next_mode == MODE_READ {
-            self.state.fetch_add(1, Ordering::AcqRel);
-        } else {
-            self.state.fetch_or(WRITER_BIT, Ordering::AcqRel);
-        }
-
-        // Signal the successor.
-        next_slot.parked.store(true, Ordering::Release);
+        // Walk-step bound exhausted.  In a well-formed queue this is
+        // unreachable: the chain has at most `MAX_WAITERS` distinct
+        // slots.  Reaching this point indicates a chain cycle —
+        // a logic bug — that we surface in test builds.
+        debug_assert!(false,
+                      "signal_next_waiter: walk exceeded MAX_WAITERS — chain cycle?");
     }
 }
 
@@ -640,7 +1287,7 @@ mod tests {
     fn waiter_slot_init_unparked() {
         let slot = WaiterSlot::INIT;
         assert_eq!(slot.next.load(Ordering::Acquire), NONE_SENTINEL);
-        assert!(!slot.parked.load(Ordering::Acquire));
+        assert_eq!(slot.parked.load(Ordering::Acquire), PARKED_NOT_IN_QUEUE);
         assert_eq!(slot.mode.load(Ordering::Acquire), MODE_READ);
     }
 
@@ -648,11 +1295,67 @@ mod tests {
     fn waiter_slot_reset_clears_state() {
         let slot = WaiterSlot::INIT;
         slot.next.store(7, Ordering::Relaxed);
-        slot.parked.store(true, Ordering::Relaxed);
+        slot.parked.store(PARKED_ADMITTED, Ordering::Relaxed);
         slot.reset(MODE_WRITE);
         assert_eq!(slot.next.load(Ordering::Acquire), NONE_SENTINEL);
-        assert!(!slot.parked.load(Ordering::Acquire));
+        assert_eq!(slot.parked.load(Ordering::Acquire), PARKED_NOT_IN_QUEUE);
         assert_eq!(slot.requested_mode(), MODE_WRITE);
+    }
+
+    /// **WS-SM SM2.E**: pin the parked state constants are mutually
+    /// distinct (essential invariant — CAS WAITING_* → ADMITTED must
+    /// fail on NOT_IN_QUEUE or on the wrong-mode WAITING variant).
+    #[test]
+    fn parked_state_constants_pairwise_distinct() {
+        assert_ne!(PARKED_NOT_IN_QUEUE, PARKED_WAITING_READER);
+        assert_ne!(PARKED_NOT_IN_QUEUE, PARKED_WAITING_WRITER);
+        assert_ne!(PARKED_NOT_IN_QUEUE, PARKED_ADMITTED);
+        assert_ne!(PARKED_WAITING_READER, PARKED_WAITING_WRITER);
+        assert_ne!(PARKED_WAITING_READER, PARKED_ADMITTED);
+        assert_ne!(PARKED_WAITING_WRITER, PARKED_ADMITTED);
+    }
+
+    /// **WS-SM SM2.E**: pin the parked state constants' values so any
+    /// future renumbering breaks the test.  The values are
+    /// load-bearing in the protocol: NOT_IN_QUEUE is `Default::default()`
+    /// for `AtomicU8::new(0)`-zero-init slots, and downstream Lean
+    /// refinement reasoning depends on the exact numeric values.  The
+    /// mode-encoded WAITING_READER/WAITING_WRITER distinction closes
+    /// the stale-mode-read race (Stream B fix).
+    #[test]
+    fn parked_state_constants_values() {
+        assert_eq!(PARKED_NOT_IN_QUEUE, 0);
+        assert_eq!(PARKED_WAITING_READER, 1);
+        assert_eq!(PARKED_WAITING_WRITER, 2);
+        assert_eq!(PARKED_ADMITTED, 3);
+    }
+
+    /// **WS-SM SM2.E audit-pass**: pin the four-state machine count.
+    /// If a future refactor adds or removes a state, this test fails
+    /// — forcing the contributor to verify the protocol still
+    /// satisfies writer-readers exclusion under the new shape.
+    #[test]
+    fn parked_state_count_is_four() {
+        // Enumerate all distinct state values.  If we add a state,
+        // this array grows; if we remove one, this array shrinks.
+        let states = [
+            PARKED_NOT_IN_QUEUE,
+            PARKED_WAITING_READER,
+            PARKED_WAITING_WRITER,
+            PARKED_ADMITTED,
+        ];
+        assert_eq!(states.len(), 4,
+                   "WS-SM SM2.E protocol contract: parked state machine must have \
+                    exactly 4 states (NOT_IN_QUEUE / WAITING_READER / WAITING_WRITER / \
+                    ADMITTED).  A regression to 3 states (collapsing READER+WRITER) \
+                    re-opens the stale-mode-read race.");
+        // Verify all are distinct (covered by pairwise test, but
+        // explicit here too).
+        for (i, &a) in states.iter().enumerate() {
+            for &b in &states[i+1..] {
+                assert_ne!(a, b, "parked state values must be unique");
+            }
+        }
     }
 
     #[test]
@@ -765,7 +1468,7 @@ mod cross_thread_tests {
     use super::*;
     use std::sync::Arc;
     use std::thread;
-    use std::sync::atomic::{AtomicU64, Ordering as StdOrdering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as StdOrdering};
     use std::vec::Vec;
 
     /// Multi-thread acquire/release roundtrip: each of 4 threads

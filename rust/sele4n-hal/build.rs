@@ -102,6 +102,17 @@ fn main() {
     scan_lock_bridge_rs_intact();
     scan_ffi_rs_exposes_lock_ffi_exports();
 
+    // WS-SM SM2.E (closes the queued_rw_lock protocol contract):
+    // verify that the mode-encoded four-state parked machine and the
+    // stale-self tail detection are intact in `queued_rw_lock.rs`.
+    // A refactor that re-introduces `AtomicBool` parked, drops any
+    // of the four states (especially the WAITING_READER vs
+    // WAITING_WRITER distinction that closes the stale-mode-read
+    // race), or removes the stale-self check would re-open the
+    // writer-readers exclusion panic that the Stream B protocol fix
+    // closed.
+    scan_queued_rw_lock_protocol_intact();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -991,5 +1002,113 @@ fn scan_ffi_rs_exposes_lock_ffi_exports() {
                  `src/lock_bridge.rs`, and the scanner entry above (in lockstep)."
             );
         }
+    }
+}
+
+/// **WS-SM SM2.E** (closes the queued_rw_lock protocol contract): verify
+/// that `queued_rw_lock.rs` retains the protocol invariants Stream A
+/// + Stream B established to eliminate the documented hangs and the
+///   residual writer-readers exclusion panic.
+///
+/// The scanner checks for THREE contractual patterns:
+///
+/// 1. **Mode-encoded four-state parked machine**: the four constants
+///    `PARKED_NOT_IN_QUEUE`, `PARKED_WAITING_READER`,
+///    `PARKED_WAITING_WRITER`, `PARKED_ADMITTED` must all be defined.
+///    A regression that collapses WAITING_READER and WAITING_WRITER
+///    back to a single WAITING re-opens the stale-mode-read race
+///    that PR #790 commit-3 left unresolved — the walker would
+///    consult `slot.mode` (Relaxed, race-prone) instead of the
+///    atomic mode-encoded parked value.
+///
+/// 2. **Stale-self tail detection**: the literal
+///    `if raw_prev_tail == core_id` must appear in BOTH
+///    `acquire_read` and `acquire_write` (at least 2 occurrences in
+///    the file).  Removing this detection re-opens the self-link
+///    deadlock that PR #790 closed.
+///
+/// 3. **Writer admission via state-CAS (not fetch_or)**: the FORBIDDEN
+///    `state.fetch_or(WRITER_BIT` pattern must NOT appear anywhere in
+///    `signal_next_waiter` or in admission paths.  A regression that
+///    re-introduces `fetch_or` for writer admission re-opens the
+///    writer-readers coexistence race.
+fn scan_queued_rw_lock_protocol_intact() {
+    let path = "src/queued_rw_lock.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    // Strip comments to avoid false positives from documentation.
+    // The state machine, like the other build scanners, uses a simple
+    // line-based filter: lines starting with `//` (after trimming
+    // whitespace) are dropped.  This is adequate for our needs — the
+    // protocol contract uses constants and CAS calls in code, not in
+    // comments.
+    let mut stripped = String::new();
+    for line in contents.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with("*") {
+            continue;
+        }
+        stripped.push_str(line);
+        stripped.push('\n');
+    }
+
+    // Check (1): four-state parked machine.
+    let required_constants = [
+        "pub const PARKED_NOT_IN_QUEUE: u8",
+        "pub const PARKED_WAITING_READER: u8",
+        "pub const PARKED_WAITING_WRITER: u8",
+        "pub const PARKED_ADMITTED: u8",
+    ];
+    for needle in required_constants {
+        if !stripped.contains(needle) {
+            panic!(
+                "WS-SM SM2.E protocol regression: `{path}` no longer defines `{needle}`.  \
+                 The mode-encoded four-state parked machine is essential for \
+                 the writer-readers exclusion invariant under cross-iteration \
+                 stale-chain-link traversal.  Removing this constant re-opens \
+                 the residual writer-readers panic that Stream B closed.  \
+                 If you intend to restructure the parked machine, update the \
+                 scanner in lockstep and verify the protocol still satisfies \
+                 the SM2.A operational memory model's writer-readers exclusion \
+                 invariant under stress test."
+            );
+        }
+    }
+
+    // Check (2): stale-self tail detection in both acquire paths.
+    let stale_self_pattern = "if raw_prev_tail == core_id";
+    let occurrences = stripped.matches(stale_self_pattern).count();
+    if occurrences < 2 {
+        panic!(
+            "WS-SM SM2.E protocol regression: `{path}` no longer carries the \
+             stale-self tail detection (`{stale_self_pattern}`) in both \
+             `acquire_read` and `acquire_write`.  Found {occurrences} \
+             occurrence(s); required: 2 (one per acquire path).  Removing \
+             this detection re-opens the self-link deadlock that PR #790 \
+             closed (10% → 0% hang rate).  If you intend to restructure \
+             the acquire path, update this scanner in lockstep and verify \
+             stress passes 100/100 iterations."
+        );
+    }
+
+    // Check (3): forbidden fetch_or for writer admission.
+    let forbidden_pattern = "self.state.fetch_or(WRITER_BIT";
+    if stripped.contains(forbidden_pattern) {
+        panic!(
+            "WS-SM SM2.E protocol regression: `{path}` contains the forbidden \
+             pattern `{forbidden_pattern}`.  Writer admission MUST use \
+             `state.compare_exchange(0, WRITER_BIT)` — never `fetch_or` — \
+             because `fetch_or` unconditionally sets the writer bit even when \
+             reader bits are set, producing the `WRITER_BIT | reader_bits` \
+             state that directly violates writer-readers exclusion.  If you \
+             intend to use a different admission mechanism, ensure it preserves \
+             the SM2.A invariant: every reachable state is in \
+             {{0}} ∪ {{1..=READER_MASK}} ∪ {{WRITER_BIT}} — never the union with \
+             `WRITER_BIT | non-zero-reader-bits`."
+        );
     }
 }

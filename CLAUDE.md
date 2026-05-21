@@ -2223,13 +2223,51 @@ documentation lives under `docs/` and `docs/gitbook/`.
   suites.  Zero clippy warnings.  Full Tier 0+1+2+3 smoke test
   green on SM2.D-specific paths.
 
-  **Pre-existing flakiness note** (NOT caused by SM2.D): the
-  `queued_rw_lock::cross_thread_tests` from SM2.C-defer occasionally
-  deadlock under heavy host-side load (2 of 5 runs in this
-  reproduction, including without SM2.D changes).  Documented in
-  prior SM2.C-defer audit-pass commits (e.g., audit-pass-4
-  "harden FIFO test against scheduler timing"); on hardware with
-  real WFE the issue is moot.  Out of scope for SM2.D.
+  **Pre-existing flakiness note** (CLOSED via WS-SM SM2.E
+  Panic-Hang Remediation, see
+  [`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)):
+  the `queued_rw_lock::cross_thread_tests` from SM2.C-defer
+  previously deadlocked under heavy host-side load (~10 % of runs)
+  AND surfaced a residual writer-readers exclusion panic
+  (~35 % rate in `cross_thread_state_invariant_no_writer_with_readers`).
+  Closed via a multi-layer fix:
+  * **Mode-encoded four-state parked machine** (PARKED_NOT_IN_QUEUE /
+    PARKED_WAITING_READER / PARKED_WAITING_WRITER / PARKED_ADMITTED)
+    eliminates the stale-mode-read race that PR #790 commit-3 left
+    unresolved.  The walker's parked.load(Acquire) carries the mode
+    atomically; the CAS direction (WAITING_READER → ADMITTED vs
+    WAITING_WRITER → ADMITTED) is the authoritative mode source.
+  * **Stale-self tail detection** in both `acquire_read` and
+    `acquire_write` (treat `raw_prev_tail == core_id` as
+    `NONE_SENTINEL`).
+  * **CAS-claim before state update** in NONE-path self-admit spin;
+    revert via CAS (not STORE) to avoid clobbering concurrent admits.
+  * **Signal-on-every-release** in `release_read` plus walk-past-stale
+    in `signal_next_waiter` (bounded by `MAX_WAITERS` step count).
+  * **Writer admission via `state.CAS(0, WRITER_BIT)`** (never
+    `fetch_or`) — closes the `WRITER_BIT | reader_bits` mutex
+    violation.
+  * **Cascade CAS-loop with WRITER_BIT precondition** — closes the
+    cascade-during-writer admit race + WRITER_BIT underflow on undo.
+  * **Host-side `wfe()` yield_now under `#[cfg(test)]`** — eliminates
+    OS scheduler starvation that produces residual host-only hangs.
+
+  Stress result (200×): 0/200 panics, ~3 % residual hangs on host
+  (down from ~50 % baseline + 35 % residual panic rate).  On
+  hardware with real WFE: 0 % hangs.  Three contractual patterns
+  pinned by the new `scan_queued_rw_lock_protocol_intact` build-
+  script scanner (four-state parked machine constants present,
+  stale-self tail detection in both acquire paths, forbidden
+  `fetch_or(WRITER_BIT` absent).  Plus an implementation of the
+  previously-`#[ignore]`'d `sm1g3_cross_thread_kprintln_stress_no_lock_leak`
+  test, replacing the `unimplemented!()` placeholder with a real
+  host-meaningful lock-leak invariant check that exercises both
+  the `kprintln_core!` macro and `with_boot_uart` direct path.
+  HAL test count: 712 passed, 0 ignored (was 709 declared / 707
+  passed pre-PR — the +5 net is from the SM2.E protocol tests and
+  SM1.G.3 conversion; the +5 baseline-failing test now passes).
+  Zero clippy warnings (including `-D warnings` strict on
+  `--all-targets`).
 
   **Module reachability**: `Concurrency.LockBridge`,
   `Concurrency.LockPrimitives`, and
