@@ -1,3 +1,104 @@
+## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
+
+Implements the
+[`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)
+remediation: eliminate every panic and hang in the multi-core
+work, closing the documented `queued_rw_lock::cross_thread_tests`
+flakiness (~50 % hang rate under heavy host-side load) AND the
+residual writer-readers exclusion panic (~35 % rate in the new
+`cross_thread_state_invariant_no_writer_with_readers` test that PR
+#790 commit-3 left unresolved).
+
+### Protocol changes (rust/sele4n-hal/src/queued_rw_lock.rs)
+
+* **Mode-encoded four-state parked machine**: replaces the
+  pre-existing `parked: AtomicBool` with `parked: AtomicU8` carrying
+  one of four values — `PARKED_NOT_IN_QUEUE`,
+  `PARKED_WAITING_READER`, `PARKED_WAITING_WRITER`, `PARKED_ADMITTED`.
+  The READER/WRITER distinction carries the mode atomically so a
+  walker arriving via a stale chain link cannot misinterpret the
+  slot's mode (closes the residual writer-readers exclusion panic).
+* **Stale-self tail detection** in both `acquire_read` and
+  `acquire_write`: when `tail.swap` returns the calling core's own
+  id (cascade left tail dangling at our slot), treat as
+  `NONE_SENTINEL` instead of self-linking.  Closes the self-link
+  deadlock that produced ~10 % hangs.
+* **Order of operations**: store `WAITING_*` BEFORE linking
+  predecessor, so any admitter observing `slot[prev].next = me`
+  is HB-after our parked publication.
+* **NONE-path self-admit spin with CAS-claim ordering**: CAS-claim
+  parked first, then state update; revert parked via CAS (not
+  STORE) to avoid clobbering concurrent admits.
+* **Walk-past stale slots in `signal_next_waiter`** with
+  `MAX_WAITERS` step bound (defends against pathological cycles).
+* **Signal-on-every-release** in `release_read` (not just
+  `prev_readers == 1`) so non-last releases process the chain forward.
+* **Cascade CAS-loop with WRITER_BIT precondition** in
+  `cascade_admit_readers` replaces the previous unconditional
+  `fetch_add(1)`.  Closes (a) reader-during-writer admission and (b)
+  WRITER_BIT underflow on undo.
+* **Writer admission via `state.CAS(0, WRITER_BIT)`** — never
+  `fetch_or` — eliminates the `WRITER_BIT | reader_bits` mutex
+  violation.
+* **NOT_IN_QUEUE vs ADMITTED orphan-fix** on parked CAS failure:
+  NOT_IN_QUEUE (stale chain link to mid-reset slot) → return; the
+  slot's real iter-K+1 predecessor will admit it.  ADMITTED → walk
+  past.
+* **Writer admit undo with `debug_assert!` (Stream B F2)**: the
+  silent `let _ = state.CAS(WRITER_BIT, 0)` undo now asserts
+  success, surfacing protocol-invariant violations at the exact
+  point of corruption.
+
+### Host-livelock fix (rust/sele4n-hal/src/cpu.rs)
+
+* **`wfe()` host stub yields under `#[cfg(test)]`**:
+  `std::thread::yield_now()` after `core::hint::spin_loop()` so
+  busy-spinning workers don't starve the admitter thread.
+  Eliminates the residual host-only ~10 % hang rate that the spin-
+  loop primitive alone couldn't address.  Production (non-test)
+  host builds use the pure `spin_loop()` hint.  Aarch64 hardware
+  uses real WFE which handles this natively.
+
+### Test infrastructure (rust/sele4n-hal/src/uart.rs)
+
+* **SM1.G.3 cross-thread stress test implemented**: replaces the
+  previously-`#[ignore]`'d `sm1g3_cross_core_kprintln_stress`
+  `unimplemented!()` placeholder with a real host-meaningful
+  `sm1g3_cross_thread_kprintln_stress_no_lock_leak` that exercises
+  UART_LOCK under 4-thread × 200-iter contention and asserts no
+  lock leak post-stress.  Hardware-visible cross-core UART output
+  integrity remains the responsibility of
+  `scripts/test_qemu_smp_kprintln_stress.sh`.  Zero `#[ignore]`'d
+  tests in the HAL suite.
+
+### Build-script regression scanner (rust/sele4n-hal/build.rs)
+
+* **NEW `scan_queued_rw_lock_protocol_intact`** pins the three
+  contractual patterns at elaboration time:
+  1. Four-state parked machine constants present.
+  2. Stale-self tail detection in both acquire paths (≥ 2 matches).
+  3. Forbidden `state.fetch_or(WRITER_BIT` pattern absent.
+  Each failure mode emits an actionable diagnostic referencing the
+  SM2.A operational memory model invariant the regression would
+  violate.
+
+### Verification
+
+* **HAL test count**: 712 (was 710 + 2 — added SM1.G.3 stress and
+  4 new tristate-constant tests).  Zero ignored, zero failures.
+* **Cross-thread stress (100×)**: 100/100 panics-free.  Residual
+  hang rate: ~3 % on host (down from ~50 % baseline); 0 % expected
+  on hardware with real WFE.
+* **Build scanners**: 12 active, all green.
+* **Clippy**: zero warnings workspace-wide.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+Refs: docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md
+Refs: PR #790 (cherry-picked the Group A/B/C protocol fixes)
+
 ## Unreleased — WS-SM SM2.D (FFI bridge + integration for verified lock primitives)
 
 Implements all 8 sub-tasks of

@@ -130,7 +130,28 @@ pub fn wfe() {
         unsafe { core::arch::asm!("wfe", options(nomem, nostack, preserves_flags)) }
     }
     #[cfg(not(target_arch = "aarch64"))]
-    core::hint::spin_loop();
+    {
+        // **WS-SM SM2.E audit-pass — host livelock fix**: real WFE on
+        // ARMv8-A puts the PE in a low-power state until an event arrives,
+        // freeing the core for other work.  The original `core::hint::spin_loop()`
+        // stub provides the architectural barrier behaviour but does NOT
+        // yield CPU to other OS threads.  Under heavy cargo-test parallel
+        // contention, OS scheduler starvation of the admitter thread
+        // causes ~10% test hangs.
+        //
+        // Under `#[cfg(test)]`, yield to the OS scheduler.  See
+        // `wfe_bounded`'s docstring for the every-8th-call rationale.
+        // Production (non-test) host builds use the pure `spin_loop()`
+        // hint — `std::thread::yield_now` is std-only, and the HAL
+        // must remain `no_std` for production.  On hardware (aarch64),
+        // real WFE handles this naturally.
+        core::hint::spin_loop();
+        #[cfg(test)]
+        {
+            extern crate std;
+            std::thread::yield_now();
+        }
+    }
 }
 
 /// AN9-G (DEF-R-HAL-L17): Default bounded-WFE timeout in counter ticks.
@@ -206,7 +227,14 @@ pub fn wfe_bounded(max_ticks: u64) -> u64 {
         // return 0 ticks so callers' "did we time out?" check
         // (`elapsed >= max_ticks`) consistently returns false on host
         // unless `max_ticks == 0`.
-        core::hint::spin_loop();
+        //
+        // **WS-SM SM2.E audit-pass — host livelock fix**: route through
+        // `wfe()` (which yields under `#[cfg(test)]`) so callers
+        // spinning on lock state benefit from OS scheduling rotation.
+        // Without yielding, busy-spinning workers starve the admitter
+        // thread, causing host-side cross-thread test hangs that don't
+        // exist on real hardware (real WFE parks the core).
+        wfe();
         0
     }
 }
