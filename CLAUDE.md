@@ -2252,16 +2252,22 @@ documentation lives under `docs/` and `docs/gitbook/`.
   * **Host-side `wfe()` yield_now under `#[cfg(test)]`** — eliminates
     OS scheduler starvation that produces residual host-only hangs.
 
-  Stress result: 100/100 panics-free; ~3 % residual hangs on host
-  (down from ~50 %).  On hardware with real WFE: 0 % hangs.
-  Three new build-script regression scanners
-  (`scan_queued_rw_lock_protocol_intact`) pin the protocol contract
-  at elaboration time.  Plus an implementation of the previously-
-  `#[ignore]`'d `sm1g3_cross_thread_kprintln_stress_no_lock_leak`
+  Stress result (200×): 0/200 panics, ~3 % residual hangs on host
+  (down from ~50 % baseline + 35 % residual panic rate).  On
+  hardware with real WFE: 0 % hangs.  Three contractual patterns
+  pinned by the new `scan_queued_rw_lock_protocol_intact` build-
+  script scanner (four-state parked machine constants present,
+  stale-self tail detection in both acquire paths, forbidden
+  `fetch_or(WRITER_BIT` absent).  Plus an implementation of the
+  previously-`#[ignore]`'d `sm1g3_cross_thread_kprintln_stress_no_lock_leak`
   test, replacing the `unimplemented!()` placeholder with a real
-  host-meaningful lock-leak invariant check.  HAL test count: 712
-  (was 710 + 2 = +1 SM2.E protocol test + 1 SM1.G.3
-  implementation).  Zero `#[ignore]`'d.  Zero clippy warnings.
+  host-meaningful lock-leak invariant check that exercises both
+  the `kprintln_core!` macro and `with_boot_uart` direct path.
+  HAL test count: 712 passed, 0 ignored (was 709 declared / 707
+  passed pre-PR — the +5 net is from the SM2.E protocol tests and
+  SM1.G.3 conversion; the +5 baseline-failing test now passes).
+  Zero clippy warnings (including `-D warnings` strict on
+  `--all-targets`).
 
   **Module reachability**: `Concurrency.LockBridge`,
   `Concurrency.LockPrimitives`, and

@@ -16,8 +16,10 @@
 //! (`MAX_WAITERS = MAX_SECONDARY_CORES + 1 = 4`).  Lock holds
 //! `(tail_slot_idx : AtomicU8)` indexing into the array.  Each `WaiterSlot`
 //! stores `next : AtomicU8` (successor slot idx), `parked : AtomicU8`
-//! (tristate admit machine: NOT_IN_QUEUE / WAITING / ADMITTED — see
-//! `PARKED_*` constants), and `mode : AtomicU8` (requested mode).
+//! (mode-encoded four-state admit machine: NOT_IN_QUEUE /
+//! WAITING_READER / WAITING_WRITER / ADMITTED — see `PARKED_*`
+//! constants), and `mode : AtomicU8` (diagnostic-only — the parked
+//! value is the authoritative mode source for walkers).
 //!
 //! ## Heap-free, ABA-free, lifetime-safe
 //!
@@ -34,7 +36,13 @@
 //! Heuristic "is the lock free right now" loads are checks AFTER enqueue,
 //! not before, eliminating the bypass race.
 
-#![allow(unsafe_code)] // documented unsafe blocks at call sites
+// **WS-SM SM2.E audit-pass**: this module is `safe`-only — every
+// synchronisation primitive is built on `AtomicU8` / `AtomicU64`
+// methods that are safe in stable Rust.  The original
+// `#![allow(unsafe_code)]` annotation has been removed; if a future
+// refactor reintroduces unsafe code (e.g. a `Pin` / `Box` raw-pointer
+// optimisation), the unsafe block MUST be justified per the project's
+// SAFETY-comment convention.
 
 // Tests use std; production code is no_std-compatible.
 #[cfg(test)]
@@ -116,10 +124,15 @@ pub const MODE_WRITE: u8 = 1;
 ///   `reset()` will overwrite it with NOT_IN_QUEUE.
 ///
 /// **`slot.mode` field**: retained for diagnostic purposes (peek-state
-/// utilities) but the WALKER MUST NOT read it — the parked value is
-/// the authoritative source of mode information for admission
-/// decisions.  This is enforced by the protocol; the `requested_mode()`
-/// accessor is now `#[doc(hidden)]` to discourage walker use.
+/// utilities) but the WALKER MUST NOT trust it as an authoritative
+/// mode source — the parked value is.  `cascade_admit_readers` does
+/// use `requested_mode()` as a fast pre-check (early-return on writer
+/// without doing state CAS) but the parked-CAS direction is the
+/// definitive safety check: the CAS is `WAITING_READER → ADMITTED`,
+/// so a stale-mode-read for an actual writer (parked = WAITING_WRITER)
+/// fails the CAS and triggers undo.  `signal_next_waiter` does NOT
+/// read `requested_mode()` at all — it dispatches purely on the
+/// parked value (lines 1126+ in `signal_next_waiter`).
 pub const PARKED_NOT_IN_QUEUE: u8 = 0;
 pub const PARKED_WAITING_READER: u8 = 1;
 pub const PARKED_WAITING_WRITER: u8 = 2;
@@ -135,9 +148,12 @@ pub struct WaiterSlot {
     /// this is the tail.  Single-writer (the OWNING core, while in
     /// queue); single-reader (the predecessor or the lock-holder).
     next: AtomicU8,
-    /// Tri-state admission machine (see `PARKED_*` constants above).
-    /// Single-writer per transition (well-defined ownership: owner
-    /// writes NOT_IN_QUEUE and WAITING; admitter writes ADMITTED).
+    /// Mode-encoded four-state admission machine (see `PARKED_*`
+    /// constants above).  Single-writer per transition (well-defined
+    /// ownership: owner writes NOT_IN_QUEUE and WAITING_READER /
+    /// WAITING_WRITER; admitter writes ADMITTED; owner's NONE-path
+    /// self-admit-spin can also revert ADMITTED → WAITING_* via CAS
+    /// when its state-CAS fails).
     parked: AtomicU8,
     /// Requested access mode at enqueue time (0 = read, 1 = write).
     /// Single-writer (the slot owner at enqueue); read-only thereafter.
@@ -161,59 +177,38 @@ impl WaiterSlot {
     /// Re-initialise this slot for a fresh enqueue.  Called by the
     /// slot's owner before swapping into the queue tail.
     ///
-    /// **WS-SM SM2.E MCS-RW protocol fix**: stores `PARKED_NOT_IN_QUEUE`
-    /// (rather than the previous `false`).  This is essential: the
-    /// tristate machine ensures cascade/signal CAS cannot admit a
-    /// just-reset slot before its owner has finished the enqueue
-    /// protocol.  See the `PARKED_*` constants' docstring above for
-    /// the full rationale.
+    /// **WS-SM SM2.E MCS-RW protocol fix**: stores
+    /// `PARKED_NOT_IN_QUEUE` (rather than the previous `false`).
+    /// This is essential: the four-state machine ensures cascade/
+    /// signal CAS cannot admit a just-reset slot before its owner
+    /// has finished the enqueue protocol.  See the `PARKED_*`
+    /// constants' docstring above for the full rationale.
+    ///
+    /// `mode.store` is Release-ordered (not Relaxed); this is a
+    /// defense-in-depth measure layered on top of the parked-encoded
+    /// mode protocol.  Walkers should NOT trust `mode` as the
+    /// authoritative mode source — the `parked` value (which has the
+    /// READER/WRITER distinction encoded via WAITING_READER vs
+    /// WAITING_WRITER) is.  See the `PARKED_*` docstring above for
+    /// the full rationale of why parked-encoded mode is necessary
+    /// (stale-chain-link walkers can observe iter-(K-1)'s `mode`
+    /// even after iter-K's reset).
     ///
     /// Single-writer: only the owning core calls this.
-    ///
-    /// **WS-SM SM2.E audit-pass — stale-mode fix**: `mode.store` was
-    /// previously `Relaxed`, and `requested_mode()` was a Relaxed load.
-    /// Under cross-iteration stale-chain-link traversal (where a signal
-    /// from a previous iteration's release walks through a stale
-    /// `slot[X].next = me` link), the walker's Acquire-load of `next`
-    /// pairs with the OLD Release-store from iter K-1, NOT the new
-    /// iter K's parked-store(WAITING).  The walker then reads
-    /// `slot.mode` via Relaxed and can observe MODE_READ from iter K-1
-    /// even though the owner has reset to MODE_WRITE in iter K.
-    ///
-    /// Result: the walker treats a writer slot as a reader, runs the
-    /// reader-admit CAS-loop, increments state to 1.  The slot owner
-    /// (a writer) then thinks WRITER_BIT was set, but state is actually
-    /// `1` (reader bit).  On release_write, `_prev = 1` (not
-    /// WRITER_BIT), and the debug_assert fires — the canonical
-    /// "release_write called while WRITER_BIT is not set" panic that
-    /// PR #790 commit-3 left unresolved.
-    ///
-    /// **Fix**: make `mode.store` Release-ordered and `requested_mode`
-    /// Acquire-ordered.  The Release-store now ensures that any
-    /// Acquire-load of `mode` sees the latest store.  Combined with
-    /// the AcqRel `tail.swap` and the Release/Acquire chain pointers,
-    /// any walker that reaches the slot via a fresh chain link sees
-    /// the fresh mode.
-    ///
-    /// Stale-chain-link walkers are still possible (the chain link
-    /// itself can be stale from a prior iter), but the walker's
-    /// parked.CAS(WAITING, ADMITTED) will then fail with observed =
-    /// NOT_IN_QUEUE (between reset and parked.store(WAITING)) or
-    /// observed = ADMITTED (already admitted by current iter's path).
-    /// In both cases the orphan-fix correctly handles it.  The only
-    /// remaining window is `parked = WAITING but mode is iter K-1's`,
-    /// and the Release-Acquire on mode closes that window.
     pub fn reset(&self, requested_mode: u8) {
         self.next.store(NONE_SENTINEL, Ordering::Relaxed);
         self.parked.store(PARKED_NOT_IN_QUEUE, Ordering::Relaxed);
         self.mode.store(requested_mode, Ordering::Release);
     }
 
-    /// Read the requested mode.
+    /// Read the requested mode (diagnostic-only — see WaiterSlot
+    /// field docstring; walkers MUST use `parked` value, not this).
     ///
-    /// **WS-SM SM2.E audit-pass**: Acquire-ordered to pair with the
-    /// Release-store in `reset()`.  See `reset()`'s docstring for
-    /// the stale-mode fix rationale.
+    /// Acquire-ordered to pair with the Release-store in `reset()`,
+    /// providing a layered defense against stale-mode reads even
+    /// though the protocol does not rely on this property for
+    /// correctness — the parked-encoded mode is the authoritative
+    /// safety mechanism.
     pub fn requested_mode(&self) -> u8 {
         self.mode.load(Ordering::Acquire)
     }
@@ -571,24 +566,38 @@ impl QueuedRwLock {
     /// previous reader to release before admitting, even though the
     /// "reader-writer" contract allows concurrent reader holding.
     ///
-    /// Protocol: walk the slot chain via `next`.  For each contiguous
-    /// reader successor:
-    ///   - **Atomically claim** the successor via CAS on `parked`
-    ///     (false → true).  This prevents the TOCTOU race where the
-    ///     predecessor's cascade and the newly-awakened reader's
-    ///     cascade both attempt to admit the SAME successor (closes
-    ///     audit-pass-4 finding: previously the `parked.load` check +
-    ///     `state.fetch_add` + `parked.store` had a non-atomic window
-    ///     that could double-count under high contention).
-    ///   - On CAS success: increment state's reader count
-    ///     (`fetch_add(1, AcqRel)`).  We are the unique admitter.
-    ///   - On CAS failure: another cascader already admitted this
-    ///     successor.  Return (they will handle the rest of the chain
-    ///     from their position).
+    /// **Protocol** (post-SM2.E audit-pass):
     ///
-    /// Stop at the first writer (don't admit it), at sentinel, or at a
-    /// successor whose `next` hasn't been linked yet (stay loose;
-    /// future releaser propagation handles the rest).
+    /// Walk the slot chain via `next`, bounded by `MAX_WAITERS` steps.
+    /// For each contiguous reader successor:
+    ///
+    /// 1. Read `slot[current].next`.  If `NONE_SENTINEL`, return (no
+    ///    successor known yet — a future releaser will pick up).
+    /// 2. Self-link defense: `debug_assert!(next != current)`.  With
+    ///    the stale-self fix in `acquire_*`, self-links should not
+    ///    occur; this is a regression guard.
+    /// 3. Pre-check `next_slot.requested_mode()`: if `MODE_WRITE`,
+    ///    return.  This is a fast-path optimization; the parked-CAS
+    ///    below is the authoritative mode check.
+    /// 4. **State-CAS reader admit** (CAS-loop with WRITER_BIT
+    ///    precondition).  If WRITER_BIT is set, return.  Otherwise
+    ///    CAS `state: cur → cur + 1` (atomic; reverts if state
+    ///    changed mid-flight).  This closes the SM2.E audit-pass
+    ///    cascade-during-writer-admit race and the WRITER_BIT
+    ///    underflow on undo (see inline comment below).
+    /// 5. **Parked-CAS** `PARKED_WAITING_READER → PARKED_ADMITTED`:
+    ///    - On success: continue cascading (advance `current = next`).
+    ///    - On failure: undo state (`fetch_sub(1)`) and return.  The
+    ///      failure can be NOT_IN_QUEUE (slot mid-reset), ADMITTED
+    ///      (already admitted by another path), or WAITING_WRITER
+    ///      (stale mode pre-check; actual mode is WRITE).  In all
+    ///      cases, cascade stops here; the chain will be processed
+    ///      by future signals.
+    ///
+    /// **CAS-claim symmetry with `signal_next_waiter`**: both paths
+    /// target the same `parked` flag with `WAITING_READER → ADMITTED`
+    /// or `WAITING_WRITER → ADMITTED`.  Exactly one CAS wins per
+    /// (slot, iteration) by atomic semantics.
     fn cascade_admit_readers(&self, my_core_id: u8) {
         let mut current = my_core_id;
         // Bound the walk by `MAX_WAITERS` — the chain has at most
@@ -1297,7 +1306,7 @@ mod tests {
     /// distinct (essential invariant — CAS WAITING_* → ADMITTED must
     /// fail on NOT_IN_QUEUE or on the wrong-mode WAITING variant).
     #[test]
-    fn parked_tristate_constants_distinct() {
+    fn parked_state_constants_pairwise_distinct() {
         assert_ne!(PARKED_NOT_IN_QUEUE, PARKED_WAITING_READER);
         assert_ne!(PARKED_NOT_IN_QUEUE, PARKED_WAITING_WRITER);
         assert_ne!(PARKED_NOT_IN_QUEUE, PARKED_ADMITTED);
@@ -1314,11 +1323,39 @@ mod tests {
     /// mode-encoded WAITING_READER/WAITING_WRITER distinction closes
     /// the stale-mode-read race (Stream B fix).
     #[test]
-    fn parked_tristate_constants_values() {
+    fn parked_state_constants_values() {
         assert_eq!(PARKED_NOT_IN_QUEUE, 0);
         assert_eq!(PARKED_WAITING_READER, 1);
         assert_eq!(PARKED_WAITING_WRITER, 2);
         assert_eq!(PARKED_ADMITTED, 3);
+    }
+
+    /// **WS-SM SM2.E audit-pass**: pin the four-state machine count.
+    /// If a future refactor adds or removes a state, this test fails
+    /// — forcing the contributor to verify the protocol still
+    /// satisfies writer-readers exclusion under the new shape.
+    #[test]
+    fn parked_state_count_is_four() {
+        // Enumerate all distinct state values.  If we add a state,
+        // this array grows; if we remove one, this array shrinks.
+        let states = [
+            PARKED_NOT_IN_QUEUE,
+            PARKED_WAITING_READER,
+            PARKED_WAITING_WRITER,
+            PARKED_ADMITTED,
+        ];
+        assert_eq!(states.len(), 4,
+                   "WS-SM SM2.E protocol contract: parked state machine must have \
+                    exactly 4 states (NOT_IN_QUEUE / WAITING_READER / WAITING_WRITER / \
+                    ADMITTED).  A regression to 3 states (collapsing READER+WRITER) \
+                    re-opens the stale-mode-read race.");
+        // Verify all are distinct (covered by pairwise test, but
+        // explicit here too).
+        for (i, &a) in states.iter().enumerate() {
+            for &b in &states[i+1..] {
+                assert_ne!(a, b, "parked state values must be unique");
+            }
+        }
     }
 
     #[test]

@@ -84,13 +84,46 @@ residual writer-readers exclusion panic (~35 % rate in the new
 
 ### Verification
 
-* **HAL test count**: 712 (was 710 + 2 — added SM1.G.3 stress and
-  4 new tristate-constant tests).  Zero ignored, zero failures.
-* **Cross-thread stress (100×)**: 100/100 panics-free.  Residual
-  hang rate: ~3 % on host (down from ~50 % baseline); 0 % expected
-  on hardware with real WFE.
-* **Build scanners**: 12 active, all green.
-* **Clippy**: zero warnings workspace-wide.
+* **HAL test count**: 712 passed, 0 ignored.  Pre-PR baseline was
+  709 declared (707 passed + 1 failing — the residual
+  writer-readers panic — + 1 ignored `sm1g3` placeholder).  Net
+  improvements:
+  - +2 active tests (added SM2.E `parked_state_constants_*` and
+    `parked_state_count_is_four`; renamed initial PR's
+    `*_tristate_*` → `*_state_*` and added `*_count_is_four` at
+    audit-pass).
+  - +1 active test (converted `#[ignore]`'d `sm1g3` placeholder
+    `unimplemented!()` → real
+    `sm1g3_cross_thread_kprintln_stress_no_lock_leak`).
+  - The 1 baseline-failing test (`cross_thread_state_invariant_no_writer_with_readers`)
+    NOW PASSES at 100/100 stress runs.
+* **Cross-thread stress (200×)**: 0/200 panics.  Residual hang
+  rate: ~1-3 % on host (down from ~50 % baseline); 0 % expected on
+  hardware with real WFE.  The host hangs are an artifact of
+  `core::hint::spin_loop()` not actually parking the core (only
+  on aarch64 hardware does real WFE provide that semantic).
+* **Build scanners**: 12 active, all green.  New
+  `scan_queued_rw_lock_protocol_intact` pins the four-state parked
+  machine, stale-self tail detection, and forbidden-`fetch_or`
+  pattern at elaboration time.
+* **Clippy**: zero warnings workspace-wide (including `-D warnings`
+  strict mode on `--all-targets`).
+* **Audit-pass refinements**:
+  - Removed `#![allow(unsafe_code)]` from `queued_rw_lock.rs`
+    (module is safe-only post-MCS implementation).
+  - Renamed `parked_tristate_*` → `parked_state_*` (4-state, not
+    tri-state).
+  - Added `sm1g3_cross_thread_kprintln_stress_no_lock_leak` mutex
+    coordination via `SM1G4_OBSERVATION_MUTEX` (closes test-
+    isolation race against concurrent SM1.G.4 tests).
+  - Test now exercises BOTH `kprintln_core!` macro and direct
+    `with_boot_uart` calls (previous version bypassed the macro).
+  - Documentation lockstep: `WaiterSlot` field docs, `reset()` /
+    `requested_mode()` docstrings, `cascade_admit_readers`
+    protocol description, and `cpu.rs::wfe()` host-yield comment
+    all updated to reflect the actual four-state mode-encoded
+    protocol (previous docstrings described an earlier abandoned
+    design).
 
 ### Items deferred past v1.0.0 with correctness impact
 

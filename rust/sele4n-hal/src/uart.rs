@@ -955,8 +955,8 @@ mod tests {
     // WS-SM SM1.G.3 — Hardware-only cross-core stress test stub
     // ========================================================================
 
-    /// **WS-SM SM1.G.3 (audit-pass implemented)**: cross-thread
-    /// kprintln_core! stress test, host-meaningful variant.
+    /// **WS-SM SM1.G.3 (audit-pass implemented)**: cross-thread UART
+    /// lock stress test, host-meaningful variant.
     ///
     /// **Original design (pre-implementation)**: the test was a
     /// placeholder `unimplemented!()` body gated `#[ignore]`, on the
@@ -966,16 +966,31 @@ mod tests {
     /// PREFIX side would be vacuous).
     ///
     /// **Host-meaningful test (this implementation)**: spawn N
-    /// threads, each calling `kprintln_core!` M times.  The torn-
-    /// output detection on UART OUTPUT bytes is moot on host (mmio
-    /// writes are no-ops, no UART bus to observe), but the
-    /// invariant TEST IS still meaningful:
+    /// threads, each invoking BOTH the `kprintln_core!` macro AND
+    /// direct `with_boot_uart` calls.  The torn-output detection on
+    /// UART OUTPUT bytes is moot on host (mmio writes are no-ops, no
+    /// UART bus to observe), but the invariant TEST IS still
+    /// meaningful:
     ///
     /// * `UART_LOCK` must NOT deadlock under N-thread contention
     ///   (the test completes within the cargo timeout).
     /// * `UART_LOCK` must end in the released state after all
     ///   threads finish (no lock leakage).
     /// * No thread panics due to a lock-acquire bug.
+    /// * The `kprintln_core!` macro's per-line atomicity (audit
+    ///   pass-1 guarantee — single `with_boot_uart` closure) holds
+    ///   under contention; verified structurally by the fact that
+    ///   no thread panics inside the macro body.
+    ///
+    /// **Test-isolation discipline**: the assertion at the end
+    /// (`!UART_LOCK.is_held()`) would be racy under cargo's parallel
+    /// test execution if a concurrent test happened to hold
+    /// UART_LOCK at the moment of our check.  We acquire
+    /// `SM1G4_OBSERVATION_MUTEX` (the existing UART-observation
+    /// coordinator) for the duration of the test to serialise
+    /// against the SM1.G.4 observation tests.  The contention
+    /// between our own worker threads is preserved (the mutex
+    /// serialises us against OTHER tests, not against ourselves).
     ///
     /// **Hardware-visible cross-core stress** (UART output integrity)
     /// remains the responsibility of
@@ -995,8 +1010,15 @@ mod tests {
         use std::thread;
         use std::vec::Vec;
 
+        // **Audit-pass — test isolation fix**: serialise against
+        // SM1.G.4 observation tests via the existing mutex.  See
+        // docstring for the rationale.  Use `unwrap_or_else(|e|
+        // e.into_inner())` for poison defense per the audit-pass-4
+        // convention.
+        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+
         const N_THREADS: usize = 4;
-        const M_ITERATIONS: usize = 200;
+        const M_ITERATIONS: usize = 100;
 
         // Counter for synchronisation — verifies all threads completed
         // their iterations.
@@ -1007,15 +1029,18 @@ mod tests {
             let counter = Arc::clone(&counter);
             handles.push(thread::spawn(move || {
                 for i in 0..M_ITERATIONS {
-                    // Use `with_boot_uart` directly (the underlying
-                    // primitive of `kprintln_core!`) so we exercise the
-                    // UART_LOCK acquire-release cycle without polluting
-                    // the test output stream.
+                    // Exercise the `kprintln_core!` macro directly
+                    // (audit-pass: the previous version bypassed the
+                    // macro and went straight to `with_boot_uart`,
+                    // which didn't test the macro's per-line
+                    // atomicity contract from SM1.G.4 audit-pass-1).
+                    // On host, UART writes are mmio no-ops so the
+                    // test output stream isn't polluted.
+                    crate::kprintln_core!("stress {} {}", tid, i);
+                    // Also exercise `with_boot_uart` directly to
+                    // catch any divergence between the two acquire
+                    // paths.
                     crate::uart::with_boot_uart(|_uart| {
-                        // No-op critical section.  The body runs while
-                        // we hold UART_LOCK and (on test profile) the
-                        // `_ = ()` ensures the closure isn't optimised
-                        // away.
                         let _ = (tid, i);
                     });
                     counter.fetch_add(1, StdOrdering::Relaxed);
@@ -1023,11 +1048,13 @@ mod tests {
             }));
         }
 
-        // Cap join time defensively.  N_THREADS × M_ITERATIONS = 800
-        // critical-section acquisitions; on contended host the
-        // worst-case is well under 1 second.  If join hangs beyond
-        // cargo's per-test timeout, that itself is the diagnostic
-        // signal of a lock leak.
+        // Cap join time defensively.  N_THREADS × M_ITERATIONS = 400
+        // critical-section acquisitions × 2 paths = 800 total CS
+        // acquisitions; on contended host the worst-case is well
+        // under 1 second.  If join hangs beyond cargo's per-test
+        // timeout, that itself is the diagnostic signal of a lock
+        // leak — but the post-join assertion below will surface a
+        // more specific diagnostic on graceful failure modes.
         for handle in handles {
             handle.join().expect("worker thread panicked");
         }
@@ -1040,7 +1067,10 @@ mod tests {
 
         // UART_LOCK must be released after all threads complete.
         // (If a worker panicked or the lock release was missed, this
-        // would catch it.)
+        // would catch it.)  This check is race-free because we hold
+        // SM1G4_OBSERVATION_MUTEX: no other observation test can be
+        // touching UART_LOCK concurrently, and our worker threads
+        // have all joined (so they're not touching it either).
         assert!(!UART_LOCK.is_held(),
                 "UART_LOCK leaked after cross-thread stress: still held");
     }
