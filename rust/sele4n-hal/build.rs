@@ -103,12 +103,14 @@ fn main() {
     scan_ffi_rs_exposes_lock_ffi_exports();
 
     // WS-SM SM2.E (closes the queued_rw_lock protocol contract):
-    // verify that the mode-encoded tristate parked machine and the
+    // verify that the mode-encoded four-state parked machine and the
     // stale-self tail detection are intact in `queued_rw_lock.rs`.
-    // A refactor that re-introduces `AtomicBool` parked, drops the
-    // four-state machine, or removes the stale-self check would
-    // re-open the writer-readers exclusion panic that the Stream B
-    // protocol fix closed.
+    // A refactor that re-introduces `AtomicBool` parked, drops any
+    // of the four states (especially the WAITING_READER vs
+    // WAITING_WRITER distinction that closes the stale-mode-read
+    // race), or removes the stale-self check would re-open the
+    // writer-readers exclusion panic that the Stream B protocol fix
+    // closed.
     scan_queued_rw_lock_protocol_intact();
 
     // Only build assembly for aarch64 targets
