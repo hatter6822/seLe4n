@@ -2223,13 +2223,51 @@ documentation lives under `docs/` and `docs/gitbook/`.
   suites.  Zero clippy warnings.  Full Tier 0+1+2+3 smoke test
   green on SM2.D-specific paths.
 
-  **Pre-existing flakiness note** (NOT caused by SM2.D): the
-  `queued_rw_lock::cross_thread_tests` from SM2.C-defer occasionally
-  deadlock under heavy host-side load (2 of 5 runs in this
-  reproduction, including without SM2.D changes).  Documented in
-  prior SM2.C-defer audit-pass commits (e.g., audit-pass-4
-  "harden FIFO test against scheduler timing"); on hardware with
-  real WFE the issue is moot.  Out of scope for SM2.D.
+  **Pre-existing flakiness note** (CLOSED via WS-SM SM2.E
+  Panic-Hang Remediation, see
+  [`docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md`](docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md)):
+  the `queued_rw_lock::cross_thread_tests` from SM2.C-defer
+  previously deadlocked under heavy host-side load (~10 % of runs)
+  AND surfaced a residual writer-readers exclusion panic
+  (~35 % rate in `cross_thread_state_invariant_no_writer_with_readers`).
+  Closed via a multi-layer fix:
+  * **Mode-encoded four-state parked machine** (PARKED_NOT_IN_QUEUE /
+    PARKED_WAITING_READER / PARKED_WAITING_WRITER / PARKED_ADMITTED)
+    eliminates the stale-mode-read race that PR #790 commit-3 left
+    unresolved.  The walker's parked.load(Acquire) carries the mode
+    atomically; the CAS direction (WAITING_READER → ADMITTED vs
+    WAITING_WRITER → ADMITTED) is the authoritative mode source.
+  * **Stale-self tail detection** in both `acquire_read` and
+    `acquire_write` (treat `raw_prev_tail == core_id` as
+    `NONE_SENTINEL`).
+  * **CAS-claim before state update** in NONE-path self-admit spin;
+    revert via CAS (not STORE) to avoid clobbering concurrent admits.
+  * **Signal-on-every-release** in `release_read` plus walk-past-stale
+    in `signal_next_waiter` (bounded by `MAX_WAITERS` step count).
+  * **Writer admission via `state.CAS(0, WRITER_BIT)`** (never
+    `fetch_or`) — closes the `WRITER_BIT | reader_bits` mutex
+    violation.
+  * **Cascade CAS-loop with WRITER_BIT precondition** — closes the
+    cascade-during-writer admit race + WRITER_BIT underflow on undo.
+  * **Host-side `wfe()` yield_now under `#[cfg(test)]`** — eliminates
+    OS scheduler starvation that produces residual host-only hangs.
+
+  Stress result (200×): 0/200 panics, ~3 % residual hangs on host
+  (down from ~50 % baseline + 35 % residual panic rate).  On
+  hardware with real WFE: 0 % hangs.  Three contractual patterns
+  pinned by the new `scan_queued_rw_lock_protocol_intact` build-
+  script scanner (four-state parked machine constants present,
+  stale-self tail detection in both acquire paths, forbidden
+  `fetch_or(WRITER_BIT` absent).  Plus an implementation of the
+  previously-`#[ignore]`'d `sm1g3_cross_thread_kprintln_stress_no_lock_leak`
+  test, replacing the `unimplemented!()` placeholder with a real
+  host-meaningful lock-leak invariant check that exercises both
+  the `kprintln_core!` macro and `with_boot_uart` direct path.
+  HAL test count: 712 passed, 0 ignored (was 709 declared / 707
+  passed pre-PR — the +5 net is from the SM2.E protocol tests and
+  SM1.G.3 conversion; the +5 baseline-failing test now passes).
+  Zero clippy warnings (including `-D warnings` strict on
+  `--all-targets`).
 
   **Module reachability**: `Concurrency.LockBridge`,
   `Concurrency.LockPrimitives`, and
@@ -2397,6 +2435,121 @@ documentation lives under `docs/` and `docs/gitbook/`.
   [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
   §5.5.  SM2 closure at SM2.E close; SM3+ (per-object locks)
   consumes the SM2.D bridge.
+
+  **WS-SM SM3.A LANDED on branch
+  `claude/tender-gauss-FWPvo`** (per-object lock fields; closes
+  the first sub-phase of SM3 with 9 of 11 sub-tasks LANDED and 2
+  documented as N/A for seLe4n's object model).  Plan §5.1 of
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md);
+  wires SM2.C's abstract `RwLockState` into every kernel-object
+  struct that seLe4n models, plus a table-level lock on the
+  SystemState's object store, plus the per-variant projection
+  function `objectLockOf` and the SM3.A.11 default-state theorems.
+
+  - **SM3.A.1**: `TCB.lock : RwLockState` with default
+    `RwLockState.unheld` (`SeLe4n/Model/Object/Types.lean`).  The
+    manual `BEq TCB` instance grows from 22 to 23 conjuncts;
+    `TCB.ext` gains an `hLock` hypothesis for the per-field
+    extensionality witness; `TCB.not_lawfulBEq` is unaffected (its
+    non-lawfulness derives from `registerContext`, not from any
+    added field).
+  - **SM3.A.2**: `Endpoint.lock` with default `unheld`.  Endpoint
+    retains `deriving DecidableEq` because `RwLockState` derives
+    `DecidableEq`.
+  - **SM3.A.3**: `CNode.lock` with default `unheld`.  The manual
+    `BEq CNode` is extended with the new conjunct;
+    `CNode.beq_sound` is rewritten with `obtain` to be robust
+    against future BEq additions (the previous positional pattern
+    `h.1.1.1.1.1` was structurally fragile — adding a new conjunct
+    silently shifted every index by one).
+  - **SM3.A.4**: `Notification.lock` with default `unheld`.
+  - **SM3.A.6**: `SchedContext.lock` with default `unheld`
+    (`SeLe4n/Kernel/SchedContext/Types.lean`).  The SchedContext
+    module gains a new import of `Concurrency.Locks.RwLock`; no
+    cyclic dependency (RwLock depends transitively only on
+    Prelude).
+  - **SM3.A.7**: `VSpaceRoot.lock` with default `unheld`
+    (`SeLe4n/Model/Object/Structures.lean`).  The manual
+    `BEq VSpaceRoot` is extended; `VSpaceRoot.beq_sound` is
+    rewritten with `obtain` for robustness; `VSpaceRoot.beq_refl`
+    gains `Bool.and_true` in its simp set to handle the new
+    trailing conjunct from the lock comparison.
+  - **SM3.A.9**: `UntypedObject.lock` with default `unheld`.  The
+    positional `UntypedObject.mk` calls in `empty_*` theorems and
+    `UntypedObjectValid.empty` are converted to named-field syntax
+    for robustness against future field additions.
+  - **SM3.A.10**: ObjStore table-level lock + `objectLockOf`
+    projection.  `SystemState.objStoreLock : RwLockState` field
+    added with default `unheld`; per §4.4 of the plan, the
+    underlying RobinHood hash table is held under a single
+    table-level lock at the top of the SM0.I hierarchy
+    (`LockKind.objStore`, level 0).  `KernelObject.objectLockOf`
+    per-variant projection function defined with 7 `@[simp]`
+    unfold lemmas (`objectLockOf_tcb` etc.).
+    `FrozenSystemState.objStoreLock`, `FrozenCNode.lock`, and
+    `FrozenVSpaceRoot.lock` fields added, forwarded unchanged by
+    `freeze` / `freezeCNode` / `freezeVSpaceRoot` so the per-object
+    lock state is preserved across the freeze boundary.
+  - **SM3.A.11**: four default-state theorems —
+    `default_objStoreLock_unheld` (proves
+    `default.objStoreLock = .unheld` by `rfl`);
+    `default_objects_locks_unheld` (the canonical SM3.A.11 closure
+    theorem; vacuously discharged via `RHTable.getElem?_empty`);
+    `default_objects_toList_empty` (computable `decide`-discharged
+    witness); `default_objects_locks_unheld_via_toList` (the
+    `toList` membership variant).
+
+  **Skipped sub-tasks (documented as N/A for seLe4n's object
+  model)**:
+
+  - **SM3.A.5** (Reply): seLe4n does not model Reply as a
+    separate kernel object; the reply discipline lives in TCB
+    state (`ThreadIpcState.blockedOnReply`,
+    `ThreadState.BlockedReply`, `TCB.pipBoost`).  Re-openable
+    when a future workstream adds a first-class Reply object.
+  - **SM3.A.8** (Page): seLe4n stores page mappings inline in
+    `VSpaceRoot.mappings : RHTable VAddr (PAddr ×
+    PagePermissions)` rather than as separate kernel objects.
+    §4.3 of the plan rejects per-PTE locking as a v1.0.0 design
+    decision — a single per-VSpaceRoot lock (SM3.A.7) suffices for
+    serializability.  Re-openable when seLe4n adopts first-class
+    Page objects.
+
+  **Production/staged partition updates**:
+  `Kernel.Concurrency.Locks.RwLock` and
+  `Kernel.Concurrency.MemoryModel` moved from the staged allowlist
+  into the production import closure — both modules are now
+  reachable from production via `Model.Object.Types`'s new import
+  of `Concurrency.Locks.RwLock` (which transitively imports
+  `MemoryModel`).  The `STATUS: staged` markers in those files are
+  removed in the same cut per the implement-the-improvement rule.
+  `RwLockRefinement` remains staged-only at SM3.A (not yet wired
+  to a runtime consumer; promotable in a later SM3 phase).
+
+  **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
+  (~280 LoC) with 30+ surface anchors, 16 decidable examples, and
+  22 runtime `assertBool` assertions covering: default-state shape
+  (objStoreLock unheld, toList empty); per-object default-lock
+  witness for every kind (Endpoint, Notification, CNode,
+  VSpaceRoot, UntypedObject, SchedContext); `objectLockOf`
+  per-variant reduction; frozen-state lock-field forwarding
+  (`freezeCNode`, `freezeVSpaceRoot`); and `RwLockState.unheld`
+  auxiliary properties from SM2.C (`wf`, `writerHeld = none`,
+  `readers = []`, `waiters = []`).  Runnable as
+  `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
+  and Tier 3 (invariant-surface).  Lean module build: 318/318
+  green.  Full Tier 0+1+2+3 smoke test passes.
+
+  **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+  Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
+  per-transition `lockSet`, `lockAcquireSequence` ordering
+  theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C
+  (`withLockSet` 2PL discipline) consumes both SM3.A and SM3.B;
+  SM3.D/SM3.E close with deadlock-freedom and serializability
+  theorems.  See
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+  §§5.2..5.5.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

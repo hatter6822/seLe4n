@@ -1092,6 +1092,99 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    **Items deferred past v1.0.0 with correctness impact**: NONE.
 
+2.8. **WS-SM Phase SM3.A (post-v0.31.9) per-object lock fields** —
+   wires SM2.C's abstract `RwLockState` into every kernel-object
+   struct that seLe4n models, plus a table-level lock on the
+   SystemState's object store, plus the per-variant `objectLockOf`
+   projection function and the SM3.A.11 default-state theorems.
+   Closes §5.1 of
+   `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (11 sub-tasks; 9
+   LANDED + 2 documented as N/A for seLe4n's object model).
+
+   **Per-object lock fields**:
+   - **SM3.A.1 — TCB.lock**: `lock : RwLockState := RwLockState.unheld`
+     in `SeLe4n/Model/Object/Types.lean`.  Manual `BEq TCB` extended
+     to compare 23 fields total; `TCB.ext` extensionality lemma
+     extended with `hLock` hypothesis.
+   - **SM3.A.2 — Endpoint.lock**: per-Endpoint lock with default
+     unheld.  Retains derived `DecidableEq`.
+   - **SM3.A.3 — CNode.lock**: per-CNode lock with default unheld.
+     Manual `BEq CNode` extended; `CNode.beq_sound` rewritten with
+     `obtain` for robustness against future BEq additions.
+   - **SM3.A.4 — Notification.lock**: per-Notification lock with
+     default unheld.  Retains derived `DecidableEq`.
+   - **SM3.A.6 — SchedContext.lock**: per-SchedContext lock with
+     default unheld in `SeLe4n/Kernel/SchedContext/Types.lean`.
+   - **SM3.A.7 — VSpaceRoot.lock**: per-VSpaceRoot lock with
+     default unheld in `SeLe4n/Model/Object/Structures.lean`.
+     Manual `BEq VSpaceRoot` extended; `VSpaceRoot.beq_sound` and
+     `VSpaceRoot.beq_refl` updated for the new conjunct.
+   - **SM3.A.9 — UntypedObject.lock**: per-UntypedObject lock with
+     default unheld.  Positional `UntypedObject.mk` calls converted
+     to named-field syntax for robustness.
+
+   **Skipped sub-tasks (N/A for seLe4n's object model)**:
+   - **SM3.A.5 (Reply)**: seLe4n encodes reply discipline through
+     TCB state (`blockedOnReply`, `pipBoost`) rather than a
+     first-class Reply kernel object.
+   - **SM3.A.8 (Page)**: seLe4n stores page mappings inline in
+     `VSpaceRoot.mappings`; per-PTE locking is rejected by §4.3
+     of the SM3 plan (single per-VSpaceRoot lock suffices for
+     serializability).
+
+   **SM3.A.10 — ObjStore table-level lock + objectLockOf projection**:
+   - `SystemState.objStoreLock : RwLockState := unheld` field on
+     `SystemState` in `SeLe4n/Model/State.lean`.  Per §4.4 of the
+     plan, the underlying RobinHood hash table is held under a
+     single table-level lock at the top of the SM0.I hierarchy
+     (`LockKind.objStore`, level 0).
+   - `KernelObject.objectLockOf : KernelObject → RwLockState`
+     projection in `SeLe4n/Model/Object/Structures.lean` with 7
+     `@[simp]` per-variant unfold lemmas
+     (`objectLockOf_tcb`/`endpoint`/`notification`/`cnode`/
+     `vspaceRoot`/`untyped`/`schedContext`).  SM3.B `LockId.lookup`
+     and SM3.C `lockSetHeld` will consume this projection.
+   - Frozen-state mirror: `FrozenSystemState.objStoreLock`,
+     `FrozenCNode.lock`, `FrozenVSpaceRoot.lock` fields added;
+     `freeze`, `freezeCNode`, `freezeVSpaceRoot` forward the lock
+     state unchanged so the per-object lock state is preserved
+     across the freeze boundary.
+
+   **SM3.A.11 — Default-state theorems**:
+   - `default_objStoreLock_unheld : default.objStoreLock = unheld`
+     — proven by `rfl`.
+   - `default_objects_locks_unheld` — the canonical SM3.A.11
+     closure theorem: for every `id ∈ default.objects`,
+     `objectLockOf o = unheld`.  Vacuously discharged via
+     `RHTable.getElem?_empty` (default's `objects` is the empty
+     hash table).  Base case for the SM3.C `lockSetHeld`
+     per-state induction.
+   - `default_objects_toList_empty` — computable `decide`-discharged
+     witness that the default state's `toList` snapshot is empty.
+   - `default_objects_locks_unheld_via_toList` — the `toList`
+     membership form, discharged via `List.not_mem_nil`.
+
+   **Production/staged partition updates**:
+   `Kernel.Concurrency.Locks.RwLock` and
+   `Kernel.Concurrency.MemoryModel` moved from the staged
+   allowlist into the production import closure (now reachable via
+   `Model.Object.Types`'s new import of
+   `Concurrency.Locks.RwLock`).  The `STATUS: staged` markers in
+   those files are removed in the same cut per the
+   implement-the-improvement rule.  `RwLockRefinement` remains
+   staged-only (not yet wired to a runtime consumer).
+
+   **Test coverage**: NEW FILE
+   `tests/PerObjectLockSuite.lean` (~280 LoC) with 30+ surface
+   anchors, 16 decidable examples, and 22 runtime `assertBool`
+   assertions.  Runnable as `lake exe per_object_lock_suite`.
+   Wired into Tier 2 (negative) and Tier 3 (invariant-surface)
+   pipelines.
+
+   **Axiom budget for SM3.A**: 0 Lean axioms, 0 sorries.
+
+   **Items deferred past v1.0.0 with correctness impact**: NONE.
+
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
    Rust HAL (`sele4n-hal/src/cpu.rs`) for hardware correctness but are

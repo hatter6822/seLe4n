@@ -1,3 +1,122 @@
+## Unreleased — WS-SM SM3.A Per-Object Lock Fields
+
+Implements §5.1 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+— "Add `lock : RwLock` fields" (5 PRs, 11 sub-tasks).  Wires SM2.C's
+abstract `RwLockState` into every kernel-object struct, plus a
+table-level lock on the SystemState's object store, plus the per-variant
+projection function and the SM3.A.11 default-state theorems.
+
+### Per-object lock fields (SM3.A.1..A.9)
+
+* **SM3.A.1**: `TCB.lock : RwLockState` with default `RwLockState.unheld`
+  (`SeLe4n/Model/Object/Types.lean`).  The manual `BEq TCB` instance
+  is extended to include `lock` (24 fields total); `TCB.ext` gains an
+  `hLock` hypothesis for the per-field extensionality witness; the
+  `not_lawfulBEq` theorem is unaffected (its non-lawfulness derives
+  from `registerContext`, not from any added field).
+* **SM3.A.2**: `Endpoint.lock` with default `unheld`.  Endpoint
+  retains `deriving DecidableEq` because `RwLockState` derives
+  `DecidableEq`.
+* **SM3.A.3**: `CNode.lock` with default `unheld`.  The manual
+  `BEq CNode` is extended; `CNode.beq_sound` is rewritten with
+  `obtain` to be robust against future BEq additions (the previous
+  positional pattern `h.1.1.1.1.1` was structurally fragile).
+* **SM3.A.4**: `Notification.lock` with default `unheld`.
+* **SM3.A.6**: `SchedContext.lock` with default `unheld`
+  (`SeLe4n/Kernel/SchedContext/Types.lean`; the SchedContext module
+  gains a new import of `Concurrency.Locks.RwLock`).
+* **SM3.A.7**: `VSpaceRoot.lock` with default `unheld`
+  (`SeLe4n/Model/Object/Structures.lean`).  The manual
+  `BEq VSpaceRoot` is extended; `VSpaceRoot.beq_sound` is rewritten
+  with `obtain` for robustness; `VSpaceRoot.beq_refl` gains
+  `Bool.and_true` in its simp set to handle the new trailing
+  conjunct.
+* **SM3.A.9**: `UntypedObject.lock` with default `unheld`.  The
+  positional `UntypedObject.mk` calls in `empty_*` theorems and
+  `UntypedObjectValid.empty` are converted to named-field syntax
+  for robustness against future field additions.
+
+**Skipped sub-tasks (documented as N/A for seLe4n)**:
+
+* **SM3.A.5** (Reply): seLe4n does not model Reply as a separate
+  kernel object; reply discipline lives in TCB state.  Re-openable
+  when seLe4n grows a first-class Reply object.
+* **SM3.A.8** (Page): seLe4n stores page mappings inline in
+  `VSpaceRoot.mappings`; §4.3 of the plan rejects per-PTE locking
+  for v1.0.0.  Re-openable when seLe4n grows first-class Page
+  objects.
+
+### ObjStore table-level lock + projection (SM3.A.10)
+
+* **`SystemState.objStoreLock : RwLockState`** with default `unheld`
+  added to the SystemState structure (`SeLe4n/Model/State.lean`).
+  Per §4.4, the underlying RobinHood hash table is held under a
+  single table-level lock at the top of the SM0.I hierarchy
+  (`LockKind.objStore`, level 0).
+* **`KernelObject.objectLockOf : KernelObject → RwLockState`** —
+  per-variant lock projection function with 7 `@[simp]` unfold
+  lemmas (`objectLockOf_tcb`, `objectLockOf_endpoint`,
+  `objectLockOf_notification`, `objectLockOf_cnode`,
+  `objectLockOf_vspaceRoot`, `objectLockOf_untyped`,
+  `objectLockOf_schedContext`).  SM3.B `LockId.lookup` and SM3.C
+  `lockSetHeld` will consume this projection.
+* **`FrozenSystemState.objStoreLock`** field added, forwarded
+  unchanged by `freeze`.  `FrozenCNode.lock` and `FrozenVSpaceRoot.lock`
+  fields added, forwarded unchanged by `freezeCNode` and
+  `freezeVSpaceRoot`.  Preserves the per-object lock state across
+  the freeze boundary.
+
+### Default-state theorems (SM3.A.11)
+
+* **`default_objStoreLock_unheld`** — proves
+  `(default : SystemState).objStoreLock = RwLockState.unheld` by `rfl`.
+* **`default_objects_locks_unheld`** — the canonical SM3.A.11
+  closure theorem: for every `id ∈ default.objects`,
+  `objectLockOf o = RwLockState.unheld`.  Vacuously discharged via
+  `RHTable.getElem?_empty` (the default state's `objects` is the
+  empty hash table).  Base case for the SM3.C `lockSetHeld`
+  per-state induction.
+* **`default_objects_toList_empty`** — computable witness that
+  `default.objects.toList = []`, proven by `decide`.
+* **`default_objects_locks_unheld_via_toList`** — the `toList`
+  membership variant, discharged via `List.not_mem_nil` after the
+  empty-list rewrite.
+
+### Production/staged partition updates
+
+`Kernel.Concurrency.Locks.RwLock` and `Kernel.Concurrency.MemoryModel`
+moved from the staged allowlist into the production import closure
+(now reachable from production via `Model.Object.Types`'s new import
+of `Concurrency.Locks.RwLock`).  The `STATUS: staged` markers in
+those files are removed.  `RwLockRefinement` remains staged-only
+(not yet wired to a runtime consumer; promotable in a later SM3
+phase).
+
+### Test coverage
+
+* **New suite**: `tests/PerObjectLockSuite.lean` (~280 LoC, 30+ surface
+  anchors, 16 decidable examples, 22 runtime assertions covering
+  default-state shape, per-object default-lock witness, `objectLockOf`
+  per-variant reduction, frozen-state lock-field forwarding, and
+  `RwLockState.unheld` auxiliary properties from SM2.C).  Runnable as
+  `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative) and
+  Tier 3 (invariant-surface).
+* **Tier 3 surface anchors** added covering every SM3.A.1..A.11
+  public symbol.
+* All 318 existing modules still build (`lake build` exit 0); all
+  Tier 0+1+2+3 tests still pass.
+
+### Items deferred past v1.0.0 with correctness impact: NONE.
+
+Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`, per-transition
+`lockSet`, `lockAcquireSequence` ordering theorems) consumes the
+SM3.A.10 `objectLockOf` projection; SM3.C (`withLockSet` 2PL
+discipline) consumes both SM3.A and SM3.B; SM3.D/SM3.E close with
+deadlock-freedom and serializability theorems.  See
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+§§5.2..5.5.
+
 ## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
 
 Implements the
