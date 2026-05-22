@@ -539,6 +539,32 @@ example :
     (KernelObject.untyped _uU_audit7 == KernelObject.untyped _uH_audit7) = false := by
   decide
 
+/-- WS-SM SM3.A audit-pass-9 (MEDIUM-2 fix): BEq KernelObject distinguishes
+lock states on the .tcb variant — the canonical kernel object with the
+richest field surface (23 fields).  Audit-pass-7 covered the per-struct
+TCB BEq test but skipped the variant-dispatch path; this closes the
+asymmetry. -/
+example :
+    (KernelObject.tcb _tcbU_audit7 == KernelObject.tcb _tcbH_audit7) = false := by
+  decide
+
+/-- WS-SM SM3.A audit-pass-9 (MEDIUM-2 fix): BEq KernelObject distinguishes
+lock states on the .cnode variant.  CNode has a manual BEq with the
+slot-fold + lock conjuncts; this verifies the variant dispatch
+preserves the discrimination. -/
+example :
+    (KernelObject.cnode _cnU_audit7 == KernelObject.cnode _cnH_audit7) = false := by
+  decide
+
+/-- WS-SM SM3.A audit-pass-9 (MEDIUM-2 fix): BEq KernelObject distinguishes
+lock states on the .vspaceRoot variant.  VSpaceRoot has a manual BEq
+with the mappings-fold + lock conjuncts; this verifies the variant
+dispatch preserves the discrimination. -/
+example :
+    (KernelObject.vspaceRoot _vsU_audit7 == KernelObject.vspaceRoot _vsH_audit7)
+      = false := by
+  decide
+
 -- ============================================================================
 -- §5 — RwLockState.unheld properties (cross-referencing SM2.C)
 -- ============================================================================
@@ -844,6 +870,16 @@ private def runBEqDistinguishesLockStateChecks : IO Unit := do
   -- .schedContext variant (the audit-pass-7 fix target).
   assertBool "BEq KernelObject distinguishes lock states on .schedContext variant"
     (decide ((KernelObject.schedContext scU == KernelObject.schedContext scH) = false))
+  -- WS-SM SM3.A audit-pass-9 (MEDIUM-2 fix): complete the BEq
+  -- KernelObject variant-dispatch coverage.  Audit-pass-7 covered 4 of
+  -- 7 variants (.endpoint, .notification, .schedContext, .untyped);
+  -- this adds the missing 3 (.tcb, .cnode, .vspaceRoot).
+  assertBool "BEq KernelObject distinguishes lock states on .tcb variant"
+    (decide ((KernelObject.tcb tcbU == KernelObject.tcb tcbH) = false))
+  assertBool "BEq KernelObject distinguishes lock states on .cnode variant"
+    (decide ((KernelObject.cnode cnU == KernelObject.cnode cnH) = false))
+  assertBool "BEq KernelObject distinguishes lock states on .vspaceRoot variant"
+    (decide ((KernelObject.vspaceRoot vsU == KernelObject.vspaceRoot vsH) = false))
 
 private def runFrozenStateForwardingChecks : IO Unit := do
   IO.println "--- §4 FrozenState — lock-field forwarding (SM3.A.3, A.7, A.10) ---"

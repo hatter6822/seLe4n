@@ -229,7 +229,25 @@ instance : Repr FrozenVSpaceRoot where
 
 /-- Q5-B: Frozen kernel object — mirrors `KernelObject` but with frozen
 representations for CNode and VSpaceRoot. TCB, Endpoint, Notification,
-and UntypedObject are unchanged (they contain no embedded hash tables). -/
+and UntypedObject are unchanged (they contain no embedded hash tables).
+
+**WS-SM SM3.A audit-pass-9 (MEDIUM-3)**: at SM3.A scope this inductive
+has **no manual `BEq` instance** — the runtime never compares frozen
+kernel objects for equality (the frozen view is single-threaded and
+immutable; equality is only relevant in the runtime SystemState).
+If a future workstream adds `BEq FrozenKernelObject`, it MUST
+include each variant's per-frozen-struct lock conjunct in the
+comparison, or lock-state regressions could be masked on the frozen
+side identically to the SchedContext bug closed by SM3.A audit-pass-7.
+
+The same warning applies to potential future `BEq FrozenCNode`,
+`BEq FrozenVSpaceRoot`, and `BEq FrozenSystemState` instances —
+each carries a `lock` field that MUST participate in any field-wise
+comparison.  This is documentation enforcement (no compile-time
+gate exists for instances that don't yet exist); the WS-SM SM3.A
+test suite's BEq-regression block (`tests/PerObjectLockSuite.lean`
+§4b) shows the canonical pattern that future additions should
+follow. -/
 inductive FrozenKernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)
