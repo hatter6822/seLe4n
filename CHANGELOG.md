@@ -1,3 +1,65 @@
+## Unreleased — WS-SM SM3.A audit-pass-9: close MEDIUM-2 + MEDIUM-3 + LOW-1 findings
+
+Final deep audit of audit-pass-7 identified 3 actionable findings, all
+closed.
+
+### MEDIUM-2 — Complete `BEq KernelObject` variant coverage
+
+`tests/PerObjectLockSuite.lean §4b` previously tested `BEq
+KernelObject` dispatch on 4 of 7 variants (`.endpoint`,
+`.notification`, `.schedContext`, `.untyped`) but skipped `.tcb`,
+`.cnode`, `.vspaceRoot`.  Per-struct BEq tests covered all 7
+kernel-object types, but the variant-dispatch path through
+`BEq KernelObject` was asymmetric.
+
+Fix: added 3 decidable `example`s + 3 runtime `assertBool` mirrors
+covering the missing `.tcb`, `.cnode`, `.vspaceRoot` variants.
+
+### MEDIUM-3 — `BEq FrozenKernelObject` future-additions documentation guard
+
+The frozen kernel-object types (`FrozenCNode`, `FrozenVSpaceRoot`,
+`FrozenSystemState`, `FrozenKernelObject`) have no `BEq` instances at
+SM3.A scope.  If a future workstream adds one, the same gap the
+audit-pass-7 SchedContext fix closed could recur on the frozen
+side.
+
+Fix: added a documentation guard in `FrozenKernelObject`'s docstring
+referencing the audit-pass-7 SchedContext lesson and pointing future
+maintainers to the canonical regression pattern in
+`PerObjectLockSuite §4b`.
+
+### LOW-1 — Regenerate stale `docs/codebase_map.json`
+
+The audit found `docs/codebase_map.json`'s `commit_sha` was stale at
+HEAD, causing `test_full.sh` to fail the freshness check.
+
+Fix: regenerated via the project's standard script.
+
+### MEDIUM-1 — Intentionally NOT addressed
+
+The audit identified that `PerObjectLockTheorem.mk` is publicly
+constructable, so the macro check can be bypassed via `{ desc,
+"BAD", (), .cat }` or `{ default with identifier := "BAD" }`.
+Audit-pass-8 attempted to close this with `private mk ::` but the
+linter rejected the change.  Per the user's instruction to "not
+revert" the linter's edit, audit-pass-8 was intentionally deferred.
+
+This leaves a known hole for deliberate bypass (not accidental
+typos).  The macro CONVENTION applies; code review catches manual
+entries.
+
+### Test results (audit-pass-9)
+
+* Lean module build: 320/320 green.
+* `lake exe per_object_lock_suite`: **71/71 PASS** (was 68 at
+  audit-pass-7 close; +3 for the new variant tests).
+* Suite metrics: 65 surface anchors, 64 decidable examples, 71
+  runtime assertions, ~1130 LoC.
+* Full Tier 0+1+2+3 green.
+* Rust 988+ tests green; zero clippy warnings.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1
+
 ## Unreleased — WS-SM SM3.A audit-pass-7: BEq SchedContext lock + compile-time-checked inventory identifiers
 
 User-reported audit identified two correctness issues, both closed.

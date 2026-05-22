@@ -2768,6 +2768,33 @@ documentation lives under `docs/` and `docs/gitbook/`.
     pinned by macro stringification (the developer writes the
     declaration name once; the macro derives the string).
 
+  **Audit-pass-9 refinements** (final deep audit identified 3
+  actionable findings; all closed):
+  - **MEDIUM-2**: completed `BEq KernelObject` variant coverage
+    by adding 3 decidable + 3 runtime tests for `.tcb`, `.cnode`,
+    `.vspaceRoot` variants (audit-pass-7 covered only 4 of 7).
+  - **MEDIUM-3**: added forward-compatibility documentation guard
+    in `FrozenKernelObject`'s docstring warning future maintainers
+    that any added `BEq Frozen*` instance MUST include the lock
+    conjunct, pointing them to the SM3.A `PerObjectLockSuite §4b`
+    regression-prevention pattern.
+  - **LOW-1**: regenerated stale `docs/codebase_map.json`.
+  - **MEDIUM-1** (intentionally NOT addressed): the inventory's
+    `PerObjectLockTheorem.mk` constructor remains publicly
+    constructable.  Audit-pass-8 attempted to close this with
+    `private mk ::` but the linter rejected the change; per
+    user instruction to not revert that edit, audit-pass-9 leaves
+    the deliberate-bypass hole open.  The `polt!` macro
+    convention catches typos and stale renames; manual bypass
+    requires deliberate circumvention and would be caught at code
+    review.
+
+  **Test results after audit-pass-9**: 320/320 Lean modules
+  build green; `lake exe per_object_lock_suite` reports 71/71
+  PASS (was 68; +3 audit-pass-9 BEq KernelObject variant tests);
+  Tier 0+1+2+3 green; Rust 988+ tests green; zero clippy
+  warnings.
+
   Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
   per-transition `lockSet`, `lockAcquireSequence` ordering
   theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C
