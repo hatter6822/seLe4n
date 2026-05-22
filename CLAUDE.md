@@ -2527,20 +2527,29 @@ documentation lives under `docs/` and `docs/gitbook/`.
   to a runtime consumer; promotable in a later SM3 phase).
 
   **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
-  (~360 LoC) with 24 surface-anchor `#check` lines, 26 decidable
-  examples, and 24 runtime `assertBool` assertions covering:
-  default-state shape (objStoreLock unheld, toList empty);
-  per-object default-lock witness for every kind including TCB
-  via named-field construction with the 6 required fields
-  (TCB, Endpoint, Notification, CNode, VSpaceRoot, UntypedObject,
-  SchedContext); `objectLockOf` per-variant reduction (all 7
-  variants); frozen-state lock-field forwarding (`freezeCNode`,
-  `freezeVSpaceRoot`); and `RwLockState.unheld` auxiliary
-  properties from SM2.C (5-conjunct `wf`, `writerHeld = none`,
-  `readers = []`, `waiters = []`).  Runnable as
-  `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
-  and Tier 3 (invariant-surface).  Lean module build: 318/318
-  green.  Full Tier 0+1+2+3 smoke test passes.
+  (~646 LoC post-audit-pass-4) with 36 surface-anchor `#check`
+  lines, 36 decidable examples, and 41 runtime `assertBool`
+  assertions covering: default-state shape (objStoreLock unheld,
+  toList empty); per-object default-lock witness for every kind
+  including TCB via named-field construction with the 6 required
+  fields (TCB, Endpoint, Notification, CNode, VSpaceRoot,
+  UntypedObject, SchedContext); `KernelObject.objectLockOf`
+  per-variant reduction (all 7 variants);
+  `FrozenKernelObject.objectLockOf` per-variant reduction (full
+  7-variant coverage post-audit-pass-4); frozen-state lock-field
+  forwarding (`freezeCNode`, `freezeVSpaceRoot`, plus
+  `freezeObject_preserves_objectLockOf` exercised on every
+  variant); audit-pass-4 non-vacuous SM3.A.11 witnesses on
+  post-insert states (3 variants — endpoint, cnode, vspaceRoot —
+  exercise `objectLockOf` after `RHTable.insert` to give the
+  universal-quantifier theorem a non-empty witness); `freeze
+  mkEmptyIntermediateState` ObjStore-lock preservation; and
+  `RwLockState.unheld` auxiliary properties from SM2.C
+  (5-conjunct `wf`, `writerHeld = none`, `readers = []`,
+  `waiters = []`).  Runnable as `lake exe per_object_lock_suite`.
+  Wired into Tier 2 (negative) and Tier 3 (invariant-surface).
+  Lean module build: 318/318 green.  Full Tier 0+1+2+3 smoke
+  test passes.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 

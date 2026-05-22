@@ -9,6 +9,7 @@
 
 import SeLe4n.Model.State
 import SeLe4n.Model.FrozenState
+import SeLe4n.Model.IntermediateState
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 
 /-!
@@ -271,6 +272,31 @@ example :
       (.schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩))
       = RwLockState.unheld := by decide
 
+/-- WS-SM SM3.A audit-pass-4: closes the `FrozenKernelObject` variant
+coverage gap identified by the test-coverage audit.  TCB variant
+through the frozen projection.  Since `FrozenKernelObject.tcb` reuses
+the runtime `TCB` struct verbatim, the projection returns `t.lock`. -/
+example :
+    FrozenKernelObject.objectLockOf
+      (.tcb ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+               cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+               ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB))
+      = RwLockState.unheld := rfl
+
+/-- WS-SM SM3.A audit-pass-4: CNode variant — through `freezeCNode`,
+the lock field is forwarded structurally; the projection returns
+`(freezeCNode CNode.empty).lock = RwLockState.unheld`. -/
+example :
+    FrozenKernelObject.objectLockOf
+      (.cnode (freezeCNode CNode.empty)) = RwLockState.unheld := by decide
+
+/-- WS-SM SM3.A audit-pass-4: VSpaceRoot variant — through
+`freezeVSpaceRoot`, the lock field is forwarded structurally. -/
+example :
+    FrozenKernelObject.objectLockOf
+      (.vspaceRoot (freezeVSpaceRoot { asid := ⟨0⟩, mappings := {} }))
+      = RwLockState.unheld := rfl
+
 -- ============================================================================
 -- §4 — SystemState default invariants (lock-field shape)
 -- ============================================================================
@@ -283,6 +309,44 @@ example : (default : SystemState).objStoreLock = RwLockState.unheld := rfl
 /-! ## Default SystemState's `objects.toList` is empty -/
 
 example : (default : SystemState).objects.toList = [] := by decide
+
+/-- WS-SM SM3.A audit-pass-4: non-vacuous witness for SM3.A.11 — after
+inserting an Endpoint into the default state's object store, the
+stored object's lock is `unheld`.  This closes the HIGH-severity
+finding from the test-coverage audit ("SM3.A.11 runtime discharge is
+vacuous on the default state's empty store").  The witness
+exercises the `objectLockOf` projection on an actual stored object
+rather than relying on vacuous quantification over an empty list.
+
+The construction uses direct `RHTable.insert` (rather than the
+`storeObject` Kernel monad action, which would require running the
+monad first) on `default.objects`, then projects the result back
+through `KernelObject.objectLockOf`.  Because the default `Endpoint
+{}` constructor sets `lock := unheld` per SM3.A.2, the lookup
+returns `some (.endpoint {})` and `objectLockOf` returns `unheld`.
+The post-condition is formulated via `Option.map (·.objectLockOf) =
+some unheld` to keep the predicate decidable (a direct `match`
+arm would require an explicit `Decidable` instance for the
+dependent shape). -/
+example :
+    let objects' :=
+      (default : SystemState).objects.insert (⟨1⟩ : SeLe4n.ObjId)
+        (.endpoint ({} : Endpoint))
+    objects'[(⟨1⟩ : SeLe4n.ObjId)]?.map KernelObject.objectLockOf
+      = some RwLockState.unheld := by
+  decide
+
+/-- WS-SM SM3.A audit-pass-4 (companion): non-vacuous witness for
+SM3.A.11 on a CNode store.  Covers the case where the stored object
+has a non-trivial inner structure (`UniqueSlotMap` slots) — verifies
+that the lock-state defaulting works even with embedded data. -/
+example :
+    let objects' :=
+      (default : SystemState).objects.insert (⟨2⟩ : SeLe4n.ObjId)
+        (.cnode CNode.empty)
+    objects'[(⟨2⟩ : SeLe4n.ObjId)]?.map KernelObject.objectLockOf
+      = some RwLockState.unheld := by
+  decide
 
 -- ============================================================================
 -- §5 — RwLockState.unheld properties (cross-referencing SM2.C)
@@ -337,6 +401,39 @@ private def runDefaultStateChecks : IO Unit := do
     (decide
       ((default : SystemState).objects.toList.all
         (fun p => p.snd.objectLockOf.wf)))
+  -- WS-SM SM3.A audit-pass-4 (HIGH fix): non-vacuous witness for
+  -- SM3.A.11.  After inserting `.endpoint {}` into the default
+  -- state's object store, lookup returns the stored Endpoint and
+  -- its `objectLockOf` projection returns `unheld`.  Exercises
+  -- the SM3.A.11 *conclusion* (not just its vacuous discharge on
+  -- an empty store).  A regression that flipped the default lock
+  -- of any kernel object to non-unheld would fail this check.
+  assertBool "post-insert .endpoint lookup yields objectLockOf = unheld"
+    (decide
+      (let objects' :=
+        (default : SystemState).objects.insert (⟨1⟩ : SeLe4n.ObjId)
+          (.endpoint ({} : Endpoint))
+       objects'[(⟨1⟩ : SeLe4n.ObjId)]?.map KernelObject.objectLockOf
+         = some RwLockState.unheld))
+  -- Companion: same for CNode (exercises a kernel object with
+  -- non-trivial inner structure — `UniqueSlotMap` slots).
+  assertBool "post-insert .cnode lookup yields objectLockOf = unheld"
+    (decide
+      (let objects' :=
+        (default : SystemState).objects.insert (⟨2⟩ : SeLe4n.ObjId)
+          (.cnode CNode.empty)
+       objects'[(⟨2⟩ : SeLe4n.ObjId)]?.map KernelObject.objectLockOf
+         = some RwLockState.unheld))
+  -- Companion: same for VSpaceRoot (exercises a kernel object whose
+  -- inner has `RHTable` mappings — verifies the SM3.A.7 default
+  -- propagates through manual `BEq VSpaceRoot` correctly).
+  assertBool "post-insert .vspaceRoot lookup yields objectLockOf = unheld"
+    (decide
+      (let objects' :=
+        (default : SystemState).objects.insert (⟨3⟩ : SeLe4n.ObjId)
+          (.vspaceRoot ({ asid := ⟨0⟩, mappings := {} } : VSpaceRoot))
+       objects'[(⟨3⟩ : SeLe4n.ObjId)]?.map KernelObject.objectLockOf
+         = some RwLockState.unheld))
 
 private def runPerObjectDefaultChecks : IO Unit := do
   IO.println "--- §2 per-object defaults — every kind's lock is unheld ---"
@@ -439,6 +536,35 @@ private def runFrozenStateForwardingChecks : IO Unit := do
       (FrozenKernelObject.objectLockOf
         (.vspaceRoot (freezeVSpaceRoot { asid := ⟨0⟩, mappings := {} }))
         = RwLockState.unheld))
+  -- WS-SM SM3.A audit-pass-4: complete FrozenKernelObject.objectLockOf
+  -- runtime variant coverage.  The previous block only exercised
+  -- endpoint/cnode/vspaceRoot; the test-coverage audit found that the
+  -- remaining 4 variants (TCB, notification, untyped, schedContext)
+  -- had no runtime exerciser.  These assertions close the gap.
+  assertBool "FrozenKernelObject.objectLockOf (.tcb minimal) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf
+        (.tcb ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+                 cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+                 ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB))
+        = RwLockState.unheld))
+  assertBool "FrozenKernelObject.objectLockOf (.notification idle) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf
+        (.notification { state := NotificationState.idle,
+                         waitingThreads := SeLe4n.NoDupList.empty,
+                         pendingBadge := none })
+        = RwLockState.unheld))
+  assertBool "FrozenKernelObject.objectLockOf (.untyped {0, 0}) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf
+        (.untyped ({ regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0 } : UntypedObject))
+        = RwLockState.unheld))
+  assertBool "FrozenKernelObject.objectLockOf (.schedContext _) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf
+        (.schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩))
+        = RwLockState.unheld))
   -- `freezeObject` is consistent with `objectLockOf` (the aggregate
   -- audit-pass-2 witness).
   assertBool "freezeObject (.endpoint {}) preserves objectLockOf"
@@ -449,6 +575,44 @@ private def runFrozenStateForwardingChecks : IO Unit := do
     (decide
       ((freezeObject (.cnode CNode.empty)).objectLockOf
         = (KernelObject.cnode CNode.empty).objectLockOf))
+  -- WS-SM SM3.A audit-pass-4: complete freezeObject_preserves_objectLockOf
+  -- variant coverage.  The audit found that only 2 of 7 variants were
+  -- runtime-exercised; these close the gap.
+  assertBool "freezeObject (.notification idle) preserves objectLockOf"
+    (decide
+      ((freezeObject (.notification
+        { state := NotificationState.idle,
+          waitingThreads := SeLe4n.NoDupList.empty,
+          pendingBadge := none })).objectLockOf
+        = (KernelObject.notification
+            { state := NotificationState.idle,
+              waitingThreads := SeLe4n.NoDupList.empty,
+              pendingBadge := none }).objectLockOf))
+  assertBool "freezeObject (.untyped {0, 0}) preserves objectLockOf"
+    (decide
+      ((freezeObject (.untyped
+        ({ regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0 } : UntypedObject))).objectLockOf
+        = (KernelObject.untyped
+            ({ regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0 } : UntypedObject)).objectLockOf))
+  assertBool "freezeObject (.schedContext _) preserves objectLockOf"
+    (decide
+      ((freezeObject (.schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩))).objectLockOf
+        = (KernelObject.schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩)).objectLockOf))
+  assertBool "freezeObject (.vspaceRoot _) preserves objectLockOf"
+    (decide
+      ((freezeObject (.vspaceRoot
+        ({ asid := ⟨0⟩, mappings := {} } : VSpaceRoot))).objectLockOf
+        = (KernelObject.vspaceRoot
+            ({ asid := ⟨0⟩, mappings := {} } : VSpaceRoot)).objectLockOf))
+  -- WS-SM SM3.A audit-pass-4: `FrozenSystemState.objStoreLock` runtime
+  -- exercise.  The test-coverage audit identified that the field had
+  -- only a surface anchor — no decidable example or runtime
+  -- assertion.  Closes the gap by exercising `freeze` over
+  -- `mkEmptyIntermediateState` (the canonical empty IntermediateState
+  -- seed) and asserting the forwarded ObjStore lock is `unheld`.
+  assertBool "freeze mkEmptyIntermediateState preserves objStoreLock = unheld"
+    (decide
+      ((freeze mkEmptyIntermediateState).objStoreLock = RwLockState.unheld))
 
 private def runRwLockStateAuxChecks : IO Unit := do
   IO.println "--- §5 RwLockState.unheld — auxiliary properties (SM2.C cross-ref) ---"

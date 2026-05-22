@@ -1175,11 +1175,20 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    staged-only (not yet wired to a runtime consumer).
 
    **Test coverage**: NEW FILE
-   `tests/PerObjectLockSuite.lean` (~280 LoC) with 30+ surface
-   anchors, 16 decidable examples, and 22 runtime `assertBool`
-   assertions.  Runnable as `lake exe per_object_lock_suite`.
-   Wired into Tier 2 (negative) and Tier 3 (invariant-surface)
-   pipelines.
+   `tests/PerObjectLockSuite.lean` (~646 LoC post-audit-pass-4)
+   with 36 surface anchors, 36 decidable examples, and 41
+   runtime `assertBool` assertions covering every public SM3.A
+   symbol: per-object `lock` fields, `KernelObject.objectLockOf`
+   + 7 per-variant `@[simp]` unfolds, `FrozenKernelObject.objectLockOf`
+   + 7 per-variant `@[simp]` unfolds (audit-pass-2 M-1, full
+   variant runtime coverage at audit-pass-4), four
+   `freeze_preserves_*` witness theorems (exercised on every
+   variant at audit-pass-4), four SM3.A.11 default-state theorems
+   (with 3 non-vacuous post-insert witnesses added at
+   audit-pass-4 to give the universal quantifier a non-empty
+   exerciser), and `RwLockState.unheld` auxiliary properties.
+   Runnable as `lake exe per_object_lock_suite`.  Wired into Tier 2
+   (negative) and Tier 3 (invariant-surface) pipelines.
 
    **Axiom budget for SM3.A**: 0 Lean axioms, 0 sorries.
 

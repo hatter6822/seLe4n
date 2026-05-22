@@ -966,12 +966,27 @@ into the production import closure.  `STATUS: staged` markers
 removed.  `RwLockRefinement` remains staged-only.
 
 **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
-(~360 LoC) with 24 surface-anchor `#check` lines, 26 decidable
-examples, 24 runtime `assertBool` assertions.  TCB-specific
-coverage included: named-field construction with the 6 required
-fields exercises the SM3.A.1 default-lock witness for TCB.
-Runnable as `lake exe per_object_lock_suite`.  Wired into
-Tier 2 (negative) and Tier 3 (invariant-surface) pipelines.
+(~646 LoC post-audit-pass-4) with 36 surface-anchor `#check`
+lines, 36 decidable examples, 41 runtime `assertBool`
+assertions.  TCB-specific coverage included: named-field
+construction with the 6 required fields exercises the SM3.A.1
+default-lock witness for TCB.  Audit-pass-2 added the
+`FrozenKernelObject.objectLockOf` symmetry projection (with 7
+`@[simp]` per-variant unfold lemmas) and 4 `freeze_preserves_*`
+witness theorems (`freeze_preserves_objStoreLock`,
+`freezeCNode_preserves_lock`, `freezeVSpaceRoot_preserves_lock`,
+`freezeObject_preserves_objectLockOf`).  Audit-pass-4 closed the
+HIGH-severity finding "SM3.A.11 runtime discharge is vacuous on
+the default state's empty store" by adding 3 non-vacuous
+SM3.A.11 witnesses on post-insert states (endpoint, cnode,
+vspaceRoot) plus 7 missing `FrozenKernelObject.objectLockOf`
+variant exercises (TCB, notification, untyped, schedContext in
+runtime + TCB, CNode, VSpaceRoot in decidable) plus 4 missing
+`freezeObject_preserves_objectLockOf` runtime variant
+exercises plus the `freeze mkEmptyIntermediateState` ObjStore-
+lock preservation check.  Runnable as
+`lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
+and Tier 3 (invariant-surface) pipelines.
 
 **Axiom budget for SM3.A**: 0 Lean axioms, 0 sorries.
 

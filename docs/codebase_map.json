@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/tender-gauss-FWPvo",
-      "commit_sha": "a115f38f214a6196848318d83254c99167c6cebc",
-      "tree_sha": "96f93eda49094d2e3274aa5ee31ffa2589d66a87",
-      "committed_at_utc": "2026-05-22T06:50:47+00:00"
+      "commit_sha": "242849820660a55cd92c21e6b85090dda52c5ce8",
+      "tree_sha": "b1e9944d886c322dd96be60ef8466c99e00f264d",
+      "committed_at_utc": "2026-05-22T07:04:48+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a236fa3059dc1c37c0852222761bf42c72b1dbbb9ee5d69dcc6c97584b2b7bf0"
+    "source_digest": "53d06ad80e2b8bc023bed7e57d476ffcb560283fe0b7a78a3471d985045fd518"
   },
   "summary": {
     "module_count": 223,
-    "declaration_count": 7441
+    "declaration_count": 7446
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 185,
-    "production_loc": 128277,
+    "production_loc": 128288,
     "test_files": 38,
-    "test_loc": 25645,
+    "test_loc": 25809,
     "proved_theorem_lemma_decls": 3730,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -60644,7 +60644,7 @@
         {
           "kind": "structure",
           "name": "FrozenVSpaceRoot",
-          "line": 193,
+          "line": 204,
           "called": [
             "ASID",
             "FrozenMap",
@@ -60658,7 +60658,7 @@
         {
           "kind": "inductive",
           "name": "FrozenKernelObject",
-          "line": 204,
+          "line": 215,
           "called": [
             "Endpoint",
             "FrozenCNode",
@@ -60672,7 +60672,7 @@
         {
           "kind": "def",
           "name": "FrozenKernelObject.objectType",
-          "line": 214,
+          "line": 225,
           "called": [
             "FrozenKernelObject",
             "KernelObjectType"
@@ -60681,7 +60681,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_tcb",
-          "line": 224,
+          "line": 235,
           "called": [
             "TCB",
             "objectType"
@@ -60690,7 +60690,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_endpoint",
-          "line": 226,
+          "line": 237,
           "called": [
             "Endpoint",
             "objectType"
@@ -60699,7 +60699,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_notification",
-          "line": 228,
+          "line": 239,
           "called": [
             "Notification",
             "objectType"
@@ -60708,7 +60708,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_cnode",
-          "line": 230,
+          "line": 241,
           "called": [
             "FrozenCNode",
             "objectType"
@@ -60717,7 +60717,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_vspaceRoot",
-          "line": 232,
+          "line": 243,
           "called": [
             "FrozenVSpaceRoot",
             "objectType"
@@ -60726,7 +60726,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_untyped",
-          "line": 234,
+          "line": 245,
           "called": [
             "UntypedObject",
             "objectType"
@@ -60735,7 +60735,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectType_schedContext",
-          "line": 236,
+          "line": 247,
           "called": [
             "SchedContext",
             "objectType"
@@ -60744,7 +60744,7 @@
         {
           "kind": "def",
           "name": "FrozenKernelObject.objectLockOf",
-          "line": 252,
+          "line": 263,
           "called": [
             "FrozenKernelObject",
             "RwLockState"
@@ -60753,7 +60753,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_tcb",
-          "line": 264,
+          "line": 275,
           "called": [
             "TCB",
             "objectLockOf"
@@ -60762,7 +60762,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_endpoint",
-          "line": 269,
+          "line": 280,
           "called": [
             "Endpoint",
             "objectLockOf"
@@ -60771,7 +60771,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_notification",
-          "line": 274,
+          "line": 285,
           "called": [
             "Notification",
             "objectLockOf"
@@ -60780,7 +60780,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_cnode",
-          "line": 279,
+          "line": 290,
           "called": [
             "FrozenCNode",
             "objectLockOf"
@@ -60789,7 +60789,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_vspaceRoot",
-          "line": 284,
+          "line": 295,
           "called": [
             "FrozenVSpaceRoot",
             "objectLockOf"
@@ -60798,7 +60798,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_untyped",
-          "line": 289,
+          "line": 300,
           "called": [
             "UntypedObject",
             "objectLockOf"
@@ -60807,7 +60807,7 @@
         {
           "kind": "theorem",
           "name": "FrozenKernelObject.objectLockOf_schedContext",
-          "line": 294,
+          "line": 305,
           "called": [
             "SchedContext",
             "objectLockOf"
@@ -60816,7 +60816,7 @@
         {
           "kind": "structure",
           "name": "FrozenReplenishQueue",
-          "line": 304,
+          "line": 315,
           "called": [
             "SchedContextId",
             "size"
@@ -60825,7 +60825,7 @@
         {
           "kind": "structure",
           "name": "FrozenSchedulerState",
-          "line": 311,
+          "line": 322,
           "called": [
             "DomainId",
             "DomainScheduleEntry",
@@ -60839,7 +60839,7 @@
         {
           "kind": "structure",
           "name": "FrozenSystemState",
-          "line": 336,
+          "line": 347,
           "called": [
             "ASID",
             "CapDerivationEdge",
@@ -60869,7 +60869,7 @@
         {
           "kind": "def",
           "name": "freezeMap",
-          "line": 396,
+          "line": 407,
           "called": [
             "FrozenMap",
             "RHTable",
@@ -60881,7 +60881,7 @@
         {
           "kind": "def",
           "name": "freezeCNode",
-          "line": 408,
+          "line": 419,
           "called": [
             "CNode",
             "FrozenCNode",
@@ -60891,7 +60891,7 @@
         {
           "kind": "def",
           "name": "freezeVSpaceRoot",
-          "line": 421,
+          "line": 432,
           "called": [
             "FrozenVSpaceRoot",
             "VSpaceRoot",
@@ -60901,7 +60901,7 @@
         {
           "kind": "def",
           "name": "freezeObject",
-          "line": 429,
+          "line": 440,
           "called": [
             "FrozenKernelObject",
             "KernelObject",
@@ -60912,7 +60912,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_preserves_type",
-          "line": 440,
+          "line": 451,
           "called": [
             "KernelObject",
             "freezeObject",
@@ -60922,7 +60922,7 @@
         {
           "kind": "def",
           "name": "freezeScheduler",
-          "line": 446,
+          "line": 457,
           "called": [
             "FrozenSchedulerState",
             "SchedulerState",
@@ -60933,7 +60933,7 @@
         {
           "kind": "def",
           "name": "freeze",
-          "line": 471,
+          "line": 482,
           "called": [
             "FrozenKernelObject",
             "FrozenMap",
@@ -60950,7 +60950,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_objectIndex",
-          "line": 510,
+          "line": 521,
           "called": [
             "IntermediateState",
             "freeze"
@@ -60959,7 +60959,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_cdtEdges",
-          "line": 514,
+          "line": 525,
           "called": [
             "IntermediateState",
             "freeze"
@@ -60968,7 +60968,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_cdtNextNode",
-          "line": 518,
+          "line": 529,
           "called": [
             "IntermediateState",
             "freeze"
@@ -60977,7 +60977,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_machine",
-          "line": 522,
+          "line": 533,
           "called": [
             "IntermediateState",
             "freeze"
@@ -60986,7 +60986,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_tlb",
-          "line": 528,
+          "line": 539,
           "called": [
             "IntermediateState",
             "freeze"
@@ -60995,7 +60995,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_current",
-          "line": 532,
+          "line": 543,
           "called": [
             "IntermediateState",
             "freeze"
@@ -61004,7 +61004,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_activeDomain",
-          "line": 536,
+          "line": 547,
           "called": [
             "IntermediateState",
             "freeze"
@@ -61013,7 +61013,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_domainSchedule",
-          "line": 540,
+          "line": 551,
           "called": [
             "IntermediateState",
             "freeze"
@@ -61022,7 +61022,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_configDefaultTimeSlice",
-          "line": 546,
+          "line": 557,
           "called": [
             "IntermediateState",
             "freeze"
@@ -61031,7 +61031,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_objStoreLock",
-          "line": 554,
+          "line": 565,
           "called": [
             "IntermediateState",
             "freeze"
@@ -61040,7 +61040,7 @@
         {
           "kind": "theorem",
           "name": "freezeCNode_preserves_lock",
-          "line": 561,
+          "line": 572,
           "called": [
             "CNode",
             "freezeCNode"
@@ -61049,7 +61049,7 @@
         {
           "kind": "theorem",
           "name": "freezeVSpaceRoot_preserves_lock",
-          "line": 568,
+          "line": 579,
           "called": [
             "VSpaceRoot",
             "freezeVSpaceRoot"
@@ -61058,7 +61058,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_preserves_objectLockOf",
-          "line": 580,
+          "line": 591,
           "called": [
             "KernelObject",
             "freezeObject",
@@ -61068,7 +61068,7 @@
         {
           "kind": "theorem",
           "name": "fold_none_replicate",
-          "line": 586,
+          "line": 597,
           "called": [
             "RHEntry",
             "none",
@@ -61078,7 +61078,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_data_size",
-          "line": 596,
+          "line": 607,
           "called": [
             "RHTable",
             "freezeMap",
@@ -61089,7 +61089,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_foldl_counter",
-          "line": 605,
+          "line": 616,
           "called": [
             "RHTable",
             "insert",
@@ -61099,7 +61099,7 @@
         {
           "kind": "theorem",
           "name": "toList_empty",
-          "line": 622,
+          "line": 633,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -61112,7 +61112,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_empty",
-          "line": 630,
+          "line": 641,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -61125,7 +61125,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_indexMap_invExtK",
-          "line": 654,
+          "line": 665,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -61140,7 +61140,7 @@
         {
           "kind": "theorem",
           "name": "freezeMap_capacity_sufficient",
-          "line": 686,
+          "line": 697,
           "called": [
             "RHTable",
             "freezeMap",
@@ -61154,7 +61154,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_tcb_passthrough",
-          "line": 693,
+          "line": 704,
           "called": [
             "TCB",
             "freezeObject"
@@ -61163,7 +61163,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_endpoint_passthrough",
-          "line": 697,
+          "line": 708,
           "called": [
             "Endpoint",
             "freezeObject"
@@ -61172,7 +61172,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_notification_passthrough",
-          "line": 701,
+          "line": 712,
           "called": [
             "Notification",
             "freezeObject"
@@ -61181,7 +61181,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_untyped_passthrough",
-          "line": 705,
+          "line": 716,
           "called": [
             "UntypedObject",
             "freezeObject"
@@ -61190,7 +61190,7 @@
         {
           "kind": "theorem",
           "name": "freezeObject_schedContext_passthrough",
-          "line": 709,
+          "line": 720,
           "called": [
             "SchedContext",
             "freezeObject"
@@ -61199,7 +61199,7 @@
         {
           "kind": "theorem",
           "name": "frozenMap_set_preserves_size",
-          "line": 713,
+          "line": 724,
           "called": [
             "FrozenMap",
             "FrozenMap.set",
@@ -61210,7 +61210,7 @@
         {
           "kind": "theorem",
           "name": "freeze_preserves_objectIndexSet",
-          "line": 728,
+          "line": 739,
           "called": [
             "IntermediateState",
             "freeze",
@@ -89941,12 +89941,12 @@
     {
       "module": "tests.PerObjectLockSuite",
       "path": "tests/PerObjectLockSuite.lean",
-      "declaration_count": 40,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.PerObjectLock",
-          "line": 53,
+          "line": 54,
           "called": [
             "FrozenKernelObject.objectLockOf",
             "FrozenKernelObject.objectLockOf_cnode",
@@ -89977,14 +89977,6 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:140>",
-          "line": 140,
-          "called": [
-            "RwLockState.unheld"
-          ]
-        },
-        {
-          "kind": "example",
           "name": "<anonymous:example:141>",
           "line": 141,
           "called": [
@@ -89993,31 +89985,30 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:153>",
-          "line": 153,
+          "name": "<anonymous:example:142>",
+          "line": 142,
           "called": [
-            "RwLockState.unheld",
-            "TCB",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:161>",
-          "line": 161,
-          "called": [
-            "RwLockState.unheld",
-            "TCB",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:169>",
-          "line": 169,
-          "called": [
-            "Endpoint",
             "RwLockState.unheld"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:154>",
+          "line": 154,
+          "called": [
+            "RwLockState.unheld",
+            "TCB",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:162>",
+          "line": 162,
+          "called": [
+            "RwLockState.unheld",
+            "TCB",
+            "ofNat"
           ]
         },
         {
@@ -90031,8 +90022,17 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:177>",
-          "line": 177,
+          "name": "<anonymous:example:171>",
+          "line": 171,
+          "called": [
+            "Endpoint",
+            "RwLockState.unheld"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:178>",
+          "line": 178,
           "called": [
             "Notification",
             "RwLockState.unheld",
@@ -90042,8 +90042,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:182>",
-          "line": 182,
+          "name": "<anonymous:example:183>",
+          "line": 183,
           "called": [
             "Notification",
             "RwLockState.unheld",
@@ -90053,8 +90053,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:189>",
-          "line": 189,
+          "name": "<anonymous:example:190>",
+          "line": 190,
           "called": [
             "RwLockState.unheld",
             "UntypedObject",
@@ -90063,8 +90063,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
+          "name": "<anonymous:example:194>",
+          "line": 194,
           "called": [
             "RwLockState.unheld",
             "UntypedObject",
@@ -90073,8 +90073,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:198>",
-          "line": 198,
+          "name": "<anonymous:example:199>",
+          "line": 199,
           "called": [
             "RwLockState.unheld",
             "empty"
@@ -90082,8 +90082,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:201>",
-          "line": 201,
+          "name": "<anonymous:example:202>",
+          "line": 202,
           "called": [
             "RwLockState.unheld",
             "empty"
@@ -90091,8 +90091,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:206>",
-          "line": 206,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
             "RwLockState.unheld",
             "VSpaceRoot"
@@ -90100,8 +90100,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
+          "name": "<anonymous:example:217>",
+          "line": 217,
           "called": [
             "RwLockState.unheld",
             "TCB",
@@ -90111,8 +90111,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:223>",
-          "line": 223,
+          "name": "<anonymous:example:224>",
+          "line": 224,
           "called": [
             "Endpoint",
             "RwLockState.unheld",
@@ -90121,8 +90121,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:227>",
-          "line": 227,
+          "name": "<anonymous:example:228>",
+          "line": 228,
           "called": [
             "RwLockState.unheld",
             "empty",
@@ -90131,8 +90131,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:230>",
-          "line": 230,
+          "name": "<anonymous:example:231>",
+          "line": 231,
           "called": [
             "RwLockState.unheld",
             "empty",
@@ -90142,8 +90142,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "RwLockState.unheld",
             "objectLockOf",
@@ -90152,8 +90152,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:240>",
-          "line": 240,
+          "name": "<anonymous:example:241>",
+          "line": 241,
           "called": [
             "RwLockState.unheld",
             "empty",
@@ -90162,8 +90162,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
+          "name": "<anonymous:example:245>",
+          "line": 245,
           "called": [
             "RwLockState.unheld",
             "objectLockOf"
@@ -90171,8 +90171,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:254>",
-          "line": 254,
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
             "Endpoint",
             "FrozenKernelObject.objectLockOf",
@@ -90181,8 +90181,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:258>",
-          "line": 258,
+          "name": "<anonymous:example:259>",
+          "line": 259,
           "called": [
             "FrozenKernelObject.objectLockOf",
             "RwLockState.unheld",
@@ -90192,8 +90192,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:264>",
-          "line": 264,
+          "name": "<anonymous:example:265>",
+          "line": 265,
           "called": [
             "FrozenKernelObject.objectLockOf",
             "RwLockState.unheld",
@@ -90202,8 +90202,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:269>",
-          "line": 269,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "FrozenKernelObject.objectLockOf",
             "RwLockState.unheld",
@@ -90212,8 +90212,40 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:280>",
-          "line": 280,
+          "name": "<anonymous:example:279>",
+          "line": 279,
+          "called": [
+            "FrozenKernelObject.objectLockOf",
+            "RwLockState.unheld",
+            "TCB",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:289>",
+          "line": 289,
+          "called": [
+            "FrozenKernelObject.objectLockOf",
+            "RwLockState.unheld",
+            "empty",
+            "freezeCNode"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:295>",
+          "line": 295,
+          "called": [
+            "FrozenKernelObject.objectLockOf",
+            "RwLockState.unheld",
+            "freezeVSpaceRoot"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:306>",
+          "line": 306,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -90222,8 +90254,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:281>",
-          "line": 281,
+          "name": "<anonymous:example:307>",
+          "line": 307,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -90232,8 +90264,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:285>",
-          "line": 285,
+          "name": "<anonymous:example:311>",
+          "line": 311,
           "called": [
             "SystemState",
             "default",
@@ -90242,24 +90274,52 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:293>",
-          "line": 293,
+          "name": "<anonymous:example:331>",
+          "line": 331,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "RwLockState.unheld",
+            "SystemState",
+            "default",
+            "insert",
+            "objectLockOf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:343>",
+          "line": 343,
+          "called": [
+            "ObjId",
+            "RwLockState.unheld",
+            "SystemState",
+            "default",
+            "empty",
+            "insert",
+            "objectLockOf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:357>",
+          "line": 357,
           "called": [
             "none"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:294>",
-          "line": 294,
+          "name": "<anonymous:example:358>",
+          "line": 358,
           "called": [
             "CoreId"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:295>",
-          "line": 295,
+          "name": "<anonymous:example:359>",
+          "line": 359,
           "called": [
             "AccessMode",
             "CoreId"
@@ -90267,8 +90327,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:299>",
-          "line": 299,
+          "name": "<anonymous:example:363>",
+          "line": 363,
           "called": [
             "wf"
           ]
@@ -90276,19 +90336,24 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 305,
+          "line": 369,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDefaultStateChecks",
-          "line": 312,
+          "line": 376,
           "called": [
+            "Endpoint",
+            "ObjId",
             "RwLockState.unheld",
             "SystemState",
+            "VSpaceRoot",
             "all",
             "assertBool",
             "default",
+            "empty",
+            "insert",
             "objectLockOf",
             "toList",
             "wf"
@@ -90297,7 +90362,7 @@
         {
           "kind": "def",
           "name": "runPerObjectDefaultChecks",
-          "line": 341,
+          "line": 438,
           "called": [
             "Endpoint",
             "Notification",
@@ -90314,7 +90379,7 @@
         {
           "kind": "def",
           "name": "runObjectLockOfReductionChecks",
-          "line": 373,
+          "line": 470,
           "called": [
             "Endpoint",
             "RwLockState.unheld",
@@ -90331,23 +90396,30 @@
         {
           "kind": "def",
           "name": "runFrozenStateForwardingChecks",
-          "line": 417,
+          "line": 514,
           "called": [
             "Endpoint",
             "FrozenKernelObject.objectLockOf",
             "RwLockState.unheld",
+            "TCB",
+            "UntypedObject",
+            "VSpaceRoot",
             "assertBool",
             "empty",
+            "freeze",
             "freezeCNode",
             "freezeObject",
             "freezeVSpaceRoot",
-            "objectLockOf"
+            "mkEmptyIntermediateState",
+            "none",
+            "objectLockOf",
+            "ofNat"
           ]
         },
         {
           "kind": "def",
           "name": "runRwLockStateAuxChecks",
-          "line": 453,
+          "line": 617,
           "called": [
             "AccessMode",
             "CoreId",
@@ -90359,7 +90431,7 @@
         {
           "kind": "def",
           "name": "runPerObjectLockChecks",
-          "line": 468,
+          "line": 632,
           "called": [
             "runDefaultStateChecks",
             "runFrozenStateForwardingChecks",
@@ -90371,7 +90443,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 481,
+          "line": 645,
           "called": [
             "runPerObjectLockChecks"
           ]

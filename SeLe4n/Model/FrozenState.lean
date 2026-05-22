@@ -189,7 +189,18 @@ structure FrozenCNode where
 
 WS-SM SM3.A.7: the runtime VSpaceRoot's `lock : RwLockState` field is
 forwarded through `freezeVSpaceRoot` so the frozen-phase representation
-preserves the per-object lock state. -/
+preserves the per-object lock state.
+
+**Note (audit-pass-4)**: `FrozenVSpaceRoot` deliberately does NOT
+`deriving Repr`.  Unlike `FrozenCNode` (whose `slots : CNodeRadix`
+carries a `Repr` instance via `Q4-D`), `FrozenVSpaceRoot.mappings :
+FrozenMap VAddr (PAddr × PagePermissions)` has no `Repr` instance.
+Adding `deriving Repr` here causes `failed to synthesize instance of
+type class Repr (FrozenMap ...)`.  If trace output of frozen VSpaces
+becomes necessary, a manual `Repr FrozenVSpaceRoot` instance that
+elides the `mappings` field (e.g., reporting only `asid` + mapping
+count + `lock`) can be added; that path is post-1.0 ergonomics work
+outside SM3.A scope. -/
 structure FrozenVSpaceRoot where
   asid     : SeLe4n.ASID
   mappings : FrozenMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)

@@ -107,9 +107,14 @@ projection function and the SM3.A.11 default-state theorems.
 
 * **SM3.A.1**: `TCB.lock : RwLockState` with default `RwLockState.unheld`
   (`SeLe4n/Model/Object/Types.lean`).  The manual `BEq TCB` instance
-  is extended to include `lock` (24 fields total); `TCB.ext` gains an
-  `hLock` hypothesis for the per-field extensionality witness; the
-  `not_lawfulBEq` theorem is unaffected (its non-lawfulness derives
+  is extended to include `lock` (23 fields total — `tid`, `priority`,
+  `domain`, `cspaceRoot`, `vspaceRoot`, `ipcBuffer`, `ipcState`,
+  `threadState`, `timeSlice`, `deadline`, `queuePrev`, `queuePPrev`,
+  `queueNext`, `pendingMessage`, `registerContext`, `faultHandler`,
+  `boundNotification`, `schedContextBinding`, `timeoutBudget`,
+  `maxControlledPriority`, `pipBoost`, `timedOut`, `lock`); `TCB.ext`
+  gains an `hLock` hypothesis for the per-field extensionality witness;
+  the `not_lawfulBEq` theorem is unaffected (its non-lawfulness derives
   from `registerContext`, not from any added field).
 * **SM3.A.2**: `Endpoint.lock` with default `unheld`.  Endpoint
   retains `deriving DecidableEq` because `RwLockState` derives
@@ -191,18 +196,27 @@ phase).
 
 ### Test coverage
 
-* **New suite**: `tests/PerObjectLockSuite.lean` (~360 LoC, 24 surface
-  anchors, 26 decidable examples, 24 runtime assertions covering
-  default-state shape, per-object default-lock witness (TCB through
-  named-field construction with required fields; Endpoint, CNode,
-  Notification, UntypedObject, SchedContext, VSpaceRoot via empty /
-  default constructors), `objectLockOf` per-variant reduction
-  (all 7 variants including TCB), frozen-state lock-field forwarding
-  (`freezeCNode`, `freezeVSpaceRoot`), and `RwLockState.unheld`
-  auxiliary properties from SM2.C (5-conjunct `wf`, zero-writer,
-  zero-readers, zero-waiters).  Runnable as
-  `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
-  and Tier 3 (invariant-surface).
+* **New suite**: `tests/PerObjectLockSuite.lean` (~646 LoC
+  post-audit-pass-4: 36 surface anchors, 36 decidable examples, 41
+  runtime assertions).  Covers default-state shape, per-object
+  default-lock witness (TCB through named-field construction with
+  required fields; Endpoint, CNode, Notification, UntypedObject,
+  SchedContext, VSpaceRoot via empty / default constructors),
+  `KernelObject.objectLockOf` per-variant reduction (all 7
+  variants including TCB), `FrozenKernelObject.objectLockOf`
+  per-variant reduction (audit-pass-2 M-1; full 7-variant coverage
+  added at audit-pass-4), frozen-state lock-field forwarding
+  (`freezeCNode`, `freezeVSpaceRoot`, plus the
+  `freezeObject_preserves_objectLockOf` aggregate exercised on
+  every variant), non-vacuous SM3.A.11 witnesses on post-insert
+  states (audit-pass-4 HIGH-fix: 3 variants — endpoint, cnode,
+  vspaceRoot — exercise `objectLockOf` after `RHTable.insert` to
+  give the universal-quantifier theorem a non-empty witness),
+  `freeze mkEmptyIntermediateState` ObjStore-lock preservation,
+  and `RwLockState.unheld` auxiliary properties from SM2.C
+  (5-conjunct `wf`, zero-writer, zero-readers, zero-waiters).
+  Runnable as `lake exe per_object_lock_suite`.  Wired into Tier 2
+  (negative) and Tier 3 (invariant-surface).
 * **Tier 3 surface anchors** added covering every SM3.A.1..A.11
   public symbol.
 * All 318 existing modules still build (`lake build` exit 0); all
