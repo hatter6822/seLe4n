@@ -8,6 +8,11 @@
 -/
 
 import SeLe4n.Prelude
+-- WS-SM SM3.A.6: per-SchedContext lock field requires the abstract
+-- operational RwLock specification from SM2.C.  This import does not
+-- introduce a cycle: `Concurrency.Locks.RwLock` depends transitively
+-- only on `Prelude` (via `Concurrency.Types` and `Concurrency.MemoryModel`).
+import SeLe4n.Kernel.Concurrency.Locks.RwLock
 
 /-! # SchedContext Types — WS-Z Phase Z1
 
@@ -165,6 +170,16 @@ structure SchedContext where
   replenishments : List ReplenishmentEntry := []
   boundThread : Option SeLe4n.ThreadId := none
   isActive : Bool := false
+  /-- WS-SM SM3.A.6: per-SchedContext reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated SchedContext starts
+      with its lock available.  CBS operations that mutate budget /
+      replenishments (`timerTickBudget`, `applyRefill`,
+      `schedContextBind`, `schedContextUnbind`, donation paths) acquire
+      in write mode; observation paths (read-only budget queries) acquire
+      in read mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
+      §5.1 (SM3.A.6). -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 deriving Repr
 
 -- ============================================================================

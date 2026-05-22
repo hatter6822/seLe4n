@@ -7,9 +7,14 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM2.A abstract memory model; closes the
--- happens-before partial-order foundation that SM2.B TicketLock and
--- SM2.C RwLock proofs consume for release/acquire pairing).
+-- WS-SM SM3.A: this module entered the production import closure
+-- transitively via `Locks.RwLock` when the SM3.A.1..A.9 per-object
+-- `lock : RwLockState` fields landed on every kernel-object struct.
+-- The prior "STATUS: staged" marker was removed at SM3.A landing
+-- per the implement-the-improvement rule — the abstract memory model
+-- is now part of the kernel's foundational specification.  The SM2.A
+-- operational ARMv8.1-A LSE memory model continues to underpin the
+-- SM2.B TicketLock and SM2.C RwLock release/acquire-pairing proofs.
 
 import SeLe4n.Kernel.Concurrency.Types
 

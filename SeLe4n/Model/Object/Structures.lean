@@ -171,6 +171,17 @@ WS-H11/H-02: Enriched with per-page permissions (read/write/execute/user/cacheab
 structure VSpaceRoot where
   asid : SeLe4n.ASID
   mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  /-- WS-SM SM3.A.7: per-VSpaceRoot reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated VSpaceRoot starts
+      with its lock available.  VSpace mutation paths (`vspaceMapPage`,
+      `vspaceUnmapPage`) acquire in write mode; lookup paths
+      (`vspaceLookup`, `vspaceLookupAddr`) acquire in read mode.  Per
+      §4.3 of the SM3 plan, page-level (per-PTE) locking is rejected as
+      a v1.0.0 design — VSpace mutations operate at the table level and
+      a single VSpaceRoot lock suffices for serializability.  See
+      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.7). -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
 
 namespace VSpaceRoot
@@ -448,7 +459,10 @@ instance : BEq VSpaceRoot where
   beq a b :=
     a.asid == b.asid &&
     a.mappings.size == b.mappings.size &&
-    a.mappings.fold (init := true) (fun acc k v => acc && b.mappings[k]? == some v)
+    a.mappings.fold (init := true) (fun acc k v => acc && b.mappings[k]? == some v) &&
+    -- WS-SM SM3.A.7: per-VSpaceRoot lock state participates in structural equality.
+    -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
+    a.lock == b.lock
 
 /-- WS-H7: VSpaceRoot BEq correctness — the fold-based comparison is sound.
 When BEq returns true, the two VSpaceRoots have equal ASIDs and identical
@@ -461,8 +475,13 @@ the forward (soundness) direction; the reverse follows from `BEq.refl` when the
 structures are definitionally equal. -/
 theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
     a.asid = b.asid ∧ a.mappings.size = b.mappings.size := by
+  -- WS-SM SM3.A.7 audit-pass note: rewritten with `obtain` to be robust
+  -- against the addition of the `lock` conjunct.  The previous positional
+  -- projection pattern `h.1.1` / `h.1.2` was structurally fragile — adding
+  -- a new conjunct to the BEq definition silently shifted indices.
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  exact ⟨h.1.1, h.1.2⟩
+  obtain ⟨⟨⟨hAsid, hSize⟩, _hFold⟩, _hLock⟩ := h
+  exact ⟨hAsid, hSize⟩
 
 /-- Y2-D: BEq reflexivity for VSpaceRoot under the Robin Hood invariant.
 
@@ -498,8 +517,12 @@ theorem VSpaceRoot.beq_sound (a b : VSpaceRoot) (h : (a == b) = true) :
     as a proof obligation in any kernel invariant or preservation theorem. -/
 theorem VSpaceRoot.beq_refl (a : VSpaceRoot) (hExt : a.mappings.invExt) :
     (a == a) = true := by
+  -- WS-SM SM3.A.7: extended `simp only` set with `Bool.and_true` to handle
+  -- the trailing `&& a.lock == a.lock` conjunct added in SM3.A.7.
+  -- `RwLockState` derives `LawfulBEq` (via `DecidableEq`), so
+  -- `a.lock == a.lock` reduces to `true` via `beq_self_eq_true`.
   unfold BEq.beq instBEqVSpaceRoot
-  simp only [beq_self_eq_true, Bool.true_and]
+  simp only [beq_self_eq_true, Bool.true_and, Bool.and_true]
   -- Remaining goal: the fold over a.mappings produces true
   unfold SeLe4n.Kernel.RobinHood.RHTable.fold
   apply Array.foldl_induction (motive := fun _ acc => acc = true)
@@ -993,16 +1016,29 @@ instance : BEq CNode where
     a.depth == b.depth && a.guardWidth == b.guardWidth &&
     a.guardValue == b.guardValue && a.radixWidth == b.radixWidth &&
     a.slots.size == b.slots.size &&
-    a.slots.fold (init := true) (fun acc k v => acc && b.slots.get? k == some v)
+    a.slots.fold (init := true) (fun acc k v => acc && b.slots.get? k == some v) &&
+    -- WS-SM SM3.A.3: per-CNode lock state participates in structural equality.
+    -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
+    a.lock == b.lock
 
 /-- WS-H13: CNode BEq soundness — when BEq returns true, the two CNodes have
-equal depth, guardWidth, guardValue, radixWidth, and slot count. -/
+equal depth, guardWidth, guardValue, radixWidth, and slot count.
+
+WS-SM SM3.A.3 audit-pass note: rewritten with `obtain` to be robust against
+the addition of the `lock` conjunct (and any future per-CNode field added to
+`BEq`).  The previous positional projection pattern `h.1.1.1.1.1` was
+structurally fragile — adding a new conjunct to the BEq definition silently
+shifted every index by one and surfaced as a confusing "field mismatch" error.
+The `obtain` form names each conjunct explicitly, so a future BEq addition
+only requires extending the pattern. -/
 theorem CNode.beq_sound (a b : CNode) (h : (a == b) = true) :
     a.depth = b.depth ∧ a.guardWidth = b.guardWidth ∧
     a.guardValue = b.guardValue ∧ a.radixWidth = b.radixWidth ∧
     a.slots.size = b.slots.size := by
   simp only [BEq.beq, Bool.and_eq_true_iff, decide_eq_true_eq] at h
-  exact ⟨h.1.1.1.1.1, h.1.1.1.1.2, h.1.1.1.2, h.1.1.2, h.1.2⟩
+  obtain ⟨⟨⟨⟨⟨⟨hDepth, hGuardWidth⟩, hGuardValue⟩, hRadixWidth⟩, hSlotsSize⟩, _hFold⟩,
+          _hLock⟩ := h
+  exact ⟨hDepth, hGuardWidth, hGuardValue, hRadixWidth, hSlotsSize⟩
 
 -- ============================================================================
 -- WS-H13: CSpace depth consistency predicates
@@ -2678,6 +2714,66 @@ def objectType : KernelObject → KernelObjectType
   | .vspaceRoot _ => .vspaceRoot
   | .untyped _ => .untyped
   | .schedContext _ => .schedContext
+
+/-- WS-SM SM3.A.10: per-object lock state projection.
+
+Returns the `RwLockState` carried by the inner per-object struct (TCB,
+Endpoint, Notification, CNode, VSpaceRoot, UntypedObject, SchedContext).
+This is the abstract-state side of the per-object lock field discipline:
+
+* SM3.B (`LockId.fromObject`) maps an object to its `LockId` (kind +
+  ObjId) without consulting the lock state.
+* SM3.B (`LockId.lookup`) routes an `(s, LockId)` pair through the
+  RHTable and `objectLockOf` to return the abstract lock state.
+* SM3.C.4 (`lockSetHeld`) consumes `objectLockOf o` to check that the
+  declared lock set is currently held by the executing core.
+
+By construction, every newly-allocated object has `objectLockOf o =
+RwLockState.unheld` — see `default_objects_locks_unheld` (SM3.A.11).
+The abstract spec mirrors the runtime per-object lock state because the
+Lean abstract `RwLockState` refines the Rust `AtomicU64`-backed
+`RwLock` via the SM2.C.20 refinement bridge in
+`Concurrency/Locks/RwLockRefinement.lean`. -/
+def objectLockOf : KernelObject → SeLe4n.Kernel.Concurrency.RwLockState
+  | .tcb t          => t.lock
+  | .endpoint e     => e.lock
+  | .notification n => n.lock
+  | .cnode c        => c.lock
+  | .vspaceRoot v   => v.lock
+  | .untyped u      => u.lock
+  | .schedContext s => s.lock
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.tcb`.
+
+Surface-anchor for SM3.B consumers (`LockId.lookup`) and SM3.C
+(`withLockSet`) that need to thread the projection through
+case-analysis on `KernelObject`. -/
+@[simp] theorem objectLockOf_tcb (t : TCB) :
+    objectLockOf (.tcb t) = t.lock := rfl
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.endpoint`. -/
+@[simp] theorem objectLockOf_endpoint (e : Endpoint) :
+    objectLockOf (.endpoint e) = e.lock := rfl
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.notification`. -/
+@[simp] theorem objectLockOf_notification (n : Notification) :
+    objectLockOf (.notification n) = n.lock := rfl
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.cnode`. -/
+@[simp] theorem objectLockOf_cnode (c : CNode) :
+    objectLockOf (.cnode c) = c.lock := rfl
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.vspaceRoot`. -/
+@[simp] theorem objectLockOf_vspaceRoot (v : VSpaceRoot) :
+    objectLockOf (.vspaceRoot v) = v.lock := rfl
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.untyped`. -/
+@[simp] theorem objectLockOf_untyped (u : UntypedObject) :
+    objectLockOf (.untyped u) = u.lock := rfl
+
+/-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.schedContext`. -/
+@[simp] theorem objectLockOf_schedContext (s : SeLe4n.Kernel.SchedContext) :
+    objectLockOf (.schedContext s) = s.lock := rfl
 
 /-- T5-C (M-NEW-5): Object well-formedness predicate parameterized by the object store.
 

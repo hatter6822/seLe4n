@@ -7,9 +7,16 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM2.C abstract RwLock spec; refined by
--- `rust/sele4n-hal/src/rw_lock.rs` per SM2.C.19 and the SM2.C.20
--- refinement bridge `Locks/RwLockRefinement.lean`).
+-- WS-SM SM3.A: this module entered the production import closure when
+-- the SM3.A.1..A.9 per-object `lock : RwLockState` fields landed on every
+-- kernel-object struct (TCB, Endpoint, CNode, Notification,
+-- UntypedObject, SchedContext, VSpaceRoot).  The prior "STATUS: staged"
+-- marker was removed at SM3.A landing per the implement-the-improvement
+-- rule — every kernel object now carries a per-object lock state and
+-- consuming code (SM3.B `LockId.lookup`, SM3.C `withLockSet`) is built
+-- on top.  The abstract operational specification here continues to be
+-- refined by `rust/sele4n-hal/src/rw_lock.rs` per SM2.C.19 and the
+-- SM2.C.20 refinement bridge `Locks/RwLockRefinement.lean`.
 
 import SeLe4n.Kernel.Concurrency.MemoryModel
 import SeLe4n.Kernel.Concurrency.Types
