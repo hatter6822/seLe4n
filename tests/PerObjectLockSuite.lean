@@ -395,6 +395,151 @@ example :
   decide
 
 -- ============================================================================
+-- §4b — WS-SM SM3.A audit-pass-7: BEq distinguishes lock-state regression guard
+-- ============================================================================
+
+/-! ## Each kernel-object `BEq` instance distinguishes lock-state differences
+
+The audit-pass-7 audit found that `BEq SchedContext` was missing
+the `lock` conjunct — two SchedContexts differing only in lock
+state would compare equal, masking SM3.A.11 regressions in any
+caller (including `BEq KernelObject`'s dispatch on `.schedContext`).
+
+These regression-prevention examples assert that for every kernel
+object kind, constructing two values whose ONLY field difference
+is `lock` (one `.unheld`, the other with a non-trivial `writerHeld`)
+yields `(a == b) = false` under the BEq instance.
+
+A future workstream that adds a new kernel object MUST add a
+corresponding test here.  A future workstream that adds a new
+field to an existing kernel object's BEq instance MUST verify
+the `lock` field is still part of the comparison.
+
+The non-unheld lock state used as witness — `{ writerHeld := some
+⟨0, by decide⟩, readers := [], waiters := [] }` — is a concrete
+lock state that differs from `unheld` only in the `writerHeld`
+field.  Both share `readers = []` and `waiters = []`. -/
+
+/-- WS-SM SM3.A audit-pass-7: regression-guard fixtures for the BEq
+distinguishes-lock-state checks.  `heldLockBy0` differs from
+`RwLockState.unheld` only in the `writerHeld` field (asserts a
+writer held by `CoreId 0`). -/
+private def heldLockBy0 : SeLe4n.Kernel.Concurrency.RwLockState :=
+  { writerHeld := some ⟨0, by decide⟩
+    readers    := []
+    waiters    := [] }
+
+private def _tcbU_audit7 : TCB :=
+  { tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+    ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    lock := RwLockState.unheld }
+
+private def _tcbH_audit7 : TCB :=
+  { tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+    ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    lock := heldLockBy0 }
+
+/-- BEq TCB distinguishes lock states. -/
+example : (_tcbU_audit7 == _tcbH_audit7) = false := by decide
+
+private def _epU_audit7 : Endpoint := { lock := RwLockState.unheld }
+private def _epH_audit7 : Endpoint := { lock := heldLockBy0 }
+
+/-- BEq Endpoint distinguishes lock states. -/
+example : (_epU_audit7 == _epH_audit7) = false := by decide
+
+private def _cnU_audit7 : CNode :=
+  { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+    slots := SeLe4n.UniqueSlotMap.empty,
+    lock := RwLockState.unheld }
+
+private def _cnH_audit7 : CNode :=
+  { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+    slots := SeLe4n.UniqueSlotMap.empty,
+    lock := heldLockBy0 }
+
+/-- BEq CNode distinguishes lock states. -/
+example : (_cnU_audit7 == _cnH_audit7) = false := by decide
+
+private def _nU_audit7 : Notification :=
+  { state := NotificationState.idle,
+    waitingThreads := SeLe4n.NoDupList.empty,
+    pendingBadge := none,
+    lock := RwLockState.unheld }
+
+private def _nH_audit7 : Notification :=
+  { state := NotificationState.idle,
+    waitingThreads := SeLe4n.NoDupList.empty,
+    pendingBadge := none,
+    lock := heldLockBy0 }
+
+/-- BEq Notification distinguishes lock states. -/
+example : (_nU_audit7 == _nH_audit7) = false := by decide
+
+private def _uU_audit7 : UntypedObject :=
+  { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0,
+    lock := RwLockState.unheld }
+
+private def _uH_audit7 : UntypedObject :=
+  { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0,
+    lock := heldLockBy0 }
+
+/-- BEq UntypedObject distinguishes lock states. -/
+example : (_uU_audit7 == _uH_audit7) = false := by decide
+
+private def _scU_audit7 : SeLe4n.Kernel.SchedContext :=
+  { scId := ⟨0⟩, budget := SeLe4n.Kernel.Budget.zero,
+    period := SeLe4n.Kernel.Period.default,
+    priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := SeLe4n.Kernel.Budget.zero,
+    lock := RwLockState.unheld }
+
+private def _scH_audit7 : SeLe4n.Kernel.SchedContext :=
+  { scId := ⟨0⟩, budget := SeLe4n.Kernel.Budget.zero,
+    period := SeLe4n.Kernel.Period.default,
+    priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := SeLe4n.Kernel.Budget.zero,
+    lock := heldLockBy0 }
+
+/-- WS-SM SM3.A audit-pass-7 (THE FIX): BEq SchedContext now
+distinguishes lock states.  Before audit-pass-7 this comparison
+returned `true`, masking lock-state regressions. -/
+example : (_scU_audit7 == _scH_audit7) = false := by decide
+
+private def _vsU_audit7 : VSpaceRoot := { asid := ⟨0⟩, mappings := {},
+                                          lock := RwLockState.unheld }
+private def _vsH_audit7 : VSpaceRoot := { asid := ⟨0⟩, mappings := {},
+                                          lock := heldLockBy0 }
+
+/-- BEq VSpaceRoot distinguishes lock states. -/
+example : (_vsU_audit7 == _vsH_audit7) = false := by decide
+
+/-- BEq KernelObject distinguishes lock states on the .endpoint variant. -/
+example :
+    (KernelObject.endpoint _epU_audit7 == KernelObject.endpoint _epH_audit7) = false := by
+  decide
+
+/-- BEq KernelObject distinguishes lock states on the .notification variant. -/
+example :
+    (KernelObject.notification _nU_audit7 == KernelObject.notification _nH_audit7)
+      = false := by
+  decide
+
+/-- BEq KernelObject distinguishes lock states on the .schedContext variant —
+the canonical audit-pass-7 fix target. -/
+example :
+    (KernelObject.schedContext _scU_audit7 == KernelObject.schedContext _scH_audit7)
+      = false := by
+  decide
+
+/-- BEq KernelObject distinguishes lock states on the .untyped variant. -/
+example :
+    (KernelObject.untyped _uU_audit7 == KernelObject.untyped _uH_audit7) = false := by
+  decide
+
+-- ============================================================================
 -- §5 — RwLockState.unheld properties (cross-referencing SM2.C)
 -- ============================================================================
 
@@ -621,6 +766,84 @@ private def runObjectLockOfReductionChecks : IO Unit := do
       (KernelObject.objectLockOf
         (.vspaceRoot ({ asid := ⟨0⟩, mappings := {} } : VSpaceRoot))
         = RwLockState.unheld))
+
+private def runBEqDistinguishesLockStateChecks : IO Unit := do
+  IO.println "--- §4b SM3.A audit-pass-7 — BEq distinguishes lock state regression guard ---"
+  -- Aggregate runtime check: every kernel object's BEq must
+  -- distinguish lock-state differences.  These runtime assertions
+  -- surface in the test output so a future regression is visible
+  -- in `lake exe per_object_lock_suite`.  Construct two kernel
+  -- objects per kind, differing ONLY in `lock`, and assert
+  -- `(a == b) = false`.
+  let heldLockBy0 : RwLockState :=
+    { writerHeld := some ⟨0, by decide⟩, readers := [], waiters := [] }
+  let tcbU : TCB := { tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+                      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+                      ipcBuffer := SeLe4n.VAddr.ofNat 0,
+                      lock := RwLockState.unheld }
+  let tcbH : TCB := { tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+                      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+                      ipcBuffer := SeLe4n.VAddr.ofNat 0,
+                      lock := heldLockBy0 }
+  assertBool "BEq TCB distinguishes lock states"
+    (decide ((tcbU == tcbH) = false))
+  let epU : Endpoint := { lock := RwLockState.unheld }
+  let epH : Endpoint := { lock := heldLockBy0 }
+  assertBool "BEq Endpoint distinguishes lock states"
+    (decide ((epU == epH) = false))
+  let cnU : CNode := { depth := 0, guardWidth := 0, guardValue := 0,
+                       radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty,
+                       lock := RwLockState.unheld }
+  let cnH : CNode := { depth := 0, guardWidth := 0, guardValue := 0,
+                       radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty,
+                       lock := heldLockBy0 }
+  assertBool "BEq CNode distinguishes lock states"
+    (decide ((cnU == cnH) = false))
+  let nU : Notification := { state := NotificationState.idle,
+                             waitingThreads := SeLe4n.NoDupList.empty,
+                             pendingBadge := none,
+                             lock := RwLockState.unheld }
+  let nH : Notification := { state := NotificationState.idle,
+                             waitingThreads := SeLe4n.NoDupList.empty,
+                             pendingBadge := none,
+                             lock := heldLockBy0 }
+  assertBool "BEq Notification distinguishes lock states"
+    (decide ((nU == nH) = false))
+  let uU : UntypedObject := { regionBase := SeLe4n.PAddr.ofNat 0,
+                              regionSize := 0,
+                              lock := RwLockState.unheld }
+  let uH : UntypedObject := { regionBase := SeLe4n.PAddr.ofNat 0,
+                              regionSize := 0,
+                              lock := heldLockBy0 }
+  assertBool "BEq UntypedObject distinguishes lock states"
+    (decide ((uU == uH) = false))
+  -- WS-SM SM3.A audit-pass-7 (THE FIX): BEq SchedContext now
+  -- distinguishes lock states.  Before audit-pass-7 this returned
+  -- `true` (BEq missing the `lock` conjunct), masking regressions.
+  let scU : SeLe4n.Kernel.SchedContext :=
+    { scId := ⟨0⟩, budget := SeLe4n.Kernel.Budget.zero,
+      period := SeLe4n.Kernel.Period.default,
+      priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+      budgetRemaining := SeLe4n.Kernel.Budget.zero,
+      lock := RwLockState.unheld }
+  let scH : SeLe4n.Kernel.SchedContext :=
+    { scId := ⟨0⟩, budget := SeLe4n.Kernel.Budget.zero,
+      period := SeLe4n.Kernel.Period.default,
+      priority := ⟨0⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+      budgetRemaining := SeLe4n.Kernel.Budget.zero,
+      lock := heldLockBy0 }
+  assertBool "BEq SchedContext distinguishes lock states (audit-pass-7 fix)"
+    (decide ((scU == scH) = false))
+  let vsU : VSpaceRoot := { asid := ⟨0⟩, mappings := {},
+                            lock := RwLockState.unheld }
+  let vsH : VSpaceRoot := { asid := ⟨0⟩, mappings := {},
+                            lock := heldLockBy0 }
+  assertBool "BEq VSpaceRoot distinguishes lock states"
+    (decide ((vsU == vsH) = false))
+  -- Aggregate: BEq KernelObject distinguishes lock states on the
+  -- .schedContext variant (the audit-pass-7 fix target).
+  assertBool "BEq KernelObject distinguishes lock states on .schedContext variant"
+    (decide ((KernelObject.schedContext scU == KernelObject.schedContext scH) = false))
 
 private def runFrozenStateForwardingChecks : IO Unit := do
   IO.println "--- §4 FrozenState — lock-field forwarding (SM3.A.3, A.7, A.10) ---"
@@ -860,6 +1083,7 @@ def runPerObjectLockChecks : IO Unit := do
   runDefaultStateChecks
   runPerObjectDefaultChecks
   runObjectLockOfReductionChecks
+  runBEqDistinguishesLockStateChecks
   runFrozenStateForwardingChecks
   runRwLockStateAuxChecks
   runAuditPass5InvariantChecks

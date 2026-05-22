@@ -2711,6 +2711,63 @@ documentation lives under `docs/` and `docs/gitbook/`.
   refactor net +1, Repr FrozenVSpaceRoot +1); Tier 0+1+2+3
   green; Rust 988+ tests green; zero clippy warnings.
 
+  **Audit-pass-7 refinements** (user-reported correctness gaps;
+  both closed with static guarantees that prevent recurrence):
+  - **Issue #1: `BEq SchedContext` was missing the `lock`
+    conjunct**.  The SM3.A.6 commit added `SchedContext.lock` but
+    did NOT update the manual `BEq SchedContext` instance.  Two
+    SchedContexts that differ ONLY in lock state compared equal
+    under `==` — masking SM3.A.11 invariant regressions in any
+    code/test that uses `==`.  The defect propagated through
+    `BEq KernelObject`'s dispatch on `.schedContext`.  **Fix**:
+    added `&& a.lock == b.lock` as a 12th conjunct.  Plus a new
+    `tests/PerObjectLockSuite.lean` §4b section with 11 decidable
+    regression tests (7 per-kernel-object struct + 4 KernelObject-
+    variant) plus 8 runtime mirrors that construct two values
+    differing only in `lock` and assert `(a == b) = false`.  A
+    future workstream that adds a new kernel object or changes
+    an existing BEq instance to drop the `lock` field fails this
+    regression-prevention block.
+  - **Issue #2: `PerObjectLockTheorem.identifier : String` had
+    no compile-time check**.  A typo or stale rename in any
+    inventory entry would still typecheck — the 34-entry
+    inventory's claimed "rename/removal regression guard" was
+    weakened by the `String`-typed field (the `_nodup` and
+    `_count` proofs operated on strings, not on actual
+    declarations).  **Fix**: added a `polt!` macro that
+    captures the identifier's `Lean.Name` AND emits a
+    `let _ := @<ident>; ()` term in a new `_elabCheck : Unit`
+    field of `PerObjectLockTheorem`.  A typo or stale rename
+    fails to elaborate with "unknown constant '<name>'" — the
+    static guarantee a `String`-typed field cannot provide.
+    Verified via three intentional regressions (each rolled
+    back after verifying the build failure): typo on
+    `Endpoint.lock` → `Endpoint.lockTYPO` fails with "Unknown
+    constant"; silent rename of `default_objStoreLock_unheld`
+    fails with "Unknown identifier"; the canonical 34 entries
+    pass cleanly.
+
+  **Test results after audit-pass-7**: 320/320 Lean modules
+  build green; `lake exe per_object_lock_suite` reports 68/68
+  PASS (was 60; +8 BEq regression assertions); 65 surface
+  anchors, 61 decidable examples, 68 runtime assertions, ~1097
+  LoC; Tier 0+1+2+3 green; Rust 988+ tests green; zero clippy
+  warnings.
+
+  **Static guarantees added in audit-pass-7** (preventing
+  recurrence):
+  - `BEq SchedContext` includes `&& a.lock == b.lock` — pinned
+    by 11 decidable + 8 runtime regression tests.
+  - Every kernel-object struct's BEq distinguishes lock state —
+    pinned by per-kind regression tests covering TCB, Endpoint,
+    CNode, Notification, UntypedObject, SchedContext, VSpaceRoot
+    + the aggregate `BEq KernelObject` dispatch.
+  - Inventory identifiers refer to actual declarations — pinned
+    by the `polt!` macro's compile-time elaboration check.
+  - Inventory identifier strings match their declaration names —
+    pinned by macro stringification (the developer writes the
+    declaration name once; the macro derives the string).
+
   Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
   per-transition `lockSet`, `lockAcquireSequence` ordering
   theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C

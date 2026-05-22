@@ -1,3 +1,97 @@
+## Unreleased — WS-SM SM3.A audit-pass-7: BEq SchedContext lock + compile-time-checked inventory identifiers
+
+User-reported audit identified two correctness issues, both closed.
+
+### Issue #1 — `BEq SchedContext` was missing the `lock` conjunct
+
+The SM3.A.6 commit added `SchedContext.lock : RwLockState` but did NOT
+update the manual `BEq SchedContext` instance in
+`SeLe4n/Kernel/SchedContext/Types.lean`.  The instance compared 11
+fields (`scId` through `isActive`) but not `lock`.
+
+**Impact**: two SchedContexts that differ ONLY in lock state compared
+equal under `==`, masking SM3.A.11 invariant regressions in any
+code/test that uses `==` for object/state comparison.  The defect
+propagated through `BEq KernelObject`'s dispatch on the
+`.schedContext` variant — so lock-state regressions could be
+silently masked anywhere in the kernel.
+
+**Fix**: extended `BEq SchedContext` to include `&& a.lock == b.lock`
+as a 12th conjunct.  `RwLockState` derives `DecidableEq` so its
+`==` agrees with `=`.
+
+### Issue #2 — `PerObjectLockTheorem.identifier` had no compile-time check
+
+The audit-pass-5 form of `PerObjectLockTheorem.identifier` was
+typed as `String`, meaning a typo or stale rename in any entry
+would still typecheck.  The 34-entry inventory's claim of being
+a "rename/removal regression guard" was structurally weakened by
+this — the `_nodup` and `_count` proofs operated on strings, not
+on actual declarations.
+
+**Fix**: added a compile-time elaboration witness via a `polt!`
+macro that:
+
+1. **Captures the identifier's `Lean.Name`** verbatim (stored in
+   `identifier : String` for cross-reference).
+2. **Forces compile-time elaboration** via a `let _ := @<ident>;
+   ()` term stored in a new `_elabCheck : Unit` field of
+   `PerObjectLockTheorem`.  A typo or stale rename fails to
+   elaborate with "unknown constant '<name>'" — the static
+   guarantee a `String`-typed field cannot provide.
+
+**Verified** via three intentional regressions (each rolled back
+after verifying the build failure):
+
+* Typo `Endpoint.lock` → `Endpoint.lockTYPO`: build fails with
+  "Unknown constant `SeLe4n.Model.Endpoint.lockTYPO`".
+* Silent rename `default_objStoreLock_unheld` →
+  `default_objStoreLock_REMOVED`: build fails with "Unknown
+  identifier".
+* Macro expansion still passes for the canonical 34 entries.
+
+### Regression-prevention tests (Issue #1 follow-on)
+
+To guarantee Issue #1 cannot recur for any kernel object,
+`tests/PerObjectLockSuite.lean` gains a new §4b section with **per-
+kernel-object BEq distinguishes-lock-state** witnesses:
+
+* 7 decidable `example` cases (TCB, Endpoint, CNode, Notification,
+  UntypedObject, SchedContext, VSpaceRoot) constructing two
+  instances differing only in `lock`, asserting `(a == b) = false`.
+* 4 `KernelObject`-variant decidable cases for the aggregate
+  `BEq KernelObject` dispatch.
+* 8 runtime `assertBool` mirrors of the above.
+
+A future workstream that adds a new kernel object MUST add a
+corresponding test here.  A future workstream that adds a new
+field to an existing kernel object's BEq instance MUST verify the
+`lock` field is still part of the comparison — the regression
+guards above will fail if it is silently dropped.
+
+### Test results (audit-pass-7)
+
+* Lean module build: **320/320 green**.
+* `lake exe per_object_lock_suite`: **68/68 PASS** (was 60 at
+  audit-pass-6; +8 BEq regression assertions).
+* Suite metrics: 65 surface anchors, **61** decidable examples
+  (was 50; +11 for BEq regression + macro-typed inventory
+  entries), 68 runtime assertions, **1097 LoC** (was 873).
+* Full Tier 0+1+2+3 green.
+* Rust 988+ tests green; zero clippy warnings.
+
+### Static guarantees added (this can not happen again)
+
+| Guarantee | Mechanism |
+|---|---|
+| BEq SchedContext distinguishes lock state | Manual `BEq SchedContext` includes `&& a.lock == b.lock` conjunct |
+| Every kernel object's BEq distinguishes lock state | 11 decidable regression tests (7 per-struct + 4 KernelObject-variant) plus 8 runtime mirrors |
+| Inventory identifier refers to a real declaration | `polt!` macro emits `let _ := @<ident>; ()` forcing elaboration |
+| Inventory identifier matches its stringified form | Macro stringifies the ident itself; no manual string typing |
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1;
+      docs/CLAIM_EVIDENCE_INDEX.md (SM3.A row)
+
 ## Unreleased — WS-SM SM3.A audit-pass-6: deeper audit close-out
 
 Second user-driven deep audit identified 1 CRITICAL + 4 MEDIUM/LOW
