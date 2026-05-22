@@ -195,6 +195,25 @@ theorem RwLockState.unheld_readers : unheld.readers = ([] : List CoreId) := rfl
 theorem RwLockState.unheld_waiters :
     unheld.waiters = ([] : List (CoreId × AccessMode)) := rfl
 
+/-- **WS-SM SM3.A audit-pass-5**: the `Inhabited`-derived `default` of
+`RwLockState` is structurally identical to `RwLockState.unheld`.
+
+`RwLockState` derives `Inhabited`, which Lean synthesises by
+combining the `Inhabited` instances of every field
+(`Option CoreId` → `none`, `List CoreId` → `[]`,
+`List (CoreId × AccessMode)` → `[]`).  The result is the same
+record as `RwLockState.unheld`.
+
+This equivalence is **not** trivially `rfl` in every Lean context
+because the `Inhabited` derivation produces an explicit
+`Inhabited.mk { writerHeld := default, ... }` term whose
+definitional unfolding requires reducing each field's `Inhabited`
+instance.  We provide an explicit witness so downstream code that
+writes `lock := default` is machine-checkably equivalent to code
+that writes `lock := RwLockState.unheld`. -/
+@[simp] theorem RwLockState.default_eq_unheld :
+    (default : RwLockState) = RwLockState.unheld := rfl
+
 -- ============================================================================
 -- SM2.C.2 — wf predicate (5 conjuncts: plan's 4 + reachability gap closure)
 -- ============================================================================

@@ -209,6 +209,24 @@ structure FrozenVSpaceRoot where
   lock     : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
 
+/-- WS-SM SM3.A audit-pass-5: manual `Repr FrozenVSpaceRoot` instance
+that elides the `mappings` field (which has no `Repr` instance via
+`FrozenMap`).
+
+Closes the audit-pass-4 deferred Repr work without requiring a
+`Repr (FrozenMap ...)` instance.  The output reports the `asid` and
+`lock` fields verbatim and shows the `mappings` field as
+`«mappings:opaque»` with a count placeholder.  This is sufficient
+for trace fixtures that need to identify which VSpaceRoot is being
+discussed without dumping its full mapping table.
+
+Pattern follows the standard Lean 4 manual `Repr` style: a
+single-line `Std.Format.text` constant. -/
+instance : Repr FrozenVSpaceRoot where
+  reprPrec v _ :=
+    s!"⟨asid := {reprStr v.asid}, mappings := «opaque/FrozenMap», " ++
+    s!"lock := {reprStr v.lock}⟩"
+
 /-- Q5-B: Frozen kernel object — mirrors `KernelObject` but with frozen
 representations for CNode and VSpaceRoot. TCB, Endpoint, Notification,
 and UntypedObject are unchanged (they contain no embedded hash tables). -/

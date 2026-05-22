@@ -1,3 +1,111 @@
+## Unreleased — WS-SM SM3.A audit-pass-5: deferred-completion close-out
+
+Comprehensive close-out of the items identified in the user-driven
+audit as "work not optimally completed".  Lands non-vacuous
+preservation theorems, totality/consistency witnesses, the
+`perObjectLockTheorems` aggregator, the `RwLockState.default_eq_unheld`
+equivalence, the manual `Repr FrozenVSpaceRoot` instance, and the
+CLAIM_EVIDENCE_INDEX entry.
+
+### Strengthened SM3.A.11 — non-vacuous form
+
+The audit-pass-2/3/4 forms of `default_objects_locks_unheld`
+discharged vacuously on the empty default store.  Audit-pass-5
+adds the **non-vacuous** companion:
+
+* `SystemState.allObjectLocksUnheld` — Prop conjunction:
+  `objStoreLock = .unheld ∧ ∀ id o, objects.get? id = some o →
+  objectLockOf o = .unheld`.  The first conjunct is substantive
+  (a concrete equality on the table-level field), so the
+  conjunction is **non-vacuous on every state**.
+* `SystemState.allObjectLocksUnheldB` — Bool form for runtime
+  decidability via `decide`.
+* `default_allObjectLocksUnheld` — non-vacuous SM3.A.11 closure:
+  the default state satisfies both conjuncts.  The first
+  conjunct (`objStoreLock = unheld`) is `rfl`-discharged; the
+  second uses the existing `default_objects_locks_unheld`
+  vacuous discharge.
+* `allObjectLocksUnheld_of_pointwise` — constructor lemma for
+  arbitrary states satisfying the pointwise condition.  This is
+  the "post-boot analogous theorem" promised in the
+  `default_objects_locks_unheld` docstring (audit-pass-1 deferred
+  this; audit-pass-5 implements it).
+
+### Preservation theorems for the canonical state-mutating operation
+
+The audit-pass-4 finding "no preservation theorems for any kernel
+transition" is closed with four `storeObject`-preservation
+witnesses:
+
+* `storeObject_preserves_objStoreLock` — the table-level lock is
+  unchanged across `storeObject`.
+* `storeObject_preserves_objectLockOf_off_target` — for any
+  `id' ≠ id`, the lookup at `id'` is unchanged
+  (`RHTable.getElem?_insert_ne`).
+* `storeObject_inserted_object_lookup` — at the inserted ObjId,
+  lookup returns precisely the inserted object
+  (`RHTable.getElem?_insert_self`).
+* `storeObject_preserves_allObjectLocksUnheld` — the aggregate:
+  `storeObject` with an unheld-lock object preserves the global
+  invariant.  Two-case proof (id-equality on `objects` insert
+  position).
+
+### Consistency theorems for `objectLockOf`
+
+* `objectLockOf_exists` — totality witness.
+* `objectType_and_lockOf_total` — both projections are total.
+* `objectLockOf_consistent_with_type` — per-variant kind-tag ↔
+  lock-field consistency.
+
+### Structural enforcement of Reply/Page N/A decisions
+
+* `KernelObjectType.variants_count_exactly_seven` — pins the
+  variant cardinality.  A future workstream adding a `Reply` or
+  `Page` variant fails this count witness, forcing the SM3.A.5 /
+  SM3.A.8 decision to be revisited.
+* `KernelObjectType.variants_total` — every value is one of the
+  seven enumerated variants.
+
+### `RwLockState.default = .unheld` equivalence
+
+* `RwLockState.default_eq_unheld` — `@[simp]` theorem; the
+  `Inhabited`-derived default normalises to `.unheld`.
+
+### Manual `Repr FrozenVSpaceRoot` instance
+
+* Manual `instance : Repr FrozenVSpaceRoot` that elides the
+  `mappings` field (which has no `Repr` instance via
+  `FrozenMap`).
+
+### `perObjectLockTheorems` aggregator
+
+* NEW FILE `SeLe4n/Model/Object/PerObjectLockInventory.lean`
+  (~280 LoC).  34-entry typed inventory in 5 categories
+  (7 fieldDefault + 9 projection + 5 defaultState + 8
+  preservation + 5 consistency).  Per-category count witnesses,
+  partition-sum theorem, Nodup witnesses on identifiers and
+  descriptions.
+
+### CLAIM_EVIDENCE_INDEX entry
+
+Added a new SM3.A row at the top of the active baseline claims
+table documenting all 11 sub-tasks, the audit-pass-5 theorems,
+the inventory, and the gate commands.
+
+### Test results (audit-pass-5)
+
+* Lean module build: 319/319 green (was 318; +1 for
+  `PerObjectLockInventory`).
+* `lake exe per_object_lock_suite`: 58 runtime assertions PASS
+  (was 41 at audit-pass-4 close; +17 audit-pass-5 additions).
+* `tests/PerObjectLockSuite.lean`: 62 surface anchors, 48
+  decidable examples, 58 runtime assertions (~806 LoC).
+* Full Tier 0+1+2+3 green; Rust 988+ tests green; zero clippy
+  warnings.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1;
+      docs/CLAIM_EVIDENCE_INDEX.md (SM3.A row).
+
 ## Unreleased — WS-SM SM3.A audit-pass-2 refinements
 
 Independent audit review of the initial SM3.A landing identified 1

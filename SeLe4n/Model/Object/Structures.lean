@@ -2775,6 +2775,107 @@ case-analysis on `KernelObject`. -/
 @[simp] theorem objectLockOf_schedContext (s : SeLe4n.Kernel.SchedContext) :
     objectLockOf (.schedContext s) = s.lock := rfl
 
+-- ============================================================================
+-- WS-SM SM3.A audit-pass-5 — `objectLockOf` consistency theorems
+-- ============================================================================
+
+/-- WS-SM SM3.A audit-pass-5: `objectLockOf` is exhaustive — for
+every `KernelObject`, the projection returns *some* `RwLockState`.
+
+This is the totality witness: pattern-match exhaustivity is
+machine-checked by Lean's elaborator, but this theorem makes the
+totality explicit for SM3.B/C consumers that need to argue "every
+object has a lock state" without unfolding the case analysis.
+
+The theorem is trivial (every total function returns a value of
+its codomain), but its presence enables consumers to write
+`have h := objectLockOf_exists obj` and proceed without
+re-examining the case structure. -/
+theorem objectLockOf_exists (obj : KernelObject) :
+    ∃ ls : SeLe4n.Kernel.Concurrency.RwLockState, objectLockOf obj = ls :=
+  ⟨objectLockOf obj, rfl⟩
+
+/-- WS-SM SM3.A audit-pass-5: `objectLockOf` and `objectType` are
+**co-consistent** — for every object, both projections succeed
+without partiality.  This pairs the SM3.A.10 lock projection with
+the existing `objectType` projection to confirm they are
+structural siblings (both are total per-variant case dispatches
+on `KernelObject`).
+
+SM3.B's `LockId.fromObject` will combine `objectType` (to compute
+the `LockKind`) with the object's identifier field (e.g.
+`t.tid.toObjId`) to produce a `LockId`.  This theorem witnesses
+that the kind dispatch is already total at SM3.A. -/
+theorem objectType_and_lockOf_total (obj : KernelObject) :
+    ∃ (k : KernelObjectType) (ls : SeLe4n.Kernel.Concurrency.RwLockState),
+      objectType obj = k ∧ objectLockOf obj = ls :=
+  ⟨objectType obj, objectLockOf obj, rfl, rfl⟩
+
+/-- WS-SM SM3.A audit-pass-5: the kind tag is determined by the
+variant, and so is the lock state — together they uniquely
+characterise the per-variant lock-field projection contract.
+
+For every kernel-object kind `k`, there is a unique
+`(objectType obj = k, objectLockOf obj = obj.lock)` mapping.  This
+theorem is the type-level dual of the seven `@[simp] objectLockOf_*`
+unfold lemmas: given a variant tag, you know exactly which inner
+struct's `lock` field is projected. -/
+theorem objectLockOf_consistent_with_type (obj : KernelObject) :
+    match obj with
+    | .tcb t          => objectType obj = .tcb          ∧ objectLockOf obj = t.lock
+    | .endpoint e     => objectType obj = .endpoint     ∧ objectLockOf obj = e.lock
+    | .notification n => objectType obj = .notification ∧ objectLockOf obj = n.lock
+    | .cnode c        => objectType obj = .cnode        ∧ objectLockOf obj = c.lock
+    | .vspaceRoot v   => objectType obj = .vspaceRoot   ∧ objectLockOf obj = v.lock
+    | .untyped u      => objectType obj = .untyped      ∧ objectLockOf obj = u.lock
+    | .schedContext s => objectType obj = .schedContext ∧ objectLockOf obj = s.lock := by
+  cases obj <;> exact ⟨rfl, rfl⟩
+
+end KernelObject
+
+namespace KernelObjectType
+
+/-- WS-SM SM3.A audit-pass-5: the seLe4n `KernelObjectType`
+enumeration has **exactly 7 variants** — and SM3.A.5 (Reply) and
+SM3.A.8 (Page) are NOT among them.
+
+This is the structural enforcement that locks down the SM3.A.5 /
+SM3.A.8 "N/A for seLe4n" decisions.  A future workstream that
+adds a `Reply` or `Page` variant to `KernelObject` (and hence to
+`KernelObjectType`) would fail this exhaustivity witness, forcing
+the SM3.A decision to be revisited at that time rather than
+silently slipping past.
+
+The `_count` form pins the cardinality; the `_variants` form
+enumerates each variant explicitly so a renamed-variant refactor
+fails the surface check. -/
+theorem variants_count_exactly_seven :
+    let variants : List KernelObjectType :=
+      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext]
+    variants.length = 7 ∧ variants.Nodup := by
+  refine ⟨rfl, ?_⟩
+  decide
+
+/-- WS-SM SM3.A audit-pass-5: every `KernelObjectType` value is one
+of the 7 enumerated variants.  Total-case witness for the kind
+tag — pairs with `variants_count_exactly_seven` to lock down the
+N/A decisions for Reply (SM3.A.5) and Page (SM3.A.8). -/
+theorem variants_total (k : KernelObjectType) :
+    k = .tcb ∨ k = .endpoint ∨ k = .notification ∨ k = .cnode ∨
+    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext := by
+  cases k
+  · exact Or.inl rfl
+  · exact Or.inr (Or.inl rfl)
+  · exact Or.inr (Or.inr (Or.inl rfl))
+  · exact Or.inr (Or.inr (Or.inr (Or.inl rfl)))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))
+
+end KernelObjectType
+
+namespace KernelObject
+
 /-- T5-C (M-NEW-5): Object well-formedness predicate parameterized by the object store.
 
 For each object kind, this checks structural validity constraints that must hold

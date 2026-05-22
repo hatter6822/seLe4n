@@ -1844,4 +1844,44 @@ import SeLe4n.Model.FrozenState
 #check @SeLe4n.Model.default_objects_locks_unheld_via_toList
 EOF'
 
+# WS-SM SM3.A audit-pass-5 — non-vacuous SM3.A.11 + preservation
+# theorems + consistency theorems + inventory aggregator surface.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.Object.PerObjectLockInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.State
+import SeLe4n.Model.FrozenState
+import SeLe4n.Model.Object.PerObjectLockInventory
+
+-- Non-vacuous SM3.A.11 + preservation theorems.
+#check @SeLe4n.Model.SystemState.allObjectLocksUnheld
+#check @SeLe4n.Model.SystemState.allObjectLocksUnheldB
+#check @SeLe4n.Model.default_allObjectLocksUnheld
+#check @SeLe4n.Model.allObjectLocksUnheld_of_pointwise
+#check @SeLe4n.Model.storeObject_preserves_objStoreLock
+#check @SeLe4n.Model.storeObject_preserves_objectLockOf_off_target
+#check @SeLe4n.Model.storeObject_inserted_object_lookup
+#check @SeLe4n.Model.storeObject_preserves_allObjectLocksUnheld
+-- Consistency theorems.
+#check @SeLe4n.Model.KernelObject.objectLockOf_exists
+#check @SeLe4n.Model.KernelObject.objectType_and_lockOf_total
+#check @SeLe4n.Model.KernelObject.objectLockOf_consistent_with_type
+#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_seven
+#check @SeLe4n.Model.KernelObjectType.variants_total
+-- Inventory aggregator.
+#check @SeLe4n.Model.PerObjectLockCategory
+#check @SeLe4n.Model.PerObjectLockTheorem
+#check @SeLe4n.Model.perObjectLockTheorems
+#check @SeLe4n.Model.perObjectLockTheorems_count
+#check @SeLe4n.Model.perObjectLockTheorems_fieldDefault_count
+#check @SeLe4n.Model.perObjectLockTheorems_projection_count
+#check @SeLe4n.Model.perObjectLockTheorems_defaultState_count
+#check @SeLe4n.Model.perObjectLockTheorems_preservation_count
+#check @SeLe4n.Model.perObjectLockTheorems_consistency_count
+#check @SeLe4n.Model.perObjectLockTheorems_partition_sum
+#check @SeLe4n.Model.perObjectLockTheorems_identifiers_nodup
+#check @SeLe4n.Model.perObjectLockTheorems_descriptions_nodup
+-- RwLockState.default equivalence.
+#check @SeLe4n.Kernel.Concurrency.RwLockState.default_eq_unheld
+EOF'
+
 finalize_report

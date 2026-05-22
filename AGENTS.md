@@ -2624,6 +2624,56 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (24 at audit-pass-1 + 5 new audit-pass-2 assertions); Tier
   0+1+2+3 green.
 
+  **Audit-pass-5 refinements** (user-driven deferred-completion
+  close-out; 9 substantive additions):
+  - **Strengthened SM3.A.11 (non-vacuous form)**: added
+    `SystemState.allObjectLocksUnheld` Prop conjunction
+    (`objStoreLock = unheld ∧ ∀ id o ∈ store, objectLockOf o =
+    unheld`) plus `SystemState.allObjectLocksUnheldB` Bool form;
+    `default_allObjectLocksUnheld` proves both conjuncts hold on
+    the default state (the first is substantive, not vacuous);
+    `allObjectLocksUnheld_of_pointwise` constructor for arbitrary
+    states.
+  - **Preservation theorems for `storeObject`**:
+    `storeObject_preserves_objStoreLock`,
+    `storeObject_preserves_objectLockOf_off_target`,
+    `storeObject_inserted_object_lookup`, and the aggregate
+    `storeObject_preserves_allObjectLocksUnheld`.  Closes the
+    audit-pass-4 finding "no preservation theorems for any
+    kernel transition".
+  - **Consistency theorems**: `KernelObject.objectLockOf_exists`
+    (totality), `objectType_and_lockOf_total` (co-consistency),
+    `objectLockOf_consistent_with_type` (per-variant kind-tag ↔
+    lock-field).
+  - **Reply/Page N/A structural enforcement**:
+    `KernelObjectType.variants_count_exactly_seven` pins the
+    variant cardinality; `variants_total` enumerates every value.
+    A future workstream adding `Reply` or `Page` variant fails
+    these witnesses, forcing the SM3.A.5 / SM3.A.8 decision to
+    be revisited.
+  - **`RwLockState.default = .unheld`**: `@[simp]` equivalence
+    theorem.  Downstream code that writes `lock := default`
+    simp-normalises to `lock := .unheld`.
+  - **Manual `Repr FrozenVSpaceRoot`**: elides the
+    `FrozenMap`-typed `mappings` field for trace output.  Closes
+    the audit-pass-4 deferred Repr work.
+  - **`perObjectLockTheorems` aggregator** (NEW FILE
+    `SeLe4n/Model/Object/PerObjectLockInventory.lean`): 34-entry
+    typed inventory in 5 categories (7 fieldDefault + 9
+    projection + 5 defaultState + 8 preservation + 5
+    consistency).  Per-category count witnesses, partition-sum
+    theorem, Nodup witnesses on identifiers and descriptions.
+  - **CLAIM_EVIDENCE_INDEX entry**: new SM3.A row at the top of
+    the active-baseline claims table.
+  - **Test suite expansion**: `tests/PerObjectLockSuite.lean`
+    grew from ~646 LoC to ~806 LoC; runtime assertions from 41
+    to 58.
+
+  **Test results after audit-pass-5**: 319/319 Lean modules
+  build green (was 318; +1 for `PerObjectLockInventory`);
+  `lake exe per_object_lock_suite` reports 58/58 PASS; Tier
+  0+1+2+3 green; Rust 988+ tests green; zero clippy warnings.
+
   Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
   per-transition `lockSet`, `lockAcquireSequence` ordering
   theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C
