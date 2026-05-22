@@ -42,8 +42,10 @@ re-implementing the per-variant case-analysis at every consumer site.
   "30+ surface anchors, 16 decidable examples, 22 runtime
   assertions" — actuals were 24/26/22.  Updated to "24 surface
   anchors, 26 decidable examples, 22 runtime assertions" in
-  audit-pass-1; audit-pass-2 brings them to 32/30/29 with the
-  M-1 FrozenKernelObject additions.
+  audit-pass-1; audit-pass-2 brings them to 36 surface anchors,
+  31 decidable examples, 29 runtime assertions (counted via
+  `grep -c "^#check"`, `grep -c "^example "`, and
+  `grep -c "^  assertBool "` on the post-audit-pass-2 suite).
 
 * **L-7** (allowlist comment): the staged-module allowlist
   header comment was rewritten at SM3.A landing to describe the

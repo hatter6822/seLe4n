@@ -2593,8 +2593,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `freezeCNode_preserves_lock`,
     `freezeVSpaceRoot_preserves_lock`.
   - **LOW (L-4) — test-count accuracy**: updated to the precise
-    counts after the audit-pass-2 additions (32 surface anchors,
-    30 decidable examples, 29 runtime assertions).
+    counts after the audit-pass-2 additions: 36 surface anchors,
+    31 decidable examples, 29 runtime assertions (counted via
+    `grep -c "^#check"`, `grep -c "^example "`, and
+    `grep -c "^  assertBool "`).
   - **LOW (L-5) — missing `.tcb` decidable example in §3**:
     audit-pass-1 fixed the runtime tier; audit-pass-2 fixes the
     elaboration tier by adding the missing decidable example
