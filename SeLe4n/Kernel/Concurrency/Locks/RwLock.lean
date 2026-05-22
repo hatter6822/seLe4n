@@ -7,9 +7,16 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM2.C abstract RwLock spec; refined by
--- `rust/sele4n-hal/src/rw_lock.rs` per SM2.C.19 and the SM2.C.20
--- refinement bridge `Locks/RwLockRefinement.lean`).
+-- WS-SM SM3.A: this module entered the production import closure when
+-- the SM3.A.1..A.9 per-object `lock : RwLockState` fields landed on every
+-- kernel-object struct (TCB, Endpoint, CNode, Notification,
+-- UntypedObject, SchedContext, VSpaceRoot).  The prior "STATUS: staged"
+-- marker was removed at SM3.A landing per the implement-the-improvement
+-- rule — every kernel object now carries a per-object lock state and
+-- consuming code (SM3.B `LockId.lookup`, SM3.C `withLockSet`) is built
+-- on top.  The abstract operational specification here continues to be
+-- refined by `rust/sele4n-hal/src/rw_lock.rs` per SM2.C.19 and the
+-- SM2.C.20 refinement bridge `Locks/RwLockRefinement.lean`.
 
 import SeLe4n.Kernel.Concurrency.MemoryModel
 import SeLe4n.Kernel.Concurrency.Types
@@ -153,8 +160,10 @@ lock at the operational-semantics level:
   FIFO guarantee (documented in SM2.C.20).
 
 `Inhabited` is derived (every field has `Inhabited` — `Option` via
-`none`, `List` via `[]`).  The default `Inhabited` witness is **not**
-`unheld`; see `unheld` below for the canonical initial state. -/
+`none`, `List` via `[]`).  Per WS-SM SM3.A audit-pass-5, the
+derived `default` is structurally identical to `RwLockState.unheld`,
+witnessed by `default_eq_unheld` below.  Downstream code that
+writes `lock := default` simp-normalises to `lock := .unheld`. -/
 structure RwLockState where
   /-- The current writer holder, if any.  At most one writer at a time. -/
   writerHeld : Option CoreId
@@ -187,6 +196,25 @@ theorem RwLockState.unheld_readers : unheld.readers = ([] : List CoreId) := rfl
 /-- Witness: `unheld.waiters = []`. -/
 theorem RwLockState.unheld_waiters :
     unheld.waiters = ([] : List (CoreId × AccessMode)) := rfl
+
+/-- **WS-SM SM3.A audit-pass-5**: the `Inhabited`-derived `default` of
+`RwLockState` is structurally identical to `RwLockState.unheld`.
+
+`RwLockState` derives `Inhabited`, which Lean synthesises by
+combining the `Inhabited` instances of every field
+(`Option CoreId` → `none`, `List CoreId` → `[]`,
+`List (CoreId × AccessMode)` → `[]`).  The result is the same
+record as `RwLockState.unheld`.
+
+This equivalence is **not** trivially `rfl` in every Lean context
+because the `Inhabited` derivation produces an explicit
+`Inhabited.mk { writerHeld := default, ... }` term whose
+definitional unfolding requires reducing each field's `Inhabited`
+instance.  We provide an explicit witness so downstream code that
+writes `lock := default` is machine-checkably equivalent to code
+that writes `lock := RwLockState.unheld`. -/
+@[simp] theorem RwLockState.default_eq_unheld :
+    (default : RwLockState) = RwLockState.unheld := rfl
 
 -- ============================================================================
 -- SM2.C.2 — wf predicate (5 conjuncts: plan's 4 + reachability gap closure)

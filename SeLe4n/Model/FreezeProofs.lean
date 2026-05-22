@@ -303,6 +303,134 @@ theorem toList_noDupKeys [BEq κ] [Hashable κ] [LawfulBEq κ]
     · omega
 
 -- ============================================================================
+-- WS-SM SM3.A audit-pass-6 — reverse toList/get? bridge + allObjectLocksUnheld iff
+-- ============================================================================
+
+/-- WS-SM SM3.A audit-pass-6: reverse direction of `toList_contains_of_get` —
+if `(k, v) ∈ rt.toList` and `invExt` holds, then `rt.get? k = some v`.
+
+The forward direction (`toList_contains_of_get`) is at line 131 above.
+This reverse direction closes the bidirectional bridge between
+`RHTable.toList` membership and `RHTable.get?` lookups for keyed
+queries.
+
+**Proof outline**:
+1. From `(k, v) ∈ rt.toList`, suppose `rt.get? k = none`.  By
+   `toList_absent_of_get_none`, `(k, v) ∉ rt.toList` — contradiction.
+2. So `rt.get? k = some v'` for some `v'`.  Need to show `v = v'`.
+3. By `toList_contains_of_get` with `(k, v')`, `(k, v') ∈ rt.toList`.
+4. By `toList_noDupKeys`, the indices of `(k, v)` and `(k, v')` in
+   `toList` are equal (same key — uniqueness).  So `v = v'`. -/
+theorem get_some_of_toList_contains [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (k : κ) (v : ν) (hExt : rt.invExt)
+    (hMem : (k, v) ∈ rt.toList) :
+    rt.get? k = some v := by
+  -- Step 1: rt.get? k cannot be none (would contradict hMem via toList_absent_of_get_none).
+  match hGet : rt.get? k with
+  | none =>
+      exact absurd hMem (toList_absent_of_get_none rt k hExt hGet v)
+  | some v' =>
+      -- Step 2: (k, v') ∈ toList by toList_contains_of_get.
+      have hMem' : (k, v') ∈ rt.toList :=
+        toList_contains_of_get rt k v' hExt hGet
+      -- Step 3: Both (k, v) and (k, v') are in toList; they share a key.
+      -- By toList_noDupKeys, their indices match, so the pairs are equal.
+      obtain ⟨i, hi, hAti⟩ := List.mem_iff_getElem.mp hMem
+      obtain ⟨j, hj, hAtj⟩ := List.mem_iff_getElem.mp hMem'
+      have hKeyEq : (rt.toList[i].1 == rt.toList[j].1) = true := by
+        rw [hAti, hAtj]; simp
+      have hij := toList_noDupKeys rt hExt i j hi hj hKeyEq
+      subst hij
+      -- Now hAti : rt.toList[i] = (k, v) and hAtj : rt.toList[i] = (k, v') —
+      -- so (k, v) = (k, v'), giving v = v'.
+      have hEq : (k, v) = (k, v') := hAti.symm.trans hAtj
+      have hVal : v = v' := (Prod.mk.inj hEq).2
+      rw [hVal]
+
+/-- WS-SM SM3.A audit-pass-6: bidirectional bridge between `RHTable.toList`
+and `RHTable.get?` for keyed predicates, under `invExt`.
+
+Captures the "list-quantification ↔ universal quantification on
+lookups" pattern: for any predicate `P` on (key, value) pairs,
+
+  toList.all (fun p => P p)  ↔  ∀ k v, get? k = some v → P (k, v)
+
+The forward direction (`toList.all → ∀ get?`) uses
+`toList_contains_of_get` to lift each `get?` hit into a `toList`
+membership, then projects out `P`.
+
+The reverse direction (`∀ get? → toList.all`) uses
+`get_some_of_toList_contains` to lift each `toList` membership into
+a `get?` hit, then applies the hypothesis. -/
+theorem toList_all_iff_forall_get_some [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) (P : κ × ν → Bool) (hExt : rt.invExt) :
+    rt.toList.all P = true ↔
+    ∀ k v, rt.get? k = some v → P (k, v) = true := by
+  constructor
+  · -- Forward: toList.all → ∀ get?
+    intro hAll k v hGet
+    rw [List.all_eq_true] at hAll
+    exact hAll _ (toList_contains_of_get rt k v hExt hGet)
+  · -- Backward: ∀ get? → toList.all
+    intro hForall
+    rw [List.all_eq_true]
+    intro p hMem
+    -- For any pair `p = (p.1, p.2)`, apply `get_some_of_toList_contains`
+    -- to get `rt.get? p.1 = some p.2`, then apply the hypothesis.
+    -- Destructure `p` to make the pair structure explicit (avoids
+    -- needing `Prod.mk.eta` which does not exist in this Lean version).
+    obtain ⟨k, v⟩ := p
+    have hGet := get_some_of_toList_contains rt k v hExt hMem
+    exact hForall k v hGet
+
+/-- WS-SM SM3.A audit-pass-6: the "Prop ↔ Bool" bridge for the SM3.A
+`allObjectLocksUnheld` predicate.
+
+The Bool form (`allObjectLocksUnheldB`) and the Prop form
+(`allObjectLocksUnheld`) are equivalent under the Robin Hood
+invariant `st.objects.invExt`.  This is the theorem referenced in
+the `allObjectLocksUnheldB` docstring (`SeLe4n/Model/State.lean`).
+
+Proof: pure case-by-case via `toList_all_iff_forall_get_some` for
+the per-object conjunct, plus a decidable-equality rewrite for the
+table-level `objStoreLock` conjunct (which is identical between
+Bool and Prop forms via `decide`).
+
+Closes the audit-pass-5 dead-link docstring reference. -/
+theorem allObjectLocksUnheld_iff_via_toList (st : SystemState)
+    (hInv : st.objects.invExt) :
+    st.allObjectLocksUnheld ↔ st.allObjectLocksUnheldB = true := by
+  unfold SystemState.allObjectLocksUnheld SystemState.allObjectLocksUnheldB
+  -- Both forms are conjunctions: split the iff into both directions and both conjuncts.
+  constructor
+  · intro ⟨hStore, hPointwise⟩
+    rw [Bool.and_eq_true]
+    refine ⟨?_, ?_⟩
+    · -- The first conjunct: Bool form is `decide`-ified Prop.
+      simp [hStore]
+    · -- The second conjunct: use the toList bridge.
+      have hP := (toList_all_iff_forall_get_some st.objects
+                   (fun p => p.snd.objectLockOf
+                       = SeLe4n.Kernel.Concurrency.RwLockState.unheld) hInv).mpr
+      apply hP
+      intro k v hGet
+      have := hPointwise k v hGet
+      simp [this]
+  · intro hBool
+    rw [Bool.and_eq_true] at hBool
+    obtain ⟨hStoreBool, hAllBool⟩ := hBool
+    refine ⟨?_, ?_⟩
+    · -- Recover the Prop form of the first conjunct from the Bool form.
+      simpa using hStoreBool
+    · -- Recover the Prop form of the second conjunct via the toList bridge.
+      intro id o hLookup
+      have hP := (toList_all_iff_forall_get_some st.objects
+                   (fun p => p.snd.objectLockOf
+                       = SeLe4n.Kernel.Concurrency.RwLockState.unheld) hInv).mp
+      have hLifted := hP hAllBool id o hLookup
+      simpa using hLifted
+
+-- ============================================================================
 -- Q6-A: freezeMap index construction — absent key preservation
 -- ============================================================================
 

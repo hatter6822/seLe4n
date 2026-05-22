@@ -12,6 +12,15 @@ import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext
 import SeLe4n.Model.Object.NoDupList
 import SeLe4n.Model.Object.UniqueSlotMap
+-- WS-SM SM3.A.1..A.4/A.6..A.9: per-object lock state.  Every kernel-object
+-- struct carries a `lock : RwLockState` field whose default `RwLockState.unheld`
+-- means freshly-allocated objects start with the lock available.  Wires the
+-- abstract operational specification from SM2.C (`RwLockState`, `unheld`)
+-- into the model layer so SM3.B..E can extract per-transition lock sets,
+-- prove deadlock-freedom (Theorem 2.1.9), serializability (Theorem 2.1.10),
+-- and single-core proof preservation (Corollary 2.1.11) without further
+-- structural changes.
+import SeLe4n.Kernel.Concurrency.Locks.RwLock
 
 namespace SeLe4n.Model
 
@@ -731,6 +740,18 @@ structure TCB where
       This eliminates the risk of sentinel collision with legitimate IPC data
       in register x0. -/
   timedOut : Bool := false
+  /-- WS-SM SM3.A.1: per-TCB reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated TCB starts with its lock
+      available.  Kernel transitions that mutate this TCB acquire the lock in
+      write mode; lookups (e.g., scheduler reads, `getTcb?`) acquire in read
+      mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.1)
+      for the per-object lock-field rollout, and SM2.C
+      (`Locks/RwLock.lean`) for the abstract operational spec the field
+      refines.  Refines bit 63 (writer) + bits 0..62 (readers) of the Rust
+      HAL's packed `AtomicU64` state in
+      `rust/sele4n-hal/src/rw_lock.rs`. -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -756,7 +777,10 @@ instance : BEq TCB where
     a.timeoutBudget == b.timeoutBudget &&
     a.maxControlledPriority == b.maxControlledPriority &&
     a.pipBoost == b.pipBoost &&
-    a.timedOut == b.timedOut
+    a.timedOut == b.timedOut &&
+    -- WS-SM SM3.A.1: per-TCB lock state participates in structural equality.
+    -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
+    a.lock == b.lock
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -818,12 +842,15 @@ theorem TCB.ext {a b : TCB}
     (hTb : a.timeoutBudget = b.timeoutBudget)
     (hMcp : a.maxControlledPriority = b.maxControlledPriority)
     (hPip : a.pipBoost = b.pipBoost)
-    (hTo : a.timedOut = b.timedOut) :
+    (hTo : a.timedOut = b.timedOut)
+    -- WS-SM SM3.A.1: extensionality covers the per-TCB lock field.
+    (hLock : a.lock = b.lock) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
-         hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo⟩
+         hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
+         hLock⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -839,10 +866,22 @@ structure IntrusiveQueue where
 WS-H12a: Endpoint structure uses only intrusive dual-queue fields.
 Legacy WS-E3 fields (`state`, `queue`, `waitingReceiver`) and the
 `EndpointState` type have been removed — all IPC operations use the O(1)
-dual-queue path (`endpointSendDual`/`endpointReceiveDual`). -/
+dual-queue path (`endpointSendDual`/`endpointReceiveDual`).
+
+WS-SM SM3.A.2: per-Endpoint lock field added.  Endpoint mutations in IPC
+transitions (`endpointSendDual`, `endpointReceiveDual`,
+`endpointCallDual`) acquire `lock` in write mode; lookups acquire in
+read mode.  The `RwLockState` `DecidableEq` instance preserves the
+derivation of `DecidableEq Endpoint`. -/
 structure Endpoint where
   sendQ : IntrusiveQueue := {}
   receiveQ : IntrusiveQueue := {}
+  /-- WS-SM SM3.A.2: per-Endpoint reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated Endpoint starts with
+      its lock available.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
+      §5.1 (SM3.A.2). -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 inductive NotificationState where
@@ -912,6 +951,14 @@ structure Notification where
       surface, per the WS-RC §1.5 structural-fix policy. -/
   waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
+  /-- WS-SM SM3.A.4: per-Notification reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated Notification starts
+      with its lock available.  `notificationSignal` / `notificationWait`
+      acquire in write mode; observation paths (e.g., `getNotification?`)
+      acquire in read mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
+      §5.1 (SM3.A.4). -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 /-- WS-H13/H-01: Depth-aware CNode with compressed-path guard.
@@ -937,6 +984,15 @@ structure CNode where
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
   slots      : SeLe4n.UniqueSlotMap Capability
+  /-- WS-SM SM3.A.3: per-CNode reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated CNode starts with its
+      lock available.  CSpace mutation paths (`cspaceMutate`, `cspaceCopy`,
+      `cspaceMove`, `cspaceDelete`, `cspaceRevoke`) acquire in write mode;
+      lookup paths (`cspaceLookupSlot`, `cspaceLookupPath`,
+      `resolveCapAddress`) acquire in read mode.  See
+      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.3). -/
+  lock       : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/
@@ -991,6 +1047,14 @@ structure UntypedObject where
       untypeds and for any test that does not exercise multi-level
       retype chains. -/
   parent : Option SeLe4n.ObjId := none
+  /-- WS-SM SM3.A.9: per-UntypedObject reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated UntypedObject starts
+      with its lock available.  `retypeFromUntyped` and `untypedAllocate`
+      acquire in write mode; observation paths (watermark / freeSpace
+      reads) acquire in read mode.  See
+      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.9). -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr, DecidableEq
 
 namespace UntypedObject
@@ -1072,26 +1136,31 @@ def wellFormed (ut : UntypedObject) : Prop :=
   ut.childrenNonOverlap ∧ ut.childrenUniqueIds
 
 theorem empty_watermarkValid (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false none).watermarkValid := by
+    ({ regionBase := base, regionSize := size, watermark := 0,
+                       children := [], isDevice := false, parent := none } : UntypedObject).watermarkValid := by
   simp [watermarkValid]
 
 theorem empty_childrenWithinWatermark (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false none).childrenWithinWatermark := by
+    ({ regionBase := base, regionSize := size, watermark := 0,
+                       children := [], isDevice := false, parent := none } : UntypedObject).childrenWithinWatermark := by
   intro c hMem
   simp at hMem
 
 theorem empty_childrenNonOverlap (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false none).childrenNonOverlap := by
+    ({ regionBase := base, regionSize := size, watermark := 0,
+                       children := [], isDevice := false, parent := none } : UntypedObject).childrenNonOverlap := by
   intro c₁ c₂ hMem₁
   simp at hMem₁
 
 theorem empty_childrenUniqueIds (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false none).childrenUniqueIds := by
+    ({ regionBase := base, regionSize := size, watermark := 0,
+                       children := [], isDevice := false, parent := none } : UntypedObject).childrenUniqueIds := by
   intro c₁ c₂ hMem₁
   simp at hMem₁
 
 theorem empty_wellFormed (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false none).wellFormed :=
+    ({ regionBase := base, regionSize := size, watermark := 0,
+                       children := [], isDevice := false, parent := none } : UntypedObject).wellFormed :=
   ⟨empty_watermarkValid base size, empty_childrenWithinWatermark base size,
    empty_childrenNonOverlap base size, empty_childrenUniqueIds base size⟩
 
@@ -1331,7 +1400,9 @@ namespace UntypedObjectValid
 /-- AN2-F.3: Canonical empty constructor — a fresh untyped region at `base`
     with `size` capacity, zero children, is well-formed by `empty_wellFormed`. -/
 @[inline] def empty (base : SeLe4n.PAddr) (size : Nat) : UntypedObjectValid :=
-  ⟨UntypedObject.mk base size 0 [] false none, UntypedObject.empty_wellFormed base size⟩
+  ⟨({ regionBase := base, regionSize := size, watermark := 0,
+      children := [], isDevice := false, parent := none } : UntypedObject),
+   UntypedObject.empty_wellFormed base size⟩
 
 end UntypedObjectValid
 

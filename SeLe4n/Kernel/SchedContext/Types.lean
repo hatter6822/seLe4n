@@ -8,6 +8,11 @@
 -/
 
 import SeLe4n.Prelude
+-- WS-SM SM3.A.6: per-SchedContext lock field requires the abstract
+-- operational RwLock specification from SM2.C.  This import does not
+-- introduce a cycle: `Concurrency.Locks.RwLock` depends transitively
+-- only on `Prelude` (via `Concurrency.Types` and `Concurrency.MemoryModel`).
+import SeLe4n.Kernel.Concurrency.Locks.RwLock
 
 /-! # SchedContext Types — WS-Z Phase Z1
 
@@ -165,6 +170,16 @@ structure SchedContext where
   replenishments : List ReplenishmentEntry := []
   boundThread : Option SeLe4n.ThreadId := none
   isActive : Bool := false
+  /-- WS-SM SM3.A.6: per-SchedContext reader-writer lock state.  Default
+      `RwLockState.unheld` means a freshly-allocated SchedContext starts
+      with its lock available.  CBS operations that mutate budget /
+      replenishments (`timerTickBudget`, `applyRefill`,
+      `schedContextBind`, `schedContextUnbind`, donation paths) acquire
+      in write mode; observation paths (read-only budget queries) acquire
+      in read mode.  See `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`
+      §5.1 (SM3.A.6). -/
+  lock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 deriving Repr
 
 -- ============================================================================
@@ -276,13 +291,24 @@ instance : BEq SchedContextBinding where
 -- ============================================================================
 
 /-- Manual BEq for SchedContext — field-wise comparison.
-Non-lawful due to List comparison semantics. -/
+Non-lawful due to List comparison semantics.
+
+**WS-SM SM3.A audit-pass-7**: extended to include the per-SchedContext
+`lock : RwLockState` field added in SM3.A.6.  Without this conjunct,
+two SchedContexts that differ only in their lock state would
+compare equal — masking SM3.A.11 invariant regressions in any
+caller that relies on `==` for object/state comparison (including
+`BEq KernelObject`'s dispatch on the `.schedContext` variant).
+`RwLockState` derives `DecidableEq`, so its `==` agrees with `=`. -/
 instance : BEq SchedContext where
   beq a b :=
     a.scId == b.scId && a.budget == b.budget && a.period == b.period &&
     a.priority == b.priority && a.deadline == b.deadline && a.domain == b.domain &&
     a.budgetRemaining == b.budgetRemaining && a.periodStart == b.periodStart &&
     a.replenishments == b.replenishments && a.boundThread == b.boundThread &&
-    a.isActive == b.isActive
+    a.isActive == b.isActive &&
+    -- WS-SM SM3.A audit-pass-7: per-SchedContext lock state participates
+    -- in structural equality so lock-state regressions are not masked.
+    a.lock == b.lock
 
 end SeLe4n.Kernel

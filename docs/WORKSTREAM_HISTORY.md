@@ -920,6 +920,85 @@ spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
 [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
 §§5.2..5.5.
 
+**WS-SM SM3.A LANDED on branch `claude/tender-gauss-FWPvo`**
+(per-object lock fields; closes the first sub-phase of SM3).
+Plan §5.1 of
+[`SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md):
+wires SM2.C's abstract `RwLockState` into every kernel-object
+struct seLe4n models (TCB, Endpoint, CNode, Notification,
+UntypedObject, SchedContext, VSpaceRoot), plus a table-level lock
+on the SystemState's object store, plus the per-variant
+`objectLockOf` projection function and the SM3.A.11 default-state
+theorems.  Nine of eleven sub-tasks LANDED:
+
+- **SM3.A.1..A.9**: per-object `lock : RwLockState := unheld`
+  fields on TCB / Endpoint / CNode / Notification / SchedContext /
+  VSpaceRoot / UntypedObject.  Manual BEq instances extended for
+  TCB, CNode, VSpaceRoot.  `TCB.ext` extensionality lemma extended
+  with `hLock` hypothesis.  `CNode.beq_sound` and `VSpaceRoot.beq_sound`
+  rewritten with `obtain` for robustness against future BEq additions.
+  `VSpaceRoot.beq_refl` simp set extended with `Bool.and_true`.
+  Positional `UntypedObject.mk` calls converted to named-field
+  syntax for forward-compatibility.
+- **SM3.A.10**: `SystemState.objStoreLock` + `KernelObject.objectLockOf`
+  projection with 7 per-variant `@[simp]` unfold lemmas.
+  Frozen-state mirror: `FrozenSystemState.objStoreLock`,
+  `FrozenCNode.lock`, `FrozenVSpaceRoot.lock` forwarded by
+  `freeze` / `freezeCNode` / `freezeVSpaceRoot`.
+- **SM3.A.11**: four default-state theorems
+  (`default_objStoreLock_unheld`, `default_objects_locks_unheld`,
+  `default_objects_toList_empty`,
+  `default_objects_locks_unheld_via_toList`).  The pointwise form
+  is vacuously discharged via `RHTable.getElem?_empty`; the
+  `toList` form is `decide`-discharged.
+
+**Skipped sub-tasks (documented as N/A for seLe4n)**:
+- **SM3.A.5 (Reply)**: seLe4n encodes reply discipline through TCB
+  state, not as a first-class Reply kernel object.
+- **SM3.A.8 (Page)**: seLe4n stores page mappings inline in
+  `VSpaceRoot.mappings`; per-PTE locking is rejected by §4.3 of
+  the plan.
+
+**Production/staged partition updates**:
+`Kernel.Concurrency.Locks.RwLock` and
+`Kernel.Concurrency.MemoryModel` moved from the staged allowlist
+into the production import closure.  `STATUS: staged` markers
+removed.  `RwLockRefinement` remains staged-only.
+
+**Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
+(~646 LoC post-audit-pass-4) with 36 surface-anchor `#check`
+lines, 36 decidable examples, 41 runtime `assertBool`
+assertions.  TCB-specific coverage included: named-field
+construction with the 6 required fields exercises the SM3.A.1
+default-lock witness for TCB.  Audit-pass-2 added the
+`FrozenKernelObject.objectLockOf` symmetry projection (with 7
+`@[simp]` per-variant unfold lemmas) and 4 `freeze_preserves_*`
+witness theorems (`freeze_preserves_objStoreLock`,
+`freezeCNode_preserves_lock`, `freezeVSpaceRoot_preserves_lock`,
+`freezeObject_preserves_objectLockOf`).  Audit-pass-4 closed the
+HIGH-severity finding "SM3.A.11 runtime discharge is vacuous on
+the default state's empty store" by adding 3 non-vacuous
+SM3.A.11 witnesses on post-insert states (endpoint, cnode,
+vspaceRoot) plus 7 missing `FrozenKernelObject.objectLockOf`
+variant exercises (TCB, notification, untyped, schedContext in
+runtime + TCB, CNode, VSpaceRoot in decidable) plus 4 missing
+`freezeObject_preserves_objectLockOf` runtime variant
+exercises plus the `freeze mkEmptyIntermediateState` ObjStore-
+lock preservation check.  Runnable as
+`lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
+and Tier 3 (invariant-surface) pipelines.
+
+**Axiom budget for SM3.A**: 0 Lean axioms, 0 sorries.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
+per-transition `lockSet`, `lockAcquireSequence` ordering theorems)
+consumes the SM3.A.10 `objectLockOf` projection; SM3.C
+(`withLockSet` 2PL discipline) consumes both SM3.A and SM3.B;
+SM3.D/SM3.E close with deadlock-freedom and serializability
+theorems.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

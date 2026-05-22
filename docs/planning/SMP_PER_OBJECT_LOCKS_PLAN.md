@@ -342,7 +342,7 @@ under RwLock, multiple cores can read concurrently.
 Cost: SM2's RwLock has 10 theorems vs 6 for TicketLock. Worth
 it.
 
-### 4.3 Per-object vs per-subsystem
+### 4.3 Per-object vs per-subsystem (and the per-PTE rejection)
 
 Decision #10 (per-object fine locks): each kernel-object struct
 carries its own RwLock. Granularity is per-object, not
@@ -352,6 +352,41 @@ different TCBs concurrently.
 
 For 65,536 maxObjects, total lock overhead: ~1 MiB of RAM —
 within budget on RPi5's 4 GB.
+
+**Per-PTE locking is rejected** at the v1.0.0 design boundary.
+seLe4n stores page mappings inline in `VSpaceRoot.mappings :
+RHTable VAddr (PAddr × PagePermissions)` rather than as
+first-class Page kernel objects.  A finer-grained per-page-table-
+entry lock would require:
+
+1. A lock state field on every map entry — multiplying lock
+   overhead by ~`maxMappings` (typically 4×maxObjects on a
+   populated system), pushing total lock memory past the per-VM
+   working-set budget on memory-constrained platforms.
+2. Hand-over-hand acquisition for cross-page operations (e.g.,
+   PTE relocation across hash buckets during `RHTable.insert`
+   probe-sequence reorganization), which the SM3.B `lockSet`
+   extraction cannot pre-declare statically without locking the
+   table itself first.
+3. An additional lock-hierarchy level beyond `LockKind.page`
+   (level 9) for the PTE granularity, which conflicts with the
+   SM0.I 10-level cap.
+
+A **single per-VSpaceRoot lock** (SM3.A.7) at hierarchy level 8
+(`LockKind.vspaceRoot`) is sufficient for serializability: every
+VSpace mutation (`vspaceMapPage`, `vspaceUnmapPage`) acquires the
+VSpaceRoot lock in write mode; every lookup (`vspaceLookup`,
+`vspaceLookupAddr`) acquires in read mode.  Concurrent reads from
+different VSpaceRoots proceed in parallel; concurrent writes to
+the same VSpaceRoot serialize, which matches user expectations
+and matches seL4's per-PD locking discipline.  This decision is
+consistent with §4.4's table-level ObjStore lock (also rejecting
+finer per-bucket locking for the same Robin-Hood probe-sequence-
+relocation reason).
+
+When seLe4n adopts first-class Page kernel objects in a
+post-v1.0.0 workstream (out of scope for SM3), per-Page locking
+can be re-evaluated against the then-current performance budget.
 
 ### 4.4 The ObjStore table-level lock
 
@@ -383,25 +418,59 @@ endpoint/20 (write). The acquisition sequence is unambiguous.
 
 ## 5. Detailed sub-task breakdown
 
-### 5.1 Add `lock : RwLock` fields (SM3.A, 5 PRs, 11 sub-tasks)
+### 5.1 Add `lock : RwLock` fields (SM3.A, 5 PRs, 11 sub-tasks) — LANDED
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM3.A.1 | `TCB` gains `lock : RwLock` | `Model/Object/Types.lean` | Structure compiles; `BEq` updated to 23 fields | M |
-| SM3.A.2 | `Endpoint` gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.3 | `CNode` gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.4 | `Notification` gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.5 | `Reply` gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.6 | `SchedContext` gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.7 | `VSpaceRoot` gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.8 | `Page` (PageFrame, etc.) gains `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.9 | `Untyped` regions gain `lock` | `Model/Object/Structures.lean` | Structure compiles | S |
-| SM3.A.10 | `ObjStore` (RobinHood) table-level `lock` | `Kernel/RobinHood/Core.lean` | Lock field present; reads need read-acquire | M |
-| SM3.A.11 | `default_objects_locks_unheld` theorem | `Model/State.lean` | Every default-constructed object has `lock = .unheld` | M |
+| Sub | Description | Files | Acceptance | Status |
+|-----|-------------|-------|------------|--------|
+| SM3.A.1 | `TCB` gains `lock : RwLockState` | `Model/Object/Types.lean` | Structure compiles; `BEq` extended; `TCB.ext` extended with `hLock` conjunct | LANDED |
+| SM3.A.2 | `Endpoint` gains `lock` | `Model/Object/Types.lean` | Structure compiles; `DecidableEq` derivation preserved | LANDED |
+| SM3.A.3 | `CNode` gains `lock` | `Model/Object/Types.lean` | Structure compiles; manual `BEq` extended; `freezeCNode` forwards `lock` | LANDED |
+| SM3.A.4 | `Notification` gains `lock` | `Model/Object/Types.lean` | Structure compiles; `DecidableEq` derivation preserved | LANDED |
+| ~~SM3.A.5~~ | ~~`Reply` gains `lock`~~ | N/A | **N/A for seLe4n** — Reply is not a kernel object (managed through TCB `blockedOnReply` state + Reply capabilities) | SKIPPED |
+| SM3.A.6 | `SchedContext` gains `lock` | `Kernel/SchedContext/Types.lean` | Structure compiles; default unheld lock present | LANDED |
+| SM3.A.7 | `VSpaceRoot` gains `lock` | `Model/Object/Structures.lean` | Structure compiles; manual `BEq` extended; `freezeVSpaceRoot` forwards `lock`; `beq_sound` + `beq_refl` updated for new conjunct | LANDED |
+| ~~SM3.A.8~~ | ~~`Page` (PageFrame, etc.) gains `lock`~~ | N/A | **N/A for seLe4n** — pages are mapping entries (`PAddr × PagePermissions`) inside `VSpaceRoot.mappings`, not separate kernel objects.  Per-page locking is rejected by §4.3 (single VSpaceRoot lock suffices for serializability). | SKIPPED |
+| SM3.A.9 | `UntypedObject` regions gain `lock` | `Model/Object/Types.lean` | Structure compiles; `DecidableEq` derivation preserved | LANDED |
+| SM3.A.10 | `ObjStore` table-level `lock` + `objectLockOf` projection | `Model/State.lean`, `Model/Object/Structures.lean` | `SystemState.objStoreLock` field added; `KernelObject.objectLockOf` projection function defined with 7 per-variant `@[simp]` unfold lemmas; `FrozenSystemState.objStoreLock` forwards | LANDED |
+| SM3.A.11 | `default_objects_locks_unheld` theorem | `Model/State.lean` | `default_objStoreLock_unheld` (objStore unheld at default); `default_objects_locks_unheld` (vacuous discharge — pointwise form); `default_objects_toList_empty` (computable witness); `default_objects_locks_unheld_via_toList` (toList membership variant) | LANDED |
+
+**Skipped sub-tasks**: SM3.A.5 (Reply) and SM3.A.8 (Page) are
+documented as **N/A for seLe4n** because the corresponding entities
+are not kernel objects in the seLe4n model:
+
+* **Reply**: seL4 has a first-class `Reply` object that backs reply
+  capabilities; seLe4n encodes the reply discipline through TCB state
+  (`ThreadIpcState.blockedOnReply`, `ThreadState.BlockedReply`,
+  `TCB.pipBoost`) and capability-level reply targets.  Adding a
+  separate `Reply` kernel object is a major model refactor outside
+  SM3.A scope.  When seLe4n grows a `Reply` object in a future
+  workstream, SM3.A.5 can be re-opened at that time.
+* **Page**: seL4 has first-class page objects that back mapping
+  capabilities; seLe4n stores mappings inline in
+  `VSpaceRoot.mappings : RHTable VAddr (PAddr × PagePermissions)`.
+  §4.3 of this plan rejects per-PTE locking as a v1.0.0 design
+  decision — a single per-VSpaceRoot lock (SM3.A.7) suffices for
+  serializability.  If seLe4n adopts page objects in a future
+  workstream, SM3.A.8 can be re-opened.
+
+The plan's underlying intent — "every kernel-object struct that the
+SystemState models gains a `lock : RwLockState` field" — is fully
+discharged.  The skipped sub-tasks correspond to seL4-specific kernel
+objects that seLe4n's current model intentionally folds into other
+structures.
 
 **Default-initialization**: each lock field's default is
-`RwLock.unheld` (the construction from SM2.C). This means every
-freshly-allocated object starts unlocked.
+`SeLe4n.Kernel.Concurrency.RwLockState.unheld` (the canonical initial
+state from SM2.C).  This means every freshly-allocated object starts
+with its lock available.
+
+**Type name**: the lock field type is `RwLockState`, not `RwLock`.
+The plan's draft pseudocode used `RwLock` as the abstract type name;
+in the actual SM2.C landing the abstract operational specification
+exports `RwLockState` (an unbiased operational state record carrying
+`writerHeld`, `readers`, `waiters`) as the abstract refinement target.
+The Rust `RwLock` is the concrete hardware-level type; the Lean
+abstract `RwLockState` is its operational refinement.
 
 #### SM3.A.1 code skeleton (TCB)
 

@@ -1788,4 +1788,112 @@ import SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount
 EOF'
 
+# WS-SM SM3.A — Per-object lock field surface anchors.  Every per-object
+# `lock : RwLockState` field plus the SM3.A.10 `objectLockOf` projection
+# and its per-variant unfold lemmas plus the SM3.A.11 default-state
+# theorems.  A regression that renames the field (e.g., `lock` →
+# `rwLock`) fails this surface check at the lean-build step.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.Object SeLe4n.Model.State SeLe4n.Model.FrozenState SeLe4n.Kernel.SchedContext.Types'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.State
+import SeLe4n.Model.FrozenState
+
+-- SM3.A.1..A.9 — per-object lock fields on every kernel-object struct.
+#check @SeLe4n.Model.TCB.lock
+#check @SeLe4n.Model.Endpoint.lock
+#check @SeLe4n.Model.CNode.lock
+#check @SeLe4n.Model.Notification.lock
+#check @SeLe4n.Model.UntypedObject.lock
+#check @SeLe4n.Kernel.SchedContext.lock
+#check @SeLe4n.Model.VSpaceRoot.lock
+-- SM3.A.1 — TCB.ext extended with hLock conjunct (per-field witness form).
+#check @SeLe4n.Model.TCB.ext
+-- SM3.A.10 — KernelObject.objectLockOf projection + per-variant simp lemmas.
+#check @SeLe4n.Model.KernelObject.objectLockOf
+#check @SeLe4n.Model.KernelObject.objectLockOf_tcb
+#check @SeLe4n.Model.KernelObject.objectLockOf_endpoint
+#check @SeLe4n.Model.KernelObject.objectLockOf_notification
+#check @SeLe4n.Model.KernelObject.objectLockOf_cnode
+#check @SeLe4n.Model.KernelObject.objectLockOf_vspaceRoot
+#check @SeLe4n.Model.KernelObject.objectLockOf_untyped
+#check @SeLe4n.Model.KernelObject.objectLockOf_schedContext
+-- SM3.A.10 — SystemState ObjStore table-level lock.
+#check @SeLe4n.Model.SystemState.objStoreLock
+-- SM3.A.10 — FrozenState lock-field forwarding (frozen mirror of SM3.A.3/A.7/A.10).
+#check @SeLe4n.Model.FrozenCNode.lock
+#check @SeLe4n.Model.FrozenVSpaceRoot.lock
+#check @SeLe4n.Model.FrozenSystemState.objStoreLock
+-- SM3.A.10 audit-pass-2 — FrozenKernelObject.objectLockOf symmetry projection.
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_tcb
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_endpoint
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_notification
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_cnode
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_vspaceRoot
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_untyped
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_schedContext
+-- SM3.A.10 audit-pass-2 — freeze*_preserves_lock witness theorems.
+#check @SeLe4n.Model.freeze_preserves_objStoreLock
+#check @SeLe4n.Model.freezeCNode_preserves_lock
+#check @SeLe4n.Model.freezeVSpaceRoot_preserves_lock
+#check @SeLe4n.Model.freezeObject_preserves_objectLockOf
+-- SM3.A.11 — default-state lock theorems.
+#check @SeLe4n.Model.default_objStoreLock_unheld
+#check @SeLe4n.Model.default_objects_locks_unheld
+#check @SeLe4n.Model.default_objects_toList_empty
+#check @SeLe4n.Model.default_objects_locks_unheld_via_toList
+EOF'
+
+# WS-SM SM3.A audit-pass-5 — non-vacuous SM3.A.11 + preservation
+# theorems + consistency theorems + inventory aggregator surface.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.Object.PerObjectLockInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.State
+import SeLe4n.Model.FrozenState
+import SeLe4n.Model.Object.PerObjectLockInventory
+
+-- Non-vacuous SM3.A.11 + preservation theorems.
+#check @SeLe4n.Model.SystemState.allObjectLocksUnheld
+#check @SeLe4n.Model.SystemState.allObjectLocksUnheldB
+#check @SeLe4n.Model.default_allObjectLocksUnheld
+#check @SeLe4n.Model.allObjectLocksUnheld_of_pointwise
+#check @SeLe4n.Model.storeObject_preserves_objStoreLock
+#check @SeLe4n.Model.storeObject_preserves_objectLockOf_off_target
+#check @SeLe4n.Model.storeObject_inserted_object_lookup
+#check @SeLe4n.Model.storeObject_preserves_allObjectLocksUnheld
+-- Consistency theorems.
+#check @SeLe4n.Model.KernelObject.objectLockOf_exists
+#check @SeLe4n.Model.KernelObject.objectType_and_lockOf_total
+#check @SeLe4n.Model.KernelObject.objectLockOf_consistent_with_type
+#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_seven
+#check @SeLe4n.Model.KernelObjectType.variants_total
+-- Inventory aggregator.
+#check @SeLe4n.Model.PerObjectLockCategory
+#check @SeLe4n.Model.PerObjectLockTheorem
+#check @SeLe4n.Model.perObjectLockTheorems
+#check @SeLe4n.Model.perObjectLockTheorems_count
+#check @SeLe4n.Model.perObjectLockTheorems_fieldDefault_count
+#check @SeLe4n.Model.perObjectLockTheorems_projection_count
+#check @SeLe4n.Model.perObjectLockTheorems_defaultState_count
+#check @SeLe4n.Model.perObjectLockTheorems_preservation_count
+#check @SeLe4n.Model.perObjectLockTheorems_consistency_count
+#check @SeLe4n.Model.perObjectLockTheorems_partition_sum
+#check @SeLe4n.Model.perObjectLockTheorems_identifiers_nodup
+#check @SeLe4n.Model.perObjectLockTheorems_descriptions_nodup
+-- RwLockState.default equivalence.
+#check @SeLe4n.Kernel.Concurrency.RwLockState.default_eq_unheld
+EOF'
+
+# WS-SM SM3.A audit-pass-6 — toList ↔ get? bridge theorems +
+# allObjectLocksUnheld Prop↔Bool equivalence under invExt.  These
+# close the audit-pass-5 dead-link docstring reference.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.FreezeProofs'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.FreezeProofs
+
+#check @SeLe4n.Model.get_some_of_toList_contains
+#check @SeLe4n.Model.toList_all_iff_forall_get_some
+#check @SeLe4n.Model.allObjectLocksUnheld_iff_via_toList
+EOF'
+
 finalize_report

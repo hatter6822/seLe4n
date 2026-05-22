@@ -1,3 +1,538 @@
+## Unreleased — WS-SM SM3.A audit-pass-7: BEq SchedContext lock + compile-time-checked inventory identifiers
+
+User-reported audit identified two correctness issues, both closed.
+
+### Issue #1 — `BEq SchedContext` was missing the `lock` conjunct
+
+The SM3.A.6 commit added `SchedContext.lock : RwLockState` but did NOT
+update the manual `BEq SchedContext` instance in
+`SeLe4n/Kernel/SchedContext/Types.lean`.  The instance compared 11
+fields (`scId` through `isActive`) but not `lock`.
+
+**Impact**: two SchedContexts that differ ONLY in lock state compared
+equal under `==`, masking SM3.A.11 invariant regressions in any
+code/test that uses `==` for object/state comparison.  The defect
+propagated through `BEq KernelObject`'s dispatch on the
+`.schedContext` variant — so lock-state regressions could be
+silently masked anywhere in the kernel.
+
+**Fix**: extended `BEq SchedContext` to include `&& a.lock == b.lock`
+as a 12th conjunct.  `RwLockState` derives `DecidableEq` so its
+`==` agrees with `=`.
+
+### Issue #2 — `PerObjectLockTheorem.identifier` had no compile-time check
+
+The audit-pass-5 form of `PerObjectLockTheorem.identifier` was
+typed as `String`, meaning a typo or stale rename in any entry
+would still typecheck.  The 34-entry inventory's claim of being
+a "rename/removal regression guard" was structurally weakened by
+this — the `_nodup` and `_count` proofs operated on strings, not
+on actual declarations.
+
+**Fix**: added a compile-time elaboration witness via a `polt!`
+macro that:
+
+1. **Captures the identifier's `Lean.Name`** verbatim (stored in
+   `identifier : String` for cross-reference).
+2. **Forces compile-time elaboration** via a `let _ := @<ident>;
+   ()` term stored in a new `_elabCheck : Unit` field of
+   `PerObjectLockTheorem`.  A typo or stale rename fails to
+   elaborate with "unknown constant '<name>'" — the static
+   guarantee a `String`-typed field cannot provide.
+
+**Verified** via three intentional regressions (each rolled back
+after verifying the build failure):
+
+* Typo `Endpoint.lock` → `Endpoint.lockTYPO`: build fails with
+  "Unknown constant `SeLe4n.Model.Endpoint.lockTYPO`".
+* Silent rename `default_objStoreLock_unheld` →
+  `default_objStoreLock_REMOVED`: build fails with "Unknown
+  identifier".
+* Macro expansion still passes for the canonical 34 entries.
+
+### Regression-prevention tests (Issue #1 follow-on)
+
+To guarantee Issue #1 cannot recur for any kernel object,
+`tests/PerObjectLockSuite.lean` gains a new §4b section with **per-
+kernel-object BEq distinguishes-lock-state** witnesses:
+
+* 7 decidable `example` cases (TCB, Endpoint, CNode, Notification,
+  UntypedObject, SchedContext, VSpaceRoot) constructing two
+  instances differing only in `lock`, asserting `(a == b) = false`.
+* 4 `KernelObject`-variant decidable cases for the aggregate
+  `BEq KernelObject` dispatch.
+* 8 runtime `assertBool` mirrors of the above.
+
+A future workstream that adds a new kernel object MUST add a
+corresponding test here.  A future workstream that adds a new
+field to an existing kernel object's BEq instance MUST verify the
+`lock` field is still part of the comparison — the regression
+guards above will fail if it is silently dropped.
+
+### Test results (audit-pass-7)
+
+* Lean module build: **320/320 green**.
+* `lake exe per_object_lock_suite`: **68/68 PASS** (was 60 at
+  audit-pass-6; +8 BEq regression assertions).
+* Suite metrics: 65 surface anchors, **61** decidable examples
+  (was 50; +11 for BEq regression + macro-typed inventory
+  entries), 68 runtime assertions, **1097 LoC** (was 873).
+* Full Tier 0+1+2+3 green.
+* Rust 988+ tests green; zero clippy warnings.
+
+### Static guarantees added (this can not happen again)
+
+| Guarantee | Mechanism |
+|---|---|
+| BEq SchedContext distinguishes lock state | Manual `BEq SchedContext` includes `&& a.lock == b.lock` conjunct |
+| Every kernel object's BEq distinguishes lock state | 11 decidable regression tests (7 per-struct + 4 KernelObject-variant) plus 8 runtime mirrors |
+| Inventory identifier refers to a real declaration | `polt!` macro emits `let _ := @<ident>; ()` forcing elaboration |
+| Inventory identifier matches its stringified form | Macro stringifies the ident itself; no manual string typing |
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1;
+      docs/CLAIM_EVIDENCE_INDEX.md (SM3.A row)
+
+## Unreleased — WS-SM SM3.A audit-pass-6: deeper audit close-out
+
+Second user-driven deep audit identified 1 CRITICAL + 4 MEDIUM/LOW
+findings, all closed.
+
+### CRITICAL — Inventory was test-only despite the audit-pass-5 claim
+
+The audit-pass-5 commit `63499af` claimed the new
+`SeLe4n/Model/Object/PerObjectLockInventory.lean` was production-
+reachable.  Verification showed `lake build` (default target)
+produced 318 jobs (unchanged), because no production file imported
+the inventory.  A regression in the inventory would only fail
+Tier-3 (via the manual `lake build` invocation in
+`test_tier3_invariant_surface.sh`), not the production-build CI
+gate.
+
+Closed by adding `import SeLe4n.Model.Object.PerObjectLockInventory`
+to `SeLe4n.lean` (the library entry point).  `lake build` now
+produces 320 jobs (was 318 pre-audit-pass-5: 318 + inventory + 1
+implied by the audit-pass-6 FreezeProofs bridge theorems).
+
+### MEDIUM — `RwLockState` docstring stale after audit-pass-5
+
+The original `RwLockState` structure docstring (line 162-164) stated
+*"The default `Inhabited` witness is **not** `unheld`"* — but
+audit-pass-5 proved `default_eq_unheld` (they ARE equal by `rfl`).
+The audit-pass-5 commit should have updated this docstring.
+
+Closed by rewriting the docstring to reflect that `default` IS
+`unheld`, with a cross-reference to the new `default_eq_unheld`
+theorem.
+
+### MEDIUM — Implement the `allObjectLocksUnheld_iff_via_toList` bridge
+
+The audit-pass-5 docstring on `allObjectLocksUnheldB` referenced
+`allObjectLocksUnheld_iff_via_toList` as the Prop ↔ Bool bridge
+"below" — but no such theorem existed.  Per
+implement-the-improvement, the bridge is now fully implemented in
+`SeLe4n/Model/FreezeProofs.lean`:
+
+* `get_some_of_toList_contains` — reverse direction of the existing
+  `toList_contains_of_get`: if `(k, v) ∈ rt.toList` and `invExt`
+  holds, then `rt.get? k = some v`.  Proof composes
+  `toList_absent_of_get_none` (contradiction with `get? = none`) and
+  `toList_noDupKeys` (key uniqueness).
+* `toList_all_iff_forall_get_some` — general `toList.all P ↔ ∀ k v,
+  get? k = some v → P (k, v)` bridge, parameterised over any
+  Bool-valued predicate.
+* `allObjectLocksUnheld_iff_via_toList` — the SM3.A-specific Prop ↔
+  Bool equivalence: `st.allObjectLocksUnheld ↔
+  st.allObjectLocksUnheldB = true` under `st.objects.invExt`.
+
+The State.lean docstring now references the actual location of the
+bridge (FreezeProofs.lean).
+
+### MEDIUM — Inventory section count comments wrong
+
+`SeLe4n/Model/Object/PerObjectLockInventory.lean` §4 comment said
+"(5 entries — 4 freeze + 4 storeObject; total 8 listed)" — the "5"
+was wrong; actual count is 8.  §5 said "(4 entries — totality +
+variants cardinality)" — actual count is 5.  Both corrected.
+
+### LOW — Dead-weight `assertBool "... reachable" true` in audit-pass-5 §6
+
+The audit-pass-5 `runAuditPass5InvariantChecks` had 4
+`assertBool "... reachable" true` invocations that passed
+unconditionally regardless of theorem state.  Closed by replacing
+each with a substantive decidable witness on a post-`storeObject`
+state: extracts the post-state via `Except.ok`-destructuring,
+projects through `objectLockOf`, and asserts the preservation
+claim's conclusion as a decidable `Option RwLockState` /
+`Option.isNone` comparison.
+
+### LOW — `objectLockOf_consistent_with_type` runtime exercise
+
+The audit-pass-5 theorem had only a Tier-3 surface anchor and no
+runtime exercise.  Added a runtime `assertBool` on a constructed
+`.endpoint {}` value.
+
+### LOW — `Repr FrozenVSpaceRoot` runtime exercise
+
+The audit-pass-5 manual `Repr FrozenVSpaceRoot` instance had no
+test.  Added a runtime `assertBool` asserting `reprStr` produces a
+non-empty string on a constructed `freezeVSpaceRoot` output.
+
+### Test results (audit-pass-6)
+
+* Lean module build: **320/320 green** (was 318 + 2 for inventory
+  promotion + FreezeProofs bridge).
+* `lake exe per_object_lock_suite`: **60/60 PASS** (audit-pass-5
+  was 58; +2 net from dead-weight refactor + Repr exercise).
+* Suite metrics: 65 surface anchors, 50 decidable examples, 60
+  runtime assertions, ~813 LoC.
+* Full Tier 0+1+2+3 green.
+* Rust 988+ tests green; zero clippy warnings.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1
+      docs/CLAIM_EVIDENCE_INDEX.md (SM3.A row, gate updated to 320)
+
+## Unreleased — WS-SM SM3.A audit-pass-5: deferred-completion close-out
+
+Comprehensive close-out of the items identified in the user-driven
+audit as "work not optimally completed".  Lands non-vacuous
+preservation theorems, totality/consistency witnesses, the
+`perObjectLockTheorems` aggregator, the `RwLockState.default_eq_unheld`
+equivalence, the manual `Repr FrozenVSpaceRoot` instance, and the
+CLAIM_EVIDENCE_INDEX entry.
+
+### Strengthened SM3.A.11 — non-vacuous form
+
+The audit-pass-2/3/4 forms of `default_objects_locks_unheld`
+discharged vacuously on the empty default store.  Audit-pass-5
+adds the **non-vacuous** companion:
+
+* `SystemState.allObjectLocksUnheld` — Prop conjunction:
+  `objStoreLock = .unheld ∧ ∀ id o, objects.get? id = some o →
+  objectLockOf o = .unheld`.  The first conjunct is substantive
+  (a concrete equality on the table-level field), so the
+  conjunction is **non-vacuous on every state**.
+* `SystemState.allObjectLocksUnheldB` — Bool form for runtime
+  decidability via `decide`.
+* `default_allObjectLocksUnheld` — non-vacuous SM3.A.11 closure:
+  the default state satisfies both conjuncts.  The first
+  conjunct (`objStoreLock = unheld`) is `rfl`-discharged; the
+  second uses the existing `default_objects_locks_unheld`
+  vacuous discharge.
+* `allObjectLocksUnheld_of_pointwise` — constructor lemma for
+  arbitrary states satisfying the pointwise condition.  This is
+  the "post-boot analogous theorem" promised in the
+  `default_objects_locks_unheld` docstring (audit-pass-1 deferred
+  this; audit-pass-5 implements it).
+
+### Preservation theorems for the canonical state-mutating operation
+
+The audit-pass-4 finding "no preservation theorems for any kernel
+transition" is closed with four `storeObject`-preservation
+witnesses:
+
+* `storeObject_preserves_objStoreLock` — the table-level lock is
+  unchanged across `storeObject`.
+* `storeObject_preserves_objectLockOf_off_target` — for any
+  `id' ≠ id`, the lookup at `id'` is unchanged
+  (`RHTable.getElem?_insert_ne`).
+* `storeObject_inserted_object_lookup` — at the inserted ObjId,
+  lookup returns precisely the inserted object
+  (`RHTable.getElem?_insert_self`).
+* `storeObject_preserves_allObjectLocksUnheld` — the aggregate:
+  `storeObject` with an unheld-lock object preserves the global
+  invariant.  Two-case proof (id-equality on `objects` insert
+  position).
+
+### Consistency theorems for `objectLockOf`
+
+* `objectLockOf_exists` — totality witness.
+* `objectType_and_lockOf_total` — both projections are total.
+* `objectLockOf_consistent_with_type` — per-variant kind-tag ↔
+  lock-field consistency.
+
+### Structural enforcement of Reply/Page N/A decisions
+
+* `KernelObjectType.variants_count_exactly_seven` — pins the
+  variant cardinality.  A future workstream adding a `Reply` or
+  `Page` variant fails this count witness, forcing the SM3.A.5 /
+  SM3.A.8 decision to be revisited.
+* `KernelObjectType.variants_total` — every value is one of the
+  seven enumerated variants.
+
+### `RwLockState.default = .unheld` equivalence
+
+* `RwLockState.default_eq_unheld` — `@[simp]` theorem; the
+  `Inhabited`-derived default normalises to `.unheld`.
+
+### Manual `Repr FrozenVSpaceRoot` instance
+
+* Manual `instance : Repr FrozenVSpaceRoot` that elides the
+  `mappings` field (which has no `Repr` instance via
+  `FrozenMap`).
+
+### `perObjectLockTheorems` aggregator
+
+* NEW FILE `SeLe4n/Model/Object/PerObjectLockInventory.lean`
+  (~280 LoC).  34-entry typed inventory in 5 categories
+  (7 fieldDefault + 9 projection + 5 defaultState + 8
+  preservation + 5 consistency).  Per-category count witnesses,
+  partition-sum theorem, Nodup witnesses on identifiers and
+  descriptions.
+
+### CLAIM_EVIDENCE_INDEX entry
+
+Added a new SM3.A row at the top of the active baseline claims
+table documenting all 11 sub-tasks, the audit-pass-5 theorems,
+the inventory, and the gate commands.
+
+### Test results (audit-pass-5)
+
+* Lean module build: 319/319 green (was 318; +1 for
+  `PerObjectLockInventory`).
+* `lake exe per_object_lock_suite`: 58 runtime assertions PASS
+  (was 41 at audit-pass-4 close; +17 audit-pass-5 additions).
+* `tests/PerObjectLockSuite.lean`: 62 surface anchors, 48
+  decidable examples, 58 runtime assertions (~806 LoC).
+* Full Tier 0+1+2+3 green; Rust 988+ tests green; zero clippy
+  warnings.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1;
+      docs/CLAIM_EVIDENCE_INDEX.md (SM3.A row).
+
+## Unreleased — WS-SM SM3.A audit-pass-2 refinements
+
+Independent audit review of the initial SM3.A landing identified 1
+MEDIUM and 7 LOW findings, all closed in this commit:
+
+### MEDIUM — `FrozenKernelObject.objectLockOf` symmetry (M-1)
+
+The SM3.A.10 `KernelObject.objectLockOf` projection had 7 `@[simp]`
+unfold lemmas covering every variant of `KernelObject`, but
+`FrozenKernelObject` (the snapshot equivalent in `Model/FrozenState.lean`)
+had no sibling projection.  Since `FrozenKernelObject.cnode` wraps
+`FrozenCNode` (which already carries `lock` via the SM3.A.3 frozen
+mirror) and the other variants reuse the runtime structs verbatim,
+the projection is implementable.
+
+Closed by adding:
+
+* `FrozenKernelObject.objectLockOf` with 7 `@[simp]` per-variant
+  unfold lemmas (`objectLockOf_tcb` through `objectLockOf_schedContext`).
+* `freezeObject_preserves_objectLockOf` — the aggregate witness
+  that bridges runtime `KernelObject.objectLockOf` and frozen
+  `FrozenKernelObject.objectLockOf` across `freezeObject`.  Proved
+  by case-analysis on `KernelObject`; every case discharges by `rfl`.
+
+SM3.B's `LockId.lookup` for the frozen phase (which FrozenOps will
+consume) can now route through the symmetric projection rather than
+re-implementing the per-variant case-analysis at every consumer site.
+
+### LOW — Cross-document accuracy (L-1, L-4, L-7)
+
+* **L-1** (§4.3 reference): the plan / spec / CHANGELOG / CLAUDE /
+  AGENTS cited "§4.3 rejects per-PTE locking" but the plan's §4.3
+  ("Per-object vs per-subsystem") did not actually mention per-PTE.
+  Per implement-the-improvement, §4.3 of the plan is amended to
+  include the per-PTE rejection rationale (3 numbered concerns:
+  per-PTE lock overhead, hand-over-hand acquisition during
+  RHTable probe-sequence relocation, hierarchy-level conflict
+  with the SM0.I 10-level cap).  The cross-references now resolve
+  to actual text.
+
+* **L-4** (test-count accuracy): the previous CHANGELOG cited
+  "30+ surface anchors, 16 decidable examples, 22 runtime
+  assertions" — actuals were 24/26/22.  Updated to "24 surface
+  anchors, 26 decidable examples, 22 runtime assertions" in
+  audit-pass-1; audit-pass-2 brings them to 36 surface anchors,
+  31 decidable examples, 29 runtime assertions (counted via
+  `grep -c "^#check"`, `grep -c "^example "`, and
+  `grep -c "^  assertBool "` on the post-audit-pass-2 suite).
+
+* **L-7** (allowlist comment): the staged-module allowlist
+  header comment was rewritten at SM3.A landing to describe the
+  RwLock/MemoryModel promotion but elided the historical context
+  for `RwLockRefinement` (added by WS-SM SM2.C at v0.31.9).  The
+  header now distinguishes "modules moved OUT at SM3.A" from
+  "entries pre-dating SM3.A that remain staged-only" to avoid
+  misleading a future reader.
+
+### LOW — Test-coverage refinements (L-2, L-3, L-5, L-6)
+
+* **L-2** (dead-weight assertBool): two
+  `assertBool ... true` invocations in
+  `runDefaultStateChecks` reported PASS regardless of whether the
+  underlying theorem actually elaborated.  Closed by replacing
+  with decidable closed-form checks — every entry in the default
+  state's `toList` snapshot has `objectLockOf p.2 = unheld` (`.all`
+  over the empty list) and `wf` (`.all` over the empty list).
+  Both vacuously true on the default state but exercise the
+  decidable closed form.
+
+* **L-3** (missing freeze_preserves witnesses): every other
+  freeze-forwarded field has a `freeze_preserves_X` witness
+  theorem (`freeze_preserves_machine`, `freeze_preserves_tlb`,
+  etc.).  The new SM3.A.10 lock fields had no such witness.
+  Closed by adding:
+  - `freeze_preserves_objStoreLock`
+  - `freezeCNode_preserves_lock`
+  - `freezeVSpaceRoot_preserves_lock`
+
+* **L-5** (missing `.tcb` decidable example): the §3 decidable
+  example block omitted `.tcb`.  Closed by adding the missing
+  example (already had the runtime assertion in audit-pass-1).
+
+* **L-6** (TCB §2 example rfl-only): every other §2 example had
+  both `by decide` and `rfl` forms; TCB had only `rfl`.  Closed
+  by adding the `by decide` companion.
+
+### Test results (audit-pass-2)
+
+Lean module build: 318/318 green (modulo the audit-pass-2
+additions which preserve the build).  `lake exe
+per_object_lock_suite` reports 29/29 PASS (was 24 at
+audit-pass-1 close; +5 new audit-pass-2 assertions for the M-1
+FrozenKernelObject projection).  Tier 0+1+2+3 still green.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1, §4.3 (amended)
+
+## Unreleased — WS-SM SM3.A Per-Object Lock Fields
+
+Implements §5.1 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+— "Add `lock : RwLock` fields" (5 PRs, 11 sub-tasks).  Wires SM2.C's
+abstract `RwLockState` into every kernel-object struct, plus a
+table-level lock on the SystemState's object store, plus the per-variant
+projection function and the SM3.A.11 default-state theorems.
+
+### Per-object lock fields (SM3.A.1..A.9)
+
+* **SM3.A.1**: `TCB.lock : RwLockState` with default `RwLockState.unheld`
+  (`SeLe4n/Model/Object/Types.lean`).  The manual `BEq TCB` instance
+  is extended to include `lock` (23 fields total — `tid`, `priority`,
+  `domain`, `cspaceRoot`, `vspaceRoot`, `ipcBuffer`, `ipcState`,
+  `threadState`, `timeSlice`, `deadline`, `queuePrev`, `queuePPrev`,
+  `queueNext`, `pendingMessage`, `registerContext`, `faultHandler`,
+  `boundNotification`, `schedContextBinding`, `timeoutBudget`,
+  `maxControlledPriority`, `pipBoost`, `timedOut`, `lock`); `TCB.ext`
+  gains an `hLock` hypothesis for the per-field extensionality witness;
+  the `not_lawfulBEq` theorem is unaffected (its non-lawfulness derives
+  from `registerContext`, not from any added field).
+* **SM3.A.2**: `Endpoint.lock` with default `unheld`.  Endpoint
+  retains `deriving DecidableEq` because `RwLockState` derives
+  `DecidableEq`.
+* **SM3.A.3**: `CNode.lock` with default `unheld`.  The manual
+  `BEq CNode` is extended; `CNode.beq_sound` is rewritten with
+  `obtain` to be robust against future BEq additions (the previous
+  positional pattern `h.1.1.1.1.1` was structurally fragile).
+* **SM3.A.4**: `Notification.lock` with default `unheld`.
+* **SM3.A.6**: `SchedContext.lock` with default `unheld`
+  (`SeLe4n/Kernel/SchedContext/Types.lean`; the SchedContext module
+  gains a new import of `Concurrency.Locks.RwLock`).
+* **SM3.A.7**: `VSpaceRoot.lock` with default `unheld`
+  (`SeLe4n/Model/Object/Structures.lean`).  The manual
+  `BEq VSpaceRoot` is extended; `VSpaceRoot.beq_sound` is rewritten
+  with `obtain` for robustness; `VSpaceRoot.beq_refl` gains
+  `Bool.and_true` in its simp set to handle the new trailing
+  conjunct.
+* **SM3.A.9**: `UntypedObject.lock` with default `unheld`.  The
+  positional `UntypedObject.mk` calls in `empty_*` theorems and
+  `UntypedObjectValid.empty` are converted to named-field syntax
+  for robustness against future field additions.
+
+**Skipped sub-tasks (documented as N/A for seLe4n)**:
+
+* **SM3.A.5** (Reply): seLe4n does not model Reply as a separate
+  kernel object; reply discipline lives in TCB state.  Re-openable
+  when seLe4n grows a first-class Reply object.
+* **SM3.A.8** (Page): seLe4n stores page mappings inline in
+  `VSpaceRoot.mappings`; §4.3 of the plan rejects per-PTE locking
+  for v1.0.0.  Re-openable when seLe4n grows first-class Page
+  objects.
+
+### ObjStore table-level lock + projection (SM3.A.10)
+
+* **`SystemState.objStoreLock : RwLockState`** with default `unheld`
+  added to the SystemState structure (`SeLe4n/Model/State.lean`).
+  Per §4.4, the underlying RobinHood hash table is held under a
+  single table-level lock at the top of the SM0.I hierarchy
+  (`LockKind.objStore`, level 0).
+* **`KernelObject.objectLockOf : KernelObject → RwLockState`** —
+  per-variant lock projection function with 7 `@[simp]` unfold
+  lemmas (`objectLockOf_tcb`, `objectLockOf_endpoint`,
+  `objectLockOf_notification`, `objectLockOf_cnode`,
+  `objectLockOf_vspaceRoot`, `objectLockOf_untyped`,
+  `objectLockOf_schedContext`).  SM3.B `LockId.lookup` and SM3.C
+  `lockSetHeld` will consume this projection.
+* **`FrozenSystemState.objStoreLock`** field added, forwarded
+  unchanged by `freeze`.  `FrozenCNode.lock` and `FrozenVSpaceRoot.lock`
+  fields added, forwarded unchanged by `freezeCNode` and
+  `freezeVSpaceRoot`.  Preserves the per-object lock state across
+  the freeze boundary.
+
+### Default-state theorems (SM3.A.11)
+
+* **`default_objStoreLock_unheld`** — proves
+  `(default : SystemState).objStoreLock = RwLockState.unheld` by `rfl`.
+* **`default_objects_locks_unheld`** — the canonical SM3.A.11
+  closure theorem: for every `id ∈ default.objects`,
+  `objectLockOf o = RwLockState.unheld`.  Vacuously discharged via
+  `RHTable.getElem?_empty` (the default state's `objects` is the
+  empty hash table).  Base case for the SM3.C `lockSetHeld`
+  per-state induction.
+* **`default_objects_toList_empty`** — computable witness that
+  `default.objects.toList = []`, proven by `decide`.
+* **`default_objects_locks_unheld_via_toList`** — the `toList`
+  membership variant, discharged via `List.not_mem_nil` after the
+  empty-list rewrite.
+
+### Production/staged partition updates
+
+`Kernel.Concurrency.Locks.RwLock` and `Kernel.Concurrency.MemoryModel`
+moved from the staged allowlist into the production import closure
+(now reachable from production via `Model.Object.Types`'s new import
+of `Concurrency.Locks.RwLock`).  The `STATUS: staged` markers in
+those files are removed.  `RwLockRefinement` remains staged-only
+(not yet wired to a runtime consumer; promotable in a later SM3
+phase).
+
+### Test coverage
+
+* **New suite**: `tests/PerObjectLockSuite.lean` (~646 LoC
+  post-audit-pass-4: 36 surface anchors, 36 decidable examples, 41
+  runtime assertions).  Covers default-state shape, per-object
+  default-lock witness (TCB through named-field construction with
+  required fields; Endpoint, CNode, Notification, UntypedObject,
+  SchedContext, VSpaceRoot via empty / default constructors),
+  `KernelObject.objectLockOf` per-variant reduction (all 7
+  variants including TCB), `FrozenKernelObject.objectLockOf`
+  per-variant reduction (audit-pass-2 M-1; full 7-variant coverage
+  added at audit-pass-4), frozen-state lock-field forwarding
+  (`freezeCNode`, `freezeVSpaceRoot`, plus the
+  `freezeObject_preserves_objectLockOf` aggregate exercised on
+  every variant), non-vacuous SM3.A.11 witnesses on post-insert
+  states (audit-pass-4 HIGH-fix: 3 variants — endpoint, cnode,
+  vspaceRoot — exercise `objectLockOf` after `RHTable.insert` to
+  give the universal-quantifier theorem a non-empty witness),
+  `freeze mkEmptyIntermediateState` ObjStore-lock preservation,
+  and `RwLockState.unheld` auxiliary properties from SM2.C
+  (5-conjunct `wf`, zero-writer, zero-readers, zero-waiters).
+  Runnable as `lake exe per_object_lock_suite`.  Wired into Tier 2
+  (negative) and Tier 3 (invariant-surface).
+* **Tier 3 surface anchors** added covering every SM3.A.1..A.11
+  public symbol.
+* All 318 existing modules still build (`lake build` exit 0); all
+  Tier 0+1+2+3 tests still pass.
+
+### Items deferred past v1.0.0 with correctness impact: NONE.
+
+Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`, per-transition
+`lockSet`, `lockAcquireSequence` ordering theorems) consumes the
+SM3.A.10 `objectLockOf` projection; SM3.C (`withLockSet` 2PL
+discipline) consumes both SM3.A and SM3.B; SM3.D/SM3.E close with
+deadlock-freedom and serializability theorems.  See
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+§§5.2..5.5.
+
 ## Unreleased — WS-SM SM2.E Panic-Hang Remediation (queued MCS-RW lock)
 
 Implements the

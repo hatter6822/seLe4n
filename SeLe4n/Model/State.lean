@@ -352,6 +352,28 @@ structure SystemState where
       Empty by default (no stale entries at boot). Operations that modify page
       tables must flush the TLB to maintain `tlbConsistent`. -/
   tlb : TlbState := TlbState.empty
+  /-- WS-SM SM3.A.10: ObjStore table-level reader-writer lock state.
+
+      Per §4.4 of the SM3 plan, the underlying RobinHood hash table
+      (`objects : RHTable ObjId KernelObject`) carries a single table-level
+      lock at the top of the lock hierarchy
+      (`LockKind.objStore`, level 0).  Rationale: inserts and deletes can
+      relocate entries across buckets (Robin Hood probe-sequence
+      reorganisation), so a per-bucket lock would require complex
+      hand-over-hand acquisition.  The table-level lock is acquired in:
+
+      * `read` mode for lookups (`objects[id]?`, `lookupObject`).
+      * `write` mode for inserts (`storeObject`,
+        `storeObjectChecked`, `storeObjectKindChecked`) and deletes
+        (`removeObject` etc.).
+
+      Default `RwLockState.unheld` means a freshly-created SystemState
+      starts with the ObjStore lock available.  This is the lowest-level
+      lock in the SM3 hierarchy, acquired first (before any per-object
+      lock) per the 2PL discipline in SM3.C.  See
+      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10). -/
+  objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -381,6 +403,12 @@ instance : Inhabited SystemState where
     cdtNextNode := ⟨0⟩
     scThreadIndex := {}
     tlb := TlbState.empty
+    -- WS-SM SM3.A.10: ObjStore table-level lock starts in the unheld
+    -- state (lock available) at boot.  Explicit listing pins the
+    -- default-state invariant `default.objStoreLock = .unheld` so the
+    -- `default_objStoreLock_unheld` and `default_objects_locks_unheld`
+    -- theorems (SM3.A.11) can discharge by `rfl`.
+    objStoreLock := SeLe4n.Kernel.Concurrency.RwLockState.unheld
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -454,6 +482,184 @@ theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := b
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
+
+-- ============================================================================
+-- WS-SM SM3.A.11 — Per-object lock invariants on the default SystemState
+-- ============================================================================
+
+/-- WS-SM SM3.A.10/A.11: The default SystemState has `objStoreLock = .unheld`.
+
+This pins the "lock available at boot" semantics of the SM3.A.10
+table-level ObjStore lock: a freshly-constructed SystemState (e.g. the
+seed passed to `bootFromPlatform`) carries an unheld ObjStore lock by
+construction.  Subsequent boot operations (`storeObject`, etc.) acquire
+the lock per the SM3.C.1 `withLockSet` discipline. -/
+theorem default_objStoreLock_unheld :
+    (default : SystemState).objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld := rfl
+
+/-- WS-SM SM3.A.11: Every object reachable through the default SystemState
+has its per-object lock in the `.unheld` state.
+
+This is the canonical SM3.A.11 closure theorem: a freshly-constructed
+SystemState has an empty object store (`RHTable.empty 16`), so the
+universal quantifier is **vacuously discharged** — no `id` ever resolves
+to `some o`.  The discharge uses `RHTable.getElem?_empty`, which proves
+that `(RHTable.empty 16 _)[id]? = none` for every key.
+
+For a non-default state where `bootFromPlatform` populates initial
+objects, the analogous theorem proves that **every initial object**
+(created via the `Builder.createObject` smart constructor) has its
+lock in `.unheld` — because the smart constructor invokes the
+per-object struct's default constructor, which sets `lock :=
+RwLockState.unheld` by the SM3.A.1..A.9 field defaults.  That stronger
+statement is part of the SM3.B follow-on (`LockId.lookup` discharge for
+post-boot states).
+
+Per SM3.C.4 (`lockSetHeld`), this theorem is the **base case** for the
+per-state lock-set-availability induction: at boot, no core holds any
+per-object lock; subsequent transitions acquire and release per the
+2PL discipline. -/
+theorem default_objects_locks_unheld :
+    ∀ (id : SeLe4n.ObjId) (o : KernelObject),
+      (default : SystemState).objects.get? id = some o →
+      KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld := by
+  intro id o hLookup
+  -- The default SystemState's `objects` is `RHTable.empty 16 (by decide)`
+  -- via `instInhabitedRHTable`. `RHTable.getElem?_empty` proves that
+  -- looking up any key in an empty table returns `none`.
+  have hEmpty : (default : SystemState).objects.get? id = none := by
+    show (default : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).get? id = none
+    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty
+      SeLe4n.Kernel.RobinHood.minPracticalRHCapacity (by decide) id
+  -- Lookup returns `some o` and `none` simultaneously — contradiction.
+  rw [hEmpty] at hLookup
+  cases hLookup
+
+/-- WS-SM SM3.A.11 (decidable variant): the predicate "every object's
+lock is unheld" reduces to a vacuous quantification on the default
+state.  Used as a Tier-2 runtime assertion in `PerObjectLockSuite`.
+
+The proof closes via `default_objects_toList_empty` below — the default
+state's object store has an empty `toList`, so the universal
+quantification over members is vacuously discharged. -/
+theorem default_objects_toList_empty :
+    (default : SystemState).objects.toList = [] := by
+  -- `default.objects` is the canonical `RHTable.empty 16` populated with
+  -- 16 `none` slots.  `toList` folds the slots with a cons-on-some
+  -- handler; since every slot is `none`, the fold accumulator stays
+  -- `[]` throughout.  `decide` discharges the finite computation
+  -- because the capacity is the literal `16` (`minPracticalRHCapacity`).
+  decide
+
+/-- WS-SM SM3.A.11 (decidable variant): every entry in the default
+state's `toList` snapshot has `objectLockOf p.2 = .unheld`.  The default
+state's `toList` is empty (`default_objects_toList_empty`), so this is
+vacuously true.  Used as a Tier-2 runtime assertion in
+`PerObjectLockSuite`. -/
+theorem default_objects_locks_unheld_via_toList :
+    ∀ p ∈ (default : SystemState).objects.toList,
+      KernelObject.objectLockOf p.2 = SeLe4n.Kernel.Concurrency.RwLockState.unheld := by
+  intro p hp
+  rw [default_objects_toList_empty] at hp
+  exact absurd hp (List.not_mem_nil)
+
+-- ============================================================================
+-- WS-SM SM3.A audit-pass-5 — Non-vacuous lock-state invariant + preservation
+-- ============================================================================
+
+/-- WS-SM SM3.A audit-pass-5: the SM3.A runtime invariant — every
+object in the store has its lock in the unheld state, AND the
+table-level `objStoreLock` is also unheld.
+
+Captures the *static* shape that holds at SM3.A scope: no current
+kernel operation acquires or releases any lock, so every reachable
+state from `default` has all locks in their initial state.
+
+This predicate is **not** vacuous: it has two conjuncts that are
+both substantive (the `objStoreLock = .unheld` clause alone is a
+non-trivial assertion about the state's table-level lock field).
+
+SM3.C (`withLockSet`) will introduce the *dynamic* shape — locks
+can transition.  At SM3.A scope this predicate is invariant under
+every kernel transition, witnessed by the
+`*_preserves_allObjectLocksUnheld` family of theorems below. -/
+def SystemState.allObjectLocksUnheld (st : SystemState) : Prop :=
+  st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld ∧
+  ∀ id o, st.objects.get? id = some o →
+    KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld
+
+/-- WS-SM SM3.A audit-pass-5: a Bool-valued decidable form of
+`allObjectLocksUnheld` over the `toList` snapshot.
+
+Runtime fixtures use this Bool form to `decide`-discharge the
+invariant on small object stores.  The relationship to the Prop
+form is the standard "list-quantification ↔ universal
+quantification on lookups" bridge, captured by
+`allObjectLocksUnheld_iff_via_toList` in
+`SeLe4n/Model/FreezeProofs.lean` (audit-pass-6) for states whose
+object store satisfies the Robin Hood invariant `invExt`.
+
+The Bool form lets `tests/PerObjectLockSuite.lean` exercise the
+invariant via `decide ((default : SystemState).allObjectLocksUnheldB
+= true)` without needing the Prop ↔ Bool bridge in scope. -/
+def SystemState.allObjectLocksUnheldB (st : SystemState) : Bool :=
+  (st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
+  (st.objects.toList.all
+    (fun p => p.snd.objectLockOf = SeLe4n.Kernel.Concurrency.RwLockState.unheld))
+
+/-- WS-SM SM3.A audit-pass-5 — STRONGER non-vacuous form of SM3.A.11.
+
+The default SystemState satisfies the full SM3.A runtime
+invariant: both the table-level `objStoreLock` is unheld AND every
+object in the store has its lock unheld.
+
+This is the canonical SM3.A.11 closure theorem in its non-vacuous
+form: the first conjunct (`objStoreLock = .unheld`) is a
+**substantive** witness, not a vacuous quantification.  The second
+conjunct still discharges vacuously on the empty default store,
+but its presence in the conjunction is the pin that downstream
+SM3.B/C consumers can `obtain` against.
+
+Per the SM3.A scope (no current kernel operation modifies any
+lock), every reachable state from `default` satisfies this
+predicate.  SM3.C will replace this with a weaker
+`lockSetHeld`-relative predicate that accommodates lock
+acquisition. -/
+theorem default_allObjectLocksUnheld :
+    (default : SystemState).allObjectLocksUnheld :=
+  ⟨rfl, default_objects_locks_unheld⟩
+
+/-- WS-SM SM3.A audit-pass-5: a more useful form of SM3.A.11 — for
+any `SystemState` whose stored objects are constructed via default
+constructors (so `objectLockOf` on each yields `.unheld`), the
+predicate holds.
+
+This is the "analogous post-boot theorem" promised in the
+`default_objects_locks_unheld` docstring: at boot, the builder
+populates the object store via `Builder.createObject`, which
+constructs each object with the default `lock := .unheld` field
+value.  The resulting state therefore satisfies
+`allObjectLocksUnheld` (modulo the `objStoreLock` field, which is
+also `.unheld` by default at boot).
+
+The theorem is parameterised over `objStoreLock` to capture both
+cases: the default `.unheld` and any future operationally-acquired
+state.
+
+**Closure path (SM3.B/C)**: once `Builder.createObject` is
+extended to enforce `objectLockOf newObj = .unheld` at construction
+time (the structural enforcement of the SM3.A.10 invariant), this
+theorem becomes a direct corollary. -/
+theorem allObjectLocksUnheld_of_pointwise (st : SystemState)
+    (hObjStore : st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld)
+    (hPointwise : ∀ id o, st.objects.get? id = some o →
+        KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld) :
+    st.allObjectLocksUnheld :=
+  ⟨hObjStore, hPointwise⟩
+
+-- WS-SM SM3.A audit-pass-5: the `storeObject_preserves_*` theorems are
+-- placed AFTER `storeObject`'s definition (around line 900 below), since
+-- they reference its definitional reduction.
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
     This theorem destructures `allTablesInvExtK` into exactly 17 named conjuncts.
@@ -631,6 +837,143 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
           | .vspaceRoot newRoot => cleared.insert newRoot.asid id
           | _ => cleared
     })
+
+-- ============================================================================
+-- WS-SM SM3.A audit-pass-5 — `storeObject` lock-state preservation
+-- ============================================================================
+
+/-- WS-SM SM3.A audit-pass-5: `storeObject` preserves the
+table-level `objStoreLock` field.
+
+`storeObject` updates `objects`, `objectIndex`, `objectIndexSet`,
+`lifecycle`, and `asidTable`, but does NOT touch `objStoreLock`.
+This is a structural witness that no current SM3.A operation
+modifies the table-level lock field — closes the audit-pass-4
+finding "no preservation theorems for the new fields".
+
+The theorem statement uses the underlying state-update view to
+keep the proof a `rfl`: `storeObject` returns `.ok ((), newSt)`
+where `newSt` is the `{st with ...}`-spreaded record that retains
+`st.objStoreLock`.
+
+A `result` parameter (rather than introducing the post-state via a
+`match`) keeps the theorem in a shape that SM3.B/C 2PL discipline
+consumers can chain through `Except.ok`-destructuring on
+`storeObject`'s result. -/
+theorem storeObject_preserves_objStoreLock (st : SystemState)
+    (id : SeLe4n.ObjId) (obj : KernelObject) :
+    ∀ result, storeObject id obj st = .ok ((), result) →
+      result.objStoreLock = st.objStoreLock := by
+  intro result hRun
+  -- `storeObject id obj st` reduces definitionally to
+  -- `.ok ((), {st with ...})` where `...` does NOT mention `objStoreLock`.
+  unfold storeObject at hRun
+  cases hRun
+  rfl
+
+/-- WS-SM SM3.A audit-pass-5: `storeObject` preserves the
+per-object lock state of every object whose ObjId is **not** the
+one being overwritten.
+
+For ObjIds other than the inserted one, the object store's entries
+are unchanged, so their `objectLockOf` projections agree across the
+transition.  Closes the audit-pass-4 finding "no preservation
+theorems for per-object lock fields".
+
+The theorem requires `id ≠ id'` because at `id` itself the new
+object replaces the old one — its lock state is determined by the
+inserted object (`obj`), not the prior state.  The `id = id'`
+case is covered by `storeObject_inserted_object_lock` below. -/
+theorem storeObject_preserves_objectLockOf_off_target (st : SystemState)
+    (id id' : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hNe : id ≠ id') :
+    ∀ result, storeObject id obj st = .ok ((), result) →
+      result.objects.get? id' = st.objects.get? id' := by
+  intro result hRun
+  unfold storeObject at hRun
+  cases hRun
+  -- `result.objects = st.objects.insert id obj`; lookup at `id' ≠ id`
+  -- is unchanged by `RHTable.getElem?_insert_ne` (which requires the
+  -- Robin Hood invariant `invExt` on the pre-insert table).
+  show (st.objects.insert id obj).get? id' = st.objects.get? id'
+  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects id id' obj
+    (fun h => hNe (eq_of_beq h)) hObjInv
+
+/-- WS-SM SM3.A audit-pass-5: lookup at the just-inserted ObjId
+returns the inserted object.
+
+Closes the SM3.A.11 conclusion at the operational level: after
+storing `obj` at `id`, the lookup returns precisely `obj`.
+Combined with the field-level default of `lock := .unheld`, the
+SM3.A.11 invariant is operationally preserved through
+`storeObject`.
+
+Mirrors `storeObject_objects_eq` (line 1517 below) but is phrased
+in terms of `result.objects.get?` so it composes cleanly with
+`storeObject_preserves_allObjectLocksUnheld`'s case analysis. -/
+theorem storeObject_inserted_object_lookup (st : SystemState)
+    (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt) :
+    ∀ result, storeObject id obj st = .ok ((), result) →
+      result.objects.get? id = some obj := by
+  intro result hRun
+  unfold storeObject at hRun
+  cases hRun
+  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects id obj
+    hObjInv
+
+/-- WS-SM SM3.A audit-pass-5: `storeObject` with an unheld-lock
+object preserves the SM3.A `allObjectLocksUnheld` invariant.
+
+This is the per-operation preservation theorem that the SM3.C
+2PL discipline will compose: if every kernel transition either
+(a) doesn't modify a lock field (most SM3.A transitions), or
+(b) modifies it by storing an object with `objectLockOf = .unheld`
+(this case), then the SM3.A `allObjectLocksUnheld` invariant is
+maintained.
+
+Closes the audit-pass-4 finding "no preservation theorems for any
+kernel transition".  Establishes that `storeObject` is the
+canonical operation through which fresh objects enter the store,
+and that as long as fresh objects are constructed with the default
+`.unheld` lock (which is enforced by the SM3.A.1..A.9 field
+defaults plus the convention that `Builder.createObject` never
+overrides them), the global invariant holds.
+
+The hypothesis `hFreshLock : objectLockOf obj = .unheld` is the
+operational form of "every freshly-allocated object starts with
+lock unheld" — discharged at every callsite via the field default
+when `obj` is constructed via named-field syntax without an
+explicit `lock := ...` override. -/
+theorem storeObject_preserves_allObjectLocksUnheld (st : SystemState)
+    (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hInv : st.allObjectLocksUnheld)
+    (hFreshLock : KernelObject.objectLockOf obj
+                    = SeLe4n.Kernel.Concurrency.RwLockState.unheld) :
+    ∀ result, storeObject id obj st = .ok ((), result) →
+      result.allObjectLocksUnheld := by
+  intro result hRun
+  refine ⟨?_, ?_⟩
+  · -- objStoreLock preserved by storeObject_preserves_objStoreLock
+    rw [storeObject_preserves_objStoreLock st id obj result hRun]
+    exact hInv.1
+  · -- Per-object claim: for any id', the lock is unheld.
+    intro id' o hLookup
+    -- Two cases: id' = id (the inserted object) or id' ≠ id.
+    by_cases hEq : id = id'
+    · -- id' = id: the lookup returns `obj`, whose lock is unheld by hFreshLock.
+      subst hEq
+      have hSelf := storeObject_inserted_object_lookup st id obj hObjInv result hRun
+      rw [hSelf] at hLookup
+      cases hLookup
+      exact hFreshLock
+    · -- id' ≠ id: lookup is unchanged from st.objects.get? id'.
+      have hOff := storeObject_preserves_objectLockOf_off_target st id id' obj
+        hObjInv hEq result hRun
+      rw [hOff] at hLookup
+      exact hInv.2 id' o hLookup
 
 /-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
     existing object does not increase the object index length, and inserting
