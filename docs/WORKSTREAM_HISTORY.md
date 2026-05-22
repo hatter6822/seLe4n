@@ -966,10 +966,12 @@ into the production import closure.  `STATUS: staged` markers
 removed.  `RwLockRefinement` remains staged-only.
 
 **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
-(~280 LoC) with 30+ surface anchors, 16 decidable examples, 22
-runtime `assertBool` assertions.  Runnable as `lake exe
-per_object_lock_suite`.  Wired into Tier 2 (negative) and Tier 3
-(invariant-surface) pipelines.
+(~360 LoC) with 24 surface-anchor `#check` lines, 26 decidable
+examples, 24 runtime `assertBool` assertions.  TCB-specific
+coverage included: named-field construction with the 6 required
+fields exercises the SM3.A.1 default-lock witness for TCB.
+Runnable as `lake exe per_object_lock_suite`.  Wired into
+Tier 2 (negative) and Tier 3 (invariant-surface) pipelines.
 
 **Axiom budget for SM3.A**: 0 Lean axioms, 0 sorries.
 

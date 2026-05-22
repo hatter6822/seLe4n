@@ -122,6 +122,21 @@ open SeLe4n.Kernel.Concurrency
 example : CNode.empty.lock = RwLockState.unheld := by decide
 example : CNode.empty.lock = RwLockState.unheld := rfl
 
+/-! ## TCB default-construction with required fields has unheld lock
+
+`TCB` has 6 required fields without defaults (`tid`, `priority`,
+`domain`, `cspaceRoot`, `vspaceRoot`, `ipcBuffer`); the lock field
+defaults to `RwLockState.unheld`, so any TCB constructed via named
+field syntax (omitting `lock`) inherits the default.  This pins the
+SM3.A.1 default-lock witness for TCB specifically — without it, a
+regression that flipped the default to a non-unheld state would slip
+through the surface-anchor check. -/
+
+example :
+    ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+       cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+       ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB).lock = RwLockState.unheld := rfl
+
 /-! ## Endpoint default-constructor has unheld lock -/
 
 example : ({} : Endpoint).lock = RwLockState.unheld := by decide
@@ -169,6 +184,14 @@ example :
 -- ============================================================================
 
 /-! ## `objectLockOf` reduces to the per-variant lock for each kind -/
+
+/-- TCB variant: the projection on `.tcb tcb` reduces to `tcb.lock`. -/
+example :
+    KernelObject.objectLockOf
+      (.tcb ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+               cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+               ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB))
+      = RwLockState.unheld := rfl
 
 example :
     KernelObject.objectLockOf
@@ -254,6 +277,14 @@ private def runDefaultStateChecks : IO Unit := do
 
 private def runPerObjectDefaultChecks : IO Unit := do
   IO.println "--- §2 per-object defaults — every kind's lock is unheld ---"
+  -- TCB: named-field construction with required fields only; lock
+  -- inherits the SM3.A.1 default of `RwLockState.unheld`.  Without
+  -- this assertion, a regression that flipped the TCB default to
+  -- a non-unheld state would not be caught by surface anchors alone.
+  assertBool "TCB{minimal}.lock = unheld"
+    (decide (({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+                cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+                ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB).lock = RwLockState.unheld))
   -- Endpoint: empty constructor yields unheld lock.
   assertBool "Endpoint {}.lock = unheld"
     (decide (({} : Endpoint).lock = RwLockState.unheld))
@@ -281,6 +312,16 @@ private def runObjectLockOfReductionChecks : IO Unit := do
   -- Every per-variant unfold lemma reduces `objectLockOf (.kind x) = x.lock`
   -- by `rfl`.  We can't decide BaseIO equality but we can assert that the
   -- decidable equality on the result holds.
+  -- TCB variant: closes the per-variant projection gap from §2 — without
+  -- this, a regression in `objectLockOf_tcb` would not be caught at the
+  -- runtime tier (only at the surface-anchor tier).
+  assertBool "objectLockOf (.tcb minimal) = unheld"
+    (decide
+      (KernelObject.objectLockOf
+        (.tcb ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+                 cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+                 ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB))
+        = RwLockState.unheld))
   assertBool "objectLockOf (.endpoint {}) = unheld"
     (decide
       (KernelObject.objectLockOf (.endpoint ({} : Endpoint)) = RwLockState.unheld))

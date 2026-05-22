@@ -95,13 +95,18 @@ phase).
 
 ### Test coverage
 
-* **New suite**: `tests/PerObjectLockSuite.lean` (~280 LoC, 30+ surface
-  anchors, 16 decidable examples, 22 runtime assertions covering
-  default-state shape, per-object default-lock witness, `objectLockOf`
-  per-variant reduction, frozen-state lock-field forwarding, and
-  `RwLockState.unheld` auxiliary properties from SM2.C).  Runnable as
-  `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative) and
-  Tier 3 (invariant-surface).
+* **New suite**: `tests/PerObjectLockSuite.lean` (~360 LoC, 24 surface
+  anchors, 26 decidable examples, 24 runtime assertions covering
+  default-state shape, per-object default-lock witness (TCB through
+  named-field construction with required fields; Endpoint, CNode,
+  Notification, UntypedObject, SchedContext, VSpaceRoot via empty /
+  default constructors), `objectLockOf` per-variant reduction
+  (all 7 variants including TCB), frozen-state lock-field forwarding
+  (`freezeCNode`, `freezeVSpaceRoot`), and `RwLockState.unheld`
+  auxiliary properties from SM2.C (5-conjunct `wf`, zero-writer,
+  zero-readers, zero-waiters).  Runnable as
+  `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
+  and Tier 3 (invariant-surface).
 * **Tier 3 surface anchors** added covering every SM3.A.1..A.11
   public symbol.
 * All 318 existing modules still build (`lake build` exit 0); all

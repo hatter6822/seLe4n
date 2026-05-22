@@ -2527,14 +2527,16 @@ documentation lives under `docs/` and `docs/gitbook/`.
   to a runtime consumer; promotable in a later SM3 phase).
 
   **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
-  (~280 LoC) with 30+ surface anchors, 16 decidable examples, and
-  22 runtime `assertBool` assertions covering: default-state shape
-  (objStoreLock unheld, toList empty); per-object default-lock
-  witness for every kind (Endpoint, Notification, CNode,
-  VSpaceRoot, UntypedObject, SchedContext); `objectLockOf`
-  per-variant reduction; frozen-state lock-field forwarding
-  (`freezeCNode`, `freezeVSpaceRoot`); and `RwLockState.unheld`
-  auxiliary properties from SM2.C (`wf`, `writerHeld = none`,
+  (~360 LoC) with 24 surface-anchor `#check` lines, 26 decidable
+  examples, and 24 runtime `assertBool` assertions covering:
+  default-state shape (objStoreLock unheld, toList empty);
+  per-object default-lock witness for every kind including TCB
+  via named-field construction with the 6 required fields
+  (TCB, Endpoint, Notification, CNode, VSpaceRoot, UntypedObject,
+  SchedContext); `objectLockOf` per-variant reduction (all 7
+  variants); frozen-state lock-field forwarding (`freezeCNode`,
+  `freezeVSpaceRoot`); and `RwLockState.unheld` auxiliary
+  properties from SM2.C (5-conjunct `wf`, `writerHeld = none`,
   `readers = []`, `waiters = []`).  Runnable as
   `lake exe per_object_lock_suite`.  Wired into Tier 2 (negative)
   and Tier 3 (invariant-surface).  Lean module build: 318/318
