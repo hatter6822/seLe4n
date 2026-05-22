@@ -1823,6 +1823,20 @@ import SeLe4n.Model.FrozenState
 #check @SeLe4n.Model.FrozenCNode.lock
 #check @SeLe4n.Model.FrozenVSpaceRoot.lock
 #check @SeLe4n.Model.FrozenSystemState.objStoreLock
+-- SM3.A.10 audit-pass-2 — FrozenKernelObject.objectLockOf symmetry projection.
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_tcb
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_endpoint
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_notification
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_cnode
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_vspaceRoot
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_untyped
+#check @SeLe4n.Model.FrozenKernelObject.objectLockOf_schedContext
+-- SM3.A.10 audit-pass-2 — freeze*_preserves_lock witness theorems.
+#check @SeLe4n.Model.freeze_preserves_objStoreLock
+#check @SeLe4n.Model.freezeCNode_preserves_lock
+#check @SeLe4n.Model.freezeVSpaceRoot_preserves_lock
+#check @SeLe4n.Model.freezeObject_preserves_objectLockOf
 -- SM3.A.11 — default-state lock theorems.
 #check @SeLe4n.Model.default_objStoreLock_unheld
 #check @SeLe4n.Model.default_objects_locks_unheld

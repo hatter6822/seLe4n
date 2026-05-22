@@ -236,6 +236,64 @@ theorem FrozenKernelObject.objectType_untyped (u : UntypedObject) :
 theorem FrozenKernelObject.objectType_schedContext (sc : SeLe4n.Kernel.SchedContext) :
     (FrozenKernelObject.schedContext sc).objectType = .schedContext := rfl
 
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant lock-state projection on
+`FrozenKernelObject`, mirroring `KernelObject.objectLockOf`
+(`SeLe4n/Model/Object/Structures.lean`).
+
+Returns the `RwLockState` carried by the inner frozen per-object
+struct.  Since `FrozenKernelObject.{tcb, endpoint, notification,
+untyped, schedContext}` reuse the runtime types verbatim, the lock
+state is identical to `KernelObject.objectLockOf`'s projection on
+those variants; `.cnode` and `.vspaceRoot` route through the new
+SM3.A.3/A.7 frozen-state lock fields on `FrozenCNode` and
+`FrozenVSpaceRoot` respectively.  SM3.B's `LockId.lookup` for the
+frozen phase (consumed by FrozenOps) will route through this
+projection. -/
+def FrozenKernelObject.objectLockOf :
+    FrozenKernelObject → SeLe4n.Kernel.Concurrency.RwLockState
+  | .tcb t          => t.lock
+  | .endpoint e     => e.lock
+  | .notification n => n.lock
+  | .cnode c        => c.lock
+  | .vspaceRoot v   => v.lock
+  | .untyped u      => u.lock
+  | .schedContext s => s.lock
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.tcb`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_tcb (t : TCB) :
+    (FrozenKernelObject.tcb t).objectLockOf = t.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.endpoint`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_endpoint (e : Endpoint) :
+    (FrozenKernelObject.endpoint e).objectLockOf = e.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.notification`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_notification (n : Notification) :
+    (FrozenKernelObject.notification n).objectLockOf = n.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.cnode`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_cnode (c : FrozenCNode) :
+    (FrozenKernelObject.cnode c).objectLockOf = c.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.vspaceRoot`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_vspaceRoot (v : FrozenVSpaceRoot) :
+    (FrozenKernelObject.vspaceRoot v).objectLockOf = v.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.untyped`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_untyped (u : UntypedObject) :
+    (FrozenKernelObject.untyped u).objectLockOf = u.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.schedContext`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_schedContext (s : SeLe4n.Kernel.SchedContext) :
+    (FrozenKernelObject.schedContext s).objectLockOf = s.lock := rfl
+
 -- ============================================================================
 -- Q5-B: FrozenSchedulerState
 -- ============================================================================
@@ -488,6 +546,40 @@ transition (MED-01 fix). -/
 theorem freeze_preserves_configDefaultTimeSlice (ist : IntermediateState) :
     (freeze ist).scheduler.configDefaultTimeSlice =
     ist.state.scheduler.configDefaultTimeSlice := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: `freeze` preserves the ObjStore
+table-level lock state.  Pins the SM3.A.10 frozen-state lock-forwarding
+contract — `FrozenSystemState.objStoreLock` carries the same
+`RwLockState` as the source `SystemState.objStoreLock` at freeze time. -/
+theorem freeze_preserves_objStoreLock (ist : IntermediateState) :
+    (freeze ist).objStoreLock = ist.state.objStoreLock := rfl
+
+/-- WS-SM SM3.A.3 audit-pass-2: `freezeCNode` preserves the per-CNode
+lock state.  Pins the SM3.A.3 frozen-state lock-forwarding contract —
+`FrozenCNode.lock` carries the same `RwLockState` as the source
+`CNode.lock`. -/
+theorem freezeCNode_preserves_lock (cn : CNode) :
+    (freezeCNode cn).lock = cn.lock := rfl
+
+/-- WS-SM SM3.A.7 audit-pass-2: `freezeVSpaceRoot` preserves the
+per-VSpaceRoot lock state.  Pins the SM3.A.7 frozen-state
+lock-forwarding contract — `FrozenVSpaceRoot.lock` carries the same
+`RwLockState` as the source `VSpaceRoot.lock`. -/
+theorem freezeVSpaceRoot_preserves_lock (vs : VSpaceRoot) :
+    (freezeVSpaceRoot vs).lock = vs.lock := rfl
+
+/-- WS-SM SM3.A.10 audit-pass-2: `freezeObject` is consistent with
+`FrozenKernelObject.objectLockOf` and `KernelObject.objectLockOf` —
+freezing an object preserves its per-object lock state.  This is the
+aggregate witness that composes the per-variant
+`freezeCNode_preserves_lock` and `freezeVSpaceRoot_preserves_lock`
+with the verbatim-passthrough variants (TCB / Endpoint / Notification
+/ Untyped / SchedContext).  SM3.B's `LockId.lookup` for the frozen
+phase can rely on this property to bridge the runtime and frozen
+lock-set views. -/
+theorem freezeObject_preserves_objectLockOf (obj : KernelObject) :
+    (freezeObject obj).objectLockOf = obj.objectLockOf := by
+  cases obj <;> rfl
 
 /-- Q5-C helper: folding over an array of `none` values with the toList accumulator
 returns the initial accumulator unchanged. -/

@@ -2544,6 +2544,75 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
+  **Audit-pass-1 refinements** (self-review, included in the SM3.A
+  cut):
+  - TEST COVERAGE GAP (MEDIUM, runtime tier):
+    `tests/PerObjectLockSuite.lean` had `#check @TCB.lock` /
+    `#check @TCB.ext` surface anchors but no decidable example or
+    runtime assertion for TCB's default-lock witness.  Added a
+    minimal TCB construction (with the 6 required fields) +
+    `lock = unheld` decidable example + `objectLockOf (.tcb _) =
+    unheld` companion + runtime assertions in `§2` and `§3`.
+    Total runtime assertions: 22 → 24.
+  - DOCUMENTATION ACCURACY (LOW): the initial CHANGELOG / spec /
+    history claims of "30+ surface anchors, 16 decidable examples,
+    22 runtime assertions" were imprecise.  Actuals (counted via
+    `grep -c "^#check"` / `grep -c "^example "` / `assertBool`
+    invocations): 24 / 26 / 24.  Updated to the precise counts.
+
+  **Audit-pass-2 refinements** (independent code review, 1 MEDIUM +
+  7 LOW findings, all closed):
+  - **MEDIUM (M-1) — `FrozenKernelObject.objectLockOf` symmetry**:
+    The SM3.A.10 `KernelObject.objectLockOf` projection has 7
+    `@[simp]` unfold lemmas, but `FrozenKernelObject` had no
+    sibling projection.  Closed by adding
+    `FrozenKernelObject.objectLockOf` with 7 `@[simp]`
+    per-variant unfold lemmas + the aggregate witness
+    `freezeObject_preserves_objectLockOf` (proved by
+    case-analysis; every case discharges by `rfl`).  SM3.B's
+    `LockId.lookup` for the frozen phase can now route through
+    the symmetric projection.
+  - **LOW (L-1) — §4.3 reference**: the plan / spec / CHANGELOG /
+    CLAUDE / AGENTS cited "§4.3 rejects per-PTE locking" but
+    §4.3 ("Per-object vs per-subsystem") did not actually
+    mention per-PTE.  Closed via implement-the-improvement: §4.3
+    is amended to include the per-PTE rejection rationale
+    (3 numbered concerns: per-PTE lock overhead, hand-over-hand
+    acquisition during RHTable probe-sequence relocation,
+    hierarchy-level conflict with the SM0.I 10-level cap).
+  - **LOW (L-2) — dead-weight assertBool**: two
+    `assertBool ... true` invocations in
+    `runDefaultStateChecks` reported PASS regardless of theorem
+    elaboration.  Replaced with decidable closed-form checks —
+    every entry in the default state's `toList` has
+    `objectLockOf p.2 = unheld` and `wf` (vacuously true on the
+    empty default state but exercises the decidable closed form).
+  - **LOW (L-3) — missing `freeze_preserves_*` witnesses**:
+    every other freeze-forwarded field has a `freeze_preserves_X`
+    witness.  Added `freeze_preserves_objStoreLock`,
+    `freezeCNode_preserves_lock`,
+    `freezeVSpaceRoot_preserves_lock`.
+  - **LOW (L-4) — test-count accuracy**: updated to the precise
+    counts after the audit-pass-2 additions (32 surface anchors,
+    30 decidable examples, 29 runtime assertions).
+  - **LOW (L-5) — missing `.tcb` decidable example in §3**:
+    audit-pass-1 fixed the runtime tier; audit-pass-2 fixes the
+    elaboration tier by adding the missing decidable example
+    for `objectLockOf (.tcb _) = unheld`.
+  - **LOW (L-6) — TCB §2 example rfl-only**: every other §2
+    example had both `by decide` and `rfl` forms; TCB had only
+    `rfl`.  Added the `by decide` companion.
+  - **LOW (L-7) — allowlist comment**: the staged-module
+    allowlist header comment elided the SM2.C historical
+    context for `RwLockRefinement`.  Rewritten to clearly
+    distinguish "modules moved OUT at SM3.A" from "entries
+    pre-dating SM3.A that remain staged-only".
+
+  **Test results after audit-pass-2**: 318/318 Lean modules
+  build green; `lake exe per_object_lock_suite` reports 29/29 PASS
+  (24 at audit-pass-1 + 5 new audit-pass-2 assertions); Tier
+  0+1+2+3 green.
+
   Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
   per-transition `lockSet`, `lockAcquireSequence` ordering
   theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C

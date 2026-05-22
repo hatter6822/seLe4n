@@ -1,3 +1,97 @@
+## Unreleased — WS-SM SM3.A audit-pass-2 refinements
+
+Independent audit review of the initial SM3.A landing identified 1
+MEDIUM and 7 LOW findings, all closed in this commit:
+
+### MEDIUM — `FrozenKernelObject.objectLockOf` symmetry (M-1)
+
+The SM3.A.10 `KernelObject.objectLockOf` projection had 7 `@[simp]`
+unfold lemmas covering every variant of `KernelObject`, but
+`FrozenKernelObject` (the snapshot equivalent in `Model/FrozenState.lean`)
+had no sibling projection.  Since `FrozenKernelObject.cnode` wraps
+`FrozenCNode` (which already carries `lock` via the SM3.A.3 frozen
+mirror) and the other variants reuse the runtime structs verbatim,
+the projection is implementable.
+
+Closed by adding:
+
+* `FrozenKernelObject.objectLockOf` with 7 `@[simp]` per-variant
+  unfold lemmas (`objectLockOf_tcb` through `objectLockOf_schedContext`).
+* `freezeObject_preserves_objectLockOf` — the aggregate witness
+  that bridges runtime `KernelObject.objectLockOf` and frozen
+  `FrozenKernelObject.objectLockOf` across `freezeObject`.  Proved
+  by case-analysis on `KernelObject`; every case discharges by `rfl`.
+
+SM3.B's `LockId.lookup` for the frozen phase (which FrozenOps will
+consume) can now route through the symmetric projection rather than
+re-implementing the per-variant case-analysis at every consumer site.
+
+### LOW — Cross-document accuracy (L-1, L-4, L-7)
+
+* **L-1** (§4.3 reference): the plan / spec / CHANGELOG / CLAUDE /
+  AGENTS cited "§4.3 rejects per-PTE locking" but the plan's §4.3
+  ("Per-object vs per-subsystem") did not actually mention per-PTE.
+  Per implement-the-improvement, §4.3 of the plan is amended to
+  include the per-PTE rejection rationale (3 numbered concerns:
+  per-PTE lock overhead, hand-over-hand acquisition during
+  RHTable probe-sequence relocation, hierarchy-level conflict
+  with the SM0.I 10-level cap).  The cross-references now resolve
+  to actual text.
+
+* **L-4** (test-count accuracy): the previous CHANGELOG cited
+  "30+ surface anchors, 16 decidable examples, 22 runtime
+  assertions" — actuals were 24/26/22.  Updated to "24 surface
+  anchors, 26 decidable examples, 22 runtime assertions" in
+  audit-pass-1; audit-pass-2 brings them to 32/30/29 with the
+  M-1 FrozenKernelObject additions.
+
+* **L-7** (allowlist comment): the staged-module allowlist
+  header comment was rewritten at SM3.A landing to describe the
+  RwLock/MemoryModel promotion but elided the historical context
+  for `RwLockRefinement` (added by WS-SM SM2.C at v0.31.9).  The
+  header now distinguishes "modules moved OUT at SM3.A" from
+  "entries pre-dating SM3.A that remain staged-only" to avoid
+  misleading a future reader.
+
+### LOW — Test-coverage refinements (L-2, L-3, L-5, L-6)
+
+* **L-2** (dead-weight assertBool): two
+  `assertBool ... true` invocations in
+  `runDefaultStateChecks` reported PASS regardless of whether the
+  underlying theorem actually elaborated.  Closed by replacing
+  with decidable closed-form checks — every entry in the default
+  state's `toList` snapshot has `objectLockOf p.2 = unheld` (`.all`
+  over the empty list) and `wf` (`.all` over the empty list).
+  Both vacuously true on the default state but exercise the
+  decidable closed form.
+
+* **L-3** (missing freeze_preserves witnesses): every other
+  freeze-forwarded field has a `freeze_preserves_X` witness
+  theorem (`freeze_preserves_machine`, `freeze_preserves_tlb`,
+  etc.).  The new SM3.A.10 lock fields had no such witness.
+  Closed by adding:
+  - `freeze_preserves_objStoreLock`
+  - `freezeCNode_preserves_lock`
+  - `freezeVSpaceRoot_preserves_lock`
+
+* **L-5** (missing `.tcb` decidable example): the §3 decidable
+  example block omitted `.tcb`.  Closed by adding the missing
+  example (already had the runtime assertion in audit-pass-1).
+
+* **L-6** (TCB §2 example rfl-only): every other §2 example had
+  both `by decide` and `rfl` forms; TCB had only `rfl`.  Closed
+  by adding the `by decide` companion.
+
+### Test results (audit-pass-2)
+
+Lean module build: 318/318 green (modulo the audit-pass-2
+additions which preserve the build).  `lake exe
+per_object_lock_suite` reports 29/29 PASS (was 24 at
+audit-pass-1 close; +5 new audit-pass-2 assertions for the M-1
+FrozenKernelObject projection).  Tier 0+1+2+3 still green.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1, §4.3 (amended)
+
 ## Unreleased — WS-SM SM3.A Per-Object Lock Fields
 
 Implements §5.1 of

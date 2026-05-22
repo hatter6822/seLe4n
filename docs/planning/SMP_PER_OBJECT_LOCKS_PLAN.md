@@ -342,7 +342,7 @@ under RwLock, multiple cores can read concurrently.
 Cost: SM2's RwLock has 10 theorems vs 6 for TicketLock. Worth
 it.
 
-### 4.3 Per-object vs per-subsystem
+### 4.3 Per-object vs per-subsystem (and the per-PTE rejection)
 
 Decision #10 (per-object fine locks): each kernel-object struct
 carries its own RwLock. Granularity is per-object, not
@@ -352,6 +352,41 @@ different TCBs concurrently.
 
 For 65,536 maxObjects, total lock overhead: ~1 MiB of RAM —
 within budget on RPi5's 4 GB.
+
+**Per-PTE locking is rejected** at the v1.0.0 design boundary.
+seLe4n stores page mappings inline in `VSpaceRoot.mappings :
+RHTable VAddr (PAddr × PagePermissions)` rather than as
+first-class Page kernel objects.  A finer-grained per-page-table-
+entry lock would require:
+
+1. A lock state field on every map entry — multiplying lock
+   overhead by ~`maxMappings` (typically 4×maxObjects on a
+   populated system), pushing total lock memory past the per-VM
+   working-set budget on memory-constrained platforms.
+2. Hand-over-hand acquisition for cross-page operations (e.g.,
+   PTE relocation across hash buckets during `RHTable.insert`
+   probe-sequence reorganization), which the SM3.B `lockSet`
+   extraction cannot pre-declare statically without locking the
+   table itself first.
+3. An additional lock-hierarchy level beyond `LockKind.page`
+   (level 9) for the PTE granularity, which conflicts with the
+   SM0.I 10-level cap.
+
+A **single per-VSpaceRoot lock** (SM3.A.7) at hierarchy level 8
+(`LockKind.vspaceRoot`) is sufficient for serializability: every
+VSpace mutation (`vspaceMapPage`, `vspaceUnmapPage`) acquires the
+VSpaceRoot lock in write mode; every lookup (`vspaceLookup`,
+`vspaceLookupAddr`) acquires in read mode.  Concurrent reads from
+different VSpaceRoots proceed in parallel; concurrent writes to
+the same VSpaceRoot serialize, which matches user expectations
+and matches seL4's per-PD locking discipline.  This decision is
+consistent with §4.4's table-level ObjStore lock (also rejecting
+finer per-bucket locking for the same Robin-Hood probe-sequence-
+relocation reason).
+
+When seLe4n adopts first-class Page kernel objects in a
+post-v1.0.0 workstream (out of scope for SM3), per-Page locking
+can be re-evaluated against the then-current performance budget.
 
 ### 4.4 The ObjStore table-level lock
 

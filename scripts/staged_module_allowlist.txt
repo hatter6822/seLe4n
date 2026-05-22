@@ -17,19 +17,32 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-SM SM3.A landing (removes
-# `Kernel.Concurrency.Locks.RwLock` and `Kernel.Concurrency.MemoryModel`
-# from the allowlist — both modules entered the production import
-# closure when SM3.A.1..A.9 added per-object `lock : RwLockState`
-# fields to every kernel-object struct.  `RwLockRefinement` remains
-# staged-only at SM3.A because it is not imported by `Locks.RwLock`
-# (the import direction is `RwLockRefinement → RwLock`, not the
-# reverse), so no production module pulls it in.  Future phases
-# (SM3.B `LockId.lookup` discharge, SM3.C `withLockSet` 2PL proofs)
-# may consume the refinement bridge and promote it to production at
-# that time.  The "STATUS: staged" markers in `Locks/RwLock.lean`
-# and `Concurrency/MemoryModel.lean` were removed in the same cut per
-# the implement-the-improvement rule).
+# Last verified: WS-SM SM3.A landing.  Two modules moved OUT of the
+# allowlist at SM3.A (both transitioned from staged-only to
+# production-reachable):
+#
+#   * `Kernel.Concurrency.Locks.RwLock` — entered the production
+#     import closure via `Model.Object.Types`'s new SM3.A.1 import.
+#     Every kernel-object struct now carries a `lock : RwLockState`
+#     field; the abstract operational spec is consumed structurally.
+#   * `Kernel.Concurrency.MemoryModel` — entered production
+#     transitively (via `Locks.RwLock` which imports it).
+#
+# The "STATUS: staged" markers in `Locks/RwLock.lean` and
+# `Concurrency/MemoryModel.lean` were replaced with WS-SM SM3.A
+# landing notes in the same cut per the implement-the-improvement
+# rule.
+#
+# `Kernel.Concurrency.Locks.RwLockRefinement` was added to the
+# allowlist by the WS-SM SM2.C landing (entry below; entry text
+# preserved verbatim from that landing's WS-SM SM2.C.20 rationale
+# at v0.31.9).  SM3.A does **not** remove this entry — the import
+# direction is `RwLockRefinement → Locks.RwLock` rather than the
+# reverse, so `Locks.RwLock`'s promotion to production does NOT
+# transitively pull in `RwLockRefinement`.  A future phase
+# (SM3.B `LockId.lookup` discharge, SM3.C `withLockSet` 2PL
+# proofs) may consume the refinement bridge and promote it; until
+# then it stays staged-only.
 
 SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)

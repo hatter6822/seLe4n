@@ -106,6 +106,24 @@ open SeLe4n.Kernel.Concurrency
 #check @FrozenVSpaceRoot.lock
 #check @FrozenSystemState.objStoreLock
 
+/-! ## SM3.A.10 audit-pass-2 — Frozen-state `objectLockOf` projection -/
+
+#check @FrozenKernelObject.objectLockOf
+#check @FrozenKernelObject.objectLockOf_tcb
+#check @FrozenKernelObject.objectLockOf_endpoint
+#check @FrozenKernelObject.objectLockOf_notification
+#check @FrozenKernelObject.objectLockOf_cnode
+#check @FrozenKernelObject.objectLockOf_vspaceRoot
+#check @FrozenKernelObject.objectLockOf_untyped
+#check @FrozenKernelObject.objectLockOf_schedContext
+
+/-! ## SM3.A.10 audit-pass-2 — `freeze*_preserves_lock` witness theorems -/
+
+#check @freeze_preserves_objStoreLock
+#check @freezeCNode_preserves_lock
+#check @freezeVSpaceRoot_preserves_lock
+#check @freezeObject_preserves_objectLockOf
+
 /-! ## SM3.A.11 — Default-state lock theorems -/
 
 #check @default_objStoreLock_unheld
@@ -136,6 +154,15 @@ example :
     ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
        cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
        ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB).lock = RwLockState.unheld := rfl
+
+/-- WS-SM SM3.A audit-pass-2 (L-6 fix): `by decide` companion form for
+TCB symmetry with every other per-object example.  Exercises the
+`DecidableEq` derivation on `RwLockState` through `TCB.lock`. -/
+example :
+    ({ tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+       cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+       ipcBuffer := SeLe4n.VAddr.ofNat 0 } : TCB).lock = RwLockState.unheld := by
+  decide
 
 /-! ## Endpoint default-constructor has unheld lock -/
 
@@ -219,6 +246,32 @@ example :
       (.vspaceRoot { asid := ⟨0⟩, mappings := {} }) = RwLockState.unheld := by decide
 
 -- ============================================================================
+-- §3b — FrozenKernelObject.objectLockOf (audit-pass-2 M-1)
+-- ============================================================================
+
+/-! ## Frozen-state per-variant `objectLockOf` reduction -/
+
+example :
+    FrozenKernelObject.objectLockOf
+      (.endpoint ({} : Endpoint)) = RwLockState.unheld := by decide
+
+example :
+    FrozenKernelObject.objectLockOf
+      (.notification { state := NotificationState.idle,
+                       waitingThreads := SeLe4n.NoDupList.empty,
+                       pendingBadge := none }) = RwLockState.unheld := by decide
+
+example :
+    FrozenKernelObject.objectLockOf
+      (.untyped { regionBase := SeLe4n.PAddr.ofNat 0, regionSize := 0 })
+      = RwLockState.unheld := by decide
+
+example :
+    FrozenKernelObject.objectLockOf
+      (.schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩))
+      = RwLockState.unheld := by decide
+
+-- ============================================================================
 -- §4 — SystemState default invariants (lock-field shape)
 -- ============================================================================
 
@@ -264,16 +317,26 @@ private def runDefaultStateChecks : IO Unit := do
   -- The default state's object store has an empty toList snapshot.
   assertBool "default.objects.toList = []"
     (decide ((default : SystemState).objects.toList = []))
-  -- The witness theorem for SM3.A.11 — every entry in toList has unheld lock.
-  -- Since the list is empty, this is the vacuous discharge.
-  let _proof := @default_objects_locks_unheld_via_toList
-  assertBool "default_objects_locks_unheld_via_toList theorem reachable"
-    true
-  -- The pointwise form of SM3.A.11 — for any (id, o) ∈ default.objects,
-  -- objectLockOf o = unheld.  Vacuously true (default has no entries).
-  let _proofPointwise := @default_objects_locks_unheld
-  assertBool "default_objects_locks_unheld theorem reachable"
-    true
+  -- WS-SM SM3.A audit-pass-2 (L-2 fix): replaces the previous
+  -- dead-weight `assertBool ... true` invocations.  The SM2.D
+  -- audit-pass-6 LOW-4 pattern is to evaluate a decidable
+  -- closed-form instance — here, we check `objectLockOf` on every
+  -- KernelObject value reachable via `.toList` from the default
+  -- state (vacuously empty list, but the closed form is
+  -- decidable).  A regression that broke the SM3.A.11 theorem
+  -- discharge would fail this check rather than silently passing.
+  assertBool "default_objects_locks_unheld holds on every toList entry"
+    (decide
+      ((default : SystemState).objects.toList.all
+        (fun p => p.snd.objectLockOf = RwLockState.unheld)))
+  -- Companion check: every entry's lock satisfies the SM2.C `wf`
+  -- invariant (5 conjuncts).  Closed-form decidable; vacuously
+  -- true on the empty default state but exercises the closed
+  -- instance for a regression-resistant Tier-2 assertion.
+  assertBool "every default toList lock satisfies wf"
+    (decide
+      ((default : SystemState).objects.toList.all
+        (fun p => p.snd.objectLockOf.wf)))
 
 private def runPerObjectDefaultChecks : IO Unit := do
   IO.println "--- §2 per-object defaults — every kind's lock is unheld ---"
@@ -359,6 +422,33 @@ private def runFrozenStateForwardingChecks : IO Unit := do
   -- `freezeVSpaceRoot` carries the lock unchanged.
   assertBool "freezeVSpaceRoot preserves lock = unheld"
     (decide ((freezeVSpaceRoot { asid := ⟨0⟩, mappings := {} }).lock = RwLockState.unheld))
+  -- WS-SM SM3.A audit-pass-2 (M-1): FrozenKernelObject.objectLockOf
+  -- symmetry — every frozen-variant projection returns its inner
+  -- struct's `lock` field.  These assertions close the SM3.A.10
+  -- symmetry gap that the audit flagged.
+  assertBool "FrozenKernelObject.objectLockOf (.endpoint {}) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf (.endpoint ({} : Endpoint))
+        = RwLockState.unheld))
+  assertBool "FrozenKernelObject.objectLockOf (.cnode (freezeCNode CNode.empty)) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf (.cnode (freezeCNode CNode.empty))
+        = RwLockState.unheld))
+  assertBool "FrozenKernelObject.objectLockOf (.vspaceRoot _) = unheld"
+    (decide
+      (FrozenKernelObject.objectLockOf
+        (.vspaceRoot (freezeVSpaceRoot { asid := ⟨0⟩, mappings := {} }))
+        = RwLockState.unheld))
+  -- `freezeObject` is consistent with `objectLockOf` (the aggregate
+  -- audit-pass-2 witness).
+  assertBool "freezeObject (.endpoint {}) preserves objectLockOf"
+    (decide
+      ((freezeObject (.endpoint ({} : Endpoint))).objectLockOf
+        = (KernelObject.endpoint ({} : Endpoint)).objectLockOf))
+  assertBool "freezeObject (.cnode CNode.empty) preserves objectLockOf"
+    (decide
+      ((freezeObject (.cnode CNode.empty)).objectLockOf
+        = (KernelObject.cnode CNode.empty).objectLockOf))
 
 private def runRwLockStateAuxChecks : IO Unit := do
   IO.println "--- §5 RwLockState.unheld — auxiliary properties (SM2.C cross-ref) ---"
