@@ -166,20 +166,37 @@ theorem FrozenMap.set_none [BEq κ] [Hashable κ] [LawfulBEq κ]
 -- ============================================================================
 
 /-- Q5-B: Frozen CNode — slots backed by `CNodeRadix` (flat radix array)
-instead of `RHTable`. Zero-hash O(1) lookup via bit extraction. -/
+instead of `RHTable`. Zero-hash O(1) lookup via bit extraction.
+
+WS-SM SM3.A.3: the runtime CNode's `lock : RwLockState` field is forwarded
+through `freezeCNode` so the frozen-phase representation preserves the
+per-object lock state.  The lock state captured at freeze time becomes
+the lock state of the corresponding `FrozenKernelObject.cnode`. -/
 structure FrozenCNode where
   depth      : Nat
   guardWidth : Nat
   guardValue : Nat
   radixWidth : Nat
   slots      : CNodeRadix
+  /-- WS-SM SM3.A.3: per-CNode lock state forwarded from the runtime
+      representation through `freezeCNode`. -/
+  lock       : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
   deriving Repr
 
 /-- Q5-B: Frozen VSpaceRoot — mappings backed by `FrozenMap` instead of
-`RHTable`. One hash at freeze time; runtime uses index + array access. -/
+`RHTable`. One hash at freeze time; runtime uses index + array access.
+
+WS-SM SM3.A.7: the runtime VSpaceRoot's `lock : RwLockState` field is
+forwarded through `freezeVSpaceRoot` so the frozen-phase representation
+preserves the per-object lock state. -/
 structure FrozenVSpaceRoot where
   asid     : SeLe4n.ASID
   mappings : FrozenMap SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)
+  /-- WS-SM SM3.A.7: per-VSpaceRoot lock state forwarded from the runtime
+      representation through `freezeVSpaceRoot`. -/
+  lock     : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 
 /-- Q5-B: Frozen kernel object — mirrors `KernelObject` but with frozen
 representations for CNode and VSpaceRoot. TCB, Endpoint, Notification,
@@ -295,6 +312,11 @@ structure FrozenSystemState where
   during freeze. The TLB is immutable in the frozen phase (no frozen TLB
   operations), so this is a direct field copy for completeness. -/
   tlb               : TlbState
+  /-- WS-SM SM3.A.10: ObjStore table-level lock state, forwarded from
+      `SystemState.objStoreLock` during freeze.  Preserves the lock state
+      of the underlying RobinHood hash table across the freeze boundary. -/
+  objStoreLock      : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 
 -- ============================================================================
 -- Q5-C: Freeze Functions
@@ -321,18 +343,28 @@ def freezeMap [BEq κ] [Hashable κ] [LawfulBEq κ] (rt : RHTable κ ν) : Froze
   { data := data, indexMap := indexMap }
 
 /-- Q5-C: Freeze a CNode's RHTable-backed slots into a `CNodeRadix` flat
-radix array. Delegates to Q4-D's `freezeCNodeSlots`. -/
+radix array. Delegates to Q4-D's `freezeCNodeSlots`.
+
+WS-SM SM3.A.3: forwards the runtime CNode's `lock` field unchanged so
+the frozen-phase representation preserves the per-object lock state. -/
 def freezeCNode (cn : CNode) : FrozenCNode :=
   { depth := cn.depth
     guardWidth := cn.guardWidth
     guardValue := cn.guardValue
     radixWidth := cn.radixWidth
-    slots := freezeCNodeSlots cn }
+    slots := freezeCNodeSlots cn
+    -- WS-SM SM3.A.3: forward the runtime lock state into the frozen view.
+    lock := cn.lock }
 
-/-- Q5-C: Freeze a VSpaceRoot's RHTable-backed mappings into a `FrozenMap`. -/
+/-- Q5-C: Freeze a VSpaceRoot's RHTable-backed mappings into a `FrozenMap`.
+
+WS-SM SM3.A.7: forwards the runtime VSpaceRoot's `lock` field unchanged
+so the frozen-phase representation preserves the per-object lock state. -/
 def freezeVSpaceRoot (vs : VSpaceRoot) : FrozenVSpaceRoot :=
   { asid := vs.asid
-    mappings := freezeMap vs.mappings }
+    mappings := freezeMap vs.mappings
+    -- WS-SM SM3.A.7: forward the runtime lock state into the frozen view.
+    lock := vs.lock }
 
 /-- Q5-C: Freeze an individual kernel object. CNode and VSpaceRoot get their
 embedded maps frozen; other object types pass through unchanged. -/
@@ -408,7 +440,9 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     objectIndex := st.objectIndex
     objectIndexSet := freezeMap st.objectIndexSet.table
     scThreadIndex := freezeMap st.scThreadIndex
-    tlb := st.tlb }
+    tlb := st.tlb
+    -- WS-SM SM3.A.10: forward the ObjStore table-level lock unchanged.
+    objStoreLock := st.objStoreLock }
 
 -- ============================================================================
 -- Q5-C Proofs

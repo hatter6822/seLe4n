@@ -352,6 +352,28 @@ structure SystemState where
       Empty by default (no stale entries at boot). Operations that modify page
       tables must flush the TLB to maintain `tlbConsistent`. -/
   tlb : TlbState := TlbState.empty
+  /-- WS-SM SM3.A.10: ObjStore table-level reader-writer lock state.
+
+      Per §4.4 of the SM3 plan, the underlying RobinHood hash table
+      (`objects : RHTable ObjId KernelObject`) carries a single table-level
+      lock at the top of the lock hierarchy
+      (`LockKind.objStore`, level 0).  Rationale: inserts and deletes can
+      relocate entries across buckets (Robin Hood probe-sequence
+      reorganisation), so a per-bucket lock would require complex
+      hand-over-hand acquisition.  The table-level lock is acquired in:
+
+      * `read` mode for lookups (`objects[id]?`, `lookupObject`).
+      * `write` mode for inserts (`storeObject`,
+        `storeObjectChecked`, `storeObjectKindChecked`) and deletes
+        (`removeObject` etc.).
+
+      Default `RwLockState.unheld` means a freshly-created SystemState
+      starts with the ObjStore lock available.  This is the lowest-level
+      lock in the SM3 hierarchy, acquired first (before any per-object
+      lock) per the 2PL discipline in SM3.C.  See
+      `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.1 (SM3.A.10). -/
+  objStoreLock : SeLe4n.Kernel.Concurrency.RwLockState :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
 
 /-- Abstract owner identity for a slot in this model: the containing CNode object id. -/
 abbrev CSpaceOwner := SeLe4n.ObjId
@@ -381,6 +403,12 @@ instance : Inhabited SystemState where
     cdtNextNode := ⟨0⟩
     scThreadIndex := {}
     tlb := TlbState.empty
+    -- WS-SM SM3.A.10: ObjStore table-level lock starts in the unheld
+    -- state (lock available) at boot.  Explicit listing pins the
+    -- default-state invariant `default.objStoreLock = .unheld` so the
+    -- `default_objStoreLock_unheld` and `default_objects_locks_unheld`
+    -- theorems (SM3.A.11) can discharge by `rfl`.
+    objStoreLock := SeLe4n.Kernel.Concurrency.RwLockState.unheld
   }
 
 /-- X2-B/H-2: Checked domain schedule setter — validates that all entries have
@@ -454,6 +482,86 @@ theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := b
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   constructor; exact SeLe4n.Kernel.RobinHood.RHSet.empty_invExtK
   exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
+
+-- ============================================================================
+-- WS-SM SM3.A.11 — Per-object lock invariants on the default SystemState
+-- ============================================================================
+
+/-- WS-SM SM3.A.10/A.11: The default SystemState has `objStoreLock = .unheld`.
+
+This pins the "lock available at boot" semantics of the SM3.A.10
+table-level ObjStore lock: a freshly-constructed SystemState (e.g. the
+seed passed to `bootFromPlatform`) carries an unheld ObjStore lock by
+construction.  Subsequent boot operations (`storeObject`, etc.) acquire
+the lock per the SM3.C.1 `withLockSet` discipline. -/
+theorem default_objStoreLock_unheld :
+    (default : SystemState).objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld := rfl
+
+/-- WS-SM SM3.A.11: Every object reachable through the default SystemState
+has its per-object lock in the `.unheld` state.
+
+This is the canonical SM3.A.11 closure theorem: a freshly-constructed
+SystemState has an empty object store (`RHTable.empty 16`), so the
+universal quantifier is **vacuously discharged** — no `id` ever resolves
+to `some o`.  The discharge uses `RHTable.getElem?_empty`, which proves
+that `(RHTable.empty 16 _)[id]? = none` for every key.
+
+For a non-default state where `bootFromPlatform` populates initial
+objects, the analogous theorem proves that **every initial object**
+(created via the `Builder.createObject` smart constructor) has its
+lock in `.unheld` — because the smart constructor invokes the
+per-object struct's default constructor, which sets `lock :=
+RwLockState.unheld` by the SM3.A.1..A.9 field defaults.  That stronger
+statement is part of the SM3.B follow-on (`LockId.lookup` discharge for
+post-boot states).
+
+Per SM3.C.4 (`lockSetHeld`), this theorem is the **base case** for the
+per-state lock-set-availability induction: at boot, no core holds any
+per-object lock; subsequent transitions acquire and release per the
+2PL discipline. -/
+theorem default_objects_locks_unheld :
+    ∀ (id : SeLe4n.ObjId) (o : KernelObject),
+      (default : SystemState).objects.get? id = some o →
+      KernelObject.objectLockOf o = SeLe4n.Kernel.Concurrency.RwLockState.unheld := by
+  intro id o hLookup
+  -- The default SystemState's `objects` is `RHTable.empty 16 (by decide)`
+  -- via `instInhabitedRHTable`. `RHTable.getElem?_empty` proves that
+  -- looking up any key in an empty table returns `none`.
+  have hEmpty : (default : SystemState).objects.get? id = none := by
+    show (default : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).get? id = none
+    exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty
+      SeLe4n.Kernel.RobinHood.minPracticalRHCapacity (by decide) id
+  -- Lookup returns `some o` and `none` simultaneously — contradiction.
+  rw [hEmpty] at hLookup
+  cases hLookup
+
+/-- WS-SM SM3.A.11 (decidable variant): the predicate "every object's
+lock is unheld" reduces to a vacuous quantification on the default
+state.  Used as a Tier-2 runtime assertion in `PerObjectLockSuite`.
+
+The proof closes via `default_objects_toList_empty` below — the default
+state's object store has an empty `toList`, so the universal
+quantification over members is vacuously discharged. -/
+theorem default_objects_toList_empty :
+    (default : SystemState).objects.toList = [] := by
+  -- `default.objects` is the canonical `RHTable.empty 16` populated with
+  -- 16 `none` slots.  `toList` folds the slots with a cons-on-some
+  -- handler; since every slot is `none`, the fold accumulator stays
+  -- `[]` throughout.  `decide` discharges the finite computation
+  -- because the capacity is the literal `16` (`minPracticalRHCapacity`).
+  decide
+
+/-- WS-SM SM3.A.11 (decidable variant): every entry in the default
+state's `toList` snapshot has `objectLockOf p.2 = .unheld`.  The default
+state's `toList` is empty (`default_objects_toList_empty`), so this is
+vacuously true.  Used as a Tier-2 runtime assertion in
+`PerObjectLockSuite`. -/
+theorem default_objects_locks_unheld_via_toList :
+    ∀ p ∈ (default : SystemState).objects.toList,
+      KernelObject.objectLockOf p.2 = SeLe4n.Kernel.Concurrency.RwLockState.unheld := by
+  intro p hp
+  rw [default_objects_toList_empty] at hp
+  exact absurd hp (List.not_mem_nil)
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
     This theorem destructures `allTablesInvExtK` into exactly 17 named conjuncts.
