@@ -160,8 +160,10 @@ lock at the operational-semantics level:
   FIFO guarantee (documented in SM2.C.20).
 
 `Inhabited` is derived (every field has `Inhabited` — `Option` via
-`none`, `List` via `[]`).  The default `Inhabited` witness is **not**
-`unheld`; see `unheld` below for the canonical initial state. -/
+`none`, `List` via `[]`).  Per WS-SM SM3.A audit-pass-5, the
+derived `default` is structurally identical to `RwLockState.unheld`,
+witnessed by `default_eq_unheld` below.  Downstream code that
+writes `lock := default` simp-normalises to `lock := .unheld`. -/
 structure RwLockState where
   /-- The current writer holder, if any.  At most one writer at a time. -/
   writerHeld : Option CoreId

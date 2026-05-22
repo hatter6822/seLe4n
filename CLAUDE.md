@@ -2674,6 +2674,43 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `lake exe per_object_lock_suite` reports 58/58 PASS; Tier
   0+1+2+3 green; Rust 988+ tests green; zero clippy warnings.
 
+  **Audit-pass-6 refinements** (second external audit pass; also
+  on the same branch): closes the 1 LOW finding "319/319 jobs"
+  drift (audit-pass-5 promoted the inventory to production-
+  reachable but `lake build` count was already 320 by then due to
+  unrelated downstream additions; cross-references in CHANGELOG /
+  CLAIM_EVIDENCE_INDEX / CLAUDE updated to 320), plus the
+  "RwLockState `default` docstring stale" finding (RwLock.lean
+  docstring at structure decl updated to reflect that `default
+  = unheld` via the SM3.A audit-pass-5 `default_eq_unheld`
+  theorem), plus the "inventory section comment counts wrong"
+  finding (§4 said "5 entries" actual 8; §5 said "4 entries"
+  actual 5; both corrected), plus the "dead-link to
+  `allObjectLocksUnheld_iff_via_toList`" finding: per the
+  implement-the-improvement rule, the missing bridge theorem is
+  fully implemented in `Model/FreezeProofs.lean` —
+  `get_some_of_toList_contains` (reverse direction of the
+  audit-pass-5 `toList_contains_of_get`), the
+  `toList_all_iff_forall_get_some` general `toList.all ↔ ∀ get?`
+  bridge, and the SM3.A-specific
+  `allObjectLocksUnheld_iff_via_toList` Prop ↔ Bool equivalence
+  under `invExt`.  Plus 5 dead-weight `assertBool "...
+  reachable" true` invocations in `runAuditPass5InvariantChecks`
+  replaced with substantive decidable witnesses on a post-
+  `storeObject` state (4 storeObject preservation witnesses + 1
+  objectLockOf_consistent_with_type witness), plus a `Repr
+  FrozenVSpaceRoot` runtime exercise (1 assertion).  Inventory
+  promoted into production via `SeLe4n.lean` import (was
+  test-only at audit-pass-5).
+
+  **Test results after audit-pass-6**: 320/320 Lean modules
+  build green (was 318 baseline, audit-pass-5 promoted inventory
+  +1, audit-pass-6 added FreezeProofs bridge theorems +1; total
+  +2);  `lake exe per_object_lock_suite` reports 60/60 PASS
+  (audit-pass-5 was 58; audit-pass-6 +2 — dead-weight assertBool
+  refactor net +1, Repr FrozenVSpaceRoot +1); Tier 0+1+2+3
+  green; Rust 988+ tests green; zero clippy warnings.
+
   Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
   per-transition `lockSet`, `lockAcquireSequence` ordering
   theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C

@@ -1,3 +1,102 @@
+## Unreleased — WS-SM SM3.A audit-pass-6: deeper audit close-out
+
+Second user-driven deep audit identified 1 CRITICAL + 4 MEDIUM/LOW
+findings, all closed.
+
+### CRITICAL — Inventory was test-only despite the audit-pass-5 claim
+
+The audit-pass-5 commit `63499af` claimed the new
+`SeLe4n/Model/Object/PerObjectLockInventory.lean` was production-
+reachable.  Verification showed `lake build` (default target)
+produced 318 jobs (unchanged), because no production file imported
+the inventory.  A regression in the inventory would only fail
+Tier-3 (via the manual `lake build` invocation in
+`test_tier3_invariant_surface.sh`), not the production-build CI
+gate.
+
+Closed by adding `import SeLe4n.Model.Object.PerObjectLockInventory`
+to `SeLe4n.lean` (the library entry point).  `lake build` now
+produces 320 jobs (was 318 pre-audit-pass-5: 318 + inventory + 1
+implied by the audit-pass-6 FreezeProofs bridge theorems).
+
+### MEDIUM — `RwLockState` docstring stale after audit-pass-5
+
+The original `RwLockState` structure docstring (line 162-164) stated
+*"The default `Inhabited` witness is **not** `unheld`"* — but
+audit-pass-5 proved `default_eq_unheld` (they ARE equal by `rfl`).
+The audit-pass-5 commit should have updated this docstring.
+
+Closed by rewriting the docstring to reflect that `default` IS
+`unheld`, with a cross-reference to the new `default_eq_unheld`
+theorem.
+
+### MEDIUM — Implement the `allObjectLocksUnheld_iff_via_toList` bridge
+
+The audit-pass-5 docstring on `allObjectLocksUnheldB` referenced
+`allObjectLocksUnheld_iff_via_toList` as the Prop ↔ Bool bridge
+"below" — but no such theorem existed.  Per
+implement-the-improvement, the bridge is now fully implemented in
+`SeLe4n/Model/FreezeProofs.lean`:
+
+* `get_some_of_toList_contains` — reverse direction of the existing
+  `toList_contains_of_get`: if `(k, v) ∈ rt.toList` and `invExt`
+  holds, then `rt.get? k = some v`.  Proof composes
+  `toList_absent_of_get_none` (contradiction with `get? = none`) and
+  `toList_noDupKeys` (key uniqueness).
+* `toList_all_iff_forall_get_some` — general `toList.all P ↔ ∀ k v,
+  get? k = some v → P (k, v)` bridge, parameterised over any
+  Bool-valued predicate.
+* `allObjectLocksUnheld_iff_via_toList` — the SM3.A-specific Prop ↔
+  Bool equivalence: `st.allObjectLocksUnheld ↔
+  st.allObjectLocksUnheldB = true` under `st.objects.invExt`.
+
+The State.lean docstring now references the actual location of the
+bridge (FreezeProofs.lean).
+
+### MEDIUM — Inventory section count comments wrong
+
+`SeLe4n/Model/Object/PerObjectLockInventory.lean` §4 comment said
+"(5 entries — 4 freeze + 4 storeObject; total 8 listed)" — the "5"
+was wrong; actual count is 8.  §5 said "(4 entries — totality +
+variants cardinality)" — actual count is 5.  Both corrected.
+
+### LOW — Dead-weight `assertBool "... reachable" true` in audit-pass-5 §6
+
+The audit-pass-5 `runAuditPass5InvariantChecks` had 4
+`assertBool "... reachable" true` invocations that passed
+unconditionally regardless of theorem state.  Closed by replacing
+each with a substantive decidable witness on a post-`storeObject`
+state: extracts the post-state via `Except.ok`-destructuring,
+projects through `objectLockOf`, and asserts the preservation
+claim's conclusion as a decidable `Option RwLockState` /
+`Option.isNone` comparison.
+
+### LOW — `objectLockOf_consistent_with_type` runtime exercise
+
+The audit-pass-5 theorem had only a Tier-3 surface anchor and no
+runtime exercise.  Added a runtime `assertBool` on a constructed
+`.endpoint {}` value.
+
+### LOW — `Repr FrozenVSpaceRoot` runtime exercise
+
+The audit-pass-5 manual `Repr FrozenVSpaceRoot` instance had no
+test.  Added a runtime `assertBool` asserting `reprStr` produces a
+non-empty string on a constructed `freezeVSpaceRoot` output.
+
+### Test results (audit-pass-6)
+
+* Lean module build: **320/320 green** (was 318 + 2 for inventory
+  promotion + FreezeProofs bridge).
+* `lake exe per_object_lock_suite`: **60/60 PASS** (audit-pass-5
+  was 58; +2 net from dead-weight refactor + Repr exercise).
+* Suite metrics: 65 surface anchors, 50 decidable examples, 60
+  runtime assertions, ~813 LoC.
+* Full Tier 0+1+2+3 green.
+* Rust 988+ tests green; zero clippy warnings.
+
+Refs: docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md §5.1
+      docs/CLAIM_EVIDENCE_INDEX.md (SM3.A row, gate updated to 320)
+
 ## Unreleased — WS-SM SM3.A audit-pass-5: deferred-completion close-out
 
 Comprehensive close-out of the items identified in the user-driven

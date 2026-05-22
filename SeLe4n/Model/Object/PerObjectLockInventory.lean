@@ -169,7 +169,7 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
     { description := "Default SystemState satisfies allObjectLocksUnheld (non-vacuous)"
       identifier  := "SeLe4n.Model.default_allObjectLocksUnheld"
       category    := .defaultState },
-    -- §4 preservation (5 entries — 4 freeze + 4 storeObject; total 8 listed)
+    -- §4 preservation (8 entries — 4 freeze + 4 storeObject)
     { description := "freeze preserves objStoreLock"
       identifier  := "SeLe4n.Model.freeze_preserves_objStoreLock"
       category    := .preservation },
@@ -194,7 +194,7 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
     { description := "storeObject with unheld lock preserves allObjectLocksUnheld"
       identifier  := "SeLe4n.Model.storeObject_preserves_allObjectLocksUnheld"
       category    := .preservation },
-    -- §5 consistency (4 entries — totality + variants cardinality)
+    -- §5 consistency (5 entries — totality + variants cardinality)
     { description := "objectLockOf is total over every KernelObject"
       identifier  := "SeLe4n.Model.KernelObject.objectLockOf_exists"
       category    := .consistency },

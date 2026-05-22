@@ -595,8 +595,13 @@ Runtime fixtures use this Bool form to `decide`-discharge the
 invariant on small object stores.  The relationship to the Prop
 form is the standard "list-quantification ↔ universal
 quantification on lookups" bridge, captured by
-`allObjectLocksUnheld_iff_via_toList` below for states whose
-object store satisfies the Robin Hood invariant. -/
+`allObjectLocksUnheld_iff_via_toList` in
+`SeLe4n/Model/FreezeProofs.lean` (audit-pass-6) for states whose
+object store satisfies the Robin Hood invariant `invExt`.
+
+The Bool form lets `tests/PerObjectLockSuite.lean` exercise the
+invariant via `decide ((default : SystemState).allObjectLocksUnheldB
+= true)` without needing the Prop ↔ Bool bridge in scope. -/
 def SystemState.allObjectLocksUnheldB (st : SystemState) : Bool :=
   (st.objStoreLock = SeLe4n.Kernel.Concurrency.RwLockState.unheld) &&
   (st.objects.toList.all

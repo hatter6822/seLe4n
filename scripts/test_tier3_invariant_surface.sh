@@ -1884,4 +1884,16 @@ import SeLe4n.Model.Object.PerObjectLockInventory
 #check @SeLe4n.Kernel.Concurrency.RwLockState.default_eq_unheld
 EOF'
 
+# WS-SM SM3.A audit-pass-6 — toList ↔ get? bridge theorems +
+# allObjectLocksUnheld Prop↔Bool equivalence under invExt.  These
+# close the audit-pass-5 dead-link docstring reference.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.FreezeProofs'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.FreezeProofs
+
+#check @SeLe4n.Model.get_some_of_toList_contains
+#check @SeLe4n.Model.toList_all_iff_forall_get_some
+#check @SeLe4n.Model.allObjectLocksUnheld_iff_via_toList
+EOF'
+
 finalize_report
