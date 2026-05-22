@@ -232,3 +232,16 @@ root = "tests.SmpSurfaceAnchors"
 [[lean_exe]]
 name = "lock_bridge_suite"
 root = "tests.LockBridgeSuite"
+
+# WS-SM SM3.A — Per-object lock field regression suite.
+# Surface anchors + decidable examples + runtime structural assertions
+# for the SM3.A per-object `lock : RwLockState` fields on TCB, Endpoint,
+# CNode, Notification, UntypedObject, SchedContext, VSpaceRoot, and the
+# ObjStore-level table lock on SystemState.  Covers the SM3.A.11
+# default-state theorems (`default_objects_locks_unheld`,
+# `default_objStoreLock_unheld`) plus the per-variant `objectLockOf`
+# reduction lemmas, and the SM3.A.3/A.7/A.10 frozen-state forwarding
+# semantics (`freezeCNode`, `freezeVSpaceRoot`).  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "per_object_lock_suite"
+root = "tests.PerObjectLockSuite"

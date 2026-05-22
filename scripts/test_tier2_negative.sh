@@ -129,4 +129,14 @@ run_check_with_timeout "TRACE" lake exe smp_surface_anchors
 # round-trips and the peek decoder algebra.
 run_check_with_timeout "TRACE" lake exe lock_bridge_suite
 
+# WS-SM SM3.A — Per-object lock field regression suite.  Surface
+# anchors + decidable examples + runtime structural assertions for the
+# per-object `lock : RwLockState` fields on every kernel-object struct
+# (TCB, Endpoint, CNode, Notification, UntypedObject, SchedContext,
+# VSpaceRoot) plus the ObjStore-level table lock on SystemState.
+# Covers the SM3.A.11 default-state theorems
+# (`default_objects_locks_unheld`, `default_objStoreLock_unheld`)
+# and the per-variant `objectLockOf` reduction lemmas.
+run_check_with_timeout "TRACE" lake exe per_object_lock_suite
+
 finalize_report

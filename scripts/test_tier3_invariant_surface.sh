@@ -1788,4 +1788,46 @@ import SeLe4n.Platform.FFI
 #check @SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount
 EOF'
 
+# WS-SM SM3.A — Per-object lock field surface anchors.  Every per-object
+# `lock : RwLockState` field plus the SM3.A.10 `objectLockOf` projection
+# and its per-variant unfold lemmas plus the SM3.A.11 default-state
+# theorems.  A regression that renames the field (e.g., `lock` →
+# `rwLock`) fails this surface check at the lean-build step.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.Object SeLe4n.Model.State SeLe4n.Model.FrozenState SeLe4n.Kernel.SchedContext.Types'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.State
+import SeLe4n.Model.FrozenState
+
+-- SM3.A.1..A.9 — per-object lock fields on every kernel-object struct.
+#check @SeLe4n.Model.TCB.lock
+#check @SeLe4n.Model.Endpoint.lock
+#check @SeLe4n.Model.CNode.lock
+#check @SeLe4n.Model.Notification.lock
+#check @SeLe4n.Model.UntypedObject.lock
+#check @SeLe4n.Kernel.SchedContext.lock
+#check @SeLe4n.Model.VSpaceRoot.lock
+-- SM3.A.1 — TCB.ext extended with hLock conjunct (per-field witness form).
+#check @SeLe4n.Model.TCB.ext
+-- SM3.A.10 — KernelObject.objectLockOf projection + per-variant simp lemmas.
+#check @SeLe4n.Model.KernelObject.objectLockOf
+#check @SeLe4n.Model.KernelObject.objectLockOf_tcb
+#check @SeLe4n.Model.KernelObject.objectLockOf_endpoint
+#check @SeLe4n.Model.KernelObject.objectLockOf_notification
+#check @SeLe4n.Model.KernelObject.objectLockOf_cnode
+#check @SeLe4n.Model.KernelObject.objectLockOf_vspaceRoot
+#check @SeLe4n.Model.KernelObject.objectLockOf_untyped
+#check @SeLe4n.Model.KernelObject.objectLockOf_schedContext
+-- SM3.A.10 — SystemState ObjStore table-level lock.
+#check @SeLe4n.Model.SystemState.objStoreLock
+-- SM3.A.10 — FrozenState lock-field forwarding (frozen mirror of SM3.A.3/A.7/A.10).
+#check @SeLe4n.Model.FrozenCNode.lock
+#check @SeLe4n.Model.FrozenVSpaceRoot.lock
+#check @SeLe4n.Model.FrozenSystemState.objStoreLock
+-- SM3.A.11 — default-state lock theorems.
+#check @SeLe4n.Model.default_objStoreLock_unheld
+#check @SeLe4n.Model.default_objects_locks_unheld
+#check @SeLe4n.Model.default_objects_toList_empty
+#check @SeLe4n.Model.default_objects_locks_unheld_via_toList
+EOF'
+
 finalize_report
