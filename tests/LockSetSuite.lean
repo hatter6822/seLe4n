@@ -332,7 +332,7 @@ example :
 a single (TCB, write) entry. -/
 
 example :
-    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
     S.size = 2 := by decide
 
 -- ============================================================================
@@ -842,17 +842,26 @@ private def runLubMergeChecks : IO Unit := do
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
-  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
     (decide (selfReply.size = 2))
-  -- Audit-pass-3: endpointReply with donation-return: the SC is added.
-  let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (some ⟨42⟩)
-  assertBool "endpointReply(caller=5, target=7, donatedSc=42) has 4 locks"
+  -- Audit-pass-3+4: endpointReply with donation-return.
+  -- Under invariant, originalOwner == replyTarget so the duplicate TCB
+  -- entry collapses via lub-merge — 4 locks total.
+  let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                    (some ⟨42⟩) (some ⟨7⟩)
+  assertBool "endpointReply(caller=5, target=7, donatedSc=42, owner=7=target) has 4 locks (lub-collapse)"
     (decide (donReply.size = 4))
-  -- Audit-pass-3: replyRecv with full extension (sender + donation).
+  -- Audit-pass-4: under hypothetical invariant violation where
+  -- originalOwner ≠ replyTarget, the lockSet correctly covers both.
+  let donReplyDrift := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                         (some ⟨42⟩) (some ⟨9⟩)
+  assertBool "endpointReply(caller=5, target=7, owner=9≠target) has 5 locks (drift case)"
+    (decide (donReplyDrift.size = 5))
+  -- Audit-pass-3+4: replyRecv with full donation extension.
   let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
-                       (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩)
-  assertBool "replyRecv (sender + donation) has 6 locks"
+                       (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩) (some ⟨7⟩)
+  assertBool "replyRecv (sender + donation + owner=target=7 collapse) has 6 locks"
     (decide (donReplyRecv.size = 6))
 
 private def runUnionChecks : IO Unit := do
@@ -905,11 +914,12 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .call))
   assertBool "lockSet_endpointCall (with donation): all kinds in permittedKinds .call"
     allOk_callDon
-  -- Audit-pass-3: donation-return extension on .reply.
-  let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (some ⟨42⟩)
+  -- Audit-pass-3+4: donation-return extension on .reply (full args).
+  let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                    (some ⟨42⟩) (some ⟨7⟩)
   let allOk_replyDon := replyDon.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .reply))
-  assertBool "lockSet_endpointReply (with donation): all kinds in permittedKinds .reply"
+  assertBool "lockSet_endpointReply (with donation + owner): all kinds in permittedKinds .reply"
     allOk_replyDon
 
 private def runCanonicalSortRuntimeChecks : IO Unit := do

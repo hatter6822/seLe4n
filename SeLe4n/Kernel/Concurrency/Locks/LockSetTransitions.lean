@@ -314,30 +314,42 @@ def lockSet_endpointCall (callerTid : ThreadId)
 Caller TCB (write — clearing blocked state); reply target TCB
 (write — transitioning out of `BlockedReply`).
 
-Audit-pass-3 (donation-return extension): when the replier
-(=caller) has a `.donated scId originalOwner` binding,
-`returnDonatedSchedContext` updates the SC + replier's TCB +
-originalOwner's TCB.  In the reply context, the `originalOwner`
-IS the `replyTargetTid` (the SC was originally donated from the
-target's earlier `endpointCall` to the replier), so no separate
-original-owner arg is needed — the existing `replyTargetTid` is
-the original owner.  Only the SC is a new lock.
+Audit-pass-3 (donation-return extension, audit-pass-4 refinement):
+when the replier (=caller) has a `.donated scId originalOwner`
+binding, `returnDonatedSchedContext` updates the SC + replier's
+TCB + originalOwner's TCB.
 
-The caller pre-resolves this by inspecting the replier's own TCB:
+In a well-formed kernel state (`ipcInvariantFull`'s
+`blockedOnReplyHasTarget` + the donation discipline), the
+`originalOwner` field stored in the replier's TCB binding equals
+the `replyTargetTid` (the cap's stored target).  However, per
+plan §4.1's "union over all paths" requirement and CLAUDE.md's
+implement-the-improvement rule, the lockSet declares BOTH
+independently — the caller pre-resolves the originalOwner from
+the replier's TCB binding and passes it explicitly:
 
-* If `replierTcb.schedContextBinding = .donated scId _`: pass
-  `donatedScId := some scId`.
-* If `.bound _` or `.unbound`: pass `donatedScId := none` (no
-  donation to return). -/
+* If `replierTcb.schedContextBinding = .donated scId originalOwner`:
+  pass `donatedScId := some scId` AND
+  `donatedOriginalOwnerTid := some originalOwner`.
+* If `.bound _` or `.unbound`: pass both as `none`.
+
+Under the well-formed invariant where originalOwner ==
+replyTargetTid, the `insertOrMerge` lub-merge collapses the
+duplicate TCB lock entry (write + write = write).  In a
+hypothetical invariant-violation state where they differ, the
+lockSet correctly covers both objects. -/
 def lockSet_endpointReply (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
-    (donatedScId : Option SchedContextId) : LockSet :=
-  lockSetExtendOpt
+    (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) : LockSet :=
+  let withSc := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
        (cnodeLock cnodeRootObjId, .read),
        (tcbLock replyTargetTid, .write)])
     (donatedScId.map (fun sc => (schedContextLock sc, .write)))
+  lockSetExtendOpt withSc
+    (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `replyRecv` (syscall `.replyRecv`).
 
@@ -348,25 +360,27 @@ prior-call reply target TCB (write — completes the reply), and an
 optional new sender TCB (write — if a sender was already
 waiting).
 
-Audit-pass-3 (donation-return extension): the reply phase may
-return a donated SC from the caller (replier) to the replyTarget
-— same shape as `lockSet_endpointReply`.  The receive phase does
-NOT initiate donation (donation is caller-initiated from
-`endpointCall`, not receiver-initiated).
+Audit-pass-3 (donation-return extension, audit-pass-4 refinement):
+the reply phase may return a donated SC from the caller (replier)
+to the original owner — same shape as `lockSet_endpointReply`.
+The receive phase does NOT initiate donation (donation is
+caller-initiated from `endpointCall`, not receiver-initiated).
 
-The caller pre-resolves the SC by inspecting the replier's own
-TCB (same as for `endpointReply`).  Only one extra Option is
-needed because:
+The caller pre-resolves the donation pair by inspecting the
+replier's own TCB binding:
 
-* The reply-direction donation return touches `donatedScId` (if
-  the replier has `.donated`).
-* The receive-direction donation reception (if a new sender
-  later calls and donates) is handled at that future `endpointCall`
-  syscall's own lockSet — not this `replyRecv` invocation. -/
+* If `replierTcb.schedContextBinding = .donated scId originalOwner`:
+  pass `donatedScId := some scId` AND
+  `donatedOriginalOwnerTid := some originalOwner`.
+* If `.bound _` or `.unbound`: pass both as `none`.
+
+Under the well-formed invariant where originalOwner ==
+replyTargetTid, lub-merge collapses the duplicate TCB lock. -/
 def lockSet_replyRecv (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
     (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
-    (donatedScId : Option SchedContextId) : LockSet :=
+    (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) : LockSet :=
   let withSender := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -374,8 +388,10 @@ def lockSet_replyRecv (callerTid : ThreadId)
        (tcbLock replyTargetTid, .write),
        (endpointLock endpointObjId, .write)])
     (newSenderTid.map (fun st => (tcbLock st, .write)))
-  lockSetExtendOpt withSender
+  let withSc := lockSetExtendOpt withSender
     (donatedScId.map (fun sc => (schedContextLock sc, .write)))
+  lockSetExtendOpt withSc
+    (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
 
 /-! ## Notification syscalls (2 transitions) -/
 
@@ -963,14 +979,16 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
         | none => simp at hpp
         | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.reply` (audit-pass-3: donation-return
-extension). -/
+/-- WS-SM SM3.B.4 for `.reply` (audit-pass-3 + audit-pass-4: donation-
+return extension with separate `donatedOriginalOwnerTid` arg). -/
 theorem lockSet_consistent_reply (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId)
-    (donatedScId : Option SchedContextId) :
-    ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid donatedScId).pairs,
+    (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) :
+    ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid donatedScId
+              donatedOriginalOwnerTid).pairs,
       p.fst.kind ∈ permittedKinds .reply :=
-  lockSet_consistent_base_plus_opt _ _ _
+  lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -983,17 +1001,23 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
         cases donatedScId with
         | none => simp at hpp
         | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases donatedOriginalOwnerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3: donation-return
-extension). -/
+/-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3 + audit-pass-4:
+donation-return extension with separate `donatedOriginalOwnerTid`
+arg). -/
 theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId) (epId : ObjId)
     (newSenderTid : Option ThreadId)
-    (donatedScId : Option SchedContextId) :
+    (donatedScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
-              donatedScId).pairs,
+              donatedScId donatedOriginalOwnerTid).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_two_opts _ _ _ _
+  lockSet_consistent_base_plus_three_opts _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1012,6 +1036,10 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
         cases donatedScId with
         | none => simp at hpp
         | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases donatedOriginalOwnerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)

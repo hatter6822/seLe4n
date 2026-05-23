@@ -1397,6 +1397,40 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      (§14 lockKind co-domain, §15 fst_inj structural witness),
      +11 runtime assertions (72 → 83).
 
+   **Audit-pass-4 refinements** (deepest deep audit; closes one
+   remaining defense-in-depth gap in audit-pass-3's donation fix
+   and acknowledges PIP-chain dynamic locking; land in the same
+   v0.31.9 release cut):
+
+   * **`originalOwner` separated for defense-in-depth**:
+     audit-pass-3's `lockSet_endpointReply` and
+     `lockSet_replyRecv` assumed the well-formed invariant
+     `originalOwner == replyTargetTid` and only declared a
+     single Option for the donation SC.  Audit-pass-4 declares
+     the originalOwner TCB lock as a SEPARATE
+     `donatedOriginalOwnerTid : Option ThreadId` arg (per plan
+     §4.1's "union over all paths" requirement).  Under the
+     invariant, lub-merge collapses the duplicate entry — same
+     behavior as before.  Under hypothetical invariant
+     violation, both objects are correctly locked.  This makes
+     the reply paths symmetric with `lockSet_tcbSuspend`.
+
+   * **PIP-chain dynamic-locking acknowledged**: traced
+     `endpointCallWithDonation` /
+     `endpointReplyWithDonation` through
+     `propagatePriorityInheritance` /
+     `revertPriorityInheritance`.  These walk arbitrarily-long
+     blocking-graph chains, touching TCB `pipBoost` fields.
+     Chain length is state-discovered, not statically
+     pre-resolvable.  Plan §4.1's "variable number of locks"
+     provision applies — SM3.C will handle PIP locks via
+     dynamic ladder extension preserving the SM0.I lock-id
+     total order's deadlock-freedom.  This is the
+     genuinely-dynamic case explicitly permitted by the plan.
+
+   * **Test-coverage expansion**: 95 → 96 runtime assertions
+     (+1 for the invariant-drift defense-in-depth assertion).
+
    **Audit-pass-3 refinements** (donation-path FIX implementing
    the improvement audit-pass-2 only documented; land in the
    same v0.31.9 release cut):

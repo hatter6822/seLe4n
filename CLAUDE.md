@@ -2970,6 +2970,46 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `runFstInjChecks` (LockSet.fst_inj structural witness).
     Plus 4 new surface anchors for the audit-pass-2 theorems.
 
+  **Audit-pass-4 refinements** (deepest deep audit; closes one
+  remaining defense-in-depth gap in audit-pass-3's donation fix;
+  all closures land in the same v0.31.9 release cut):
+  - **`originalOwner` separated from `replyTargetTid` in reply
+    paths**: audit-pass-3's `lockSet_endpointReply` and
+    `lockSet_replyRecv` assumed the kernel invariant
+    `originalOwner == replyTargetTid` and only declared a single
+    Option for the donation SC.  Per plan §4.1's "union over all
+    paths" requirement, audit-pass-4 declares the originalOwner
+    TCB lock as a SEPARATE `donatedOriginalOwnerTid : Option
+    ThreadId` arg.  Under the well-formed invariant where
+    originalOwner == replyTargetTid, the `insertOrMerge`
+    lub-merge collapses the duplicate TCB entry — same behavior
+    as before.  Under hypothetical invariant violation where
+    they differ (defense-in-depth), the lockSet now correctly
+    covers both objects.  This makes the reply paths symmetric
+    with `lockSet_tcbSuspend` which already had the explicit
+    Option ThreadId arg.
+  - **PIP-chain dynamic-locking acknowledged**: traced
+    `endpointCallWithDonation` and `endpointReplyWithDonation`
+    through `propagatePriorityInheritance` /
+    `revertPriorityInheritance`.  These walk arbitrarily-long
+    chains of TCBs (the blocking graph), touching `pipBoost`
+    fields and run-queue buckets.  The chain length is
+    state-discovered, not statically pre-resolvable.  Plan
+    §4.1's "variable number of locks" provision applies; SM3.C
+    will handle PIP-chain locks via dynamic ladder extension
+    (acquire next chain TCB in `ObjId.val` ascending order),
+    preserving the SM0.I lock-id total order's deadlock-freedom
+    guarantee without violating 2PL.  This is the genuinely-
+    dynamic case that no static lockSet can cover, and the plan
+    explicitly permits it.
+  - **Test-coverage expansion**: 95 → 96 runtime assertions
+    (+1 for the `donReplyDrift` invariant-violation
+    defense-in-depth assertion).  Tests now cover both:
+    * Well-formed reply (owner == target): lub-collapse to 4
+      locks.
+    * Hypothetical drift (owner ≠ target): 5 locks covering
+      both.
+
   **Audit-pass-3 refinements** (donation-path FIX, replacing
   audit-pass-2's documentation workaround per the
   `Implement-the-improvement` rule; all closures land in the

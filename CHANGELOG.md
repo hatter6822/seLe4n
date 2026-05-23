@@ -1,3 +1,91 @@
+## Unreleased — WS-SM SM3.B audit-pass-4: originalOwner separated for defense-in-depth + PIP-chain dynamic-locking acknowledgement
+
+Deepest deep audit pass.  Audit-pass-3 added donation-path
+lockSet extensions; audit-pass-4 closes one remaining
+defense-in-depth gap and acknowledges the genuinely-dynamic
+PIP-chain case.
+
+### Defense-in-depth refinement: separate originalOwner in reply paths
+
+Audit-pass-3's `lockSet_endpointReply` and `lockSet_replyRecv`
+relied on the kernel invariant `originalOwner == replyTargetTid`
+and only declared a single Option for the donation SC.  Per plan
+§4.1's "union over all paths" requirement and as defense-in-
+depth against hypothetical invariant violation, audit-pass-4
+declares the originalOwner TCB lock as a SEPARATE
+`donatedOriginalOwnerTid : Option ThreadId` arg:
+
+* `lockSet_endpointReply (callerTid, cnRoot, replyTargetTid,
+  donatedScId, donatedOriginalOwnerTid)` — gains the new arg.
+* `lockSet_replyRecv (callerTid, cnRoot, replyTargetTid, epId,
+  newSenderTid, donatedScId, donatedOriginalOwnerTid)` — gains
+  the new arg.
+
+Under the well-formed invariant (`originalOwner ==
+replyTargetTid`), `insertOrMerge` lub-merges the duplicate TCB
+entry — no behavioral change.  Under hypothetical invariant
+violation, the lockSet correctly covers both objects.  This
+makes the reply paths symmetric with `lockSet_tcbSuspend` which
+already had the separate Option ThreadId arg from audit-pass-3.
+
+### PIP-chain dynamic-locking acknowledgement
+
+Traced `endpointCallWithDonation` and `endpointReplyWithDonation`
+through `propagatePriorityInheritance` /
+`revertPriorityInheritance` (in
+`SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean`).
+These walk arbitrarily-long chains of TCBs (the blocking graph),
+updating each `pipBoost` field and the run-queue buckets.
+
+The chain length is **state-discovered**, not statically
+pre-resolvable in the lockSet args (would require running
+propagation BEFORE acquiring locks — violates 2PL acquisition-
+order discipline).
+
+Plan §4.1's "variable number of locks" provision applies: SM3.C
+will handle PIP-chain locks via dynamic ladder extension
+(acquire next chain TCB in `ObjId.val` ascending order),
+preserving the SM0.I lock-id total order's deadlock-freedom
+guarantee without violating 2PL.  This is the genuinely-dynamic
+case that no static lockSet can cover; the plan explicitly
+permits it via the "variable number of locks" caveat.
+
+### Test suite expansion (95 → 96 runtime assertions)
+
+* `donReplyDrift` (§9): asserts that when
+  `donatedOriginalOwnerTid ≠ replyTargetTid` (hypothetical
+  invariant violation), the lockSet's size grows from 4 to 5
+  (the extra TCB lock is included for defense-in-depth).
+* `donReply` (§9, refined): now exercises the well-formed case
+  where owner == target collapses via lub-merge (still 4 locks).
+* Consistency runtime: extends `runConsistencyRuntimeChecks`
+  with the new explicit-owner arg.
+* Per-transition shape: `selfReply` updated to pass `none none`
+  for the donation pair.
+
+### Mathematical correctness verification
+
+* Verified by source-level trace that `returnDonatedSchedContext
+  serverTid scId originalOwner` writes:
+  - SC (`boundThread := some originalOwner`),
+  - originalOwner TCB (`schedContextBinding := .bound scId`),
+  - serverTid TCB (`schedContextBinding := .unbound`).
+  All three are now in the static lockSet (replier == callerTid;
+  originalOwner == donatedOriginalOwnerTid; SC == donatedScId).
+* Verified `lub-merge` collapse for the well-formed case: when
+  donatedOriginalOwnerTid == replyTargetTid, the duplicate
+  `tcbLock` entry merges to a single write-mode entry.
+* Verified non-collapse for the invariant-drift case: when they
+  differ, both TCB locks remain.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit-pass-4 findings have been addressed in the same
+cut.
+
 ## Unreleased — WS-SM SM3.B audit-pass-3: donation-path lockSet extensions (implement the improvement)
 
 Per CLAUDE.md's `Implement-the-improvement` rule, audit-pass-2's

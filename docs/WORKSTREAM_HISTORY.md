@@ -1114,6 +1114,21 @@ pass-1; all closures land in the same v0.31.9 release cut):
   in §14 lockKind co-domain, +4 in §15 fst_inj structural
   witness).
 
+**Audit-pass-4 refinements** (deepest deep audit; closes one
+remaining defense-in-depth gap and acknowledges PIP-chain
+dynamic locking; all closures land in the same v0.31.9 release
+cut):
+
+* **`originalOwner` separated for defense-in-depth**:
+  `lockSet_endpointReply` and `lockSet_replyRecv` now declare
+  the originalOwner TCB lock as a SEPARATE `Option ThreadId`
+  arg.  Under well-formed invariant, lub-merge collapses; under
+  hypothetical invariant violation, both locks are covered.
+* **PIP-chain dynamic-locking acknowledged**: PIP chain TCBs
+  are state-discovered; SM3.C will handle via dynamic ladder
+  extension under SM0.I's total order.
+* **Test-coverage expansion**: 95 → 96 runtime assertions.
+
 **Audit-pass-3 refinements** (donation-path FIX implementing
 the improvement audit-pass-2 only documented; per CLAUDE.md's
 `Implement-the-improvement` rule, all closures land in the

@@ -527,7 +527,7 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 | SM3.B.6 | `lockAcquireSequence_ordered` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.7 | `lockAcquireSequence_complete` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.8 | `lockAcquireSequence_canonical` | `Locks/LockSet.lean` | LANDED |
-| SM3.B.9 | `tests/LockSetSuite.lean` (~1100 LoC, 95 assertions after audit-pass-3) | `tests/LockSetSuite.lean` | LANDED |
+| SM3.B.9 | `tests/LockSetSuite.lean` (~1100 LoC, 96 assertions after audit-pass-4) | `tests/LockSetSuite.lean` | LANDED |
 
 **Adaptations from the pseudocode in this section**:
 
@@ -551,6 +551,25 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 * Per-syscall lockSets take post-cap-resolution `ObjId` arguments
   rather than raw `CPtr`s — keeps the function static (no state
   parameter) per plan §4.1.
+
+**Audit-pass-4 closure additions** (deepest deep audit; closes
+one remaining defense-in-depth gap in audit-pass-3's donation
+fix and acknowledges PIP-chain dynamic locking):
+
+* **`originalOwner` separated for defense-in-depth**: in
+  `lockSet_endpointReply` and `lockSet_replyRecv`, the
+  originalOwner TCB lock is now a SEPARATE `Option ThreadId`
+  arg.  Under the well-formed invariant `originalOwner ==
+  replyTargetTid`, lub-merge collapses the duplicate.  Under
+  hypothetical invariant violation, both objects are correctly
+  locked.
+* **PIP-chain dynamic-locking acknowledged**: traced through
+  `propagatePriorityInheritance` /
+  `revertPriorityInheritance`.  Plan §4.1's "variable number of
+  locks" provision applies — SM3.C handles PIP locks via
+  dynamic ladder extension under SM0.I's total order.  This is
+  the genuinely-dynamic case the plan explicitly permits.
+* **Test-coverage expansion**: 95 → 96 runtime assertions.
 
 **Audit-pass-3 closure additions** (donation-path FIX
 implementing the improvement audit-pass-2 only documented; per
