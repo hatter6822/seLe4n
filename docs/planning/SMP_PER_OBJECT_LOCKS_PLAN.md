@@ -511,7 +511,46 @@ In a non-default state where `bootFromPlatform` has populated
 initial objects, the analogous theorem proves that each initial
 object's lock is `.unheld`.
 
-### 5.2 LockId computation + lock-set extraction (SM3.B, 4 PRs, 9 sub-tasks)
+### 5.2 LockId computation + lock-set extraction (SM3.B, 4 PRs, 9 sub-tasks) — LANDED
+
+All 9 sub-tasks LANDED on branch `claude/affectionate-goldberg-6MNJ9`.
+See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
+"Active workstream context" for the full per-sub-task description.
+
+| Sub | Description | Files | Status |
+|-----|-------------|-------|--------|
+| SM3.B.1 | `LockId.fromObject` + `KernelObject.lockKind` | `Locks/LockIdProjection.lean` | LANDED |
+| SM3.B.2 | `LockId.lookup` (dispatches via typed `getX?`) | `Locks/LockIdProjection.lean` | LANDED |
+| SM3.B.3 | 25 per-transition `lockSet_<τ>` declarations | `Locks/LockSetTransitions.lean` | LANDED |
+| SM3.B.4 | `permittedKinds` + 25 `lockSet_consistent_<τ>` | `Locks/LockSetTransitions.lean` | LANDED |
+| SM3.B.5 | `LockSet` + smart constructors + `lockAcquireSequence` | `Locks/LockSet.lean` | LANDED |
+| SM3.B.6 | `lockAcquireSequence_ordered` | `Locks/LockSet.lean` | LANDED |
+| SM3.B.7 | `lockAcquireSequence_complete` | `Locks/LockSet.lean` | LANDED |
+| SM3.B.8 | `lockAcquireSequence_canonical` | `Locks/LockSet.lean` | LANDED |
+| SM3.B.9 | `tests/LockSetSuite.lean` (~600 LoC, 49 assertions) | `tests/LockSetSuite.lean` | LANDED |
+
+**Adaptations from the pseudocode in this section**:
+
+* `LockId.fromObject` takes `(oid : ObjId)` externally rather than
+  reading `tcb.tid.toObjId`/`ep.eid.toObjId`/etc. from the
+  KernelObject variant.  Only TCB and SchedContext carry inner-
+  struct IDs in seLe4n; the other variants are looked up by external
+  ObjId in the SystemState's RHTable.  Splitting the projection into
+  `KernelObject.lockKind` (variant-only) and `LockId.fromObject (oid,
+  o)` (kind + ObjId) keeps the function total over every variant.
+* `LockId.lookup` is implemented as a dispatcher on `l.kind` that
+  routes through the typed `getTcb?`/`getEndpoint?`/etc. accessors
+  rather than performing a raw `match s.objects[l.objId]?`.  This
+  keeps the AK7-cascade raw-match floor at the v0.31.2 baseline.
+* `LockSet` is a `List (LockId × AccessMode)` with a `Nodup`
+  proof on the projected keys (mathlib-free analog of the plan's
+  `Finset`).  `insertOrMerge` uses `AccessMode.lub` to collapse
+  duplicate keys per plan §4.1.
+* `lockAcquireSequence` uses `List.mergeSort` (Lean core) rather
+  than `List.qsort` (mathlib).
+* Per-syscall lockSets take post-cap-resolution `ObjId` arguments
+  rather than raw `CPtr`s — keeps the function static (no state
+  parameter) per plan §4.1.
 
 #### SM3.B.1 — `LockId.fromObject`
 

@@ -245,3 +245,15 @@ root = "tests.LockBridgeSuite"
 [[lean_exe]]
 name = "per_object_lock_suite"
 root = "tests.PerObjectLockSuite"
+
+# WS-SM SM3.B — LockSet regression suite.
+# Surface anchors + decidable examples + runtime structural assertions
+# for the SM3.B `LockSet` type, `KernelObject.lockKind` projection,
+# `LockId.fromObject` / `LockId.lookup`, per-syscall `lockSet_<τ>`
+# declarations, the `lockAcquireSequence` canonical sort + the three
+# ordered/complete/canonical theorems, `permittedKinds` + per-
+# transition `lockSet_consistent_<τ>` theorems, and the 72-theorem
+# inventory aggregator.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "lock_set_suite"
+root = "tests.LockSetSuite"

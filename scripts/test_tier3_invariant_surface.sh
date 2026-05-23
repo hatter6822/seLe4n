@@ -1896,4 +1896,142 @@ import SeLe4n.Model.FreezeProofs
 #check @SeLe4n.Model.allObjectLocksUnheld_iff_via_toList
 EOF'
 
+# WS-SM SM3.B — LockSet + LockIdProjection + LockSetTransitions +
+# LockSetInventory.  Surface anchors for every public SM3.B symbol:
+#   * LockSet structure + canonical sort + ordered/complete/canonical
+#     theorems (SM3.B.5/B.6/B.7/B.8)
+#   * KernelObject.lockKind, LockId.fromObject, LockId.lookup +
+#     round-trip theorems (SM3.B.1/B.2)
+#   * Per-transition lockSet_<τ> declarations (SM3.B.3, 25 transitions)
+#   * permittedKinds + per-transition lockSet_consistent_<τ> theorems
+#     (SM3.B.4, 25 transitions)
+#   * 72-theorem inventory aggregator + per-category count witnesses
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.LockSet'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.LockSet
+
+-- SM3.B.1: KernelObject.lockKind + per-variant simp lemmas.
+#check @SeLe4n.Model.KernelObject.lockKind
+#check @SeLe4n.Model.KernelObject.lockKind_tcb
+#check @SeLe4n.Model.KernelObject.lockKind_endpoint
+#check @SeLe4n.Model.KernelObject.lockKind_notification
+#check @SeLe4n.Model.KernelObject.lockKind_cnode
+#check @SeLe4n.Model.KernelObject.lockKind_vspaceRoot
+#check @SeLe4n.Model.KernelObject.lockKind_untyped
+#check @SeLe4n.Model.KernelObject.lockKind_schedContext
+#check @SeLe4n.Model.KernelObject.lockKind_exists
+#check @SeLe4n.Model.KernelObject.lockKind_eq_of_objectType
+-- SM3.B.1: LockId.fromObject + per-variant simp lemmas.
+#check @SeLe4n.Model.LockId.fromObject
+#check @SeLe4n.Model.LockId.fromObject_kind
+#check @SeLe4n.Model.LockId.fromObject_objId
+#check @SeLe4n.Model.LockId.fromObject_tcb
+#check @SeLe4n.Model.LockId.fromObject_endpoint
+#check @SeLe4n.Model.LockId.fromObject_notification
+#check @SeLe4n.Model.LockId.fromObject_cnode
+#check @SeLe4n.Model.LockId.fromObject_vspaceRoot
+#check @SeLe4n.Model.LockId.fromObject_untyped
+#check @SeLe4n.Model.LockId.fromObject_schedContext
+-- SM3.B.2: LockId.lookup + structural theorems.
+#check @SeLe4n.Model.LockId.lookup
+#check @SeLe4n.Model.LockId.lookup_some_of_kindMatch
+#check @SeLe4n.Model.LockId.lookup_fromObject_of_present
+#check @SeLe4n.Model.LockId.lookup_objStore
+#check @SeLe4n.Model.LockId.lookup_reply
+#check @SeLe4n.Model.LockId.lookup_page
+#check @SeLe4n.Model.LockId.lookup_kindMatch
+#check @SeLe4n.Model.LockId.lookup_lockState_eq
+-- SM3.B.5..B.8: LockSet structure + canonical sort + theorems.
+#check @SeLe4n.Kernel.Concurrency.LockSet
+#check @SeLe4n.Kernel.Concurrency.LockSet.empty
+#check @SeLe4n.Kernel.Concurrency.LockSet.singleton
+#check @SeLe4n.Kernel.Concurrency.LockSet.insert?
+#check @SeLe4n.Kernel.Concurrency.LockSet.insertOrMerge
+#check @SeLe4n.Kernel.Concurrency.LockSet.union
+#check @SeLe4n.Kernel.Concurrency.LockSet.containsKey
+#check @SeLe4n.Kernel.Concurrency.LockSet.size
+#check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence
+#check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_ordered
+#check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_complete
+#check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_canonical
+#check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_length
+#check @SeLe4n.Kernel.Concurrency.LockSet.lockAcquireSequence_perm
+#check @SeLe4n.Kernel.Concurrency.LockSet.fst_inj_at_pairs
+#check @SeLe4n.Kernel.Concurrency.LockSet.insertOrMerge_mem
+-- SM3.B AccessMode algebra.
+#check @SeLe4n.Kernel.Concurrency.AccessMode.lub
+#check @SeLe4n.Kernel.Concurrency.AccessMode.lub_idem
+#check @SeLe4n.Kernel.Concurrency.AccessMode.lub_comm
+#check @SeLe4n.Kernel.Concurrency.AccessMode.lub_assoc
+#check @SeLe4n.Kernel.Concurrency.AccessMode.conflicts
+#check @SeLe4n.Kernel.Concurrency.AccessMode.conflicts_symm
+-- SM3.B.3: Per-transition lockSet declarations.
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointSend
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointReceive
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointCall
+#check @SeLe4n.Kernel.Concurrency.lockSet_endpointReply
+#check @SeLe4n.Kernel.Concurrency.lockSet_replyRecv
+#check @SeLe4n.Kernel.Concurrency.lockSet_notificationSignal
+#check @SeLe4n.Kernel.Concurrency.lockSet_notificationWait
+#check @SeLe4n.Kernel.Concurrency.lockSet_cspaceMint
+#check @SeLe4n.Kernel.Concurrency.lockSet_cspaceCopy
+#check @SeLe4n.Kernel.Concurrency.lockSet_cspaceMove
+#check @SeLe4n.Kernel.Concurrency.lockSet_cspaceDelete
+#check @SeLe4n.Kernel.Concurrency.lockSet_lifecycleRetype
+#check @SeLe4n.Kernel.Concurrency.lockSet_vspaceMap
+#check @SeLe4n.Kernel.Concurrency.lockSet_vspaceUnmap
+#check @SeLe4n.Kernel.Concurrency.lockSet_serviceRegister
+#check @SeLe4n.Kernel.Concurrency.lockSet_serviceRevoke
+#check @SeLe4n.Kernel.Concurrency.lockSet_serviceQuery
+#check @SeLe4n.Kernel.Concurrency.lockSet_schedContextConfigure
+#check @SeLe4n.Kernel.Concurrency.lockSet_schedContextBind
+#check @SeLe4n.Kernel.Concurrency.lockSet_schedContextUnbind
+#check @SeLe4n.Kernel.Concurrency.lockSet_tcbSuspend
+#check @SeLe4n.Kernel.Concurrency.lockSet_tcbResume
+#check @SeLe4n.Kernel.Concurrency.lockSet_tcbSetPriority
+#check @SeLe4n.Kernel.Concurrency.lockSet_tcbSetMCPriority
+#check @SeLe4n.Kernel.Concurrency.lockSet_tcbSetIPCBuffer
+-- SM3.B.4: permittedKinds + per-transition lockSet_consistent_*.
+#check @SeLe4n.Kernel.Concurrency.permittedKinds
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_send
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_receive
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_call
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_reply
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_replyRecv
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_notificationSignal
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_notificationWait
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceMint
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceCopy
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceMove
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_cspaceDelete
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_lifecycleRetype
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_vspaceMap
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_vspaceUnmap
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_serviceRegister
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_serviceRevoke
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_serviceQuery
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_schedContextConfigure
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_schedContextBind
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_schedContextUnbind
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSuspend
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbResume
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetPriority
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetMCPriority
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetIPCBuffer
+-- SM3.B Inventory aggregator.
+#check @SeLe4n.Kernel.Concurrency.LockSetCategory
+#check @SeLe4n.Kernel.Concurrency.LockSetTheorem
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_projection_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_lockSet_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_consistency_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_acquireSort_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_algebra_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_partition_sum
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_descriptions_nodup
+#check @SeLe4n.Kernel.Concurrency.lockSet_consistent_aggregate_covers_every_syscall
+EOF'
+
 finalize_report

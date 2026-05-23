@@ -2770,12 +2770,131 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
   per-transition `lockSet`, `lockAcquireSequence` ordering
-  theorems) consumes the SM3.A.10 `objectLockOf` projection; SM3.C
-  (`withLockSet` 2PL discipline) consumes both SM3.A and SM3.B;
-  SM3.D/SM3.E close with deadlock-freedom and serializability
-  theorems.  See
+  theorems) — **LANDED below**.  SM3.C (`withLockSet` 2PL
+  discipline) consumes both SM3.A and SM3.B; SM3.D/SM3.E close
+  with deadlock-freedom and serializability theorems.  See
   [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
   §§5.2..5.5.
+
+  **WS-SM SM3.B LANDED on branch
+  `claude/affectionate-goldberg-6MNJ9`** (LockSet, LockId
+  projection, per-transition lockSet declarations, canonical sort
+  theorems; closes the second sub-phase of SM3 with all 9
+  sub-tasks LANDED).  Plan §5.2 of
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md);
+  builds the abstract lock-set type plus per-syscall lock-set
+  declarations on top of SM3.A's per-object lock fields and
+  SM0.I's `LockKind` / `LockId` total order.
+
+  - **SM3.B.1**: `KernelObject.lockKind : KernelObject → LockKind`
+    + 7 per-variant `@[simp]` unfolds + `lockKind_exists` + the
+    agreement theorem with `objectType`
+    (`lockKind_eq_of_objectType`) in
+    `SeLe4n/Kernel/Concurrency/Locks/LockIdProjection.lean`.
+    `LockId.fromObject (oid : ObjId) (o : KernelObject) : LockId`
+    smart constructor with 7 per-variant convenience lemmas.  The
+    plan's pseudocode signature `(o : KernelObject) → LockId` is
+    adapted to seLe4n's data model: only `TCB` and `SchedContext`
+    carry inner-struct IDs; the other variants are looked up by
+    external ObjId in `SystemState.objects`, so taking the ObjId
+    externally makes the projection total.
+  - **SM3.B.2**: `LockId.lookup s l : Option (RwLockState ×
+    KernelObject)` dispatches on `l.kind` and routes through the
+    typed `getX?` accessors (`getTcb?`, `getEndpoint?`,
+    `getNotification?`, `getCNode?`, `getVSpaceRoot?`,
+    `getUntyped?`, `getSchedContext?`) — zero raw
+    `match.*objects[...]?` sites.  Six structural theorems:
+    `lookup_some_of_kindMatch`, `lookup_fromObject_of_present`,
+    `lookup_kindMatch`, `lookup_lockState_eq`, plus three
+    `@[simp]` fail-closed witnesses for the N/A `LockKind`
+    variants (`lookup_objStore`, `lookup_reply`, `lookup_page`).
+  - **SM3.B.3**: 25 per-transition `lockSet_<τ>` declarations in
+    `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`,
+    one per `SyscallId` variant.  Each takes post-cap-resolution
+    `ObjId`s plus `callerTid` (and `Option ObjId` for
+    path-dependent locks like receiver TCB, blocked endpoint/
+    notification).
+  - **SM3.B.4**: `permittedKinds (sid : SyscallId) : List
+    LockKind` declarative upper-bound + 25 per-transition
+    `lockSet_consistent_<τ>` theorems.  Discharged through four
+    generic builder lemmas
+    (`lockSet_consistent_of_extended_base`,
+    `lockSet_consistent_extendOpt`,
+    `lockSet_consistent_base_plus_opt`,
+    `lockSet_consistent_base_plus_two_opts`) plus per-transition
+    `simp only [<lockBuilder>_kind] + decide` discharge of
+    finite-list membership.
+  - **SM3.B.5**: `LockSet` structure (List with Nodup-keys
+    invariant) in `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`.
+    `AccessMode.lub` (write dominates read; idempotent /
+    commutative / associative) and `AccessMode.conflicts`
+    (symmetric) algebra.  Smart constructors `empty`,
+    `singleton`, `insert?` (strict; rejects duplicate keys),
+    `insertOrMerge` (lub-merge on duplicate keys), `union`.
+    `lockAcquireSequence (S : LockSet) : List (LockId ×
+    AccessMode)` sorts `S.pairs` by `LockId` ascending via
+    `List.mergeSort` with the `LockId ≤` Bool comparator.
+  - **SM3.B.6**: `lockAcquireSequence_ordered` — the sort is
+    `Pairwise (≤ on fst)` — discharged via
+    `List.pairwise_mergeSort` + `LockId.le_trans` +
+    `LockId.le_total`.
+  - **SM3.B.7**: `lockAcquireSequence_complete` — every input
+    pair appears in the sorted output (and vice versa).
+  - **SM3.B.8**: `lockAcquireSequence_canonical` (plan §3.5.1) —
+    the sorted sequence is the *unique* `≤`-sorted permutation of
+    `S.pairs`.  Proof factors through `LockSet.fst_inj_at_pairs`
+    (key uniqueness forces pair uniqueness on shared `fst`) and a
+    custom by-induction "uniqueness of sorted permutation"
+    helper.
+  - **SM3.B.9**: NEW FILE `tests/LockSetSuite.lean` (~600 LoC)
+    with 100+ surface anchors, decidable examples on small
+    concrete LockSets exercising sort ordering and per-transition
+    shape, 49 runtime `assertBool` assertions for per-transition
+    size invariants and inventory partition counts.  Runnable as
+    `lake exe lock_set_suite`.
+
+  **SM3.B inventory (72 entries)**: NEW FILE
+  `SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean` (~290
+  LoC) mirrors SM3.A's `PerObjectLockInventory.lean` pattern with
+  a typed `LockSetTheorem` struct, a `lkst!` macro that
+  compile-time elaborates identifiers, and a 72-entry list
+  partitioned across five categories: `.projection` (10),
+  `.lockSet` (25), `.consistency` (25), `.acquireSort` (5),
+  `.algebra` (7).  Per-category count witnesses, partition-sum
+  theorem, Nodup-on-identifiers and Nodup-on-descriptions
+  witnesses (discharged via `native_decide` due to list size),
+  and the coverage theorem
+  `lockSet_consistent_aggregate_covers_every_syscall` pinning
+  `consistency category count = SyscallId.count`.
+
+  **Production/staged partition**: 5 new SM3.B modules
+  (`LockSet`, `LockIdProjection`, `LockSetTransitions`,
+  `LockSetInventory`, the re-export hub `Concurrency.LockSet`)
+  staged via `Platform/Staged.lean` (added to the SM3.B closure
+  in `scripts/staged_module_allowlist.txt`); SM3.C's `withLockSet`
+  2PL combinator will promote them to production-reachable when
+  the per-transition wrappers land.
+
+  **AK7-cascade hygiene**: `LockId.lookup` dispatches on
+  `l.kind` and routes through the typed `getX?` accessors, so
+  the cumulative `RAW_MATCH_TOTAL` floor (122 at v0.31.2) is
+  unchanged.  Typed-accessor adoption counts grew by 7 (one for
+  each of the 7 kernel-object kinds the dispatcher consumes).
+
+  **Test coverage**: 49 new runtime assertions in
+  `lock_set_suite`.  Lean-side: ~100 new surface anchors in
+  `tests/test_tier3_invariant_surface.sh` (covering every public
+  SM3.B symbol).  Existing test suites continue to pass (Tier
+  0+1+2+3 green).  Zero clippy warnings (no Rust changes).
+
+  **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+  Follow-on: SM3.C (`withLockSet` 2PL combinator,
+  `acquireLockOnObject` / `releaseLockOnObject`, `lockSetHeld`
+  predicate, RAII discipline, per-`@[export]` migration) per
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+  §5.3; SM3.D (deadlock-freedom Theorem 2.1.9) and SM3.E
+  (serializability Theorem 2.1.10) close the SM3 phase.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

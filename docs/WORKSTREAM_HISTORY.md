@@ -992,12 +992,80 @@ and Tier 3 (invariant-surface) pipelines.
 
 **Items deferred past v1.0.0 with correctness impact**: NONE.
 
-Follow-on: SM3.B (`LockId.fromObject`, `LockId.lookup`,
-per-transition `lockSet`, `lockAcquireSequence` ordering theorems)
-consumes the SM3.A.10 `objectLockOf` projection; SM3.C
-(`withLockSet` 2PL discipline) consumes both SM3.A and SM3.B;
-SM3.D/SM3.E close with deadlock-freedom and serializability
-theorems.
+Follow-on: SM3.B — **LANDED below**.
+
+**WS-SM SM3.B LANDED on branch `claude/affectionate-goldberg-6MNJ9`**
+(LockSet, LockId projection, per-transition lockSet declarations,
+canonical sort theorems; closes the second sub-phase of SM3 with
+all 9 sub-tasks LANDED).  Plan §5.2 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md);
+builds the abstract lock-set type and per-syscall lock-set
+declarations on top of SM3.A's per-object lock fields and SM0.I's
+`LockKind` / `LockId` total order.
+
+**SM3.B sub-tasks**:
+
+- **SM3.B.1**: `KernelObject.lockKind` + 7 per-variant `@[simp]`
+  unfolds + `LockId.fromObject` smart constructor + 7 per-variant
+  convenience lemmas
+  (`SeLe4n/Kernel/Concurrency/Locks/LockIdProjection.lean`).  The
+  plan's pseudocode `LockId.fromObject (o : KernelObject) → LockId`
+  is adapted to seLe4n's data model (only `TCB` and `SchedContext`
+  carry inner-struct IDs) by taking the ObjId externally.
+- **SM3.B.2**: `LockId.lookup s l : Option (RwLockState ×
+  KernelObject)` dispatches on `l.kind` and routes through typed
+  `getX?` accessors — zero raw `match ... objects[...]?` sites.
+  Six structural witness theorems plus three `@[simp]` fail-closed
+  witnesses for the N/A `LockKind` variants.
+- **SM3.B.3**: 25 per-transition `lockSet_<τ>` declarations in
+  `LockSetTransitions.lean`, one per `SyscallId` variant.
+- **SM3.B.4**: `permittedKinds` declarative permitted-kinds list +
+  25 per-transition `lockSet_consistent_<τ>` theorems discharged
+  via 4 generic builder lemmas + per-transition `simp only ...
+  decide`.
+- **SM3.B.5**: `LockSet` structure (List with Nodup-keys invariant)
+  + `AccessMode.lub` / `conflicts` algebra + smart constructors
+  (`empty`, `singleton`, `insert?`, `insertOrMerge`, `union`) +
+  canonical `lockAcquireSequence` sort via `List.mergeSort`
+  (`SeLe4n/Kernel/Concurrency/Locks/LockSet.lean`).
+- **SM3.B.6**: `lockAcquireSequence_ordered` — `Pairwise (≤ on
+  fst)` — discharged via `List.pairwise_mergeSort` +
+  `LockId.le_trans` + `LockId.le_total`.
+- **SM3.B.7**: `lockAcquireSequence_complete` — input ⇔ sorted
+  membership equivalence.
+- **SM3.B.8**: `lockAcquireSequence_canonical` (plan §3.5.1) —
+  the sort is the unique sorted permutation under key uniqueness.
+- **SM3.B.9**: `tests/LockSetSuite.lean` (~600 LoC) with 100+
+  surface anchors, decidable examples on small concrete LockSets,
+  49 runtime `assertBool` assertions.
+
+**SM3.B inventory (72 entries)**:
+`LockSetInventory.lean` mirrors SM3.A's `PerObjectLockInventory`
+pattern with the `lkst!` macro and 5 categories:
+`.projection` (10), `.lockSet` (25), `.consistency` (25),
+`.acquireSort` (5), `.algebra` (7).  Plus per-category count
+witnesses, partition-sum theorem, Nodup-on-identifiers /
+descriptions, and the coverage theorem
+`lockSet_consistent_aggregate_covers_every_syscall` pinning
+`consistency category count = SyscallId.count`.
+
+**Production/staged partition**: 5 new SM3.B modules staged via
+`Platform/Staged.lean`; SM3.C will promote them production-
+reachable.
+
+**AK7-cascade hygiene**: dispatcher routes through `getX?` typed
+accessors so the `RAW_MATCH_TOTAL` floor remains at the v0.31.2
+baseline of 122.  Typed-accessor adoption counts grew by 7.
+
+**Axiom budget for SM3.B**: 0 Lean axioms, 0 sorries.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM3.C (`withLockSet` 2PL combinator), SM3.D
+(deadlock-freedom Theorem 2.1.9), SM3.E (serializability Theorem
+2.1.10) per
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+§§5.3..5.5.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
