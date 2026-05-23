@@ -2024,6 +2024,10 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetMCPriority
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_tcbSetIPCBuffer
+-- SM3.B.3 audit-pass-5 — PIP-chain-walk start markers.
+#check @SeLe4n.Kernel.Concurrency.pipChainStart_endpointCall
+#check @SeLe4n.Kernel.Concurrency.pipChainStart_endpointReply
+#check @SeLe4n.Kernel.Concurrency.pipChainStart_replyRecv
 -- SM3.B Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.LockSetCategory
 #check @SeLe4n.Kernel.Concurrency.LockSetTheorem
@@ -2034,6 +2038,7 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSetTheorems_consistency_count
 #check @SeLe4n.Kernel.Concurrency.lockSetTheorems_acquireSort_count
 #check @SeLe4n.Kernel.Concurrency.lockSetTheorems_algebra_count
+#check @SeLe4n.Kernel.Concurrency.lockSetTheorems_chainStart_count
 #check @SeLe4n.Kernel.Concurrency.lockSetTheorems_partition_sum
 #check @SeLe4n.Kernel.Concurrency.lockSetTheorems_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.lockSetTheorems_descriptions_nodup

@@ -1129,6 +1129,42 @@ cut):
   extension under SM0.I's total order.
 * **Test-coverage expansion**: 95 → 96 runtime assertions.
 
+**Audit-pass-5 refinements** (structural PIP-chain obligation
+encoded at the type level; implements the chain-start signal
+audit-pass-4 only acknowledged as a doc note, per CLAUDE.md's
+`Implement-the-improvement` rule; all closures land in the same
+v0.31.9 release cut):
+
+* **3 new `pipChainStart_<τ>` declarations** for the 3
+  PIP-invoking transitions: `pipChainStart_endpointCall`
+  (mirrors `receiverTid`), `pipChainStart_endpointReply` (always
+  emits at `callerTid`), `pipChainStart_replyRecv` (always emits
+  at `callerTid`).  Each returns `Option ThreadId` exposing the
+  chain start point as structural metadata about the transition.
+  Defense-in-depth: the chain-start TCB is contained in the
+  static lockSet (verified by 2 runtime assertions).
+* **Structural separation from `lockSet_<τ>`**: Plan §4.1's
+  `lockSet : args → Finset` signature is preserved unchanged.
+  The chain-start hint is separate, surfacing the dynamic
+  obligation at the type level — SM3.C cannot forget to handle
+  the chain.
+* **New SM3.C.11 sub-task** in
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+  §5.3 for dynamic chain-walk locking design:
+  `withDynamicChainExtension` combinator (optimistic walk +
+  verify, `ObjId.val` ascending discipline, bounded retries),
+  `dynamicChainHeld` predicate, `dynamic_chain_deadlock_free`
+  theorem (each-core-holds-at-most-2-locks structural argument),
+  `walkAndAcquire_terminates` (`MAX_PIP_RETRIES = 64` budget),
+  per-transition wrappers, and 6 sub-sub-tasks (SM3.C.11.a..f).
+  SM3.C lifts from 4 PRs / 10 sub-tasks to 5 PRs / 11 sub-tasks.
+* **Inventory expansion**: 87 → 90 entries (+3 in the NEW
+  `chainStart` category); partition-sum updated to 6-way.
+* **Test-coverage expansion**: 96 → 106 runtime assertions
+  (+10 = +9 §16 `runPipChainStartChecks` + 1 chainStart
+  inventory check).  3 new surface anchors + 6 new decidable
+  examples + 4 new tier-3 surface anchors.
+
 **Audit-pass-3 refinements** (donation-path FIX implementing
 the improvement audit-pass-2 only documented; per CLAUDE.md's
 `Implement-the-improvement` rule, all closures land in the

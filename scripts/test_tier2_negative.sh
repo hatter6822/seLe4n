@@ -144,8 +144,9 @@ run_check_with_timeout "TRACE" lake exe per_object_lock_suite
 # `LockId.fromObject` / `LockId.lookup`, per-syscall `lockSet_<τ>`
 # declarations, the `lockAcquireSequence` canonical sort and
 # ordered/complete/canonical theorems, `permittedKinds` plus the
-# per-transition `lockSet_consistent_<τ>` theorems, and the
-# 72-theorem inventory aggregator.
+# per-transition `lockSet_consistent_<τ>` theorems, the audit-pass-5
+# `pipChainStart_<τ>` PIP chain-walk start markers, and the
+# 90-theorem inventory aggregator (with the new `chainStart` category).
 run_check_with_timeout "TRACE" lake exe lock_set_suite
 
 finalize_report

@@ -3010,6 +3010,53 @@ documentation lives under `docs/` and `docs/gitbook/`.
     * Hypothetical drift (owner ≠ target): 5 locks covering
       both.
 
+  **Audit-pass-5 refinements** (structural PIP-chain obligation
+  encoded at the type level; implements the chain-start signal
+  audit-pass-4 only acknowledged as a doc note, per CLAUDE.md's
+  `Implement-the-improvement` rule; all closures land in the same
+  v0.31.9 release cut):
+  - **3 new `pipChainStart_<τ>` declarations** for the 3
+    PIP-invoking transitions:
+    * `pipChainStart_endpointCall` — mirrors `receiverTid` (no
+      waiting receiver ⇒ no chain).
+    * `pipChainStart_endpointReply` — always emits revertPIP at
+      `callerTid`.
+    * `pipChainStart_replyRecv` — always emits revertPIP at
+      `callerTid`.
+    Each returns `Option ThreadId` exposing the chain start point
+    as structural metadata about the transition (a "follow this
+    dynamic obligation" signal), not a lockSet element.  Defense-
+    in-depth: the chain-start TCB is contained in the static
+    lockSet (verified by 2 runtime assertions).
+  - **Structural separation from `lockSet_<τ>`**: Plan §4.1's
+    `lockSet : args → Finset` signature is preserved unchanged.
+    The chain-start hint is separate, surfacing the dynamic
+    obligation explicitly at the type level — SM3.C cannot forget
+    to handle the chain.  This permits SM3.C to use different
+    dynamic strategies (optimistic walk + verify, lock-coupling,
+    coarse PIP-graph lock) without changing `lockSet`'s
+    signature.
+  - **New SM3.C.11 sub-task** for dynamic chain-walk locking
+    design ([plan §5.3](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)):
+    introduces `withDynamicChainExtension` combinator (with
+    optimistic-walk + verify strategy, `ObjId.val` ascending
+    discipline, bounded retries), `dynamicChainHeld` predicate,
+    `dynamic_chain_deadlock_free` theorem (proven via the
+    each-core-holds-at-most-2-locks-at-strictly-ascending-ObjIds
+    structural argument), `walkAndAcquire_terminates` theorem
+    (`MAX_PIP_RETRIES = 64` budget), per-transition wrappers
+    consuming `pipChainStart_*`, and 6 sub-sub-tasks
+    (SM3.C.11.a..f).  SM3.C lifts from 4 PRs / 10 sub-tasks to
+    5 PRs / 11 sub-tasks.
+  - **Inventory expansion**: `lockSetTheorems` grew from 87 to
+    90 entries.  +3 entries in the NEW `LockSetCategory.chainStart`
+    variant; partition-sum theorem updated to 6-way;
+    `lockSetTheorems_chainStart_count = 3` new witness.
+  - **Test suite expansion**: 96 → 106 runtime assertions
+    (+10 = +9 §16 `runPipChainStartChecks` + 1 chainStart
+    inventory check).  3 new surface anchors + 6 new decidable
+    examples + 4 new tier-3 invariant surface anchors.
+
   **Audit-pass-3 refinements** (donation-path FIX, replacing
   audit-pass-2's documentation workaround per the
   `Implement-the-improvement` rule; all closures land in the
@@ -3054,7 +3101,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   Follow-on: SM3.C (`withLockSet` 2PL combinator,
   `acquireLockOnObject` / `releaseLockOnObject`, `lockSetHeld`
-  predicate, RAII discipline, per-`@[export]` migration) per
+  predicate, RAII discipline, per-`@[export]` migration, plus
+  the new SM3.C.11 sub-task for dynamic PIP chain-walk locking
+  via `withDynamicChainExtension` consuming the audit-pass-5
+  `pipChainStart_*` structural signals) per
   [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
   §5.3; SM3.D (deadlock-freedom Theorem 2.1.9) and SM3.E
   (serializability Theorem 2.1.10) close the SM3 phase.

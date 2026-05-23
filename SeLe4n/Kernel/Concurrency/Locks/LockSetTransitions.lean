@@ -643,6 +643,122 @@ def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
      (tcbLock targetTcbTid, .write)]
 
 -- ============================================================================
+-- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
+-- ============================================================================
+
+/-! ## Dynamic priority-inheritance chain locking
+
+Three user syscalls (`.call`, `.reply`, `.replyRecv`) invoke a
+priority-inheritance chain walk after their core IPC mutation
+completes:
+
+* `endpointCallWithDonation`: calls `propagatePriorityInheritance
+  receiverTid` on the handshake path (only when the endpoint had a
+  blocked receiver waiting at call-time).
+* `endpointReplyWithDonation`: calls `revertPriorityInheritance
+  callerTid` after the base reply.
+* `endpointReplyRecvWithDonation`: calls `revertPriorityInheritance
+  callerTid` after the base replyRecv.
+
+The chain walk visits each TCB in the blocking graph reachable from
+the start point via the `blockingServer` relation, updating each
+visited TCB's `pipBoost` field.  The **chain length is
+state-discovered** — it depends on the current blocking graph
+topology, which cannot be statically pre-resolved from syscall args.
+
+Plan §4.1 acknowledges this case as "variable number of locks" and
+permits dynamic acquisition under the SM0.I hierarchy/ObjId total
+order discipline.  The plan's static lockSet contract
+(`Args → Finset (LockId × AccessMode)`) cannot include the chain
+TCBs in its result; instead, we **expose the chain start point**
+as a separate hint via the `pipChainStart_<τ>` family below.
+
+### Contract for SM3.C consumers
+
+If `pipChainStart_<τ> args = some startTid`, then the kernel
+transition `<τ>` will invoke a PIP chain walk starting at
+`startTid` **after** the static-lockSet action completes.  SM3.C
+**must**:
+
+1. Acquire the static `lockSet_<τ> args` first (which includes
+   `startTid` itself when chain-walk is triggered).
+2. After the core action mutates state, invoke a dynamic
+   chain-walk locking strategy starting at `startTid`.  The walk
+   must:
+   - Read the next chain link (`blockingServer`) under at least
+     the current TCB's read lock.
+   - Acquire the next chain TCB's lock in **`ObjId.val` ascending
+     order** to preserve the SM0.I total order on
+     `LockKind.tcb`-level locks (deadlock-freedom obligation).
+   - Update `pipBoost` under the chain TCB's write lock.
+3. Release in reverse order.
+
+If `pipChainStart_<τ> args = none`, no chain walk is invoked by
+`<τ>`; SM3.C's standard `withLockSet` suffices.
+
+### Why a separate function (not a lockSet field)
+
+Plan §4.1's `lockSet : args → Finset` signature is preserved
+unchanged.  The chain-start hint is structural metadata about the
+transition (a "follow this dynamic obligation" signal), not a
+lockSet element.  Separating the two:
+
+* Keeps `lockSet` honest: it declares exactly the static locks.
+* Surfaces the dynamic obligation explicitly at the type level
+  (SM3.C cannot forget to handle the chain).
+* Allows SM3.C to use different dynamic strategies (optimistic
+  walk + verify, lock-coupling, coarse PIP-graph lock) without
+  changing `lockSet`'s signature.
+
+Detailed dynamic-walk design lives in SM3.C.11 (see
+`SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3).
+-/
+
+/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.call`.
+
+`endpointCallWithDonation` invokes `propagatePriorityInheritance
+receiverTid` **only on the handshake path** (when the endpoint had
+a blocked receiver at call-time).  When `receiverTid = none` the
+caller blocks waiting, and no chain walk is invoked.  So the
+chain-start signal mirrors the `receiverTid` argument exactly. -/
+@[inline] def pipChainStart_endpointCall
+    (_callerTid : ThreadId) (_cnodeRootObjId _endpointObjId : ObjId)
+    (receiverTid : Option ThreadId)
+    (_donatedScId : Option SchedContextId) : Option ThreadId :=
+  receiverTid
+
+/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.reply`.
+
+`endpointReplyWithDonation` unconditionally invokes
+`revertPriorityInheritance callerTid` after the core reply
+succeeds (regardless of whether `applyReplyDonation` actually
+returned a SC).  The chain walks upward from the replier (=caller)
+through the replier's `blockingServer` graph; in the common case
+the replier is no longer blocked (just replied), so the chain
+length is 1 (`updatePipBoost callerTid` only, no recursion).  In
+edge cases where the replier is itself blocked, the chain extends. -/
+@[inline] def pipChainStart_endpointReply
+    (callerTid : ThreadId) (_cnodeRootObjId : ObjId)
+    (_replyTargetTid : ThreadId)
+    (_donatedScId : Option SchedContextId)
+    (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
+  some callerTid
+
+/-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.replyRecv`.
+
+`endpointReplyRecvWithDonation` invokes
+`revertPriorityInheritance callerTid` (== the receiver, who's
+also the replier in the combined transition) after the base
+replyRecv succeeds.  Symmetric to `pipChainStart_endpointReply`. -/
+@[inline] def pipChainStart_replyRecv
+    (callerTid : ThreadId) (_cnodeRootObjId : ObjId)
+    (_replyTargetTid : ThreadId) (_endpointObjId : ObjId)
+    (_newSenderTid : Option ThreadId)
+    (_donatedScId : Option SchedContextId)
+    (_donatedOriginalOwnerTid : Option ThreadId) : Option ThreadId :=
+  some callerTid
+
+-- ============================================================================
 -- SM3.B.4 — permittedKinds and lockSet_consistent
 -- ============================================================================
 

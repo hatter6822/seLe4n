@@ -19,7 +19,7 @@ inventory with size and per-category witnesses.  Mirrors the
 SM3.A `PerObjectLockInventory.lean` pattern (34-theorem aggregator)
 and the SM2.D `LockPrimitives.lean` pattern (22-theorem aggregator).
 
-The inventory has five categories matching the plan §5.2 sub-tasks:
+The inventory has six categories matching the plan §5.2 sub-tasks:
 
 * `.projection` — SM3.B.1 / SM3.B.2 (KernelObject.lockKind,
   LockId.fromObject, LockId.lookup + per-variant simp / round-trip
@@ -34,6 +34,13 @@ The inventory has five categories matching the plan §5.2 sub-tasks:
   idempotence/commutativity/associativity, AccessMode.conflicts
   symmetry, LockSet.insertOrMerge_mem, lockSetOfList_mem_inv,
   LockSet.fst_inj_at_pairs, LockSet.union_mem_inv).
+* `.chainStart` — SM3.B.3 audit-pass-5 PIP-chain-walk start
+  markers (`pipChainStart_endpointCall`, `pipChainStart_endpointReply`,
+  `pipChainStart_replyRecv`).  Structural signal to SM3.C that a
+  transition invokes a dynamic priority-inheritance chain walk
+  whose length is state-discovered.  See SM3.C.11 in
+  `SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3 for the chain-walk locking
+  design.
 
 ## Identifier validation
 
@@ -59,6 +66,8 @@ inductive LockSetCategory where
   | acquireSort
   /-- AccessMode algebra + LockSet structural helpers. -/
   | algebra
+  /-- PIP-chain-walk start markers (SM3.B.3 audit-pass-5). -/
+  | chainStart
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM3.B: a theorem entry in the LockSet inventory.
@@ -275,13 +284,20 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "LockSet.union_mem_inv: union membership trace-back"
       LockSet.union_mem_inv .algebra,
     lkst! "LockSet.containsKey_iff: key membership iff exists mode"
-      LockSet.containsKey_iff .algebra]
+      LockSet.containsKey_iff .algebra,
+    -- §6 chainStart — PIP-chain-walk start markers (3 entries — SM3.B.3 audit-pass-5)
+    lkst! "pipChainStart for endpointCall (handshake path only when receiverTid = some _)"
+      pipChainStart_endpointCall .chainStart,
+    lkst! "pipChainStart for endpointReply (always emits revertPIP at caller)"
+      pipChainStart_endpointReply .chainStart,
+    lkst! "pipChainStart for replyRecv (always emits revertPIP at caller)"
+      pipChainStart_replyRecv .chainStart]
 
-/-- WS-SM SM3.B: the inventory has exactly 87 entries.
+/-- WS-SM SM3.B: the inventory has exactly 90 entries.
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 87 := by decide
+    lockSetTheorems.length = 90 := by decide
 
 /-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
@@ -313,18 +329,25 @@ theorem lockSetTheorems_algebra_count :
     (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
+/-- WS-SM SM3.B: 3 entries in the `chainStart` category
+(SM3.B.3 audit-pass-5: pipChainStart for the 3 PIP-invoking transitions). -/
+theorem lockSetTheorems_chainStart_count :
+    (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 3 := by
+  decide
+
 /-- WS-SM SM3.B: per-category counts sum to the total. -/
 theorem lockSetTheorems_partition_sum :
     (lockSetTheorems.filter (fun t => t.category == .projection)).length +
     (lockSetTheorems.filter (fun t => t.category == .lockSet)).length +
     (lockSetTheorems.filter (fun t => t.category == .consistency)).length +
     (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length +
-    (lockSetTheorems.filter (fun t => t.category == .algebra)).length =
+    (lockSetTheorems.filter (fun t => t.category == .algebra)).length +
+    (lockSetTheorems.filter (fun t => t.category == .chainStart)).length =
     lockSetTheorems.length := by decide
 
 /-- WS-SM SM3.B: every inventory identifier is unique.
 
-We use `native_decide` because the 87-entry inventory's
+We use `native_decide` because the 90-entry inventory's
 list-of-strings `Nodup` check exceeds `decide`'s practical
 elaboration budget; `native_decide` compiles to native code and
 discharges the same proposition in milliseconds.  The trust base

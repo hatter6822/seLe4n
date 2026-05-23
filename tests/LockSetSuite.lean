@@ -141,6 +141,12 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_tcbSetMCPriority
 #check @lockSet_tcbSetIPCBuffer
 
+/-! ## SM3.B.3 audit-pass-5 — PIP-chain-walk start markers -/
+
+#check @pipChainStart_endpointCall
+#check @pipChainStart_endpointReply
+#check @pipChainStart_replyRecv
+
 /-! ## SM3.B.4 — Per-transition consistency theorems -/
 
 #check @permittedKinds
@@ -181,6 +187,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSetTheorems_consistency_count
 #check @lockSetTheorems_acquireSort_count
 #check @lockSetTheorems_algebra_count
+#check @lockSetTheorems_chainStart_count
 #check @lockSetTheorems_partition_sum
 #check @lockSetTheorems_identifiers_nodup
 #check @lockSetTheorems_descriptions_nodup
@@ -624,10 +631,53 @@ example :
     canonical = S.lockAcquireSequence := by native_decide
 
 -- ============================================================================
+-- §6e — pipChainStart_* (audit-pass-5) PIP chain-walk start markers
+-- ============================================================================
+
+/-! ### pipChainStart_endpointCall mirrors receiverTid exactly.
+
+When there is no waiting receiver (`receiverTid = none`), no PIP
+propagation occurs and the chain-start signal is `none`.  When a
+receiver is waiting, PIP propagates from the receiver and the
+chain-start signal equals `some receiverTid`. -/
+
+example :
+    pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) none none
+      = none := by decide
+
+example :
+    pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+      (some ⟨8⟩) none = some ⟨8⟩ := by decide
+
+example :
+    pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+      (some ⟨8⟩) (some ⟨100⟩) = some ⟨8⟩ := by decide
+
+/-! ### pipChainStart_endpointReply always emits revertPIP at caller. -/
+
+example :
+    pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ none none
+      = some ⟨5⟩ := by decide
+
+example :
+    pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+      (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
+
+/-! ### pipChainStart_replyRecv always emits revertPIP at caller. -/
+
+example :
+    pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
+      none none none = some ⟨5⟩ := by decide
+
+example :
+    pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
+      (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩ := by decide
+
+-- ============================================================================
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 87 := by decide
+example : lockSetTheorems.length = 90 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
@@ -642,6 +692,9 @@ example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length 
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
+  decide
+
+example : (lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 3 := by
   decide
 
 -- ============================================================================
@@ -1037,8 +1090,8 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 87"
-    (decide (lockSetTheorems.length = 87))
+  assertBool "lockSetTheorems.length = 90"
+    (decide (lockSetTheorems.length = 90))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   assertBool "lockSet category count = 25 (one per SyscallId variant)"
@@ -1049,14 +1102,64 @@ private def runInventoryChecks : IO Unit := do
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"
     (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9))
+  assertBool "chainStart category count = 3 (audit-pass-5 PIP-chain markers)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .chainStart)).length = 3))
   assertBool "category-partition sum = total"
     (decide
       ((lockSetTheorems.filter (fun t => t.category == .projection)).length +
        (lockSetTheorems.filter (fun t => t.category == .lockSet)).length +
        (lockSetTheorems.filter (fun t => t.category == .consistency)).length +
        (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length +
-       (lockSetTheorems.filter (fun t => t.category == .algebra)).length =
+       (lockSetTheorems.filter (fun t => t.category == .algebra)).length +
+       (lockSetTheorems.filter (fun t => t.category == .chainStart)).length =
        lockSetTheorems.length))
+
+private def runPipChainStartChecks : IO Unit := do
+  IO.println "--- §16 PIP chain-walk start markers (audit-pass-5) ---"
+  -- pipChainStart_endpointCall mirrors receiverTid exactly.
+  assertBool "pipChainStart_endpointCall: receiverTid = none ⇒ chain-start = none"
+    (decide (pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              none none = none))
+  assertBool "pipChainStart_endpointCall: receiverTid = some ⟨8⟩ ⇒ chain-start = some ⟨8⟩"
+    (decide (pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) none = some ⟨8⟩))
+  assertBool "pipChainStart_endpointCall: donation arg does not affect chain-start"
+    (decide (pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) (some ⟨100⟩) = some ⟨8⟩))
+  -- pipChainStart_endpointReply always emits revertPIP at the caller (= replier).
+  assertBool "pipChainStart_endpointReply: always = some callerTid"
+    (decide (pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+              none none = some ⟨5⟩))
+  assertBool "pipChainStart_endpointReply: donation args do not affect chain-start"
+    (decide (pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+              (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩))
+  -- pipChainStart_replyRecv mirrors endpointReply.
+  assertBool "pipChainStart_replyRecv: always = some callerTid (no extras)"
+    (decide (pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
+              none none none = some ⟨5⟩))
+  assertBool "pipChainStart_replyRecv: full args do not affect chain-start"
+    (decide (pipChainStart_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (ObjId.ofNat 20)
+              (some ⟨11⟩) (some ⟨42⟩) (some ⟨7⟩) = some ⟨5⟩))
+  -- Defense-in-depth: the chain-start TCB equals the receiver in `.call`
+  -- handshake mode, so the static lockSet (which includes receiverTid in
+  -- its `tcbLock receiverTid .write` entry) already covers the chain
+  -- entry point.  SM3.C's dynamic walker then extends past startTid.
+  assertBool "pipChainStart_endpointCall: chain-start is contained in static lockSet"
+    (let st := pipChainStart_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                 (some ⟨8⟩) none
+     let ls := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                 (some ⟨8⟩) none
+     match st with
+     | none => true
+     | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))
+  assertBool "pipChainStart_endpointReply: chain-start callerTid is in static lockSet"
+    (let st := pipChainStart_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                 none none
+     let ls := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                 none none
+     match st with
+     | none => true
+     | some tid => decide (ls.containsKey ⟨.tcb, ObjId.ofNat tid.toNat⟩ = true))
 
 def runLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.B — LockSet regression suite"
@@ -1076,6 +1179,7 @@ def runLockSetChecks : IO Unit := do
   runLookupFixtureChecks
   runLockKindCoDomainChecks
   runFstInjChecks
+  runPipChainStartChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 

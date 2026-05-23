@@ -1297,21 +1297,29 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `simp only [<lockBuilder>_kind] + decide` discharge of the
      finite kinds-list membership.
 
-   **SM3.B inventory (72 entries)**:
+   **SM3.B inventory (90 entries after audit-pass-5)**:
    `Concurrency/Locks/LockSetInventory.lean` mirrors SM3.A's
    `PerObjectLockInventory.lean` pattern with a typed
    `LockSetTheorem` struct, a `lkst!` macro that compile-time
-   elaborates identifiers, and a 72-entry list partitioned across
-   five categories:
-   - `.projection` (10 entries): `KernelObject.lockKind` + 7
-     per-variant simp lemmas + `LockId.fromObject` + `LockId.lookup`.
+   elaborates identifiers, and a 90-entry list partitioned across
+   six categories:
+   - `.projection` (22 entries): `KernelObject.lockKind` + 7
+     per-variant simp lemmas + `lockKind_eq_of_objectType` + 4
+     `lockKind_*` co-domain theorems (audit-pass-2) +
+     `LockId.fromObject` + `LockId.lookup` + 4 lookup structural
+     theorems + 3 N/A-kind fail-closed witnesses (audit-pass-1).
    - `.lockSet` (25 entries): one per `lockSet_<τ>`.
    - `.consistency` (25 entries): one per `lockSet_consistent_<τ>`.
-   - `.acquireSort` (5 entries): `lockAcquireSequence` + three
-     theorems + length-preservation.
-   - `.algebra` (7 entries): `AccessMode.lub` properties +
+   - `.acquireSort` (6 entries): `lockAcquireSequence` + three
+     theorems + length + perm.
+   - `.algebra` (9 entries): `AccessMode.lub` properties +
      `LockSet.insertOrMerge_mem` + `lockSetOfList_mem_inv` +
-     `LockSet.fst_inj_at_pairs`.
+     `LockSet.fst_inj_at_pairs` + `LockSet.union_mem_inv`
+     (audit-pass-1) + `LockSet.containsKey_iff` (audit-pass-2).
+   - `.chainStart` (3 entries, NEW at audit-pass-5):
+     `pipChainStart_endpointCall`/`endpointReply`/`replyRecv` —
+     structural signal to SM3.C that a transition invokes a
+     dynamic PIP chain walk whose length is state-discovered.
 
    Plus per-category count witnesses, partition-sum theorem,
    Nodup-on-identifiers and Nodup-on-descriptions witnesses
@@ -1430,6 +1438,49 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
 
    * **Test-coverage expansion**: 95 → 96 runtime assertions
      (+1 for the invariant-drift defense-in-depth assertion).
+
+   **Audit-pass-5 refinements** (structural PIP-chain
+   obligation encoded at the type level; implements the chain-
+   start signal audit-pass-4 only acknowledged as a doc note,
+   per CLAUDE.md's `Implement-the-improvement` rule; land in
+   the same v0.31.9 release cut):
+
+   * **3 new `pipChainStart_<τ>` declarations** for the 3
+     PIP-invoking transitions:
+     - `pipChainStart_endpointCall` — mirrors `receiverTid`
+       (no waiting receiver ⇒ no chain).
+     - `pipChainStart_endpointReply` — always emits revertPIP
+       at `callerTid`.
+     - `pipChainStart_replyRecv` — always emits revertPIP at
+       `callerTid`.
+     Each returns `Option ThreadId` exposing the chain start
+     point as structural metadata about the transition (a
+     "follow this dynamic obligation" signal), not a lockSet
+     element.  Defense-in-depth: the chain-start TCB is
+     contained in the static lockSet (verified by 2 runtime
+     assertions).
+   * **Structural separation from `lockSet_<τ>`**: Plan §4.1's
+     `lockSet : args → Finset` signature is preserved unchanged.
+     The chain-start hint is separate, surfacing the dynamic
+     obligation explicitly at the type level — SM3.C cannot
+     forget to handle the chain.
+   * **New SM3.C.11 sub-task** in
+     `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3
+     covering the dynamic chain-walk locking design:
+     `withDynamicChainExtension` combinator (optimistic walk +
+     verify, `ObjId.val` ascending discipline, bounded
+     retries), `dynamicChainHeld` predicate,
+     `dynamic_chain_deadlock_free` theorem,
+     `walkAndAcquire_terminates` theorem, per-transition
+     wrappers, and 6 sub-sub-tasks (SM3.C.11.a..f).  SM3.C
+     lifts from 4 PRs / 10 sub-tasks to 5 PRs / 11 sub-tasks.
+   * **Inventory expansion**: 87 → 90 entries (+3 in the NEW
+     `chainStart` category).  `lockSetTheorems_chainStart_count
+     = 3` new witness; partition-sum updated to 6-way.
+   * **Test-coverage expansion**: 96 → 106 runtime assertions
+     (+10 = +9 §16 `runPipChainStartChecks` + 1 inventory
+     chainStart check).  3 new surface anchors + 6 new
+     decidable examples + 4 new tier-3 surface anchors.
 
    **Audit-pass-3 refinements** (donation-path FIX implementing
    the improvement audit-pass-2 only documented; land in the

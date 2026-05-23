@@ -1,3 +1,163 @@
+## Unreleased — WS-SM SM3.B audit-pass-5: structural pipChainStart signal + SM3.C.11 plan section
+
+Audit-pass-4 acknowledged the PIP-chain dynamic-locking case in
+prose but did not encode the obligation at the type level.  Per
+CLAUDE.md's `Implement-the-improvement` rule (forbidden to
+document inferior code), audit-pass-5 implements the structural
+signal AND extends the plan with a comprehensive SM3.C.11
+sub-task for the chain-walk locking design.
+
+### New structural signal: `pipChainStart_<τ>`
+
+Three new declarations in
+`SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`:
+
+* `pipChainStart_endpointCall : ThreadId → ObjId → ObjId →
+  Option ThreadId → Option SchedContextId → Option ThreadId`
+  — mirrors `receiverTid` (no waiting receiver ⇒ no chain;
+  some receiver ⇒ PIP propagates from the receiver).
+* `pipChainStart_endpointReply : ThreadId → ObjId → ThreadId →
+  Option SchedContextId → Option ThreadId → Option ThreadId`
+  — always emits `revertPIP` at `callerTid` (the replier).
+* `pipChainStart_replyRecv : ThreadId → ObjId → ThreadId →
+  ObjId → Option ThreadId → Option SchedContextId →
+  Option ThreadId → Option ThreadId` — always emits at the
+  caller, symmetric to endpointReply.
+
+Each returns `Option ThreadId`: `some startTid` if the
+transition triggers a PIP chain walk starting at `startTid`,
+`none` otherwise.  SM3.C.11 will consume this signal to invoke
+the dynamic chain-walk locking machinery.
+
+### Structural separation from `lockSet_<τ>`
+
+The chain-start hint is **separate** from the static lockSet:
+
+* `lockSet_<τ>` stays an honest static declaration (every entry
+  is statically computable from args).
+* `pipChainStart_<τ>` is a structural signal about the
+  transition's dynamic locking obligation.
+
+Plan §4.1's `lockSet : args → Finset` signature is preserved
+unchanged.  Separation:
+
+* Keeps `lockSet` honest — declares exactly the static locks.
+* Surfaces the dynamic obligation explicitly at the type level
+  — SM3.C cannot forget to handle the chain.
+* Allows SM3.C to use different dynamic strategies (optimistic
+  walk + verify, lock-coupling, coarse PIP-graph lock) without
+  changing `lockSet`'s signature.
+
+Defense-in-depth: the chain-start TCB is **contained in the
+static lockSet** (e.g., `pipChainStart_endpointCall` returns
+`receiverTid` only when `receiverTid` is in
+`lockSet_endpointCall`'s `(tcb receiverTid, write)` entry).
+Verified by 2 runtime assertions.
+
+### SM3.C.11 — Dynamic priority-inheritance chain-walk locking
+
+New comprehensive sub-task in
+`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3 (between
+SM3.C.10 and §5.4) covering:
+
+* **SM3.C.11.a** — `withDynamicChainExtension` combinator with
+  optimistic-walk + verify strategy (release-then-acquire,
+  bounded retries, `ObjId.val` ascending discipline).  Rejected
+  alternatives documented: lock-coupling (violates 2PL), coarse
+  PIP-graph lock (defeats fine-graining), pre-walk + verify
+  (graph mutation race).
+* **SM3.C.11.b** — Per-transition wrappers consuming
+  `pipChainStart_*` (the 3 PIP-invoking transitions).
+* **SM3.C.11.c** — `dynamicChainHeld` predicate (state-relative
+  Prop with Pairwise + blockingServer correctness clauses).
+* **SM3.C.11.d** — Deadlock-freedom theorem
+  (`dynamic_chain_deadlock_free`): two cores cannot deadlock
+  under the ObjId-ascending discipline because each holds at
+  most TWO locks at any instant, and acquisition is monotone
+  in `ObjId.val`.
+* **SM3.C.11.e** — Termination theorem
+  (`walkAndAcquire_terminates`): `MAX_PIP_RETRIES = 64` is
+  sufficient (chain depth bounded by `MAX_THREADS = 1024`;
+  expected retries O(log N) per step).
+* **SM3.C.11.f** — Tests: single-step chain, multi-step chain,
+  adversarial concurrent mutation, two-cores-disjoint
+  regression.
+
+SM3.C lifts from 4 PRs / 10 sub-tasks to 5 PRs / 11 sub-tasks.
+
+### Inventory expansion (87 → 90 entries)
+
+`lockSetTheorems` in `LockSetInventory.lean` gains 3 entries in
+the new `LockSetCategory.chainStart` variant:
+
+* `pipChainStart_endpointCall`
+* `pipChainStart_endpointReply`
+* `pipChainStart_replyRecv`
+
+New count witnesses:
+* `lockSetTheorems_count = 90` (was 87).
+* `lockSetTheorems_chainStart_count = 3` (new).
+* `lockSetTheorems_partition_sum` updated to 6-way sum.
+* `lockSetTheorems_identifiers_nodup` / `_descriptions_nodup`
+  re-verified at the new size via `native_decide`.
+
+### Test suite expansion (96 → 106 runtime assertions)
+
+`tests/LockSetSuite.lean` gains:
+
+* **§1 surface anchors** (+4): `pipChainStart_endpointCall`,
+  `pipChainStart_endpointReply`, `pipChainStart_replyRecv`,
+  `lockSetTheorems_chainStart_count`.
+* **§6e** (NEW, +6 decidable examples): mirror of
+  `runPipChainStartChecks`, exercising each function's domain.
+* **§7 inventory examples**: updated counts (90 total +
+  chainStart=3); inventory partition sum now 6-way.
+* **§16** (NEW, `runPipChainStartChecks`, +9 runtime
+  assertions): receiverTid mirroring, callerTid always-emit,
+  donation-args-ignored property, chain-start-contained-in-
+  static-lockSet defense-in-depth.
+
+### Tier-3 surface coverage
+
+`scripts/test_tier3_invariant_surface.sh` extended with 4 new
+surface anchors: `pipChainStart_endpointCall`,
+`pipChainStart_endpointReply`, `pipChainStart_replyRecv`,
+`lockSetTheorems_chainStart_count`.
+
+### Mathematical correctness verification
+
+* Verified by source-level trace that `propagatePriorityInheritance`
+  (in `Scheduler/PriorityInheritance/Propagate.lean`) is invoked
+  from exactly three syscall sites:
+  - `endpointCallWithDonation` only when `receiverTid` is
+    available (handshake path).
+  - `endpointReplyWithDonation` unconditionally after the base
+    reply.
+  - `endpointReplyRecvWithDonation` unconditionally after the
+    base replyRecv.
+* Verified that the chain-start TCB is the entry point of the
+  walk; the walk then traverses `blockingServer s startTid`
+  recursively.
+* Verified by build that all 3 functions compile cleanly with
+  `@[inline]` (no spurious `unusedSimpArgs` warnings).
+* Verified by runtime test that `chain-start ∈ static lockSet`
+  defense-in-depth holds for the 2 always-emitting variants.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.  Full Tier 0+1+2+3 smoke test green.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  The actual `withDynamicChainExtension` implementation is
+deferred to SM3.C.11 (per the plan's phase boundary — SM3.B is
+the static lock-set declaration phase; SM3.C is the
+2PL-discipline implementation phase).  This is not a
+correctness deferral: SM3.B's structural signal makes the
+SM3.C.11 obligation **mechanically witnessed** — a future SM3.C
+implementation that omits the chain extension while
+`pipChainStart_<τ> args = some _` fails SM3.C.11.b's
+structural completeness check at the type level.
+
 ## Unreleased — WS-SM SM3.B audit-pass-4: originalOwner separated for defense-in-depth + PIP-chain dynamic-locking acknowledgement
 
 Deepest deep audit pass.  Audit-pass-3 added donation-path
