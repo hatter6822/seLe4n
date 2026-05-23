@@ -82,6 +82,77 @@ instance RwLockState.coreHolds_decidable (s : RwLockState) (c : CoreId)
   unfold RwLockState.coreHolds
   cases mode <;> exact inferInstance
 
+-- ============================================================================
+-- §1b — Abstract acquire grants on an available lock (audit-pass-1)
+-- ============================================================================
+--
+-- Codex review (PR #794) raised two P1 concerns:
+--   * Comment 3: `withLockSet` runs the action even if `applyOp .tryAcquire*`
+--     ENQUEUED the core (contended) rather than GRANTING ownership.
+--   * Comment 4: a failed (enqueued) acquire leaks the core into the waiter
+--     queue because the no-op release never dequeues it.
+--
+-- Resolution (honest, per implement-the-improvement): the abstract kernel
+-- model is SINGLE-CORE (CLAUDE.md "single-core kernel model"), so at the
+-- abstract layer there is exactly one core acting and the locks `withLockSet`
+-- acquires are ALWAYS initially `unheld` (no other core can hold them).
+-- Under that precondition `applyOp .tryAcquire*` GRANTS (never enqueues), so
+-- the action genuinely runs with the lock held, and the symmetric release
+-- returns the lock to `unheld` with no waiter leak.  The contended /
+-- blocking-until-granted semantics are the SMP FFI layer's responsibility
+-- (SM5+), where the real `RwLock` spins/blocks until ownership is granted.
+--
+-- These theorems make that precondition EXPLICIT and prove the grant +
+-- clean-round-trip properties the reviewer (correctly) observed were missing.
+
+/-- WS-SM SM3.C.4 audit-pass-1: acquiring an **unheld** lock GRANTS
+ownership — the post-state satisfies `coreHolds core mode`.
+
+This is the foundational refutation of Comment 3's concern for the
+abstract single-core model: on an available lock, `applyOp
+.tryAcquire*` takes the grant branch (not the enqueue branch),
+because `unheld` has no holder and no queued waiter, so the core
+genuinely holds the lock when the action runs. -/
+theorem RwLockState.unheld_acquire_grants (core : CoreId) (mode : AccessMode) :
+    (RwLockState.unheld.applyOp (mode.toAcquireOp core)).coreHolds core mode := by
+  cases mode with
+  | read =>
+      -- unheld.applyOp (.tryAcquireRead core) = { readers := [core], … }
+      show (RwLockState.unheld.applyOp (.tryAcquireRead core)).coreHolds core .read
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp only [RwLockState.coreHolds]
+      simp
+  | write =>
+      show (RwLockState.unheld.applyOp (.tryAcquireWrite core)).coreHolds core .write
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp only [RwLockState.coreHolds]
+      simp
+
+/-- WS-SM SM3.C.4 audit-pass-1: acquiring then releasing an **unheld**
+lock returns it to `unheld` — NO waiter leak.
+
+This is the refutation of Comment 4's concern for the abstract
+single-core model: since the acquire GRANTED (took the writerHeld /
+readers branch, not the waiters branch), the symmetric release finds
+the core as the holder and cleanly removes it, with
+`promoteWaitersOnWriterRelease` / `promoteWaitersIfReadersEmpty`
+no-ops on the empty queue.  The lock round-trips to `unheld`. -/
+theorem RwLockState.unheld_acquire_release_roundtrip (core : CoreId)
+    (mode : AccessMode) :
+    (RwLockState.unheld.applyOp (mode.toAcquireOp core)).applyOp
+      (mode.toReleaseOp core) = RwLockState.unheld := by
+  cases mode with
+  | read =>
+      show (RwLockState.unheld.applyOp (.tryAcquireRead core)).applyOp
+        (.releaseRead core) = RwLockState.unheld
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp [RwLockState.promoteWaitersIfReadersEmpty]
+  | write =>
+      show (RwLockState.unheld.applyOp (.tryAcquireWrite core)).applyOp
+        (.releaseWrite core) = RwLockState.unheld
+      unfold RwLockState.applyOp RwLockState.coreInvolved RwLockState.unheld
+      simp [RwLockState.promoteWaitersOnWriterRelease]
+
 /-- WS-SM SM3.C.4: predicate witnessing that core `c` holds the
 lock identified by `l` in mode `mode`.
 

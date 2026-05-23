@@ -114,13 +114,23 @@ open SeLe4n.Kernel.Concurrency
 #check @withLockSet_invariant_preserved
 #check @withLockSet_satisfies_strict_2PL
 #check @withLockSet_computation
-#check @lockSet_action_state_unchanged_outside_lockSet
+-- Audit-pass-1 (Comment 7): substantive acquire-grants theorems
+-- (replacing the removed tautological _unchanged_outside_lockSet).
+#check @acquireLockOnObject_objStore_establishes_lockHeld
+#check @acquireLockOnObject_objStore_release_roundtrip
 
 /-! ## SM3.C.8 — Substantive structural-preservation lemmas -/
 
 #check @KernelObject.updateLock_preserves_objectType
 #check @updateObjectAt_preserves_objStoreLock
+#check @updateObjectLockAt_preserves_objStoreLock
 #check @acquireLockOnObject_preserves_objStoreLock_of_modeled
+
+/-! ## SM3.C.4 audit-pass-1 — abstract acquire grants on available lock -/
+
+#check @updateObjectLockAt
+#check @RwLockState.unheld_acquire_grants
+#check @RwLockState.unheld_acquire_release_roundtrip
 #check @releaseLockOnObject_preserves_objStoreLock_of_modeled
 #check @updateObjectAt_preserves_objectType_at
 
@@ -409,22 +419,22 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 61 entries.
-  assertBool "withLockSetTheorems.length = 61"
-    (decide (withLockSetTheorems.length = 61))
+  -- The inventory has 66 entries (audit-pass-1 expanded from 61).
+  assertBool "withLockSetTheorems.length = 66"
+    (decide (withLockSetTheorems.length = 66))
   -- Per-category counts.
-  assertBool "withLockSetTheorems combinator count = 29"
+  assertBool "withLockSetTheorems combinator count = 31"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .combinator)).length = 29))
-  assertBool "withLockSetTheorems held count = 9"
+      (fun t => t.category == .combinator)).length = 31))
+  assertBool "withLockSetTheorems held count = 11"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .held)).length = 9))
+      (fun t => t.category == .held)).length = 11))
   assertBool "withLockSetTheorems ordering count = 3"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .ordering)).length = 3))
-  assertBool "withLockSetTheorems atomicity count = 7"
+  assertBool "withLockSetTheorems atomicity count = 8"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .atomicity)).length = 7))
+      (fun t => t.category == .atomicity)).length = 8))
   assertBool "withLockSetTheorems dynamicChain count = 13"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .dynamicChain)).length = 13))
@@ -458,6 +468,40 @@ private def runStructuralPreservationChecks : IO Unit := do
   assertBool "acquireLockOnObject .objStore .read DOES add bootCoreId to readers"
     (decide (bootCoreId ∈ sObjStore.objStoreLock.readers))
 
+private def runAuditPass1Checks : IO Unit := do
+  IO.println "--- §10 SM3.C audit-pass-1 — codex review closures ---"
+  let s₀ : SystemState := default
+  -- Comment 3: acquiring an AVAILABLE objStore lock GRANTS (the action
+  -- would run with the lock genuinely held), in both modes.
+  let sW := acquireLockOnObject s₀ bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write
+  assertBool "Comment 3: acquiring available objStore .write GRANTS (writerHeld = some core)"
+    (decide (sW.objStoreLock.writerHeld = some bootCoreId))
+  assertBool "Comment 3: post-acquire lockHeld holds for objStore .write"
+    (decide (lockHeld bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write sW))
+  let sR := acquireLockOnObject s₀ bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .read
+  assertBool "Comment 3: post-acquire lockHeld holds for objStore .read"
+    (decide (lockHeld bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .read sR))
+  -- Comment 4: acquire then release returns objStore lock to unheld — no leak.
+  let sRT := releaseLockOnObject sW bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write
+  assertBool "Comment 4: acquire+release round-trips objStore lock to unheld (no waiter leak)"
+    (decide (sRT.objStoreLock = RwLockState.unheld))
+  -- Abstract grant theorem holds for both modes (decidable witness).
+  assertBool "Comment 3: RwLockState.unheld_acquire_grants .write (writerHeld set)"
+    (decide ((RwLockState.unheld.applyOp ((AccessMode.write).toAcquireOp bootCoreId)).writerHeld
+              = some bootCoreId))
+  assertBool "Comment 4: unheld acquire+release round-trip .read = unheld"
+    (decide ((RwLockState.unheld.applyOp ((AccessMode.read).toAcquireOp bootCoreId)).applyOp
+              ((AccessMode.read).toReleaseOp bootCoreId) = RwLockState.unheld))
+  -- Comment 5: kind-mismatched LockId fails closed.  On the default
+  -- (empty) state, a .tcb-kinded LockId resolves to no object, so
+  -- updateObjectLockAt is a no-op (objStoreLock untouched, objects
+  -- unchanged).  The kind-check routes through LockId.lookup which
+  -- returns none on absence/mismatch.
+  let sKind := updateObjectLockAt s₀ ⟨.tcb, SeLe4n.ObjId.ofNat 42⟩
+    ((AccessMode.write).toAcquireOp bootCoreId)
+  assertBool "Comment 5: updateObjectLockAt on absent/mismatched kind is no-op (objStoreLock)"
+    (decide (sKind.objStoreLock = RwLockState.unheld))
+
 def runWithLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.C — withLockSet 2PL discipline regression suite"
   IO.println "========================================================="
@@ -469,6 +513,7 @@ def runWithLockSetChecks : IO Unit := do
   runWithLockSetComputationChecks
   runDynamicChainChecks
   runStructuralPreservationChecks
+  runAuditPass1Checks
   runInventoryChecks
   IO.println "========================================================="
   IO.println "All SM3.C withLockSet checks PASS."

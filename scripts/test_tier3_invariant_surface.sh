@@ -2081,6 +2081,9 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.acquireAll_cons
 #check @SeLe4n.Kernel.Concurrency.releaseAll_cons
 #check @SeLe4n.Kernel.Concurrency.updateObjectAt
+-- SM3.C.2 audit-pass-1 (Comment 5): kind-checked lock update.
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_preserves_objStoreLock
 -- SM3.C.2 KernelObject.updateLock helper.
 #check @SeLe4n.Model.KernelObject.updateLock
 #check @SeLe4n.Model.KernelObject.updateLock_tcb
@@ -2099,6 +2102,9 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.updateObjectAt_preserves_objectType_at
 -- SM3.C.4 lockHeld / lockSetHeld + decidability + default-state-empty.
 #check @SeLe4n.Kernel.Concurrency.RwLockState.coreHolds
+-- SM3.C.4 audit-pass-1 (Comments 3, 4): abstract acquire grants on available lock.
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_acquire_grants
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_acquire_release_roundtrip
 #check @SeLe4n.Kernel.Concurrency.lockHeld
 #check @SeLe4n.Kernel.Concurrency.lockSetHeld
 #check @SeLe4n.Kernel.Concurrency.lockHeld_reply
@@ -2118,7 +2124,9 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.lockSet_atomic_under_2pl
 #check @SeLe4n.Kernel.Concurrency.lockSet_invariant_preserved
 #check @SeLe4n.Kernel.Concurrency.withLockSet_invariant_preserved
-#check @SeLe4n.Kernel.Concurrency.lockSet_action_state_unchanged_outside_lockSet
+-- SM3.C.8 audit-pass-1 (Comment 7): substantive acquire-grants theorems.
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_establishes_lockHeld
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_release_roundtrip
 #check @SeLe4n.Kernel.Concurrency.withLockSet_satisfies_strict_2PL
 #check @SeLe4n.Kernel.Concurrency.withLockSet_computation
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.

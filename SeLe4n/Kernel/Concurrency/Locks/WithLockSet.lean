@@ -267,6 +267,26 @@ def updateObjectAt (s : SystemState) (oid : SeLe4n.ObjId)
   | some obj => { s with objects := s.objects.insert oid (f obj) }
   | none => s
 
+/-- WS-SM SM3.C.2 (audit-pass-1, Comment 5): kind-checked lock update.
+
+Apply the lock-only transform `obj.updateLock op` to the object at
+`l.objId` **only if** the stored object's `lockKind` matches
+`l.kind`.  On kind mismatch (e.g. a `.tcb`-kinded `LockId` pointing
+at an Endpoint object) or absence, the state is returned unchanged
+(**fail closed**).
+
+This mirrors the SM3.B `LockId.lookup` fail-closed kind-check
+discipline: a `LockId` that names the wrong object kind must never
+silently mutate the wrong object's lock field — that would break
+the `LockId`/object-kind correspondence the whole lock hierarchy
+relies on.  The check routes through `LockId.lookup` (which already
+encapsulates the kind-match logic), so the two stay in lock-step. -/
+def updateObjectLockAt (s : SystemState) (l : LockId) (op : RwLockOp) :
+    SystemState :=
+  match LockId.lookup s l with
+  | some _ => updateObjectAt s l.objId (fun obj => obj.updateLock op)
+  | none => s   -- absent OR kind mismatch → fail closed
+
 /-- WS-SM SM3.C.2: `acquireLockOnObject` — the SM3.C.1 acquire
 primitive's per-object body.
 
@@ -290,7 +310,13 @@ The four control-flow branches:
   presence via `LockId.lookup` upstream).
 
 The result is the new `SystemState` with the per-object lock
-field (or the table-level lock) advanced via `applyOp`. -/
+field (or the table-level lock) advanced via `applyOp`.
+
+**Audit-pass-1 (Comment 5)**: the modeled-kind branches route
+through `updateObjectLockAt`, which validates the stored object's
+kind against `l.kind` (fail-closed on mismatch) before mutating —
+a `.tcb`-kinded `LockId` pointing at an Endpoint object is a no-op,
+not a wrong-object mutation. -/
 def acquireLockOnObject (s : SystemState) (core : CoreId)
     (l : LockId) (mode : AccessMode) : SystemState :=
   match l.kind with
@@ -300,11 +326,13 @@ def acquireLockOnObject (s : SystemState) (core : CoreId)
   | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
   | .vspaceRoot | .untyped | .schedContext =>
-      updateObjectAt s l.objId (fun obj => obj.updateLock (mode.toAcquireOp core))
+      updateObjectLockAt s l (mode.toAcquireOp core)
 
 /-- WS-SM SM3.C.2: `releaseLockOnObject` — the SM3.C.1 release
 primitive's per-object body.  Symmetric to `acquireLockOnObject`
-with the release-op variant of the `RwLockOp` constructor. -/
+with the release-op variant of the `RwLockOp` constructor.  Same
+audit-pass-1 (Comment 5) kind-checked dispatch via
+`updateObjectLockAt`. -/
 def releaseLockOnObject (s : SystemState) (core : CoreId)
     (l : LockId) (mode : AccessMode) : SystemState :=
   match l.kind with
@@ -314,7 +342,7 @@ def releaseLockOnObject (s : SystemState) (core : CoreId)
   | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
   | .vspaceRoot | .untyped | .schedContext =>
-      updateObjectAt s l.objId (fun obj => obj.updateLock (mode.toReleaseOp core))
+      updateObjectLockAt s l (mode.toReleaseOp core)
 
 /-- WS-SM SM3.C.2: `acquireLockOnObject` on a `.reply` LockId is
 identity (SM3.A.5 N/A — no kernel-object struct exists). -/
@@ -366,6 +394,18 @@ theorem updateObjectAt_preserves_objStoreLock (s : SystemState)
   unfold updateObjectAt
   cases s.objects.get? oid <;> rfl
 
+/-- WS-SM SM3.C.8 foundation (audit-pass-1): `updateObjectLockAt`
+preserves the table-level `objStoreLock`.  Both branches (kind-match
+→ `updateObjectAt`; mismatch/absent → identity) leave `objStoreLock`
+untouched. -/
+theorem updateObjectLockAt_preserves_objStoreLock (s : SystemState)
+    (l : LockId) (op : RwLockOp) :
+    (updateObjectLockAt s l op).objStoreLock = s.objStoreLock := by
+  unfold updateObjectLockAt
+  cases LockId.lookup s l with
+  | none => rfl
+  | some _ => exact updateObjectAt_preserves_objStoreLock s l.objId _
+
 /-- WS-SM SM3.C.8 foundation: acquiring a *per-object* lock (any kind
 other than `.objStore`) preserves the table-level `objStoreLock`.
 
@@ -382,7 +422,7 @@ theorem acquireLockOnObject_preserves_objStoreLock_of_modeled
   | page => rfl
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext =>
-    all_goals exact updateObjectAt_preserves_objStoreLock s l.objId _
+    all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- WS-SM SM3.C.8 foundation: releasing a per-object lock preserves
 the table-level `objStoreLock`.  Symmetric to the acquire form. -/
@@ -397,7 +437,7 @@ theorem releaseLockOnObject_preserves_objStoreLock_of_modeled
   | page => rfl
   | tcb | endpoint | notification | cnode
   | vspaceRoot | untyped | schedContext =>
-    all_goals exact updateObjectAt_preserves_objStoreLock s l.objId _
+    all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- WS-SM SM3.C.8 foundation (substantive): `updateObjectAt` with a
 lock-only transformation `f` that preserves `objectType` preserves

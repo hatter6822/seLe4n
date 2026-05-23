@@ -157,6 +157,10 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       releaseAll_cons .combinator,
     wlst! "updateObjectAt: in-place kernel-object update helper"
       updateObjectAt .combinator,
+    wlst! "updateObjectLockAt: kind-checked lock update (audit-pass-1 Comment 5)"
+      updateObjectLockAt .combinator,
+    wlst! "updateObjectLockAt_preserves_objStoreLock: kind-checked update preserves table lock"
+      updateObjectLockAt_preserves_objStoreLock .combinator,
     wlst! "AccessMode.toAcquireOp: mode → acquire RwLockOp"
       AccessMode.toAcquireOp .combinator,
     wlst! "AccessMode.toReleaseOp: mode → release RwLockOp"
@@ -197,6 +201,10 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       lockSetHeld_subset .held,
     wlst! "lockSetHeld_default_iff_empty: default state holds no locks"
       lockSetHeld_default_iff_empty .held,
+    wlst! "RwLockState.unheld_acquire_grants: acquiring an available lock GRANTS (audit-pass-1 Comment 3)"
+      RwLockState.unheld_acquire_grants .held,
+    wlst! "RwLockState.unheld_acquire_release_roundtrip: acquire+release no waiter leak (audit-pass-1 Comment 4)"
+      RwLockState.unheld_acquire_release_roundtrip .held,
     -- §3 ordering (3 entries: SM3.C.5 + SM3.C.6 + acquire/release order
     -- correspondence)
     wlst! "lockSet_acquired_in_order: SM3.C.5 — acquires by LockId ascending"
@@ -214,8 +222,10 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       lockSet_invariant_preserved .atomicity,
     wlst! "withLockSet_invariant_preserved: SM3.C.8 — full 2PL invariant preservation"
       withLockSet_invariant_preserved .atomicity,
-    wlst! "lockSet_action_state_unchanged_outside_lockSet: precondition-passing form"
-      lockSet_action_state_unchanged_outside_lockSet .atomicity,
+    wlst! "acquireLockOnObject_objStore_establishes_lockHeld: substantive acquire-grants (audit-pass-1 Comment 7)"
+      acquireLockOnObject_objStore_establishes_lockHeld .atomicity,
+    wlst! "acquireLockOnObject_objStore_release_roundtrip: clean round-trip (audit-pass-1 Comment 4)"
+      acquireLockOnObject_objStore_release_roundtrip .atomicity,
     wlst! "withLockSet_satisfies_strict_2PL: SM3.C aggregate witness"
       withLockSet_satisfies_strict_2PL .atomicity,
     wlst! "withLockSet_computation: canonical 'what does withLockSet compute' form"
@@ -248,20 +258,25 @@ def withLockSetTheorems : List WithLockSetTheorem :=
     wlst! "walkAndAcquire_total: SM3.C.11.e totality witness"
       walkAndAcquire_total .dynamicChain]
 
-/-- WS-SM SM3.C: the inventory has exactly 61 entries.
+/-- WS-SM SM3.C: the inventory has exactly 66 entries (audit-pass-1
+expanded from 61: +2 combinator kind-checked update, +2 held grant /
+round-trip, +2 atomicity substantive acquire-grants, −1 removed
+tautology, net +5... see per-category counts).
 A regression that adds a new SM3.C theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem withLockSetTheorems_count :
-    withLockSetTheorems.length = 61 := by decide
+    withLockSetTheorems.length = 66 := by decide
 
-/-- WS-SM SM3.C: 29 entries in the `combinator` category. -/
+/-- WS-SM SM3.C: 31 entries in the `combinator` category
+(audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`). -/
 theorem withLockSetTheorems_combinator_count :
-    (withLockSetTheorems.filter (fun t => t.category == .combinator)).length = 29 := by
+    (withLockSetTheorems.filter (fun t => t.category == .combinator)).length = 31 := by
   decide
 
-/-- WS-SM SM3.C: 9 entries in the `held` category. -/
+/-- WS-SM SM3.C: 11 entries in the `held` category
+(audit-pass-1: +`unheld_acquire_grants` + `unheld_acquire_release_roundtrip`). -/
 theorem withLockSetTheorems_held_count :
-    (withLockSetTheorems.filter (fun t => t.category == .held)).length = 9 := by
+    (withLockSetTheorems.filter (fun t => t.category == .held)).length = 11 := by
   decide
 
 /-- WS-SM SM3.C: 3 entries in the `ordering` category. -/
@@ -269,9 +284,11 @@ theorem withLockSetTheorems_ordering_count :
     (withLockSetTheorems.filter (fun t => t.category == .ordering)).length = 3 := by
   decide
 
-/-- WS-SM SM3.C: 7 entries in the `atomicity` category. -/
+/-- WS-SM SM3.C: 8 entries in the `atomicity` category
+(audit-pass-1: −tautology +`acquireLockOnObject_objStore_establishes_lockHeld`
++`acquireLockOnObject_objStore_release_roundtrip`). -/
 theorem withLockSetTheorems_atomicity_count :
-    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 7 := by
+    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 8 := by
   decide
 
 /-- WS-SM SM3.C: 13 entries in the `dynamicChain` category. -/

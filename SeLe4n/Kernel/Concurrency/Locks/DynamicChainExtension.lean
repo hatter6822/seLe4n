@@ -100,22 +100,39 @@ open SeLe4n.Kernel.PriorityInheritance
 -- §1 — Constants
 -- ============================================================================
 
-/-- WS-SM SM3.C.11.e: maximum retry budget for the dynamic chain
-walker.  Bounded by 64 — well above any realistic blocking chain
-depth.
+/-- WS-SM SM3.C.11.e: chain-traversal fuel bound for the abstract
+dynamic chain walker.
 
-PIP chain depth is bounded by the longest blocking chain in the
-kernel state.  Under SM3.D's `blockingAcyclic` invariant, the
-chain length is bounded by the number of TCBs (currently ≤ 1024
-— `MAX_THREADS`).  Even under pathological contention assuming
-O(N²) retries per step due to interference, the total budget of
-64 retries per step × O(log N) expected steps is well below 1024
-retries total.
+**Audit-pass-1 (Comments 2 & 6) — fuel semantics clarified.**  The
+codex review correctly observed that at the abstract layer this
+value is consumed *per chain step* (each `.extended` step decrements
+it), so it functions as a **maximum chain-traversal depth**, not as
+a per-step retry budget.  The two notions are distinct and live at
+different layers:
 
-Panic on exhaustion is preferable to silent infinite loop in the
-host event handler that delivered the IPC.  The panic is
-unreachable under normal operation (SM3.D.4's deadlock-freedom
-theorem provides a stronger guarantee than any retry budget). -/
+* **Abstract layer (this module)**: the walker is a *pure function*
+  over a *fixed* `SystemState`.  There is nothing to "retry" — re-
+  running `walkStep` on the same state yields the same result.  The
+  fuel is therefore purely a **structural termination bound** that
+  caps the chain depth the walker will traverse, guaranteeing the
+  recursion terminates (Lean accepts the `fuel`-decreasing
+  definition).  `walkAndAcquireAux_terminated_length_le` proves the
+  produced path length is `≤ initial + fuel`.
+
+* **FFI / runtime layer (SM5+, deferred)**: the optimistic-walk +
+  verify strategy uses a *separate* per-step retry budget to handle
+  concurrent graph mutation (re-read `blockingServer`, release,
+  re-acquire).  That budget is the "retry" notion the plan §5.3
+  describes; it is NOT this constant.
+
+The value 64 is well above any realistic blocking-chain depth
+(under SM3.D's `blockingAcyclic` invariant the chain length is
+bounded by the number of TCBs, and real reply-blocking chains are
+only a few levels deep).  A chain deeper than 64 returns
+`.exhausted` rather than looping; on hardware the runtime layer
+treats exhaustion as a panic (preferable to a silent infinite loop
+in the IPC host-event handler), pre-empted in practice by SM3.D.4's
+deadlock-freedom guarantee. -/
 def MAX_PIP_RETRIES : Nat := 64
 
 /-- WS-SM SM3.C.11.e: `MAX_PIP_RETRIES` is positive. -/
@@ -332,23 +349,46 @@ Given:
 * `s` — the post-static-lockSet state (with `startTid`'s TCB lock
   already held).
 
-The combinator:
-1. Invokes `walkAndAcquire` to build the chain path.
-2. On success (`.terminated path`), executes `action` on the
-   state with the full chain held.
-3. On `.exhausted`, returns the input state unchanged (the
-   FFI-layer impl panics; the abstract layer is total).
+The combinator (audit-pass-1, Comment 1):
+1. Invokes `walkAndAcquire` to discover the chain path.
+2. On success (`.terminated path`), **acquires a write lock on
+   every TCB in the path** via `acquireAll caller chainLocks`
+   (the path is `ObjId.val`-ascending, so this acquire sequence
+   respects the SM0.I lock ladder), executes `action` on the
+   lock-acquired state, then **releases in reverse order** via
+   `releaseAll caller chainLocks.reverse`.
+3. On `.exhausted` / `.extended` (no terminating chain), returns
+   the input state unchanged with the fallback value.
+
+This closes the Comment-1 gap: the previous form ran `action s`
+directly without ever acquiring the chain locks, so the promised
+"full chain held" precondition was not established.  The walker
+only returned a `WalkOutcome` (the path); the lock acquisition is
+now performed explicitly here via the SM3.C.1 `acquireAll` /
+`releaseAll` folds, exactly mirroring the static `withLockSet`
+2PL discipline but over the dynamically-discovered chain.
+
+The `chainLocks` are all `.tcb`-kinded write locks (the PIP chain
+walks the blocking graph of TCBs), built in path order so the
+acquire sequence is `ObjId.val`-ascending — deadlock-free by the
+same SM0.I total-order argument as the static lock set.
 
 The return value carries:
-* The post-action SystemState (or the input if exhausted).
-* The action's result (or a default value if exhausted; we
-  parameterize on a fallback to keep the combinator total). -/
-def withDynamicChainExtension {α : Type} (_caller : CoreId)
+* The post-release SystemState (or the input if no chain).
+* The action's result (or `fallback` if no chain; we parameterize
+  on a fallback to keep the combinator total). -/
+def withDynamicChainExtension {α : Type} (caller : CoreId)
     (startTid : ThreadId)
     (action : SystemState → SystemState × α)
     (fallback : α) (s : SystemState) : SystemState × α :=
   match walkAndAcquire s startTid with
-  | .terminated _ => action s
+  | .terminated path =>
+      let chainLocks : List (LockId × AccessMode) :=
+        path.path.map (fun tid => (⟨.tcb, tid.toObjId⟩, AccessMode.write))
+      let acquired := acquireAll caller chainLocks s
+      let (postAction, result) := action acquired
+      let released := releaseAll caller chainLocks.reverse postAction
+      (released, result)
   | .extended _ =>
     -- Walker didn't reach a terminating chain step (still in middle of walk).
     -- At the abstract level, treat as exhausted.
@@ -357,13 +397,19 @@ def withDynamicChainExtension {α : Type} (_caller : CoreId)
 
 /-- WS-SM SM3.C.11.b: structural unfolding of
 `withDynamicChainExtension`. -/
-theorem withDynamicChainExtension_unfold {α : Type} (_caller : CoreId)
+theorem withDynamicChainExtension_unfold {α : Type} (caller : CoreId)
     (startTid : ThreadId)
     (action : SystemState → SystemState × α)
     (fallback : α) (s : SystemState) :
-    withDynamicChainExtension _caller startTid action fallback s =
+    withDynamicChainExtension caller startTid action fallback s =
       (match walkAndAcquire s startTid with
-       | .terminated _ => action s
+       | .terminated path =>
+           let chainLocks : List (LockId × AccessMode) :=
+             path.path.map (fun tid => (⟨.tcb, tid.toObjId⟩, AccessMode.write))
+           let acquired := acquireAll caller chainLocks s
+           let (postAction, result) := action acquired
+           let released := releaseAll caller chainLocks.reverse postAction
+           (released, result)
        | .extended _ => (s, fallback)
        | .exhausted => (s, fallback)) := rfl
 

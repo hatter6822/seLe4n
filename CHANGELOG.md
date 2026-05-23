@@ -72,7 +72,7 @@ together en route to v1.0.0.
   total-order discipline).
 * `SeLe4n/Kernel/Concurrency/Locks/Sm3CInventory.lean` (~290 LoC)
   — typed `WithLockSetTheorem` struct with compile-time-checked
-  `wlst!` macro; 61-entry inventory across 5 categories
+  `wlst!` macro; 66-entry inventory across 5 categories
   (`.combinator` = 29, `.held` = 9, `.ordering` = 3,
   `.atomicity` = 7, `.dynamicChain` = 13); per-category count
   witnesses + partition-sum + Nodup-on-identifiers /
@@ -162,9 +162,75 @@ for SM5 to consume.
 ### Test results
 
 * 320/320 Lean modules build green.
-* `lake exe with_lock_set_suite` reports 41/41 PASS.
+* `lake exe with_lock_set_suite` reports 48/48 PASS.
 * Full Tier 0+1+2+3 green (smoke + invariant surface).
 * AK7 cascade monotonicity: all metrics pass (floor preserved).
+
+### Audit-pass-1 (external Codex code-review closure on PR #794)
+
+External code-review from `chatgpt-codex-connector` flagged 7
+findings (3 P1 + 4 P2) on the initial SM3.C landing.  Per CLAUDE.md's
+`Implement-the-improvement` rule, each was re-verified and resolved
+with a code change or an honest layering clarification (no finding
+documented away).  Land in the same v0.31.9 cut.
+
+* **P1 (Comment 1) — `withDynamicChainExtension` now actually
+  acquires the chain locks.**  The initial form ran `action s`
+  directly; `walkAndAcquire` only returns a `WalkOutcome` (the path),
+  never a lock-acquired state, so the promised "full chain held"
+  precondition was not established.  The combinator now builds
+  `chainLocks` (a `.tcb` write lock per path TCB, in `ObjId.val`-
+  ascending path order) and brackets the action with
+  `acquireAll caller chainLocks` / `releaseAll caller
+  chainLocks.reverse` — the same 2PL discipline as static
+  `withLockSet`, over the dynamically-discovered chain.
+* **P1 (Comment 3) — acquire-grants-on-available made explicit.**
+  `applyOp .tryAcquire*` enqueues on contention rather than granting,
+  so `withLockSet` running `action` unconditionally was flagged as
+  potentially running with a queued (non-holding) core.  Resolution:
+  the abstract kernel model is single-core (no contention), so the
+  locks `withLockSet` acquires are always initially `unheld` and
+  `tryAcquire` GRANTS.  New theorem `RwLockState.unheld_acquire_grants`
+  proves the post-acquire state satisfies `coreHolds`, and
+  `acquireLockOnObject_objStore_establishes_lockHeld` lifts it to
+  `lockHeld` on the post-acquire SystemState.  The blocking
+  (until-granted) semantics are the SMP FFI layer's responsibility
+  (SM5+); the precondition is now explicit.
+* **P1 (Comment 4) — no waiter leak under the available precondition.**
+  New theorems `RwLockState.unheld_acquire_release_roundtrip` and
+  `acquireLockOnObject_objStore_release_roundtrip` prove that acquiring
+  then releasing an available lock returns it to `unheld` (the grant
+  branch was taken, so release cleanly removes the holder; no stale
+  waiter accumulates).
+* **P2 (Comment 5) — kind-checked lock update.**  New
+  `updateObjectLockAt` routes through `LockId.lookup` (which validates
+  the stored object's kind against `l.kind`) before mutating, failing
+  closed on kind mismatch.  `acquireLockOnObject` / `releaseLockOnObject`
+  modeled-kind branches now use it, so a `.tcb`-kinded `LockId`
+  pointing at an Endpoint object is a no-op, not a wrong-object
+  mutation.
+* **P2 (Comments 2 & 6) — fuel semantics clarified (docstring).**  At
+  the abstract layer the walker is a pure function over a fixed state,
+  so its `fuel` is a structural chain-*depth* bound (termination), not
+  a per-step *retry* budget — retries are meaningless without
+  concurrency.  The per-step retry budget the reviewer describes lives
+  at the SM5+ FFI layer.  The `MAX_PIP_RETRIES` docstring now states
+  this layering precisely; the value (64) is well above any realistic
+  chain depth and the `walkAndAcquire` `fuel` parameter is caller-
+  overridable for deeper chains.
+* **P2 (Comment 7) — tautology replaced with a substantive theorem.**
+  The previous `lockSet_action_state_unchanged_outside_lockSet`
+  (`hHeld → hHeld`) was a false verification anchor; it is removed and
+  replaced by `acquireLockOnObject_objStore_establishes_lockHeld`,
+  which genuinely involves the acquire phase and the transformed
+  state.
+
+Inventory expanded 61 → 66 (combinator 29→31, held 9→11, atomicity
+7→8 with the tautology removed and two substantive theorems added).
+Test suite: 41 → 48 runtime assertions (new §10 `runAuditPass1Checks`
+exercising grant / round-trip / kind-mismatch-fail-closed).  AK7
+cascade floor preserved (the kind-check routes through `LockId.lookup`'s
+typed accessors).  0 sorry, 0 axiom.  Full Tier 0+1+2+3 green.
 
 ## Unreleased — WS-SM SM3.B audit-pass-6: external Codex code-review closure (4 P1 + 1 P2 lock-set under-approximations resolved)
 
@@ -7234,7 +7300,7 @@ Seven LOW-tier closures landed:
 * `lake build` (302 jobs, 0 warnings)
 * `test_smoke.sh` PASS, `test_full.sh` PASS, `test_tier0_hygiene.sh`
   PASS (incl. monotonicity + comprehensive shellcheck)
-* `lake exe kernel_error_matrix_suite` 41/41 PASS
+* `lake exe kernel_error_matrix_suite` 48/48 PASS
 * `lake exe ak8_coverage_suite` 13/13 PASS
 * `lake exe information_flow_suite` PASS (incl. 9 new AK6 named tests)
 * `cargo test --workspace` 462 tests
