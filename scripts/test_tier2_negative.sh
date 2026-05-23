@@ -145,7 +145,9 @@ run_check_with_timeout "TRACE" lake exe per_object_lock_suite
 # declarations, the `lockAcquireSequence` canonical sort and
 # ordered/complete/canonical theorems, `permittedKinds` plus the
 # per-transition `lockSet_consistent_<τ>` theorems, the audit-pass-5
-# `pipChainStart_<τ>` PIP chain-walk start markers, and the
+# `pipChainStart_<τ>` PIP chain-walk start markers, the audit-pass-6
+# `tcbSetPriority`/`tcbSetMCPriority`/`tcbSetIPCBuffer`/`serviceRegister`
+# footprint extensions (SC + VSpaceRoot + endpoint locks), and the
 # 90-theorem inventory aggregator (with the new `chainStart` category).
 run_check_with_timeout "TRACE" lake exe lock_set_suite
 

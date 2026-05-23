@@ -1482,6 +1482,42 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      chainStart check).  3 new surface anchors + 6 new
      decidable examples + 4 new tier-3 surface anchors.
 
+   **Audit-pass-6 refinements** (external Codex code-review
+   closure on PR #793; 4 P1 high-severity + 1 P2 medium-severity
+   lock-set under-approximations resolved by re-tracing the
+   actual kernel operations and extending the static lock-set
+   declarations; land in the same v0.31.9 release cut):
+
+   * **P1 — `lockSet_tcbSetPriority`**: gains
+     `boundSchedContextId : Option SchedContextId` arg.
+     `setPriorityOp` → `updatePrioritySource` writes the bound
+     SC's `priority` field when the target's binding is
+     `.bound`/`.donated`.
+   * **P1 — `lockSet_tcbSetMCPriority`**: gains
+     `boundSchedContextId : Option SchedContextId` arg.
+     `setMCPriorityOp` calls `updatePrioritySource` in the
+     priority-capping branch.
+   * **P1 — `lockSet_tcbSetIPCBuffer`**: gains
+     `targetVSpaceRootObjId : Option ObjId` arg.
+     `setIPCBufferOp` → `validateIpcBufferAddress` reads the
+     target's VSpaceRoot and traverses its mappings.
+   * **P2 — `lockSet_serviceRegister`**: gains a mandatory
+     `endpointObjId : ObjId` arg.  `registerService` reads
+     `st.objects[epId]?` to verify endpoint kind.
+   * **`permittedKinds` extensions**: `.tcbSetPriority` /
+     `.tcbSetMCPriority` add `.schedContext`;
+     `.tcbSetIPCBuffer` adds `.vspaceRoot`; `.serviceRegister`
+     adds `.endpoint`.  `.serviceRevoke` / `.serviceQuery`
+     split out unchanged.
+   * **Consistency proofs**: `_tcbSetPriority` /
+     `_tcbSetMCPriority` / `_tcbSetIPCBuffer` use
+     `lockSet_consistent_base_plus_opt` (Option discharge
+     pattern from audit-pass-3); `_serviceRegister` gains a
+     3rd literal-list rcases branch.
+   * **Test-coverage expansion**: 106 → 133 runtime assertions
+     (+27).  NEW §17 `runAuditPass6FootprintChecks` (+10).
+     Plus +6 §4, +7 §7, +4 §11.
+
    **Audit-pass-3 refinements** (donation-path FIX implementing
    the improvement audit-pass-2 only documented; land in the
    same v0.31.9 release cut):

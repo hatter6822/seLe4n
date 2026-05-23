@@ -527,7 +527,7 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 | SM3.B.6 | `lockAcquireSequence_ordered` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.7 | `lockAcquireSequence_complete` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.8 | `lockAcquireSequence_canonical` | `Locks/LockSet.lean` | LANDED |
-| SM3.B.9 | `tests/LockSetSuite.lean` (~1150 LoC, 106 assertions after audit-pass-5) | `tests/LockSetSuite.lean` | LANDED |
+| SM3.B.9 | `tests/LockSetSuite.lean` (~1280 LoC, 133 assertions after audit-pass-6) | `tests/LockSetSuite.lean` | LANDED |
 
 **Adaptations from the pseudocode in this section**:
 
@@ -551,6 +551,71 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 * Per-syscall lockSets take post-cap-resolution `ObjId` arguments
   rather than raw `CPtr`s — keeps the function static (no state
   parameter) per plan §4.1.
+
+**Audit-pass-6 closure additions** (external code-review closure
+on PR #793 from chatgpt-codex-connector; 4 P1 high-severity +
+1 P2 medium-severity lock-set under-approximations resolved by
+re-tracing the actual kernel operations and extending the static
+lock-set declarations with newly-discovered write/read footprints,
+per CLAUDE.md's `Implement-the-improvement` rule):
+
+* **P1 — `lockSet_tcbSetPriority`**: gains
+  `boundSchedContextId : Option SchedContextId` arg.
+  `SchedContext.PriorityManagement.setPriorityOp` calls
+  `updatePrioritySource` which writes the bound SchedContext's
+  `priority` field via
+  `st.objects.insert scId.toObjId (.schedContext sc')` whenever
+  `targetTcb.schedContextBinding ∈ {.bound scId, .donated scId _}`.
+  Without this lock, the transition could race with concurrent
+  SchedContext operations on the same object.
+* **P1 — `lockSet_tcbSetMCPriority`**: gains
+  `boundSchedContextId : Option SchedContextId` arg (same shape).
+  `setMCPriorityOp` calls `updatePrioritySource` in the
+  priority-capping branch when current priority > new MCP.
+* **P1 — `lockSet_tcbSetIPCBuffer`**: gains
+  `targetVSpaceRootObjId : Option ObjId` arg.
+  `Architecture.IpcBufferValidation.setIPCBufferOp` calls
+  `validateIpcBufferAddress` which reads the target's VSpaceRoot
+  via `st.getVSpaceRoot? targetTcb.vspaceRoot` and `root.lookup
+  addr` (VSpace mapping traversal).  Read lock is sufficient
+  (no writes to the VSpaceRoot itself).
+* **P2 — `lockSet_serviceRegister`**: gains
+  `endpointObjId : ObjId` (mandatory) arg.
+  `Kernel.Service.Registry.registerService` reads
+  `st.objects[epId]?` to verify the target's `.endpoint` kind
+  (R4-C.2 / L-09).  Read lock is sufficient (the
+  `serviceRegistry` map is the only write target).
+* **`permittedKinds` extensions**:
+  - `.tcbSetPriority` → adds `.schedContext`
+  - `.tcbSetMCPriority` → adds `.schedContext`
+  - `.tcbSetIPCBuffer` → adds `.vspaceRoot`
+  - `.serviceRegister` → adds `.endpoint`
+  - `.serviceRevoke` / `.serviceQuery` → unchanged (split out
+    from `.serviceRegister` in the `permittedKinds` definition
+    since they only touch the `serviceRegistry` map, not kernel
+    objects)
+* **Consistency proofs**: `lockSet_consistent_tcbSetPriority` /
+  `lockSet_consistent_tcbSetMCPriority` /
+  `lockSet_consistent_tcbSetIPCBuffer` now use
+  `lockSet_consistent_base_plus_opt` (one Option each);
+  `lockSet_consistent_serviceRegister` gains a 3rd rcases
+  branch for the new endpoint entry in the base list.
+* **Source-level tracing**: each extension was verified by
+  source-level tracing of the actual kernel operation, then
+  cross-checked by re-reading the audit-pass-6 review comments
+  on PR #793 to ensure the trace and the auditor's claim agree.
+* **Test-coverage expansion**: 106 → 133 runtime assertions
+  (+27).  New §17 `runAuditPass6FootprintChecks` (+10): SC
+  inclusion in bound `setPriority`/`setMCPriority`, VSpaceRoot
+  inclusion in `setIPCBuffer` (+ none-case absence check),
+  endpoint inclusion in `serviceRegister`, plus canonical-sort
+  cross-checks placing each new lock at its correct hierarchy
+  level (SC at level 7, VSpaceRoot at level 8, endpoint at
+  level 4).  Plus +6 audit-pass-6 in §4 `runPermittedKindsChecks`,
+  +7 audit-pass-6 in §7 `runPerTransitionShapeChecks`, and +4
+  audit-pass-6 in §11 `runConsistencyRuntimeChecks`.
+* **`permittedKinds` decidable examples**: 4 example lines in
+  §6 updated to match the new permitted-kinds lists.
 
 **Audit-pass-5 closure additions** (structural PIP-chain
 obligation encoded at the type level; implements the chain-

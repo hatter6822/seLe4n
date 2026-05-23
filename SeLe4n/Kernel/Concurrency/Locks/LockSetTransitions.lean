@@ -504,25 +504,49 @@ def lockSet_vspaceUnmap (callerTid : ThreadId)
 /-! ## Service syscalls (3 transitions)
 
 Services are tracked at the SystemState level (not as per-object
-RHTable entries); they take the ObjStore-level lock implicitly via
-their registry table reads/writes.  At SM3.B per-object level, the
-caller TCB and the relevant CNode are the only per-object locks. -/
+RHTable entries).  Their registry table reads/writes serialise
+implicitly via the table-level `objStoreLock` (SM3.A.10).  At SM3.B
+per-object level, the caller TCB and the relevant CNode are the
+universal locks; `serviceRegister` additionally takes a read lock
+on the endpoint capability target (audit-pass-6 closure). -/
 
-/-- WS-SM SM3.B.3: `lockSet` for `serviceRegister`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `serviceRegister`.
+
+Audit-pass-6 (P2 closure for chatgpt-codex-connector review on PR #793):
+`Kernel.Service.Registry.registerService` reads
+`st.objects[epId]?` to verify the target object is a `.endpoint`
+variant (R4-C.2 / L-09) and the endpoint capability has Write right
+(R4-C.1 / M-14).  Without locking the endpoint, this transition
+could race with concurrent endpoint writers (e.g., IPC queue
+mutations from `endpointSend` / `endpointReceive`) and observe a
+mid-transition `KernelObject` variant.  A read lock is sufficient
+since `registerService` only writes the `serviceRegistry` map (not
+the endpoint object itself). -/
 def lockSet_serviceRegister (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) : LockSet :=
+    (cnodeRootObjId : ObjId) (endpointObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read)]
+     (cnodeLock cnodeRootObjId, .read),
+     (endpointLock endpointObjId, .read)]
 
-/-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `serviceRevoke`.
+
+`revokeService sid` only touches `serviceRegistry` (erase) and
+`removeDependenciesOf` (in-place state mutation).  Neither reads
+nor writes a kernel object, so the per-object lock footprint is
+just caller TCB + CNode. -/
 def lockSet_serviceRevoke (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read)]
 
-/-- WS-SM SM3.B.3: `lockSet` for `serviceQuery`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `serviceQuery`.
+
+`lookupServiceByCap epId` folds over `serviceRegistry`; it does NOT
+read `st.objects[epId]?` (the lookup is by cap-target ObjId match
+within the registry, not by object dereference).  Per-object lock
+footprint: caller TCB + CNode. -/
 def lockSet_serviceQuery (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) : LockSet :=
   lockSetOfList
@@ -618,29 +642,98 @@ def lockSet_tcbResume (callerTid : ThreadId)
      (cnodeLock cnodeRootObjId, .read),
      (tcbLock targetTcbTid, .write)]
 
-/-- WS-SM SM3.B.3: `lockSet` for `tcbSetPriority`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `tcbSetPriority`.
+
+Audit-pass-6 (P1 closure for chatgpt-codex-connector review on PR #793):
+`SchedContext.PriorityManagement.setPriorityOp` calls
+`updatePrioritySource st tid targetTcb newPriority` which dispatches
+on `targetTcb.schedContextBinding`:
+
+* `.unbound`: writes the TARGET TCB's `priority` field (already
+  covered by `tcbLock targetTcbTid .write` in the base).
+* `.bound scId` / `.donated scId _`: writes the bound SchedContext's
+  `priority` field via `st.objects.insert scId.toObjId (.schedContext sc')`.
+  Without locking that SC, this transition could race with concurrent
+  SchedContext operations on the same object.
+
+The caller pre-resolves `targetTcb.schedContextBinding` to determine
+whether the bound SC needs locking:
+
+```
+let scId := s.getTcb? targetTcbTid >>= fun t =>
+  match t.schedContextBinding with
+  | .unbound => none
+  | .bound id | .donated id _ => some id
+```
+-/
 def lockSet_tcbSetPriority (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (tcbLock targetTcbTid, .write)]
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (boundSchedContextId : Option SchedContextId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock targetTcbTid, .write)])
+    (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
 
-/-- WS-SM SM3.B.3: `lockSet` for `tcbSetMCPriority`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `tcbSetMCPriority`.
+
+Audit-pass-6 (P1 closure for chatgpt-codex-connector review on PR #793):
+`SchedContext.PriorityManagement.setMCPriorityOp` always writes the
+target TCB's `maxControlledPriority` field (covered by
+`tcbLock targetTcbTid .write` in the base).  In the priority-capping
+branch (when the target's current effective priority exceeds
+`newMCP`), it then calls `updatePrioritySource` with the capped
+priority — which writes the bound SchedContext if the binding is
+`.bound`/`.donated` (same shape as `setPriorityOp`).
+
+The caller pre-resolves `targetTcb.schedContextBinding` identically
+to `lockSet_tcbSetPriority`. -/
 def lockSet_tcbSetMCPriority (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (tcbLock targetTcbTid, .write)]
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (boundSchedContextId : Option SchedContextId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock targetTcbTid, .write)])
+    (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
 
-/-- WS-SM SM3.B.3: `lockSet` for `tcbSetIPCBuffer`. -/
+/-- WS-SM SM3.B.3: `lockSet` for `tcbSetIPCBuffer`.
+
+Audit-pass-6 (P1 closure for chatgpt-codex-connector review on PR #793):
+`Architecture.IpcBufferValidation.setIPCBufferOp` calls
+`validateIpcBufferAddress` which reads:
+
+1. `st.getVSpaceRoot? targetTcb.vspaceRoot` — reads the target's
+   VSpaceRoot object.
+2. `root.lookup addr` — traverses the VSpaceRoot's `mappings`
+   RHTable.
+
+Both are reads (no writes to the VSpaceRoot itself), so a read lock
+on the target's VSpaceRoot is sufficient.  Without this lock, the
+IPC-buffer validation could race with a concurrent
+`VSpaceMap`/`VSpaceUnmap` on the same address space and observe an
+inconsistent mapping.
+
+The caller pre-resolves `targetTcb.vspaceRoot`:
+
+```
+let vsr := (s.getTcb? targetTcbTid).map (·.vspaceRoot)
+```
+
+`vsr = none` covers the case where the target TCB itself doesn't
+exist; in that case the syscall fails before reaching
+`setIPCBufferOp` and no VSpace read happens. -/
 def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .read),
-     (cnodeLock cnodeRootObjId, .read),
-     (tcbLock targetTcbTid, .write)]
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (targetVSpaceRootObjId : Option ObjId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock targetTcbTid, .write)])
+    (targetVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read)))
 
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
@@ -795,18 +888,29 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- VSpace syscalls
   | .vspaceMap | .vspaceUnmap =>
       [.tcb, .cnode, .vspaceRoot]
-  -- Service syscalls
-  | .serviceRegister | .serviceRevoke | .serviceQuery =>
+  -- Service syscalls.  `.serviceRegister` reads `st.objects[epId]?`
+  -- (audit-pass-6 extension); the other two only touch `serviceRegistry`.
+  | .serviceRegister =>
+      [.tcb, .cnode, .endpoint]
+  | .serviceRevoke | .serviceQuery =>
       [.tcb, .cnode]
   -- SchedContext syscalls
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind =>
       [.tcb, .cnode, .schedContext]
   -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
   -- cancellation path (per audit-pass-3 extension).
+  -- `.tcbSetPriority` and `.tcbSetMCPriority` write a bound or donated
+  -- SchedContext via `updatePrioritySource` (audit-pass-6 extension).
+  -- `.tcbSetIPCBuffer` reads the target's VSpaceRoot via
+  -- `validateIpcBufferAddress` (audit-pass-6 extension).
   | .tcbSuspend =>
       [.tcb, .cnode, .endpoint, .notification, .schedContext]
-  | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer =>
+  | .tcbResume =>
       [.tcb, .cnode]
+  | .tcbSetPriority | .tcbSetMCPriority =>
+      [.tcb, .cnode, .schedContext]
+  | .tcbSetIPCBuffer =>
+      [.tcb, .cnode, .vspaceRoot]
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
 instance (k : LockKind) (sid : SyscallId) :
@@ -1298,13 +1402,18 @@ theorem lockSet_consistent_vspaceUnmap (callerTid : ThreadId)
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
-/-- WS-SM SM3.B.4 for `.serviceRegister`. -/
+/-- WS-SM SM3.B.4 for `.serviceRegister`.
+
+Audit-pass-6: the endpoint read lock is now part of the base list.
+The literal-list discharge gains one extra `rcases` step. -/
 theorem lockSet_consistent_serviceRegister (callerTid : ThreadId)
-    (cnRoot : ObjId) :
-    ∀ p ∈ (lockSet_serviceRegister callerTid cnRoot).pairs,
+    (cnRoot epId : ObjId) :
+    ∀ p ∈ (lockSet_serviceRegister callerTid cnRoot epId).pairs,
       p.fst.kind ∈ permittedKinds .serviceRegister :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
@@ -1441,12 +1550,15 @@ theorem lockSet_consistent_tcbResume (callerTid : ThreadId)
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
-/-- WS-SM SM3.B.4 for `.tcbSetPriority`. -/
+/-- WS-SM SM3.B.4 for `.tcbSetPriority`.
+
+Audit-pass-6: the bound-SC write lock is now an `lockSetExtendOpt`
+extension on top of the base list.  Uses `base_plus_opt`. -/
 theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_tcbSetPriority callerTid cnRoot targetTcb).pairs,
+    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId) :
+    ∀ p ∈ (lockSet_tcbSetPriority callerTid cnRoot targetTcb boundSc).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetPriority :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1455,13 +1567,19 @@ theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases boundSc with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.tcbSetMCPriority`. -/
+/-- WS-SM SM3.B.4 for `.tcbSetMCPriority`.
+
+Audit-pass-6: same shape as `.tcbSetPriority`. -/
 theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid cnRoot targetTcb).pairs,
+    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId) :
+    ∀ p ∈ (lockSet_tcbSetMCPriority callerTid cnRoot targetTcb boundSc).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetMCPriority :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1470,13 +1588,21 @@ theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases boundSc with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`. -/
+/-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`.
+
+Audit-pass-6: the target-VSpaceRoot read lock is now an
+`lockSetExtendOpt` extension on top of the base list.  Uses
+`base_plus_opt`. -/
 theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
-    (cnRoot : ObjId) (targetTcb : ThreadId) :
-    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb).pairs,
+    (cnRoot : ObjId) (targetTcb : ThreadId) (targetVSpaceRoot : Option ObjId) :
+    ∀ p ∈ (lockSet_tcbSetIPCBuffer callerTid cnRoot targetTcb targetVSpaceRoot).pairs,
       p.fst.kind ∈ permittedKinds .tcbSetIPCBuffer :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1485,5 +1611,9 @@ theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases targetVSpaceRoot with
+        | none => simp at hpp
+        | some vsr => simp at hpp; rw [← hpp]; simp; decide)
 
 end SeLe4n.Kernel.Concurrency

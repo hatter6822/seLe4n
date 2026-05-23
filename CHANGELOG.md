@@ -1,3 +1,153 @@
+## Unreleased — WS-SM SM3.B audit-pass-6: external Codex code-review closure (4 P1 + 1 P2 lock-set under-approximations resolved)
+
+External code-review on PR #793 from chatgpt-codex-connector
+flagged 5 lock-set under-approximations: 4 P1 (high-severity) and
+1 P2 (medium-severity).  Per CLAUDE.md's `Implement-the-improvement`
+rule (forbidden to document inferior code), each finding was
+re-verified by source-level tracing of the actual kernel operation
+and resolved by extending the static `lockSet_<τ>` declaration.
+
+### P1 — `lockSet_tcbSetPriority`: SchedContext write lock
+
+`SchedContext.PriorityManagement.setPriorityOp` calls
+`updatePrioritySource` which dispatches on
+`targetTcb.schedContextBinding`:
+
+* `.unbound`: writes the TARGET TCB's `priority` field (already
+  covered by `tcbLock targetTcbTid .write`).
+* `.bound scId` / `.donated scId _`: writes the bound
+  SchedContext's `priority` field via
+  `st.objects.insert scId.toObjId (.schedContext sc')`.
+
+Pre-audit: this SC write was unsynchronised against concurrent
+SchedContext operations on the same object.
+
+Fix: `lockSet_tcbSetPriority` gains a
+`boundSchedContextId : Option SchedContextId` arg.  The caller
+pre-resolves `targetTcb.schedContextBinding` before computing
+the lockSet — mirrors the SM3.B audit-pass-3 pattern for
+`tcbSuspend.bindingScId`.
+
+### P1 — `lockSet_tcbSetMCPriority`: SchedContext write lock
+
+`SchedContext.PriorityManagement.setMCPriorityOp` ALWAYS writes
+the target TCB's `maxControlledPriority` field (covered by the
+existing `tcbLock targetTcbTid .write`).  In the priority-capping
+branch (when the target's current effective priority exceeds the
+new MCP), it then calls `updatePrioritySource` with the capped
+priority — which writes the bound SchedContext if the binding is
+`.bound`/`.donated` (same shape as `setPriorityOp`).
+
+Fix: same `boundSchedContextId : Option SchedContextId` arg
+pattern as `lockSet_tcbSetPriority`.
+
+### P1 — `lockSet_tcbSetIPCBuffer`: VSpaceRoot read lock
+
+`Architecture.IpcBufferValidation.setIPCBufferOp` calls
+`validateIpcBufferAddress` which reads:
+
+1. `st.getVSpaceRoot? targetTcb.vspaceRoot` — reads the target's
+   VSpaceRoot object.
+2. `root.lookup addr` — traverses the VSpaceRoot's `mappings`
+   RHTable (the page table).
+
+Both are reads (no writes to the VSpaceRoot itself).
+
+Pre-audit: the IPC-buffer validation could race with a concurrent
+`VSpaceMap`/`VSpaceUnmap` on the same address space and observe
+an inconsistent mapping.
+
+Fix: `lockSet_tcbSetIPCBuffer` gains a
+`targetVSpaceRootObjId : Option ObjId` arg.  Read lock is
+sufficient.  `none` covers the case where the target TCB itself
+doesn't exist (the syscall fails before reaching `setIPCBufferOp`
+and no VSpace read happens).
+
+### P2 — `lockSet_serviceRegister`: endpoint read lock
+
+`Kernel.Service.Registry.registerService` reads
+`st.objects[epId]?` to verify the target object is a `.endpoint`
+variant (R4-C.2 / L-09).  Pre-audit: this read could race with
+concurrent endpoint writers (e.g., IPC queue mutations from
+`endpointSend` / `endpointReceive`) and observe a mid-transition
+`KernelObject` variant.
+
+Fix: `lockSet_serviceRegister` gains a mandatory
+`endpointObjId : ObjId` arg.  Read lock is sufficient since
+`registerService` only writes the `serviceRegistry` map (not the
+endpoint object itself).
+
+### `permittedKinds` extensions
+
+* `.tcbSetPriority` → adds `.schedContext`
+* `.tcbSetMCPriority` → adds `.schedContext`
+* `.tcbSetIPCBuffer` → adds `.vspaceRoot`
+* `.serviceRegister` → adds `.endpoint`
+* `.serviceRevoke` / `.serviceQuery` → unchanged (split out from
+  `.serviceRegister` in the `permittedKinds` definition since
+  they only touch the `serviceRegistry` map, not kernel objects)
+
+### Consistency-proof updates
+
+The 4 consistency theorems gain literal-list rcases steps and/or
+switch from `lockSet_consistent_of_extended_base` to
+`lockSet_consistent_base_plus_opt`:
+
+* `lockSet_consistent_serviceRegister` — gains 3rd rcases branch
+  for the new endpoint entry; still uses
+  `lockSet_consistent_of_extended_base`.
+* `lockSet_consistent_tcbSetPriority` / `_tcbSetMCPriority` /
+  `_tcbSetIPCBuffer` — switch to
+  `lockSet_consistent_base_plus_opt` with the standard cases-on-
+  the-Option discharge pattern from audit-pass-3.
+
+### Test coverage (106 → 133, +27 runtime assertions)
+
+* NEW §17 `runAuditPass6FootprintChecks` (+10): SC inclusion in
+  bound `setPriority`/`setMCPriority`, VSpaceRoot inclusion in
+  `setIPCBuffer` (+ none-case absence check), endpoint inclusion
+  in `serviceRegister`, plus canonical-sort cross-checks placing
+  each new lock at its correct hierarchy level (SC at level 7,
+  VSpaceRoot at level 8, endpoint at level 4).
+* §4 `runPermittedKindsChecks` (+6): all 4 audit-pass-6
+  extensions verified + 2 unchanged service checks documented.
+* §7 `runPerTransitionShapeChecks` (+7): per-syscall size checks
+  for each new Option arg (with-and-without).
+* §11 `runConsistencyRuntimeChecks` (+4): runtime application of
+  the 4 updated consistency theorems on concrete args.
+* §6 `permittedKinds` decidable examples updated.
+
+### Mathematical correctness verification
+
+* Verified by source-level trace of `setPriorityOp` →
+  `updatePrioritySource` → SC write at
+  `Kernel/SchedContext/PriorityManagement.lean:217-221`.
+* Verified by source-level trace of `setMCPriorityOp` →
+  `updatePrioritySource` at
+  `Kernel/SchedContext/PriorityManagement.lean:347`.
+* Verified by source-level trace of `setIPCBufferOp` →
+  `validateIpcBufferAddress` → `getVSpaceRoot?` + `root.lookup` at
+  `Kernel/Architecture/IpcBufferValidation.lean:76,79`.
+* Verified by source-level trace of `registerService` →
+  `st.objects[epId]?` read at
+  `Kernel/Service/Registry.lean:75`.
+* Confirmed `revokeService` (only `serviceRegistry` mutation) and
+  `lookupServiceByCap` (only `serviceRegistry` fold) do NOT read
+  kernel objects → `lockSet_serviceRevoke` /
+  `lockSet_serviceQuery` unchanged.
+* All 4 new Option-extended lockSets respect the SM0.I lock-id
+  total order: the new SC entries sort to level 7, VSpaceRoot to
+  level 8, and endpoint to level 4 — verified via runtime
+  canonical-sort cross-checks.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.  Full Tier 0+1+2 smoke test green; 320/320 Lean modules
+build cleanly; 133/133 runtime assertions in `lock_set_suite`.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
 ## Unreleased — WS-SM SM3.B audit-pass-5: structural pipChainStart signal + SM3.C.11 plan section
 
 Audit-pass-4 acknowledged the PIP-chain dynamic-locking case in

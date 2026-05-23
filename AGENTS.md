@@ -3057,6 +3057,63 @@ documentation lives under `docs/` and `docs/gitbook/`.
     inventory check).  3 new surface anchors + 6 new decidable
     examples + 4 new tier-3 invariant surface anchors.
 
+  **Audit-pass-6 refinements** (external Codex code-review
+  closure on PR #793; 4 P1 high-severity + 1 P2 medium-severity
+  lock-set under-approximations resolved by re-tracing the actual
+  kernel operations and extending the static lock-set
+  declarations; per CLAUDE.md's `Implement-the-improvement`
+  rule, no findings are documented away — each is materialised
+  as a code change on the lockSet declaration):
+  - **P1 `lockSet_tcbSetPriority`**: gains
+    `boundSchedContextId : Option SchedContextId` arg.
+    `setPriorityOp` → `updatePrioritySource` writes the bound SC
+    via `st.objects.insert scId.toObjId (.schedContext sc')`
+    whenever the target's binding is `.bound`/`.donated`.
+    Without the lock, this races with concurrent SchedContext ops
+    on the same object.
+  - **P1 `lockSet_tcbSetMCPriority`**: same `Option
+    SchedContextId` arg.  `setMCPriorityOp` calls
+    `updatePrioritySource` in the priority-capping branch.
+  - **P1 `lockSet_tcbSetIPCBuffer`**: gains
+    `targetVSpaceRootObjId : Option ObjId` arg.
+    `setIPCBufferOp` → `validateIpcBufferAddress` reads the
+    target's VSpaceRoot via `getVSpaceRoot?` then traverses
+    `root.lookup addr` (page-table walk).  Read lock sufficient.
+  - **P2 `lockSet_serviceRegister`**: gains a mandatory
+    `endpointObjId : ObjId` arg.  `registerService` reads
+    `st.objects[epId]?` to verify the endpoint kind tag.  Read
+    lock sufficient (the `serviceRegistry` map is the only write
+    target).
+  - **`permittedKinds` extensions**: `.tcbSetPriority` /
+    `.tcbSetMCPriority` add `.schedContext`; `.tcbSetIPCBuffer`
+    adds `.vspaceRoot`; `.serviceRegister` adds `.endpoint`.
+    `.serviceRevoke` / `.serviceQuery` split out from
+    `.serviceRegister` in the `permittedKinds` definition since
+    they only touch the `serviceRegistry` map.
+  - **Consistency-proof updates**: `_serviceRegister` gains a
+    3rd literal-list rcases branch; `_tcbSetPriority` /
+    `_tcbSetMCPriority` / `_tcbSetIPCBuffer` switch from
+    `lockSet_consistent_of_extended_base` to
+    `lockSet_consistent_base_plus_opt`.
+  - **Source-level tracing**: each finding was verified by
+    tracing the actual kernel code:
+    `Kernel/SchedContext/PriorityManagement.lean:217-221` (SC
+    write in `updatePrioritySource`),
+    `:347` (`setMCPriorityOp` capping branch),
+    `Kernel/Architecture/IpcBufferValidation.lean:76,79`
+    (VSpace + mappings read),
+    `Kernel/Service/Registry.lean:75` (endpoint object read).
+    `revokeService` (only `serviceRegistry` erase) and
+    `lookupServiceByCap` (only `serviceRegistry` fold) confirmed
+    NOT to read kernel objects.
+  - **Test suite expansion**: 106 → 133 runtime assertions
+    (+27 across §4, §7, §11, §17).  NEW §17
+    `runAuditPass6FootprintChecks` (+10): per-syscall lock
+    presence, missing-lock-absence (none-case for IPC buffer),
+    and canonical-sort hierarchy-level cross-checks (SC at
+    level 7, VSpaceRoot at level 8, endpoint at level 4).
+  - **Items deferred past v1.0.0 with correctness impact**: NONE.
+
   **Audit-pass-3 refinements** (donation-path FIX, replacing
   audit-pass-2's documentation workaround per the
   `Implement-the-improvement` rule; all closures land in the
