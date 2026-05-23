@@ -549,9 +549,14 @@ matches both pairs (then equal by transitivity), matches one
 (contradiction with mapped Nodup since the other would also map
 to the head's key), or matches neither (recursive case).
 
+Audit-pass-2 cleanup: removed unused `[DecidableEq α]` constraint
+— the proof never invokes decidability of equality.  Type-class
+inference is purely structural via `List.Pairwise` /
+`List.mem_cons` / `List.mem_map`.
+
 This is the generic structural lemma; `LockSet.fst_inj_at_pairs`
 specialises it to a `LockSet`'s underlying `pairs` field. -/
-theorem list_fst_inj_of_nodup_keys {α β : Type _} [DecidableEq α]
+theorem list_fst_inj_of_nodup_keys {α β : Type _}
     (l : List (α × β)) (hNodup : (l.map (·.fst)).Nodup)
     {p₁ p₂ : α × β} (h₁ : p₁ ∈ l) (h₂ : p₂ ∈ l)
     (hfst : p₁.fst = p₂.fst) : p₁ = p₂ := by

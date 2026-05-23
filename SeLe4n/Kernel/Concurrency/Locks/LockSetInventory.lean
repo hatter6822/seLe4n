@@ -116,6 +116,14 @@ def lockSetTheorems : List LockSetTheorem :=
       SeLe4n.Model.KernelObject.lockKind_schedContext .projection,
     lkst! "lockKind agrees with objectType per variant"
       SeLe4n.Model.KernelObject.lockKind_eq_of_objectType .projection,
+    lkst! "lockKind is one of the 7 modeled kinds (excludes objStore/reply/page)"
+      SeLe4n.Model.KernelObject.lockKind_in_modeledKinds .projection,
+    lkst! "lockKind ≠ .objStore (SystemState-level lock is separate)"
+      SeLe4n.Model.KernelObject.lockKind_ne_objStore .projection,
+    lkst! "lockKind ≠ .reply (SM3.A.5 N/A)"
+      SeLe4n.Model.KernelObject.lockKind_ne_reply .projection,
+    lkst! "lockKind ≠ .page (SM3.A.8 N/A)"
+      SeLe4n.Model.KernelObject.lockKind_ne_page .projection,
     lkst! "LockId.fromObject builds LockId from ObjId + KernelObject"
       SeLe4n.Model.LockId.fromObject .projection,
     lkst! "LockId.lookup resolves a LockId against a SystemState"
@@ -236,7 +244,7 @@ def lockSetTheorems : List LockSetTheorem :=
       lockSet_consistent_tcbSetMCPriority .consistency,
     lkst! "lockSet_consistent for tcbSetIPCBuffer"
       lockSet_consistent_tcbSetIPCBuffer .consistency,
-    -- §4 acquireSort (5 entries — SM3.B.5/B.6/B.7/B.8 + length)
+    -- §4 acquireSort (6 entries — SM3.B.5/B.6/B.7/B.8 + length + perm)
     lkst! "lockAcquireSequence sorts a LockSet by LockId ascending"
       LockSet.lockAcquireSequence .acquireSort,
     lkst! "lockAcquireSequence_ordered: sorted by LockId ≤"
@@ -247,6 +255,8 @@ def lockSetTheorems : List LockSetTheorem :=
       LockSet.lockAcquireSequence_canonical .acquireSort,
     lkst! "lockAcquireSequence_length preserves cardinality"
       LockSet.lockAcquireSequence_length .acquireSort,
+    lkst! "lockAcquireSequence_perm: the sort is a permutation of the input"
+      LockSet.lockAcquireSequence_perm .acquireSort,
     -- §5 algebra (8 entries — AccessMode + LockSet structural)
     lkst! "AccessMode.lub idempotent"
       AccessMode.lub_idem .algebra,
@@ -263,20 +273,23 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "LockSet.fst_inj_at_pairs: pairs with same fst are equal"
       LockSet.fst_inj_at_pairs .algebra,
     lkst! "LockSet.union_mem_inv: union membership trace-back"
-      LockSet.union_mem_inv .algebra]
+      LockSet.union_mem_inv .algebra,
+    lkst! "LockSet.containsKey_iff: key membership iff exists mode"
+      LockSet.containsKey_iff .algebra]
 
-/-- WS-SM SM3.B: the inventory has exactly 81 entries.
+/-- WS-SM SM3.B: the inventory has exactly 87 entries.
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 81 := by decide
+    lockSetTheorems.length = 87 := by decide
 
-/-- WS-SM SM3.B: 18 entries in the `projection` category
+/-- WS-SM SM3.B: 22 entries in the `projection` category
 (lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
- + LockId.fromObject + LockId.lookup + 4 lookup structural theorems
- + 3 fail-closed N/A witnesses). -/
+ + lockKind_in_modeledKinds + 3 lockKind_ne_<NA-kind> + LockId.fromObject
+ + LockId.lookup + 4 lookup structural theorems + 3 fail-closed N/A
+ witnesses). -/
 theorem lockSetTheorems_projection_count :
-    (lockSetTheorems.filter (fun t => t.category == .projection)).length = 18 := by
+    (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
 /-- WS-SM SM3.B: 25 entries in the `lockSet` category (one per SyscallId variant). -/
@@ -289,14 +302,15 @@ theorem lockSetTheorems_consistency_count :
     (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 25 := by
   decide
 
-/-- WS-SM SM3.B: 5 entries in the `acquireSort` category (SM3.B.5..B.8 + length). -/
+/-- WS-SM SM3.B: 6 entries in the `acquireSort` category
+(SM3.B.5..B.8 + length + perm). -/
 theorem lockSetTheorems_acquireSort_count :
-    (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 5 := by
+    (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
   decide
 
-/-- WS-SM SM3.B: 8 entries in the `algebra` category. -/
+/-- WS-SM SM3.B: 9 entries in the `algebra` category. -/
 theorem lockSetTheorems_algebra_count :
-    (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 8 := by
+    (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
 /-- WS-SM SM3.B: per-category counts sum to the total. -/
@@ -310,7 +324,7 @@ theorem lockSetTheorems_partition_sum :
 
 /-- WS-SM SM3.B: every inventory identifier is unique.
 
-We use `native_decide` because the 72-entry inventory's
+We use `native_decide` because the 87-entry inventory's
 list-of-strings `Nodup` check exceeds `decide`'s practical
 elaboration budget; `native_decide` compiles to native code and
 discharges the same proposition in milliseconds.  The trust base

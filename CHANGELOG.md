@@ -1,3 +1,128 @@
+## Unreleased — WS-SM SM3.B audit-pass-2: substantive co-domain theorems + inventory completeness + extraneous-constraint cleanup
+
+Second deep audit pass.  Audit-pass-1 (preceding entry) closed
+test-coverage gaps and added `LockSet.union_mem_inv`.
+Audit-pass-2 focuses on:
+
+### Code-quality cleanup
+
+* **Removed duplicate theorem** `fromObject_lockKind_eq` — was
+  literally identical to `fromObject_kind` (same statement, same
+  `rfl` proof, only differing in lack of `@[simp]` and the
+  docstring's framing).
+* **Removed unused `[DecidableEq α]` constraint** from
+  `list_fst_inj_of_nodup_keys` — the proof never invokes
+  decidability of equality; type-class inference is purely
+  structural via `List.Pairwise` / `List.mem_cons` /
+  `List.mem_map`.
+
+### Substantive co-domain theorems
+
+`KernelObject.lockKind_exists` is genuinely trivial (every total
+function has values on its codomain).  Audit-pass-2 adds 4
+substantive co-domain witnesses that provide actually-useful
+information:
+
+* `lockKind_in_modeledKinds`: `obj.lockKind` returns one of the
+  7 modeled kinds (`.tcb`, `.endpoint`, `.notification`, `.cnode`,
+  `.vspaceRoot`, `.untyped`, `.schedContext`).
+* `lockKind_ne_objStore`: never returns `.objStore` (the
+  SystemState-level table-lock kind).
+* `lockKind_ne_reply`: never returns `.reply` (SM3.A.5 N/A —
+  Reply not modeled as a kernel-object struct).
+* `lockKind_ne_page`: never returns `.page` (SM3.A.8 N/A — page
+  mappings stored inline in `VSpaceRoot.mappings`).
+
+These tell SM3.C consumers that a `KernelObject`-derived `LockId`
+will never refer to a SystemState-level or N/A kind, simplifying
+case analysis at the `lockSetHeld` predicate.
+
+### Donation-path scope clarification
+
+Added explicit documentation in `LockSetTransitions.lean` that
+the statically-declared `lockSet_<τ>` covers only the **directly-
+named objects** in the syscall args.  For the 6 syscalls that may
+traverse a SchedContext-donation path (`endpointCall`,
+`endpointReply`, `replyRecv`, `tcbSuspend`, `schedContextBind`,
+`schedContextUnbind`), the donation path additionally touches:
+
+* The donated `SchedContext` (write — `boundThread` rebound).
+* The original-owner `TCB` (write —
+  `schedContextBinding` transitions out of `.donated`).
+
+These are state-discovered (located via the replier's TCB's
+`schedContextBinding` field) rather than statically named in the
+args.  The plan §5.2's example `lockSet_endpointCall` does NOT
+model the donation path either, so this implementation matches
+the plan's level of detail.  SM3.C's `withLockSet` combinator
+handles donation-chain locks via a documented sub-call pattern
+(acquire-inspect-extend-acquire-rest) without breaking 2PL.
+
+PIP-chain TCB locks (one per blocking ancestor) are inherently
+dynamic and cannot be modelled in a static lockSet.  Plan §4.1's
+"deadlock-freedom requires knowing the lock-set in advance"
+discipline applies via the SM0.I lock-id total order: PIP-chain
+TCBs are at hierarchy level `.tcb` and are acquired in
+`ObjId.val` ascending order, preserving the lock-ladder
+invariant.
+
+### Inventory expansion (81 → 87 entries)
+
+Added 6 substantive entries:
+
+* `lockKind_in_modeledKinds` (projection category)
+* `lockKind_ne_objStore` (projection)
+* `lockKind_ne_reply` (projection)
+* `lockKind_ne_page` (projection)
+* `lockAcquireSequence_perm` (acquireSort)
+* `LockSet.containsKey_iff` (algebra)
+
+Per-category counts: projection 18 → 22, acquireSort 5 → 6,
+algebra 8 → 9.
+
+### Test suite expansion (72 → 83 runtime assertions)
+
+* `runLockKindCoDomainChecks` (§14): 7 assertions verifying
+  lockKind's co-domain properties on concrete `KernelObject`
+  values.
+* `runFstInjChecks` (§15): 4 assertions verifying
+  `LockSet.fst_inj_at_pairs`'s structural witness (Nodup keys,
+  distinct pairs have distinct fst).
+* Surface anchors for 4 new `lockKind_*` theorems.
+
+### Mathematical correctness verification (deeper pass)
+
+The audit verified by careful re-reading and by direct runtime
+evaluation:
+
+* **`lockAcquireSequence_canonical`** proof structure factors
+  through `LockSet.fst_inj_at_pairs` (Nodup-of-keys ⇒ pair
+  uniqueness on shared fst) and antisymmetry of `LockId.le`.
+  Verified by reading the `uniq_sorted_perm_aux` inner proof.
+* **`LockId.lookup`** dispatcher type-id constructions:
+  `(⟨l.objId.val⟩ : ThreadId).toObjId` reduces to `l.objId` via
+  `ObjId.ofNat_toNat` round-trip.  Verified by inspection and by
+  fixture-state lookup tests.
+* **`insertOrMerge`** merge semantics: when the same key is
+  inserted twice, `AccessMode.lub` collapses modes (write
+  dominates read).  Verified directly via `#eval` on the
+  `self-suspend` scenario `(callerTid = targetTcbTid)`.
+* **`union_mem_inv`** disjunction: case 1 is "p ∈ S₁" (full pair
+  match), case 2 is "p.fst matches an S₂ key" (lub-merged or
+  fresh).  Verified by constructing disjoint + overlapping union
+  fixtures.
+* **`lockKind_in_modeledKinds`** + `lockKind_ne_*`: case-by-case
+  on the 7 KernelObject variants; each `cases obj <;> rfl` or
+  `cases obj <;> intro h <;> cases h` discharge.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit-pass-2 findings have been addressed in the same
+cut.
+
 ## Unreleased — WS-SM SM3.B audit-pass-1: refactor + test-coverage gap closures + structural-semantics theorem
 
 Comprehensive deep-audit pass over the WS-SM SM3.B landing.  No

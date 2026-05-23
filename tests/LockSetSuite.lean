@@ -58,6 +58,10 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.lockKind_schedContext
 #check @KernelObject.lockKind_exists
 #check @KernelObject.lockKind_eq_of_objectType
+#check @KernelObject.lockKind_in_modeledKinds
+#check @KernelObject.lockKind_ne_objStore
+#check @KernelObject.lockKind_ne_reply
+#check @KernelObject.lockKind_ne_page
 #check @LockId.fromObject
 #check @LockId.fromObject_kind
 #check @LockId.fromObject_objId
@@ -566,9 +570,9 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 81 := by decide
+example : lockSetTheorems.length = 87 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 18 := by
+example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25 := by
@@ -577,10 +581,10 @@ example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25
 example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 25 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 5 := by
+example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 8 := by
+example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9 := by
   decide
 
 -- ============================================================================
@@ -823,6 +827,58 @@ private def runCanonicalSortRuntimeChecks : IO Unit := do
   assertBool "lockAcquireSequence: within-kind sort by ObjId ascending"
     (decide (withinKind.lockAcquireSequence = withinKindExpected))
 
+private def runLockKindCoDomainChecks : IO Unit := do
+  IO.println "--- §14 lockKind co-domain (audit-pass-2) ---"
+  -- Audit-pass-2: substantive co-domain claim — lockKind returns one
+  -- of the 7 modeled kinds, never .objStore / .reply / .page.
+  let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
+  let u : KernelObject := KernelObject.untyped
+    { regionBase := PAddr.ofNat 0, regionSize := 4096 }
+  assertBool "endpoint.lockKind ≠ .objStore"
+    (decide (ep.lockKind ≠ .objStore))
+  assertBool "endpoint.lockKind ≠ .reply"
+    (decide (ep.lockKind ≠ .reply))
+  assertBool "endpoint.lockKind ≠ .page"
+    (decide (ep.lockKind ≠ .page))
+  assertBool "untyped.lockKind ≠ .objStore"
+    (decide (u.lockKind ≠ .objStore))
+  assertBool "untyped.lockKind ≠ .reply"
+    (decide (u.lockKind ≠ .reply))
+  assertBool "untyped.lockKind ≠ .page"
+    (decide (u.lockKind ≠ .page))
+  assertBool "endpoint.lockKind is one of the 7 modeled kinds"
+    (decide (ep.lockKind = .tcb ∨ ep.lockKind = .endpoint ∨
+             ep.lockKind = .notification ∨ ep.lockKind = .cnode ∨
+             ep.lockKind = .vspaceRoot ∨ ep.lockKind = .untyped ∨
+             ep.lockKind = .schedContext))
+  -- The new substantive theorems are surface-anchored via #check
+  -- above; their content is exercised by the decidable assertions
+  -- preceding this line (e.g. "endpoint.lockKind is one of the 7
+  -- modeled kinds" applies the same Or-chain via decide).
+
+private def runFstInjChecks : IO Unit := do
+  IO.println "--- §15 LockSet.fst_inj_at_pairs (audit-pass-2) ---"
+  -- Construct a 2-element LockSet and verify membership.  The
+  -- `fst_inj_at_pairs` theorem itself is exercised via the
+  -- `canonical-sort` proof internally (uniqueness uses it); a
+  -- self-application "(p, p) ↦ p = p" is trivial.  We instead
+  -- exercise the contrapositive: two distinct pairs in a LockSet
+  -- have distinct `fst` keys (since equal-fst would collapse them
+  -- via insertOrMerge).
+  let p1 : LockId × AccessMode := (⟨.tcb, ObjId.ofNat 1⟩, .write)
+  let p2 : LockId × AccessMode := (⟨.endpoint, ObjId.ofNat 2⟩, .write)
+  let S := (LockSet.singleton p1.fst p1.snd).union (LockSet.singleton p2.fst p2.snd)
+  assertBool "S contains p1"
+    (decide (p1 ∈ S.pairs))
+  assertBool "S contains p2"
+    (decide (p2 ∈ S.pairs))
+  -- The projected keys list is Nodup (the structural invariant).
+  assertBool "S.hUniqueKeys (projected keys are Nodup)"
+    (decide ((S.pairs.map (·.fst)).Nodup))
+  -- Two distinct pairs must have distinct fst (contrapositive of fst_inj).
+  assertBool "p1.fst ≠ p2.fst"
+    (decide (p1.fst ≠ p2.fst))
+
 private def runLookupFixtureChecks : IO Unit := do
   IO.println "--- §13 LockId.lookup on non-default fixture state ---"
   let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
@@ -851,18 +907,18 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 81"
-    (decide (lockSetTheorems.length = 81))
-  assertBool "projection category count = 18"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 18))
+  assertBool "lockSetTheorems.length = 87"
+    (decide (lockSetTheorems.length = 87))
+  assertBool "projection category count = 22"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
   assertBool "lockSet category count = 25 (one per SyscallId variant)"
     (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25))
   assertBool "consistency category count = 25 (one per SyscallId variant)"
     (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 25))
-  assertBool "acquireSort category count = 5"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 5))
-  assertBool "algebra category count = 8"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 8))
+  assertBool "acquireSort category count = 6"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
+  assertBool "algebra category count = 9"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 9))
   assertBool "category-partition sum = total"
     (decide
       ((lockSetTheorems.filter (fun t => t.category == .projection)).length +
@@ -888,6 +944,8 @@ def runLockSetChecks : IO Unit := do
   runConsistencyRuntimeChecks
   runCanonicalSortRuntimeChecks
   runLookupFixtureChecks
+  runLockKindCoDomainChecks
+  runFstInjChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 

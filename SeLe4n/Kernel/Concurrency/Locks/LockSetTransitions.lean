@@ -72,6 +72,51 @@ ObjStore is **NOT** declared in per-transition lockSets — every
 transition implicitly holds the ObjStore lock (in read mode for
 most paths, write mode for those that insert/erase entries).
 SM3.C will add the ObjStore lock as a wrapper at acquisition time.
+
+## Audit-pass-2 scope clarification: donation and PIP-chain locks
+
+For the 6 syscalls that may traverse a SchedContext-donation path
+(`endpointCall`, `endpointReply`, `replyRecv`, `tcbSuspend`,
+`schedContextBind`, `schedContextUnbind`) or trigger
+priority-inheritance-propagation (any IPC syscall on a blocking
+chain), the **statically-declared lockSet covers only the
+directly-named objects** in the syscall args.
+
+The donation path can additionally touch:
+
+* the donated `SchedContext` (write — `boundThread` field is
+  rebound),
+* the original-owner `TCB` (write — schedContextBinding field
+  transitions out of `.donated` / back to `.bound`).
+
+These are state-discovered (located via the replier's TCB's
+`schedContextBinding` field) rather than statically named in the
+syscall args.  Per plan §4.1's "pre-resolved Option arg" pattern,
+a future audit pass could add `donatedScId : Option SchedContextId`
+and `originalOwnerTid : Option ThreadId` parameters to the
+affected `lockSet_<τ>` functions, with the caller pre-inspecting
+the replier's TCB (under a temporary read-lock) before computing
+the full lockSet.
+
+The plan §5.2's example `lockSet_endpointCall` does NOT model the
+donation path either, so this implementation matches the plan's
+level of detail.  SM3.C's `withLockSet` combinator can handle
+donation-chain locks via a documented sub-call pattern
+(acquire-inspect-extend-acquire-rest) without breaking 2PL —
+the inspection happens between the initial lock-set acquisition
+and the action body.
+
+PIP-chain TCB locks (one per blocking ancestor) are inherently
+dynamic and cannot be modelled in a static lockSet.  Plan §4.1's
+"deadlock-freedom requires knowing the lock-set in advance"
+discipline applies via the SM0.I lock-id total order: PIP-chain
+TCBs are at hierarchy level `.tcb` and are acquired in `ObjId.val`
+ascending order, preserving the lock-ladder invariant.
+
+The `permittedKinds` declarations in this module reflect the
+static lockSet's footprint; dynamic donation/PIP-chain locks
+extend the actually-held set at acquisition time but never the
+declared lockSet.
 -/
 
 namespace SeLe4n.Kernel.Concurrency

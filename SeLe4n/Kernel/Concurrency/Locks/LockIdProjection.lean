@@ -126,10 +126,62 @@ def lockKind : KernelObject → LockKind
 /-- WS-SM SM3.B.1: totality witness — `lockKind` is defined for every
 `KernelObject`.  Trivial (every total function returns a value of
 its codomain), but consumed by SM3.C as the "every object has a
-declared lock kind" structural lemma. -/
+declared lock kind" structural lemma.  Mirrors SM3.A's
+`objectLockOf_exists` totality witness. -/
 theorem lockKind_exists (obj : KernelObject) :
     ∃ k : LockKind, obj.lockKind = k :=
   ⟨obj.lockKind, rfl⟩
+
+/-- WS-SM SM3.B.1 audit-pass-2: substantive co-domain witness —
+`lockKind` returns one of the seven kernel-object kinds
+(`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
+`.untyped`, `.schedContext`).  It NEVER returns `.objStore`,
+`.reply`, or `.page` — the three `LockKind` variants that have
+no corresponding kernel-object struct in seLe4n's model.
+
+This is the substantive counterpart to `lockKind_exists`: it tells
+consumers something useful (the actual range of `lockKind`) rather
+than the vacuous "lockKind has a value".  Consumed by SM3.C's
+`lockSetHeld` predicate when checking that every LockId in a
+`lockSet` corresponds to a modeled object kind. -/
+theorem lockKind_in_modeledKinds (obj : KernelObject) :
+    obj.lockKind = .tcb ∨ obj.lockKind = .endpoint ∨
+    obj.lockKind = .notification ∨ obj.lockKind = .cnode ∨
+    obj.lockKind = .vspaceRoot ∨ obj.lockKind = .untyped ∨
+    obj.lockKind = .schedContext := by
+  cases obj
+  case tcb _ => exact Or.inl rfl
+  case endpoint _ => exact Or.inr (Or.inl rfl)
+  case notification _ => exact Or.inr (Or.inr (Or.inl rfl))
+  case cnode _ => exact Or.inr (Or.inr (Or.inr (Or.inl rfl)))
+  case vspaceRoot _ =>
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))
+  case untyped _ =>
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
+  case schedContext _ =>
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))
+
+/-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.objStore`.
+
+The `.objStore` `LockKind` corresponds to the SystemState-level
+table-level lock (`SystemState.objStoreLock`), not to any
+per-object struct.  A consumer that processes `obj.lockKind` and
+expects a modeled kind can rely on this witness. -/
+theorem lockKind_ne_objStore (obj : KernelObject) :
+    obj.lockKind ≠ .objStore := by
+  cases obj <;> intro h <;> cases h
+
+/-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.reply`
+(SM3.A.5 N/A — Reply not modeled as a kernel-object struct). -/
+theorem lockKind_ne_reply (obj : KernelObject) :
+    obj.lockKind ≠ .reply := by
+  cases obj <;> intro h <;> cases h
+
+/-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.page`
+(SM3.A.8 N/A — page mappings stored inline in VSpaceRoot.mappings). -/
+theorem lockKind_ne_page (obj : KernelObject) :
+    obj.lockKind ≠ .page := by
+  cases obj <;> intro h <;> cases h
 
 /-- WS-SM SM3.B.1: agreement with `objectType` — the kind tag
 projection is in lock-step with the type tag projection.
@@ -218,12 +270,10 @@ specialises to `(.tcb, tid.toObjId)`. -/
     LockId.fromObject oid (KernelObject.schedContext sc) =
       ⟨.schedContext, oid⟩ := rfl
 
-/-- WS-SM SM3.B.1: agreement with the lock-field projection.
-`LockId.fromObject` says nothing about the lock *state* (only the
-kind + ObjId pair); but for `LockId.lookup`-derived information,
-the kind side aligns with `objectLockOf`'s underlying variant. -/
-theorem fromObject_lockKind_eq (oid : SeLe4n.ObjId) (o : KernelObject) :
-    (LockId.fromObject oid o).kind = o.lockKind := rfl
+-- (Audit-pass-2: removed the duplicate `fromObject_lockKind_eq`,
+-- which was literally identical to `fromObject_kind` above —
+-- same statement, same `rfl` proof, only differing in the lack of
+-- `@[simp]` and in the docstring's framing.  Use `fromObject_kind`.)
 
 -- ============================================================================
 -- SM3.B.2 — LockId.lookup

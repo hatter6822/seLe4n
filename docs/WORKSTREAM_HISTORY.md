@@ -1039,14 +1039,16 @@ declarations on top of SM3.A's per-object lock fields and SM0.I's
   surface anchors, decidable examples on small concrete LockSets,
   49 runtime `assertBool` assertions.
 
-**SM3.B inventory (81 entries — audit-pass-1 expansion)**:
+**SM3.B inventory (87 entries — audit-pass-1+2 expansion)**:
 `LockSetInventory.lean` mirrors SM3.A's `PerObjectLockInventory`
 pattern with the `lkst!` macro and 5 categories:
-`.projection` (18 — 1 lockKind def + 7 per-variant unfolds +
-agreement-with-objectType + LockId.fromObject + LockId.lookup +
-4 lookup structural theorems + 3 fail-closed N/A witnesses),
-`.lockSet` (25), `.consistency` (25), `.acquireSort` (5),
-`.algebra` (8 — including `LockSet.union_mem_inv` and
+`.projection` (22 — 1 lockKind def + 7 per-variant unfolds +
+agreement-with-objectType + 4 audit-pass-2 lockKind co-domain
+theorems + LockId.fromObject + LockId.lookup + 4 lookup
+structural theorems + 3 fail-closed N/A witnesses),
+`.lockSet` (25), `.consistency` (25), `.acquireSort` (6 — adds
+`lockAcquireSequence_perm`), `.algebra` (9 — adds
+`LockSet.containsKey_iff` alongside `LockSet.union_mem_inv` and
 `LockSet.fst_inj_at_pairs`).  Plus per-category count witnesses,
 partition-sum theorem, Nodup-on-identifiers / descriptions, and
 the coverage theorem
@@ -1087,7 +1089,33 @@ initial-landing):
   §12 canonical-sort determinism, §13 LockId.lookup on non-empty
   fixture state including kind-mismatch fail-closed); +23
   runtime assertions (49 → 72).
-* **Inventory expansion**: 72 → 81 entries.
+* **Inventory expansion** (audit-pass-1): 72 → 81 entries.
+
+**Audit-pass-2 refinements** (second deeper deep audit, post-
+pass-1; all closures land in the same v0.31.9 release cut):
+
+* **Code-quality cleanup**: removed duplicate
+  `fromObject_lockKind_eq` (identical to `fromObject_kind`);
+  removed unused `[DecidableEq α]` constraint from
+  `list_fst_inj_of_nodup_keys`.
+* **Substantive co-domain theorems**: `lockKind_in_modeledKinds`
+  (returns one of 7 modeled kinds), `lockKind_ne_objStore`,
+  `lockKind_ne_reply`, `lockKind_ne_page` (fail-closed
+  witnesses).  Replace the trivial `lockKind_exists` with
+  actually-useful information about the range of `lockKind`.
+* **Donation-path scope clarification**: explicitly documents
+  in `LockSetTransitions.lean` that the static lockSet covers
+  only directly-named objects; the donation path
+  (state-discovered SchedContext + original-owner TCB) is
+  deferred to SM3.C's acquire-inspect-extend-acquire-rest
+  sub-call pattern.
+* **Inventory expansion** (audit-pass-2): 81 → 87 entries (+4
+  projection: 4 lockKind co-domain theorems; +1 acquireSort:
+  `lockAcquireSequence_perm`; +1 algebra:
+  `LockSet.containsKey_iff`).
+* **Test-coverage expansion**: 72 → 83 runtime assertions (+7
+  in §14 lockKind co-domain, +4 in §15 fst_inj structural
+  witness).
 
 Follow-on: SM3.C (`withLockSet` 2PL combinator), SM3.D
 (deadlock-freedom Theorem 2.1.9), SM3.E (serializability Theorem

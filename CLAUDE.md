@@ -2943,6 +2943,37 @@ documentation lives under `docs/` and `docs/gitbook/`.
     (`union_mem_inv`).  Per-category counts and partition-sum
     theorem updated; `lockSetTheorems_count = 81`.
 
+  **Audit-pass-2 refinements** (second deeper deep audit, post-
+  pass-1; all closures land in the same v0.31.9 release cut):
+  - **Code-quality cleanup**: removed duplicate theorem
+    `fromObject_lockKind_eq` (literally identical to
+    `fromObject_kind`); removed unused `[DecidableEq α]`
+    constraint from `list_fst_inj_of_nodup_keys` (proof never
+    invokes decidability of equality).
+  - **Substantive co-domain theorems**: `lockKind_exists` is
+    genuinely trivial; audit-pass-2 adds 4 useful co-domain
+    witnesses: `lockKind_in_modeledKinds` (returns one of 7
+    modeled kinds), `lockKind_ne_objStore` /
+    `lockKind_ne_reply` / `lockKind_ne_page` (fail-closed
+    witnesses for the SystemState-level + N/A kinds).
+  - **Donation-path scope clarification**: explicitly documents
+    that the statically-declared `lockSet_<τ>` covers only the
+    directly-named objects in syscall args.  The donation path
+    (touches donated SchedContext + original-owner TCB) is
+    state-discovered and handled at SM3.C via the acquire-
+    inspect-extend-acquire-rest sub-call pattern.  PIP-chain
+    TCB locks are inherently dynamic; the SM0.I lock-id total
+    order keeps deadlock-freedom under dynamic locking.
+  - **Inventory expansion**: `lockSetTheorems` grew from 81 to
+    87 entries.  +4 projection (4 `lockKind_*` co-domain
+    theorems); +1 acquireSort (`lockAcquireSequence_perm`); +1
+    algebra (`LockSet.containsKey_iff`).
+  - **Test suite expansion**: 72 → 83 runtime assertions.  +7
+    in §14 `runLockKindCoDomainChecks` (co-domain claims on
+    concrete `KernelObject` values); +4 in §15
+    `runFstInjChecks` (LockSet.fst_inj structural witness).
+    Plus 4 new surface anchors for the audit-pass-2 theorems.
+
   Follow-on: SM3.C (`withLockSet` 2PL combinator,
   `acquireLockOnObject` / `releaseLockOnObject`, `lockSetHeld`
   predicate, RAII discipline, per-`@[export]` migration) per

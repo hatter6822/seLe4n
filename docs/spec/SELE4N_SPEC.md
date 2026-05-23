@@ -1325,19 +1325,22 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `Platform/Staged.lean`.  SM3.C's `withLockSet` 2PL combinator
    will promote them to production-reachable.
 
-   **Test coverage** (audit-pass-1): NEW FILE
-   `tests/LockSetSuite.lean` (~900 LoC) with 105+ surface anchors
-   for every public SM3.B symbol, decidable examples on small
-   concrete LockSets exercising sort ordering and per-transition
-   shape, and 72 runtime `assertBool` assertions across 13
-   sections (§1 empty/singleton, §2 acquire sort, §3 AccessMode
-   algebra, §4 permitted kinds, §5 lockKind helpers, §6 LockId
-   projection, §7 per-transition shapes, §8 inventory aggregator,
-   §9 lub-merging on duplicate keys, §10 LockSet.union semantics,
-   §11 runtime exercise of `lockSet_consistent_*` on concrete
-   args, §12 canonical-sort determinism across insertion orders,
-   §13 `LockId.lookup` on non-default fixture state including
-   kind-mismatch fail-closed branches).  Runnable as
+   **Test coverage** (audit-pass-1+2): NEW FILE
+   `tests/LockSetSuite.lean` (~1000 LoC) with 110+ surface
+   anchors for every public SM3.B symbol, decidable examples on
+   small concrete LockSets exercising sort ordering and
+   per-transition shape, and 83 runtime `assertBool` assertions
+   across 15 sections (§1 empty/singleton, §2 acquire sort, §3
+   AccessMode algebra, §4 permitted kinds, §5 lockKind helpers,
+   §6 LockId projection, §7 per-transition shapes, §8 inventory
+   aggregator, §9 lub-merging on duplicate keys, §10
+   LockSet.union semantics, §11 runtime exercise of
+   `lockSet_consistent_*` on concrete args, §12 canonical-sort
+   determinism across insertion orders, §13 `LockId.lookup` on
+   non-default fixture state including kind-mismatch fail-closed
+   branches, §14 lockKind co-domain audit-pass-2 — verifies
+   lockKind never returns `.objStore`/`.reply`/`.page`, §15
+   `LockSet.fst_inj_at_pairs` structural witness).  Runnable as
    `lake exe lock_set_suite`.  Wired into Tier 2 (negative) and
    Tier 3 (invariant-surface) pipelines.
 
@@ -1368,6 +1371,37 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      + `lockKind_eq_of_objectType`; +1 algebra: `union_mem_inv`).
    * **Test-coverage gap closures**: 5 new runtime check sections
      (§9..§13), +23 runtime assertions over the initial landing.
+
+   **Audit-pass-2 refinements** (second deeper deep audit;
+   land in the same v0.31.9 release cut):
+
+   * **Code-quality cleanup**: removed duplicate theorem
+     `fromObject_lockKind_eq` (literally identical to
+     `fromObject_kind`); removed unused `[DecidableEq α]`
+     constraint from `list_fst_inj_of_nodup_keys` (proof never
+     invokes decidability of equality).
+   * **Substantive co-domain theorems**: `KernelObject.lockKind_exists`
+     is genuinely trivial; audit-pass-2 adds 4 useful co-domain
+     theorems: `lockKind_in_modeledKinds`, `lockKind_ne_objStore`,
+     `lockKind_ne_reply`, `lockKind_ne_page`.  These tell SM3.C
+     consumers that a `KernelObject`-derived `LockId` will never
+     refer to a SystemState-level or N/A kind.
+   * **Donation-path scope clarification**: explicitly documents
+     in `LockSetTransitions.lean` that the statically-declared
+     `lockSet_<τ>` covers only the directly-named objects in
+     syscall args.  The donation path (touches donated
+     SchedContext + original-owner TCB) is state-discovered and
+     deferred to SM3.C's acquire-inspect-extend-acquire-rest
+     sub-call pattern.  PIP-chain TCB locks are inherently
+     dynamic; the SM0.I lock-id total order keeps deadlock-
+     freedom under dynamic locking.
+   * **Inventory expansion** (audit-pass-2): 81 → 87 entries (+4
+     projection: 4 `lockKind_*` co-domain theorems; +1
+     acquireSort: `lockAcquireSequence_perm`; +1 algebra:
+     `LockSet.containsKey_iff`).
+   * **Test-coverage gap closures**: 2 new runtime check sections
+     (§14 lockKind co-domain, §15 fst_inj structural witness),
+     +11 runtime assertions (72 → 83).
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the

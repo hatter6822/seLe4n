@@ -527,7 +527,7 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 | SM3.B.6 | `lockAcquireSequence_ordered` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.7 | `lockAcquireSequence_complete` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.8 | `lockAcquireSequence_canonical` | `Locks/LockSet.lean` | LANDED |
-| SM3.B.9 | `tests/LockSetSuite.lean` (~900 LoC, 72 assertions after audit-pass-1) | `tests/LockSetSuite.lean` | LANDED |
+| SM3.B.9 | `tests/LockSetSuite.lean` (~1000 LoC, 83 assertions after audit-pass-2) | `tests/LockSetSuite.lean` | LANDED |
 
 **Adaptations from the pseudocode in this section**:
 
@@ -551,6 +551,32 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 * Per-syscall lockSets take post-cap-resolution `ObjId` arguments
   rather than raw `CPtr`s — keeps the function static (no state
   parameter) per plan §4.1.
+
+**Audit-pass-2 closure additions** (second deeper deep audit;
+all closures land in the same v0.31.9 release cut):
+
+* **Code-quality cleanup**: removed duplicate theorem
+  `fromObject_lockKind_eq` (literally identical to
+  `fromObject_kind`); removed unused `[DecidableEq α]`
+  constraint from `list_fst_inj_of_nodup_keys`.
+* **Substantive co-domain theorems**: `KernelObject.lockKind_exists`
+  is genuinely trivial; audit-pass-2 adds 4 useful co-domain
+  theorems: `lockKind_in_modeledKinds`, `lockKind_ne_objStore`,
+  `lockKind_ne_reply`, `lockKind_ne_page`.  These tell SM3.C
+  consumers that a `KernelObject`-derived `LockId` will never
+  refer to a SystemState-level or N/A kind.
+* **Donation-path scope clarification**: explicitly documents
+  in `LockSetTransitions.lean` that the statically-declared
+  `lockSet_<τ>` covers only the directly-named objects.  The
+  state-discovered donation path (touches donated SchedContext
+  + original-owner TCB) is handled at SM3.C via the acquire-
+  inspect-extend-acquire-rest sub-call pattern.  PIP-chain TCB
+  locks are inherently dynamic; the SM0.I lock-id total order
+  keeps deadlock-freedom under dynamic locking.
+* **Inventory expansion**: 81 → 87 entries (+4 projection +1
+  acquireSort +1 algebra).
+* **Test suite expansion**: 72 → 83 runtime assertions
+  (§14 `runLockKindCoDomainChecks`, §15 `runFstInjChecks`).
 
 **Audit-pass-1 closure additions** (post-initial-landing
 comprehensive deep audit, all closures land in the same v0.31.9
