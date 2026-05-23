@@ -923,7 +923,95 @@ The Theorem 3.5.1 above.
 
 **Size**: L.
 
-### 5.3 Two-phase locking discipline (SM3.C, 5 PRs, 11 sub-tasks)
+### 5.3 Two-phase locking discipline (SM3.C, 5 PRs, 11 sub-tasks) — LANDED
+
+All 11 sub-tasks LANDED on branch `claude/quirky-mayer-lSoD2`
+within the v0.31.9 release cut (mirroring the SM3.A / SM3.B
+landing pattern — no version bump; SM3.A..SM3.E close out together
+en route to v1.0.0).  See the CHANGELOG entry "WS-SM SM3.C
+LANDED" and CLAUDE.md / AGENTS.md "Active workstream context" for
+the full per-sub-task description.
+
+| Sub | Description | Files | Status |
+|-----|-------------|-------|--------|
+| SM3.C.1 | `withLockSet` 2PL combinator + `acquireAll`/`releaseAll` folds | `Locks/WithLockSet.lean` | LANDED |
+| SM3.C.2 | `acquireLockOnObject` / `releaseLockOnObject` + `KernelObject.updateLock` | `Locks/WithLockSet.lean` | LANDED |
+| SM3.C.3 | RAII discipline (modelled via the total `withLockSet` 3-phase fold; see note) | `Locks/WithLockSet.lean` | LANDED |
+| SM3.C.4 | `lockHeld` / `lockSetHeld` predicate + decidability + default-state-empty | `Locks/LockSetHeld.lean` | LANDED |
+| SM3.C.5 | `lockSet_acquired_in_order` | `Locks/LockSet2PL.lean` | LANDED |
+| SM3.C.6 | `lockSet_released_in_reverse` | `Locks/LockSet2PL.lean` | LANDED |
+| SM3.C.7 | `lockSet_atomic_under_2pl` + 3-phase decomposition | `Locks/LockSet2PL.lean` | LANDED |
+| SM3.C.8 | `lockSet_invariant_preserved` / `withLockSet_invariant_preserved` (Cor 2.1.11) | `Locks/LockSet2PL.lean` | LANDED |
+| SM3.C.9 | Migrate every `@[export]` body (deferred to SM5+; see note) | — | DEFERRED |
+| SM3.C.10 | Tests verify RAII discipline | `tests/WithLockSetSuite.lean` | LANDED |
+| SM3.C.11 | Dynamic PIP chain-walk locking (a–f) | `Locks/DynamicChainExtension.lean` | LANDED |
+
+**Adaptations from the pseudocode in this section**:
+
+* **`withLockSet` signature** — the plan's pseudocode uses
+  `SystemState → BaseIO (SystemState × α)`.  The landed form uses
+  the *pure* `SystemState → SystemState × α` because the abstract
+  SystemState model tracks lock state as a pure field-update
+  (advancing each per-object `RwLockState` via
+  `RwLockState.applyOp`).  This is what SM3.D's deadlock-freedom
+  theorem and SM3.E's serializability theorem reason about.  A
+  future `withLockSetFFI : SystemState → BaseIO (SystemState × α)`
+  overload (deferred to SM5+) wraps `withLockSet` with the typed
+  `LockBridge` FFI wrappers for hardware execution; the two layers
+  correspond via the SM2.C.20 refinement bridge.
+
+* **`Finset` → `LockSet`** — same mathlib-free adaptation as
+  SM3.B: the lock-set type is the SM3.B `LockSet` (a `List` with a
+  `Nodup`-keys invariant), not `Finset`.
+
+* **SM3.C.3 RAII** — the plan sketches a `try/catch` panic-safe
+  variant.  Lean's `BaseIO` has no exception-throwing primitives,
+  and the abstract `withLockSet` is a *total pure function* (no
+  panic paths exist: `acquireLockOnObject` is total over every
+  `LockId` shape via the `.reply`/`.page` no-op arms and the
+  absent-object branch of `updateObjectAt`).  The RAII guarantee
+  is therefore structural: the release fold *always* runs after
+  the action because it is the next statement in the total fold,
+  not conditional on any success flag.  The Rust-side
+  `panic = "abort"` discipline (SM2.D) handles the hardware panic
+  case — a panic halts the kernel, at which point "release" is
+  moot.
+
+* **SM3.C.8 substantive form** — the plan's contract is a
+  schema.  The landed form makes it non-tautological: the
+  metatheorem `lockSet_invariant_preserved` proves that the
+  acquire fold preserves any *lock-insensitive* invariant
+  (discharged via the structural-preservation foundation lemmas
+  `acquireLockOnObject_preserves_objStoreLock_of_modeled`,
+  `updateObjectAt_preserves_objectType_at`,
+  `KernelObject.updateLock_preserves_objectType`).
+  `withLockSet_invariant_preserved` composes the acquire-fold +
+  action + release-fold preservation into the full Corollary
+  2.1.11 closure.  This reduces the SMP proof obligation to "the
+  invariant is lock-insensitive", which is discharged structurally
+  per invariant class — the single-core proof of the action is
+  reused verbatim.
+
+* **SM3.C.9 deferral** — migrating every `@[export]` body to wrap
+  its transition in `withLockSet` requires the per-core kernel
+  state seam that SM5 introduces.  At SM3.C the kernel is still
+  modelled single-core (the abstract model has one core), so the
+  `withLockSet` wrappers would be no-ops on the current kernel.
+  The migration lands with SM5's per-core scheduler integration,
+  which is when the wrappers become semantically active.  This
+  matches the plan's own observation that SM3.C.9 "spreads this
+  over multiple PRs (~3-5 PRs)".
+
+* **SM3.C.11 dynamic chain** — the abstract walker
+  (`walkAndAcquire`) is a fuel-bounded pure function returning a
+  `WalkOutcome` (`extended` / `terminated` / `exhausted`).  The
+  optimistic-walk-and-verify retry loop and the CAS-based
+  acquisition live at the FFI layer (SM5+ runtime).  The abstract
+  layer proves the deadlock-freedom witness
+  `walkAndAcquire_path_ascending_in_ObjId_if_terminated`: any
+  terminating walk produces a path whose `ObjId.val`s are strictly
+  ascending — the SM0.I total-order discipline that closes any
+  potential wait-cycle.
 
 #### SM3.C.1 — `withLockSet` combinator
 

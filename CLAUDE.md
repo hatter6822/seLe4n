@@ -3156,15 +3156,131 @@ documentation lives under `docs/` and `docs/gitbook/`.
     extensions (+3), and §2 acquireSort with the SC at level 7
     sorting last (+2).
 
-  Follow-on: SM3.C (`withLockSet` 2PL combinator,
-  `acquireLockOnObject` / `releaseLockOnObject`, `lockSetHeld`
-  predicate, RAII discipline, per-`@[export]` migration, plus
-  the new SM3.C.11 sub-task for dynamic PIP chain-walk locking
-  via `withDynamicChainExtension` consuming the audit-pass-5
-  `pipChainStart_*` structural signals) per
+  **WS-SM SM3.C LANDED on branch
+  `claude/quirky-mayer-lSoD2`** (withLockSet 2PL combinator,
+  lockSetHeld predicate, 2PL discipline theorems, dynamic PIP
+  chain-walk locking; closes the third sub-phase of SM3 with 10 of
+  11 sub-tasks LANDED — SM3.C.9 deferred to SM5+).  Plan §5.3 of
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md);
+  wires SM3.B's per-transition `lockSet` declarations into the
+  verified two-phase-locking discipline that SM3.D (deadlock-freedom)
+  and SM3.E (serializability) build on.  Lands within the v0.31.9
+  release cut (no version bump), mirroring SM3.A / SM3.B.
+
+  - **SM3.C.1**: `withLockSet (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState) :
+    SystemState × α` 2PL combinator — acquires every lock in
+    `S.lockAcquireSequence` (LockId ascending), runs `action`,
+    releases in reverse.  Pure-function form (the plan's `BaseIO`
+    pseudocode is the FFI overload, deferred to SM5+).  `acquireAll`
+    / `releaseAll` fold helpers with nil/cons unfold lemmas.  File
+    `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`.
+  - **SM3.C.2**: `acquireLockOnObject` / `releaseLockOnObject`
+    dispatch on `l.kind` — `.objStore` advances
+    `SystemState.objStoreLock`; modeled kinds route through
+    `updateObjectAt` + `KernelObject.updateLock` (advancing the
+    inner per-object `RwLockState` via `applyOp`); `.reply`/`.page`
+    are no-ops.  `updateLock` carries 7 `@[simp]` unfolds +
+    `updateLock_preserves_lockKind` /
+    `updateLock_preserves_objectType` / `objectLockOf_updateLock`.
+  - **SM3.C.3**: RAII discipline — the abstract `withLockSet` is a
+    total pure function with no panic paths, so the release fold
+    always runs after the action (structural, not exception-
+    handler-based).  The Rust-side `panic = "abort"` discipline
+    (SM2.D) covers the hardware panic case.
+  - **SM3.C.4**: `lockHeld` / `lockSetHeld` SMP-migration
+    precondition for Corollary 2.1.11
+    (`SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean`).
+    `RwLockState.coreHolds` per-state predicate; `lockHeld`
+    dispatches on `l.kind` (modeled kinds via `LockId.lookup`,
+    `.objStore` via `s.objStoreLock`, fail-closed on `.reply`/
+    `.page`); `lockSetHeld` forall-over-pairs.  Decidable;
+    `lockSetHeld_empty` / `_singleton` / `_subset` (monotone) +
+    `lockSetHeld_default_iff_empty` (a freshly-booted system holds
+    no locks).
+  - **SM3.C.5**: `lockSet_acquired_in_order` — acquire order is
+    `LockId` ascending, lifting SM3.B.6's
+    `lockAcquireSequence_ordered`.
+  - **SM3.C.6**: `lockSet_released_in_reverse` — release order is
+    descending (reverse of acquire).
+  - **SM3.C.7**: `lockSet_atomic_under_2pl` +
+    `withLockSet_three_phase_decomposition` (Theorem 2.1.10
+    operational form — the result is the action's output on the
+    post-acquire state composed with the release fold; no observer
+    interleaves with the action phase).  File
+    `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean`.
+  - **SM3.C.8**: `lockSet_invariant_preserved` (Corollary 2.1.11,
+    SUBSTANTIVE — not a tautology).  Proves by induction on the
+    canonical acquisition sequence that the acquire fold preserves
+    any lock-insensitive invariant.  The lock-insensitivity
+    hypothesis is discharged structurally for the kind-discipline
+    invariant class by the foundation lemmas
+    `acquireLockOnObject_preserves_objStoreLock_of_modeled`,
+    `releaseLockOnObject_preserves_objStoreLock_of_modeled`, and
+    `updateObjectAt_preserves_objectType_at` (which threads the
+    RHTable extension invariant `s.objects.invExt` through
+    `getElem?_insert_self` / `getElem?_insert_ne` to show the kind
+    tag at every key is preserved).
+    `withLockSet_invariant_preserved` composes the acquire-fold +
+    action + release-fold preservation into the full closure
+    SM4..SM6 phase migrations consume.
+  - **SM3.C.9**: DEFERRED to SM5+.  Migrating every `@[export]`
+    body to wrap its transition in `withLockSet` requires the
+    per-core kernel state seam SM5 introduces; at SM3.C the kernel
+    is modelled single-core so the wrappers would be no-ops on the
+    current abstract model.  A sequencing deferral, not a
+    correctness gap.
+  - **SM3.C.10**: `tests/WithLockSetSuite.lean` (~430 LoC) — 70+
+    surface anchors, 12 decidable examples, 41 runtime `assertBool`
+    assertions across 9 sections.  Runnable as
+    `lake exe with_lock_set_suite`; Tier-2 + Tier-3 wired.
+  - **SM3.C.11**: dynamic PIP chain-walk locking
+    (`SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean`).
+    The 3 PIP-invoking transitions walk a blocking chain whose
+    length is state-discovered, so no static lockSet can contain
+    the chain TCBs.  `withDynamicChainExtension` consumes SM3.B's
+    `pipChainStart_<τ>` signal and walks via `walkAndAcquire` (a
+    fuel-bounded — `MAX_PIP_RETRIES = 64` — pure function returning
+    a `WalkOutcome`).  The deadlock-freedom witness
+    `walkAndAcquire_path_ascending_in_ObjId_if_terminated` proves
+    that any terminating walk produces a path whose `ObjId.val`s
+    are strictly ascending (the SM0.I total-order discipline that
+    closes any potential wait-cycle).  `dynamicChainHeld` is the
+    4-conjunct chain-held predicate.
+
+  **SM3.C inventory (61 entries)**: `withLockSetTheorems` in
+  `Sm3CInventory.lean` across 5 categories (`.combinator` = 29,
+  `.held` = 9, `.ordering` = 3, `.atomicity` = 7, `.dynamicChain`
+  = 13) with compile-time-checked `wlst!` macro + per-category
+  counts + partition-sum + Nodup witnesses.
+
+  **Module reachability**: all 5 SM3.C modules staged via the
+  LockSet re-export hub (`Platform/Staged.lean` +
+  `staged_module_allowlist.txt`); SM5+ per-core scheduler
+  integration is the first production runtime exerciser.
+
+  **AK7-cascade cleanliness**: routes through `RHTable.get?`
+  method form + the generic `default_objects_get?_none` helper;
+  the `RAW_MATCH_TOTAL` floor stays at the v0.31.2 baseline (122)
+  and `RAW_LOOKUP_TID` drops 759 → 757.
+
+  **Test coverage**: 320/320 Lean modules build green;
+  `lake exe with_lock_set_suite` reports 41/41 PASS; full Tier
+  0+1+2+3 green; AK7 cascade monotonicity all metrics pass.
+  **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries (only the
+  standard `propext` / `Quot.sound` / `Classical.choice`
+  foundational axioms).  **Items deferred past v1.0.0 with
+  correctness impact**: NONE.
+
+  Follow-on: SM3.D (deadlock-freedom Theorem 2.1.9 via the
+  `noDeadlock` predicate + `deadlockFreedom_under_2pl_and_ordering`
+  + wait-graph acyclicity, consuming SM3.C's
+  `lockSet_acquired_in_order` + the SM0.I total order) and SM3.E
+  (serializability Theorem 2.1.10 + the single-core-proof-
+  preservation Corollary 2.1.11 instantiations) close the SM3
+  phase per
   [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
-  §5.3; SM3.D (deadlock-freedom Theorem 2.1.9) and SM3.E
-  (serializability Theorem 2.1.10) close the SM3 phase.
+  §§5.4..5.5.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

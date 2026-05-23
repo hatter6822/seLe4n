@@ -2045,4 +2045,112 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_aggregate_covers_every_syscall
 EOF'
 
+# WS-SM SM3.C — withLockSet 2PL discipline + lockSetHeld + dynamic
+# chain extension + 51-theorem inventory.  Surface anchors verify
+# every SM3.C public symbol survives renames at elaboration time.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.LockSet
+import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
+import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
+import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
+import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
+
+-- SM3.C.1: withLockSet combinator + unfolding lemmas.
+#check @SeLe4n.Kernel.Concurrency.withLockSet
+#check @SeLe4n.Kernel.Concurrency.withLockSet_empty
+#check @SeLe4n.Kernel.Concurrency.withLockSet_unfold
+#check @SeLe4n.Kernel.Concurrency.withLockSet_eq_decomposition
+#check @SeLe4n.Kernel.Concurrency.withLockSet_fst
+#check @SeLe4n.Kernel.Concurrency.withLockSet_snd
+-- SM3.C.2: acquireLockOnObject / releaseLockOnObject + N/A simp lemmas.
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_reply
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_page
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_reply
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_page
+-- SM3.C.1 helpers: AccessMode → RwLockOp + acquireAll/releaseAll.
+#check @SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp
+#check @SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp
+#check @SeLe4n.Kernel.Concurrency.acquireAll
+#check @SeLe4n.Kernel.Concurrency.releaseAll
+#check @SeLe4n.Kernel.Concurrency.acquireAll_nil
+#check @SeLe4n.Kernel.Concurrency.releaseAll_nil
+#check @SeLe4n.Kernel.Concurrency.acquireAll_cons
+#check @SeLe4n.Kernel.Concurrency.releaseAll_cons
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt
+-- SM3.C.2 KernelObject.updateLock helper.
+#check @SeLe4n.Model.KernelObject.updateLock
+#check @SeLe4n.Model.KernelObject.updateLock_tcb
+#check @SeLe4n.Model.KernelObject.updateLock_endpoint
+#check @SeLe4n.Model.KernelObject.updateLock_notification
+#check @SeLe4n.Model.KernelObject.updateLock_cnode
+#check @SeLe4n.Model.KernelObject.updateLock_vspaceRoot
+#check @SeLe4n.Model.KernelObject.updateLock_untyped
+#check @SeLe4n.Model.KernelObject.updateLock_schedContext
+#check @SeLe4n.Model.KernelObject.updateLock_preserves_lockKind
+#check @SeLe4n.Model.KernelObject.updateLock_preserves_objectType
+#check @SeLe4n.Model.KernelObject.objectLockOf_updateLock
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_preserves_objStoreLock
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objStoreLock_of_modeled
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objStoreLock_of_modeled
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_preserves_objectType_at
+-- SM3.C.4 lockHeld / lockSetHeld + decidability + default-state-empty.
+#check @SeLe4n.Kernel.Concurrency.RwLockState.coreHolds
+#check @SeLe4n.Kernel.Concurrency.lockHeld
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld
+#check @SeLe4n.Kernel.Concurrency.lockHeld_reply
+#check @SeLe4n.Kernel.Concurrency.lockHeld_page
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_empty
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_singleton
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_subset
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_default_iff_empty
+-- SM3.C.5/C.6 ordering theorems.
+#check @SeLe4n.Kernel.Concurrency.acquireOrder
+#check @SeLe4n.Kernel.Concurrency.releaseOrder
+#check @SeLe4n.Kernel.Concurrency.releaseOrder_eq_acquireOrder_reverse
+#check @SeLe4n.Kernel.Concurrency.lockSet_acquired_in_order
+#check @SeLe4n.Kernel.Concurrency.lockSet_released_in_reverse
+-- SM3.C.7/C.8 atomicity/invariant-preservation theorems.
+#check @SeLe4n.Kernel.Concurrency.withLockSet_three_phase_decomposition
+#check @SeLe4n.Kernel.Concurrency.lockSet_atomic_under_2pl
+#check @SeLe4n.Kernel.Concurrency.lockSet_invariant_preserved
+#check @SeLe4n.Kernel.Concurrency.withLockSet_invariant_preserved
+#check @SeLe4n.Kernel.Concurrency.lockSet_action_state_unchanged_outside_lockSet
+#check @SeLe4n.Kernel.Concurrency.withLockSet_satisfies_strict_2PL
+#check @SeLe4n.Kernel.Concurrency.withLockSet_computation
+-- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
+#check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
+#check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES_pos
+#check @SeLe4n.Kernel.Concurrency.PipChainPath
+#check @SeLe4n.Kernel.Concurrency.PipChainPath.singleton
+#check @SeLe4n.Kernel.Concurrency.PipChainPath.length
+#check @SeLe4n.Kernel.Concurrency.WalkOutcome
+#check @SeLe4n.Kernel.Concurrency.walkStep
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold
+#check @SeLe4n.Kernel.Concurrency.dynamicChainHeld
+#check @SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_path_ascending_in_ObjId_if_terminated
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquireAux_terminated_length_le
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_length_bounded
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_total
+-- SM3.C Inventory aggregator.
+#check @SeLe4n.Kernel.Concurrency.WithLockSetCategory
+#check @SeLe4n.Kernel.Concurrency.WithLockSetTheorem
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_combinator_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_held_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_ordering_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_atomicity_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_dynamicChain_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_partition_sum
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_descriptions_nodup
+EOF'
+
 finalize_report
