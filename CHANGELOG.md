@@ -1,3 +1,902 @@
+## Unreleased — WS-SM SM3.B audit-pass-6: external Codex code-review closure (4 P1 + 1 P2 lock-set under-approximations resolved)
+
+External code-review on PR #793 from chatgpt-codex-connector
+flagged 5 lock-set under-approximations: 4 P1 (high-severity) and
+1 P2 (medium-severity).  Per CLAUDE.md's `Implement-the-improvement`
+rule (forbidden to document inferior code), each finding was
+re-verified by source-level tracing of the actual kernel operation
+and resolved by extending the static `lockSet_<τ>` declaration.
+
+### P1 — `lockSet_tcbSetPriority`: SchedContext write lock
+
+`SchedContext.PriorityManagement.setPriorityOp` calls
+`updatePrioritySource` which dispatches on
+`targetTcb.schedContextBinding`:
+
+* `.unbound`: writes the TARGET TCB's `priority` field (already
+  covered by `tcbLock targetTcbTid .write`).
+* `.bound scId` / `.donated scId _`: writes the bound
+  SchedContext's `priority` field via
+  `st.objects.insert scId.toObjId (.schedContext sc')`.
+
+Pre-audit: this SC write was unsynchronised against concurrent
+SchedContext operations on the same object.
+
+Fix: `lockSet_tcbSetPriority` gains a
+`boundSchedContextId : Option SchedContextId` arg.  The caller
+pre-resolves `targetTcb.schedContextBinding` before computing
+the lockSet — mirrors the SM3.B audit-pass-3 pattern for
+`tcbSuspend.bindingScId`.
+
+### P1 — `lockSet_tcbSetMCPriority`: SchedContext write lock
+
+`SchedContext.PriorityManagement.setMCPriorityOp` ALWAYS writes
+the target TCB's `maxControlledPriority` field (covered by the
+existing `tcbLock targetTcbTid .write`).  In the priority-capping
+branch (when the target's current effective priority exceeds the
+new MCP), it then calls `updatePrioritySource` with the capped
+priority — which writes the bound SchedContext if the binding is
+`.bound`/`.donated` (same shape as `setPriorityOp`).
+
+Fix: same `boundSchedContextId : Option SchedContextId` arg
+pattern as `lockSet_tcbSetPriority`.
+
+### P1 — `lockSet_tcbSetIPCBuffer`: VSpaceRoot read lock
+
+`Architecture.IpcBufferValidation.setIPCBufferOp` calls
+`validateIpcBufferAddress` which reads:
+
+1. `st.getVSpaceRoot? targetTcb.vspaceRoot` — reads the target's
+   VSpaceRoot object.
+2. `root.lookup addr` — traverses the VSpaceRoot's `mappings`
+   RHTable (the page table).
+
+Both are reads (no writes to the VSpaceRoot itself).
+
+Pre-audit: the IPC-buffer validation could race with a concurrent
+`VSpaceMap`/`VSpaceUnmap` on the same address space and observe
+an inconsistent mapping.
+
+Fix: `lockSet_tcbSetIPCBuffer` gains a
+`targetVSpaceRootObjId : Option ObjId` arg.  Read lock is
+sufficient.  `none` covers the case where the target TCB itself
+doesn't exist (the syscall fails before reaching `setIPCBufferOp`
+and no VSpace read happens).
+
+### P2 — `lockSet_serviceRegister`: endpoint read lock
+
+`Kernel.Service.Registry.registerService` reads
+`st.objects[epId]?` to verify the target object is a `.endpoint`
+variant (R4-C.2 / L-09).  Pre-audit: this read could race with
+concurrent endpoint writers (e.g., IPC queue mutations from
+`endpointSend` / `endpointReceive`) and observe a mid-transition
+`KernelObject` variant.
+
+Fix: `lockSet_serviceRegister` gains a mandatory
+`endpointObjId : ObjId` arg.  Read lock is sufficient since
+`registerService` only writes the `serviceRegistry` map (not the
+endpoint object itself).
+
+### `permittedKinds` extensions
+
+* `.tcbSetPriority` → adds `.schedContext`
+* `.tcbSetMCPriority` → adds `.schedContext`
+* `.tcbSetIPCBuffer` → adds `.vspaceRoot`
+* `.serviceRegister` → adds `.endpoint`
+* `.serviceRevoke` / `.serviceQuery` → unchanged (split out from
+  `.serviceRegister` in the `permittedKinds` definition since
+  they only touch the `serviceRegistry` map, not kernel objects)
+
+### Consistency-proof updates
+
+The 4 consistency theorems gain literal-list rcases steps and/or
+switch from `lockSet_consistent_of_extended_base` to
+`lockSet_consistent_base_plus_opt`:
+
+* `lockSet_consistent_serviceRegister` — gains 3rd rcases branch
+  for the new endpoint entry; still uses
+  `lockSet_consistent_of_extended_base`.
+* `lockSet_consistent_tcbSetPriority` / `_tcbSetMCPriority` /
+  `_tcbSetIPCBuffer` — switch to
+  `lockSet_consistent_base_plus_opt` with the standard cases-on-
+  the-Option discharge pattern from audit-pass-3.
+
+### Test coverage (106 → 133, +27 runtime assertions)
+
+* NEW §17 `runAuditPass6FootprintChecks` (+10): SC inclusion in
+  bound `setPriority`/`setMCPriority`, VSpaceRoot inclusion in
+  `setIPCBuffer` (+ none-case absence check), endpoint inclusion
+  in `serviceRegister`, plus canonical-sort cross-checks placing
+  each new lock at its correct hierarchy level (SC at level 7,
+  VSpaceRoot at level 8, endpoint at level 4).
+* §4 `runPermittedKindsChecks` (+6): all 4 audit-pass-6
+  extensions verified + 2 unchanged service checks documented.
+* §7 `runPerTransitionShapeChecks` (+7): per-syscall size checks
+  for each new Option arg (with-and-without).
+* §11 `runConsistencyRuntimeChecks` (+4): runtime application of
+  the 4 updated consistency theorems on concrete args.
+* §6 `permittedKinds` decidable examples updated.
+
+### Mathematical correctness verification
+
+* Verified by source-level trace of `setPriorityOp` →
+  `updatePrioritySource` → SC write at
+  `Kernel/SchedContext/PriorityManagement.lean:217-221`.
+* Verified by source-level trace of `setMCPriorityOp` →
+  `updatePrioritySource` at
+  `Kernel/SchedContext/PriorityManagement.lean:347`.
+* Verified by source-level trace of `setIPCBufferOp` →
+  `validateIpcBufferAddress` → `getVSpaceRoot?` + `root.lookup` at
+  `Kernel/Architecture/IpcBufferValidation.lean:76,79`.
+* Verified by source-level trace of `registerService` →
+  `st.objects[epId]?` read at
+  `Kernel/Service/Registry.lean:75`.
+* Confirmed `revokeService` (only `serviceRegistry` mutation) and
+  `lookupServiceByCap` (only `serviceRegistry` fold) do NOT read
+  kernel objects → `lockSet_serviceRevoke` /
+  `lockSet_serviceQuery` unchanged.
+* All 4 new Option-extended lockSets respect the SM0.I lock-id
+  total order: the new SC entries sort to level 7, VSpaceRoot to
+  level 8, and endpoint to level 4 — verified via runtime
+  canonical-sort cross-checks.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.  Full Tier 0+1+2 smoke test green; 320/320 Lean modules
+build cleanly; 133/133 runtime assertions in `lock_set_suite`.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+## Unreleased — WS-SM SM3.B audit-pass-5: structural pipChainStart signal + SM3.C.11 plan section
+
+Audit-pass-4 acknowledged the PIP-chain dynamic-locking case in
+prose but did not encode the obligation at the type level.  Per
+CLAUDE.md's `Implement-the-improvement` rule (forbidden to
+document inferior code), audit-pass-5 implements the structural
+signal AND extends the plan with a comprehensive SM3.C.11
+sub-task for the chain-walk locking design.
+
+### New structural signal: `pipChainStart_<τ>`
+
+Three new declarations in
+`SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean`:
+
+* `pipChainStart_endpointCall : ThreadId → ObjId → ObjId →
+  Option ThreadId → Option SchedContextId → Option ThreadId`
+  — mirrors `receiverTid` (no waiting receiver ⇒ no chain;
+  some receiver ⇒ PIP propagates from the receiver).
+* `pipChainStart_endpointReply : ThreadId → ObjId → ThreadId →
+  Option SchedContextId → Option ThreadId → Option ThreadId`
+  — always emits `revertPIP` at `callerTid` (the replier).
+* `pipChainStart_replyRecv : ThreadId → ObjId → ThreadId →
+  ObjId → Option ThreadId → Option SchedContextId →
+  Option ThreadId → Option ThreadId` — always emits at the
+  caller, symmetric to endpointReply.
+
+Each returns `Option ThreadId`: `some startTid` if the
+transition triggers a PIP chain walk starting at `startTid`,
+`none` otherwise.  SM3.C.11 will consume this signal to invoke
+the dynamic chain-walk locking machinery.
+
+### Structural separation from `lockSet_<τ>`
+
+The chain-start hint is **separate** from the static lockSet:
+
+* `lockSet_<τ>` stays an honest static declaration (every entry
+  is statically computable from args).
+* `pipChainStart_<τ>` is a structural signal about the
+  transition's dynamic locking obligation.
+
+Plan §4.1's `lockSet : args → Finset` signature is preserved
+unchanged.  Separation:
+
+* Keeps `lockSet` honest — declares exactly the static locks.
+* Surfaces the dynamic obligation explicitly at the type level
+  — SM3.C cannot forget to handle the chain.
+* Allows SM3.C to use different dynamic strategies (optimistic
+  walk + verify, lock-coupling, coarse PIP-graph lock) without
+  changing `lockSet`'s signature.
+
+Defense-in-depth: the chain-start TCB is **contained in the
+static lockSet** (e.g., `pipChainStart_endpointCall` returns
+`receiverTid` only when `receiverTid` is in
+`lockSet_endpointCall`'s `(tcb receiverTid, write)` entry).
+Verified by 2 runtime assertions.
+
+### SM3.C.11 — Dynamic priority-inheritance chain-walk locking
+
+New comprehensive sub-task in
+`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` §5.3 (between
+SM3.C.10 and §5.4) covering:
+
+* **SM3.C.11.a** — `withDynamicChainExtension` combinator with
+  optimistic-walk + verify strategy (release-then-acquire,
+  bounded retries, `ObjId.val` ascending discipline).  Rejected
+  alternatives documented: lock-coupling (violates 2PL), coarse
+  PIP-graph lock (defeats fine-graining), pre-walk + verify
+  (graph mutation race).
+* **SM3.C.11.b** — Per-transition wrappers consuming
+  `pipChainStart_*` (the 3 PIP-invoking transitions).
+* **SM3.C.11.c** — `dynamicChainHeld` predicate (state-relative
+  Prop with Pairwise + blockingServer correctness clauses).
+* **SM3.C.11.d** — Deadlock-freedom theorem
+  (`dynamic_chain_deadlock_free`): two cores cannot deadlock
+  under the ObjId-ascending discipline because each holds at
+  most TWO locks at any instant, and acquisition is monotone
+  in `ObjId.val`.
+* **SM3.C.11.e** — Termination theorem
+  (`walkAndAcquire_terminates`): `MAX_PIP_RETRIES = 64` is
+  sufficient (chain depth bounded by `MAX_THREADS = 1024`;
+  expected retries O(log N) per step).
+* **SM3.C.11.f** — Tests: single-step chain, multi-step chain,
+  adversarial concurrent mutation, two-cores-disjoint
+  regression.
+
+SM3.C lifts from 4 PRs / 10 sub-tasks to 5 PRs / 11 sub-tasks.
+
+### Inventory expansion (87 → 90 entries)
+
+`lockSetTheorems` in `LockSetInventory.lean` gains 3 entries in
+the new `LockSetCategory.chainStart` variant:
+
+* `pipChainStart_endpointCall`
+* `pipChainStart_endpointReply`
+* `pipChainStart_replyRecv`
+
+New count witnesses:
+* `lockSetTheorems_count = 90` (was 87).
+* `lockSetTheorems_chainStart_count = 3` (new).
+* `lockSetTheorems_partition_sum` updated to 6-way sum.
+* `lockSetTheorems_identifiers_nodup` / `_descriptions_nodup`
+  re-verified at the new size via `native_decide`.
+
+### Test suite expansion (96 → 106 runtime assertions)
+
+`tests/LockSetSuite.lean` gains:
+
+* **§1 surface anchors** (+4): `pipChainStart_endpointCall`,
+  `pipChainStart_endpointReply`, `pipChainStart_replyRecv`,
+  `lockSetTheorems_chainStart_count`.
+* **§6e** (NEW, +6 decidable examples): mirror of
+  `runPipChainStartChecks`, exercising each function's domain.
+* **§7 inventory examples**: updated counts (90 total +
+  chainStart=3); inventory partition sum now 6-way.
+* **§16** (NEW, `runPipChainStartChecks`, +9 runtime
+  assertions): receiverTid mirroring, callerTid always-emit,
+  donation-args-ignored property, chain-start-contained-in-
+  static-lockSet defense-in-depth.
+
+### Tier-3 surface coverage
+
+`scripts/test_tier3_invariant_surface.sh` extended with 4 new
+surface anchors: `pipChainStart_endpointCall`,
+`pipChainStart_endpointReply`, `pipChainStart_replyRecv`,
+`lockSetTheorems_chainStart_count`.
+
+### Mathematical correctness verification
+
+* Verified by source-level trace that `propagatePriorityInheritance`
+  (in `Scheduler/PriorityInheritance/Propagate.lean`) is invoked
+  from exactly three syscall sites:
+  - `endpointCallWithDonation` only when `receiverTid` is
+    available (handshake path).
+  - `endpointReplyWithDonation` unconditionally after the base
+    reply.
+  - `endpointReplyRecvWithDonation` unconditionally after the
+    base replyRecv.
+* Verified that the chain-start TCB is the entry point of the
+  walk; the walk then traverses `blockingServer s startTid`
+  recursively.
+* Verified by build that all 3 functions compile cleanly with
+  `@[inline]` (no spurious `unusedSimpArgs` warnings).
+* Verified by runtime test that `chain-start ∈ static lockSet`
+  defense-in-depth holds for the 2 always-emitting variants.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.  Full Tier 0+1+2+3 smoke test green.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  The actual `withDynamicChainExtension` implementation is
+deferred to SM3.C.11 (per the plan's phase boundary — SM3.B is
+the static lock-set declaration phase; SM3.C is the
+2PL-discipline implementation phase).  This is not a
+correctness deferral: SM3.B's structural signal makes the
+SM3.C.11 obligation **mechanically witnessed** — a future SM3.C
+implementation that omits the chain extension while
+`pipChainStart_<τ> args = some _` fails SM3.C.11.b's
+structural completeness check at the type level.
+
+## Unreleased — WS-SM SM3.B audit-pass-4: originalOwner separated for defense-in-depth + PIP-chain dynamic-locking acknowledgement
+
+Deepest deep audit pass.  Audit-pass-3 added donation-path
+lockSet extensions; audit-pass-4 closes one remaining
+defense-in-depth gap and acknowledges the genuinely-dynamic
+PIP-chain case.
+
+### Defense-in-depth refinement: separate originalOwner in reply paths
+
+Audit-pass-3's `lockSet_endpointReply` and `lockSet_replyRecv`
+relied on the kernel invariant `originalOwner == replyTargetTid`
+and only declared a single Option for the donation SC.  Per plan
+§4.1's "union over all paths" requirement and as defense-in-
+depth against hypothetical invariant violation, audit-pass-4
+declares the originalOwner TCB lock as a SEPARATE
+`donatedOriginalOwnerTid : Option ThreadId` arg:
+
+* `lockSet_endpointReply (callerTid, cnRoot, replyTargetTid,
+  donatedScId, donatedOriginalOwnerTid)` — gains the new arg.
+* `lockSet_replyRecv (callerTid, cnRoot, replyTargetTid, epId,
+  newSenderTid, donatedScId, donatedOriginalOwnerTid)` — gains
+  the new arg.
+
+Under the well-formed invariant (`originalOwner ==
+replyTargetTid`), `insertOrMerge` lub-merges the duplicate TCB
+entry — no behavioral change.  Under hypothetical invariant
+violation, the lockSet correctly covers both objects.  This
+makes the reply paths symmetric with `lockSet_tcbSuspend` which
+already had the separate Option ThreadId arg from audit-pass-3.
+
+### PIP-chain dynamic-locking acknowledgement
+
+Traced `endpointCallWithDonation` and `endpointReplyWithDonation`
+through `propagatePriorityInheritance` /
+`revertPriorityInheritance` (in
+`SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean`).
+These walk arbitrarily-long chains of TCBs (the blocking graph),
+updating each `pipBoost` field and the run-queue buckets.
+
+The chain length is **state-discovered**, not statically
+pre-resolvable in the lockSet args (would require running
+propagation BEFORE acquiring locks — violates 2PL acquisition-
+order discipline).
+
+Plan §4.1's "variable number of locks" provision applies: SM3.C
+will handle PIP-chain locks via dynamic ladder extension
+(acquire next chain TCB in `ObjId.val` ascending order),
+preserving the SM0.I lock-id total order's deadlock-freedom
+guarantee without violating 2PL.  This is the genuinely-dynamic
+case that no static lockSet can cover; the plan explicitly
+permits it via the "variable number of locks" caveat.
+
+### Test suite expansion (95 → 96 runtime assertions)
+
+* `donReplyDrift` (§9): asserts that when
+  `donatedOriginalOwnerTid ≠ replyTargetTid` (hypothetical
+  invariant violation), the lockSet's size grows from 4 to 5
+  (the extra TCB lock is included for defense-in-depth).
+* `donReply` (§9, refined): now exercises the well-formed case
+  where owner == target collapses via lub-merge (still 4 locks).
+* Consistency runtime: extends `runConsistencyRuntimeChecks`
+  with the new explicit-owner arg.
+* Per-transition shape: `selfReply` updated to pass `none none`
+  for the donation pair.
+
+### Mathematical correctness verification
+
+* Verified by source-level trace that `returnDonatedSchedContext
+  serverTid scId originalOwner` writes:
+  - SC (`boundThread := some originalOwner`),
+  - originalOwner TCB (`schedContextBinding := .bound scId`),
+  - serverTid TCB (`schedContextBinding := .unbound`).
+  All three are now in the static lockSet (replier == callerTid;
+  originalOwner == donatedOriginalOwnerTid; SC == donatedScId).
+* Verified `lub-merge` collapse for the well-formed case: when
+  donatedOriginalOwnerTid == replyTargetTid, the duplicate
+  `tcbLock` entry merges to a single write-mode entry.
+* Verified non-collapse for the invariant-drift case: when they
+  differ, both TCB locks remain.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit-pass-4 findings have been addressed in the same
+cut.
+
+## Unreleased — WS-SM SM3.B audit-pass-3: donation-path lockSet extensions (implement the improvement)
+
+Per CLAUDE.md's `Implement-the-improvement` rule, audit-pass-2's
+documented "donation-path scope limitation" was a documentation
+workaround, not a fix.  Audit-pass-3 **implements the
+improvement**: the 4 affected syscalls (`endpointCall`,
+`endpointReply`, `replyRecv`, `tcbSuspend`) now have their
+`lockSet_<τ>` and `lockSet_consistent_<τ>` extended with
+pre-resolved `Option SchedContextId` and `Option ThreadId`
+arguments that cover the full donation footprint per plan §4.1's
+"union over all paths" requirement.
+
+### Donation-path source-level tracing
+
+I traced each donation-affected kernel transition through to its
+underlying mutations:
+
+* **`endpointCallWithDonation`** → `applyCallDonation` →
+  `donateSchedContext`:
+  - Updates the SC (`boundThread := some serverTid`).
+  - Updates the server (receiver) TCB
+    (`schedContextBinding := .donated scId callerTid`).
+  - Does NOT touch the caller's TCB.
+
+* **`endpointReplyWithDonation`** → `applyReplyDonation` →
+  `returnDonatedSchedContext`:
+  - Updates the SC (`boundThread := some originalOwner`).
+  - Updates the original-owner TCB (binding back to `.bound`).
+  - Updates the server (replier) TCB (binding to `.unbound`).
+  - In the reply context, `originalOwner == replyTargetTid`
+    (already in lockSet).  Only the SC is a new lock.
+
+* **`cancelDonation` in `tcbSuspend`**:
+  - `.unbound`: no extra locks.
+  - `.bound scId`: writes the SC (clears `boundThread`,
+    `isActive`).
+  - `.donated scId originalOwner`: writes the SC + original-
+    owner TCB + suspended TCB (via `returnDonatedSchedContext`).
+
+### Implemented extensions
+
+* **`lockSet_endpointCall (callerTid, cnRoot, epId, receiverTid,
+  donatedScId)`** — new `Option SchedContextId` arg.  Caller
+  pre-inspects own TCB: `.bound scId → some scId`, else `none`.
+* **`lockSet_endpointReply (callerTid, cnRoot, replyTargetTid,
+  donatedScId)`** — new `Option SchedContextId` arg.  Caller
+  pre-inspects replier's TCB: `.donated scId _ → some scId`,
+  else `none`.
+* **`lockSet_replyRecv (callerTid, cnRoot, replyTargetTid, epId,
+  newSenderTid, donatedScId)`** — same as reply (the receive
+  phase doesn't initiate donation).
+* **`lockSet_tcbSuspend (callerTid, cnRoot, targetTcbTid, blEp,
+  blN, bindingScId, donatedOriginalOwnerTid)`** — two new
+  Options.  Caller pre-inspects suspended TCB's binding:
+  - `.unbound`: both `none`.
+  - `.bound scId`: `(some scId, none)`.
+  - `.donated scId owner`: `(some scId, some owner)`.
+
+### `permittedKinds` extensions
+
+* `.call` → `[.tcb, .cnode, .endpoint, .schedContext]`
+* `.reply` → `[.tcb, .cnode, .schedContext]`
+* `.replyRecv` → `[.tcb, .cnode, .endpoint, .schedContext]`
+* `.tcbSuspend` → `[.tcb, .cnode, .endpoint, .notification, .schedContext]`
+
+### New consistency-proof builders
+
+* `lockSet_consistent_base_plus_three_opts` — for `replyRecv` (1
+  base list + 1 standard Option + 1 donation Option).
+* `lockSet_consistent_base_plus_four_opts` — for `tcbSuspend` (1
+  base list + 2 standard Options + 2 donation Options).
+
+### Test suite expansion (83 → 95 runtime assertions)
+
+* Per-transition shape: +3 new assertions for `tcbSuspend`
+  `.bound`/`.donated`/full cases.
+* Lub-merging: +2 assertions for the donation-extended reply
+  and replyRecv shapes.
+* Consistency runtime: +2 assertions exercising `.call`/`.reply`
+  with donation.
+* PermittedKinds: +3 new permittedKinds checks for the extended
+  call/reply/replyRecv kinds.
+* §2 acquireSort: +2 assertions for `endpointCall` with
+  donation (SC sorts last at level 7).
+
+### Mathematical correctness verification
+
+Every donation extension was verified by source-level tracing of
+the actual kernel transition code (`donateSchedContext`,
+`returnDonatedSchedContext`, `cancelDonation`'s dispatch arms).
+The lockSets now declare exactly the set of objects that the
+underlying kernel transition may write.  Verified by directly
+exercising each consistency theorem at runtime on concrete
+arguments — all 95 assertions pass.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit-pass-3 findings have been addressed in the same
+cut; the audit-pass-2 documentation workaround has been replaced
+by the actual fix per CLAUDE.md's `Implement-the-improvement`
+rule.
+
+## Unreleased — WS-SM SM3.B audit-pass-2: substantive co-domain theorems + inventory completeness + extraneous-constraint cleanup
+
+Second deep audit pass.  Audit-pass-1 (preceding entry) closed
+test-coverage gaps and added `LockSet.union_mem_inv`.
+Audit-pass-2 focuses on:
+
+### Code-quality cleanup
+
+* **Removed duplicate theorem** `fromObject_lockKind_eq` — was
+  literally identical to `fromObject_kind` (same statement, same
+  `rfl` proof, only differing in lack of `@[simp]` and the
+  docstring's framing).
+* **Removed unused `[DecidableEq α]` constraint** from
+  `list_fst_inj_of_nodup_keys` — the proof never invokes
+  decidability of equality; type-class inference is purely
+  structural via `List.Pairwise` / `List.mem_cons` /
+  `List.mem_map`.
+
+### Substantive co-domain theorems
+
+`KernelObject.lockKind_exists` is genuinely trivial (every total
+function has values on its codomain).  Audit-pass-2 adds 4
+substantive co-domain witnesses that provide actually-useful
+information:
+
+* `lockKind_in_modeledKinds`: `obj.lockKind` returns one of the
+  7 modeled kinds (`.tcb`, `.endpoint`, `.notification`, `.cnode`,
+  `.vspaceRoot`, `.untyped`, `.schedContext`).
+* `lockKind_ne_objStore`: never returns `.objStore` (the
+  SystemState-level table-lock kind).
+* `lockKind_ne_reply`: never returns `.reply` (SM3.A.5 N/A —
+  Reply not modeled as a kernel-object struct).
+* `lockKind_ne_page`: never returns `.page` (SM3.A.8 N/A — page
+  mappings stored inline in `VSpaceRoot.mappings`).
+
+These tell SM3.C consumers that a `KernelObject`-derived `LockId`
+will never refer to a SystemState-level or N/A kind, simplifying
+case analysis at the `lockSetHeld` predicate.
+
+### Donation-path scope clarification
+
+Added explicit documentation in `LockSetTransitions.lean` that
+the statically-declared `lockSet_<τ>` covers only the **directly-
+named objects** in the syscall args.  For the 6 syscalls that may
+traverse a SchedContext-donation path (`endpointCall`,
+`endpointReply`, `replyRecv`, `tcbSuspend`, `schedContextBind`,
+`schedContextUnbind`), the donation path additionally touches:
+
+* The donated `SchedContext` (write — `boundThread` rebound).
+* The original-owner `TCB` (write —
+  `schedContextBinding` transitions out of `.donated`).
+
+These are state-discovered (located via the replier's TCB's
+`schedContextBinding` field) rather than statically named in the
+args.  The plan §5.2's example `lockSet_endpointCall` does NOT
+model the donation path either, so this implementation matches
+the plan's level of detail.  SM3.C's `withLockSet` combinator
+handles donation-chain locks via a documented sub-call pattern
+(acquire-inspect-extend-acquire-rest) without breaking 2PL.
+
+PIP-chain TCB locks (one per blocking ancestor) are inherently
+dynamic and cannot be modelled in a static lockSet.  Plan §4.1's
+"deadlock-freedom requires knowing the lock-set in advance"
+discipline applies via the SM0.I lock-id total order: PIP-chain
+TCBs are at hierarchy level `.tcb` and are acquired in
+`ObjId.val` ascending order, preserving the lock-ladder
+invariant.
+
+### Inventory expansion (81 → 87 entries)
+
+Added 6 substantive entries:
+
+* `lockKind_in_modeledKinds` (projection category)
+* `lockKind_ne_objStore` (projection)
+* `lockKind_ne_reply` (projection)
+* `lockKind_ne_page` (projection)
+* `lockAcquireSequence_perm` (acquireSort)
+* `LockSet.containsKey_iff` (algebra)
+
+Per-category counts: projection 18 → 22, acquireSort 5 → 6,
+algebra 8 → 9.
+
+### Test suite expansion (72 → 83 runtime assertions)
+
+* `runLockKindCoDomainChecks` (§14): 7 assertions verifying
+  lockKind's co-domain properties on concrete `KernelObject`
+  values.
+* `runFstInjChecks` (§15): 4 assertions verifying
+  `LockSet.fst_inj_at_pairs`'s structural witness (Nodup keys,
+  distinct pairs have distinct fst).
+* Surface anchors for 4 new `lockKind_*` theorems.
+
+### Mathematical correctness verification (deeper pass)
+
+The audit verified by careful re-reading and by direct runtime
+evaluation:
+
+* **`lockAcquireSequence_canonical`** proof structure factors
+  through `LockSet.fst_inj_at_pairs` (Nodup-of-keys ⇒ pair
+  uniqueness on shared fst) and antisymmetry of `LockId.le`.
+  Verified by reading the `uniq_sorted_perm_aux` inner proof.
+* **`LockId.lookup`** dispatcher type-id constructions:
+  `(⟨l.objId.val⟩ : ThreadId).toObjId` reduces to `l.objId` via
+  `ObjId.ofNat_toNat` round-trip.  Verified by inspection and by
+  fixture-state lookup tests.
+* **`insertOrMerge`** merge semantics: when the same key is
+  inserted twice, `AccessMode.lub` collapses modes (write
+  dominates read).  Verified directly via `#eval` on the
+  `self-suspend` scenario `(callerTid = targetTcbTid)`.
+* **`union_mem_inv`** disjunction: case 1 is "p ∈ S₁" (full pair
+  match), case 2 is "p.fst matches an S₂ key" (lub-merged or
+  fresh).  Verified by constructing disjoint + overlapping union
+  fixtures.
+* **`lockKind_in_modeledKinds`** + `lockKind_ne_*`: case-by-case
+  on the 7 KernelObject variants; each `cases obj <;> rfl` or
+  `cases obj <;> intro h <;> cases h` discharge.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit-pass-2 findings have been addressed in the same
+cut.
+
+## Unreleased — WS-SM SM3.B audit-pass-1: refactor + test-coverage gap closures + structural-semantics theorem
+
+Comprehensive deep-audit pass over the WS-SM SM3.B landing.  No
+correctness defects were found; the changes below close several
+test-coverage gaps, eliminate code-smell, and add a structural
+characterisation theorem for `LockSet.union` that was missing
+from the initial landing.
+
+### Code-quality cleanup
+
+* **`DecidableEq LockSet` proof**: removed a no-op `simp only at h`
+  that was a leftover from an earlier proof attempt — the `obtain`
+  destructuring already reduces `s₁.pairs`/`s₂.pairs` to the
+  underlying field values.
+* **`containsKey_iff` proof**: replaced the awkward
+  `rw [show (l, p.snd) = p from by cases p; simp_all]` pattern with
+  a clean `obtain` + `subst` (no `simp_all`).
+* **`lockAcquireSequence_canonical` proof**: removed the unused
+  `_hSortedRef` parameter from the `lockAcquireSequence_canonical_aux`
+  `where` clause; simplified the main proof to a single chain of
+  Perm/Nodup-keys derivations followed by a direct invocation of
+  the generic `uniq_sorted_perm_aux`.
+* **Per-transition `lockSet_consistent_*` proofs (×25)**: replaced
+  the repeated `simp only [tcbLock_kind, cnodeLock_kind,
+  endpointLock_kind, notificationLock_kind, schedContextLock_kind,
+  vspaceRootLock_kind, untypedLock_kind]; decide` pattern with a
+  clean `simp; decide` (the `*Lock_kind` lemmas are `@[simp]`
+  globally).  Removed the `set_option linter.unusedSimpArgs false`
+  workaround that the verbose form required.  Net diff: −76 long
+  `simp only` lines + 1 lint-override.
+* **`LockSet.insertOrMerge_mem` location**: moved from
+  `LockSetTransitions.lean` to `LockSet.lean` (the module that
+  defines `insertOrMerge` itself) for proper layering.  The new
+  `union_mem_inv` (below) consumes it.
+
+### Test-coverage gap closures
+
+* **Lub-merging at duplicate keys** (NEW): tests for read+write =
+  write, write+read = write, read+read = read on the same key.
+* **Self-suspend collapse** (NEW): `lockSet_tcbSuspend ⟨5⟩ _ ⟨5⟩
+  none none` collapses to 2 locks (the merged caller/target TCB
+  + cnode root); the merged TCB lock is in write mode.
+* **Reply-self collapse** (NEW): `lockSet_endpointReply ⟨5⟩ _ ⟨5⟩`
+  collapses to 2 locks.
+* **`LockSet.union` semantics** (NEW): disjoint union has size 2;
+  overlapping union merges via lub; union with empty is identity.
+* **`lockSet_consistent_*` runtime exercise** (NEW): each
+  per-transition consistency theorem is *applied* to concrete
+  arguments at runtime (specialisation followed by `List.all
+  (decide ...)` discharges).  Previously only surface-anchored
+  via `#check`.
+* **`lockAcquireSequence` canonical-sort runtime** (NEW): same
+  multiset built in 3 different insertion orders produces the
+  same canonical output; within-kind sort is ascending by
+  `ObjId.val`.
+* **`LockId.lookup` on non-empty fixture state** (NEW): exercises
+  the `some` branch for matching kind + ObjId; kind-mismatch
+  branch (LockId.kind ≠ stored-object.kind) returns `none`;
+  absent-ObjId returns `none`; fail-closed witnesses for the N/A
+  `.objStore` / `.reply` / `.page` kinds.
+
+### Spec-gap fix: `LockSet.union_mem_inv`
+
+The initial landing defined `LockSet.union` but had no theorem
+characterising its semantics.  Audit-pass-1 adds the structural
+characterisation theorem `LockSet.union_mem_inv`:
+
+```
+∀ p ∈ (S₁.union S₂).pairs, p ∈ S₁.pairs ∨ ∃ p' ∈ S₂.pairs, p.fst = p'.fst
+```
+
+The asymmetry between "element of S₁" (full pair match) and
+"fst-key matches S₂" reflects `insertOrMerge`'s lub behaviour:
+keys present in S₂ but not S₁ are added directly; keys present
+in both are lub-merged so the resulting pair's `fst` matches an
+S₂ key but its `snd` is the lub of both modes.  Proof by
+fold-induction on `S₂.pairs` via a `where`-bound aux helper.
+
+### Inventory expansion
+
+The SM3.B `lockSetTheorems` inventory grew from 72 to 81 entries:
+
+* **+8 projection entries** (was 10, now 18):
+  `KernelObject.lockKind_eq_of_objectType` (substantive
+  agreement with `objectType`); `LockId.lookup_some_of_kindMatch`,
+  `_fromObject_of_present`, `_kindMatch`, `_lockState_eq` (4
+  structural theorems); `LockId.lookup_objStore`, `_reply`,
+  `_page` (3 `@[simp]` fail-closed witnesses for the N/A kinds).
+* **+1 algebra entry** (was 7, now 8): `LockSet.union_mem_inv`.
+* Per-category counts and partition-sum theorem updated.
+* `lockSetTheorems_count = 81` (was 72).
+
+### Test suite expansion
+
+`tests/LockSetSuite.lean` grew from 49 to 72 runtime
+`assertBool` assertions plus 5 new surface anchors
+(`LockSet.union_mem_inv`, `LockSet.insertOrMerge_mem`,
+`LockSet.empty_pairs`, `LockSet.singleton_pairs`,
+`LockSet.union_empty`, `LockSet.containsKey_iff`).
+
+Five new runtime check sections were added:
+
+* `runLubMergeChecks` (§9): 6 lub-merge regression assertions.
+* `runUnionChecks` (§10): 3 union-semantics assertions.
+* `runConsistencyRuntimeChecks` (§11): 4 per-transition
+  `lockSet_consistent_*` runtime applications on concrete args.
+* `runCanonicalSortRuntimeChecks` (§12): 4 canonical-sort
+  determinism assertions across insertion orders.
+* `runLookupFixtureChecks` (§13): 7 `LockId.lookup` fixture-state
+  assertions covering matching-kind / kind-mismatch / absent-ObjId
+  / N/A-kind paths.
+
+### Tier-3 surface expansion
+
+`scripts/test_tier3_invariant_surface.sh` gains 5 new `#check`
+anchors for the `LockSet` structural helpers
+(`union_mem_inv`, `union_empty`, `containsKey_iff`,
+`empty_pairs`, `singleton_pairs`).
+
+### Mathematical correctness verification
+
+The audit verified each of the following properties by inspection
+of the code and proof structures, and by direct runtime
+evaluation:
+
+* `AccessMode.lub` is correctly a join (associative, commutative,
+  idempotent; `write` is top, `read` is bottom).
+* `AccessMode.conflicts` is symmetric; only `read/read` is
+  non-conflicting.
+* `LockSet.hUniqueKeys` correctly enforces no two pairs share a
+  `LockId`.
+* `lockAcquireSequence` produces a sorted permutation of the input.
+* `lockAcquireSequence_ordered`, `_complete`, `_canonical` are
+  substantive (not `True`-aliases); `_canonical`'s proof factors
+  through `LockSet.fst_inj_at_pairs` (Nodup-of-keys ⇒ pair
+  uniqueness on shared fst) and antisymmetry of `LockId.le`.
+* `LockId.fromObject` correctly pairs ObjId + variant-derived
+  kind.
+* `LockId.lookup` correctly dispatches on kind; the typed `getX?`
+  accessor route preserves AK7-cascade hygiene; fail-closed for
+  absent ObjId, kind mismatch, and the three N/A kinds.
+* Every `lockSet_<τ>` declares the upper-bound footprint per plan
+  §4.1 ("union over all paths"); duplicate keys collapse via
+  `AccessMode.lub`; the `lockSet_consistent_<τ>` theorems are all
+  substantive (verified by `simp; decide` discharging the kind
+  membership after `*Lock_kind` simp).
+* Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+  warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit findings have been addressed in the same cut.
+
+## Unreleased — WS-SM SM3.B LANDED: LockSet, LockIdProjection, per-transition lockSet declarations, canonical sort theorems
+
+Closes §5.2 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+(9 sub-tasks; all LANDED).  Builds on SM3.A's per-object lock
+fields and SM0.I's `LockKind` / `LockId` total order to provide
+the abstract lock-set type, per-syscall lock-set declarations,
+the canonical acquisition sort, and the structural theorems that
+SM3.C (`withLockSet` 2PL combinator) consumes.
+
+### Files added
+
+* `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~660 LoC) —
+  `LockSet` structure with Nodup-keys invariant; `AccessMode.lub`
+  + `AccessMode.conflicts` algebra; smart constructors (`empty`,
+  `singleton`, `insert?`, `insertOrMerge`, `union`); canonical
+  `lockAcquireSequence` sort via `List.mergeSort`; three
+  substantive theorems (`lockAcquireSequence_ordered`,
+  `lockAcquireSequence_complete`,
+  `lockAcquireSequence_canonical`) plus helper lemmas.
+* `SeLe4n/Kernel/Concurrency/Locks/LockIdProjection.lean` (~440
+  LoC) — `KernelObject.lockKind` projection with 7 per-variant
+  `@[simp]` unfolds; `LockId.fromObject (oid, o)` smart
+  constructor; `LockId.lookup s l` dispatcher (routes through
+  typed `getX?` accessors — zero raw `match.*objects[...]` sites);
+  six structural theorems plus three `@[simp]` fail-closed
+  witnesses for the N/A `LockKind` variants (`objStore`, `reply`,
+  `page`).
+* `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1170
+  LoC) — 25 `lockSet_<τ>` declarations (one per `SyscallId`
+  variant); `permittedKinds` per-syscall permitted-kinds list;
+  4 generic consistency builder lemmas; 25 per-transition
+  `lockSet_consistent_<τ>` theorems.
+* `SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean` (~290
+  LoC) — typed `LockSetTheorem` struct with compile-time-checked
+  `lkst!` macro; 72-entry inventory across 5 categories
+  (`.projection` = 10, `.lockSet` = 25, `.consistency` = 25,
+  `.acquireSort` = 5, `.algebra` = 7); per-category count
+  witnesses + partition-sum + Nodup-on-identifiers /
+  Nodup-on-descriptions + the coverage theorem
+  `lockSet_consistent_aggregate_covers_every_syscall`.
+* `SeLe4n/Kernel/Concurrency/LockSet.lean` (re-export hub).
+* `tests/LockSetSuite.lean` (~600 LoC) — 100+ surface anchors,
+  decidable examples on small concrete LockSets exercising sort
+  ordering, 49 runtime `assertBool` assertions for per-transition
+  size invariants and inventory partition counts.  Runnable as
+  `lake exe lock_set_suite`.
+
+### Files modified
+
+* `SeLe4n/Platform/Staged.lean` — imports the new SM3.B re-export
+  hub.
+* `scripts/staged_module_allowlist.txt` — 5 new entries
+  (`LockSet`, `Locks.LockSet`, `Locks.LockIdProjection`,
+  `Locks.LockSetTransitions`, `Locks.LockSetInventory`).
+* `scripts/test_tier2_negative.sh` — runs `lake exe
+  lock_set_suite`.
+* `scripts/test_tier3_invariant_surface.sh` — adds ~80 `#check`
+  surface anchors for every public SM3.B symbol.
+* `lakefile.toml` — registers the `lock_set_suite` executable.
+* `docs/spec/SELE4N_SPEC.md` — adds §2.9 documenting SM3.B.
+* `docs/codebase_map.json` — regenerated (module count 224 → 230,
+  declaration count 7524 → 7700+).
+
+### Plan §5.2 sub-tasks closed
+
+| Sub-task | Status |
+|----------|:------:|
+| SM3.B.1 — `LockId.fromObject` + `KernelObject.lockKind` | LANDED |
+| SM3.B.2 — `LockId.lookup` | LANDED |
+| SM3.B.3 — Per-transition `lockSet_<τ>` × 25 | LANDED |
+| SM3.B.4 — `permittedKinds` + `lockSet_consistent_<τ>` × 25 | LANDED |
+| SM3.B.5 — `lockAcquireSequence` | LANDED |
+| SM3.B.6 — `lockAcquireSequence_ordered` | LANDED |
+| SM3.B.7 — `lockAcquireSequence_complete` | LANDED |
+| SM3.B.8 — `lockAcquireSequence_canonical` | LANDED |
+| SM3.B.9 — `tests/LockSetSuite.lean` | LANDED |
+
+### Design notes
+
+* **`LockId.fromObject` signature**: the plan's pseudocode
+  `(o : KernelObject) → LockId` uses inner-struct ID fields
+  (`tcb.tid`, `ep.eid`, …) that seLe4n's data model carries only
+  on `TCB` and `SchedContext`.  The implemented signature takes
+  the ObjId externally so the projection is total for every
+  variant; the lookup-key vs inner-struct-ID coincidence is
+  preserved by state-level invariants.
+* **`LockSet` vs `Finset`**: seLe4n is mathlib-free.  The
+  equivalent of `Finset (LockId × AccessMode)` is a `List` with
+  a `Nodup` proof on the projected `LockId` keys, mirroring
+  SM3.A's `NoDupList` pattern.
+* **AccessMode lub merging**: when the same `LockId` is
+  inserted twice with different modes, `insertOrMerge` picks the
+  lub (write dominates read) — plan §4.1's "union over all
+  paths" principle.
+* **AK7-cascade cleanliness**: `LockId.lookup` dispatches on
+  `l.kind` and routes through the typed `getX?` accessors
+  (`getTcb?`, `getEndpoint?`, `getNotification?`, `getCNode?`,
+  `getVSpaceRoot?`, `getUntyped?`, `getSchedContext?`) so the
+  raw-pattern-match count remains at the v0.31.2 baseline of
+  122.
+
+### Axiom budget
+
+0 Lean axioms, 0 sorries added.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+### Follow-on
+
+SM3.C (`withLockSet` 2PL combinator, `acquireLockOnObject` /
+`releaseLockOnObject`, `lockSetHeld` predicate, RAII discipline)
+per
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+§5.3.
+
 ## Unreleased — WS-SM SM3.A audit-pass-7: BEq SchedContext lock + compile-time-checked inventory identifiers
 
 User-reported audit identified two correctness issues, both closed.

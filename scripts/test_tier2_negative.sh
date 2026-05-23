@@ -139,4 +139,16 @@ run_check_with_timeout "TRACE" lake exe lock_bridge_suite
 # and the per-variant `objectLockOf` reduction lemmas.
 run_check_with_timeout "TRACE" lake exe per_object_lock_suite
 
+# WS-SM SM3.B — LockSet regression suite.  Exercises the SM3.B
+# `LockSet` type, `KernelObject.lockKind` projection,
+# `LockId.fromObject` / `LockId.lookup`, per-syscall `lockSet_<τ>`
+# declarations, the `lockAcquireSequence` canonical sort and
+# ordered/complete/canonical theorems, `permittedKinds` plus the
+# per-transition `lockSet_consistent_<τ>` theorems, the audit-pass-5
+# `pipChainStart_<τ>` PIP chain-walk start markers, the audit-pass-6
+# `tcbSetPriority`/`tcbSetMCPriority`/`tcbSetIPCBuffer`/`serviceRegister`
+# footprint extensions (SC + VSpaceRoot + endpoint locks), and the
+# 90-theorem inventory aggregator (with the new `chainStart` category).
+run_check_with_timeout "TRACE" lake exe lock_set_suite
+
 finalize_report

@@ -97,6 +97,16 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- witness.  Used by the cross-language symmetry script
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
+-- WS-SM SM3.B: LockSet + per-transition lockSet declarations + the
+-- canonical sort and ordered/complete/canonical theorems +
+-- LockId.fromObject / LockId.lookup projection layer +
+-- per-transition lockSet_consistent theorems + 72-theorem inventory.
+-- Staged at SM3.B; SM3.C (`withLockSet` 2PL combinator) is the first
+-- runtime exerciser.  Reachability: every `@[export]` body in SM3.C
+-- will wrap its kernel-transition action in `withLockSet (lockSet_τ
+-- args)`, threading the SM3.B canonical sort through `acquireAll`
+-- and the reverse through `releaseAll`.
+import SeLe4n.Kernel.Concurrency.LockSet
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
