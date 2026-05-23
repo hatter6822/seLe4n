@@ -1325,18 +1325,49 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `Platform/Staged.lean`.  SM3.C's `withLockSet` 2PL combinator
    will promote them to production-reachable.
 
-   **Test coverage**: NEW FILE `tests/LockSetSuite.lean` (~600 LoC)
-   with surface anchors for every public SM3.B symbol (100+
-   `#check` lines), decidable examples on small concrete LockSets
-   exercising sort ordering and per-transition shape, runtime
-   `assertBool` assertions for every `lockSet_<τ>` size invariant
-   and the inventory partition counts.  Runnable as
+   **Test coverage** (audit-pass-1): NEW FILE
+   `tests/LockSetSuite.lean` (~900 LoC) with 105+ surface anchors
+   for every public SM3.B symbol, decidable examples on small
+   concrete LockSets exercising sort ordering and per-transition
+   shape, and 72 runtime `assertBool` assertions across 13
+   sections (§1 empty/singleton, §2 acquire sort, §3 AccessMode
+   algebra, §4 permitted kinds, §5 lockKind helpers, §6 LockId
+   projection, §7 per-transition shapes, §8 inventory aggregator,
+   §9 lub-merging on duplicate keys, §10 LockSet.union semantics,
+   §11 runtime exercise of `lockSet_consistent_*` on concrete
+   args, §12 canonical-sort determinism across insertion orders,
+   §13 `LockId.lookup` on non-default fixture state including
+   kind-mismatch fail-closed branches).  Runnable as
    `lake exe lock_set_suite`.  Wired into Tier 2 (negative) and
    Tier 3 (invariant-surface) pipelines.
 
    **Axiom budget for SM3.B**: 0 Lean axioms, 0 sorries.
 
    **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+   **Audit-pass-1 refinements** (comprehensive deep audit;
+   land in the same v0.31.9 release cut):
+
+   * **Code-quality cleanup**: removed no-op `simp only at h` in
+     `DecidableEq LockSet`, replaced `simp_all` workaround in
+     `containsKey_iff`, dropped unused `_hSortedRef` parameter
+     from `lockAcquireSequence_canonical_aux`.
+   * **Proof-style refactor**: replaced 76 repeated `simp only
+     [tcbLock_kind, ..., untypedLock_kind]; decide` across the
+     25 `lockSet_consistent_*` theorems with clean `simp; decide`
+     (the `*Lock_kind` lemmas are `@[simp]` globally); removed
+     the `set_option linter.unusedSimpArgs false` workaround.
+   * **Module-layering fix**: moved `LockSet.insertOrMerge_mem`
+     from `LockSetTransitions.lean` to `LockSet.lean` (the
+     defining module).
+   * **Spec-gap closure**: added `LockSet.union_mem_inv` — the
+     structural characterisation theorem for `LockSet.union`'s
+     semantics that was missing from the initial landing.
+   * **Inventory expansion**: 72 → 81 entries (+8 projection: 4
+     lookup structural theorems + 3 N/A-kind fail-closed witnesses
+     + `lockKind_eq_of_objectType`; +1 algebra: `union_mem_inv`).
+   * **Test-coverage gap closures**: 5 new runtime check sections
+     (§9..§13), +23 runtime assertions over the initial landing.
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the

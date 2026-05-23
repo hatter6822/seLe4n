@@ -527,7 +527,7 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 | SM3.B.6 | `lockAcquireSequence_ordered` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.7 | `lockAcquireSequence_complete` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.8 | `lockAcquireSequence_canonical` | `Locks/LockSet.lean` | LANDED |
-| SM3.B.9 | `tests/LockSetSuite.lean` (~600 LoC, 49 assertions) | `tests/LockSetSuite.lean` | LANDED |
+| SM3.B.9 | `tests/LockSetSuite.lean` (~900 LoC, 72 assertions after audit-pass-1) | `tests/LockSetSuite.lean` | LANDED |
 
 **Adaptations from the pseudocode in this section**:
 
@@ -551,6 +551,40 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 * Per-syscall lockSets take post-cap-resolution `ObjId` arguments
   rather than raw `CPtr`s — keeps the function static (no state
   parameter) per plan §4.1.
+
+**Audit-pass-1 closure additions** (post-initial-landing
+comprehensive deep audit, all closures land in the same v0.31.9
+release cut):
+
+* `LockSet.union_mem_inv` — structural characterisation of
+  `LockSet.union`'s semantics:
+  `∀ p ∈ S₁.union S₂, p ∈ S₁ ∨ ∃ p' ∈ S₂, p.fst = p'.fst`.
+  The initial landing defined `union` without a semantics
+  theorem.  The asymmetry reflects `insertOrMerge`'s lub
+  behaviour (S₁-keys persist as full pairs; S₂-keys may merge
+  modes via lub).
+* **Inventory expansion** to 81 entries (from 72): adds 8
+  projection entries (4 `LockId.lookup` structural theorems + 3
+  fail-closed N/A witnesses + `lockKind_eq_of_objectType`) and
+  1 algebra entry (`union_mem_inv`).
+* **Test-coverage gap closures**: 5 new runtime check sections
+  in `tests/LockSetSuite.lean` (§9 lub-merging on duplicate
+  keys, §10 `LockSet.union` semantics, §11 runtime exercise of
+  `lockSet_consistent_*` on concrete args, §12 canonical-sort
+  determinism across insertion orders, §13 `LockId.lookup` on
+  non-default fixture state including kind-mismatch fail-closed
+  branches).  +23 runtime `assertBool` assertions.
+* **Proof-style refactor**: replaced 76 verbose `simp only
+  [tcbLock_kind, ..., untypedLock_kind]; decide` invocations
+  across the 25 per-transition `lockSet_consistent_*` theorems
+  with the clean `simp; decide` pattern (relying on the
+  `@[simp]`-tagged `*Lock_kind` lemmas).  Removed the
+  `set_option linter.unusedSimpArgs false` workaround that the
+  verbose form required.
+* **Module-layering fix**: `LockSet.insertOrMerge_mem` moved
+  from `LockSetTransitions.lean` (which only consumes it) to
+  `LockSet.lean` (the module that defines `insertOrMerge`
+  itself).
 
 #### SM3.B.1 — `LockId.fromObject`
 

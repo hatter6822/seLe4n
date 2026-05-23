@@ -1039,13 +1039,17 @@ declarations on top of SM3.A's per-object lock fields and SM0.I's
   surface anchors, decidable examples on small concrete LockSets,
   49 runtime `assertBool` assertions.
 
-**SM3.B inventory (72 entries)**:
+**SM3.B inventory (81 entries — audit-pass-1 expansion)**:
 `LockSetInventory.lean` mirrors SM3.A's `PerObjectLockInventory`
 pattern with the `lkst!` macro and 5 categories:
-`.projection` (10), `.lockSet` (25), `.consistency` (25),
-`.acquireSort` (5), `.algebra` (7).  Plus per-category count
-witnesses, partition-sum theorem, Nodup-on-identifiers /
-descriptions, and the coverage theorem
+`.projection` (18 — 1 lockKind def + 7 per-variant unfolds +
+agreement-with-objectType + LockId.fromObject + LockId.lookup +
+4 lookup structural theorems + 3 fail-closed N/A witnesses),
+`.lockSet` (25), `.consistency` (25), `.acquireSort` (5),
+`.algebra` (8 — including `LockSet.union_mem_inv` and
+`LockSet.fst_inj_at_pairs`).  Plus per-category count witnesses,
+partition-sum theorem, Nodup-on-identifiers / descriptions, and
+the coverage theorem
 `lockSet_consistent_aggregate_covers_every_syscall` pinning
 `consistency category count = SyscallId.count`.
 
@@ -1060,6 +1064,30 @@ baseline of 122.  Typed-accessor adoption counts grew by 7.
 **Axiom budget for SM3.B**: 0 Lean axioms, 0 sorries.
 
 **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+**Audit-pass-1 refinements** (comprehensive deep audit, post-
+initial-landing):
+
+* **Code-quality cleanup**: removed no-op `simp only at h` in
+  `DecidableEq LockSet`; replaced `simp_all` in `containsKey_iff`
+  with `obtain` + `subst`; dropped unused `_hSortedRef`
+  parameter from `lockAcquireSequence_canonical_aux`.
+* **Proof-style refactor**: replaced 76 repeated `simp only [...
+  Lock_kind]; decide` invocations across 25 consistency theorems
+  with clean `simp; decide`; removed the `unusedSimpArgs` lint
+  override.
+* **Module-layering fix**: moved `LockSet.insertOrMerge_mem`
+  from `LockSetTransitions.lean` to `LockSet.lean`.
+* **Spec-gap closure**: added `LockSet.union_mem_inv` — the
+  structural characterisation theorem for `LockSet.union`'s
+  semantics that was missing from the initial landing.
+* **Test-coverage gap closures**: 5 new runtime check sections
+  (§9 lub-merging, §10 LockSet.union semantics, §11
+  `lockSet_consistent_*` runtime application on concrete args,
+  §12 canonical-sort determinism, §13 LockId.lookup on non-empty
+  fixture state including kind-mismatch fail-closed); +23
+  runtime assertions (49 → 72).
+* **Inventory expansion**: 72 → 81 entries.
 
 Follow-on: SM3.C (`withLockSet` 2PL combinator), SM3.D
 (deadlock-freedom Theorem 2.1.9), SM3.E (serializability Theorem

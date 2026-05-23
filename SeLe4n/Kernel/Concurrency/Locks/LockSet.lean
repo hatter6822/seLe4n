@@ -177,14 +177,22 @@ instance : Repr LockSet where
   reprPrec s n := reprPrec s.pairs n
 
 /-- WS-SM SM3.B: structural equality on `LockSet` reduces to equality
-on the `pairs` field (the well-formedness witness is propositionally
-unique under `Nodup` proof irrelevance). -/
+on the `pairs` field.
+
+The well-formedness witness `hUniqueKeys` is a `Nodup` proof, which
+is propositionally unique (proof irrelevance for Props), so two
+`LockSet`s with the same `pairs` are definitionally equal at the
+structure level.
+
+Audit-pass-1 cleanup: removed a no-op `simp only at h` that was a
+leftover from an earlier proof attempt — the `obtain` destructuring
+reduces `s₁.pairs` and `s₂.pairs` to `p₁` and `p₂` automatically,
+so `h` is already `p₁ = p₂` after destructuring. -/
 instance : DecidableEq LockSet := fun s₁ s₂ =>
   if h : s₁.pairs = s₂.pairs then
     .isTrue (by
       obtain ⟨p₁, h₁⟩ := s₁
       obtain ⟨p₂, _h₂⟩ := s₂
-      simp only at h
       subst h
       rfl)
   else
@@ -193,7 +201,7 @@ instance : DecidableEq LockSet := fun s₁ s₂ =>
 /-- WS-SM SM3.B: the empty `LockSet` — a transition with no locks (rare).
 
 The well-formedness witness is `List.Pairwise.nil` (the empty list
-is trivially `Nodup`).  Used as the base case for `LockSet.union?`
+is trivially `Nodup`).  Used as the base case for `LockSet.union`
 and as the seed for `List.foldl`-based assembly. -/
 def empty : LockSet :=
   { pairs := [], hUniqueKeys := List.Pairwise.nil }
@@ -254,14 +262,15 @@ theorem containsKey_iff (l : LockId) (S : LockSet) :
     rw [containsKey, List.any_eq_true] at h
     obtain ⟨p, hpmem, hpfst⟩ := h
     have hEq : p.fst = l := of_decide_eq_true hpfst
+    -- Decompose p into (pFst, pSnd) and substitute pFst = l so the
+    -- conclusion (l, pSnd) ∈ S.pairs follows directly from hpmem.
     refine ⟨p.snd, ?_⟩
-    show (l, p.snd) ∈ S.pairs
-    rw [show (l, p.snd) = p from by cases p; simp_all]
+    obtain ⟨pFst, pSnd⟩ := p
+    subst hEq
     exact hpmem
   · rintro ⟨m, hmem⟩
     rw [containsKey, List.any_eq_true]
-    refine ⟨(l, m), hmem, ?_⟩
-    simp
+    exact ⟨(l, m), hmem, decide_eq_true rfl⟩
 
 /-- WS-SM SM3.B: try to insert a fresh `(LockId, AccessMode)` pair
 into a `LockSet`.  Returns `none` if the `LockId` is already
@@ -352,6 +361,81 @@ def union (S₁ S₂ : LockSet) : LockSet :=
 /-- WS-SM SM3.B: `union` with the empty set on the right is identity. -/
 @[simp] theorem union_empty (S : LockSet) : S.union empty = S := by
   simp [union, empty]
+
+/-- WS-SM SM3.B: an element of `S.insertOrMerge l m`'s underlying
+list is either an old element of `S` or the new pair `(l, m)` (or
+the merged form of an old pair with key `l`).
+
+The disjunction has three branches:
+* `p = (l, m)` — the prepended fresh-key case.
+* `p.fst = l` — the merged-existing-key case (snd is the lub).
+* `p ∈ S.pairs` — the unchanged-existing-key case.
+
+Used by SM3.B.4's per-transition `lockSet_consistent_*` proofs
+(via `lockSetOfList_mem_inv`) and by `union_mem_inv` below. -/
+theorem insertOrMerge_mem (S : LockSet) (l : LockId) (m : AccessMode)
+    (p : LockId × AccessMode)
+    (hMem : p ∈ (S.insertOrMerge l m).pairs) :
+    p = (l, m) ∨ p.fst = l ∨ p ∈ S.pairs := by
+  unfold LockSet.insertOrMerge at hMem
+  split at hMem
+  case h_1 _hContains =>
+    -- Containment case: pairs become S.pairs with key-l snd merged via lub.
+    obtain ⟨p', hp'Mem, hp'Eq⟩ := List.mem_map.mp hMem
+    by_cases hp' : p'.fst = l
+    · -- The transformed pair is (l, p'.snd.lub m); its fst is l.
+      simp [hp'] at hp'Eq
+      right; left
+      rw [← hp'Eq]
+    · -- The pair is unchanged; it was in S.pairs.
+      simp [hp'] at hp'Eq
+      right; right
+      rw [← hp'Eq]
+      exact hp'Mem
+  case h_2 _ =>
+    -- Prepend case: pairs = (l, m) :: S.pairs.
+    rcases List.mem_cons.mp hMem with hNew | hOld
+    · left; exact hNew
+    · right; right; exact hOld
+
+/-- WS-SM SM3.B: every element of `S₁.union S₂` traces back to an
+element of `S₁` or has its `fst` key matching some element's `fst`
+in `S₂`.
+
+This is the structural characterisation of `union` semantics: the
+result contains keys from both inputs (with lub-merged modes for
+keys appearing in both), and no keys are invented.
+
+The asymmetry between "element of S₁" (full pair match) and "fst
+key matches some element of S₂" reflects `insertOrMerge`'s lub
+behaviour: keys present in S₂ but not in S₁ are added directly;
+keys present in both have their modes merged, so the resulting
+pair's `fst` matches an S₂ key but its `snd` may differ from
+S₂'s. -/
+theorem union_mem_inv (S₁ S₂ : LockSet) (p : LockId × AccessMode)
+    (hMem : p ∈ (S₁.union S₂).pairs) :
+    p ∈ S₁.pairs ∨ ∃ p' ∈ S₂.pairs, p.fst = p'.fst := by
+  unfold union at hMem
+  exact union_mem_inv_aux S₂.pairs S₁ p hMem
+where
+  union_mem_inv_aux :
+      ∀ (suffix : List (LockId × AccessMode)) (acc : LockSet)
+        (p : LockId × AccessMode),
+        p ∈ (suffix.foldl (init := acc)
+          (fun a q => a.insertOrMerge q.fst q.snd)).pairs →
+        p ∈ acc.pairs ∨ ∃ p' ∈ suffix, p.fst = p'.fst
+  | [], acc, p, hMem => Or.inl (by simpa using hMem)
+  | (q :: rest), acc, p, hMem => by
+      simp only [List.foldl_cons] at hMem
+      have hRec := union_mem_inv_aux rest (acc.insertOrMerge q.fst q.snd) p hMem
+      rcases hRec with hInMerge | hInRest
+      · rcases LockSet.insertOrMerge_mem acc q.fst q.snd p hInMerge with hEq | hFst | hAcc
+        · right; refine ⟨q, List.mem_cons_self, ?_⟩; rw [hEq]
+        · right; exact ⟨q, List.mem_cons_self, hFst⟩
+        · exact Or.inl hAcc
+      · right
+        obtain ⟨p', hp'Mem, hp'Eq⟩ := hInRest
+        exact ⟨p', List.mem_cons_of_mem _ hp'Mem, hp'Eq⟩
 
 -- ============================================================================
 -- SM3.B.5..B.8 — canonical sort (`lockAcquireSequence`)
@@ -532,58 +616,33 @@ theorem lockAcquireSequence_canonical (S : LockSet)
     (hPerm : l'.Perm S.pairs)
     (hSorted : l'.Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst)) :
     l' = lockAcquireSequence S := by
-  -- Combine: lockAcquireSequence S is also a permutation of S.pairs and is sorted.
+  -- Strategy: both `l'` and `lockAcquireSequence S` are sorted permutations
+  -- of the same underlying multiset.  Under key uniqueness (from
+  -- `S.hUniqueKeys`), the sorted permutation is structurally unique.
   have hSortedSelf := lockAcquireSequence_ordered S
-  have hPermSelf := lockAcquireSequence_perm S
-  -- Both are permutations of S.pairs, so they're permutations of each other.
-  have hPermBoth : l'.Perm (lockAcquireSequence S) :=
-    hPerm.trans hPermSelf.symm
-  -- We need a uniqueness-of-sorted-permutation lemma.  Use the
-  -- antisymmetric `≤` derived from key-uniqueness.
-  -- Define a *strict-positional* ordering: for any two pairs from S.pairs,
-  -- `p₁.fst < p₂.fst` (since keys are distinct, ≤ becomes <).
-  -- Then sorted permutations of a list with strict ordering are unique.
-  -- We use List.eq_of_perm_of_sorted from Std (or hand-prove via induction).
-  -- This is the canonical "perm + sorted on antisymmetric R = equal" lemma.
-  -- Since we may not have it directly, hand-prove via induction.
-  exact lockAcquireSequence_canonical_aux S l' hPermBoth.symm hSortedSelf hSorted
+  have hPermBoth : (lockAcquireSequence S).Perm l' :=
+    (lockAcquireSequence_perm S).trans hPerm.symm
+  -- Derive Nodup-keys on both the canonical sort and l'.
+  have hKeysNodup_lock : ((lockAcquireSequence S).map (·.fst)).Nodup :=
+    ((lockAcquireSequence_perm S).map _).nodup_iff.mpr S.hUniqueKeys
+  have hKeysNodup_l' : (l'.map (·.fst)).Nodup :=
+    (hPermBoth.symm.map _).nodup_iff.mpr hKeysNodup_lock
+  -- Apply the generic uniqueness lemma (sorted + Nodup-keys + perm ⇒ equal).
+  exact (uniq_sorted_perm_aux hPermBoth hSortedSelf hKeysNodup_lock
+    hSorted hKeysNodup_l').symm
 where
-  /-- Helper: any two sorted permutations of `S.pairs` are equal.  Proof by
-  strong induction on length using a custom "uniqueness of sorted
-  permutation" lemma. -/
-  lockAcquireSequence_canonical_aux (S : LockSet)
-      (l' : List (LockId × AccessMode))
-      (hPerm : (lockAcquireSequence S).Perm l')
-      (_hSortedRef : (lockAcquireSequence S).Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst))
-      (hSortedL' : l'.Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst)) :
-      l' = lockAcquireSequence S := by
-    -- Strategy: under key uniqueness on S.pairs, the `≤`-sorted
-    -- permutations are uniquely determined.  Symmetrize hPerm to use
-    -- standard mathlib-style identification.
-    symm
-    -- We use the fact: if two lists are permutations and both Pairwise (≤)
-    -- under a strictly-antisymmetric-via-key-uniqueness ≤, they are equal.
-    -- We derive antisymmetry from S's hUniqueKeys (positions in S.pairs
-    -- have distinct fst, hence distinct ≤-ordering after sort).
-    -- Use the standard `List.Sorted` uniqueness pattern, hand-rolled:
-    have hKeysNodup_lock : ((lockAcquireSequence S).map (·.fst)).Nodup := by
-      -- The sort preserves the underlying list as a permutation, so the
-      -- mapped fst list is also a permutation of S.pairs.map (·.fst),
-      -- which is Nodup by S.hUniqueKeys.
-      have hPermFst : ((lockAcquireSequence S).map (·.fst)).Perm
-                      (S.pairs.map (·.fst)) :=
-        (lockAcquireSequence_perm S).map _
-      exact hPermFst.nodup_iff.mpr S.hUniqueKeys
-    have hKeysNodup_l' : (l'.map (·.fst)).Nodup := by
-      have hPermFstL' : (l'.map (·.fst)).Perm
-                        ((lockAcquireSequence S).map (·.fst)) :=
-        (hPerm.symm.map _)
-      exact hPermFstL'.nodup_iff.mpr hKeysNodup_lock
-    -- Now apply uniqueness of sorted Nodup-keyed permutation.
-    exact uniq_sorted_perm_aux hPerm
-      _hSortedRef hKeysNodup_lock hSortedL' hKeysNodup_l'
   /-- Inner helper: uniqueness of sorted-with-Nodup-keys permutation.
-  Generic over arbitrary lists. -/
+  Generic over arbitrary lists.
+
+  Given two lists `l₁` and `l₂` that are:
+  * permutations of each other
+  * both `Pairwise (≤ on fst)` (sorted by first projection)
+  * both with `Nodup` first-projection (distinct keys)
+  Then they are structurally equal.
+
+  Proof by induction on `l₁` (then case-split on `l₂`); the inductive
+  step uses antisymmetry of `LockId.le` plus Nodup-of-keys to force
+  heads to agree. -/
   uniq_sorted_perm_aux : ∀ {l₁ l₂ : List (LockId × AccessMode)},
       l₁.Perm l₂ →
       l₁.Pairwise (fun p₁ p₂ => p₁.fst ≤ p₂.fst) →

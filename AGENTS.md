@@ -2881,13 +2881,67 @@ documentation lives under `docs/` and `docs/gitbook/`.
   unchanged.  Typed-accessor adoption counts grew by 7 (one for
   each of the 7 kernel-object kinds the dispatcher consumes).
 
-  **Test coverage**: 49 new runtime assertions in
-  `lock_set_suite`.  Lean-side: ~100 new surface anchors in
-  `tests/test_tier3_invariant_surface.sh` (covering every public
-  SM3.B symbol).  Existing test suites continue to pass (Tier
-  0+1+2+3 green).  Zero clippy warnings (no Rust changes).
+  **Test coverage** (audit-pass-1): 72 runtime assertions in
+  `lock_set_suite` (was 49 at initial landing; +23 from audit-pass-1
+  closures across §9 lub-merging, §10 union semantics, §11
+  per-transition consistency runtime exercise, §12 canonical-sort
+  determinism, §13 LockId.lookup fixture-state).  Lean-side: ~105
+  surface anchors in `tests/test_tier3_invariant_surface.sh`
+  (covering every public SM3.B symbol; +5 audit-pass-1 anchors for
+  `LockSet.union_mem_inv` / `union_empty` / `containsKey_iff` /
+  `empty_pairs` / `singleton_pairs`).  Existing test suites
+  continue to pass (Tier 0+1+2+3 green).  Zero clippy warnings (no
+  Rust changes).  Zero linter warnings.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+  **Audit-pass-1 refinements** (post-initial-landing comprehensive
+  deep audit; all closures land in the same v0.31.9 release cut):
+  - **Code-quality cleanup**: removed no-op `simp only at h` in
+    `DecidableEq LockSet`; rewrote `containsKey_iff` to use
+    `obtain` + `subst` (eliminated `simp_all`); dropped unused
+    `_hSortedRef` parameter from `lockAcquireSequence_canonical_aux`.
+  - **Proof-style refactor**: replaced 76 repeated
+    `simp only [tcbLock_kind, cnodeLock_kind, ..., untypedLock_kind];
+    decide` invocations across the 25 per-transition consistency
+    theorems with clean `simp; decide` (the `*Lock_kind` lemmas are
+    `@[simp]` globally).  Removed the
+    `set_option linter.unusedSimpArgs false` workaround that the
+    verbose form required.  Net diff: −76 long `simp only` lines.
+  - **Module-layering fix**: moved `LockSet.insertOrMerge_mem` from
+    `LockSetTransitions.lean` (which only consumes it) to
+    `LockSet.lean` (the module that defines `insertOrMerge`
+    itself).
+  - **Spec-gap closure**: added `LockSet.union_mem_inv` — a
+    structural characterisation theorem for `LockSet.union`'s
+    semantics.  Initial landing defined `union` without any
+    theorem characterising its membership; audit-pass-1 closes
+    the spec gap by proving `∀ p ∈ S₁.union S₂, p ∈ S₁ ∨ ∃ p' ∈
+    S₂, p.fst = p'.fst`.  The asymmetry between "full pair match"
+    on S₁ and "fst-key match" on S₂ reflects `insertOrMerge`'s lub
+    merging.
+  - **Test-coverage gap closures** (5 new check sections, +23
+    runtime assertions):
+    * §9 lub-merging: read+write, write+read, read+read at same
+      key; self-suspend collapse; self-reply collapse.
+    * §10 union semantics: disjoint / overlapping / empty.
+    * §11 `lockSet_consistent_*` runtime application: specialise
+      each consistency theorem to concrete args and verify the
+      `List.all (decide ...)` discharge.
+    * §12 canonical-sort determinism: same multiset built in 3
+      different orders yields identical canonical output; within-
+      kind sort is ascending by `ObjId.val`.
+    * §13 `LockId.lookup` fixture-state: `some` branch for
+      matching kind+ObjId; kind-mismatch fail-closed (TCB-tagged
+      LockId at an Endpoint ObjId → `none`); absent-ObjId
+      fail-closed; N/A-kind (`.objStore`/`.reply`/`.page`) fail-
+      closed witnesses.
+  - **Inventory expansion**: `lockSetTheorems` grew from 72 to 81
+    entries.  +8 projection entries
+    (`lockKind_eq_of_objectType` + 4 lookup structural theorems +
+    3 fail-closed N/A witnesses); +1 algebra entry
+    (`union_mem_inv`).  Per-category counts and partition-sum
+    theorem updated; `lockSetTheorems_count = 81`.
 
   Follow-on: SM3.C (`withLockSet` 2PL combinator,
   `acquireLockOnObject` / `releaseLockOnObject`, `lockSetHeld`

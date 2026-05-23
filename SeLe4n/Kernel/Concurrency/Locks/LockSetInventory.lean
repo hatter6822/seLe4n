@@ -31,8 +31,9 @@ The inventory has five categories matching the plan §5.2 sub-tasks:
 * `.acquireSort` — SM3.B.5/B.6/B.7/B.8 lockAcquireSequence + the
   three ordered/complete/canonical theorems.
 * `.algebra` — SM3.B helper theorems (AccessMode.lub
-  idempotence/commutativity/associativity,
-  AccessMode.conflicts symmetry, LockSet.insertOrMerge_mem).
+  idempotence/commutativity/associativity, AccessMode.conflicts
+  symmetry, LockSet.insertOrMerge_mem, lockSetOfList_mem_inv,
+  LockSet.fst_inj_at_pairs, LockSet.union_mem_inv).
 
 ## Identifier validation
 
@@ -94,7 +95,9 @@ macro_rules
 /-- WS-SM SM3.B: substantive theorem inventory.  Every entry's
 identifier is compile-time-validated. -/
 def lockSetTheorems : List LockSetTheorem :=
-  [-- §1 projection (10 entries)
+  [-- §1 projection (18 entries — 1 lockKind def + 7 per-variant lockKind
+    -- unfolds + agreement-with-objectType + LockId.fromObject + LockId.lookup
+    -- + 6 lookup structural theorems + 3 fail-closed witnesses for N/A kinds)
     lkst! "KernelObject.lockKind projects the LockKind from a variant"
       SeLe4n.Model.KernelObject.lockKind .projection,
     lkst! "lockKind on .tcb reduces to .tcb"
@@ -111,10 +114,26 @@ def lockSetTheorems : List LockSetTheorem :=
       SeLe4n.Model.KernelObject.lockKind_untyped .projection,
     lkst! "lockKind on .schedContext reduces to .schedContext"
       SeLe4n.Model.KernelObject.lockKind_schedContext .projection,
+    lkst! "lockKind agrees with objectType per variant"
+      SeLe4n.Model.KernelObject.lockKind_eq_of_objectType .projection,
     lkst! "LockId.fromObject builds LockId from ObjId + KernelObject"
       SeLe4n.Model.LockId.fromObject .projection,
     lkst! "LockId.lookup resolves a LockId against a SystemState"
       SeLe4n.Model.LockId.lookup .projection,
+    lkst! "LockId.lookup_some_of_kindMatch: success branch on matching kind"
+      SeLe4n.Model.LockId.lookup_some_of_kindMatch .projection,
+    lkst! "LockId.lookup_fromObject_of_present: round-trip identity"
+      SeLe4n.Model.LockId.lookup_fromObject_of_present .projection,
+    lkst! "LockId.lookup_kindMatch: post-condition on success"
+      SeLe4n.Model.LockId.lookup_kindMatch .projection,
+    lkst! "LockId.lookup_lockState_eq: returned state matches objectLockOf"
+      SeLe4n.Model.LockId.lookup_lockState_eq .projection,
+    lkst! "LockId.lookup_objStore: SystemState-level kind fails closed"
+      SeLe4n.Model.LockId.lookup_objStore .projection,
+    lkst! "LockId.lookup_reply: SM3.A.5 N/A kind fails closed"
+      SeLe4n.Model.LockId.lookup_reply .projection,
+    lkst! "LockId.lookup_page: SM3.A.8 N/A kind fails closed"
+      SeLe4n.Model.LockId.lookup_page .projection,
     -- §2 lockSet — per-transition declarations (25 entries — one per SyscallId variant)
     lkst! "lockSet for endpointSend"
       lockSet_endpointSend .lockSet,
@@ -228,7 +247,7 @@ def lockSetTheorems : List LockSetTheorem :=
       LockSet.lockAcquireSequence_canonical .acquireSort,
     lkst! "lockAcquireSequence_length preserves cardinality"
       LockSet.lockAcquireSequence_length .acquireSort,
-    -- §5 algebra (7 entries — AccessMode + LockSet structural)
+    -- §5 algebra (8 entries — AccessMode + LockSet structural)
     lkst! "AccessMode.lub idempotent"
       AccessMode.lub_idem .algebra,
     lkst! "AccessMode.lub commutative"
@@ -242,17 +261,22 @@ def lockSetTheorems : List LockSetTheorem :=
     lkst! "lockSetOfList membership trace-back"
       lockSetOfList_mem_inv .algebra,
     lkst! "LockSet.fst_inj_at_pairs: pairs with same fst are equal"
-      LockSet.fst_inj_at_pairs .algebra]
+      LockSet.fst_inj_at_pairs .algebra,
+    lkst! "LockSet.union_mem_inv: union membership trace-back"
+      LockSet.union_mem_inv .algebra]
 
-/-- WS-SM SM3.B: the inventory has exactly 72 entries.
+/-- WS-SM SM3.B: the inventory has exactly 81 entries.
 A regression that adds a new SM3.B theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem lockSetTheorems_count :
-    lockSetTheorems.length = 72 := by decide
+    lockSetTheorems.length = 81 := by decide
 
-/-- WS-SM SM3.B: 10 entries in the `projection` category. -/
+/-- WS-SM SM3.B: 18 entries in the `projection` category
+(lockKind def + 7 per-variant simp lemmas + lockKind_eq_of_objectType
+ + LockId.fromObject + LockId.lookup + 4 lookup structural theorems
+ + 3 fail-closed N/A witnesses). -/
 theorem lockSetTheorems_projection_count :
-    (lockSetTheorems.filter (fun t => t.category == .projection)).length = 10 := by
+    (lockSetTheorems.filter (fun t => t.category == .projection)).length = 18 := by
   decide
 
 /-- WS-SM SM3.B: 25 entries in the `lockSet` category (one per SyscallId variant). -/
@@ -270,9 +294,9 @@ theorem lockSetTheorems_acquireSort_count :
     (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 5 := by
   decide
 
-/-- WS-SM SM3.B: 7 entries in the `algebra` category. -/
+/-- WS-SM SM3.B: 8 entries in the `algebra` category. -/
 theorem lockSetTheorems_algebra_count :
-    (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 7 := by
+    (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 8 := by
   decide
 
 /-- WS-SM SM3.B: per-category counts sum to the total. -/

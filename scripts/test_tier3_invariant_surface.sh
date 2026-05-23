@@ -1965,6 +1965,12 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.AccessMode.lub_assoc
 #check @SeLe4n.Kernel.Concurrency.AccessMode.conflicts
 #check @SeLe4n.Kernel.Concurrency.AccessMode.conflicts_symm
+-- SM3.B LockSet structural helpers (audit-pass-1 additions).
+#check @SeLe4n.Kernel.Concurrency.LockSet.union_mem_inv
+#check @SeLe4n.Kernel.Concurrency.LockSet.union_empty
+#check @SeLe4n.Kernel.Concurrency.LockSet.containsKey_iff
+#check @SeLe4n.Kernel.Concurrency.LockSet.empty_pairs
+#check @SeLe4n.Kernel.Concurrency.LockSet.singleton_pairs
 -- SM3.B.3: Per-transition lockSet declarations.
 #check @SeLe4n.Kernel.Concurrency.lockSet_endpointSend
 #check @SeLe4n.Kernel.Concurrency.lockSet_endpointReceive

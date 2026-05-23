@@ -100,6 +100,15 @@ open SeLe4n.Kernel.Concurrency
 #check @AccessMode.conflicts
 #check @AccessMode.conflicts_symm
 
+/-! ## SM3.B LockSet structural helpers -/
+
+#check @LockSet.insertOrMerge_mem
+#check @LockSet.union_mem_inv
+#check @LockSet.empty_pairs
+#check @LockSet.singleton_pairs
+#check @LockSet.union_empty
+#check @LockSet.containsKey_iff
+
 /-! ## SM3.B.3 — Per-transition lockSet declarations -/
 
 #check @lockSet_endpointSend
@@ -271,6 +280,57 @@ example : threeTcbLockSet.lockAcquireSequence =
      (⟨.tcb, ObjId.ofNat 5⟩, .write),
      (⟨.tcb, ObjId.ofNat 7⟩, .write)] := by native_decide
 
+/-! ### Lub-merging when the same key appears twice in input.
+
+Audit-pass-1 addition: `insertOrMerge` must collapse duplicate keys
+via `AccessMode.lub`.  This is a real correctness scenario for
+`lockSet_tcbSuspend` when `callerTid = targetTcbTid` (self-suspend).
+
+Order should not matter — read+write = write regardless of which
+is inserted first. -/
+
+example :
+    let S := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+    S.size = 1 ∧ S.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)] := by decide
+
+example :
+    let S := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+    S.size = 1 ∧ S.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)] := by decide
+
+-- read + read = read (no upgrade)
+example :
+    let S := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+    S.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .read)] := by decide
+
+/-! ### Self-suspend (`callerTid = targetTcbTid`) collapses TCB locks.
+
+The base list contains (tcb caller, read) and (tcb target, write).
+With caller=target, the lub-merge produces (tcb caller, write).
+Total size = 2 (caller-TCB merged + cnode-root). -/
+
+example :
+    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+    S.size = 2 := by decide
+
+example :
+    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+    S.lockAcquireSequence =
+      [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+       (⟨.tcb, ObjId.ofNat 5⟩, .write)] := by native_decide
+
+/-! ### Reply with caller = reply-target collapses to two locks.
+
+`lockSet_endpointReply` declares (caller TCB, write), (cnode, read),
+(reply target, write).  If caller = reply target, the merge yields
+a single (TCB, write) entry. -/
+
+example :
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
+    S.size = 2 := by decide
+
 -- ============================================================================
 -- §4 — Per-transition lockSet shape examples
 -- ============================================================================
@@ -339,6 +399,54 @@ example :
     LockId.lookup (default : SystemState) ⟨.endpoint, ObjId.ofNat 99⟩ = none := by
   decide
 
+/-! ### LockId.lookup on the empty SystemState for `.objStore`/`.reply`/`.page`
+returns none — fail-closed for N/A kinds. -/
+
+example :
+    LockId.lookup (default : SystemState) ⟨.objStore, ObjId.ofNat 0⟩ = none := by
+  decide
+
+example :
+    LockId.lookup (default : SystemState) ⟨.reply, ObjId.ofNat 0⟩ = none := by
+  decide
+
+example :
+    LockId.lookup (default : SystemState) ⟨.page, ObjId.ofNat 0⟩ = none := by
+  decide
+
+/-! ### LockId.lookup on a state with an inserted Endpoint.
+
+Audit-pass-1 addition: tests the `some` branch of `LockId.lookup`.
+After inserting an Endpoint at ObjId 5, lookup at `(.endpoint, 5)`
+returns `some (lock, object)` and lookup at any other kind+ObjId
+returns `none` (the kind-confusion fail-closed branch). -/
+
+private def stateWithEndpoint : SystemState :=
+  let s : SystemState := default
+  let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
+  { s with objects := s.objects.insert (ObjId.ofNat 5) ep }
+
+example :
+    (LockId.lookup stateWithEndpoint ⟨.endpoint, ObjId.ofNat 5⟩).isSome :=
+  by native_decide
+
+/-! ### Kind mismatch fail-closed: a TCB-tagged LockId at an
+ObjId storing an Endpoint resolves to `none`. -/
+
+example :
+    LockId.lookup stateWithEndpoint ⟨.tcb, ObjId.ofNat 5⟩ = none := by
+  native_decide
+
+example :
+    LockId.lookup stateWithEndpoint ⟨.cnode, ObjId.ofNat 5⟩ = none := by
+  native_decide
+
+/-! ### Lookup at an unrelated ObjId is none. -/
+
+example :
+    LockId.lookup stateWithEndpoint ⟨.endpoint, ObjId.ofNat 99⟩ = none := by
+  native_decide
+
 -- ============================================================================
 -- §6 — Permitted kinds for every syscall
 -- ============================================================================
@@ -370,12 +478,97 @@ example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode] := by decide
 example : permittedKinds .tcbSetIPCBuffer = [.tcb, .cnode] := by decide
 
 -- ============================================================================
+-- §6b — LockSet.union semantics
+-- ============================================================================
+
+/-! ### Union with empty is identity.
+
+The `union_empty` `@[simp]` theorem gives this for free, but the
+runtime check ensures the `foldl` computation actually behaves
+identity on the empty right-argument. -/
+
+example : (LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write).union LockSet.empty =
+    LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write := by decide
+
+/-! ### Union of disjoint LockSets contains both keys. -/
+
+example :
+    let S1 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
+    let S2 := LockSet.singleton ⟨.endpoint, ObjId.ofNat 2⟩ .write
+    (S1.union S2).size = 2 := by decide
+
+/-! ### Union merges overlapping keys via lub. -/
+
+example :
+    let S1 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .read
+    let S2 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
+    (S1.union S2).pairs = [(⟨.tcb, ObjId.ofNat 1⟩, .write)] := by decide
+
+-- ============================================================================
+-- §6c — Runtime exercise of lockSet_consistent_* on concrete args
+-- ============================================================================
+
+/-! ### Every per-transition `lockSet_consistent_*` theorem actually
+holds on concrete arguments.  Audit-pass-1 addition: surface-anchors
+are only `#check`'d, so a `True`-typed identity would pass.  The
+runtime exercise below specialises each theorem to concrete args and
+verifies the universally-quantified claim. -/
+
+example :
+    ∀ p ∈ (lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩)).pairs,
+      p.fst.kind ∈ permittedKinds .send :=
+  lockSet_consistent_send ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+
+example :
+    ∀ p ∈ (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩)).pairs,
+      p.fst.kind ∈ permittedKinds .call :=
+  lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+
+example :
+    ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSuspend :=
+  lockSet_consistent_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+    (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+
+example :
+    ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩).pairs,
+      p.fst.kind ∈ permittedKinds .schedContextBind :=
+  lockSet_consistent_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩
+
+example :
+    ∀ p ∈ (lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (ObjId.ofNat 30)).pairs,
+      p.fst.kind ∈ permittedKinds .lifecycleRetype :=
+  lockSet_consistent_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (ObjId.ofNat 30)
+
+-- ============================================================================
+-- §6d — Runtime exercise of lockAcquireSequence_canonical
+-- ============================================================================
+
+/-! ### The canonical-sort theorem actually applies: given an
+already-sorted permutation, `lockAcquireSequence` returns the same. -/
+
+example :
+    let S := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩)
+    let canonical : List (LockId × AccessMode) :=
+      [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+       (⟨.tcb, ObjId.ofNat 5⟩, .write),
+       (⟨.tcb, ObjId.ofNat 8⟩, .write),
+       (⟨.endpoint, ObjId.ofNat 20⟩, .write)]
+    canonical = S.lockAcquireSequence := by native_decide
+
+-- ============================================================================
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 72 := by decide
+example : lockSetTheorems.length = 81 := by decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 10 := by
+example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 18 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25 := by
@@ -387,7 +580,7 @@ example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 5 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 7 := by
+example : (lockSetTheorems.filter (fun t => t.category == .algebra)).length = 8 := by
   decide
 
 -- ============================================================================
@@ -522,20 +715,154 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "tcbSuspend size (no Options) = 3"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
 
+private def runLubMergeChecks : IO Unit := do
+  IO.println "--- §9 Lub-merging on duplicate keys ---"
+  -- read + write at same key → write
+  let s1 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+  assertBool "insertOrMerge read+write at same key gives single (write) entry"
+    (decide (s1.size = 1 ∧ s1.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)]))
+  -- write + read at same key → write (commutativity of lub)
+  let s2 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+  assertBool "insertOrMerge write+read at same key gives single (write) entry"
+    (decide (s2.size = 1 ∧ s2.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .write)]))
+  -- read + read at same key → read
+  let s3 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+              |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .read
+  assertBool "insertOrMerge read+read at same key gives single (read) entry"
+    (decide (s3.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .read)]))
+  -- Self-suspend (callerTid = targetTcbTid) collapses TCB locks.
+  let selfSuspend := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+  assertBool "tcbSuspend(caller=target) collapses to 2 locks (cnode + merged TCB)"
+    (decide (selfSuspend.size = 2))
+  assertBool "tcbSuspend(caller=target) merged TCB lock is write"
+    (decide (selfSuspend.lockAcquireSequence =
+      [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+       (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
+  -- endpointReply(caller=replyTarget) collapses.
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
+  assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
+    (decide (selfReply.size = 2))
+
+private def runUnionChecks : IO Unit := do
+  IO.println "--- §10 LockSet.union semantics ---"
+  let s1 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
+  let s2 := LockSet.singleton ⟨.endpoint, ObjId.ofNat 2⟩ .write
+  assertBool "union of disjoint LockSets has size 2"
+    (decide ((s1.union s2).size = 2))
+  let s3 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .read
+  let s4 := LockSet.singleton ⟨.tcb, ObjId.ofNat 1⟩ .write
+  assertBool "union of overlapping LockSets merges via lub"
+    (decide ((s3.union s4).pairs = [(⟨.tcb, ObjId.ofNat 1⟩, .write)]))
+  assertBool "union with empty is identity"
+    (decide (s1.union LockSet.empty = s1))
+
+private def runConsistencyRuntimeChecks : IO Unit := do
+  IO.println "--- §11 Runtime exercise of lockSet_consistent_* ---"
+  -- Build a concrete LockSet via lockSet_endpointSend and verify EVERY
+  -- entry's kind is in permittedKinds .send.
+  let send := lockSet_endpointSend ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+  let allOk_send := send.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .send))
+  assertBool "lockSet_endpointSend (with receiver): all kinds in permittedKinds .send"
+    allOk_send
+  -- And a transition with multiple Optional args (.tcbSuspend) — both Some.
+  let susp := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+                (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+  let allOk_susp := susp.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .tcbSuspend))
+  assertBool "lockSet_tcbSuspend (both Options some): all kinds in permittedKinds .tcbSuspend"
+    allOk_susp
+  -- Edge case: no Option args.
+  let mint := lockSet_cspaceMint ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+  let allOk_mint := mint.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .cspaceMint))
+  assertBool "lockSet_cspaceMint: all kinds in permittedKinds .cspaceMint"
+    allOk_mint
+  -- 4-base-arg transition.
+  let retype := lockSet_lifecycleRetype ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                  (ObjId.ofNat 30)
+  let allOk_retype := retype.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .lifecycleRetype))
+  assertBool "lockSet_lifecycleRetype: all kinds in permittedKinds .lifecycleRetype"
+    allOk_retype
+
+private def runCanonicalSortRuntimeChecks : IO Unit := do
+  IO.println "--- §12 lockAcquireSequence canonical sort runtime ---"
+  -- The sort is total and deterministic regardless of input order.
+  -- Verify by constructing the same multiset in different orders and
+  -- checking they produce the same lockAcquireSequence output.
+  let order1 := LockSet.empty.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
+                  |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+                  |>.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
+  let order2 := LockSet.empty.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
+                  |>.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
+                  |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+  let order3 := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+                  |>.insertOrMerge ⟨.cnode, ObjId.ofNat 10⟩ .read
+                  |>.insertOrMerge ⟨.endpoint, ObjId.ofNat 20⟩ .write
+  let expected : List (LockId × AccessMode) :=
+    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (⟨.endpoint, ObjId.ofNat 20⟩, .write)]
+  assertBool "lockAcquireSequence: order1 produces canonical output"
+    (decide (order1.lockAcquireSequence = expected))
+  assertBool "lockAcquireSequence: order2 produces canonical output"
+    (decide (order2.lockAcquireSequence = expected))
+  assertBool "lockAcquireSequence: order3 produces canonical output"
+    (decide (order3.lockAcquireSequence = expected))
+  -- Within-kind sort: ObjIds ascending.
+  let withinKind := LockSet.empty.insertOrMerge ⟨.tcb, ObjId.ofNat 7⟩ .write
+                      |>.insertOrMerge ⟨.tcb, ObjId.ofNat 3⟩ .write
+                      |>.insertOrMerge ⟨.tcb, ObjId.ofNat 5⟩ .write
+  let withinKindExpected : List (LockId × AccessMode) :=
+    [(⟨.tcb, ObjId.ofNat 3⟩, .write),
+     (⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (⟨.tcb, ObjId.ofNat 7⟩, .write)]
+  assertBool "lockAcquireSequence: within-kind sort by ObjId ascending"
+    (decide (withinKind.lockAcquireSequence = withinKindExpected))
+
+private def runLookupFixtureChecks : IO Unit := do
+  IO.println "--- §13 LockId.lookup on non-default fixture state ---"
+  let ep : KernelObject := KernelObject.endpoint ({} : Endpoint)
+  let s : SystemState := {
+    (default : SystemState) with
+      objects := (default : SystemState).objects.insert (ObjId.ofNat 5) ep
+  }
+  -- Right kind, right ObjId → some.
+  assertBool "LockId.lookup at (.endpoint, 5) on state-with-endpoint: some"
+    (LockId.lookup s ⟨.endpoint, ObjId.ofNat 5⟩).isSome
+  -- Wrong kind (TCB at Endpoint's ObjId) → none.
+  assertBool "LockId.lookup at (.tcb, 5) on state-with-endpoint: none (kind mismatch)"
+    (decide (LockId.lookup s ⟨.tcb, ObjId.ofNat 5⟩ = none))
+  assertBool "LockId.lookup at (.cnode, 5) on state-with-endpoint: none (kind mismatch)"
+    (decide (LockId.lookup s ⟨.cnode, ObjId.ofNat 5⟩ = none))
+  -- Right kind, wrong ObjId → none.
+  assertBool "LockId.lookup at (.endpoint, 99) on state-with-endpoint: none (absent ObjId)"
+    (decide (LockId.lookup s ⟨.endpoint, ObjId.ofNat 99⟩ = none))
+  -- Fail-closed for N/A kinds.
+  assertBool "LockId.lookup at (.objStore, 0): none (no object for table-level lock)"
+    (decide (LockId.lookup s ⟨.objStore, ObjId.ofNat 0⟩ = none))
+  assertBool "LockId.lookup at (.reply, 0): none (SM3.A.5 N/A)"
+    (decide (LockId.lookup s ⟨.reply, ObjId.ofNat 0⟩ = none))
+  assertBool "LockId.lookup at (.page, 0): none (SM3.A.8 N/A)"
+    (decide (LockId.lookup s ⟨.page, ObjId.ofNat 0⟩ = none))
+
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 72"
-    (decide (lockSetTheorems.length = 72))
-  assertBool "projection category count = 10"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 10))
+  assertBool "lockSetTheorems.length = 81"
+    (decide (lockSetTheorems.length = 81))
+  assertBool "projection category count = 18"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 18))
   assertBool "lockSet category count = 25 (one per SyscallId variant)"
     (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25))
   assertBool "consistency category count = 25 (one per SyscallId variant)"
     (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 25))
   assertBool "acquireSort category count = 5"
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 5))
-  assertBool "algebra category count = 7"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 7))
+  assertBool "algebra category count = 8"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .algebra)).length = 8))
   assertBool "category-partition sum = total"
     (decide
       ((lockSetTheorems.filter (fun t => t.category == .projection)).length +
@@ -556,6 +883,11 @@ def runLockSetChecks : IO Unit := do
   runLockIdProjectionChecks
   runPerTransitionShapeChecks
   runInventoryChecks
+  runLubMergeChecks
+  runUnionChecks
+  runConsistencyRuntimeChecks
+  runCanonicalSortRuntimeChecks
+  runLookupFixtureChecks
   IO.println "======================================"
   IO.println "All SM3.B LockSet checks PASS."
 

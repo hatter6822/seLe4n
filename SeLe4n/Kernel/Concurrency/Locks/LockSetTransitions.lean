@@ -515,34 +515,8 @@ instance (k : LockKind) (sid : SyscallId) :
 -- SM3.B.4 — generic membership-traces-back theorem for fold-based lockSets
 -- ============================================================================
 
-/-- WS-SM SM3.B.4 helper: an element of `S.insertOrMerge l m`'s
-underlying list is either an old element of `S` or the new pair
-`(l, m)` (or the merged form of an old pair with key `l`). -/
-theorem LockSet.insertOrMerge_mem (S : LockSet) (l : LockId) (m : AccessMode)
-    (p : LockId × AccessMode)
-    (hMem : p ∈ (S.insertOrMerge l m).pairs) :
-    p = (l, m) ∨ p.fst = l ∨ p ∈ S.pairs := by
-  unfold LockSet.insertOrMerge at hMem
-  split at hMem
-  case h_1 _hContains =>
-    -- Containment case: pairs become S.pairs with key-l snd merged via lub.
-    -- Every element of the result has fst equal to some original fst.
-    obtain ⟨p', hp'Mem, hp'Eq⟩ := List.mem_map.mp hMem
-    by_cases hp' : p'.fst = l
-    · -- The transformed pair is (l, p'.snd.lub m); its fst is l.
-      simp [hp'] at hp'Eq
-      right; left
-      rw [← hp'Eq]
-    · -- The pair is unchanged; it was in S.pairs.
-      simp [hp'] at hp'Eq
-      right; right
-      rw [← hp'Eq]
-      exact hp'Mem
-  case h_2 _ =>
-    -- Prepend case: pairs = (l, m) :: S.pairs.
-    rcases List.mem_cons.mp hMem with hNew | hOld
-    · left; exact hNew
-    · right; right; exact hOld
+-- `LockSet.insertOrMerge_mem` is defined in `LockSet.lean`; we re-use it
+-- here for the fold-based membership trace-back.
 
 /-- WS-SM SM3.B.4 helper: an element of `lockSetOfList pairs`'s
 underlying list has fst equal to some pair in `pairs`'s fst.
@@ -708,14 +682,14 @@ theorem lockSet_consistent_base_plus_two_opts
 @[simp] theorem untypedLock_kind (oid : ObjId) : (untypedLock oid).kind = .untyped :=
   rfl
 
--- The per-transition `lockSet_consistent_*` proofs use a uniform
--- `simp only [tcbLock_kind, ...]` argument list to reduce
--- `(<lockBuilder> arg).kind` to its concrete `LockKind` so `decide`
--- can discharge the `∈ permittedKinds <τ>` goal.  Not every transition
--- uses every lock-kind, so several arguments are unused per proof;
--- the linter false-positives on those.  We disable the linter for
--- this section.
-set_option linter.unusedSimpArgs false
+-- Audit-pass-1 refactor: the per-transition `lockSet_consistent_*`
+-- proofs use a uniform `simp; decide` pattern (where `simp`
+-- normalizes `(<lockBuilder> arg).kind` to its concrete `LockKind`
+-- via the `@[simp]` `*Lock_kind` lemmas above, then `decide`
+-- discharges the `LockKind ∈ permittedKinds <τ>` finite-list
+-- membership).  Removed the explicit `simp only [...]` argument list
+-- (which forced an `unusedSimpArgs` linter override) — plain `simp`
+-- with the `@[simp]`-tagged helpers is sufficient and warning-free.
 
 /-- WS-SM SM3.B.4 (plan §5.2.SM3.B.4) for `.send`: every declared lock
 has kind in `permittedKinds .send`. -/
@@ -726,16 +700,16 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases rTid with
         | none => simp at hpp
-        | some rt => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some rt => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.receive`. -/
 theorem lockSet_consistent_receive (callerTid : ThreadId)
@@ -745,16 +719,16 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases sTid with
         | none => simp at hpp
-        | some st => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some st => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.call`. -/
 theorem lockSet_consistent_call (callerTid : ThreadId)
@@ -764,16 +738,16 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases rTid with
         | none => simp at hpp
-        | some rt => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some rt => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.reply`. -/
 theorem lockSet_consistent_reply (callerTid : ThreadId)
@@ -783,11 +757,11 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.replyRecv`. -/
@@ -799,18 +773,18 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases newSenderTid with
         | none => simp at hpp
-        | some st => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some st => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
@@ -820,16 +794,16 @@ theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases wTid with
         | none => simp at hpp
-        | some wt => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some wt => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationWait`. -/
 theorem lockSet_consistent_notificationWait (callerTid : ThreadId)
@@ -839,11 +813,11 @@ theorem lockSet_consistent_notificationWait (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceMint`. -/
@@ -854,11 +828,11 @@ theorem lockSet_consistent_cspaceMint (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceCopy`. -/
@@ -869,11 +843,11 @@ theorem lockSet_consistent_cspaceCopy (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceMove`. -/
@@ -884,11 +858,11 @@ theorem lockSet_consistent_cspaceMove (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.cspaceDelete`. -/
@@ -899,11 +873,11 @@ theorem lockSet_consistent_cspaceDelete (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.lifecycleRetype`. -/
@@ -914,13 +888,13 @@ theorem lockSet_consistent_lifecycleRetype (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.vspaceMap`. -/
@@ -931,11 +905,11 @@ theorem lockSet_consistent_vspaceMap (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.vspaceUnmap`. -/
@@ -946,11 +920,11 @@ theorem lockSet_consistent_vspaceUnmap (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceRegister`. -/
@@ -961,9 +935,9 @@ theorem lockSet_consistent_serviceRegister (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceRevoke`. -/
@@ -974,9 +948,9 @@ theorem lockSet_consistent_serviceRevoke (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.serviceQuery`. -/
@@ -987,9 +961,9 @@ theorem lockSet_consistent_serviceQuery (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.schedContextConfigure`. -/
@@ -1000,16 +974,16 @@ theorem lockSet_consistent_schedContextConfigure (callerTid : ThreadId)
   lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases boundTcb with
         | none => simp at hpp
-        | some bt => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some bt => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.schedContextBind`. -/
 theorem lockSet_consistent_schedContextBind (callerTid : ThreadId)
@@ -1019,13 +993,13 @@ theorem lockSet_consistent_schedContextBind (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.schedContextUnbind`. -/
@@ -1036,13 +1010,13 @@ theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.tcbSuspend`. -/
@@ -1054,20 +1028,20 @@ theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
   lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
     (by intro pp hpp
         cases blEp with
         | none => simp at hpp
-        | some ep => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some ep => simp at hpp; rw [← hpp]; simp; decide)
     (by intro pp hpp
         cases blN with
         | none => simp at hpp
-        | some n => simp at hpp; rw [← hpp]; simp only [tcbLock_kind, endpointLock_kind, notificationLock_kind]; decide)
+        | some n => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.tcbResume`. -/
 theorem lockSet_consistent_tcbResume (callerTid : ThreadId)
@@ -1077,11 +1051,11 @@ theorem lockSet_consistent_tcbResume (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.tcbSetPriority`. -/
@@ -1092,11 +1066,11 @@ theorem lockSet_consistent_tcbSetPriority (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.tcbSetMCPriority`. -/
@@ -1107,11 +1081,11 @@ theorem lockSet_consistent_tcbSetMCPriority (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 /-- WS-SM SM3.B.4 for `.tcbSetIPCBuffer`. -/
@@ -1122,11 +1096,11 @@ theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         rcases List.mem_cons.mp hMem with h | hMem
-        · rw [h]; simp only [tcbLock_kind, cnodeLock_kind, endpointLock_kind, notificationLock_kind, schedContextLock_kind, vspaceRootLock_kind, untypedLock_kind]; decide
+        · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
 end SeLe4n.Kernel.Concurrency

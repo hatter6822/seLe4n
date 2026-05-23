@@ -1,3 +1,156 @@
+## Unreleased — WS-SM SM3.B audit-pass-1: refactor + test-coverage gap closures + structural-semantics theorem
+
+Comprehensive deep-audit pass over the WS-SM SM3.B landing.  No
+correctness defects were found; the changes below close several
+test-coverage gaps, eliminate code-smell, and add a structural
+characterisation theorem for `LockSet.union` that was missing
+from the initial landing.
+
+### Code-quality cleanup
+
+* **`DecidableEq LockSet` proof**: removed a no-op `simp only at h`
+  that was a leftover from an earlier proof attempt — the `obtain`
+  destructuring already reduces `s₁.pairs`/`s₂.pairs` to the
+  underlying field values.
+* **`containsKey_iff` proof**: replaced the awkward
+  `rw [show (l, p.snd) = p from by cases p; simp_all]` pattern with
+  a clean `obtain` + `subst` (no `simp_all`).
+* **`lockAcquireSequence_canonical` proof**: removed the unused
+  `_hSortedRef` parameter from the `lockAcquireSequence_canonical_aux`
+  `where` clause; simplified the main proof to a single chain of
+  Perm/Nodup-keys derivations followed by a direct invocation of
+  the generic `uniq_sorted_perm_aux`.
+* **Per-transition `lockSet_consistent_*` proofs (×25)**: replaced
+  the repeated `simp only [tcbLock_kind, cnodeLock_kind,
+  endpointLock_kind, notificationLock_kind, schedContextLock_kind,
+  vspaceRootLock_kind, untypedLock_kind]; decide` pattern with a
+  clean `simp; decide` (the `*Lock_kind` lemmas are `@[simp]`
+  globally).  Removed the `set_option linter.unusedSimpArgs false`
+  workaround that the verbose form required.  Net diff: −76 long
+  `simp only` lines + 1 lint-override.
+* **`LockSet.insertOrMerge_mem` location**: moved from
+  `LockSetTransitions.lean` to `LockSet.lean` (the module that
+  defines `insertOrMerge` itself) for proper layering.  The new
+  `union_mem_inv` (below) consumes it.
+
+### Test-coverage gap closures
+
+* **Lub-merging at duplicate keys** (NEW): tests for read+write =
+  write, write+read = write, read+read = read on the same key.
+* **Self-suspend collapse** (NEW): `lockSet_tcbSuspend ⟨5⟩ _ ⟨5⟩
+  none none` collapses to 2 locks (the merged caller/target TCB
+  + cnode root); the merged TCB lock is in write mode.
+* **Reply-self collapse** (NEW): `lockSet_endpointReply ⟨5⟩ _ ⟨5⟩`
+  collapses to 2 locks.
+* **`LockSet.union` semantics** (NEW): disjoint union has size 2;
+  overlapping union merges via lub; union with empty is identity.
+* **`lockSet_consistent_*` runtime exercise** (NEW): each
+  per-transition consistency theorem is *applied* to concrete
+  arguments at runtime (specialisation followed by `List.all
+  (decide ...)` discharges).  Previously only surface-anchored
+  via `#check`.
+* **`lockAcquireSequence` canonical-sort runtime** (NEW): same
+  multiset built in 3 different insertion orders produces the
+  same canonical output; within-kind sort is ascending by
+  `ObjId.val`.
+* **`LockId.lookup` on non-empty fixture state** (NEW): exercises
+  the `some` branch for matching kind + ObjId; kind-mismatch
+  branch (LockId.kind ≠ stored-object.kind) returns `none`;
+  absent-ObjId returns `none`; fail-closed witnesses for the N/A
+  `.objStore` / `.reply` / `.page` kinds.
+
+### Spec-gap fix: `LockSet.union_mem_inv`
+
+The initial landing defined `LockSet.union` but had no theorem
+characterising its semantics.  Audit-pass-1 adds the structural
+characterisation theorem `LockSet.union_mem_inv`:
+
+```
+∀ p ∈ (S₁.union S₂).pairs, p ∈ S₁.pairs ∨ ∃ p' ∈ S₂.pairs, p.fst = p'.fst
+```
+
+The asymmetry between "element of S₁" (full pair match) and
+"fst-key matches S₂" reflects `insertOrMerge`'s lub behaviour:
+keys present in S₂ but not S₁ are added directly; keys present
+in both are lub-merged so the resulting pair's `fst` matches an
+S₂ key but its `snd` is the lub of both modes.  Proof by
+fold-induction on `S₂.pairs` via a `where`-bound aux helper.
+
+### Inventory expansion
+
+The SM3.B `lockSetTheorems` inventory grew from 72 to 81 entries:
+
+* **+8 projection entries** (was 10, now 18):
+  `KernelObject.lockKind_eq_of_objectType` (substantive
+  agreement with `objectType`); `LockId.lookup_some_of_kindMatch`,
+  `_fromObject_of_present`, `_kindMatch`, `_lockState_eq` (4
+  structural theorems); `LockId.lookup_objStore`, `_reply`,
+  `_page` (3 `@[simp]` fail-closed witnesses for the N/A kinds).
+* **+1 algebra entry** (was 7, now 8): `LockSet.union_mem_inv`.
+* Per-category counts and partition-sum theorem updated.
+* `lockSetTheorems_count = 81` (was 72).
+
+### Test suite expansion
+
+`tests/LockSetSuite.lean` grew from 49 to 72 runtime
+`assertBool` assertions plus 5 new surface anchors
+(`LockSet.union_mem_inv`, `LockSet.insertOrMerge_mem`,
+`LockSet.empty_pairs`, `LockSet.singleton_pairs`,
+`LockSet.union_empty`, `LockSet.containsKey_iff`).
+
+Five new runtime check sections were added:
+
+* `runLubMergeChecks` (§9): 6 lub-merge regression assertions.
+* `runUnionChecks` (§10): 3 union-semantics assertions.
+* `runConsistencyRuntimeChecks` (§11): 4 per-transition
+  `lockSet_consistent_*` runtime applications on concrete args.
+* `runCanonicalSortRuntimeChecks` (§12): 4 canonical-sort
+  determinism assertions across insertion orders.
+* `runLookupFixtureChecks` (§13): 7 `LockId.lookup` fixture-state
+  assertions covering matching-kind / kind-mismatch / absent-ObjId
+  / N/A-kind paths.
+
+### Tier-3 surface expansion
+
+`scripts/test_tier3_invariant_surface.sh` gains 5 new `#check`
+anchors for the `LockSet` structural helpers
+(`union_mem_inv`, `union_empty`, `containsKey_iff`,
+`empty_pairs`, `singleton_pairs`).
+
+### Mathematical correctness verification
+
+The audit verified each of the following properties by inspection
+of the code and proof structures, and by direct runtime
+evaluation:
+
+* `AccessMode.lub` is correctly a join (associative, commutative,
+  idempotent; `write` is top, `read` is bottom).
+* `AccessMode.conflicts` is symmetric; only `read/read` is
+  non-conflicting.
+* `LockSet.hUniqueKeys` correctly enforces no two pairs share a
+  `LockId`.
+* `lockAcquireSequence` produces a sorted permutation of the input.
+* `lockAcquireSequence_ordered`, `_complete`, `_canonical` are
+  substantive (not `True`-aliases); `_canonical`'s proof factors
+  through `LockSet.fst_inj_at_pairs` (Nodup-of-keys ⇒ pair
+  uniqueness on shared fst) and antisymmetry of `LockId.le`.
+* `LockId.fromObject` correctly pairs ObjId + variant-derived
+  kind.
+* `LockId.lookup` correctly dispatches on kind; the typed `getX?`
+  accessor route preserves AK7-cascade hygiene; fail-closed for
+  absent ObjId, kind mismatch, and the three N/A kinds.
+* Every `lockSet_<τ>` declares the upper-bound footprint per plan
+  §4.1 ("union over all paths"); duplicate keys collapse via
+  `AccessMode.lub`; the `lockSet_consistent_<τ>` theorems are all
+  substantive (verified by `simp; decide` discharging the kind
+  membership after `*Lock_kind` simp).
+* Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+  warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit findings have been addressed in the same cut.
+
 ## Unreleased — WS-SM SM3.B LANDED: LockSet, LockIdProjection, per-transition lockSet declarations, canonical sort theorems
 
 Closes §5.2 of
