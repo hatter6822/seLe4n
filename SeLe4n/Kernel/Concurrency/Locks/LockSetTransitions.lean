@@ -73,50 +73,94 @@ transition implicitly holds the ObjStore lock (in read mode for
 most paths, write mode for those that insert/erase entries).
 SM3.C will add the ObjStore lock as a wrapper at acquisition time.
 
-## Audit-pass-2 scope clarification: donation and PIP-chain locks
+## Audit-pass-3 (FIX): donation-path locks added per plan §4.1
 
-For the 6 syscalls that may traverse a SchedContext-donation path
-(`endpointCall`, `endpointReply`, `replyRecv`, `tcbSuspend`,
-`schedContextBind`, `schedContextUnbind`) or trigger
-priority-inheritance-propagation (any IPC syscall on a blocking
-chain), the **statically-declared lockSet covers only the
-directly-named objects** in the syscall args.
+Audit-pass-2 documented (rather than implemented) that 4
+syscalls may traverse a SchedContext-donation path beyond their
+directly-named-object footprint.  Per CLAUDE.md's
+`Implement-the-improvement` rule (and plan §4.1's "lockSet is
+the union over all paths" requirement), audit-pass-3 **fixes**
+the gap by adding pre-resolved `Option SchedContextId` and
+`Option ThreadId` arguments to the affected `lockSet_<τ>`
+functions.
 
-The donation path can additionally touch:
+The 4 affected syscalls and their donation extensions:
 
-* the donated `SchedContext` (write — `boundThread` field is
-  rebound),
-* the original-owner `TCB` (write — schedContextBinding field
-  transitions out of `.donated` / back to `.bound`).
+* **`lockSet_endpointCall`** — adds `donatedScId : Option
+  SchedContextId`.  When the caller has an active SC and the
+  receiver is passive, `applyCallDonation` updates the SC's
+  `boundThread` (write to SC).  Caller and receiver TCBs are
+  already in the lockSet.
 
-These are state-discovered (located via the replier's TCB's
-`schedContextBinding` field) rather than statically named in the
-syscall args.  Per plan §4.1's "pre-resolved Option arg" pattern,
-a future audit pass could add `donatedScId : Option SchedContextId`
-and `originalOwnerTid : Option ThreadId` parameters to the
-affected `lockSet_<τ>` functions, with the caller pre-inspecting
-the replier's TCB (under a temporary read-lock) before computing
-the full lockSet.
+* **`lockSet_endpointReply`** — adds `donatedScId : Option
+  SchedContextId`.  When the replier has a `.donated scId
+  originalOwner` binding, `returnDonatedSchedContext` updates
+  the SC + replier TCB + originalOwner TCB.  In the reply
+  context, `originalOwner = replyTargetTid` (the original
+  client), so the origin-owner TCB is already in the lockSet.
+  Only the SC is a new lock.
 
-The plan §5.2's example `lockSet_endpointCall` does NOT model the
-donation path either, so this implementation matches the plan's
-level of detail.  SM3.C's `withLockSet` combinator can handle
-donation-chain locks via a documented sub-call pattern
-(acquire-inspect-extend-acquire-rest) without breaking 2PL —
-the inspection happens between the initial lock-set acquisition
-and the action body.
+* **`lockSet_replyRecv`** — adds `donatedScId : Option
+  SchedContextId`.  Same as reply (the receive phase doesn't
+  initiate donation — donation is caller-initiated via
+  `endpointCall`, not receiver-initiated).
 
-PIP-chain TCB locks (one per blocking ancestor) are inherently
-dynamic and cannot be modelled in a static lockSet.  Plan §4.1's
-"deadlock-freedom requires knowing the lock-set in advance"
-discipline applies via the SM0.I lock-id total order: PIP-chain
-TCBs are at hierarchy level `.tcb` and are acquired in `ObjId.val`
-ascending order, preserving the lock-ladder invariant.
+* **`lockSet_tcbSuspend`** — adds `bindingScId : Option
+  SchedContextId` AND `donatedOriginalOwnerTid : Option
+  ThreadId`.  `cancelDonation` dispatches:
+  - `.unbound`: no extra locks.
+  - `.bound scId`: writes SC + suspended TCB.  Suspended TCB
+    already in lockSet; SC is new.
+  - `.donated scId originalOwner`: writes SC + suspended TCB +
+    originalOwner TCB.  Suspended TCB already in lockSet; SC
+    and originalOwner TCB are new.
 
-The `permittedKinds` declarations in this module reflect the
-static lockSet's footprint; dynamic donation/PIP-chain locks
-extend the actually-held set at acquisition time but never the
-declared lockSet.
+The caller is expected to pre-inspect the relevant TCB (under
+the ObjStore read-lock + the TCB's read-lock acquired
+temporarily for the inspection — sound under non-strict 2PL)
+to extract these args BEFORE computing the lockSet and
+acquiring it via `withLockSet`.  This pattern keeps `lockSet`
+itself a pure function of `(τ, args)` while covering all
+donation paths.
+
+### Syscalls that do NOT need donation extension
+
+* **`lockSet_endpointSend`**: send is asynchronous, no
+  donation.
+* **`lockSet_endpointReceive`**: receive blocks waiting; if a
+  caller arrives and donates, the donation is initiated from
+  the caller's `endpointCall` syscall — handled there.
+* **`lockSet_notificationSignal/Wait`**: notifications don't
+  donate.
+* **`lockSet_cspaceMint/Copy/Move/Delete`**: capability ops
+  don't touch SCs.
+* **`lockSet_lifecycleRetype`**: retype creates new objects
+  (born unbound), no donation.
+* **`lockSet_vspaceMap/Unmap`**: VSpace ops don't touch SCs.
+* **`lockSet_serviceRegister/Revoke/Query`**: service-level
+  ops don't touch SCs.
+* **`lockSet_schedContextConfigure`**: only changes SC params
+  + bound TCB domain; bound TCB is already in lockSet.
+* **`lockSet_schedContextBind`**: requires SC to be currently
+  unbound (precondition); no donation involved.
+* **`lockSet_schedContextUnbind`**: unbinds the SC's bound
+  thread; the bound thread is already in lockSet as
+  `targetTcbTid`.
+* **`lockSet_tcbResume/SetPriority/SetMCPriority/SetIPCBuffer`**:
+  TCB-only config ops, no donation.
+
+### PIP-chain TCB locks
+
+Priority-inheritance propagation walks the blocking graph and
+may touch arbitrarily-many TCBs in the chain.  This is
+inherently dynamic and cannot be modelled in a static lockSet.
+Plan §4.1's "deadlock-freedom requires knowing the lock-set in
+advance" applies via the SM0.I lock-id total order: PIP-chain
+TCBs are all at hierarchy level `.tcb` (3) and are acquired in
+`ObjId.val` ascending order, preserving the lock-ladder
+invariant.  SM3.C's `withLockSet` combinator will handle PIP
+acquisition via a sub-call pattern (acquire-walk-extend) that
+preserves 2PL.
 -/
 
 namespace SeLe4n.Kernel.Concurrency
@@ -234,27 +278,66 @@ def lockSet_endpointReceive (callerTid : ThreadId)
 /-- WS-SM SM3.B.3: `lockSet` for `endpointCall` (syscall `.call`).
 
 A blocking RPC: caller TCB writes, endpoint writes, optional
-receiver TCB writes (same shape as send + receive combined). -/
+receiver TCB writes (same shape as send + receive combined).
+
+Audit-pass-3 (donation extension): when the caller has an active
+`SchedContext` and the receiver is passive (unbound),
+`applyCallDonation` rebinds the SC's `boundThread` from caller to
+receiver.  The receiver's TCB binding transitions to `.donated
+scId callerTid`.  The caller pre-resolves this by inspecting the
+caller's own TCB:
+
+* If `callerTcb.schedContextBinding = .bound scId`: pass
+  `donatedScId := some scId`.
+* If `callerTcb.schedContextBinding = .unbound` or `.donated _ _`:
+  pass `donatedScId := none` (no fresh donation in this call).
+
+The receiver's currently-unbound-vs-bound status determines
+whether the actual donation runs; but the lockSet declares the
+upper-bound footprint regardless, so the SC lock is included
+whenever the caller HAS an active SC to potentially donate. -/
 def lockSet_endpointCall (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
-    (receiverTid : Option ThreadId) : LockSet :=
-  lockSetExtendOpt
+    (receiverTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) : LockSet :=
+  let withReceiver := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
        (cnodeLock cnodeRootObjId, .read),
        (endpointLock endpointObjId, .write)])
     (receiverTid.map (fun rt => (tcbLock rt, .write)))
+  lockSetExtendOpt withReceiver
+    (donatedScId.map (fun sc => (schedContextLock sc, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointReply` (syscall `.reply`).
 
 Caller TCB (write — clearing blocked state); reply target TCB
-(write — transitioning out of `BlockedReply`). -/
+(write — transitioning out of `BlockedReply`).
+
+Audit-pass-3 (donation-return extension): when the replier
+(=caller) has a `.donated scId originalOwner` binding,
+`returnDonatedSchedContext` updates the SC + replier's TCB +
+originalOwner's TCB.  In the reply context, the `originalOwner`
+IS the `replyTargetTid` (the SC was originally donated from the
+target's earlier `endpointCall` to the replier), so no separate
+original-owner arg is needed — the existing `replyTargetTid` is
+the original owner.  Only the SC is a new lock.
+
+The caller pre-resolves this by inspecting the replier's own TCB:
+
+* If `replierTcb.schedContextBinding = .donated scId _`: pass
+  `donatedScId := some scId`.
+* If `.bound _` or `.unbound`: pass `donatedScId := none` (no
+  donation to return). -/
 def lockSet_endpointReply (callerTid : ThreadId)
-    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId) : LockSet :=
-  lockSetOfList
-    [(tcbLock callerTid, .write),
-     (cnodeLock cnodeRootObjId, .read),
-     (tcbLock replyTargetTid, .write)]
+    (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
+    (donatedScId : Option SchedContextId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .write),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock replyTargetTid, .write)])
+    (donatedScId.map (fun sc => (schedContextLock sc, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `replyRecv` (syscall `.replyRecv`).
 
@@ -263,17 +346,36 @@ TCB (write — both reply-clearing and receive-blocking phases), the
 endpoint (write — queue mutation in the receive phase), the
 prior-call reply target TCB (write — completes the reply), and an
 optional new sender TCB (write — if a sender was already
-waiting). -/
+waiting).
+
+Audit-pass-3 (donation-return extension): the reply phase may
+return a donated SC from the caller (replier) to the replyTarget
+— same shape as `lockSet_endpointReply`.  The receive phase does
+NOT initiate donation (donation is caller-initiated from
+`endpointCall`, not receiver-initiated).
+
+The caller pre-resolves the SC by inspecting the replier's own
+TCB (same as for `endpointReply`).  Only one extra Option is
+needed because:
+
+* The reply-direction donation return touches `donatedScId` (if
+  the replier has `.donated`).
+* The receive-direction donation reception (if a new sender
+  later calls and donates) is handled at that future `endpointCall`
+  syscall's own lockSet — not this `replyRecv` invocation. -/
 def lockSet_replyRecv (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
-    (endpointObjId : ObjId) (newSenderTid : Option ThreadId) : LockSet :=
-  lockSetExtendOpt
+    (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) : LockSet :=
+  let withSender := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
        (cnodeLock cnodeRootObjId, .read),
        (tcbLock replyTargetTid, .write),
        (endpointLock endpointObjId, .write)])
     (newSenderTid.map (fun st => (tcbLock st, .write)))
+  lockSetExtendOpt withSender
+    (donatedScId.map (fun sc => (schedContextLock sc, .write)))
 
 /-! ## Notification syscalls (2 transitions) -/
 
@@ -454,19 +556,39 @@ def lockSet_schedContextUnbind (callerTid : ThreadId)
 
 Target TCB (write — state transition to `.Inactive`); optional
 endpoint/notification if the target is blocked on one (write —
-queue removal). -/
+queue removal).
+
+Audit-pass-3 (donation-cancel extension): `cancelDonation`
+dispatches on the suspended TCB's `schedContextBinding`:
+
+* `.unbound`: no extra locks.
+* `.bound scId`: writes the SC (clears `boundThread`,
+  `isActive`).  Caller passes `bindingScId := some scId`.
+* `.donated scId originalOwner`: writes the SC + the original
+  owner's TCB (re-binds SC to original owner).  Caller passes
+  both `bindingScId := some scId` AND
+  `donatedOriginalOwnerTid := some originalOwner`.
+
+The caller pre-resolves these by inspecting the suspended TCB's
+`schedContextBinding` field before computing the lockSet. -/
 def lockSet_tcbSuspend (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
     (blockedEndpointObjId : Option ObjId)
-    (blockedNotificationObjId : Option ObjId) : LockSet :=
+    (blockedNotificationObjId : Option ObjId)
+    (bindingScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) : LockSet :=
   let base := lockSetOfList
     [(tcbLock callerTid, .read),
      (cnodeLock cnodeRootObjId, .read),
      (tcbLock targetTcbTid, .write)]
   let withEp := lockSetExtendOpt base
     (blockedEndpointObjId.map (fun ep => (endpointLock ep, .write)))
-  lockSetExtendOpt withEp
+  let withN := lockSetExtendOpt withEp
     (blockedNotificationObjId.map (fun n => (notificationLock n, .write)))
+  let withSc := lockSetExtendOpt withN
+    (bindingScId.map (fun sc => (schedContextLock sc, .write)))
+  lockSetExtendOpt withSc
+    (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbResume`.
 
@@ -519,13 +641,16 @@ lockSet (over all argument values, including all possible
 `Option` cases). -/
 def permittedKinds (sid : SyscallId) : List LockKind :=
   match sid with
-  -- IPC syscalls
-  | .send | .receive | .call =>
+  -- IPC syscalls.  `.call`, `.reply`, `.replyRecv` may traverse a
+  -- SchedContext-donation path (per audit-pass-3 extension).
+  | .send | .receive =>
       [.tcb, .cnode, .endpoint]
+  | .call =>
+      [.tcb, .cnode, .endpoint, .schedContext]
   | .reply =>
-      [.tcb, .cnode]
+      [.tcb, .cnode, .schedContext]
   | .replyRecv =>
-      [.tcb, .cnode, .endpoint]
+      [.tcb, .cnode, .endpoint, .schedContext]
   -- Notification syscalls
   | .notificationSignal | .notificationWait =>
       [.tcb, .cnode, .notification]
@@ -544,9 +669,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- SchedContext syscalls
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind =>
       [.tcb, .cnode, .schedContext]
-  -- TCB lifecycle/config
+  -- TCB lifecycle/config.  `.tcbSuspend` may traverse a donation
+  -- cancellation path (per audit-pass-3 extension).
   | .tcbSuspend =>
-      [.tcb, .cnode, .endpoint, .notification]
+      [.tcb, .cnode, .endpoint, .notification, .schedContext]
   | .tcbResume | .tcbSetPriority | .tcbSetMCPriority | .tcbSetIPCBuffer =>
       [.tcb, .cnode]
 
@@ -697,6 +823,44 @@ theorem lockSet_consistent_base_plus_two_opts
   lockSet_consistent_extendOpt _ _ _
     (lockSet_consistent_base_plus_opt base opt₁ permitted hBase hOpt₁) hOpt₂
 
+/-- WS-SM SM3.B.4 builder (audit-pass-3): combine with three optional
+extensions.  Used by `lockSet_consistent_replyRecv` after audit-pass-3
+expanded `lockSet_replyRecv` with the `donatedScId` arg. -/
+theorem lockSet_consistent_base_plus_three_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_two_opts base opt₁ opt₂ permitted
+      hBase hOpt₁ hOpt₂) hOpt₃
+
+/-- WS-SM SM3.B.4 builder (audit-pass-3): combine with four optional
+extensions.  Used by `lockSet_consistent_tcbSuspend` after
+audit-pass-3 expanded `lockSet_tcbSuspend` with the `bindingScId`
+and `donatedOriginalOwnerTid` args. -/
+theorem lockSet_consistent_base_plus_four_opts
+    (base : List (LockId × AccessMode))
+    (opt₁ opt₂ opt₃ opt₄ : Option (LockId × AccessMode))
+    (permitted : List LockKind)
+    (hBase : ∀ p ∈ base, p.fst.kind ∈ permitted)
+    (hOpt₁ : ∀ pp, opt₁ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₂ : ∀ pp, opt₂ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₃ : ∀ pp, opt₃ = some pp → pp.fst.kind ∈ permitted)
+    (hOpt₄ : ∀ pp, opt₄ = some pp → pp.fst.kind ∈ permitted) :
+    ∀ p ∈ (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+              (lockSetExtendOpt (lockSetOfList base) opt₁) opt₂) opt₃) opt₄).pairs,
+      p.fst.kind ∈ permitted :=
+  lockSet_consistent_extendOpt _ _ _
+    (lockSet_consistent_base_plus_three_opts base opt₁ opt₂ opt₃ permitted
+      hBase hOpt₁ hOpt₂ hOpt₃) hOpt₄
+
 -- ============================================================================
 -- SM3.B.4 — lockSet_consistent per-transition theorems
 -- ============================================================================
@@ -775,12 +939,13 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
         | none => simp at hpp
         | some st => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.call`. -/
+/-- WS-SM SM3.B.4 for `.call` (audit-pass-3: donation extension). -/
 theorem lockSet_consistent_call (callerTid : ThreadId)
-    (cnRoot epId : ObjId) (rTid : Option ThreadId) :
-    ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid).pairs,
+    (cnRoot epId : ObjId) (rTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) :
+    ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId).pairs,
       p.fst.kind ∈ permittedKinds .call :=
-  lockSet_consistent_base_plus_opt _ _ _
+  lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -793,13 +958,19 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
         cases rTid with
         | none => simp at hpp
         | some rt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases donatedScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.reply`. -/
+/-- WS-SM SM3.B.4 for `.reply` (audit-pass-3: donation-return
+extension). -/
 theorem lockSet_consistent_reply (callerTid : ThreadId)
-    (cnRoot : ObjId) (rTid : ThreadId) :
-    ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid).pairs,
+    (cnRoot : ObjId) (rTid : ThreadId)
+    (donatedScId : Option SchedContextId) :
+    ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid donatedScId).pairs,
       p.fst.kind ∈ permittedKinds .reply :=
-  lockSet_consistent_of_extended_base _ _
+  lockSet_consistent_base_plus_opt _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -808,14 +979,21 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases donatedScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
-/-- WS-SM SM3.B.4 for `.replyRecv`. -/
+/-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3: donation-return
+extension). -/
 theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId) (epId : ObjId)
-    (newSenderTid : Option ThreadId) :
-    ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid).pairs,
+    (newSenderTid : Option ThreadId)
+    (donatedScId : Option SchedContextId) :
+    ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
+              donatedScId).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_opt _ _ _
+  lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -830,6 +1008,10 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
         cases newSenderTid with
         | none => simp at hpp
         | some st => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases donatedScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
@@ -1064,13 +1246,17 @@ theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
         · rw [h]; simp; decide
         exact absurd hMem (by intro h; cases h))
 
-/-- WS-SM SM3.B.4 for `.tcbSuspend`. -/
+/-- WS-SM SM3.B.4 for `.tcbSuspend` (audit-pass-3: donation-cancel
+extension — 4 optional args). -/
 theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
     (cnRoot : ObjId) (targetTcb : ThreadId)
-    (blEp : Option ObjId) (blN : Option ObjId) :
-    ∀ p ∈ (lockSet_tcbSuspend callerTid cnRoot targetTcb blEp blN).pairs,
+    (blEp : Option ObjId) (blN : Option ObjId)
+    (bindingScId : Option SchedContextId)
+    (donatedOriginalOwnerTid : Option ThreadId) :
+    ∀ p ∈ (lockSet_tcbSuspend callerTid cnRoot targetTcb blEp blN
+              bindingScId donatedOriginalOwnerTid).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
-  lockSet_consistent_base_plus_two_opts _ _ _ _
+  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1087,6 +1273,14 @@ theorem lockSet_consistent_tcbSuspend (callerTid : ThreadId)
         cases blN with
         | none => simp at hpp
         | some n => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases bindingScId with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases donatedOriginalOwnerTid with
+        | none => simp at hpp
+        | some ot => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.tcbResume`. -/
 theorem lockSet_consistent_tcbResume (callerTid : ThreadId)

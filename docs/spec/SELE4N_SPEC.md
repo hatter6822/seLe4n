@@ -1386,15 +1386,9 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `lockKind_ne_reply`, `lockKind_ne_page`.  These tell SM3.C
      consumers that a `KernelObject`-derived `LockId` will never
      refer to a SystemState-level or N/A kind.
-   * **Donation-path scope clarification**: explicitly documents
-     in `LockSetTransitions.lean` that the statically-declared
-     `lockSet_<τ>` covers only the directly-named objects in
-     syscall args.  The donation path (touches donated
-     SchedContext + original-owner TCB) is state-discovered and
-     deferred to SM3.C's acquire-inspect-extend-acquire-rest
-     sub-call pattern.  PIP-chain TCB locks are inherently
-     dynamic; the SM0.I lock-id total order keeps deadlock-
-     freedom under dynamic locking.
+   * **Donation-path scope** (initial audit-pass-2 form was
+     documentation-only; **REPLACED by audit-pass-3 below** per
+     CLAUDE.md's `Implement-the-improvement` rule).
    * **Inventory expansion** (audit-pass-2): 81 → 87 entries (+4
      projection: 4 `lockKind_*` co-domain theorems; +1
      acquireSort: `lockAcquireSequence_perm`; +1 algebra:
@@ -1402,6 +1396,42 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    * **Test-coverage gap closures**: 2 new runtime check sections
      (§14 lockKind co-domain, §15 fst_inj structural witness),
      +11 runtime assertions (72 → 83).
+
+   **Audit-pass-3 refinements** (donation-path FIX implementing
+   the improvement audit-pass-2 only documented; land in the
+   same v0.31.9 release cut):
+
+   * **Donation-path lockSet extensions**: per plan §4.1's
+     "union over all paths" requirement, 4 syscalls now have
+     pre-resolved `Option` args covering the donation
+     footprint:
+     - `lockSet_endpointCall` gains `donatedScId : Option
+       SchedContextId` for `applyCallDonation`'s SC update.
+     - `lockSet_endpointReply` gains `donatedScId : Option
+       SchedContextId` for `applyReplyDonation`'s SC return
+       (original-owner TCB == `replyTargetTid` already in
+       lockSet, so only the SC is new).
+     - `lockSet_replyRecv` gains `donatedScId : Option
+       SchedContextId` (same as reply).
+     - `lockSet_tcbSuspend` gains TWO new Options: `bindingScId
+       : Option SchedContextId` AND `donatedOriginalOwnerTid :
+       Option ThreadId` for `cancelDonation`'s `.bound`/`.donated`
+       arms.
+   * **Source-level tracing**: each extension verified against
+     the actual kernel code (`donateSchedContext`,
+     `returnDonatedSchedContext`, `cancelDonation` dispatch
+     arms) to ensure the lockSets declare exactly the set of
+     objects the underlying transition writes.
+   * **`permittedKinds` extensions**: `.call`, `.reply`,
+     `.replyRecv`, `.tcbSuspend` all gain `.schedContext`.
+   * **New consistency-proof builders**:
+     `lockSet_consistent_base_plus_three_opts` (for `replyRecv`)
+     and `lockSet_consistent_base_plus_four_opts` (for
+     `tcbSuspend`).
+   * **Test-coverage expansion**: 83 → 95 runtime assertions
+     (+12 for new donation-shape, donation-consistency-runtime,
+     extended permittedKinds, and donation-aware acquireSort
+     checks).
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the

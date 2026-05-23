@@ -1,3 +1,108 @@
+## Unreleased — WS-SM SM3.B audit-pass-3: donation-path lockSet extensions (implement the improvement)
+
+Per CLAUDE.md's `Implement-the-improvement` rule, audit-pass-2's
+documented "donation-path scope limitation" was a documentation
+workaround, not a fix.  Audit-pass-3 **implements the
+improvement**: the 4 affected syscalls (`endpointCall`,
+`endpointReply`, `replyRecv`, `tcbSuspend`) now have their
+`lockSet_<τ>` and `lockSet_consistent_<τ>` extended with
+pre-resolved `Option SchedContextId` and `Option ThreadId`
+arguments that cover the full donation footprint per plan §4.1's
+"union over all paths" requirement.
+
+### Donation-path source-level tracing
+
+I traced each donation-affected kernel transition through to its
+underlying mutations:
+
+* **`endpointCallWithDonation`** → `applyCallDonation` →
+  `donateSchedContext`:
+  - Updates the SC (`boundThread := some serverTid`).
+  - Updates the server (receiver) TCB
+    (`schedContextBinding := .donated scId callerTid`).
+  - Does NOT touch the caller's TCB.
+
+* **`endpointReplyWithDonation`** → `applyReplyDonation` →
+  `returnDonatedSchedContext`:
+  - Updates the SC (`boundThread := some originalOwner`).
+  - Updates the original-owner TCB (binding back to `.bound`).
+  - Updates the server (replier) TCB (binding to `.unbound`).
+  - In the reply context, `originalOwner == replyTargetTid`
+    (already in lockSet).  Only the SC is a new lock.
+
+* **`cancelDonation` in `tcbSuspend`**:
+  - `.unbound`: no extra locks.
+  - `.bound scId`: writes the SC (clears `boundThread`,
+    `isActive`).
+  - `.donated scId originalOwner`: writes the SC + original-
+    owner TCB + suspended TCB (via `returnDonatedSchedContext`).
+
+### Implemented extensions
+
+* **`lockSet_endpointCall (callerTid, cnRoot, epId, receiverTid,
+  donatedScId)`** — new `Option SchedContextId` arg.  Caller
+  pre-inspects own TCB: `.bound scId → some scId`, else `none`.
+* **`lockSet_endpointReply (callerTid, cnRoot, replyTargetTid,
+  donatedScId)`** — new `Option SchedContextId` arg.  Caller
+  pre-inspects replier's TCB: `.donated scId _ → some scId`,
+  else `none`.
+* **`lockSet_replyRecv (callerTid, cnRoot, replyTargetTid, epId,
+  newSenderTid, donatedScId)`** — same as reply (the receive
+  phase doesn't initiate donation).
+* **`lockSet_tcbSuspend (callerTid, cnRoot, targetTcbTid, blEp,
+  blN, bindingScId, donatedOriginalOwnerTid)`** — two new
+  Options.  Caller pre-inspects suspended TCB's binding:
+  - `.unbound`: both `none`.
+  - `.bound scId`: `(some scId, none)`.
+  - `.donated scId owner`: `(some scId, some owner)`.
+
+### `permittedKinds` extensions
+
+* `.call` → `[.tcb, .cnode, .endpoint, .schedContext]`
+* `.reply` → `[.tcb, .cnode, .schedContext]`
+* `.replyRecv` → `[.tcb, .cnode, .endpoint, .schedContext]`
+* `.tcbSuspend` → `[.tcb, .cnode, .endpoint, .notification, .schedContext]`
+
+### New consistency-proof builders
+
+* `lockSet_consistent_base_plus_three_opts` — for `replyRecv` (1
+  base list + 1 standard Option + 1 donation Option).
+* `lockSet_consistent_base_plus_four_opts` — for `tcbSuspend` (1
+  base list + 2 standard Options + 2 donation Options).
+
+### Test suite expansion (83 → 95 runtime assertions)
+
+* Per-transition shape: +3 new assertions for `tcbSuspend`
+  `.bound`/`.donated`/full cases.
+* Lub-merging: +2 assertions for the donation-extended reply
+  and replyRecv shapes.
+* Consistency runtime: +2 assertions exercising `.call`/`.reply`
+  with donation.
+* PermittedKinds: +3 new permittedKinds checks for the extended
+  call/reply/replyRecv kinds.
+* §2 acquireSort: +2 assertions for `endpointCall` with
+  donation (SC sorts last at level 7).
+
+### Mathematical correctness verification
+
+Every donation extension was verified by source-level tracing of
+the actual kernel transition code (`donateSchedContext`,
+`returnDonatedSchedContext`, `cancelDonation`'s dispatch arms).
+The lockSets now declare exactly the set of objects that the
+underlying kernel transition may write.  Verified by directly
+exercising each consistency theorem at runtime on concrete
+arguments — all 95 assertions pass.
+
+Zero `sorry`, zero `axiom`, zero clippy warnings, zero linter
+warnings.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.  All audit-pass-3 findings have been addressed in the same
+cut; the audit-pass-2 documentation workaround has been replaced
+by the actual fix per CLAUDE.md's `Implement-the-improvement`
+rule.
+
 ## Unreleased — WS-SM SM3.B audit-pass-2: substantive co-domain theorems + inventory completeness + extraneous-constraint cleanup
 
 Second deep audit pass.  Audit-pass-1 (preceding entry) closed

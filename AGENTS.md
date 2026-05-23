@@ -2956,14 +2956,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
     modeled kinds), `lockKind_ne_objStore` /
     `lockKind_ne_reply` / `lockKind_ne_page` (fail-closed
     witnesses for the SystemState-level + N/A kinds).
-  - **Donation-path scope clarification**: explicitly documents
-    that the statically-declared `lockSet_<τ>` covers only the
-    directly-named objects in syscall args.  The donation path
-    (touches donated SchedContext + original-owner TCB) is
-    state-discovered and handled at SM3.C via the acquire-
-    inspect-extend-acquire-rest sub-call pattern.  PIP-chain
-    TCB locks are inherently dynamic; the SM0.I lock-id total
-    order keeps deadlock-freedom under dynamic locking.
+  - **Donation-path scope** (initial audit-pass-2 form was
+    documentation-only; **REPLACED by audit-pass-3 below** per
+    CLAUDE.md's `Implement-the-improvement` rule — see audit-
+    pass-3 entry for the actual fix).
   - **Inventory expansion**: `lockSetTheorems` grew from 81 to
     87 entries.  +4 projection (4 `lockKind_*` co-domain
     theorems); +1 acquireSort (`lockAcquireSequence_perm`); +1
@@ -2973,6 +2969,48 @@ documentation lives under `docs/` and `docs/gitbook/`.
     concrete `KernelObject` values); +4 in §15
     `runFstInjChecks` (LockSet.fst_inj structural witness).
     Plus 4 new surface anchors for the audit-pass-2 theorems.
+
+  **Audit-pass-3 refinements** (donation-path FIX, replacing
+  audit-pass-2's documentation workaround per the
+  `Implement-the-improvement` rule; all closures land in the
+  same v0.31.9 release cut):
+  - **Donation-path lockSet extensions**: implemented the
+    actual fix per plan §4.1's "union over all paths"
+    requirement.  4 syscalls extended with pre-resolved Option
+    args covering the full donation footprint:
+    * `lockSet_endpointCall` — `+ donatedScId : Option
+      SchedContextId` (for `applyCallDonation`).
+    * `lockSet_endpointReply` — `+ donatedScId : Option
+      SchedContextId` (for `applyReplyDonation` /
+      `returnDonatedSchedContext`).
+    * `lockSet_replyRecv` — `+ donatedScId : Option
+      SchedContextId` (same as reply; the receive phase doesn't
+      initiate donation).
+    * `lockSet_tcbSuspend` — `+ bindingScId : Option
+      SchedContextId` AND `+ donatedOriginalOwnerTid : Option
+      ThreadId` (for `cancelDonation`'s `.bound` and
+      `.donated` arms).
+  - **Source-level tracing**: each extension was verified by
+    tracing through the actual kernel code
+    (`donateSchedContext`, `returnDonatedSchedContext`,
+    `cancelDonation` dispatch arms).  The lockSets now declare
+    exactly the set of objects the underlying transition may
+    write.
+  - **`permittedKinds` extensions**:
+    * `.call` → adds `.schedContext`
+    * `.reply` → adds `.schedContext`
+    * `.replyRecv` → adds `.schedContext`
+    * `.tcbSuspend` → adds `.schedContext`
+  - **New consistency-proof builders**: `base_plus_three_opts`
+    (for `replyRecv`) and `base_plus_four_opts` (for
+    `tcbSuspend`).  Each chains the existing builders.
+  - **Test suite expansion**: 83 → 95 runtime assertions (+12).
+    New per-transition shape assertions for `tcbSuspend`
+    `.bound`/`.donated`/full cases (+3), donation-extended
+    reply / replyRecv shape (+2), consistency runtime checks for
+    `.call` and `.reply` with donation (+2), permittedKinds
+    extensions (+3), and §2 acquireSort with the SC at level 7
+    sorting last (+2).
 
   Follow-on: SM3.C (`withLockSet` 2PL combinator,
   `acquireLockOnObject` / `releaseLockOnObject`, `lockSetHeld`

@@ -316,11 +316,11 @@ With caller=target, the lub-merge produces (tcb caller, write).
 Total size = 2 (caller-TCB merged + cnode-root). -/
 
 example :
-    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none
     S.size = 2 := by decide
 
 example :
-    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+    let S := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none
     S.lockAcquireSequence =
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)] := by native_decide
@@ -332,7 +332,7 @@ example :
 a single (TCB, write) entry. -/
 
 example :
-    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
+    let S := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none
     S.size = 2 := by decide
 
 -- ============================================================================
@@ -354,26 +354,58 @@ example :
 /-! ### endpointCall lock-set sort matches plan §4.5 example.
 
 Plan §4.5: endpointCall with caller TCB 5, CNode 10, endpoint 20,
-receiver TCB 8.  Sort: cnode/10, tcb/5, tcb/8, endpoint/20. -/
+receiver TCB 8.  Sort: cnode/10, tcb/5, tcb/8, endpoint/20.
+
+Audit-pass-3: the donation arg is `none` for this example (caller
+has no active SC to donate). -/
 
 example :
     LockSet.lockAcquireSequence
-      (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)) =
+      (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+        (some ⟨8⟩) none) =
     [(⟨.cnode, ObjId.ofNat 10⟩, .read),
      (⟨.tcb, ObjId.ofNat 5⟩, .write),
      (⟨.tcb, ObjId.ofNat 8⟩, .write),
      (⟨.endpoint, ObjId.ofNat 20⟩, .write)] := by native_decide
 
+/-! ### endpointCall with donation: caller TCB 5 has SC 100,
+calling receiver TCB 8 (passive).  SC is donated, so SC lock
+included. -/
+
+example :
+    LockSet.lockAcquireSequence
+      (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+        (some ⟨8⟩) (some ⟨100⟩)) =
+    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (⟨.tcb, ObjId.ofNat 8⟩, .write),
+     (⟨.endpoint, ObjId.ofNat 20⟩, .write),
+     (⟨.schedContext, ObjId.ofNat 100⟩, .write)] := by native_decide
+
 /-! ### tcbSuspend with both blocked endpoint and blocked notification: 5 locks. -/
 
 example :
     (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-      (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))).size = 5 := by decide
+      (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none).size = 5 := by decide
 
 /-! ### tcbSuspend with no blocked objects: 3 locks. -/
 
 example :
-    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3 := by decide
+    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none none none).size = 3 := by decide
+
+/-! ### tcbSuspend with `.donated` binding: 5 locks (caller TCB +
+cnode + suspended TCB + donated SC + original owner). -/
+
+example :
+    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+      (some ⟨50⟩) (some ⟨7⟩)).size = 5 := by decide
+
+/-! ### tcbSuspend with `.bound` binding: 4 locks (caller TCB +
+cnode + suspended TCB + bound SC). -/
+
+example :
+    (lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+      (some ⟨50⟩) none).size = 4 := by decide
 
 -- ============================================================================
 -- §5 — LockId.fromObject + LockId.lookup with fixture states
@@ -457,9 +489,11 @@ example :
 
 example : permittedKinds .send = [.tcb, .cnode, .endpoint] := by decide
 example : permittedKinds .receive = [.tcb, .cnode, .endpoint] := by decide
-example : permittedKinds .call = [.tcb, .cnode, .endpoint] := by decide
-example : permittedKinds .reply = [.tcb, .cnode] := by decide
-example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint] := by decide
+-- Audit-pass-3: `.call`/`.reply`/`.replyRecv` now include `.schedContext`
+-- to cover the donation extension.
+example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext] := by decide
+example : permittedKinds .reply = [.tcb, .cnode, .schedContext] := by decide
+example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext] := by decide
 example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification] := by decide
 example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by decide
 example : permittedKinds .cspaceMint = [.tcb, .cnode] := by decide
@@ -475,7 +509,10 @@ example : permittedKinds .serviceQuery = [.tcb, .cnode] := by decide
 example : permittedKinds .schedContextConfigure = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .schedContextUnbind = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .tcbSuspend = [.tcb, .cnode, .endpoint, .notification] := by decide
+-- Audit-pass-3: `.tcbSuspend` now includes `.schedContext` to cover
+-- the donation-cancel extension.
+example : permittedKinds .tcbSuspend =
+    [.tcb, .cnode, .endpoint, .notification, .schedContext] := by decide
 example : permittedKinds .tcbResume = [.tcb, .cnode] := by decide
 example : permittedKinds .tcbSetPriority = [.tcb, .cnode] := by decide
 example : permittedKinds .tcbSetMCPriority = [.tcb, .cnode] := by decide
@@ -526,16 +563,36 @@ example :
 
 example :
     ∀ p ∈ (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (some ⟨8⟩)).pairs,
+              (some ⟨8⟩) none).pairs,
       p.fst.kind ∈ permittedKinds .call :=
-  lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+  lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some ⟨8⟩) none
+
+-- Audit-pass-3: with donation arg, all kinds still in permitted set.
+example :
+    ∀ p ∈ (lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+              (some ⟨8⟩) (some ⟨100⟩)).pairs,
+      p.fst.kind ∈ permittedKinds .call :=
+  lockSet_consistent_call ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+    (some ⟨8⟩) (some ⟨100⟩)
 
 example :
     ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))).pairs,
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+              none none).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSuspend :=
+  lockSet_consistent_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+    (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30)) none none
+
+-- Audit-pass-3: with donation cancel args (.donated case with all 4 Options).
+example :
+    ∀ p ∈ (lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+              (some ⟨50⟩) (some ⟨7⟩)).pairs,
       p.fst.kind ∈ permittedKinds .tcbSuspend :=
   lockSet_consistent_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
     (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+    (some ⟨50⟩) (some ⟨7⟩)
 
 example :
     ∀ p ∈ (lockSet_schedContextBind ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ ⟨3⟩).pairs,
@@ -558,7 +615,7 @@ already-sorted permutation, `lockAcquireSequence` returns the same. -/
 
 example :
     let S := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
-              (some ⟨8⟩)
+              (some ⟨8⟩) none
     let canonical : List (LockId × AccessMode) :=
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write),
@@ -615,11 +672,12 @@ private def runLockSetCoreChecks : IO Unit := do
 private def runLockSetAcquireSortChecks : IO Unit := do
   IO.println "--- §2 Acquire sort ---"
   -- Plan §4.5 example: caller TCB 5, CNode 10, endpoint 20, receiver TCB 8.
-  let s := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩)
+  -- Audit-pass-3: donation arg is none (no SC active for this caller).
+  let s := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20) (some ⟨8⟩) none
   let seq := s.lockAcquireSequence
-  assertBool "endpointCall lock-set size = 4"
+  assertBool "endpointCall lock-set size = 4 (no donation)"
     (decide (s.size = 4))
-  assertBool "endpointCall lockAcquireSequence length = 4"
+  assertBool "endpointCall lockAcquireSequence length = 4 (no donation)"
     (decide (seq.length = 4))
   -- The sort is deterministic: cnode/10 (read), tcb/5 (write), tcb/8 (write), endpoint/20 (write).
   let expected : List (LockId × AccessMode) :=
@@ -629,6 +687,20 @@ private def runLockSetAcquireSortChecks : IO Unit := do
      (⟨.endpoint, ObjId.ofNat 20⟩, .write)]
   assertBool "endpointCall lockAcquireSequence matches plan §4.5 expected order"
     (decide (seq = expected))
+  -- Audit-pass-3: with donation, the SC is added and sorts last (level 7).
+  let sDon := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                (some ⟨8⟩) (some ⟨100⟩)
+  let seqDon := sDon.lockAcquireSequence
+  assertBool "endpointCall (with donation) lock-set size = 5"
+    (decide (sDon.size = 5))
+  let expectedDon : List (LockId × AccessMode) :=
+    [(⟨.cnode, ObjId.ofNat 10⟩, .read),
+     (⟨.tcb, ObjId.ofNat 5⟩, .write),
+     (⟨.tcb, ObjId.ofNat 8⟩, .write),
+     (⟨.endpoint, ObjId.ofNat 20⟩, .write),
+     (⟨.schedContext, ObjId.ofNat 100⟩, .write)]
+  assertBool "endpointCall (with donation) lockAcquireSequence: SC sorts last"
+    (decide (seqDon = expectedDon))
 
 private def runAccessModeAlgebraChecks : IO Unit := do
   IO.println "--- §3 AccessMode algebra ---"
@@ -649,10 +721,20 @@ private def runPermittedKindsChecks : IO Unit := do
     (decide (permittedKinds .vspaceMap = [.tcb, .cnode, .vspaceRoot]))
   assertBool "permittedKinds .lifecycleRetype"
     (decide (permittedKinds .lifecycleRetype = [.tcb, .cnode, .untyped]))
+  -- Audit-pass-3: .tcbSuspend now includes .schedContext (donation-cancel).
   assertBool "permittedKinds .tcbSuspend"
-    (decide (permittedKinds .tcbSuspend = [.tcb, .cnode, .endpoint, .notification]))
+    (decide (permittedKinds .tcbSuspend =
+      [.tcb, .cnode, .endpoint, .notification, .schedContext]))
   assertBool "permittedKinds .schedContextBind"
     (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
+  -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
+  assertBool "permittedKinds .call (with donation kind)"
+    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext]))
+  assertBool "permittedKinds .reply (with donation-return kind)"
+    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext]))
+  assertBool "permittedKinds .replyRecv (with donation-return kind)"
+    (decide (permittedKinds .replyRecv =
+      [.tcb, .cnode, .endpoint, .schedContext]))
 
 private def runLockKindHelpersChecks : IO Unit := do
   IO.println "--- §5 LockKind helpers ---"
@@ -711,13 +793,28 @@ private def runPerTransitionShapeChecks : IO Unit := do
   assertBool "lifecycleRetype size = 4"
     (decide ((lockSet_lifecycleRetype ⟨1⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
               (ObjId.ofNat 30)).size = 4))
-  -- TCB suspend with both Option-blocked: 5 locks.
-  assertBool "tcbSuspend size (both Options some) = 5"
+  -- TCB suspend with both Option-blocked (no donation): 5 locks.
+  assertBool "tcbSuspend size (block-options some, no donation) = 5"
     (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
-              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))).size = 5))
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+              none none).size = 5))
   -- TCB suspend with no Options: 3 locks.
   assertBool "tcbSuspend size (no Options) = 3"
-    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none).size = 3))
+    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+              none none).size = 3))
+  -- Audit-pass-3: TCB suspend with .bound binding (SC only): 4 locks.
+  assertBool "tcbSuspend size (.bound binding, SC only) = 4"
+    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+              (some ⟨50⟩) none).size = 4))
+  -- Audit-pass-3: TCB suspend with .donated binding (SC + owner): 5 locks.
+  assertBool "tcbSuspend size (.donated binding, SC + originalOwner) = 5"
+    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩ none none
+              (some ⟨50⟩) (some ⟨7⟩)).size = 5))
+  -- Audit-pass-3: TCB suspend with ALL options (block ep + nti + .donated): 7 locks.
+  assertBool "tcbSuspend size (full: blocks + .donated + originalOwner) = 7"
+    (decide ((lockSet_tcbSuspend ⟨1⟩ (ObjId.ofNat 10) ⟨3⟩
+              (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+              (some ⟨50⟩) (some ⟨7⟩)).size = 7))
 
 private def runLubMergeChecks : IO Unit := do
   IO.println "--- §9 Lub-merging on duplicate keys ---"
@@ -737,7 +834,7 @@ private def runLubMergeChecks : IO Unit := do
   assertBool "insertOrMerge read+read at same key gives single (read) entry"
     (decide (s3.pairs = [(⟨.tcb, ObjId.ofNat 5⟩, .read)]))
   -- Self-suspend (callerTid = targetTcbTid) collapses TCB locks.
-  let selfSuspend := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none
+  let selfSuspend := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none none none none
   assertBool "tcbSuspend(caller=target) collapses to 2 locks (cnode + merged TCB)"
     (decide (selfSuspend.size = 2))
   assertBool "tcbSuspend(caller=target) merged TCB lock is write"
@@ -745,9 +842,18 @@ private def runLubMergeChecks : IO Unit := do
       [(⟨.cnode, ObjId.ofNat 10⟩, .read),
        (⟨.tcb, ObjId.ofNat 5⟩, .write)]))
   -- endpointReply(caller=replyTarget) collapses.
-  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩
+  let selfReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨5⟩ none
   assertBool "endpointReply(caller=replyTarget) collapses to 2 locks"
     (decide (selfReply.size = 2))
+  -- Audit-pass-3: endpointReply with donation-return: the SC is added.
+  let donReply := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (some ⟨42⟩)
+  assertBool "endpointReply(caller=5, target=7, donatedSc=42) has 4 locks"
+    (decide (donReply.size = 4))
+  -- Audit-pass-3: replyRecv with full extension (sender + donation).
+  let donReplyRecv := lockSet_replyRecv ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩
+                       (ObjId.ofNat 20) (some ⟨8⟩) (some ⟨42⟩)
+  assertBool "replyRecv (sender + donation) has 6 locks"
+    (decide (donReplyRecv.size = 6))
 
 private def runUnionChecks : IO Unit := do
   IO.println "--- §10 LockSet.union semantics ---"
@@ -771,12 +877,13 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .send))
   assertBool "lockSet_endpointSend (with receiver): all kinds in permittedKinds .send"
     allOk_send
-  -- And a transition with multiple Optional args (.tcbSuspend) — both Some.
+  -- A transition with 4 Optional args (.tcbSuspend, full) — all Some.
   let susp := lockSet_tcbSuspend ⟨5⟩ (ObjId.ofNat 10) ⟨3⟩
                 (some (ObjId.ofNat 20)) (some (ObjId.ofNat 30))
+                (some ⟨50⟩) (some ⟨7⟩)
   let allOk_susp := susp.pairs.all (fun p =>
     decide (p.fst.kind ∈ permittedKinds .tcbSuspend))
-  assertBool "lockSet_tcbSuspend (both Options some): all kinds in permittedKinds .tcbSuspend"
+  assertBool "lockSet_tcbSuspend (full 4 Options some): all kinds in permittedKinds .tcbSuspend"
     allOk_susp
   -- Edge case: no Option args.
   let mint := lockSet_cspaceMint ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
@@ -791,6 +898,19 @@ private def runConsistencyRuntimeChecks : IO Unit := do
     decide (p.fst.kind ∈ permittedKinds .lifecycleRetype))
   assertBool "lockSet_lifecycleRetype: all kinds in permittedKinds .lifecycleRetype"
     allOk_retype
+  -- Audit-pass-3: donation extension on .call.
+  let callDon := lockSet_endpointCall ⟨5⟩ (ObjId.ofNat 10) (ObjId.ofNat 20)
+                   (some ⟨8⟩) (some ⟨100⟩)
+  let allOk_callDon := callDon.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .call))
+  assertBool "lockSet_endpointCall (with donation): all kinds in permittedKinds .call"
+    allOk_callDon
+  -- Audit-pass-3: donation-return extension on .reply.
+  let replyDon := lockSet_endpointReply ⟨5⟩ (ObjId.ofNat 10) ⟨7⟩ (some ⟨42⟩)
+  let allOk_replyDon := replyDon.pairs.all (fun p =>
+    decide (p.fst.kind ∈ permittedKinds .reply))
+  assertBool "lockSet_endpointReply (with donation): all kinds in permittedKinds .reply"
+    allOk_replyDon
 
 private def runCanonicalSortRuntimeChecks : IO Unit := do
   IO.println "--- §12 lockAcquireSequence canonical sort runtime ---"

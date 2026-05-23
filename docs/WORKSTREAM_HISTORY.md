@@ -1103,12 +1103,9 @@ pass-1; all closures land in the same v0.31.9 release cut):
   `lockKind_ne_reply`, `lockKind_ne_page` (fail-closed
   witnesses).  Replace the trivial `lockKind_exists` with
   actually-useful information about the range of `lockKind`.
-* **Donation-path scope clarification**: explicitly documents
-  in `LockSetTransitions.lean` that the static lockSet covers
-  only directly-named objects; the donation path
-  (state-discovered SchedContext + original-owner TCB) is
-  deferred to SM3.C's acquire-inspect-extend-acquire-rest
-  sub-call pattern.
+* **Donation-path scope** (initial audit-pass-2 form was
+  documentation-only; **REPLACED by audit-pass-3 below** per
+  CLAUDE.md's `Implement-the-improvement` rule).
 * **Inventory expansion** (audit-pass-2): 81 → 87 entries (+4
   projection: 4 lockKind co-domain theorems; +1 acquireSort:
   `lockAcquireSequence_perm`; +1 algebra:
@@ -1116,6 +1113,29 @@ pass-1; all closures land in the same v0.31.9 release cut):
 * **Test-coverage expansion**: 72 → 83 runtime assertions (+7
   in §14 lockKind co-domain, +4 in §15 fst_inj structural
   witness).
+
+**Audit-pass-3 refinements** (donation-path FIX implementing
+the improvement audit-pass-2 only documented; per CLAUDE.md's
+`Implement-the-improvement` rule, all closures land in the
+same v0.31.9 release cut):
+
+* **Donation-path lockSet extensions**: per plan §4.1's "union
+  over all paths" requirement, 4 syscalls extended with
+  pre-resolved Option args covering the full donation
+  footprint.  Source-level traced through
+  `donateSchedContext`, `returnDonatedSchedContext`, and
+  `cancelDonation` dispatch arms; the lockSets now declare
+  exactly the set of objects the underlying transition writes:
+  - `lockSet_endpointCall` + `donatedScId : Option SchedContextId`.
+  - `lockSet_endpointReply` + `donatedScId : Option SchedContextId`.
+  - `lockSet_replyRecv` + `donatedScId : Option SchedContextId`.
+  - `lockSet_tcbSuspend` + `bindingScId : Option SchedContextId`
+    AND `donatedOriginalOwnerTid : Option ThreadId`.
+* **`permittedKinds` extensions**: `.call`, `.reply`,
+  `.replyRecv`, `.tcbSuspend` all gain `.schedContext`.
+* **New consistency-proof builders**: `base_plus_three_opts`,
+  `base_plus_four_opts`.
+* **Test-coverage expansion**: 83 → 95 runtime assertions (+12).
 
 Follow-on: SM3.C (`withLockSet` 2PL combinator), SM3.D
 (deadlock-freedom Theorem 2.1.9), SM3.E (serializability Theorem

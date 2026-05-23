@@ -527,7 +527,7 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
 | SM3.B.6 | `lockAcquireSequence_ordered` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.7 | `lockAcquireSequence_complete` | `Locks/LockSet.lean` | LANDED |
 | SM3.B.8 | `lockAcquireSequence_canonical` | `Locks/LockSet.lean` | LANDED |
-| SM3.B.9 | `tests/LockSetSuite.lean` (~1000 LoC, 83 assertions after audit-pass-2) | `tests/LockSetSuite.lean` | LANDED |
+| SM3.B.9 | `tests/LockSetSuite.lean` (~1100 LoC, 95 assertions after audit-pass-3) | `tests/LockSetSuite.lean` | LANDED |
 
 **Adaptations from the pseudocode in this section**:
 
@@ -552,6 +552,34 @@ See CHANGELOG entry "WS-SM SM3.B LANDED" and CLAUDE.md / AGENTS.md
   rather than raw `CPtr`s — keeps the function static (no state
   parameter) per plan §4.1.
 
+**Audit-pass-3 closure additions** (donation-path FIX
+implementing the improvement audit-pass-2 only documented; per
+CLAUDE.md's `Implement-the-improvement` rule, all closures land
+in the same v0.31.9 release cut):
+
+* **Donation-path lockSet extensions**: per plan §4.1's "union
+  over all paths" requirement, 4 syscalls now have pre-resolved
+  `Option` args covering the donation footprint:
+  - `lockSet_endpointCall` gains `donatedScId : Option
+    SchedContextId`.
+  - `lockSet_endpointReply` gains `donatedScId : Option
+    SchedContextId`.
+  - `lockSet_replyRecv` gains `donatedScId : Option
+    SchedContextId`.
+  - `lockSet_tcbSuspend` gains `bindingScId : Option
+    SchedContextId` AND `donatedOriginalOwnerTid : Option
+    ThreadId`.
+* **Source-level tracing**: each extension verified by tracing
+  through the actual kernel code (`donateSchedContext`,
+  `returnDonatedSchedContext`, `cancelDonation` dispatch arms).
+  The lockSets now declare exactly the set of objects the
+  underlying transition may write.
+* **`permittedKinds` extensions**: `.call`, `.reply`,
+  `.replyRecv`, `.tcbSuspend` all gain `.schedContext`.
+* **New consistency-proof builders**: `base_plus_three_opts`
+  (for `replyRecv`), `base_plus_four_opts` (for `tcbSuspend`).
+* **Test-coverage expansion**: 83 → 95 runtime assertions.
+
 **Audit-pass-2 closure additions** (second deeper deep audit;
 all closures land in the same v0.31.9 release cut):
 
@@ -565,14 +593,9 @@ all closures land in the same v0.31.9 release cut):
   `lockKind_ne_reply`, `lockKind_ne_page`.  These tell SM3.C
   consumers that a `KernelObject`-derived `LockId` will never
   refer to a SystemState-level or N/A kind.
-* **Donation-path scope clarification**: explicitly documents
-  in `LockSetTransitions.lean` that the statically-declared
-  `lockSet_<τ>` covers only the directly-named objects.  The
-  state-discovered donation path (touches donated SchedContext
-  + original-owner TCB) is handled at SM3.C via the acquire-
-  inspect-extend-acquire-rest sub-call pattern.  PIP-chain TCB
-  locks are inherently dynamic; the SM0.I lock-id total order
-  keeps deadlock-freedom under dynamic locking.
+* **Donation-path scope** (initial audit-pass-2 form was
+  documentation-only; **REPLACED by audit-pass-3 above** per
+  CLAUDE.md's `Implement-the-improvement` rule).
 * **Inventory expansion**: 81 → 87 entries (+4 projection +1
   acquireSort +1 algebra).
 * **Test suite expansion**: 72 → 83 runtime assertions
