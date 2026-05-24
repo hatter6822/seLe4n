@@ -1231,6 +1231,10 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.LockId.le_trans
 #check @SeLe4n.Kernel.Concurrency.LockId.le_antisymm
 #check @SeLe4n.Kernel.Concurrency.LockId.lt_trichotomy
+-- SM3.D.3 — LockId strict-order helpers (irreflexive / transitive / asymmetric).
+#check @SeLe4n.Kernel.Concurrency.LockId.lt_irrefl
+#check @SeLe4n.Kernel.Concurrency.LockId.lt_trans
+#check @SeLe4n.Kernel.Concurrency.LockId.lt_asymm
 #check @SeLe4n.Kernel.Concurrency.BklState
 #check @SeLe4n.Kernel.Concurrency.bklHeldBy
 #check @SeLe4n.Kernel.Concurrency.bklState_unique_owner
@@ -2193,6 +2197,74 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_partition_sum
 #check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_descriptions_nodup
+EOF'
+
+# WS-SM SM3.D — deadlock-freedom + wait-graph acyclicity + bounded-wait +
+# 37-theorem inventory.  Surface anchors verify every SM3.D public symbol
+# survives renames at elaboration time.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.LockSet
+import SeLe4n.Kernel.Concurrency.Locks.Deadlock
+import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
+
+-- SM3.D.1: KernelExecution model + blockedAt / heldBy.
+#check @SeLe4n.Kernel.Concurrency.KernelExecution
+#check @SeLe4n.Kernel.Concurrency.blockedAt
+#check @SeLe4n.Kernel.Concurrency.heldBy
+-- SM3.D.4: hypotheses (per-core + execution-level) + ladder invariant.
+#check @SeLe4n.Kernel.Concurrency.coreFollows2PL
+#check @SeLe4n.Kernel.Concurrency.coreAcquiresInOrder
+#check @SeLe4n.Kernel.Concurrency.executionFollows2PL
+#check @SeLe4n.Kernel.Concurrency.executionAcquiresInLockIdOrder
+#check @SeLe4n.Kernel.Concurrency.ladder_of_2pl_and_order
+-- SM3.D.3: lockOrder_strict.
+#check @SeLe4n.Kernel.Concurrency.lockOrder_strict
+-- SM3.D.1 / SM3.D.4: noDeadlock + decidability + Theorem 2.1.9.
+#check @SeLe4n.Kernel.Concurrency.noDeadlock
+#check @SeLe4n.Kernel.Concurrency.mutualBlocked
+#check @SeLe4n.Kernel.Concurrency.noDeadlockDec
+#check @SeLe4n.Kernel.Concurrency.noDeadlock_iff_dec
+#check @SeLe4n.Kernel.Concurrency.noDeadlock_definition_decidable
+#check @SeLe4n.Kernel.Concurrency.deadlockFreedom_under_2pl_and_ordering
+-- SM3.D.5: wait-graph acyclicity.
+#check @SeLe4n.Kernel.Concurrency.waitsForCore
+#check @SeLe4n.Kernel.Concurrency.blockedWaitsFor
+#check @SeLe4n.Kernel.Concurrency.ReachesPlus
+#check @SeLe4n.Kernel.Concurrency.Acyclic
+#check @SeLe4n.Kernel.Concurrency.waitGraph
+#check @SeLe4n.Kernel.Concurrency.blockedWaitsFor_wanted_lt
+#check @SeLe4n.Kernel.Concurrency.reachesPlus_wanted_lt
+#check @SeLe4n.Kernel.Concurrency.waitGraph_acyclic_under_2pl
+#check @SeLe4n.Kernel.Concurrency.noDeadlock_of_waitGraph_acyclic
+-- SM3.D.6: bounded wait.
+#check @SeLe4n.Kernel.Concurrency.maxLockSetSize
+#check @SeLe4n.Kernel.Concurrency.perLockWaitCost
+#check @SeLe4n.Kernel.Concurrency.totalWaitCost
+#check @SeLe4n.Kernel.Concurrency.sum_const_map
+#check @SeLe4n.Kernel.Concurrency.totalWaitCost_eq
+#check @SeLe4n.Kernel.Concurrency.boundedWait_under_2pl
+-- SM3.D §7: grounding bridge.
+#check @SeLe4n.Kernel.Concurrency.acquireOrder_nodup
+#check @SeLe4n.Kernel.Concurrency.CorePrefixOf
+#check @SeLe4n.Kernel.Concurrency.coreFollows2PL_of_prefix
+#check @SeLe4n.Kernel.Concurrency.coreAcquiresInOrder_of_prefix
+#check @SeLe4n.Kernel.Concurrency.execution_satisfies_hypotheses_of_all_prefix
+-- SM3.D Inventory aggregator.
+#check @SeLe4n.Kernel.Concurrency.DeadlockCategory
+#check @SeLe4n.Kernel.Concurrency.DeadlockTheorem
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_model_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_hypotheses_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_order_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_deadlock_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_waitGraph_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_boundedWait_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_grounding_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_partition_sum
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_descriptions_nodup
 EOF'
 
 finalize_report

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/quirky-mayer-lSoD2",
-      "commit_sha": "c4936cb82272e246b0cc3e0581a9e86963ec4d6f",
-      "tree_sha": "c01aacd36c283d8917a05f52f4854647b3ab84d0",
-      "committed_at_utc": "2026-05-24T01:56:52+00:00"
+      "branch": "claude/friendly-rubin-5wOsy",
+      "commit_sha": "d53831a60e87e959888aa88b80175c977bcb8b77",
+      "tree_sha": "74949d62a8418afb872db1064f4653e691251cee",
+      "committed_at_utc": "2026-05-24T02:56:09-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bc0ef338d2618d86e234ddd38996bfd42c4f399d5f3d2cb91d08052abe665125"
+    "source_digest": "eea8dd8ee7873bd050aea07f39eac862663974af6f6dd0c71a7bf12c048b2834"
   },
   "summary": {
-    "module_count": 236,
-    "declaration_count": 8030
+    "module_count": 239,
+    "declaration_count": 8132
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
-    "production_files": 196,
-    "production_loc": 136019,
-    "test_files": 40,
-    "test_loc": 28376,
-    "proved_theorem_lemma_decls": 3987,
+    "production_files": 198,
+    "production_loc": 136887,
+    "test_files": 41,
+    "test_loc": 28740,
+    "proved_theorem_lemma_decls": 4017,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1641,6 +1641,7 @@
             "AsidPool",
             "allocate",
             "head",
+            "lt_irrefl",
             "maxAsidValue",
             "tail",
             "wellFormed"
@@ -1733,6 +1734,7 @@
             "AsidPool",
             "allocate",
             "head",
+            "lt_irrefl",
             "wellFormed"
           ]
         },
@@ -14546,6 +14548,507 @@
       "declarations": []
     },
     {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.Deadlock",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean",
+      "declaration_count": 46,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 90,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "KernelExecution",
+          "line": 108,
+          "called": [
+            "CoreId",
+            "LockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedAt",
+          "line": 116,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "heldBy",
+          "line": 120,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:124>",
+          "line": 124,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId",
+            "blockedAt"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:128>",
+          "line": 128,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId",
+            "heldBy"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "coreFollows2PL",
+          "line": 142,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "coreAcquiresInOrder",
+          "line": 152,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "none"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:158>",
+          "line": 158,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "coreFollows2PL"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:162>",
+          "line": 162,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "coreAcquiresInOrder"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "executionFollows2PL",
+          "line": 167,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "coreFollows2PL"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "executionAcquiresInLockIdOrder",
+          "line": 172,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "coreAcquiresInOrder"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:177>",
+          "line": 177,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "coreFollows2PL",
+            "executionFollows2PL"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:181>",
+          "line": 181,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "coreAcquiresInOrder",
+            "executionAcquiresInLockIdOrder"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ladder_of_2pl_and_order",
+          "line": 192,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId",
+            "coreAcquiresInOrder",
+            "coreFollows2PL",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockOrder_strict",
+          "line": 217,
+          "called": [
+            "LockId",
+            "LockId.lt_irrefl",
+            "LockId.lt_trans"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "noDeadlock",
+          "line": 230,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId",
+            "blockedAt",
+            "heldBy"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mutualBlocked",
+          "line": 241,
+          "called": [
+            "CoreId",
+            "KernelExecution"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:247>",
+          "line": 247,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "mutualBlocked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "noDeadlockDec",
+          "line": 256,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "mutualBlocked"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:261>",
+          "line": 261,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "noDeadlockDec"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "noDeadlock_iff_dec",
+          "line": 268,
+          "called": [
+            "KernelExecution",
+            "blockedAt",
+            "heldBy",
+            "mutualBlocked",
+            "noDeadlock",
+            "noDeadlockDec",
+            "none"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "noDeadlock_definition_decidable",
+          "line": 290,
+          "called": [
+            "KernelExecution",
+            "noDeadlock",
+            "noDeadlock_iff_dec"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockFreedom_under_2pl_and_ordering",
+          "line": 303,
+          "called": [
+            "KernelExecution",
+            "LockId.lt_asymm",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "ladder_of_2pl_and_order",
+            "noDeadlock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "waitsForCore",
+          "line": 320,
+          "called": [
+            "CoreId",
+            "KernelExecution"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedWaitsFor",
+          "line": 327,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "waitsForCore"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:331>",
+          "line": 331,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "none",
+            "waitsForCore"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:346>",
+          "line": 346,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "blockedWaitsFor"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "ReachesPlus",
+          "line": 353,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "Acyclic",
+          "line": 361,
+          "called": [
+            "CoreId",
+            "ReachesPlus"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "waitGraph",
+          "line": 366,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "blockedWaitsFor"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedWaitsFor_wanted_lt",
+          "line": 373,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "blockedWaitsFor",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "ladder_of_2pl_and_order"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reachesPlus_wanted_lt",
+          "line": 387,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId.lt_trans",
+            "ReachesPlus",
+            "blockedWaitsFor_wanted_lt",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "waitGraph_acyclic_under_2pl",
+          "line": 410,
+          "called": [
+            "Acyclic",
+            "KernelExecution",
+            "LockId.lt_irrefl",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "reachesPlus_wanted_lt",
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "noDeadlock_of_waitGraph_acyclic",
+          "line": 429,
+          "called": [
+            "Acyclic",
+            "KernelExecution",
+            "noDeadlock",
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "maxLockSetSize",
+          "line": 449,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "perLockWaitCost",
+          "line": 454,
+          "called": [
+            "numCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "totalWaitCost",
+          "line": 461,
+          "called": [
+            "LockSet",
+            "perLockWaitCost"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sum_const_map",
+          "line": 466,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "totalWaitCost_eq",
+          "line": 475,
+          "called": [
+            "LockSet",
+            "lockAcquireSequence_length",
+            "numCores",
+            "perLockWaitCost",
+            "size",
+            "sum_const_map",
+            "totalWaitCost"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "boundedWait_under_2pl",
+          "line": 490,
+          "called": [
+            "LockSet",
+            "maxLockSetSize",
+            "numCores",
+            "size",
+            "totalWaitCost",
+            "totalWaitCost_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireOrder_nodup",
+          "line": 513,
+          "called": [
+            "LockSet",
+            "acquireOrder",
+            "lockAcquireSequence_perm"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CorePrefixOf",
+          "line": 525,
+          "called": [
+            "CoreId",
+            "KernelExecution",
+            "LockId",
+            "LockSet",
+            "acquireOrder"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "coreFollows2PL_of_prefix",
+          "line": 534,
+          "called": [
+            "CoreId",
+            "CorePrefixOf",
+            "KernelExecution",
+            "LockSet",
+            "acquireOrder_nodup",
+            "coreFollows2PL"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "coreAcquiresInOrder_of_prefix",
+          "line": 550,
+          "called": [
+            "CoreId",
+            "CorePrefixOf",
+            "KernelExecution",
+            "LockSet",
+            "coreAcquiresInOrder",
+            "lockSet_acquired_in_order"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "execution_satisfies_hypotheses_of_all_prefix",
+          "line": 571,
+          "called": [
+            "CoreId",
+            "CorePrefixOf",
+            "KernelExecution",
+            "coreAcquiresInOrder",
+            "coreAcquiresInOrder_of_prefix",
+            "coreFollows2PL",
+            "coreFollows2PL_of_prefix",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "none"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension",
       "path": "SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean",
       "declaration_count": 47,
@@ -14765,6 +15268,7 @@
           "called": [
             "ThreadId",
             "head",
+            "lt_trans",
             "tail",
             "toNat"
           ]
@@ -15138,7 +15642,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.Kind",
       "path": "SeLe4n/Kernel/Concurrency/Locks/Kind.lean",
-      "declaration_count": 19,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -15272,7 +15776,8 @@
           "name": "LockId.le_trans",
           "line": 205,
           "called": [
-            "LockId"
+            "LockId",
+            "lt_trans"
           ]
         },
         {
@@ -15284,6 +15789,8 @@
             "LockKind.level_strictMono",
             "ObjId.ofNat_toNat",
             "level",
+            "lt_irrefl",
+            "lt_trans",
             "ofNat"
           ]
         },
@@ -15299,8 +15806,36 @@
         },
         {
           "kind": "theorem",
+          "name": "LockId.lt_irrefl",
+          "line": 290,
+          "called": [
+            "LockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "LockId.lt_trans",
+          "line": 302,
+          "called": [
+            "LockId",
+            "LockId.le_antisymm",
+            "LockId.le_trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "LockId.lt_asymm",
+          "line": 312,
+          "called": [
+            "LockId",
+            "LockId.lt_irrefl",
+            "LockId.lt_trans"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "LockId.lt_trichotomy",
-          "line": 286,
+          "line": 318,
           "called": [
             "LockId",
             "LockId.le_total"
@@ -21852,6 +22387,188 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/Sm3DInventory.lean",
+      "declaration_count": 17,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "DeadlockCategory",
+          "line": 52,
+          "called": [
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "DeadlockTheorem",
+          "line": 76,
+          "called": [
+            "DeadlockCategory"
+          ]
+        },
+        {
+          "kind": "syntax",
+          "name": "\"dlt!\"",
+          "line": 85,
+          "called": []
+        },
+        {
+          "kind": "macro_rules",
+          "name": "<anonymous:macro_rules:87>",
+          "line": 87,
+          "called": [
+            "DeadlockTheorem"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "deadlockTheorems",
+          "line": 99,
+          "called": [
+            "Acyclic",
+            "CorePrefixOf",
+            "DeadlockTheorem",
+            "KernelExecution",
+            "LockId.lt_asymm",
+            "LockId.lt_irrefl",
+            "LockId.lt_trans",
+            "ReachesPlus",
+            "acquireOrder_nodup",
+            "blockedAt",
+            "blockedWaitsFor",
+            "blockedWaitsFor_wanted_lt",
+            "boundedWait_under_2pl",
+            "coreAcquiresInOrder",
+            "coreAcquiresInOrder_of_prefix",
+            "coreFollows2PL",
+            "coreFollows2PL_of_prefix",
+            "deadlockFreedom_under_2pl_and_ordering",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "execution_satisfies_hypotheses_of_all_prefix",
+            "heldBy",
+            "ladder_of_2pl_and_order",
+            "lockOrder_strict",
+            "maxLockSetSize",
+            "mutualBlocked",
+            "noDeadlock",
+            "noDeadlockDec",
+            "noDeadlock_definition_decidable",
+            "noDeadlock_iff_dec",
+            "noDeadlock_of_waitGraph_acyclic",
+            "perLockWaitCost",
+            "reachesPlus_wanted_lt",
+            "totalWaitCost",
+            "totalWaitCost_eq",
+            "waitGraph",
+            "waitGraph_acyclic_under_2pl",
+            "waitsForCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_count",
+          "line": 188,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_model_count",
+          "line": 192,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_hypotheses_count",
+          "line": 196,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_order_count",
+          "line": 200,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_deadlock_count",
+          "line": 204,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_waitGraph_count",
+          "line": 208,
+          "called": [
+            "filter",
+            "length",
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_boundedWait_count",
+          "line": 212,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_grounding_count",
+          "line": 216,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_partition_sum",
+          "line": 220,
+          "called": [
+            "filter",
+            "length",
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_identifiers_nodup",
+          "line": 231,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "deadlockTheorems_descriptions_nodup",
+          "line": 235,
+          "called": []
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Concurrency.Locks.TicketLock",
       "path": "SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean",
       "declaration_count": 69,
@@ -22278,6 +22995,7 @@
           "line": 820,
           "called": [
             "TicketLockState",
+            "lt_irrefl",
             "wf",
             "wf_pending_ticket_lt"
           ]
@@ -23561,6 +24279,7 @@
           "called": [
             "get",
             "length",
+            "lt_irrefl",
             "zero"
           ]
         },
@@ -23699,6 +24418,8 @@
             "get",
             "happensBefore",
             "length",
+            "lt_irrefl",
+            "lt_trans",
             "lt_trichotomy",
             "pairwise_get_lt",
             "wellFormed"
@@ -23713,6 +24434,7 @@
             "MemoryTrace",
             "happensBefore",
             "happensBefore_strict_positional",
+            "lt_irrefl",
             "wellFormed"
           ]
         },
@@ -23736,6 +24458,7 @@
             "MemoryTrace",
             "happensBefore",
             "happensBefore_strict_positional",
+            "lt_asymm",
             "wellFormed"
           ]
         },
@@ -24203,6 +24926,7 @@
             "allCores",
             "allCores_length",
             "length",
+            "lt_irrefl",
             "numCores_pos"
           ]
         },
@@ -49974,6 +50698,7 @@
             "insertLoop",
             "insertLoop_places_key",
             "insertLoop_preserves_len",
+            "lt_trans",
             "mod_add_mod_eq",
             "none",
             "offset_injective'",
@@ -57906,6 +58631,7 @@
             "Deadline",
             "Priority",
             "isBetterCandidate",
+            "lt_irrefl",
             "toNat",
             "zero"
           ]
@@ -85669,6 +86395,438 @@
             "bov028_ofUInt64PairZeroRight",
             "bov029_zeroValidTheorem",
             "bov030_ofNatValid"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.DeadlockFreedomSuite",
+      "path": "tests/DeadlockFreedomSuite.lean",
+      "declaration_count": 36,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.DeadlockFreedom",
+          "line": 42,
+          "called": [
+            "Acyclic",
+            "CorePrefixOf",
+            "DeadlockCategory",
+            "DeadlockTheorem",
+            "KernelExecution",
+            "LockId.lt_asymm",
+            "LockId.lt_irrefl",
+            "LockId.lt_trans",
+            "ReachesPlus",
+            "acquireOrder_nodup",
+            "blockedAt",
+            "blockedWaitsFor",
+            "blockedWaitsFor_wanted_lt",
+            "boundedWait_under_2pl",
+            "coreAcquiresInOrder",
+            "coreAcquiresInOrder_of_prefix",
+            "coreFollows2PL",
+            "coreFollows2PL_of_prefix",
+            "deadlockFreedom_under_2pl_and_ordering",
+            "deadlockTheorems",
+            "deadlockTheorems_count",
+            "deadlockTheorems_descriptions_nodup",
+            "deadlockTheorems_identifiers_nodup",
+            "deadlockTheorems_partition_sum",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "execution_satisfies_hypotheses_of_all_prefix",
+            "heldBy",
+            "ladder_of_2pl_and_order",
+            "lockOrder_strict",
+            "maxLockSetSize",
+            "mutualBlocked",
+            "noDeadlock",
+            "noDeadlockDec",
+            "noDeadlock_definition_decidable",
+            "noDeadlock_iff_dec",
+            "noDeadlock_of_waitGraph_acyclic",
+            "perLockWaitCost",
+            "reachesPlus_wanted_lt",
+            "sum_const_map",
+            "totalWaitCost",
+            "totalWaitCost_eq",
+            "waitGraph",
+            "waitGraph_acyclic_under_2pl",
+            "waitsForCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c0",
+          "line": 125,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c1",
+          "line": 127,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcb5",
+          "line": 130,
+          "called": [
+            "LockId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcb7",
+          "line": 132,
+          "called": [
+            "LockId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "execNoDeadlock",
+          "line": 139,
+          "called": [
+            "KernelExecution",
+            "c0",
+            "c1",
+            "none",
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "execDeadlock",
+          "line": 152,
+          "called": [
+            "KernelExecution",
+            "c0",
+            "c1",
+            "none",
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:165>",
+          "line": 165,
+          "called": [
+            "tcb5"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:166>",
+          "line": 166,
+          "called": [
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:167>",
+          "line": 167,
+          "called": [
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:171>",
+          "line": 171,
+          "called": [
+            "execNoDeadlock",
+            "executionFollows2PL"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:172>",
+          "line": 172,
+          "called": [
+            "execNoDeadlock",
+            "executionAcquiresInLockIdOrder"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:173>",
+          "line": 173,
+          "called": [
+            "execNoDeadlock",
+            "noDeadlock"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:177>",
+          "line": 177,
+          "called": [
+            "execDeadlock",
+            "noDeadlock"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:178>",
+          "line": 178,
+          "called": [
+            "execDeadlock",
+            "executionAcquiresInLockIdOrder"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:179>",
+          "line": 179,
+          "called": [
+            "c0",
+            "c1",
+            "execDeadlock",
+            "mutualBlocked"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:180>",
+          "line": 180,
+          "called": [
+            "c0",
+            "c1",
+            "execNoDeadlock",
+            "mutualBlocked"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:184>",
+          "line": 184,
+          "called": [
+            "maxLockSetSize"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:185>",
+          "line": 185,
+          "called": [
+            "perLockWaitCost"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:201>",
+          "line": 201,
+          "called": [
+            "deadlockFreedom_under_2pl_and_ordering",
+            "execNoDeadlock",
+            "noDeadlock"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:205>",
+          "line": 205,
+          "called": [
+            "Acyclic",
+            "execNoDeadlock",
+            "waitGraph",
+            "waitGraph_acyclic_under_2pl"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:209>",
+          "line": 209,
+          "called": [
+            "execNoDeadlock",
+            "noDeadlock",
+            "noDeadlock_of_waitGraph_acyclic",
+            "waitGraph_acyclic_under_2pl"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:214>",
+          "line": 214,
+          "called": [
+            "boundedWait_under_2pl",
+            "maxLockSetSize",
+            "numCores",
+            "singleton",
+            "tcb5",
+            "totalWaitCost"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "execGrounded",
+          "line": 222,
+          "called": [
+            "KernelExecution",
+            "c0",
+            "none",
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "twoLockSet",
+          "line": 227,
+          "called": [
+            "LockSet",
+            "insertOrMerge",
+            "singleton",
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:236>",
+          "line": 236,
+          "called": [
+            "CorePrefixOf",
+            "c0",
+            "execGrounded",
+            "tcb5",
+            "tcb7",
+            "twoLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 243,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runStrictOrderChecks",
+          "line": 250,
+          "called": [
+            "assertBool",
+            "tcb5",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runHypothesisChecks",
+          "line": 256,
+          "called": [
+            "assertBool",
+            "c0",
+            "c1",
+            "execNoDeadlock",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "mutualBlocked",
+            "noDeadlock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runDeadlockNonVacuityChecks",
+          "line": 265,
+          "called": [
+            "assertBool",
+            "c0",
+            "c1",
+            "execDeadlock",
+            "executionAcquiresInLockIdOrder",
+            "mutualBlocked",
+            "noDeadlock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runWaitGraphChecks",
+          "line": 276,
+          "called": [
+            "assertBool",
+            "blockedWaitsFor",
+            "c0",
+            "c1",
+            "execDeadlock",
+            "execNoDeadlock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runBoundedWaitChecks",
+          "line": 291,
+          "called": [
+            "assertBool",
+            "maxLockSetSize",
+            "numCores",
+            "perLockWaitCost",
+            "singleton",
+            "size",
+            "tcb5",
+            "totalWaitCost",
+            "twoLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runGroundingChecks",
+          "line": 308,
+          "called": [
+            "acquireOrder",
+            "assertBool",
+            "execGrounded",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
+            "tcb5",
+            "tcb7",
+            "twoLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runInventoryChecks",
+          "line": 320,
+          "called": [
+            "assertBool",
+            "filter",
+            "length",
+            "waitGraph"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runDeadlockFreedomChecks",
+          "line": 348,
+          "called": [
+            "runBoundedWaitChecks",
+            "runDeadlockNonVacuityChecks",
+            "runGroundingChecks",
+            "runHypothesisChecks",
+            "runInventoryChecks",
+            "runStrictOrderChecks",
+            "runWaitGraphChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 363,
+          "called": [
+            "runDeadlockFreedomChecks"
           ]
         }
       ]

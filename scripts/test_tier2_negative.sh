@@ -166,4 +166,17 @@ run_check_with_timeout "TRACE" lake exe lock_set_suite
 # 51-theorem SM3.C inventory aggregator.
 run_check_with_timeout "TRACE" lake exe with_lock_set_suite
 
+# WS-SM SM3.D — deadlock-freedom regression suite.  Exercises the SM3.D
+# abstract `KernelExecution` model, the 2PL + ordering hypotheses + the
+# `ladder_of_2pl_and_order` invariant, the SM3.D.3 `lockOrder_strict`
+# (LockId strict-order helpers), the SM3.D.1/D.4 `noDeadlock` +
+# `deadlockFreedom_under_2pl_and_ordering` (Theorem 2.1.9), the SM3.D.5
+# wait-graph acyclicity (`waitGraph_acyclic_under_2pl` + the
+# `noDeadlock_of_waitGraph_acyclic` coherence corollary), the SM3.D.6
+# `boundedWait_under_2pl` bound, the §7 grounding bridge
+# (`execution_satisfies_hypotheses_of_all_prefix`), and the 37-theorem
+# SM3.D inventory.  Includes a non-vacuity witness: a genuine 2-core
+# deadlock fixture that necessarily violates the ordering hypothesis.
+run_check_with_timeout "TRACE" lake exe deadlock_freedom_suite
+
 finalize_report

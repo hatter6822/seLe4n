@@ -994,6 +994,66 @@ and Tier 3 (invariant-surface) pipelines.
 
 Follow-on: SM3.B — **LANDED below**.
 
+**WS-SM SM3.D LANDED on branch `claude/friendly-rubin-5wOsy`**
+(deadlock-freedom — Theorem 2.1.9, wait-graph acyclicity,
+bounded-wait, lock-discipline grounding; closes the fourth
+sub-phase of SM3 with all 7 sub-tasks LANDED).  Plan §5.4 of
+`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`.  Proves the
+architectural keystone of SM3: no execution of the verified
+microkernel can deadlock when every transition acquires its locks
+under SM3.C's 2PL discipline in the SM0.I `LockId` total order.
+Lands within the v0.31.9 release cut (no version bump), mirroring
+the SM3.A / SM3.B / SM3.C pattern.
+
+**SM3.D sub-tasks**:
+
+- **SM3.D.1**: `noDeadlock` predicate + the abstract
+  `KernelExecution` per-core lock-state model (`held`, `blocked`) +
+  `blockedAt` / `heldBy` + `Decidable (noDeadlock e)` (via the finite
+  reformulation `noDeadlockDec` + `noDeadlock_iff_dec`; the
+  existential's locks are pinned by `blocked`, so the `∃ l₁ l₂ :
+  LockId` collapses to a decidable per-pair `mutualBlocked` test).
+- **SM3.D.2**: `LockId.le_total` recap (cited from SM0.I).
+- **SM3.D.3**: `lockOrder_strict` (irreflexive ∧ transitive),
+  bundling the new SM0.I `Kind.lean` helpers `LockId.lt_irrefl` /
+  `lt_trans` / `lt_asymm`.
+- **SM3.D.4 (Theorem 2.1.9)**: `deadlockFreedom_under_2pl_and_ordering`
+  — no 2PL + ordered execution deadlocks.  Proof via the **ladder
+  invariant** `ladder_of_2pl_and_order` (held locks strictly below
+  the wanted lock).  Ordering gives `held ≤ wanted`; 2PL (`wanted ∉
+  held`) upgrades to the strict `held < wanted` the cycle
+  contradiction needs.  Both hypotheses genuinely used.
+- **SM3.D.5**: `waitGraph_acyclic_under_2pl` — the N-core dual (the
+  wait-for graph among blocked cores is a DAG), via a mathlib-free
+  transitive closure `ReachesPlus` + `Acyclic` + strict-monotonicity
+  along edges.  `noDeadlock_of_waitGraph_acyclic` derives the
+  two-core SM3.D.4 from the N-core SM3.D.5.
+- **SM3.D.6**: `boundedWait_under_2pl` — `WCRT` modelled
+  combinatorially as `totalWaitCost S tCs`, proved equal to `|S| ·
+  (numCores − 1) · T_cs` (`totalWaitCost_eq`) and bounded by
+  `maxLockSetSize · (numCores − 1) · T_cs`.
+- **SM3.D.7**: `tests/DeadlockFreedomSuite.lean` — surface anchors,
+  decidable examples, theorem-inhabitation `example`s, and 30 runtime
+  assertions, including a **non-vacuity witness** (a genuine 2-core
+  deadlock fixture that necessarily violates the ordering hypothesis).
+
+**Grounding (§7)**: `execution_satisfies_hypotheses_of_all_prefix`
+discharges both abstract hypotheses from the SM3.B
+`lockAcquireSequence` canonical sort (a blocked core holds a
+`Nodup`-keyed ascending *prefix* of its acquire order and waits on
+the next element — `CorePrefixOf`), realising plan §3.7's "H_c is the
+prefix" step.  The hypotheses are *consequences* of `withLockSet`,
+not assumptions.
+
+**Modules**: `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean`
+(~584 LoC) + `Sm3DInventory.lean` (37-theorem inventory), staged via
+`Concurrency.LockSet`.  **Axiom budget for SM3.D**: 0 Lean axioms, 0
+sorries.  **Items deferred past v1.0.0 with correctness impact**:
+NONE.
+
+Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
+lemmas + Corollary 2.1.11) closes the SM3 phase.
+
 **WS-SM SM3.C LANDED on branch `claude/quirky-mayer-lSoD2`**
 (withLockSet 2PL combinator, lockSetHeld predicate, 2PL discipline
 theorems, dynamic PIP chain-walk locking; closes the third
