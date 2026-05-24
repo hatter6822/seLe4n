@@ -147,8 +147,12 @@ open SeLe4n.Kernel.Concurrency
 #check @withDynamicChainExtension
 #check @withDynamicChainExtension_unfold
 #check @dynamicChainHeld
+#check @chainFollowsBlockingServer
 #check @walkStep_extended_increases_objId
+#check @walkStep_extended_blockingServer
 #check @walkAndAcquire_path_ascending_in_ObjId_if_terminated
+#check @walkAndAcquire_terminated_followsChain
+#check @walkAndAcquire_terminated_satisfies_path_structure
 #check @walkAndAcquireAux_terminated_length_le
 #check @walkAndAcquire_terminated_length_bounded
 #check @walkAndAcquire_total
@@ -405,10 +409,23 @@ private def runDynamicChainChecks : IO Unit := do
     -- SM3.C.11.e: the terminated path is bounded by MAX_PIP_RETRIES + 1.
     assertBool "walkAndAcquire terminated path length ≤ MAX_PIP_RETRIES + 1"
       (decide (path.path.length ≤ MAX_PIP_RETRIES + 1))
+    -- SM3.C.11.c (audit-pass-2): the terminated path follows the blocking
+    -- graph — wires dynamicChainHeld's conjunct 4 to the walker.  On the
+    -- empty default state the singleton path trivially follows it.
+    assertBool "walkAndAcquire terminated path follows blockingServer (chain conjunct)"
+      (decide (chainFollowsBlockingServer (default : SystemState) path.path))
+    -- And it starts at the requested start (dynamicChainHeld conjunct 3).
+    assertBool "walkAndAcquire terminated path starts at startTid"
+      (decide (path.path.head? = some path.startTid))
   | .extended _ =>
     assertBool "walkAndAcquire .extended on default (unexpected)" false
   | .exhausted =>
     assertBool "walkAndAcquire .exhausted on default (unexpected)" false
+  -- chainFollowsBlockingServer base cases: empty and singleton are trivially true.
+  assertBool "chainFollowsBlockingServer [] (empty list trivially follows)"
+    (decide (chainFollowsBlockingServer (default : SystemState) ([] : List SeLe4n.ThreadId)))
+  assertBool "chainFollowsBlockingServer [tid] (singleton trivially follows)"
+    (decide (chainFollowsBlockingServer (default : SystemState) [(⟨3⟩ : SeLe4n.ThreadId)]))
   -- SM3.C.11.e: fuel = 0 always exhausts (the walker never loops forever).
   let outcomeZero := walkAndAcquire (default : SystemState) ⟨1⟩ 0
   match outcomeZero with
@@ -419,9 +436,9 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 66 entries (audit-pass-1 expanded from 61).
-  assertBool "withLockSetTheorems.length = 66"
-    (decide (withLockSetTheorems.length = 66))
+  -- The inventory has 70 entries (audit-pass-2 expanded from 66).
+  assertBool "withLockSetTheorems.length = 70"
+    (decide (withLockSetTheorems.length = 70))
   -- Per-category counts.
   assertBool "withLockSetTheorems combinator count = 31"
     (decide ((withLockSetTheorems.filter
@@ -435,9 +452,9 @@ private def runInventoryChecks : IO Unit := do
   assertBool "withLockSetTheorems atomicity count = 8"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .atomicity)).length = 8))
-  assertBool "withLockSetTheorems dynamicChain count = 13"
+  assertBool "withLockSetTheorems dynamicChain count = 17"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .dynamicChain)).length = 13))
+      (fun t => t.category == .dynamicChain)).length = 17))
   -- Partition-sum is total.
   assertBool "withLockSetTheorems partition sum = total"
     (decide (

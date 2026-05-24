@@ -2528,7 +2528,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
   (~646 LoC post-audit-pass-4) with 36 surface-anchor `#check`
-  lines, 36 decidable examples, and 48 runtime `assertBool`
+  lines, 36 decidable examples, and 52 runtime `assertBool`
   assertions covering: default-state shape (objStoreLock unheld,
   toList empty); per-object default-lock witness for every kind
   including TCB via named-field construction with the 6 required
@@ -3231,7 +3231,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     current abstract model.  A sequencing deferral, not a
     correctness gap.
   - **SM3.C.10**: `tests/WithLockSetSuite.lean` (~430 LoC) — 70+
-    surface anchors, 12 decidable examples, 48 runtime `assertBool`
+    surface anchors, 12 decidable examples, 52 runtime `assertBool`
     assertions across 9 sections.  Runnable as
     `lake exe with_lock_set_suite`; Tier-2 + Tier-3 wired.
   - **SM3.C.11**: dynamic PIP chain-walk locking
@@ -3248,10 +3248,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
     closes any potential wait-cycle).  `dynamicChainHeld` is the
     4-conjunct chain-held predicate.
 
-  **SM3.C inventory (66 entries)**: `withLockSetTheorems` in
+  **SM3.C inventory (70 entries)**: `withLockSetTheorems` in
   `Sm3CInventory.lean` across 5 categories (`.combinator` = 31,
   `.held` = 11, `.ordering` = 3, `.atomicity` = 8, `.dynamicChain`
-  = 13) with compile-time-checked `wlst!` macro + per-category
+  = 17) with compile-time-checked `wlst!` macro + per-category
   counts + partition-sum + Nodup witnesses.
 
   **Module reachability**: all 5 SM3.C modules staged via the
@@ -3265,7 +3265,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   and `RAW_LOOKUP_TID` drops 759 → 757.
 
   **Test coverage**: 320/320 Lean modules build green;
-  `lake exe with_lock_set_suite` reports 48/48 PASS; full Tier
+  `lake exe with_lock_set_suite` reports 52/52 PASS; full Tier
   0+1+2+3 green; AK7 cascade monotonicity all metrics pass.
   **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries (only the
   standard `propext` / `Quot.sound` / `Classical.choice`

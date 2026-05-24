@@ -247,10 +247,18 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       withDynamicChainExtension_unfold .dynamicChain,
     wlst! "dynamicChainHeld: SM3.C.11.c chain-held predicate"
       dynamicChainHeld .dynamicChain,
+    wlst! "chainFollowsBlockingServer: adjacent-chain predicate (mathlib-free)"
+      chainFollowsBlockingServer .dynamicChain,
     wlst! "walkStep_extended_increases_objId: each step is strictly ascending"
       walkStep_extended_increases_objId .dynamicChain,
+    wlst! "walkStep_extended_blockingServer: each step follows a blocking-graph edge"
+      walkStep_extended_blockingServer .dynamicChain,
     wlst! "walkAndAcquire_path_ascending_in_ObjId_if_terminated: SM3.C.11.d"
       walkAndAcquire_path_ascending_in_ObjId_if_terminated .dynamicChain,
+    wlst! "walkAndAcquire_terminated_followsChain: walker output follows blockingServer"
+      walkAndAcquire_terminated_followsChain .dynamicChain,
+    wlst! "walkAndAcquire_terminated_satisfies_path_structure: wires dynamicChainHeld to walker"
+      walkAndAcquire_terminated_satisfies_path_structure .dynamicChain,
     wlst! "walkAndAcquireAux_terminated_length_le: SM3.C.11.e fuel-bounded path"
       walkAndAcquireAux_terminated_length_le .dynamicChain,
     wlst! "walkAndAcquire_terminated_length_bounded: SM3.C.11.e path ≤ MAX_PIP_RETRIES+1"
@@ -258,14 +266,19 @@ def withLockSetTheorems : List WithLockSetTheorem :=
     wlst! "walkAndAcquire_total: SM3.C.11.e totality witness"
       walkAndAcquire_total .dynamicChain]
 
-/-- WS-SM SM3.C: the inventory has exactly 66 entries (audit-pass-1
-expanded from 61: +2 combinator kind-checked update, +2 held grant /
-round-trip, +2 atomicity substantive acquire-grants, −1 removed
-tautology, net +5... see per-category counts).
+/-- WS-SM SM3.C: the inventory has exactly 70 entries.
+
+Audit-pass-1 expanded 61→66 (+2 combinator kind-checked update, +2
+held grant / round-trip, +2 atomicity substantive acquire-grants,
+−1 removed tautology).  Audit-pass-2 expanded 66→70 (+4 dynamicChain:
+`chainFollowsBlockingServer` predicate + `walkStep_extended_blockingServer`
++ `walkAndAcquire_terminated_followsChain` +
+`walkAndAcquire_terminated_satisfies_path_structure`, wiring
+`dynamicChainHeld`'s structural conjuncts to the walker).
 A regression that adds a new SM3.C theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem withLockSetTheorems_count :
-    withLockSetTheorems.length = 66 := by decide
+    withLockSetTheorems.length = 70 := by decide
 
 /-- WS-SM SM3.C: 31 entries in the `combinator` category
 (audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`). -/
@@ -291,9 +304,11 @@ theorem withLockSetTheorems_atomicity_count :
     (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 8 := by
   decide
 
-/-- WS-SM SM3.C: 13 entries in the `dynamicChain` category. -/
+/-- WS-SM SM3.C: 17 entries in the `dynamicChain` category
+(audit-pass-2: +4 chain-establishment theorems wiring `dynamicChainHeld`
+to the walker). -/
 theorem withLockSetTheorems_dynamicChain_count :
-    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length = 13 := by
+    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length = 17 := by
   decide
 
 /-- WS-SM SM3.C: per-category counts sum to the total. -/

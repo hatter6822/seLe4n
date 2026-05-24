@@ -302,6 +302,47 @@ where
 -- §4 — SM3.C.11.c — `dynamicChainHeld` predicate
 -- ============================================================================
 
+/-- WS-SM SM3.C.11.c: the adjacent-chain predicate — every
+consecutive pair `(a, b)` in the list satisfies `blockingServer s a
+= some b`.
+
+A mathlib-free, front-recursive reformulation of "the path follows
+the blocking graph" (seLe4n cannot use mathlib's `List.Chain'`).
+Induction-friendly: the `_append_of_getLast` lemma below lifts it
+across a back-append, which is exactly the shape `walkStep`'s
+extension produces.
+
+The empty and singleton lists trivially satisfy it (no adjacent
+pair to constrain). -/
+def chainFollowsBlockingServer (s : SystemState) : List ThreadId → Prop
+  | [] => True
+  | [_] => True
+  | a :: b :: rest =>
+      blockingServer s a = some b ∧ chainFollowsBlockingServer s (b :: rest)
+
+/-- WS-SM SM3.C.11.c: `chainFollowsBlockingServer` is decidable —
+each adjacent edge `blockingServer s a = some b` is a decidable
+`Option ThreadId` equality, composed via `And.decidable` over the
+structural recursion.  Enables `decide`-based runtime assertions. -/
+instance chainFollowsBlockingServer_decidable (s : SystemState) :
+    (l : List ThreadId) → Decidable (chainFollowsBlockingServer s l)
+  | [] => isTrue trivial
+  | [_] => isTrue trivial
+  | a :: b :: rest =>
+      haveI : Decidable (chainFollowsBlockingServer s (b :: rest)) :=
+        chainFollowsBlockingServer_decidable s (b :: rest)
+      -- The cons-cons arm reduces definitionally to the conjunction; with
+      -- the recursive instance registered (anonymous `haveI`), the
+      -- anonymous `Decidable (And _ _)` instance resolves via the
+      -- edge-equality's `DecidableEq` and the recursive instance.
+      inferInstanceAs (Decidable (blockingServer s a = some b ∧
+        chainFollowsBlockingServer s (b :: rest)))
+
+/-- WS-SM SM3.C.11.c: the empty / singleton list trivially follows
+the blocking graph. -/
+@[simp] theorem chainFollowsBlockingServer_singleton (s : SystemState)
+    (tid : ThreadId) : chainFollowsBlockingServer s [tid] := trivial
+
 /-- WS-SM SM3.C.11.c: predicate witnessing that core `c` holds the
 write locks on every TCB in `path` on the kernel state `s`.
 
@@ -312,14 +353,23 @@ The four conjuncts:
 * `pathOrdered`: the path is `Pairwise (·.toNat < ·.toNat)` —
   the SM0.I ascending-ObjId discipline.
 * `pathStarts`: `path.head? = some startTid` — the path begins
-  at the declared start.
-* `pathChain`: for every adjacent pair `(a, b)` in `path`,
-  `blockingServer s a = some b` — the path follows the actual
-  blocking graph.
+  at the declared start (structurally guaranteed by
+  `PipChainPath.wf_head`, restated here so the predicate is
+  self-contained).
+* `pathChain`: `chainFollowsBlockingServer s path.path` — every
+  adjacent pair follows the actual blocking graph.
 
 This is the dynamic counterpart to `lockSetHeld`: the static
 lock-set discipline plus this predicate together discharge the
-SMP-migration precondition for the 3 PIP-invoking transitions. -/
+SMP-migration precondition for the 3 PIP-invoking transitions.
+
+**Audit-pass-2**: conjunct 4 reformulated from the indexed
+`∀ i, path.path[i] → path.path[i+1]` form to the recursive
+`chainFollowsBlockingServer` predicate, which the walker can
+establish (see `walkAndAcquire_terminated_satisfies_path_structure`).
+The indexed form was a defined-but-unestablished spec; the recursive
+form is provably produced by `walkAndAcquire`, wiring this predicate
+to its producer. -/
 def dynamicChainHeld (c : CoreId) (path : PipChainPath)
     (s : SystemState) : Prop :=
   -- 1. Every TCB in path has its write lock held by c.
@@ -330,9 +380,8 @@ def dynamicChainHeld (c : CoreId) (path : PipChainPath)
   -- 3. Path starts at the declared start.
   path.path.head? = some path.startTid ∧
   -- 4. Path follows the blocking graph (substantive correctness).
-  ∀ i, ∀ h : i + 1 < path.path.length,
-    blockingServer s (path.path[i]'(by omega)) =
-      some (path.path[i+1]'h)
+  chainFollowsBlockingServer s path.path
+
 
 -- ============================================================================
 -- §5 — SM3.C.11.b — `withDynamicChainExtension` combinator
@@ -695,5 +744,166 @@ theorem walkAndAcquire_total (s : SystemState) (startTid : ThreadId)
     ∃ outcome, walkAndAcquire.walkAndAcquireAux s
       (PipChainPath.singleton startTid) fuel = outcome :=
   ⟨_, rfl⟩
+
+-- ============================================================================
+-- §8 — SM3.C.11.c — Walker establishes the dynamicChainHeld path structure
+-- ============================================================================
+--
+-- These theorems WIRE the `dynamicChainHeld` predicate to its producer
+-- (`walkAndAcquire`).  Without them `dynamicChainHeld` would be an
+-- orphan spec — defined but never shown to be establishable.  They
+-- prove the walker's terminated path satisfies the three *structural*
+-- conjuncts of `dynamicChainHeld` (ascending, starts-at-start, follows-
+-- blocking-graph).  The fourth conjunct (every TCB write-locked) is the
+-- separate job of `withDynamicChainExtension`'s `acquireAll` over the
+-- chain locks — it is a property of the lock-acquired state, not of the
+-- walker's pure path discovery.
+
+/-- WS-SM SM3.C.11.c helper: `walkStep` on an `.extended` outcome
+exposes the blocking-graph edge it traversed: the tail `lastTid`,
+the new link `newTid`, and the fact `blockingServer s lastTid =
+some newTid` (the edge the step followed).  Richer companion to
+`walkStep_extended_increases_objId`. -/
+theorem walkStep_extended_blockingServer (s : SystemState) (path : PipChainPath)
+    (newPath : PipChainPath)
+    (h : walkStep s path = .extended newPath) :
+    ∃ lastTid newTid, path.path.getLast? = some lastTid ∧
+      newPath.path = path.path ++ [newTid] ∧
+      blockingServer s lastTid = some newTid := by
+  unfold walkStep at h
+  split at h
+  next hLast => cases h
+  next lastTid hLast =>
+    split at h
+    next hBs => cases h
+    next next hBs =>
+      split at h
+      next _hGt =>
+        injection h with hEq
+        refine ⟨lastTid, next, hLast, ?_, hBs⟩
+        rw [← hEq]
+      next _hNotGt => cases h
+
+/-- WS-SM SM3.C.11.c helper: appending `b` to a list `l` whose
+`getLast?` is `some a` preserves `chainFollowsBlockingServer`,
+provided the edge `blockingServer s a = some b` holds.
+
+Proved by induction on `l` — same back-append shape as
+`pairwise_append_singleton_of_last`.  The front-recursive predicate
+recurses past the head until the singleton tail, where the new edge
+`a → b` is discharged by `hEdge`. -/
+private theorem chainFollowsBlockingServer_append_of_getLast
+    (s : SystemState) (l : List ThreadId) (a b : ThreadId)
+    (hLast : l.getLast? = some a)
+    (hChain : chainFollowsBlockingServer s l)
+    (hEdge : blockingServer s a = some b) :
+    chainFollowsBlockingServer s (l ++ [b]) := by
+  induction l with
+  | nil => cases hLast
+  | cons head tail ih =>
+    -- Substituting `cases` on `tail` specialises `ih` to the cons tail.
+    cases tail with
+    | nil =>
+      -- l = [head]; getLast? = some head ⇒ a = head; result = [head, b].
+      simp only [List.getLast?_singleton, Option.some.injEq] at hLast
+      subst hLast
+      -- chainFollowsBlockingServer s ([head] ++ [b]) = (edge head→b) ∧ True
+      exact ⟨hEdge, trivial⟩
+    | cons head₂ tail₂ =>
+      -- hChain : blockingServer s head = some head₂ ∧ chainFollowsBlockingServer s (head₂ :: tail₂)
+      obtain ⟨hEdgeHead, hChainTail⟩ := hChain
+      have hLastTail : (head₂ :: tail₂).getLast? = some a := by
+        rw [List.getLast?_cons_cons] at hLast; exact hLast
+      -- ih (now about head₂ :: tail₂) gives chain ((head₂::tail₂) ++ [b]).
+      have hRec := ih hLastTail hChainTail
+      -- Goal: chain (head :: head₂ :: (tail₂ ++ [b])).
+      exact ⟨hEdgeHead, hRec⟩
+
+/-- WS-SM SM3.C.11.c helper: `walkStep`'s `.extended` step preserves
+`chainFollowsBlockingServer`.  The new path is the old path with the
+traversed edge's target appended, and the edge follows the blocking
+graph (`walkStep_extended_blockingServer`), so the append lemma
+applies. -/
+private theorem walkStep_extended_preserves_chain (s : SystemState)
+    (path : PipChainPath) (newPath : PipChainPath)
+    (h : walkStep s path = .extended newPath)
+    (hChain : chainFollowsBlockingServer s path.path) :
+    chainFollowsBlockingServer s newPath.path := by
+  obtain ⟨lastTid, newTid, hLast, hNew, hEdge⟩ :=
+    walkStep_extended_blockingServer s path newPath h
+  rw [hNew]
+  exact chainFollowsBlockingServer_append_of_getLast s path.path lastTid newTid
+    hLast hChain hEdge
+
+/-- WS-SM SM3.C.11.c: a terminating walk produces a path that
+follows the blocking graph (`chainFollowsBlockingServer`).  Proved
+by induction on the retry fuel, mirroring
+`walkAndAcquire_path_ascending_in_ObjId_if_terminated`: the singleton
+seed trivially follows the graph, and every `.extended` step
+preserves the property (`walkStep_extended_preserves_chain`). -/
+theorem walkAndAcquire_terminated_followsChain
+    (s : SystemState) (startTid : ThreadId) (fuel : Nat)
+    (path : PipChainPath)
+    (h : walkAndAcquire.walkAndAcquireAux s (PipChainPath.singleton startTid) fuel
+      = .terminated path) :
+    chainFollowsBlockingServer s path.path := by
+  have hAux : ∀ (fuel' : Nat) (path₀ path' : PipChainPath),
+      chainFollowsBlockingServer s path₀.path →
+      walkAndAcquire.walkAndAcquireAux s path₀ fuel' = .terminated path' →
+      chainFollowsBlockingServer s path'.path := by
+    intro fuel'
+    induction fuel' with
+    | zero =>
+      intro path₀ path' _hChain hWalk
+      simp [walkAndAcquire.walkAndAcquireAux] at hWalk
+    | succ n ih =>
+      intro path₀ path' hChain hWalk
+      unfold walkAndAcquire.walkAndAcquireAux at hWalk
+      cases hStep : walkStep s path₀ with
+      | terminated fp =>
+        rw [hStep] at hWalk
+        injection hWalk with hEq
+        have hUnchanged := walkStep_terminated_path_unchanged s path₀ fp hStep
+        rw [← hEq, hUnchanged]
+        exact hChain
+      | exhausted =>
+        rw [hStep] at hWalk; cases hWalk
+      | extended newPath =>
+        rw [hStep] at hWalk
+        have hNewChain := walkStep_extended_preserves_chain s path₀ newPath hStep hChain
+        exact ih newPath path' hNewChain hWalk
+  apply hAux fuel (PipChainPath.singleton startTid) path
+  · simp [PipChainPath.singleton]
+  · exact h
+
+/-- WS-SM SM3.C.11.c (plan §5.3): the walker establishes the
+**path-structure** conjuncts of `dynamicChainHeld`.
+
+Bundles the three structural properties a terminating
+`walkAndAcquire` produces:
+* conjunct 2 — `ObjId.val`-ascending
+  (`walkAndAcquire_path_ascending_in_ObjId_if_terminated`),
+* conjunct 3 — starts at `startTid` (`PipChainPath.wf_head`),
+* conjunct 4 — follows the blocking graph
+  (`walkAndAcquire_terminated_followsChain`).
+
+This is the producer-side connection that wires `dynamicChainHeld`
+to `walkAndAcquire`: the walker's output IS a valid ascending
+blocking-chain rooted at `startTid`.  The remaining conjunct 1
+(every TCB write-locked) is established by
+`withDynamicChainExtension`'s `acquireAll` over the chain locks,
+not by the walker's pure path discovery — so it is intentionally
+not part of this walker theorem. -/
+theorem walkAndAcquire_terminated_satisfies_path_structure
+    (s : SystemState) (startTid : ThreadId) (fuel : Nat)
+    (path : PipChainPath)
+    (h : walkAndAcquire.walkAndAcquireAux s (PipChainPath.singleton startTid) fuel
+      = .terminated path) :
+    path.path.Pairwise (fun a b => a.toNat < b.toNat) ∧
+    path.path.head? = some path.startTid ∧
+    chainFollowsBlockingServer s path.path :=
+  ⟨walkAndAcquire_path_ascending_in_ObjId_if_terminated s startTid fuel path h,
+   path.wf_head,
+   walkAndAcquire_terminated_followsChain s startTid fuel path h⟩
 
 end SeLe4n.Kernel.Concurrency

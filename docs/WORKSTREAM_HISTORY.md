@@ -35,7 +35,7 @@ cross-reference removed from production sources, every "deferred to
 WS-V" SMP claim repointed to the WS-SM phase plans, DEF-R-HAL-L20
 disposition rewritten to honestly reflect the partial-resolution
 state), testing infrastructure (`tests/SmpFoundationsSuite.lean`
-with 48 runtime assertions; tier-4 SMP boot-check stub), and the
+with 52 runtime assertions; tier-4 SMP boot-check stub), and the
 WS-RC merge (R0..R5 archived; R6..R14 absorbed into SM0..SM9 per the
 SM0.Q.1 absorption mapping; sub-portfolio plans archived to
 `docs/dev_history/audits/`).
@@ -967,7 +967,7 @@ removed.  `RwLockRefinement` remains staged-only.
 
 **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
 (~646 LoC post-audit-pass-4) with 36 surface-anchor `#check`
-lines, 36 decidable examples, 48 runtime `assertBool`
+lines, 36 decidable examples, 52 runtime `assertBool`
 assertions.  TCB-specific coverage included: named-field
 construction with the 6 required fields exercises the SM3.A.1
 default-lock witness for TCB.  Audit-pass-2 added the
@@ -1040,7 +1040,7 @@ release cut (no version bump), mirroring the SM3.A / SM3.B pattern.
   kernel state seam SM5 introduces; at SM3.C the kernel is modelled
   single-core so the wrappers would be no-ops.
 - **SM3.C.10**: `tests/WithLockSetSuite.lean` (~430 LoC) — 70+
-  surface anchors, 12 decidable examples, 48 runtime `assertBool`
+  surface anchors, 12 decidable examples, 52 runtime `assertBool`
   assertions.
 - **SM3.C.11**: dynamic PIP chain-walk locking
   (`DynamicChainExtension.lean`) — `withDynamicChainExtension`
@@ -1051,7 +1051,7 @@ release cut (no version bump), mirroring the SM3.A / SM3.B pattern.
   (every terminating walk produces a strictly-`ObjId.val`-ascending
   path — the SM0.I total-order discipline).
 
-**SM3.C inventory (66 entries)**: `withLockSetTheorems` in
+**SM3.C inventory (70 entries)**: `withLockSetTheorems` in
 `Sm3CInventory.lean` across 5 categories (`.combinator` = 31,
 `.held` = 11, `.ordering` = 3, `.atomicity` = 8, `.dynamicChain` =
 10) with compile-time-checked `wlst!` macro + per-category counts +
@@ -2598,7 +2598,7 @@ sibling file is created** — every absorbed item is closed in-phase.
     `docs/codebase_map.json` regenerated).
   - Gate: `lake build` (302 jobs, 0 warnings) + `test_smoke.sh` PASS
     + `test_full.sh` PASS + `test_tier0_hygiene.sh` PASS + `lake exe
-    kernel_error_matrix_suite` 48/48 PASS + `lake exe
+    kernel_error_matrix_suite` 52/52 PASS + `lake exe
     ak8_coverage_suite` 13/13 PASS + `cargo test --workspace` 462
     tests + `cargo clippy --workspace -- -D warnings` 0 warnings +
     `check_version_sync.sh` PASS + zero `sorry`/`axiom`/`native_decide`.

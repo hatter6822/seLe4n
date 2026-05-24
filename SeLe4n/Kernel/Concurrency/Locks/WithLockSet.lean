@@ -303,11 +303,12 @@ The four control-flow branches:
   ladder).
 * `l.kind ∈ {.reply, .page}`: SM3.A.5 / SM3.A.8 N/A — no kernel-
   object struct exists, return state unchanged (fail-closed).
-* `l.kind ∈ {modeled kinds}` with object present: thread the
-  object through `KernelObject.updateLock` and re-insert.
-* `l.kind ∈ {modeled kinds}` with object absent: return state
-  unchanged (fail-closed; the caller is expected to have verified
-  presence via `LockId.lookup` upstream).
+* `l.kind ∈ {modeled kinds}`: route through `updateObjectLockAt`,
+  which uses `LockId.lookup` to require that an object is present
+  at `l.objId` **and** its variant matches `l.kind`.  If so, the
+  object's lock field is advanced via `KernelObject.updateLock`;
+  otherwise (absent OR kind mismatch) the state is unchanged
+  (fail-closed).
 
 The result is the new `SystemState` with the per-object lock
 field (or the table-level lock) advanced via `applyOp`.

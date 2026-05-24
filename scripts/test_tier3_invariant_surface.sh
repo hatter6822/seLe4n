@@ -2141,8 +2141,12 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension
 #check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold
 #check @SeLe4n.Kernel.Concurrency.dynamicChainHeld
+#check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer
 #check @SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId
+#check @SeLe4n.Kernel.Concurrency.walkStep_extended_blockingServer
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_path_ascending_in_ObjId_if_terminated
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_followsChain
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_satisfies_path_structure
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquireAux_terminated_length_le
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_length_bounded
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_total

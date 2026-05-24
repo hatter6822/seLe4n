@@ -232,6 +232,42 @@ exercising grant / round-trip / kind-mismatch-fail-closed).  AK7
 cascade floor preserved (the kind-check routes through `LockId.lookup`'s
 typed accessors).  0 sorry, 0 axiom.  Full Tier 0+1+2+3 green.
 
+### Audit-pass-2 (deep self-audit: wire `dynamicChainHeld` to its producer)
+
+A line-by-line audit of the SM3.C surface (not trusting docstrings)
+found one genuine incompleteness: `dynamicChainHeld` was a defined-
+but-orphan spec predicate — its conjunct 4 used an indexed
+`∀ i, path[i] → path[i+1]` form that **no theorem established for the
+walker**, so the predicate could be cited without proof that
+`walkAndAcquire` produces a path satisfying it.  Per CLAUDE.md's "wire
+the computed structure into the consumer" rule, this is closed:
+
+* **Conjunct 4 reformulated** to a mathlib-free recursive predicate
+  `chainFollowsBlockingServer` (front-recursive adjacent-edge chain),
+  with a `Decidable` instance.  Nothing consumed the old indexed form,
+  so this is a clean tightening.
+* **Producer connection proven**:
+  `walkStep_extended_blockingServer` (each `.extended` step follows a
+  real `blockingServer` edge) → `walkAndAcquire_terminated_followsChain`
+  (the terminating walk's path follows the blocking graph, by induction
+  on fuel) → `walkAndAcquire_terminated_satisfies_path_structure`
+  (bundles conjuncts 2 ascending + 3 starts-at-start + 4 follows-graph).
+  The walker's output is now provably a valid ascending blocking-chain
+  rooted at `startTid`.  Conjunct 1 (every TCB write-locked) remains the
+  acquire's job — consistent with the static side's single-lock grant
+  coverage and the SM5+ FFI deferral.
+* **Doc accuracy**: the `acquireLockOnObject` docstring bullets (which
+  still described the pre-audit-1 present/absent behavior without the
+  kind-match gate) were corrected to describe the `updateObjectLockAt`
+  kind-checked routing.
+
+Inventory expanded 66 → 70 (dynamicChain 13→17: the recursive
+predicate + 3 connection theorems).  Test suite: 48 → 52 runtime
+assertions (chain-follows + starts-at-start on the walker output, plus
+`chainFollowsBlockingServer` base cases).  0 sorry, 0 axiom (only
+`propext` / `Quot.sound` / `Classical.choice`).  All five modules
+re-elaborate warning-free; full Tier 0+1+2+3 green; AK7 floor preserved.
+
 ## Unreleased — WS-SM SM3.B audit-pass-6: external Codex code-review closure (4 P1 + 1 P2 lock-set under-approximations resolved)
 
 External code-review on PR #793 from chatgpt-codex-connector
