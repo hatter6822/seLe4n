@@ -2045,4 +2045,154 @@ import SeLe4n.Kernel.Concurrency.LockSet
 #check @SeLe4n.Kernel.Concurrency.lockSet_consistent_aggregate_covers_every_syscall
 EOF'
 
+# WS-SM SM3.C — withLockSet 2PL discipline + lockSetHeld + dynamic
+# chain extension + 51-theorem inventory.  Surface anchors verify
+# every SM3.C public symbol survives renames at elaboration time.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.LockSet
+import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
+import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
+import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
+import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
+
+-- SM3.C.1: withLockSet combinator + unfolding lemmas.
+#check @SeLe4n.Kernel.Concurrency.withLockSet
+#check @SeLe4n.Kernel.Concurrency.withLockSet_empty
+#check @SeLe4n.Kernel.Concurrency.withLockSet_unfold
+#check @SeLe4n.Kernel.Concurrency.withLockSet_eq_decomposition
+#check @SeLe4n.Kernel.Concurrency.withLockSet_fst
+#check @SeLe4n.Kernel.Concurrency.withLockSet_snd
+-- SM3.C.2: acquireLockOnObject / releaseLockOnObject + N/A simp lemmas.
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_reply
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_page
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_reply
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_page
+-- SM3.C.1 helpers: AccessMode → RwLockOp + acquireAll/releaseAll.
+#check @SeLe4n.Kernel.Concurrency.AccessMode.toAcquireOp
+#check @SeLe4n.Kernel.Concurrency.AccessMode.toReleaseOp
+#check @SeLe4n.Kernel.Concurrency.acquireAll
+#check @SeLe4n.Kernel.Concurrency.releaseAll
+#check @SeLe4n.Kernel.Concurrency.acquireAll_nil
+#check @SeLe4n.Kernel.Concurrency.releaseAll_nil
+#check @SeLe4n.Kernel.Concurrency.acquireAll_cons
+#check @SeLe4n.Kernel.Concurrency.releaseAll_cons
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt
+-- SM3.C.2 audit-pass-1 (Comment 5): kind-checked lock update.
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_preserves_objStoreLock
+-- SM3.C.2 KernelObject.updateLock helper.
+#check @SeLe4n.Model.KernelObject.updateLock
+#check @SeLe4n.Model.KernelObject.updateLock_tcb
+#check @SeLe4n.Model.KernelObject.updateLock_endpoint
+#check @SeLe4n.Model.KernelObject.updateLock_notification
+#check @SeLe4n.Model.KernelObject.updateLock_cnode
+#check @SeLe4n.Model.KernelObject.updateLock_vspaceRoot
+#check @SeLe4n.Model.KernelObject.updateLock_untyped
+#check @SeLe4n.Model.KernelObject.updateLock_schedContext
+#check @SeLe4n.Model.KernelObject.updateLock_preserves_lockKind
+#check @SeLe4n.Model.KernelObject.updateLock_preserves_objectType
+#check @SeLe4n.Model.KernelObject.objectLockOf_updateLock
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_preserves_objStoreLock
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objStoreLock_of_modeled
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objStoreLock_of_modeled
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_preserves_objectType_at
+-- SM3.C.4 lockHeld / lockSetHeld + decidability + default-state-empty.
+#check @SeLe4n.Kernel.Concurrency.RwLockState.coreHolds
+-- SM3.C.4 audit-pass-1 (Comments 3, 4): abstract acquire grants on available lock.
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_acquire_grants
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_acquire_release_roundtrip
+#check @SeLe4n.Kernel.Concurrency.lockHeld
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld
+#check @SeLe4n.Kernel.Concurrency.lockHeld_reply
+#check @SeLe4n.Kernel.Concurrency.lockHeld_page
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_empty
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_singleton
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_subset
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_default_iff_empty
+-- SM3.C.5/C.6 ordering theorems.
+#check @SeLe4n.Kernel.Concurrency.acquireOrder
+#check @SeLe4n.Kernel.Concurrency.releaseOrder
+#check @SeLe4n.Kernel.Concurrency.releaseOrder_eq_acquireOrder_reverse
+#check @SeLe4n.Kernel.Concurrency.lockSet_acquired_in_order
+#check @SeLe4n.Kernel.Concurrency.lockSet_released_in_reverse
+-- SM3.C.7/C.8 atomicity/invariant-preservation theorems.
+#check @SeLe4n.Kernel.Concurrency.withLockSet_three_phase_decomposition
+#check @SeLe4n.Kernel.Concurrency.lockSet_atomic_under_2pl
+#check @SeLe4n.Kernel.Concurrency.lockSet_invariant_preserved
+#check @SeLe4n.Kernel.Concurrency.withLockSet_invariant_preserved
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_objStoreLock_wf
+-- SM3.C.8 audit-pass-1 (Comment 7): substantive acquire-grants theorems.
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_establishes_lockHeld
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_release_roundtrip
+#check @SeLe4n.Kernel.Concurrency.withLockSet_satisfies_strict_2PL
+#check @SeLe4n.Kernel.Concurrency.withLockSet_computation
+-- SM3.C.8 (Group-B): acquire ESTABLISHES lockHeld / lockSetHeld + frames.
+#check @SeLe4n.Kernel.Concurrency.LockId.lookup_eq_of_objects_getElem?_eq
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_lookup_self
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_establishes_lockHeld_modeled
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_lockHeld_of_ne_objId
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_lockHeld_of_ne_all
+#check @SeLe4n.Kernel.Concurrency.acquireAll_establishes_lockHeld_of_distinct_present_unheld
+#check @SeLe4n.Kernel.Concurrency.acquireAll_establishes_lockSetHeld
+#check @SeLe4n.Kernel.Concurrency.lockAcquireSequence_distinct_objId_of_resolves
+-- SM3.C.7 (Group-B): observational atomicity (lock-insensitive observer).
+#check @SeLe4n.Kernel.Concurrency.AcquireInsensitive
+#check @SeLe4n.Kernel.Concurrency.ReleaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.acquireAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.releaseAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.withLockSet_release_invisible
+#check @SeLe4n.Kernel.Concurrency.lockSet_observer_atomic
+-- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
+#check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
+#check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES_pos
+#check @SeLe4n.Kernel.Concurrency.PipChainPath
+#check @SeLe4n.Kernel.Concurrency.PipChainPath.singleton
+#check @SeLe4n.Kernel.Concurrency.PipChainPath.length
+#check @SeLe4n.Kernel.Concurrency.WalkOutcome
+#check @SeLe4n.Kernel.Concurrency.walkStep
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_unfold
+#check @SeLe4n.Kernel.Concurrency.dynamicChainHeld
+#check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer
+#check @SeLe4n.Kernel.Concurrency.walkStep_extended_increases_objId
+#check @SeLe4n.Kernel.Concurrency.walkStep_extended_blockingServer
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_path_ascending_in_ObjId_if_terminated
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_followsChain
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_satisfies_path_structure
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquireAux_terminated_length_le
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_length_bounded
+#check @SeLe4n.Kernel.Concurrency.walkAndAcquire_total
+-- SM3.C.11.c (Group-B): conjunct-1 establishment + blockingServer transport + capstone.
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq_acquire_establishes_pathHeld
+#check @SeLe4n.Kernel.Concurrency.blockingServer_eq_bind
+#check @SeLe4n.Kernel.Concurrency.tcbReplyServer_updateLock
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_blockingServer
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_blockingServer
+#check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_of_blockingServer_eq
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_establishes_dynamicChainHeld
+-- SM3.C.11.d (Group-B): two-core deadlock-freedom.
+#check @SeLe4n.Kernel.Concurrency.coreWaitsForLock
+#check @SeLe4n.Kernel.Concurrency.dynamic_chain_deadlock_free
+#check @SeLe4n.Kernel.Concurrency.dynamic_chain_no_mutual_wait
+-- SM3.C Inventory aggregator.
+#check @SeLe4n.Kernel.Concurrency.WithLockSetCategory
+#check @SeLe4n.Kernel.Concurrency.WithLockSetTheorem
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_combinator_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_held_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_ordering_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_atomicity_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_dynamicChain_count
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_partition_sum
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.withLockSetTheorems_descriptions_nodup
+EOF'
+
 finalize_report

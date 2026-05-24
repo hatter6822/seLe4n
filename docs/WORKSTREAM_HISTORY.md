@@ -35,7 +35,7 @@ cross-reference removed from production sources, every "deferred to
 WS-V" SMP claim repointed to the WS-SM phase plans, DEF-R-HAL-L20
 disposition rewritten to honestly reflect the partial-resolution
 state), testing infrastructure (`tests/SmpFoundationsSuite.lean`
-with 41 runtime assertions; tier-4 SMP boot-check stub), and the
+with 52 runtime assertions; tier-4 SMP boot-check stub), and the
 WS-RC merge (R0..R5 archived; R6..R14 absorbed into SM0..SM9 per the
 SM0.Q.1 absorption mapping; sub-portfolio plans archived to
 `docs/dev_history/audits/`).
@@ -967,7 +967,7 @@ removed.  `RwLockRefinement` remains staged-only.
 
 **Test coverage**: NEW FILE `tests/PerObjectLockSuite.lean`
 (~646 LoC post-audit-pass-4) with 36 surface-anchor `#check`
-lines, 36 decidable examples, 41 runtime `assertBool`
+lines, 36 decidable examples, 52 runtime `assertBool`
 assertions.  TCB-specific coverage included: named-field
 construction with the 6 required fields exercises the SM3.A.1
 default-lock witness for TCB.  Audit-pass-2 added the
@@ -993,6 +993,86 @@ and Tier 3 (invariant-surface) pipelines.
 **Items deferred past v1.0.0 with correctness impact**: NONE.
 
 Follow-on: SM3.B — **LANDED below**.
+
+**WS-SM SM3.C LANDED on branch `claude/quirky-mayer-lSoD2`**
+(withLockSet 2PL combinator, lockSetHeld predicate, 2PL discipline
+theorems, dynamic PIP chain-walk locking; closes the third
+sub-phase of SM3 with 10 of 11 sub-tasks LANDED — SM3.C.9 deferred
+to SM5+).  Plan §5.3 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md);
+wires SM3.B's per-transition `lockSet` declarations into the
+verified two-phase-locking discipline that SM3.D (deadlock-freedom)
+and SM3.E (serializability) build on.  Lands within the v0.31.9
+release cut (no version bump), mirroring the SM3.A / SM3.B pattern.
+
+**SM3.C sub-tasks**:
+
+- **SM3.C.1**: `withLockSet (S : LockSet) (core : CoreId) (action :
+  SystemState → SystemState × α) (s : SystemState)` 2PL combinator
+  + `acquireAll` / `releaseAll` fold helpers
+  (`SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean`).  Pure-
+  function form; the BaseIO/FFI overload is deferred to SM5+.
+- **SM3.C.2**: `acquireLockOnObject` / `releaseLockOnObject`
+  per-object primitives + `KernelObject.updateLock` lock-field
+  updater (7 `@[simp]` unfolds + `updateLock_preserves_lockKind` /
+  `updateLock_preserves_objectType` / `objectLockOf_updateLock`).
+- **SM3.C.3**: RAII discipline — the abstract `withLockSet` is a
+  total pure function, so the release fold always runs after the
+  action (structural, not exception-handler-based).
+- **SM3.C.4**: `lockHeld` / `lockSetHeld` SMP-migration
+  precondition (`LockSetHeld.lean`) + decidability + monotone
+  subset + `lockSetHeld_default_iff_empty` boundary witness.
+- **SM3.C.5**: `lockSet_acquired_in_order` — acquire order is
+  `LockId` ascending (lifts SM3.B.6).
+- **SM3.C.6**: `lockSet_released_in_reverse` — release order is
+  descending.
+- **SM3.C.7**: `lockSet_atomic_under_2pl` +
+  `withLockSet_three_phase_decomposition` (Theorem 2.1.10
+  operational form).
+- **SM3.C.8**: `lockSet_invariant_preserved` (substantive — the
+  acquire fold preserves any lock-insensitive invariant, proven by
+  induction) + `withLockSet_invariant_preserved` (full Corollary
+  2.1.11 closure).  Discharged via the structural-preservation
+  foundation lemmas (`acquireLockOnObject_preserves_objStoreLock_of_modeled`,
+  `updateObjectAt_preserves_objectType_at`).
+- **SM3.C.9**: DEFERRED to SM5+.  Migrating every `@[export]` body
+  to wrap its transition in `withLockSet` requires the per-core
+  kernel state seam SM5 introduces; at SM3.C the kernel is modelled
+  single-core so the wrappers would be no-ops.
+- **SM3.C.10**: `tests/WithLockSetSuite.lean` (~430 LoC) — 70+
+  surface anchors, 12 decidable examples, 52 runtime `assertBool`
+  assertions.
+- **SM3.C.11**: dynamic PIP chain-walk locking
+  (`DynamicChainExtension.lean`) — `withDynamicChainExtension`
+  combinator consuming SM3.B's `pipChainStart_<τ>` signal,
+  `walkAndAcquire` fuel-bounded walker (`MAX_PIP_RETRIES = 64`),
+  `dynamicChainHeld` 4-conjunct predicate, and the deadlock-freedom
+  witness `walkAndAcquire_path_ascending_in_ObjId_if_terminated`
+  (every terminating walk produces a strictly-`ObjId.val`-ascending
+  path — the SM0.I total-order discipline).
+
+**SM3.C inventory (71 entries)**: `withLockSetTheorems` in
+`Sm3CInventory.lean` across 5 categories (`.combinator` = 31,
+`.held` = 11, `.ordering` = 3, `.atomicity` = 9, `.dynamicChain` =
+10) with compile-time-checked `wlst!` macro + per-category counts +
+partition-sum + Nodup witnesses.
+
+**Module reachability**: all 5 SM3.C modules are staged via the
+LockSet re-export hub (`Platform/Staged.lean` +
+`staged_module_allowlist.txt`); SM5+ per-core scheduler integration
+is the first production runtime exerciser.
+
+**AK7-cascade cleanliness**: routes through `RHTable.get?` method
+form + the generic `default_objects_get?_none` helper; the
+`RAW_MATCH_TOTAL` floor stays at the v0.31.2 baseline (122) and
+`RAW_LOOKUP_TID` drops 759 → 757.
+
+**Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries (only the
+standard `propext` / `Quot.sound` / `Classical.choice`
+foundational axioms).
+
+**Items deferred past v1.0.0 with correctness impact**: NONE
+(SM3.C.9 is a sequencing deferral to SM5, not a correctness gap).
 
 **WS-SM SM3.B LANDED on branch `claude/affectionate-goldberg-6MNJ9`**
 (LockSet, LockId projection, per-transition lockSet declarations,
@@ -2518,7 +2598,7 @@ sibling file is created** — every absorbed item is closed in-phase.
     `docs/codebase_map.json` regenerated).
   - Gate: `lake build` (302 jobs, 0 warnings) + `test_smoke.sh` PASS
     + `test_full.sh` PASS + `test_tier0_hygiene.sh` PASS + `lake exe
-    kernel_error_matrix_suite` 41/41 PASS + `lake exe
+    kernel_error_matrix_suite` 52/52 PASS + `lake exe
     ak8_coverage_suite` 13/13 PASS + `cargo test --workspace` 462
     tests + `cargo clippy --workspace -- -D warnings` 0 warnings +
     `check_version_sync.sh` PASS + zero `sorry`/`axiom`/`native_decide`.

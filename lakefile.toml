@@ -257,3 +257,22 @@ root = "tests.PerObjectLockSuite"
 [[lean_exe]]
 name = "lock_set_suite"
 root = "tests.LockSetSuite"
+
+# WS-SM SM3.C — withLockSet 2PL discipline regression suite.
+# Surface anchors + decidable examples + runtime structural assertions
+# for the SM3.C `withLockSet` 2PL combinator, per-object
+# `acquireLockOnObject` / `releaseLockOnObject` primitives,
+# `KernelObject.updateLock` per-variant helper + 7 simp lemmas,
+# `lockHeld` / `lockSetHeld` predicates (SMP-migration precondition
+# for Corollary 2.1.11), the SM3.C.5/C.6 ordering theorems
+# (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`),
+# the SM3.C.7/C.8 atomicity/invariant-preservation theorems
+# (`lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`),
+# the SM3.C.11 dynamic PIP-chain-walk machinery
+# (`withDynamicChainExtension`, `walkAndAcquire`, `dynamicChainHeld`,
+# and the `walkAndAcquire_path_ascending_in_ObjId_if_terminated`
+# deadlock-freedom witness), and the 51-theorem SM3.C inventory
+# aggregator.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "with_lock_set_suite"
+root = "tests.WithLockSetSuite"

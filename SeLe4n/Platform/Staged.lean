@@ -97,15 +97,20 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- witness.  Used by the cross-language symmetry script
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
--- WS-SM SM3.B: LockSet + per-transition lockSet declarations + the
+-- WS-SM SM3.B + SM3.C: LockSet + per-transition lockSet declarations + the
 -- canonical sort and ordered/complete/canonical theorems +
 -- LockId.fromObject / LockId.lookup projection layer +
--- per-transition lockSet_consistent theorems + 72-theorem inventory.
--- Staged at SM3.B; SM3.C (`withLockSet` 2PL combinator) is the first
--- runtime exerciser.  Reachability: every `@[export]` body in SM3.C
--- will wrap its kernel-transition action in `withLockSet (lockSet_τ
--- args)`, threading the SM3.B canonical sort through `acquireAll`
--- and the reverse through `releaseAll`.
+-- per-transition lockSet_consistent theorems + 72-theorem SM3.B inventory
+-- + SM3.C `withLockSet` 2PL combinator + per-object acquire/release
+-- primitives + `lockSetHeld` predicate + 2PL discipline theorems
+-- (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`,
+-- `lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`) + SM3.C.11
+-- dynamic PIP-chain-walk machinery + 51-theorem SM3.C inventory.
+-- Staged at SM3.C; SM5+ per-core scheduler integration is the first
+-- runtime exerciser.  Reachability: every `@[export]` body in the
+-- future SM3.C.9 migration wraps its kernel-transition action in
+-- `withLockSet (lockSet_τ args)`, threading the SM3.B canonical sort
+-- through `acquireAll` and the reverse through `releaseAll`.
 import SeLe4n.Kernel.Concurrency.LockSet
 
 /-!
