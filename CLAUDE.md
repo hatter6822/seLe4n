@@ -3248,9 +3248,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
     closes any potential wait-cycle).  `dynamicChainHeld` is the
     4-conjunct chain-held predicate.
 
-  **SM3.C inventory (70 entries)**: `withLockSetTheorems` in
+  **SM3.C inventory (71 entries)**: `withLockSetTheorems` in
   `Sm3CInventory.lean` across 5 categories (`.combinator` = 31,
-  `.held` = 11, `.ordering` = 3, `.atomicity` = 8, `.dynamicChain`
+  `.held` = 11, `.ordering` = 3, `.atomicity` = 9, `.dynamicChain`
   = 17) with compile-time-checked `wlst!` macro + per-category
   counts + partition-sum + Nodup witnesses.
 

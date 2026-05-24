@@ -290,6 +290,46 @@ theorem withLockSet_invariant_preserved {α : Type} (S : LockSet) (core : CoreId
   unfold releaseAll
   exact hFold S.lockAcquireSequence.reverse _ hAfterAction
 
+/-- WS-SM SM3.C.8 (audit-pass-2): **worked instantiation** of
+`lockSet_invariant_preserved` — demonstrates the metatheorem's lever
+is genuinely dischargeable, not merely well-typed.
+
+Concretely: the acquire fold preserves the well-formedness of the
+table-level `objStoreLock`.  The `hLockInsensitive` hypothesis is
+discharged here for the invariant `post := fun st => st.objStoreLock.wf`:
+
+* for a per-object lock (kind ≠ `.objStore`), `acquireLockOnObject`
+  leaves `objStoreLock` untouched
+  (`acquireLockOnObject_preserves_objStoreLock_of_modeled`), so `wf`
+  is trivially preserved;
+* for the `.objStore` lock, `objStoreLock` advances via
+  `RwLockState.applyOp`, and SM2.C's per-op wf-preservation
+  (`rwLock_tryAcquireRead/Write_preserves_wf`) keeps it well-formed.
+
+This proves the SM3.C.8 contract is usable: a real, lock-insensitive
+kernel invariant (the table lock's well-formedness) survives the
+2PL acquire fold.  It is the concrete witness that the metatheorem
+is not a vacuous false-anchor. -/
+theorem acquireAll_preserves_objStoreLock_wf (S : LockSet) (core : CoreId)
+    (s : SystemState) (hwf : s.objStoreLock.wf) :
+    (acquireAll core S.lockAcquireSequence s).objStoreLock.wf := by
+  apply lockSet_invariant_preserved S core s
+    (fun st => st.objStoreLock.wf) hwf
+  -- Discharge hLockInsensitive: acquiring any lock preserves objStoreLock.wf.
+  intro l m s' hs'
+  by_cases hKind : l.kind = .objStore
+  · -- objStore lock: objStoreLock advances via applyOp, which preserves wf.
+    unfold acquireLockOnObject
+    rw [hKind]
+    simp only
+    -- Post objStoreLock = s'.objStoreLock.applyOp (m.toAcquireOp core).
+    cases m with
+    | read => exact rwLock_tryAcquireRead_preserves_wf _ core hs'
+    | write => exact rwLock_tryAcquireWrite_preserves_wf _ core hs'
+  · -- per-object lock: objStoreLock unchanged.
+    rw [acquireLockOnObject_preserves_objStoreLock_of_modeled s' core l m hKind]
+    exact hs'
+
 /-- WS-SM SM3.C.8 (audit-pass-1, Comment 7): **substantive**
 acquire-establishes-holding theorem — replaces the previous
 tautological `_unchanged_outside_lockSet` placeholder the codex

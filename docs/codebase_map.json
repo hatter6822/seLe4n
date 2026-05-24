@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/quirky-mayer-lSoD2",
-      "commit_sha": "da272c3b8abff00360f694e2be262595c75f1486",
-      "tree_sha": "0ad2079b6ee58a051b7380a1c718ce3748677b43",
-      "committed_at_utc": "2026-05-23T19:23:49+00:00"
+      "commit_sha": "ca35551a9f90a182bf914d64a9f28568204e1522",
+      "tree_sha": "97dbd0a703b2c737e698f84ecac5685f311ab130",
+      "committed_at_utc": "2026-05-24T01:33:20+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "da57128ec5364584dab271786a2d5cf2bb6212da65639299629650cc7776fe67"
+    "source_digest": "59d95bec25394bc39c67c2296986c49433e74a0a75d08fae078abfede24ca1db"
   },
   "summary": {
     "module_count": 236,
-    "declaration_count": 7986
+    "declaration_count": 7988
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 196,
-    "production_loc": 135127,
+    "production_loc": 135173,
     "test_files": 40,
-    "test_loc": 28108,
-    "proved_theorem_lemma_decls": 3958,
+    "test_loc": 28169,
+    "proved_theorem_lemma_decls": 3959,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -16010,7 +16010,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.LockSet2PL",
       "path": "SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean",
-      "declaration_count": 14,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -16134,8 +16134,26 @@
         },
         {
           "kind": "theorem",
+          "name": "acquireAll_preserves_objStoreLock_wf",
+          "line": 313,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "acquireLockOnObject",
+            "acquireLockOnObject_preserves_objStoreLock_of_modeled",
+            "lockAcquireSequence",
+            "lockSet_invariant_preserved",
+            "rwLock_tryAcquireRead_preserves_wf",
+            "rwLock_tryAcquireWrite_preserves_wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "acquireLockOnObject_objStore_establishes_lockHeld",
-          "line": 310,
+          "line": 350,
           "called": [
             "AccessMode",
             "CoreId",
@@ -16150,7 +16168,7 @@
         {
           "kind": "theorem",
           "name": "acquireLockOnObject_objStore_release_roundtrip",
-          "line": 332,
+          "line": 372,
           "called": [
             "AccessMode",
             "CoreId",
@@ -16165,7 +16183,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_satisfies_strict_2PL",
-          "line": 352,
+          "line": 392,
           "called": [
             "LockSet",
             "acquireOrder",
@@ -16177,7 +16195,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_computation",
-          "line": 364,
+          "line": 404,
           "called": [
             "CoreId",
             "LockSet",
@@ -21091,19 +21109,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 66,
+          "line": 70,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "WithLockSetCategory",
-          "line": 72,
+          "line": 76,
           "called": []
         },
         {
           "kind": "structure",
           "name": "WithLockSetTheorem",
-          "line": 95,
+          "line": 99,
           "called": [
             "WithLockSetCategory"
           ]
@@ -21111,13 +21129,13 @@
         {
           "kind": "syntax",
           "name": "\"wlst!\"",
-          "line": 105,
+          "line": 109,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:107>",
-          "line": 107,
+          "name": "<anonymous:macro_rules:111>",
+          "line": 111,
           "called": [
             "WithLockSetTheorem"
           ]
@@ -21125,7 +21143,7 @@
         {
           "kind": "def",
           "name": "withLockSetTheorems",
-          "line": 119,
+          "line": 123,
           "called": [
             "AccessMode.toAcquireOp",
             "AccessMode.toReleaseOp",
@@ -21143,6 +21161,7 @@
             "acquireAll",
             "acquireAll_cons",
             "acquireAll_nil",
+            "acquireAll_preserves_objStoreLock_wf",
             "acquireLockOnObject",
             "acquireLockOnObject_objStore_establishes_lockHeld",
             "acquireLockOnObject_objStore_release_roundtrip",
@@ -21203,7 +21222,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_count",
-          "line": 280,
+          "line": 286,
           "called": [
             "length"
           ]
@@ -21211,15 +21230,6 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_combinator_count",
-          "line": 285,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "withLockSetTheorems_held_count",
           "line": 291,
           "called": [
             "filter",
@@ -21228,8 +21238,17 @@
         },
         {
           "kind": "theorem",
+          "name": "withLockSetTheorems_held_count",
+          "line": 297,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "withLockSetTheorems_ordering_count",
-          "line": 296,
+          "line": 302,
           "called": [
             "filter",
             "length"
@@ -21238,7 +21257,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_atomicity_count",
-          "line": 303,
+          "line": 309,
           "called": [
             "filter",
             "length"
@@ -21247,7 +21266,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_dynamicChain_count",
-          "line": 310,
+          "line": 316,
           "called": [
             "filter",
             "length"
@@ -21256,7 +21275,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_partition_sum",
-          "line": 315,
+          "line": 321,
           "called": [
             "filter",
             "length"
@@ -21265,13 +21284,13 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_identifiers_nodup",
-          "line": 324,
+          "line": 330,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_descriptions_nodup",
-          "line": 328,
+          "line": 334,
           "called": []
         }
       ]
@@ -102459,7 +102478,7 @@
     {
       "module": "tests.WithLockSetSuite",
       "path": "tests/WithLockSetSuite.lean",
-      "declaration_count": 28,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
@@ -102888,13 +102907,38 @@
         },
         {
           "kind": "def",
-          "name": "runWithLockSetChecks",
+          "name": "runIntegrationChecks",
           "line": 522,
+          "called": [
+            "RwLockState.unheld",
+            "SystemState",
+            "acquireAll",
+            "acquireOrder",
+            "assertBool",
+            "bootCoreId",
+            "default",
+            "length",
+            "lockAcquireSequence",
+            "lockSetHeld",
+            "lockSet_cspaceMove",
+            "lockSet_endpointSend",
+            "lockSet_notificationWait",
+            "none",
+            "ofNat",
+            "size",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runWithLockSetChecks",
+          "line": 582,
           "called": [
             "runAcquireAllChecks",
             "runAcquireReleasePrimitiveChecks",
             "runAuditPass1Checks",
             "runDynamicChainChecks",
+            "runIntegrationChecks",
             "runInventoryChecks",
             "runLockSetHeldChecks",
             "runOrderingChecks",
@@ -102906,7 +102950,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 540,
+          "line": 601,
           "called": [
             "runWithLockSetChecks"
           ]

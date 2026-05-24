@@ -1051,9 +1051,9 @@ release cut (no version bump), mirroring the SM3.A / SM3.B pattern.
   (every terminating walk produces a strictly-`ObjId.val`-ascending
   path — the SM0.I total-order discipline).
 
-**SM3.C inventory (70 entries)**: `withLockSetTheorems` in
+**SM3.C inventory (71 entries)**: `withLockSetTheorems` in
 `Sm3CInventory.lean` across 5 categories (`.combinator` = 31,
-`.held` = 11, `.ordering` = 3, `.atomicity` = 8, `.dynamicChain` =
+`.held` = 11, `.ordering` = 3, `.atomicity` = 9, `.dynamicChain` =
 10) with compile-time-checked `wlst!` macro + per-category counts +
 partition-sum + Nodup witnesses.
 

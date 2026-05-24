@@ -436,9 +436,9 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 70 entries (audit-pass-2 expanded from 66).
-  assertBool "withLockSetTheorems.length = 70"
-    (decide (withLockSetTheorems.length = 70))
+  -- The inventory has 71 entries (audit-pass-2: +worked instantiation).
+  assertBool "withLockSetTheorems.length = 71"
+    (decide (withLockSetTheorems.length = 71))
   -- Per-category counts.
   assertBool "withLockSetTheorems combinator count = 31"
     (decide ((withLockSetTheorems.filter
@@ -449,9 +449,9 @@ private def runInventoryChecks : IO Unit := do
   assertBool "withLockSetTheorems ordering count = 3"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .ordering)).length = 3))
-  assertBool "withLockSetTheorems atomicity count = 8"
+  assertBool "withLockSetTheorems atomicity count = 9"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .atomicity)).length = 8))
+      (fun t => t.category == .atomicity)).length = 9))
   assertBool "withLockSetTheorems dynamicChain count = 17"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .dynamicChain)).length = 17))
@@ -519,6 +519,66 @@ private def runAuditPass1Checks : IO Unit := do
   assertBool "Comment 5: updateObjectLockAt on absent/mismatched kind is no-op (objStoreLock)"
     (decide (sKind.objStoreLock = RwLockState.unheld))
 
+private def runIntegrationChecks : IO Unit := do
+  IO.println "--- §11 SM3.B ↔ SM3.C integration (withLockSet/lockSetHeld on real lockSet_<τ>) ---"
+  let s₀ : SystemState := default
+  -- Build a real per-transition lockSet: notificationWait touches the
+  -- caller TCB (write, level 3), the caller CNode (read, level 2), and
+  -- the notification (write, level 5).
+  let nwSet := lockSet_notificationWait ⟨5⟩ (SeLe4n.ObjId.ofNat 10) (SeLe4n.ObjId.ofNat 20)
+  -- The lockSet has exactly 3 declared locks.
+  assertBool "lockSet_notificationWait has 3 locks"
+    (decide (nwSet.size = 3))
+  -- SM3.C.5 on a REAL multi-lock set: the canonical acquire order is
+  -- LockId-ascending — by hierarchy level here: cnode (2) < tcb (3) <
+  -- notification (5).  This exercises the actual mergeSort, not a
+  -- singleton.
+  assertBool "acquireOrder(notificationWait) kinds = [cnode, tcb, notification] (hierarchy sort)"
+    (decide ((acquireOrder nwSet).map (·.kind)
+              = [LockKind.cnode, LockKind.tcb, LockKind.notification]))
+  assertBool "acquireOrder(notificationWait) length = 3"
+    (decide ((acquireOrder nwSet).length = 3))
+  -- withLockSet over the REAL lockSet computes: the action's value flows
+  -- through, and (since the set has no objStore lock) objStoreLock is
+  -- preserved across the acquire/release folds.
+  let nwResult := withLockSet nwSet bootCoreId (fun s => (s, (99 : Nat))) s₀
+  assertBool "withLockSet(notificationWait) returns the action's value"
+    (decide (nwResult.snd = 99))
+  assertBool "withLockSet(notificationWait) preserves objStoreLock (no objStore lock in set)"
+    (decide (nwResult.fst.objStoreLock = RwLockState.unheld))
+  -- lockSetHeld over the REAL lockSet on the empty default state is False
+  -- (none of the referenced objects exist, so no lock is held).
+  assertBool "¬ lockSetHeld(notificationWait) on default state"
+    (decide (¬ lockSetHeld bootCoreId nwSet s₀))
+  -- Within-level (objId) tie-break: cspaceMove locks two CNodes (level 2)
+  -- + caller TCB (read, level 3).  The two cnodes sort by objId.val
+  -- ascending (7 before 9), then the tcb.
+  let cmSet := lockSet_cspaceMove ⟨5⟩ (SeLe4n.ObjId.ofNat 7) (SeLe4n.ObjId.ofNat 9)
+  assertBool "acquireOrder(cspaceMove) kinds = [cnode, cnode, tcb] (within-level objId sort)"
+    (decide ((acquireOrder cmSet).map (·.kind)
+              = [LockKind.cnode, LockKind.cnode, LockKind.tcb]))
+  assertBool "acquireOrder(cspaceMove) cnode objIds ascending = [7, 9]"
+    (decide (((acquireOrder cmSet).filterMap
+        (fun l => if l.kind = .cnode then some l.objId.val else none)) = [7, 9]))
+  -- SM3.C.5 ordering theorem applies to the real lockSet: acquireOrder is
+  -- Pairwise (· ≤ ·).  (Decidable check mirroring lockSet_acquired_in_order.)
+  assertBool "acquireOrder(cspaceMove) is Pairwise (· ≤ ·) [SM3.C.5 on real set]"
+    (decide ((acquireOrder cmSet).Pairwise (· ≤ ·)))
+  -- acquireAll over the real sequence on the empty default state leaves
+  -- objStoreLock unheld (all per-object acquires fail-closed: objects absent).
+  let cmAcq := acquireAll bootCoreId cmSet.lockAcquireSequence s₀
+  assertBool "acquireAll(cspaceMove seq) on default preserves objStoreLock"
+    (decide (cmAcq.objStoreLock = RwLockState.unheld))
+  -- endpointSend with a receiver: 4 locks (caller tcb, cnode, endpoint,
+  -- receiver tcb).  Exercises the Option-extended lockSet + sort.
+  let esSet := lockSet_endpointSend ⟨5⟩ (SeLe4n.ObjId.ofNat 10)
+    (SeLe4n.ObjId.ofNat 30) (some ⟨8⟩)
+  assertBool "lockSet_endpointSend (with receiver) has 4 locks"
+    (decide (esSet.size = 4))
+  assertBool "acquireOrder(endpointSend) kinds = [cnode, tcb, tcb, endpoint]"
+    (decide ((acquireOrder esSet).map (·.kind)
+              = [LockKind.cnode, LockKind.tcb, LockKind.tcb, LockKind.endpoint]))
+
 def runWithLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.C — withLockSet 2PL discipline regression suite"
   IO.println "========================================================="
@@ -531,6 +591,7 @@ def runWithLockSetChecks : IO Unit := do
   runDynamicChainChecks
   runStructuralPreservationChecks
   runAuditPass1Checks
+  runIntegrationChecks
   runInventoryChecks
   IO.println "========================================================="
   IO.println "All SM3.C withLockSet checks PASS."

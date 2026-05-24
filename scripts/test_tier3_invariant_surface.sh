@@ -2124,6 +2124,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.lockSet_atomic_under_2pl
 #check @SeLe4n.Kernel.Concurrency.lockSet_invariant_preserved
 #check @SeLe4n.Kernel.Concurrency.withLockSet_invariant_preserved
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_objStoreLock_wf
 -- SM3.C.8 audit-pass-1 (Comment 7): substantive acquire-grants theorems.
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_establishes_lockHeld
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_release_roundtrip

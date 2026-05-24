@@ -268,6 +268,42 @@ assertions (chain-follows + starts-at-start on the walker output, plus
 `propext` / `Quot.sound` / `Classical.choice`).  All five modules
 re-elaborate warning-free; full Tier 0+1+2+3 green; AK7 floor preserved.
 
+### Audit-pass-3 (deeper self-audit: SM3.B↔SM3.C integration + metatheorem instantiation)
+
+A third audit pass — focused on whether the SM3.C surface is merely
+well-typed or genuinely *connected and usable* — found two coverage
+gaps (no soundness bugs):
+
+* **SM3.B↔SM3.C integration was entirely unexercised.** `withLockSet`,
+  `lockSetHeld`, and `acquireOrder` were never composed with a real
+  per-transition `lockSet_<τ>` — not in production (deferred to
+  SM3.C.9) and **not even in tests**, which only used `LockSet.empty`
+  / `singleton`.  The multi-lock canonical sort (the operative content
+  of SM3.C.5) thus had zero test coverage.  Closed with a new §11
+  integration section (12 assertions): `acquireOrder(lockSet_notificationWait)`
+  = `[cnode, tcb, notification]` (hierarchy sort),
+  `acquireOrder(lockSet_cspaceMove)` exercising within-level `ObjId`
+  tie-break (`[cnode 7, cnode 9, tcb]`), `withLockSet` / `lockSetHeld` /
+  `acquireAll` over real lockSets, and `lockSet_endpointSend` with an
+  `Option` receiver (4-lock set).
+
+* **SM3.C.8 metatheorems were never instantiated.**
+  `lockSet_invariant_preserved` / `withLockSet_invariant_preserved`
+  were well-typed but never discharged for a concrete invariant — a
+  metatheorem with no instantiation could be subtly unusable (e.g.
+  if `hLockInsensitive` were impossible to satisfy).  Closed with the
+  worked instantiation `acquireAll_preserves_objStoreLock_wf`, which
+  discharges the lever for the table-lock well-formedness invariant
+  (per-object acquires leave `objStoreLock` untouched; the `.objStore`
+  acquire advances it via `applyOp`, kept `wf` by SM2.C's
+  `rwLock_tryAcquire{Read,Write}_preserves_wf`).  This is the concrete
+  witness that the SM3.C.8 contract is real, not a vacuous anchor.
+
+Inventory expanded 70 → 71 (atomicity 8→9: the worked instantiation).
+Test suite: 52 → 64 runtime assertions (the §11 integration block).
+0 sorry, 0 axiom.  All five modules re-elaborate warning-free; full
+Tier 0+1+2+3 green; AK7 floor preserved; partition consistent.
+
 ## Unreleased — WS-SM SM3.B audit-pass-6: external Codex code-review closure (4 P1 + 1 P2 lock-set under-approximations resolved)
 
 External code-review on PR #793 from chatgpt-codex-connector
