@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/quirky-mayer-lSoD2",
-      "commit_sha": "ca35551a9f90a182bf914d64a9f28568204e1522",
-      "tree_sha": "97dbd0a703b2c737e698f84ecac5685f311ab130",
-      "committed_at_utc": "2026-05-24T01:33:20+00:00"
+      "commit_sha": "c4936cb82272e246b0cc3e0581a9e86963ec4d6f",
+      "tree_sha": "c01aacd36c283d8917a05f52f4854647b3ab84d0",
+      "committed_at_utc": "2026-05-24T01:56:52+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "59d95bec25394bc39c67c2296986c49433e74a0a75d08fae078abfede24ca1db"
+    "source_digest": "bc0ef338d2618d86e234ddd38996bfd42c4f399d5f3d2cb91d08052abe665125"
   },
   "summary": {
     "module_count": 236,
-    "declaration_count": 7988
+    "declaration_count": 8030
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 196,
-    "production_loc": 135173,
+    "production_loc": 136019,
     "test_files": 40,
-    "test_loc": 28169,
-    "proved_theorem_lemma_decls": 3959,
+    "test_loc": 28376,
+    "proved_theorem_lemma_decls": 3987,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14548,7 +14548,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension",
       "path": "SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean",
-      "declaration_count": 33,
+      "declaration_count": 47,
       "declarations": [
         {
           "kind": "namespace",
@@ -14862,7 +14862,7 @@
         {
           "kind": "theorem",
           "name": "walkStep_extended_blockingServer",
-          "line": 767,
+          "line": 769,
           "called": [
             "PipChainPath",
             "SystemState",
@@ -14873,7 +14873,7 @@
         {
           "kind": "theorem",
           "name": "chainFollowsBlockingServer_append_of_getLast",
-          "line": 795,
+          "line": 797,
           "called": [
             "SystemState",
             "ThreadId",
@@ -14886,7 +14886,7 @@
         {
           "kind": "theorem",
           "name": "walkStep_extended_preserves_chain",
-          "line": 827,
+          "line": 829,
           "called": [
             "PipChainPath",
             "SystemState",
@@ -14899,7 +14899,7 @@
         {
           "kind": "theorem",
           "name": "walkAndAcquire_terminated_followsChain",
-          "line": 844,
+          "line": 846,
           "called": [
             "PipChainPath",
             "SystemState",
@@ -14915,7 +14915,7 @@
         {
           "kind": "theorem",
           "name": "walkAndAcquire_terminated_satisfies_path_structure",
-          "line": 897,
+          "line": 900,
           "called": [
             "PipChainPath",
             "SystemState",
@@ -14926,6 +14926,211 @@
             "toNat",
             "walkAndAcquire_path_ascending_in_ObjId_if_terminated",
             "walkAndAcquire_terminated_followsChain"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "threadId_toObjId_ne_of_toNat_lt",
+          "line": 926,
+          "called": [
+            "ThreadId",
+            "ofNat",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chainLockSeq",
+          "line": 938,
+          "called": [
+            "AccessMode",
+            "LockId",
+            "PipChainPath",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chainLockSeq_acquire_establishes_pathHeld",
+          "line": 952,
+          "called": [
+            "CoreId",
+            "LockId",
+            "PipChainPath",
+            "RwLockState.unheld",
+            "SystemState",
+            "acquireAll",
+            "acquireAll_establishes_lockHeld_of_distinct_present_unheld",
+            "chainLockSeq",
+            "get",
+            "invExt",
+            "lockHeld",
+            "lockKind",
+            "objectLockOf",
+            "threadId_toObjId_ne_of_toNat_lt",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcbReplyServer",
+          "line": 996,
+          "called": [
+            "KernelObject",
+            "ThreadId",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objects_getElem",
+          "line": 1007,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockingServer_eq_bind",
+          "line": 1012,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "blockingServer",
+            "get",
+            "none",
+            "objects_getElem",
+            "tcbReplyServer",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tcbReplyServer_updateLock",
+          "line": 1022,
+          "called": [
+            "KernelObject",
+            "RwLockOp",
+            "tcbReplyServer",
+            "updateLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireLockOnObject_preserves_blockingServer",
+          "line": 1030,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "RHTable.getElem",
+            "SystemState",
+            "ThreadId",
+            "acquireLockOnObject",
+            "acquireLockOnObject_objects_getElem",
+            "bind",
+            "blockingServer",
+            "blockingServer_eq_bind",
+            "get",
+            "insert",
+            "invExt",
+            "lookup",
+            "none",
+            "tcbReplyServer",
+            "tcbReplyServer_updateLock",
+            "toAcquireOp",
+            "toObjId",
+            "updateLock",
+            "updateObjectAt",
+            "updateObjectLockAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_preserves_blockingServer",
+          "line": 1072,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "acquireLockOnObject",
+            "acquireLockOnObject_preserves_blockingServer",
+            "acquireLockOnObject_preserves_invExt",
+            "blockingServer",
+            "head",
+            "invExt",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chainFollowsBlockingServer_of_blockingServer_eq",
+          "line": 1091,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "chainFollowsBlockingServer"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "withDynamicChainExtension_establishes_dynamicChainHeld",
+          "line": 1117,
+          "called": [
+            "CoreId",
+            "PipChainPath",
+            "RwLockState.unheld",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "acquireAll_preserves_blockingServer",
+            "chainFollowsBlockingServer_of_blockingServer_eq",
+            "chainLockSeq",
+            "chainLockSeq_acquire_establishes_pathHeld",
+            "dynamicChainHeld",
+            "get",
+            "invExt",
+            "lockKind",
+            "objectLockOf",
+            "singleton",
+            "toObjId",
+            "walkAndAcquire_terminated_satisfies_path_structure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "coreWaitsForLock",
+          "line": 1151,
+          "called": [
+            "LockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dynamic_chain_deadlock_free",
+          "line": 1164,
+          "called": [
+            "LockId",
+            "coreWaitsForLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dynamic_chain_no_mutual_wait",
+          "line": 1178,
+          "called": [
+            "LockId",
+            "coreWaitsForLock",
+            "dynamic_chain_deadlock_free"
           ]
         }
       ]
@@ -16010,7 +16215,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.LockSet2PL",
       "path": "SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean",
-      "declaration_count": 15,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -16096,9 +16301,98 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "AcquireInsensitive",
+          "line": 211,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "SystemState",
+            "acquireLockOnObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ReleaseInsensitive",
+          "line": 216,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "SystemState",
+            "releaseLockOnObject"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_lockInsensitive",
+          "line": 222,
+          "called": [
+            "AccessMode",
+            "AcquireInsensitive",
+            "CoreId",
+            "LockId",
+            "SystemState",
+            "acquireAll",
+            "acquireLockOnObject",
+            "head",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseAll_lockInsensitive",
+          "line": 237,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "ReleaseInsensitive",
+            "SystemState",
+            "head",
+            "releaseAll",
+            "releaseLockOnObject",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "withLockSet_release_invisible",
+          "line": 255,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "ReleaseInsensitive",
+            "SystemState",
+            "acquireAll",
+            "lockAcquireSequence",
+            "releaseAll_lockInsensitive",
+            "withLockSet",
+            "withLockSet_fst"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_observer_atomic",
+          "line": 278,
+          "called": [
+            "AcquireInsensitive",
+            "CoreId",
+            "LockSet",
+            "ReleaseInsensitive",
+            "SystemState",
+            "acquireAll",
+            "acquireAll_lockInsensitive",
+            "lockAcquireSequence",
+            "withLockSet",
+            "withLockSet_release_invisible"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "lockSet_invariant_preserved",
-          "line": 224,
+          "line": 321,
           "called": [
             "AccessMode",
             "CoreId",
@@ -16114,7 +16408,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_invariant_preserved",
-          "line": 258,
+          "line": 355,
           "called": [
             "AccessMode",
             "CoreId",
@@ -16135,7 +16429,7 @@
         {
           "kind": "theorem",
           "name": "acquireAll_preserves_objStoreLock_wf",
-          "line": 313,
+          "line": 410,
           "called": [
             "CoreId",
             "LockSet",
@@ -16153,7 +16447,7 @@
         {
           "kind": "theorem",
           "name": "acquireLockOnObject_objStore_establishes_lockHeld",
-          "line": 350,
+          "line": 447,
           "called": [
             "AccessMode",
             "CoreId",
@@ -16168,7 +16462,7 @@
         {
           "kind": "theorem",
           "name": "acquireLockOnObject_objStore_release_roundtrip",
-          "line": 372,
+          "line": 469,
           "called": [
             "AccessMode",
             "CoreId",
@@ -16182,8 +16476,52 @@
         },
         {
           "kind": "theorem",
+          "name": "lockId_eq_of_components",
+          "line": 481,
+          "called": [
+            "LockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockAcquireSequence_distinct_objId_of_resolves",
+          "line": 495,
+          "called": [
+            "LockSet",
+            "SystemState",
+            "fst_inj_at_pairs",
+            "lockAcquireSequence_complete",
+            "lockAcquireSequence_perm",
+            "lockId_eq_of_components",
+            "lockKind",
+            "mem_def"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_establishes_lockSetHeld",
+          "line": 537,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "RwLockState.unheld",
+            "SystemState",
+            "acquireAll",
+            "acquireAll_establishes_lockHeld_of_distinct_present_unheld",
+            "invExt",
+            "lockAcquireSequence",
+            "lockAcquireSequence_complete",
+            "lockAcquireSequence_distinct_objId_of_resolves",
+            "lockKind",
+            "lockSetHeld",
+            "mem_def",
+            "objectLockOf"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "withLockSet_satisfies_strict_2PL",
-          "line": 392,
+          "line": 564,
           "called": [
             "LockSet",
             "acquireOrder",
@@ -16195,7 +16533,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_computation",
-          "line": 404,
+          "line": 576,
           "called": [
             "CoreId",
             "LockSet",
@@ -16212,7 +16550,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.LockSetHeld",
       "path": "SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean",
-      "declaration_count": 24,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -16532,6 +16870,209 @@
             "lockSetHeld",
             "lookup",
             "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "LockId.lookup_eq_of_objects_getElem",
+          "line": 418,
+          "called": [
+            "LockId",
+            "ObjId.ofNat_toNat",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "getCNode",
+            "getEndpoint",
+            "getNotification",
+            "getSchedContext",
+            "getTcb",
+            "getUntyped",
+            "getVSpaceRoot",
+            "lookup",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateObjectLockAt_objects_getElem",
+          "line": 451,
+          "called": [
+            "LockId",
+            "ObjId",
+            "RHTable.getElem",
+            "RwLockOp",
+            "SystemState",
+            "get",
+            "insert",
+            "invExt",
+            "lookup",
+            "none",
+            "updateLock",
+            "updateObjectAt",
+            "updateObjectLockAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireLockOnObject_objects_getElem",
+          "line": 471,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "ObjId",
+            "SystemState",
+            "acquireLockOnObject",
+            "invExt",
+            "updateObjectLockAt_objects_getElem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateObjectLockAt_preserves_invExt",
+          "line": 487,
+          "called": [
+            "LockId",
+            "RHTable.insert_preserves_invExt",
+            "RwLockOp",
+            "SystemState",
+            "get",
+            "insert",
+            "invExt",
+            "lookup",
+            "none",
+            "updateLock",
+            "updateObjectAt",
+            "updateObjectLockAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireLockOnObject_preserves_invExt",
+          "line": 505,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "SystemState",
+            "acquireLockOnObject",
+            "invExt",
+            "updateObjectLockAt_preserves_invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateObjectLockAt_lookup_self",
+          "line": 525,
+          "called": [
+            "KernelObject",
+            "KernelObject.updateLock_preserves_lockKind",
+            "LockId",
+            "RHTable.getElem",
+            "RwLockOp",
+            "SystemState",
+            "get",
+            "insert",
+            "invExt",
+            "lockKind",
+            "lookup",
+            "lookup_some_of_kindMatch",
+            "objectLockOf",
+            "updateLock",
+            "updateObjectAt",
+            "updateObjectLockAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireLockOnObject_establishes_lockHeld_modeled",
+          "line": 572,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "KernelObject",
+            "KernelObject.objectLockOf_updateLock",
+            "LockId",
+            "RwLockState.unheld",
+            "RwLockState.unheld_acquire_grants",
+            "SystemState",
+            "acquireLockOnObject",
+            "coreHolds",
+            "invExt",
+            "lockHeld",
+            "lockKind",
+            "lockKind_ne_objStore",
+            "lockKind_ne_page",
+            "lockKind_ne_reply",
+            "objectLockOf",
+            "toAcquireOp",
+            "updateLock",
+            "updateObjectLockAt",
+            "updateObjectLockAt_lookup_self"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireLockOnObject_preserves_lockHeld_of_ne_objId",
+          "line": 628,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "LockId.lookup_eq_of_objects_getElem",
+            "SystemState",
+            "acquireLockOnObject",
+            "acquireLockOnObject_objects_getElem",
+            "acquireLockOnObject_preserves_objStoreLock_of_modeled",
+            "invExt",
+            "lockHeld",
+            "lookup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_preserves_lockHeld_of_ne_all",
+          "line": 655,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "SystemState",
+            "acquireAll",
+            "acquireLockOnObject",
+            "acquireLockOnObject_preserves_invExt",
+            "acquireLockOnObject_preserves_lockHeld_of_ne_objId",
+            "head",
+            "invExt",
+            "lockHeld",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquireAll_establishes_lockHeld_of_distinct_present_unheld",
+          "line": 704,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "RwLockState.unheld",
+            "SystemState",
+            "acquireAll",
+            "acquireAll_preserves_lockHeld_of_ne_all",
+            "acquireLockOnObject",
+            "acquireLockOnObject_establishes_lockHeld_modeled",
+            "acquireLockOnObject_objects_getElem",
+            "acquireLockOnObject_preserves_invExt",
+            "head",
+            "invExt",
+            "lockHeld",
+            "lockKind",
+            "lockKind_ne_objStore",
+            "objectLockOf",
+            "tail"
           ]
         }
       ]
@@ -21160,16 +21701,27 @@
             "WithLockSetTheorem",
             "acquireAll",
             "acquireAll_cons",
+            "acquireAll_establishes_lockHeld_of_distinct_present_unheld",
+            "acquireAll_establishes_lockSetHeld",
+            "acquireAll_lockInsensitive",
             "acquireAll_nil",
+            "acquireAll_preserves_blockingServer",
+            "acquireAll_preserves_lockHeld_of_ne_all",
             "acquireAll_preserves_objStoreLock_wf",
             "acquireLockOnObject",
+            "acquireLockOnObject_establishes_lockHeld_modeled",
             "acquireLockOnObject_objStore_establishes_lockHeld",
             "acquireLockOnObject_objStore_release_roundtrip",
             "acquireLockOnObject_page",
+            "acquireLockOnObject_preserves_blockingServer",
+            "acquireLockOnObject_preserves_lockHeld_of_ne_objId",
             "acquireLockOnObject_preserves_objStoreLock_of_modeled",
             "acquireLockOnObject_reply",
             "chainFollowsBlockingServer",
+            "chainLockSeq_acquire_establishes_pathHeld",
             "dynamicChainHeld",
+            "dynamic_chain_deadlock_free",
+            "dynamic_chain_no_mutual_wait",
             "lockHeld",
             "lockHeld_page",
             "lockHeld_reply",
@@ -21181,9 +21733,11 @@
             "lockSet_acquired_in_order",
             "lockSet_atomic_under_2pl",
             "lockSet_invariant_preserved",
+            "lockSet_observer_atomic",
             "lockSet_released_in_reverse",
             "releaseAll",
             "releaseAll_cons",
+            "releaseAll_lockInsensitive",
             "releaseAll_nil",
             "releaseLockOnObject",
             "releaseLockOnObject_page",
@@ -21206,6 +21760,7 @@
             "walkStep_extended_blockingServer",
             "walkStep_extended_increases_objId",
             "withDynamicChainExtension",
+            "withDynamicChainExtension_establishes_dynamicChainHeld",
             "withDynamicChainExtension_unfold",
             "withLockSet",
             "withLockSet_computation",
@@ -21213,6 +21768,7 @@
             "withLockSet_eq_decomposition",
             "withLockSet_fst",
             "withLockSet_invariant_preserved",
+            "withLockSet_release_invisible",
             "withLockSet_satisfies_strict_2PL",
             "withLockSet_snd",
             "withLockSet_three_phase_decomposition",
@@ -21222,7 +21778,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_count",
-          "line": 286,
+          "line": 321,
           "called": [
             "length"
           ]
@@ -21230,7 +21786,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_combinator_count",
-          "line": 291,
+          "line": 326,
           "called": [
             "filter",
             "length"
@@ -21239,7 +21795,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_held_count",
-          "line": 297,
+          "line": 333,
           "called": [
             "filter",
             "length"
@@ -21248,7 +21804,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_ordering_count",
-          "line": 302,
+          "line": 338,
           "called": [
             "filter",
             "length"
@@ -21257,7 +21813,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_atomicity_count",
-          "line": 309,
+          "line": 346,
           "called": [
             "filter",
             "length"
@@ -21266,7 +21822,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_dynamicChain_count",
-          "line": 316,
+          "line": 355,
           "called": [
             "filter",
             "length"
@@ -21275,7 +21831,7 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_partition_sum",
-          "line": 321,
+          "line": 360,
           "called": [
             "filter",
             "length"
@@ -21284,13 +21840,13 @@
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_identifiers_nodup",
-          "line": 330,
+          "line": 369,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "withLockSetTheorems_descriptions_nodup",
-          "line": 334,
+          "line": 373,
           "called": []
         }
       ]
@@ -102478,7 +103034,7 @@
     {
       "module": "tests.WithLockSetSuite",
       "path": "tests/WithLockSetSuite.lean",
-      "declaration_count": 29,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -102487,13 +103043,16 @@
           "called": [
             "AccessMode.toAcquireOp",
             "AccessMode.toReleaseOp",
+            "AcquireInsensitive",
             "KernelObject.objectLockOf_updateLock",
             "KernelObject.updateLock",
             "KernelObject.updateLock_preserves_lockKind",
             "KernelObject.updateLock_preserves_objectType",
+            "LockId.lookup_eq_of_objects_getElem",
             "MAX_PIP_RETRIES",
             "MAX_PIP_RETRIES_pos",
             "PipChainPath",
+            "ReleaseInsensitive",
             "RwLockState.coreHolds",
             "RwLockState.unheld_acquire_grants",
             "RwLockState.unheld_acquire_release_roundtrip",
@@ -102502,17 +103061,33 @@
             "WithLockSetTheorem",
             "acquireAll",
             "acquireAll_cons",
+            "acquireAll_establishes_lockHeld_of_distinct_present_unheld",
+            "acquireAll_establishes_lockSetHeld",
+            "acquireAll_lockInsensitive",
             "acquireAll_nil",
+            "acquireAll_preserves_blockingServer",
+            "acquireAll_preserves_lockHeld_of_ne_all",
             "acquireLockOnObject",
+            "acquireLockOnObject_establishes_lockHeld_modeled",
             "acquireLockOnObject_objStore_establishes_lockHeld",
             "acquireLockOnObject_objStore_release_roundtrip",
             "acquireLockOnObject_page",
+            "acquireLockOnObject_preserves_blockingServer",
+            "acquireLockOnObject_preserves_lockHeld_of_ne_objId",
             "acquireLockOnObject_preserves_objStoreLock_of_modeled",
             "acquireLockOnObject_reply",
             "acquireOrder",
+            "blockingServer_eq_bind",
             "chainFollowsBlockingServer",
+            "chainFollowsBlockingServer_of_blockingServer_eq",
+            "chainLockSeq",
+            "chainLockSeq_acquire_establishes_pathHeld",
+            "coreWaitsForLock",
             "dynamicChainHeld",
+            "dynamic_chain_deadlock_free",
+            "dynamic_chain_no_mutual_wait",
             "length",
+            "lockAcquireSequence_distinct_objId_of_resolves",
             "lockHeld",
             "lockHeld_page",
             "lockHeld_reply",
@@ -102524,9 +103099,11 @@
             "lockSet_acquired_in_order",
             "lockSet_atomic_under_2pl",
             "lockSet_invariant_preserved",
+            "lockSet_observer_atomic",
             "lockSet_released_in_reverse",
             "releaseAll",
             "releaseAll_cons",
+            "releaseAll_lockInsensitive",
             "releaseAll_nil",
             "releaseLockOnObject",
             "releaseLockOnObject_page",
@@ -102535,10 +103112,12 @@
             "releaseOrder",
             "releaseOrder_eq_acquireOrder_reverse",
             "singleton",
+            "tcbReplyServer_updateLock",
             "updateObjectAt",
             "updateObjectAt_preserves_objStoreLock",
             "updateObjectAt_preserves_objectType_at",
             "updateObjectLockAt",
+            "updateObjectLockAt_lookup_self",
             "updateObjectLockAt_preserves_objStoreLock",
             "walkAndAcquire",
             "walkAndAcquireAux_terminated_length_le",
@@ -102551,6 +103130,7 @@
             "walkStep_extended_blockingServer",
             "walkStep_extended_increases_objId",
             "withDynamicChainExtension",
+            "withDynamicChainExtension_establishes_dynamicChainHeld",
             "withDynamicChainExtension_unfold",
             "withLockSet",
             "withLockSetTheorems",
@@ -102568,6 +103148,7 @@
             "withLockSet_eq_decomposition",
             "withLockSet_fst",
             "withLockSet_invariant_preserved",
+            "withLockSet_release_invisible",
             "withLockSet_satisfies_strict_2PL",
             "withLockSet_snd",
             "withLockSet_three_phase_decomposition",
@@ -102576,8 +103157,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:182>",
-          "line": 182,
+          "name": "<anonymous:example:216>",
+          "line": 216,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102589,8 +103170,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:185>",
-          "line": 185,
+          "name": "<anonymous:example:219>",
+          "line": 219,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102602,8 +103183,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:189>",
-          "line": 189,
+          "name": "<anonymous:example:223>",
+          "line": 223,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102616,8 +103197,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:200>",
-          "line": 200,
+          "name": "<anonymous:example:234>",
+          "line": 234,
           "called": [
             "SystemState",
             "acquireLockOnObject",
@@ -102628,8 +103209,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "SystemState",
             "acquireLockOnObject",
@@ -102640,8 +103221,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:206>",
-          "line": 206,
+          "name": "<anonymous:example:240>",
+          "line": 240,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102652,8 +103233,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:209>",
-          "line": 209,
+          "name": "<anonymous:example:243>",
+          "line": 243,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102664,8 +103245,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
+          "name": "<anonymous:example:248>",
+          "line": 248,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102677,8 +103258,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:221>",
-          "line": 221,
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102690,8 +103271,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:225>",
-          "line": 225,
+          "name": "<anonymous:example:259>",
+          "line": 259,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -102703,8 +103284,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "acquireOrder",
             "empty"
@@ -102712,8 +103293,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:240>",
-          "line": 240,
+          "name": "<anonymous:example:274>",
+          "line": 274,
           "called": [
             "acquireOrder",
             "empty",
@@ -102722,8 +103303,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
+          "name": "<anonymous:example:278>",
+          "line": 278,
           "called": [
             "acquireOrder",
             "ofNat",
@@ -102732,8 +103313,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:251>",
-          "line": 251,
+          "name": "<anonymous:example:285>",
+          "line": 285,
           "called": [
             "CoreId",
             "LockSet",
@@ -102748,13 +103329,13 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 264,
+          "line": 298,
           "called": []
         },
         {
           "kind": "def",
           "name": "runWithLockSetEmptyChecks",
-          "line": 271,
+          "line": 305,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -102768,7 +103349,7 @@
         {
           "kind": "def",
           "name": "runAcquireReleasePrimitiveChecks",
-          "line": 282,
+          "line": 316,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -102784,7 +103365,7 @@
         {
           "kind": "def",
           "name": "runAcquireAllChecks",
-          "line": 314,
+          "line": 348,
           "called": [
             "LockId",
             "RwLockState.unheld",
@@ -102801,7 +103382,7 @@
         {
           "kind": "def",
           "name": "runLockSetHeldChecks",
-          "line": 337,
+          "line": 371,
           "called": [
             "SystemState",
             "acquireLockOnObject",
@@ -102817,7 +103398,7 @@
         {
           "kind": "def",
           "name": "runOrderingChecks",
-          "line": 359,
+          "line": 393,
           "called": [
             "LockId",
             "acquireOrder",
@@ -102831,7 +103412,7 @@
         {
           "kind": "def",
           "name": "runWithLockSetComputationChecks",
-          "line": 376,
+          "line": 410,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -102845,7 +103426,7 @@
         {
           "kind": "def",
           "name": "runDynamicChainChecks",
-          "line": 388,
+          "line": 422,
           "called": [
             "MAX_PIP_RETRIES",
             "SystemState",
@@ -102862,7 +103443,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 437,
+          "line": 471,
           "called": [
             "assertBool",
             "filter",
@@ -102872,7 +103453,7 @@
         {
           "kind": "def",
           "name": "runStructuralPreservationChecks",
-          "line": 468,
+          "line": 502,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -102888,7 +103469,7 @@
         {
           "kind": "def",
           "name": "runAuditPass1Checks",
-          "line": 488,
+          "line": 522,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -102908,7 +103489,7 @@
         {
           "kind": "def",
           "name": "runIntegrationChecks",
-          "line": 522,
+          "line": 556,
           "called": [
             "RwLockState.unheld",
             "SystemState",
@@ -102931,17 +103512,162 @@
         },
         {
           "kind": "def",
+          "name": "mkTcbReady",
+          "line": 621,
+          "called": [
+            "TCB",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcbBlockedOn",
+          "line": 627,
+          "called": [
+            "TCB",
+            "mkTcbReady",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkCNodeFixture",
+          "line": 632,
+          "called": [
+            "CNode",
+            "empty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chainState",
+          "line": 638,
+          "called": [
+            "SystemState",
+            "default",
+            "insert",
+            "mkTcbBlockedOn",
+            "mkTcbReady",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMoveFixture",
+          "line": 647,
+          "called": [
+            "SystemState",
+            "default",
+            "insert",
+            "mkCNodeFixture",
+            "mkTcbReady",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRaiiReleaseChecks",
+          "line": 654,
+          "called": [
+            "RwLockState.unheld",
+            "SystemState",
+            "acquireLockOnObject",
+            "assertBool",
+            "bootCoreId",
+            "default",
+            "lockSetHeld",
+            "ofNat",
+            "releaseLockOnObject",
+            "singleton",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runEstablishmentChecks",
+          "line": 684,
+          "called": [
+            "LockId",
+            "SystemState",
+            "acquireAll",
+            "acquireLockOnObject",
+            "assertBool",
+            "bootCoreId",
+            "cspaceMoveFixture",
+            "default",
+            "insert",
+            "lockAcquireSequence",
+            "lockHeld",
+            "lockSetHeld",
+            "lockSet_cspaceMove",
+            "mkCNodeFixture",
+            "mkTcbReady",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runObserverAtomicChecks",
+          "line": 714,
+          "called": [
+            "KernelObjectType",
+            "SystemState",
+            "acquireAll",
+            "assertBool",
+            "bootCoreId",
+            "default",
+            "get",
+            "insert",
+            "lockAcquireSequence",
+            "mkTcbReady",
+            "objectType",
+            "ofNat",
+            "singleton",
+            "toObjId",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMultiStepChainChecks",
+          "line": 737,
+          "called": [
+            "LockId",
+            "ThreadId",
+            "acquireAll",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "chainFollowsBlockingServer",
+            "chainLockSeq",
+            "chainState",
+            "length",
+            "lockHeld",
+            "ofNat",
+            "toObjId",
+            "walkAndAcquire"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runWithLockSetChecks",
-          "line": 582,
+          "line": 785,
           "called": [
             "runAcquireAllChecks",
             "runAcquireReleasePrimitiveChecks",
             "runAuditPass1Checks",
             "runDynamicChainChecks",
+            "runEstablishmentChecks",
             "runIntegrationChecks",
             "runInventoryChecks",
             "runLockSetHeldChecks",
+            "runMultiStepChainChecks",
+            "runObserverAtomicChecks",
             "runOrderingChecks",
+            "runRaiiReleaseChecks",
             "runStructuralPreservationChecks",
             "runWithLockSetComputationChecks",
             "runWithLockSetEmptyChecks"
@@ -102950,7 +103676,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 601,
+          "line": 808,
           "called": [
             "runWithLockSetChecks"
           ]

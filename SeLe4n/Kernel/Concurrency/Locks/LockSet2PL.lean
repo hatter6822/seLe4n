@@ -189,6 +189,103 @@ theorem lockSet_atomic_under_2pl {α : Type} (S : LockSet) (core : CoreId)
   rfl
 
 -- ============================================================================
+-- §4b — SM3.C.7 — Observational atomicity (lock-insensitive observer)
+-- ============================================================================
+--
+-- The structural decomposition above (`lockSet_atomic_under_2pl`) records the
+-- 3-phase shape definitionally.  The theorems below give the *substantive*
+-- atomicity content the plan's "atomic from observer view (Thm 2.1.10)"
+-- contract asks for: an external observer whose view is **lock-insensitive**
+-- (it projects only business state, not the lock-bookkeeping fields) cannot
+-- observe ANY effect of the acquire fold or the release fold — it sees exactly
+-- the action's mutation, with the entire 2PL lock machinery invisible.  No
+-- intermediate state in which "some of the action's mutations applied and
+-- others did not" is observable, because the observer's projection is
+-- unchanged across both folds and changes only through `action`.
+
+/-- WS-SM SM3.C.7: a state projection `π` is **acquire-insensitive** for `core`
+when acquiring any lock leaves `π` unchanged.  Business-state observers (the
+object keyset, per-object kind tags, scheduler fields, IPC queues, …) are
+acquire-insensitive because `acquireLockOnObject` only advances `RwLockState`
+fields. -/
+def AcquireInsensitive {β : Type} (core : CoreId) (π : SystemState → β) : Prop :=
+  ∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    π (acquireLockOnObject s core l m) = π s
+
+/-- WS-SM SM3.C.7: the release-side counterpart of `AcquireInsensitive`. -/
+def ReleaseInsensitive {β : Type} (core : CoreId) (π : SystemState → β) : Prop :=
+  ∀ (s : SystemState) (l : LockId) (m : AccessMode),
+    π (releaseLockOnObject s core l m) = π s
+
+/-- WS-SM SM3.C.7: the acquire fold is invisible to an acquire-insensitive
+observer — `π (acquireAll core pairs s) = π s`.  Induction on the sequence. -/
+theorem acquireAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState → β)
+    (h : AcquireInsensitive core π) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
+      π (acquireAll core pairs s) = π s := by
+  intro pairs
+  induction pairs with
+  | nil => intro s; rfl
+  | cons head tail ih =>
+      intro s
+      show π (acquireAll core tail (acquireLockOnObject s core head.fst head.snd)) = π s
+      rw [ih (acquireLockOnObject s core head.fst head.snd)]
+      exact h s head.fst head.snd
+
+/-- WS-SM SM3.C.7: the release fold is invisible to a release-insensitive
+observer — `π (releaseAll core pairs s) = π s`. -/
+theorem releaseAll_lockInsensitive {β : Type} (core : CoreId) (π : SystemState → β)
+    (h : ReleaseInsensitive core π) :
+    ∀ (pairs : List (LockId × AccessMode)) (s : SystemState),
+      π (releaseAll core pairs s) = π s := by
+  intro pairs
+  induction pairs with
+  | nil => intro s; rfl
+  | cons head tail ih =>
+      intro s
+      show π (releaseAll core tail (releaseLockOnObject s core head.fst head.snd)) = π s
+      rw [ih (releaseLockOnObject s core head.fst head.snd)]
+      exact h s head.fst head.snd
+
+/-- WS-SM SM3.C.7 (plan §5.3 Theorem 2.1.10, **observational** form): for a
+release-insensitive observer `π`, the post-`withLockSet` projection equals the
+projection of the action applied to the post-acquire state — the release fold
+contributes nothing observable.  Lifts `releaseAll_lockInsensitive` through
+`withLockSet_fst`. -/
+theorem withLockSet_release_invisible {α β : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState)
+    (π : SystemState → β) (hRel : ReleaseInsensitive core π) :
+    π (withLockSet S core action s).1
+      = π (action (acquireAll core S.lockAcquireSequence s)).1 := by
+  rw [withLockSet_fst]
+  exact releaseAll_lockInsensitive core π hRel S.lockAcquireSequence.reverse _
+
+/-- WS-SM SM3.C.7 (plan §5.3 Theorem 2.1.10, observer-atomicity capstone): for
+an observer `π` that is BOTH acquire- and release-insensitive, the entire 2PL
+lock machinery is invisible.  Concretely, two facts hold simultaneously:
+
+* the action runs on a state whose `π`-projection equals the pre-state's
+  (`π (acquireAll …) = π s`), and
+* the post-`withLockSet` projection equals the action's projection
+  (`π (withLockSet …).1 = π (action …).1`).
+
+Together: from the observer's view the transition is atomic — it sees `π s`
+before and the action's `π`-image after, never a partial state arising from
+the lock acquire/release folds.  This is the honest, abstract-model form of
+"no observer without a conflicting lock sees an intermediate state": for a
+lock-insensitive observer there IS no observable intermediate, because the
+folds are projection-invariant and only `action` moves `π`. -/
+theorem lockSet_observer_atomic {α β : Type} (S : LockSet) (core : CoreId)
+    (action : SystemState → SystemState × α) (s : SystemState)
+    (π : SystemState → β)
+    (hAcq : AcquireInsensitive core π) (hRel : ReleaseInsensitive core π) :
+    π (acquireAll core S.lockAcquireSequence s) = π s ∧
+    π (withLockSet S core action s).1
+      = π (action (acquireAll core S.lockAcquireSequence s)).1 :=
+  ⟨acquireAll_lockInsensitive core π hAcq S.lockAcquireSequence s,
+   withLockSet_release_invisible S core action s π hRel⟩
+
+-- ============================================================================
 -- §5 — SM3.C.8 — `lockSet_invariant_preserved` (Corollary 2.1.11)
 -- ============================================================================
 
@@ -378,6 +475,81 @@ theorem acquireLockOnObject_objStore_release_roundtrip
   simp only
   rw [hAvail]
   exact RwLockState.unheld_acquire_release_roundtrip core mode
+
+/-- WS-SM SM3.C.8 helper: two `LockId`s with equal `kind` and `objId`
+components are equal (`LockId` carries exactly those two fields). -/
+theorem lockId_eq_of_components {l₁ l₂ : LockId}
+    (hk : l₁.kind = l₂.kind) (ho : l₁.objId = l₂.objId) : l₁ = l₂ := by
+  cases l₁; cases l₂; simp_all
+
+/-- WS-SM SM3.C.8 foundation: in a well-formed `LockSet` whose every pair
+resolves to a present object of matching kind, the canonical acquisition
+sequence has pairwise-distinct ObjIds.
+
+Two pairs sharing an ObjId would both resolve to the object stored there, hence
+have that object's `lockKind`, hence the same `kind` AND the same `objId`, hence
+the same `LockId` key — contradicting the `Nodup`-keys invariant
+(`LockSet.fst_inj_at_pairs`).  This is why the SM3.C.8 multi-lock establishment
+hypothesis (distinct ObjIds) is automatically met by any state-resolvable
+lock set. -/
+theorem lockAcquireSequence_distinct_objId_of_resolves (S : LockSet)
+    (s : SystemState)
+    (hEach : ∀ p ∈ S.pairs, ∃ o, s.objects[p.fst.objId]? = some o ∧
+        o.lockKind = p.fst.kind) :
+    S.lockAcquireSequence.Pairwise (fun a b => a.fst.objId ≠ b.fst.objId) := by
+  have hPairsNodup : S.pairs.Nodup :=
+    (List.pairwise_map.mp S.hUniqueKeys).imp
+      (fun hfst heq => hfst (congrArg Prod.fst heq))
+  have hSeqNodup : S.lockAcquireSequence.Nodup :=
+    (LockSet.lockAcquireSequence_perm S).nodup_iff.mpr hPairsNodup
+  refine hSeqNodup.imp_of_mem ?_
+  intro a b ha hb hab hObjEq
+  apply hab
+  have haP : a ∈ S.pairs :=
+    (LockSet.mem_def a S).mp ((LockSet.lockAcquireSequence_complete S a).mpr ha)
+  have hbP : b ∈ S.pairs :=
+    (LockSet.mem_def b S).mp ((LockSet.lockAcquireSequence_complete S b).mpr hb)
+  obtain ⟨oa, hPa, hKa⟩ := hEach a haP
+  obtain ⟨ob, hPb, hKb⟩ := hEach b hbP
+  have hoEq : oa = ob := by
+    have hObj : s.objects[a.fst.objId]? = s.objects[b.fst.objId]? := by rw [hObjEq]
+    rw [hPa, hPb] at hObj
+    exact Option.some.inj hObj
+  have hKindEq : a.fst.kind = b.fst.kind := by rw [← hKa, hoEq, hKb]
+  exact LockSet.fst_inj_at_pairs S haP hbP (lockId_eq_of_components hKindEq hObjEq)
+
+/-- WS-SM SM3.C.8 (substantive — the LockSet-level "acquireAll establishes
+lockSetHeld" theorem): `withLockSet`'s growing phase genuinely puts the
+declared lock set into the held state.
+
+If every lock in `S` resolves to a present, kind-matching, `unheld` object in
+the pre-state `s`, then after the canonical acquire fold the executing `core`
+holds the entire lock set: `lockSetHeld core S (acquireAll core
+S.lockAcquireSequence s)`.
+
+This is the bridge the SM3.C.8 metatheorem's `lockSetHeld` precondition rests
+on — it is not an arbitrary assumption but a *consequence* of the 2PL growing
+phase on an available lock set.  Combines the multi-lock establishment
+(`acquireAll_establishes_lockHeld_of_distinct_present_unheld`) with the
+automatic ObjId-distinctness
+(`lockAcquireSequence_distinct_objId_of_resolves`) and the
+sequence ↔ pairs membership bridge (`lockAcquireSequence_complete`). -/
+theorem acquireAll_establishes_lockSetHeld (S : LockSet) (core : CoreId)
+    (s : SystemState)
+    (hExt : s.objects.invExt)
+    (hEach : ∀ p ∈ S.pairs, ∃ o, s.objects[p.fst.objId]? = some o ∧
+        o.lockKind = p.fst.kind ∧ o.objectLockOf = RwLockState.unheld) :
+    lockSetHeld core S (acquireAll core S.lockAcquireSequence s) := by
+  have hEachSeq : ∀ p ∈ S.lockAcquireSequence, ∃ o,
+      s.objects[p.fst.objId]? = some o ∧ o.lockKind = p.fst.kind ∧
+      o.objectLockOf = RwLockState.unheld := fun p hp =>
+    hEach p ((LockSet.mem_def p S).mp ((LockSet.lockAcquireSequence_complete S p).mpr hp))
+  have hDistinct := lockAcquireSequence_distinct_objId_of_resolves S s
+    (fun p hp => by obtain ⟨o, h1, h2, _⟩ := hEach p hp; exact ⟨o, h1, h2⟩)
+  have hAll := acquireAll_establishes_lockHeld_of_distinct_present_unheld core
+    S.lockAcquireSequence s hExt hEachSeq hDistinct
+  intro p hp
+  exact hAll p ((LockSet.lockAcquireSequence_complete S p).mp ((LockSet.mem_def p S).mpr hp))
 
 -- ============================================================================
 -- §6 — SM3.C aggregator theorems (architectural anchors)

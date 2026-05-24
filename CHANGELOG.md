@@ -11,6 +11,83 @@ order; the `lockSetHeld` SMP-migration precondition (Corollary
 2.1.11); the four 2PL-discipline theorems; and the dynamic
 priority-inheritance chain-walk locking machinery (SM3.C.11).
 
+**Group-B deferred-gap closure** (post-landing audit; closes the
+provable-within-SM3.C-scope gaps that the SM5+ FFI seam does NOT
+gate — SM3.C.7 observational atomicity, SM3.C.8 establishment,
+SM3.C.11.c conjunct-1, SM3.C.11.d two-core deadlock-freedom, and
+the SM3.C.10 / SM3.C.11.f test gaps):
+
+* **SM3.C.7 observational atomicity (substantive)** — added the
+  `AcquireInsensitive` / `ReleaseInsensitive` observer predicates,
+  the fold-invisibility lemmas `acquireAll_lockInsensitive` /
+  `releaseAll_lockInsensitive`, `withLockSet_release_invisible`, and
+  the capstone `lockSet_observer_atomic`.  Together these prove the
+  honest abstract-model form of Theorem 2.1.10: a lock-insensitive
+  observer sees exactly the action's effect with the entire 2PL
+  acquire/release machinery invisible — there is no observable
+  intermediate state.  The pre-existing `lockSet_atomic_under_2pl`
+  remains as the structural 3-phase decomposition witness.
+* **SM3.C.8 establishment (substantive — closes "no theorem that
+  acquireAll establishes lockSetHeld")** — `acquireLockOnObject`
+  on a present, kind-matching, `unheld` object GRANTS the lock
+  (`acquireLockOnObject_establishes_lockHeld_modeled`); the per-step
+  frame `acquireLockOnObject_preserves_lockHeld_of_ne_objId` and
+  fold-frame `acquireAll_preserves_lockHeld_of_ne_all` keep
+  already-held locks held; the multi-lock induction
+  `acquireAll_establishes_lockHeld_of_distinct_present_unheld`
+  establishes the whole sequence; and the `LockSet`-level
+  `acquireAll_establishes_lockSetHeld` (with the automatic
+  ObjId-distinctness derivation
+  `lockAcquireSequence_distinct_objId_of_resolves` from `Nodup`
+  keys + state resolution) proves the growing phase genuinely
+  establishes the `lockSetHeld` precondition the C.8 metatheorem
+  rests on.  Foundation lemmas:
+  `LockId.lookup_eq_of_objects_getElem?_eq`,
+  `updateObjectLockAt_lookup_self`,
+  `acquireLockOnObject_objects_getElem?_of_ne`,
+  `acquireLockOnObject_preserves_invExt`.
+* **SM3.C.11.c conjunct-1 + full `dynamicChainHeld` capstone** —
+  `chainLockSeq_acquire_establishes_pathHeld` establishes conjunct 1
+  (every chain TCB write-locked) on the post-acquire state via the
+  C.8 multi-lock establishment; the `blockingServer` transport
+  (`blockingServer_eq_bind` + `tcbReplyServer_updateLock` +
+  `acquireLockOnObject_preserves_blockingServer` +
+  `acquireAll_preserves_blockingServer` +
+  `chainFollowsBlockingServer_of_blockingServer_eq`) carries
+  conjunct 4 from the pre-acquire to the post-acquire state; and
+  `withDynamicChainExtension_establishes_dynamicChainHeld` assembles
+  ALL FOUR conjuncts on the acquired state (previously only the
+  walker's path-structure conjuncts 2/3/4 were established, on the
+  pre-acquire state).  The stale §8 docstring that mislabelled
+  write-locked as "the fourth conjunct" is corrected to "conjunct 1".
+* **SM3.C.11.d two-core deadlock-freedom (substantive)** — the
+  §6 single-core ascending-path lemma is lifted to the genuine
+  two-core contract: `coreWaitsForLock` (waits for a lock strictly
+  above all held), `dynamic_chain_deadlock_free` (two cores cannot
+  mutually wait), and `dynamic_chain_no_mutual_wait` (the plan's
+  `¬(waitsFor ∧ waitsFor)` form).
+* **SM3.C.10 / SM3.C.11.f tests** — `tests/WithLockSetSuite.lean`
+  gains §12 RAII-release checks (a failing/early-exit action still
+  releases every lock), §13 populated-state establishment checks
+  (acquire ESTABLISHES lockHeld/lockSetHeld on real objects), §14
+  observational-atomicity checks (lock machinery invisible to an
+  objectType observer), and §15 multi-step-chain checks (a real
+  3-TCB blocking chain `5 → 7 → 10`: walker discovers the full path;
+  conjuncts 1 & 4 verified on the acquired state; bounded-retry
+  exhaustion at insufficient fuel; two-core disjoint-chain
+  non-contention).  All new theorems are axiom-clean (only
+  `propext` / `Classical.choice` / `Quot.sound`).  The SM3.C
+  inventory grows 71 → 86 (+5 held, +4 atomicity, +6 dynamicChain);
+  AK7-cascade `RAW_LOOKUP_TID` drops 759 → 757 (chain lookups route
+  through the `.get?` method form via the new
+  `objects_getElem?_eq_get?` bridge).  Items deferred past v1.0.0
+  with correctness impact: NONE.  Items still genuinely gated on the
+  SM5+ per-core FFI seam (unchanged): the `withLockSetFFI` /
+  FFI-executing acquire overloads (C.1/C.2 FFI forms), the
+  `@[export]`-body migration (C.9), and the per-transition
+  `withDynamicChainExtension` wrapper consuming `pipChainStart_*`
+  (C.11.b).
+
 Lands within the v0.31.9 release cut (no version bump), mirroring
 the SM3.A / SM3.B landing pattern — SM3.A..SM3.E close out
 together en route to v1.0.0.

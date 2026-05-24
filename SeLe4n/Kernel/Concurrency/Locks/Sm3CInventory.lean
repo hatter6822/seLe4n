@@ -209,6 +209,16 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       RwLockState.unheld_acquire_grants .held,
     wlst! "RwLockState.unheld_acquire_release_roundtrip: acquire+release no waiter leak (audit-pass-1 Comment 4)"
       RwLockState.unheld_acquire_release_roundtrip .held,
+    wlst! "acquireLockOnObject_establishes_lockHeld_modeled: SM3.C.8 single per-object acquire grants lockHeld"
+      acquireLockOnObject_establishes_lockHeld_modeled .held,
+    wlst! "acquireLockOnObject_preserves_lockHeld_of_ne_objId: SM3.C.8 per-step frame keeps lockHeld"
+      acquireLockOnObject_preserves_lockHeld_of_ne_objId .held,
+    wlst! "acquireAll_preserves_lockHeld_of_ne_all: SM3.C.8 fold-frame for already-held locks"
+      acquireAll_preserves_lockHeld_of_ne_all .held,
+    wlst! "acquireAll_establishes_lockHeld_of_distinct_present_unheld: SM3.C.8 multi-lock establishment"
+      acquireAll_establishes_lockHeld_of_distinct_present_unheld .held,
+    wlst! "acquireAll_establishes_lockSetHeld: SM3.C.8 growing phase establishes lockSetHeld"
+      acquireAll_establishes_lockSetHeld .held,
     -- §3 ordering (3 entries: SM3.C.5 + SM3.C.6 + acquire/release order
     -- correspondence)
     wlst! "lockSet_acquired_in_order: SM3.C.5 — acquires by LockId ascending"
@@ -236,6 +246,14 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       withLockSet_satisfies_strict_2PL .atomicity,
     wlst! "withLockSet_computation: canonical 'what does withLockSet compute' form"
       withLockSet_computation .atomicity,
+    wlst! "acquireAll_lockInsensitive: SM3.C.7 acquire fold invisible to lock-insensitive observer"
+      acquireAll_lockInsensitive .atomicity,
+    wlst! "releaseAll_lockInsensitive: SM3.C.7 release fold invisible to lock-insensitive observer"
+      releaseAll_lockInsensitive .atomicity,
+    wlst! "withLockSet_release_invisible: SM3.C.7 observational form (release contributes nothing)"
+      withLockSet_release_invisible .atomicity,
+    wlst! "lockSet_observer_atomic: SM3.C.7 Thm 2.1.10 observer-atomicity capstone"
+      lockSet_observer_atomic .atomicity,
     -- §5 dynamicChain (8 entries: SM3.C.11.a-e)
     wlst! "MAX_PIP_RETRIES: bounded retry budget (=64)"
       MAX_PIP_RETRIES .dynamicChain,
@@ -270,21 +288,38 @@ def withLockSetTheorems : List WithLockSetTheorem :=
     wlst! "walkAndAcquire_terminated_length_bounded: SM3.C.11.e path ≤ MAX_PIP_RETRIES+1"
       walkAndAcquire_terminated_length_bounded .dynamicChain,
     wlst! "walkAndAcquire_total: SM3.C.11.e totality witness"
-      walkAndAcquire_total .dynamicChain]
+      walkAndAcquire_total .dynamicChain,
+    wlst! "chainLockSeq_acquire_establishes_pathHeld: SM3.C.11.c conjunct-1 on the acquired state"
+      chainLockSeq_acquire_establishes_pathHeld .dynamicChain,
+    wlst! "acquireLockOnObject_preserves_blockingServer: SM3.C.11.c blockingServer frame (single step)"
+      acquireLockOnObject_preserves_blockingServer .dynamicChain,
+    wlst! "acquireAll_preserves_blockingServer: SM3.C.11.c blockingServer frame (fold)"
+      acquireAll_preserves_blockingServer .dynamicChain,
+    wlst! "withDynamicChainExtension_establishes_dynamicChainHeld: SM3.C.11.c capstone — all four conjuncts"
+      withDynamicChainExtension_establishes_dynamicChainHeld .dynamicChain,
+    wlst! "dynamic_chain_deadlock_free: SM3.C.11.d two-core no mutual wait"
+      dynamic_chain_deadlock_free .dynamicChain,
+    wlst! "dynamic_chain_no_mutual_wait: SM3.C.11.d ¬(waitsFor ∧ waitsFor) form"
+      dynamic_chain_no_mutual_wait .dynamicChain]
 
-/-- WS-SM SM3.C: the inventory has exactly 71 entries.
+/-- WS-SM SM3.C: the inventory has exactly 86 entries.
 
-Audit-pass-1 expanded 61→66 (+2 combinator kind-checked update, +2
-held grant / round-trip, +2 atomicity substantive acquire-grants,
-−1 removed tautology).  Audit-pass-2 expanded 66→70 (+4 dynamicChain:
-`chainFollowsBlockingServer` predicate + `walkStep_extended_blockingServer`
-+ `walkAndAcquire_terminated_followsChain` +
-`walkAndAcquire_terminated_satisfies_path_structure`, wiring
-`dynamicChainHeld`'s structural conjuncts to the walker).
+Audit-pass-1 expanded 61→66; audit-pass-2 66→70; the Group-B closure
+expanded 71→86 (+5 held: the SM3.C.8 establishment lemmas
+`acquireLockOnObject_establishes_lockHeld_modeled` / `_preserves_lockHeld_of_ne_objId`
+/ `acquireAll_preserves_lockHeld_of_ne_all` /
+`acquireAll_establishes_lockHeld_of_distinct_present_unheld` /
+`acquireAll_establishes_lockSetHeld`; +4 atomicity: the SM3.C.7
+observational-atomicity theorems `acquireAll_lockInsensitive` /
+`releaseAll_lockInsensitive` / `withLockSet_release_invisible` /
+`lockSet_observer_atomic`; +6 dynamicChain: SM3.C.11.c conjunct-1
+establishment + `blockingServer` frame/transport + the full
+`dynamicChainHeld` capstone + the SM3.C.11.d two-core deadlock-freedom
+theorems).
 A regression that adds a new SM3.C theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem withLockSetTheorems_count :
-    withLockSetTheorems.length = 71 := by decide
+    withLockSetTheorems.length = 86 := by decide
 
 /-- WS-SM SM3.C: 31 entries in the `combinator` category
 (audit-pass-1: +`updateObjectLockAt` + `updateObjectLockAt_preserves_objStoreLock`). -/
@@ -292,10 +327,11 @@ theorem withLockSetTheorems_combinator_count :
     (withLockSetTheorems.filter (fun t => t.category == .combinator)).length = 31 := by
   decide
 
-/-- WS-SM SM3.C: 11 entries in the `held` category
-(audit-pass-1: +`unheld_acquire_grants` + `unheld_acquire_release_roundtrip`). -/
+/-- WS-SM SM3.C: 16 entries in the `held` category
+(audit-pass-1: +`unheld_acquire_grants` + `unheld_acquire_release_roundtrip`;
+Group-B: +5 SM3.C.8 establishment lemmas). -/
 theorem withLockSetTheorems_held_count :
-    (withLockSetTheorems.filter (fun t => t.category == .held)).length = 11 := by
+    (withLockSetTheorems.filter (fun t => t.category == .held)).length = 16 := by
   decide
 
 /-- WS-SM SM3.C: 3 entries in the `ordering` category. -/
@@ -303,18 +339,21 @@ theorem withLockSetTheorems_ordering_count :
     (withLockSetTheorems.filter (fun t => t.category == .ordering)).length = 3 := by
   decide
 
-/-- WS-SM SM3.C: 9 entries in the `atomicity` category
+/-- WS-SM SM3.C: 13 entries in the `atomicity` category
 (audit-pass-1: −tautology +`acquireLockOnObject_objStore_establishes_lockHeld`
-+`acquireLockOnObject_objStore_release_roundtrip`). -/
++`acquireLockOnObject_objStore_release_roundtrip`; Group-B: +4 SM3.C.7
+observational-atomicity theorems). -/
 theorem withLockSetTheorems_atomicity_count :
-    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 9 := by
+    (withLockSetTheorems.filter (fun t => t.category == .atomicity)).length = 13 := by
   decide
 
-/-- WS-SM SM3.C: 17 entries in the `dynamicChain` category
+/-- WS-SM SM3.C: 23 entries in the `dynamicChain` category
 (audit-pass-2: +4 chain-establishment theorems wiring `dynamicChainHeld`
-to the walker). -/
+to the walker; Group-B: +6 — conjunct-1 establishment, `blockingServer`
+frame/transport, the full capstone, and the SM3.C.11.d two-core
+deadlock-freedom theorems). -/
 theorem withLockSetTheorems_dynamicChain_count :
-    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length = 17 := by
+    (withLockSetTheorems.filter (fun t => t.category == .dynamicChain)).length = 23 := by
   decide
 
 /-- WS-SM SM3.C: per-category counts sum to the total. -/

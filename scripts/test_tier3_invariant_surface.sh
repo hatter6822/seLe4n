@@ -2130,6 +2130,22 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_objStore_release_roundtrip
 #check @SeLe4n.Kernel.Concurrency.withLockSet_satisfies_strict_2PL
 #check @SeLe4n.Kernel.Concurrency.withLockSet_computation
+-- SM3.C.8 (Group-B): acquire ESTABLISHES lockHeld / lockSetHeld + frames.
+#check @SeLe4n.Kernel.Concurrency.LockId.lookup_eq_of_objects_getElem?_eq
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_lookup_self
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_establishes_lockHeld_modeled
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_lockHeld_of_ne_objId
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_lockHeld_of_ne_all
+#check @SeLe4n.Kernel.Concurrency.acquireAll_establishes_lockHeld_of_distinct_present_unheld
+#check @SeLe4n.Kernel.Concurrency.acquireAll_establishes_lockSetHeld
+#check @SeLe4n.Kernel.Concurrency.lockAcquireSequence_distinct_objId_of_resolves
+-- SM3.C.7 (Group-B): observational atomicity (lock-insensitive observer).
+#check @SeLe4n.Kernel.Concurrency.AcquireInsensitive
+#check @SeLe4n.Kernel.Concurrency.ReleaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.acquireAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.releaseAll_lockInsensitive
+#check @SeLe4n.Kernel.Concurrency.withLockSet_release_invisible
+#check @SeLe4n.Kernel.Concurrency.lockSet_observer_atomic
 -- SM3.C.11 dynamic chain walker + deadlock-freedom witness.
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES
 #check @SeLe4n.Kernel.Concurrency.MAX_PIP_RETRIES_pos
@@ -2151,6 +2167,19 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquireAux_terminated_length_le
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_terminated_length_bounded
 #check @SeLe4n.Kernel.Concurrency.walkAndAcquire_total
+-- SM3.C.11.c (Group-B): conjunct-1 establishment + blockingServer transport + capstone.
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq
+#check @SeLe4n.Kernel.Concurrency.chainLockSeq_acquire_establishes_pathHeld
+#check @SeLe4n.Kernel.Concurrency.blockingServer_eq_bind
+#check @SeLe4n.Kernel.Concurrency.tcbReplyServer_updateLock
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_blockingServer
+#check @SeLe4n.Kernel.Concurrency.acquireAll_preserves_blockingServer
+#check @SeLe4n.Kernel.Concurrency.chainFollowsBlockingServer_of_blockingServer_eq
+#check @SeLe4n.Kernel.Concurrency.withDynamicChainExtension_establishes_dynamicChainHeld
+-- SM3.C.11.d (Group-B): two-core deadlock-freedom.
+#check @SeLe4n.Kernel.Concurrency.coreWaitsForLock
+#check @SeLe4n.Kernel.Concurrency.dynamic_chain_deadlock_free
+#check @SeLe4n.Kernel.Concurrency.dynamic_chain_no_mutual_wait
 -- SM3.C Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.WithLockSetCategory
 #check @SeLe4n.Kernel.Concurrency.WithLockSetTheorem

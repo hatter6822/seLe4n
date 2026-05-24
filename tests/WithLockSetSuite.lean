@@ -157,6 +157,40 @@ open SeLe4n.Kernel.Concurrency
 #check @walkAndAcquire_terminated_length_bounded
 #check @walkAndAcquire_total
 
+/-! ## SM3.C.8 establishment (acquire establishes lockHeld / lockSetHeld) -/
+
+#check @acquireLockOnObject_establishes_lockHeld_modeled
+#check @acquireLockOnObject_preserves_lockHeld_of_ne_objId
+#check @acquireAll_preserves_lockHeld_of_ne_all
+#check @acquireAll_establishes_lockHeld_of_distinct_present_unheld
+#check @acquireAll_establishes_lockSetHeld
+#check @lockAcquireSequence_distinct_objId_of_resolves
+#check @updateObjectLockAt_lookup_self
+#check @LockId.lookup_eq_of_objects_getElem?_eq
+
+/-! ## SM3.C.7 observational atomicity (lock-insensitive observer) -/
+
+#check @AcquireInsensitive
+#check @ReleaseInsensitive
+#check @acquireAll_lockInsensitive
+#check @releaseAll_lockInsensitive
+#check @withLockSet_release_invisible
+#check @lockSet_observer_atomic
+
+/-! ## SM3.C.11.c/d dynamic chain — conjunct-1, capstone, deadlock-freedom -/
+
+#check @chainLockSeq
+#check @chainLockSeq_acquire_establishes_pathHeld
+#check @blockingServer_eq_bind
+#check @tcbReplyServer_updateLock
+#check @acquireLockOnObject_preserves_blockingServer
+#check @acquireAll_preserves_blockingServer
+#check @chainFollowsBlockingServer_of_blockingServer_eq
+#check @withDynamicChainExtension_establishes_dynamicChainHeld
+#check @coreWaitsForLock
+#check @dynamic_chain_deadlock_free
+#check @dynamic_chain_no_mutual_wait
+
 /-! ## SM3.C inventory -/
 
 #check @WithLockSetCategory
@@ -436,25 +470,25 @@ private def runDynamicChainChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 SM3.C — Inventory aggregator ---"
-  -- The inventory has 71 entries (audit-pass-2: +worked instantiation).
-  assertBool "withLockSetTheorems.length = 71"
-    (decide (withLockSetTheorems.length = 71))
+  -- The inventory has 86 entries (Group-B: +5 held, +4 atomicity, +6 dynamicChain).
+  assertBool "withLockSetTheorems.length = 86"
+    (decide (withLockSetTheorems.length = 86))
   -- Per-category counts.
   assertBool "withLockSetTheorems combinator count = 31"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .combinator)).length = 31))
-  assertBool "withLockSetTheorems held count = 11"
+  assertBool "withLockSetTheorems held count = 16"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .held)).length = 11))
+      (fun t => t.category == .held)).length = 16))
   assertBool "withLockSetTheorems ordering count = 3"
     (decide ((withLockSetTheorems.filter
       (fun t => t.category == .ordering)).length = 3))
-  assertBool "withLockSetTheorems atomicity count = 9"
+  assertBool "withLockSetTheorems atomicity count = 13"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .atomicity)).length = 9))
-  assertBool "withLockSetTheorems dynamicChain count = 17"
+      (fun t => t.category == .atomicity)).length = 13))
+  assertBool "withLockSetTheorems dynamicChain count = 23"
     (decide ((withLockSetTheorems.filter
-      (fun t => t.category == .dynamicChain)).length = 17))
+      (fun t => t.category == .dynamicChain)).length = 23))
   -- Partition-sum is total.
   assertBool "withLockSetTheorems partition sum = total"
     (decide (
@@ -579,6 +613,175 @@ private def runIntegrationChecks : IO Unit := do
     (decide ((acquireOrder esSet).map (·.kind)
               = [LockKind.cnode, LockKind.tcb, LockKind.tcb, LockKind.endpoint]))
 
+-- ============================================================================
+-- §12 — Test fixtures for establishment / chain checks
+-- ============================================================================
+
+/-- A minimal ready TCB (ipcState defaults to `.ready` ⟹ `blockingServer` none). -/
+private def mkTcbReady (n : Nat) : TCB :=
+  { tid := ThreadId.ofNat n, priority := ⟨10⟩, domain := ⟨0⟩,
+    cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+    ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+
+/-- A TCB reply-blocked on `server` ⟹ `blockingServer tid = some server`. -/
+private def mkTcbBlockedOn (n server : Nat) : TCB :=
+  { mkTcbReady n with
+    ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 0) (some (ThreadId.ofNat server)) }
+
+/-- A minimal CNode (default `lock = unheld`). -/
+private def mkCNodeFixture : CNode :=
+  { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+    slots := SeLe4n.UniqueSlotMap.empty }
+
+/-- A 3-TCB blocking chain `5 → 7 → 10` (10 terminates).  ObjIds ascending so
+the abstract walker commits the full path. -/
+private def chainState : SystemState :=
+  let d : SystemState := default
+  let o := d.objects.insert (ThreadId.ofNat 5).toObjId (.tcb (mkTcbBlockedOn 5 7))
+  let o := o.insert (ThreadId.ofNat 7).toObjId (.tcb (mkTcbBlockedOn 7 10))
+  let o := o.insert (ThreadId.ofNat 10).toObjId (.tcb (mkTcbReady 10))
+  { d with objects := o }
+
+/-- A state with caller TCB 5, src CNode 7, dst CNode 9 — all present, unheld.
+Used to exercise the full lock-set establishment over a real `lockSet_<τ>`. -/
+private def cspaceMoveFixture : SystemState :=
+  let d : SystemState := default
+  let o := d.objects.insert (ThreadId.ofNat 5).toObjId (.tcb (mkTcbReady 5))
+  let o := o.insert (SeLe4n.ObjId.ofNat 7) (.cnode mkCNodeFixture)
+  let o := o.insert (SeLe4n.ObjId.ofNat 9) (.cnode mkCNodeFixture)
+  { d with objects := o }
+
+private def runRaiiReleaseChecks : IO Unit := do
+  IO.println "--- §12 SM3.C.10 — RAII release discipline (panic/early-exit) ---"
+  let s₀ : SystemState := default
+  let objStoreSet := LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write
+  -- A "failing" action: it returns the (lock-acquired) state unchanged with an
+  -- error value, modelling an early-exit / panic that does NOT release locks
+  -- itself.  withLockSet's shrinking phase must still release them.
+  let failingAction : SystemState → SystemState × Bool := fun st => (st, false)
+  let result := withLockSet objStoreSet bootCoreId failingAction s₀
+  -- The action's (error) value flows through.
+  assertBool "RAII: failing action's value flows through withLockSet"
+    (decide (result.snd = false))
+  -- Despite the failing action, the table lock is RELEASED on exit (no leak).
+  assertBool "RAII: objStore lock released after failing action (round-trip to unheld)"
+    (decide (result.fst.objStoreLock = RwLockState.unheld))
+  -- lockSetHeld is false on the post-withLockSet state (locks released).
+  assertBool "RAII: ¬ lockSetHeld after withLockSet (shrinking phase released all)"
+    (decide (¬ lockSetHeld bootCoreId objStoreSet result.fst))
+  -- A read-mode failing action: same release guarantee.
+  let readSet := LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .read
+  let resultR := withLockSet readSet bootCoreId failingAction s₀
+  assertBool "RAII: objStore read lock released after failing action"
+    (decide (resultR.fst.objStoreLock = RwLockState.unheld))
+  -- The per-lock round-trip witness (SM3.C.8) underlies this at the abstract level.
+  assertBool "RAII: acquireLockOnObject_objStore_release_roundtrip witness (write)"
+    (decide ((releaseLockOnObject
+      (acquireLockOnObject s₀ bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write)
+      bootCoreId ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write).objStoreLock
+      = RwLockState.unheld))
+
+private def runEstablishmentChecks : IO Unit := do
+  IO.println "--- §13 SM3.C.8 — acquire ESTABLISHES lockHeld / lockSetHeld (populated) ---"
+  -- Single modeled establishment: a present, unheld TCB becomes write-held.
+  let sTcb : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert
+      (ThreadId.ofNat 5).toObjId (.tcb (mkTcbReady 5)) }
+  let tcbLockId : LockId := ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩
+  let sAcq := acquireLockOnObject sTcb bootCoreId tcbLockId .write
+  assertBool "establish: acquiring present+unheld TCB write-lock ⟹ lockHeld holds"
+    (decide (lockHeld bootCoreId tcbLockId .write sAcq))
+  -- Read-mode establishment on a present CNode.
+  let sCn : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert
+      (SeLe4n.ObjId.ofNat 7) (.cnode mkCNodeFixture) }
+  let cnLockId : LockId := ⟨.cnode, SeLe4n.ObjId.ofNat 7⟩
+  let sAcqR := acquireLockOnObject sCn bootCoreId cnLockId .read
+  assertBool "establish: acquiring present+unheld CNode read-lock ⟹ lockHeld holds"
+    (decide (lockHeld bootCoreId cnLockId .read sAcqR))
+  -- Multi-lock establishment over a REAL lockSet on a fully-populated state:
+  -- acquireAll establishes lockSetHeld for the entire declared footprint.
+  let cmSet := lockSet_cspaceMove ⟨5⟩ (SeLe4n.ObjId.ofNat 7) (SeLe4n.ObjId.ofNat 9)
+  let cmAcq := acquireAll bootCoreId cmSet.lockAcquireSequence cspaceMoveFixture
+  assertBool "establish: acquireAll over cspaceMove ⟹ lockSetHeld (all 3 locks held)"
+    (decide (lockSetHeld bootCoreId cmSet cmAcq))
+  -- Each individual declared lock is held post-acquire.
+  assertBool "establish: caller TCB read-lock held after cspaceMove acquireAll"
+    (decide (lockHeld bootCoreId ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩ .read cmAcq))
+  assertBool "establish: dst CNode write-lock held after cspaceMove acquireAll"
+    (decide (lockHeld bootCoreId ⟨.cnode, SeLe4n.ObjId.ofNat 9⟩ .write cmAcq))
+
+private def runObserverAtomicChecks : IO Unit := do
+  IO.println "--- §14 SM3.C.7 — observational atomicity (lock-insensitive observer) ---"
+  -- A lock-insensitive observer: the kind tag of the object stored at key 5.
+  -- Lock acquisition advances RwLockState but NEVER the variant, so this
+  -- projection is invariant across the acquire/release folds.
+  let observe : SystemState → Option KernelObjectType :=
+    fun s => (s.objects.get? (ThreadId.ofNat 5).toObjId).map KernelObject.objectType
+  let s : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert
+      (ThreadId.ofNat 5).toObjId (.tcb (mkTcbReady 5)) }
+  let tcbSet := LockSet.singleton ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩ .write
+  -- Acquire fold is invisible to the observer.
+  assertBool "observer: acquireAll invisible to objectType projection"
+    (decide (observe (acquireAll bootCoreId tcbSet.lockAcquireSequence s) = observe s))
+  -- The whole withLockSet (identity action) is invisible to the observer.
+  let wls := withLockSet tcbSet bootCoreId (fun st => (st, ())) s
+  assertBool "observer: withLockSet (identity action) invisible to objectType projection"
+    (decide (observe wls.fst = observe s))
+  -- Observer cannot see the lock machinery: pre and post projections agree even
+  -- though the lock state DID change mid-action (acquired then released).
+  assertBool "observer: post-state objectType at key 5 = .tcb (unchanged by 2PL)"
+    (decide (observe wls.fst = some KernelObjectType.tcb))
+
+private def runMultiStepChainChecks : IO Unit := do
+  IO.println "--- §15 SM3.C.11.f — multi-step PIP chain (real blocking graph) ---"
+  -- The walker discovers the full 3-step chain 5 → 7 → 10.
+  match walkAndAcquire chainState ⟨5⟩ with
+  | .terminated path =>
+      assertBool "multi-step: walkAndAcquire terminates with path length 3"
+        (decide (path.path.length = 3))
+      assertBool "multi-step: discovered path = [5, 7, 10]"
+        (decide (path.path = [⟨5⟩, ⟨7⟩, ⟨10⟩]))
+      -- Conjunct 4 on the PRE-acquire state (walker invariant).
+      assertBool "multi-step: path follows blockingServer on chainState"
+        (decide (chainFollowsBlockingServer chainState path.path))
+      -- Acquire the chain write-locks; verify conjuncts 1 & 4 on the ACQUIRED state.
+      let sAcq := acquireAll bootCoreId (chainLockSeq path) chainState
+      assertBool "multi-step: TCB 5 write-locked after acquireAll (conjunct 1)"
+        (decide (lockHeld bootCoreId ⟨.tcb, (⟨5⟩ : ThreadId).toObjId⟩ .write sAcq))
+      assertBool "multi-step: TCB 7 write-locked after acquireAll (conjunct 1)"
+        (decide (lockHeld bootCoreId ⟨.tcb, (⟨7⟩ : ThreadId).toObjId⟩ .write sAcq))
+      assertBool "multi-step: TCB 10 write-locked after acquireAll (conjunct 1)"
+        (decide (lockHeld bootCoreId ⟨.tcb, (⟨10⟩ : ThreadId).toObjId⟩ .write sAcq))
+      assertBool "multi-step: chainFollowsBlockingServer transported to acquired state (conjunct 4)"
+        (decide (chainFollowsBlockingServer sAcq path.path))
+  | _ =>
+      assertBool "multi-step: walkAndAcquire chainState ⟨5⟩ should terminate" false
+  -- Bounded retries: a chain longer than the fuel budget exhausts rather than
+  -- looping.  Fuel 2 cannot reach the terminating step of a 3-link chain.
+  match walkAndAcquire chainState ⟨5⟩ 2 with
+  | .exhausted => assertBool "bounded: fuel 2 exhausts on a 3-link chain" true
+  | _ => assertBool "bounded: fuel 2 should exhaust on a 3-link chain" false
+  match walkAndAcquire chainState ⟨5⟩ 3 with
+  | .terminated p =>
+      assertBool "bounded: fuel 3 terminates the 3-link chain" (decide (p.path.length = 3))
+  | _ => assertBool "bounded: fuel 3 should terminate the 3-link chain" false
+  -- Two-core deadlock-freedom: under the ascending discipline, mutual wait is
+  -- impossible (decidable instantiation of dynamic_chain_no_mutual_wait).
+  let l5 : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 5⟩
+  let l10 : LockId := ⟨.tcb, SeLe4n.ObjId.ofNat 10⟩
+  -- The arithmetic heart of dynamic_chain_deadlock_free: under the ascending
+  -- discipline a 2-cycle would require 5 < 10 AND 10 < 5 — impossible.
+  assertBool "two-core: ascending ObjIds preclude a 2-cycle (5<10 ∧ 10<5 impossible)"
+    (decide (¬ (l5.objId.val < l10.objId.val ∧ l10.objId.val < l5.objId.val)))
+  -- Two cores walking DISJOINT chains share no lock ObjId ⟹ no contention.
+  let chainA := chainLockSeq ⟨⟨5⟩, [⟨5⟩, ⟨7⟩], by rfl⟩
+  let chainB := chainLockSeq ⟨⟨20⟩, [⟨20⟩, ⟨25⟩], by rfl⟩
+  assertBool "two-core: disjoint chains [5,7] / [20,25] share no lock objId"
+    (decide ((chainA.map (·.fst.objId.val)).all (fun a =>
+      (chainB.map (·.fst.objId.val)).all (fun b => a ≠ b))))
+
 def runWithLockSetChecks : IO Unit := do
   IO.println "WS-SM SM3.C — withLockSet 2PL discipline regression suite"
   IO.println "========================================================="
@@ -592,6 +795,10 @@ def runWithLockSetChecks : IO Unit := do
   runStructuralPreservationChecks
   runAuditPass1Checks
   runIntegrationChecks
+  runRaiiReleaseChecks
+  runEstablishmentChecks
+  runObserverAtomicChecks
+  runMultiStepChainChecks
   runInventoryChecks
   IO.println "========================================================="
   IO.println "All SM3.C withLockSet checks PASS."

@@ -3265,12 +3265,55 @@ documentation lives under `docs/` and `docs/gitbook/`.
   and `RAW_LOOKUP_TID` drops 759 → 757.
 
   **Test coverage**: 320/320 Lean modules build green;
-  `lake exe with_lock_set_suite` reports 52/52 PASS; full Tier
+  `lake exe with_lock_set_suite` reports 88/88 PASS; full Tier
   0+1+2+3 green; AK7 cascade monotonicity all metrics pass.
   **Axiom budget for SM3.C**: 0 Lean axioms, 0 sorries (only the
   standard `propext` / `Quot.sound` / `Classical.choice`
   foundational axioms).  **Items deferred past v1.0.0 with
   correctness impact**: NONE.
+
+  **Group-B deferred-gap closure** (post-landing audit; closes the
+  provable-within-scope SM3.C gaps NOT gated on the SM5+ FFI seam):
+  SM3.C.7 observational atomicity (`AcquireInsensitive` /
+  `ReleaseInsensitive` observer predicates + `acquireAll_lockInsensitive`
+  / `releaseAll_lockInsensitive` + `withLockSet_release_invisible` +
+  the `lockSet_observer_atomic` capstone — a lock-insensitive observer
+  sees only the action's effect, the 2PL acquire/release machinery
+  invisible, so no observable intermediate state exists); SM3.C.8
+  establishment (`acquireLockOnObject_establishes_lockHeld_modeled` +
+  the per-step / fold frames + the multi-lock induction
+  `acquireAll_establishes_lockHeld_of_distinct_present_unheld` + the
+  `LockSet`-level `acquireAll_establishes_lockSetHeld`, with
+  ObjId-distinctness auto-derived from `Nodup` keys + state resolution
+  via `lockAcquireSequence_distinct_objId_of_resolves` — proving the
+  growing phase genuinely establishes the `lockSetHeld` precondition
+  the C.8 metatheorem rests on); SM3.C.11.c conjunct-1
+  (`chainLockSeq_acquire_establishes_pathHeld`) plus the
+  `blockingServer` transport (`blockingServer_eq_bind` /
+  `acquireAll_preserves_blockingServer` /
+  `chainFollowsBlockingServer_of_blockingServer_eq`) and the
+  full-four-conjunct capstone
+  `withDynamicChainExtension_establishes_dynamicChainHeld` (previously
+  only the walker's path-structure conjuncts 2/3/4 were established,
+  on the pre-acquire state); and SM3.C.11.d two-core deadlock-freedom
+  (`dynamic_chain_deadlock_free` / `dynamic_chain_no_mutual_wait`,
+  lifting the §6 single-core ascending-path lemma).  The stale §8
+  docstring mislabelling write-locked as "the fourth conjunct" is
+  corrected to "conjunct 1".  Tests: `WithLockSetSuite` gains §12
+  RAII-release (a failing/early-exit action still releases every
+  lock), §13 populated-state establishment, §14 observer-atomicity,
+  and §15 a real 3-TCB blocking chain `5 → 7 → 10` (walker discovers
+  the full path; conjuncts 1 & 4 verified on the acquired state;
+  bounded-retry exhaustion at insufficient fuel; two-core
+  disjoint-chain non-contention).  The SM3.C inventory grows 71 → 86
+  (+5 held, +4 atomicity, +6 dynamicChain); all new theorems are
+  axiom-clean; `RAW_LOOKUP_TID` drops 759 → 757 (chain lookups route
+  through the `.get?` method form via the new `objects_getElem?_eq_get?`
+  bridge).  Items still genuinely gated on the SM5+ per-core FFI seam
+  (unchanged): the `withLockSetFFI` / FFI-executing acquire overloads
+  (C.1/C.2 FFI forms), the `@[export]`-body migration (C.9), and the
+  per-transition `withDynamicChainExtension` wrapper consuming
+  `pipChainStart_*` (C.11.b).
 
   Follow-on: SM3.D (deadlock-freedom Theorem 2.1.9 via the
   `noDeadlock` predicate + `deadlockFreedom_under_2pl_and_ordering`
