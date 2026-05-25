@@ -143,9 +143,9 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~19962 lines)
+- `CHANGELOG.md` (~20005 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~6647 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~6600 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4029 lines)
@@ -176,9 +176,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
+- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~1980 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
-- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~1941 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
@@ -216,6 +216,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1243 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1211 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1210 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1185 lines)
@@ -233,7 +234,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1039 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1027 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1023 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~999 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~984 lines)
@@ -3512,8 +3512,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
   single-core proofs migrate cheaply in SM4..SM6 (Corollary 2.1.11).
   Lands within the v0.31.9 release cut (no version bump; SM3.A..SM3.E
   close out together en route to v1.0.0).  New file
-  `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~960 LoC) +
-  `Sm3EInventory.lean` (68-theorem inventory), both staged via
+  `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
+  `Sm3EInventory.lean` (76-theorem inventory), both staged via
   `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
   - **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance` schedule
@@ -3573,7 +3573,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (`lake exe serializability_suite`); 8 major-theorem `#check` anchors
   (SM3.E.8) + runtime inventory check in `tests/SmpSurfaceAnchors.lean`.
   Tier-2 + Tier-3 wired.  **Axiom budget**: 0 Lean axioms, 0 sorries
-  (only `propext` / `Quot.sound` / `Classical.choice`).  68-theorem
+  (only `propext` / `Quot.sound` / `Classical.choice`).  76-theorem
   SM3.E inventory across 7 categories.  Full Tier 0+1+2+3 green.  Items
   deferred past v1.0.0 with correctness impact: NONE.
 
@@ -3583,6 +3583,32 @@ documentation lives under `docs/` and `docs/gitbook/`.
   sub-phases LANDED (SM3.A–SM3.E).  The `@[export]`-body migration
   (SM3.C.9) remains deferred to SM5+ per the per-core kernel-state seam.
   SM4 (per-core state) follows per the master overview.
+
+  **Audit-pass-1 refinements** (post-landing self-audit; closed three
+  honesty/completeness gaps per the `implement-the-improvement` rule —
+  the initial theorems were true + axiom-clean but under-delivered on
+  their stated intent):
+  - **Orientation completeness**: `conflictGraph_acyclic`'s proof did not
+    use the conflict relation (it is `Nat.lt` irreflexivity).  Added
+    `conflictPrecedes_total_of_distinct_commit` (under the strict-2PL
+    distinct-commit lock-exclusion property every conflicting pair is
+    *comparable* — where `ktiSharesConflictingLock`/its symmetry is
+    essential) + `conflictPrecedes_strict_total_of_distinct_commit` (the
+    conflict graph is a strict *total* order, not merely acyclic — the
+    genuine Bernstein content).
+  - **Strict-2PL grounding**: `serializability_under_2pl`'s
+    `outOfOrderCommute` hypothesis was prose-linked to 2PL only.  Added
+    `conflictsCommitOrdered` (decidable lock-exclusion predicate),
+    `outOfOrderCommute_of_conflictsCommitOrdered`, and the grounded
+    `serializability_under_2pl_of_conflicts_ordered` (assumes only the
+    primitive strict-2PL conditions) — mirroring SM3.D §7.
+  - **Non-vacuous Cor 2.1.11**: the `singleCore_proof_preservation` test
+    used the trivial `True` invariant.  Added per-step
+    `acquire/releaseLockOnObject_preserves_objStoreLock_wf` +
+    `withLockSet_preserves_objStoreLock_wf` (the lever on the REAL
+    `objStoreLock.wf` invariant).
+  SM3.E inventory grew 68 → 76; suite gains a §3b grounding section + the
+  `objStoreLock.wf` example.  All axiom-clean; full Tier 0+1+2+3 green.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

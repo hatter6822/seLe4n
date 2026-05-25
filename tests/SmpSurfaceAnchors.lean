@@ -431,8 +431,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- The SM3.E inventory size witness reached and evaluates (the 8 major-theorem
   -- `#check` anchors above are elaboration-time gates; this exercises the
   -- runtime path of the SM3.E inventory aggregator).
-  assertBool "SM3.E inventory has 68 entries"
-    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 68))
+  assertBool "SM3.E inventory has 76 entries"
+    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 76))
 
   IO.println "============================================================"
   IO.println "All SM2.D + SM3.E.8 surface anchor checks PASS."

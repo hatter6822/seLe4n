@@ -2307,7 +2307,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 EOF'
 
 # WS-SM SM3.E — serializability + conflict-graph acyclicity + commit-sort
-# serialization order + single-core proof preservation + 68-theorem inventory.
+# serialization order + single-core proof preservation + 76-theorem inventory.
 # Surface anchors verify every SM3.E public symbol survives renames at
 # elaboration time.  SM3.E.8: `#check` of the major theorems.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory'
@@ -2367,6 +2367,8 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 #check @SeLe4n.Kernel.Concurrency.conflictReaches_commitTime_lt
 #check @SeLe4n.Kernel.Concurrency.ConflictAcyclic
 #check @SeLe4n.Kernel.Concurrency.conflictGraph_acyclic
+#check @SeLe4n.Kernel.Concurrency.conflictPrecedes_total_of_distinct_commit
+#check @SeLe4n.Kernel.Concurrency.conflictPrecedes_strict_total_of_distinct_commit
 -- SM3.E.2/E.3: commit-sort serialization order + main theorem.
 #check @SeLe4n.Kernel.Concurrency.insertByCommitTime
 #check @SeLe4n.Kernel.Concurrency.commitSort
@@ -2386,10 +2388,16 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 #check @SeLe4n.Kernel.Concurrency.outOfOrderCommute_of_forall_action_id
 #check @SeLe4n.Kernel.Concurrency.serializability_of_readOnly_schedule
 #check @SeLe4n.Kernel.Concurrency.commitSorted_respects_conflictPrecedes
+#check @SeLe4n.Kernel.Concurrency.conflictsCommitOrdered
+#check @SeLe4n.Kernel.Concurrency.outOfOrderCommute_of_conflictsCommitOrdered
+#check @SeLe4n.Kernel.Concurrency.serializability_under_2pl_of_conflicts_ordered
 -- SM3.E.6: single-core proof preservation (Corollary 2.1.11).
 #check @SeLe4n.Kernel.Concurrency.singleCore_invariant_preservation
 #check @SeLe4n.Kernel.Concurrency.singleCore_proof_preservation
 #check @SeLe4n.Kernel.Concurrency.withLockSet_growing_phase_establishes_lockSetHeld
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objStoreLock_wf
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objStoreLock_wf
+#check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_objStoreLock_wf
 -- SM3.E Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.SerializabilityCategory
 #check @SeLe4n.Kernel.Concurrency.SerializabilityTheorem

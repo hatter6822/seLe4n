@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.31.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 138,880 across 200 Lean files |
-| **Test LoC** | 29,318 across 42 Lean test suites |
-| **Proved declarations** | 4,128 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 139,106 across 200 Lean files |
+| **Test LoC** | 29,374 across 42 Lean test suites |
+| **Proved declarations** | 4,137 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
@@ -1378,7 +1378,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      lookup structural theorems + 3 N/A-kind fail-closed witnesses
      + `lockKind_eq_of_objectType`; +1 algebra: `union_mem_inv`).
    * **Test-coverage gap closures**: 5 new runtime check sections
-     (§9..§13), +23 runtime assertions over the initial landing.
+     (§9..§13), +25 runtime assertions over the initial landing.
 
    **Audit-pass-2 refinements** (second deeper deep audit;
    land in the same v0.31.9 release cut):
@@ -2159,8 +2159,8 @@ preserves on a per-core basis.
    two-phase locking is conflict-equivalent to a serial execution**
    (Bernstein et al. 1987, Theorem 2.1.10), the serial order being the
    commit-time order.  New module
-   `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~960 LoC) +
-   `Sm3EInventory.lean` (68-theorem inventory), staged via
+   `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
+   `Sm3EInventory.lean` (76-theorem inventory), staged via
    `Concurrency.LockSet`.
 
    - **SM3.E.1 — `conflictOrder`**: the `KernelTransitionInstance`
@@ -2198,7 +2198,7 @@ preserves on a per-core basis.
      SM3.C.8's `withLockSet_invariant_preserved`.
    - **SM3.E.7/E.8 — tests**: `tests/SerializabilitySuite.lean`
      (60+ surface anchors + 18 decidable examples + 6 theorem-application
-     witnesses + 23 runtime assertions) + 8 major-theorem `#check`
+     witnesses + 25 runtime assertions) + 8 major-theorem `#check`
      anchors in `tests/SmpSurfaceAnchors.lean`.  Tier 2 + Tier 3 wired.
 
    **Non-vacuity**: `serializability_of_readOnly_schedule` proves a

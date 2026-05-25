@@ -15,8 +15,8 @@ are the twin levers that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).
 
 **New modules**: `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean`
-(~960 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
-(68-theorem inventory).  Both staged via `Concurrency.LockSet` +
+(~1233 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
+(76-theorem inventory).  Both staged via `Concurrency.LockSet` +
 `staged_module_allowlist.txt`; SM5+ per-core scheduler integration is
 the first runtime exerciser.
 
@@ -104,7 +104,7 @@ vacuous statement.
 
 **Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries (only the standard
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms).  The
-SM3.E inventory (`serializabilityTheorems`) has 68 entries across 7
+SM3.E inventory (`serializabilityTheorems`) has 76 entries across 7
 categories (model 5, conflict 6, strict2pl 6, commutativity 23,
 acyclicity 7, serializability 18, preservation 3).  Full Tier 0+1+2+3
 green.  Items deferred past v1.0.0 with correctness impact: NONE.
@@ -117,6 +117,49 @@ extraction, SM3.C 2PL discipline, SM3.D deadlock-freedom, SM3.E
 serializability).  The remaining `@[export]`-body migration (SM3.C.9)
 is deferred to SM5+ per the per-core kernel-state seam.  SM4 (per-core
 state) follows per the master overview.
+
+**Audit-pass-1 refinements** (post-initial-landing self-audit; the
+initial SM3.E theorems were all true and axiom-clean, but three carried
+*honesty/completeness* gaps between what they proved and what their
+names/docstrings claimed — closed per CLAUDE.md's
+`implement-the-improvement` rule rather than weakening the claims):
+
+* **Orientation completeness (acyclicity engaged the conflict
+  relation).** `conflictGraph_acyclic` is true but its proof
+  (`conflictReaches_commitTime_lt`) only uses the `commitTime <` conjunct
+  — it is `Nat.lt` irreflexivity, with `ktiSharesConflictingLock` dead
+  weight.  Added `conflictPrecedes_total_of_distinct_commit` (under the
+  strict-2PL distinct-commit-times lock-exclusion property every
+  conflicting pair is *comparable* — this is where the conflict relation,
+  via its symmetry, is essential) and the capstone
+  `conflictPrecedes_strict_total_of_distinct_commit` (the conflict graph
+  is a strict *total* order on mutually-conflicting transitions, not
+  merely acyclic — the genuine Bernstein "linear extension = serial
+  schedule" content).
+* **Strict-2PL grounding of `outOfOrderCommute`.** `serializability_under_2pl`
+  is named "under 2PL" but its `outOfOrderCommute` hypothesis was only
+  prose-linked to strict 2PL.  Added the strict-2PL lock-exclusion
+  predicate `conflictsCommitOrdered` (conflicting pairs appear in commit
+  order — decidable), `outOfOrderCommute_of_conflictsCommitOrdered`
+  (derives the hypothesis from `conflictsCommitOrdered` + a
+  non-conflicting-commute witness), and the grounded top-level
+  `serializability_under_2pl_of_conflicts_ordered` whose only assumptions
+  are the genuine strict-2PL conditions — mirroring SM3.D §7's grounding
+  bridge, making the "under 2PL" name rigorous rather than nominal.
+* **Non-vacuous Corollary 2.1.11 witness.** The `singleCore_proof_preservation`
+  test exercised only the trivial `True` invariant.  Added the per-step
+  lock-insensitivity lemmas `acquireLockOnObject_preserves_objStoreLock_wf`
+  / `releaseLockOnObject_preserves_objStoreLock_wf` and the worked
+  instantiation `withLockSet_preserves_objStoreLock_wf` on the **real**
+  table-lock `objStoreLock.wf` invariant (a genuine SM2.C/SM3.C invariant),
+  proving the lever is a usable tool, not a vacuous false-anchor.
+
+  SM3.E inventory grew 68 → 76 entries (+2 acyclicity, +3 serializability,
+  +3 preservation); `tests/SerializabilitySuite.lean` gains a §3b grounding
+  section (`conflictsCommitOrdered` true on commit-ordered conflicts, false
+  on out-of-order conflicts) + the non-trivial `objStoreLock.wf`
+  preservation example + new surface anchors.  All additions axiom-clean
+  (`propext` / `Quot.sound`); full Tier 0+1+2+3 green.
 
 ## Unreleased — WS-SM SM3.D LANDED: deadlock-freedom (Theorem 2.1.9), wait-graph acyclicity, bounded-wait, lock-discipline grounding
 

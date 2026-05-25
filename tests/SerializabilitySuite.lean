@@ -98,6 +98,8 @@ open SeLe4n.Kernel.Concurrency
 #check @conflictReaches_commitTime_lt
 #check @ConflictAcyclic
 #check @conflictGraph_acyclic
+#check @conflictPrecedes_total_of_distinct_commit
+#check @conflictPrecedes_strict_total_of_distinct_commit
 
 /-! ## SM3.E.2 / SM3.E.3 — Serialization order + main theorem -/
 #check @insertByCommitTime
@@ -111,11 +113,17 @@ open SeLe4n.Kernel.Concurrency
 #check @outOfOrderCommute_of_forall_action_id
 #check @serializability_of_readOnly_schedule
 #check @commitSorted_respects_conflictPrecedes
+#check @conflictsCommitOrdered
+#check @outOfOrderCommute_of_conflictsCommitOrdered
+#check @serializability_under_2pl_of_conflicts_ordered
 
 /-! ## SM3.E.6 — Single-core proof preservation -/
 #check @singleCore_invariant_preservation
 #check @singleCore_proof_preservation
 #check @withLockSet_growing_phase_establishes_lockSetHeld
+#check @acquireLockOnObject_preserves_objStoreLock_wf
+#check @releaseLockOnObject_preserves_objStoreLock_wf
+#check @withLockSet_preserves_objStoreLock_wf
 
 /-! ## SM3.E inventory -/
 #check @SerializabilityCategory
@@ -241,14 +249,48 @@ example (s : SystemState) (f₁ f₂ : KernelObject → KernelObject) (hExt : s.
                   (updateObjectAt (updateObjectAt s tcb7.objId f₂) tcb5.objId f₁) :=
   updateObjectAt_objStoreEquiv_comm s tcb5.objId tcb7.objId f₁ f₂ hExt (by decide)
 
-/-! ## SM3.E.6 — single-core proof preservation is inhabited -/
+/-! ## SM3.E.6 — single-core proof preservation on a REAL (non-trivial) invariant -/
 
--- The trivial invariant `True` is lock-insensitive and preserved by any action,
--- so it survives the withLockSet wrapper.  Inhabitation witness for Cor 2.1.11.
+-- NON-VACUOUS witness: the genuine `objStoreLock.wf` invariant (a real SM2.C/SM3.C
+-- invariant — NOT the trivial `True`) transfers through the 2PL `withLockSet`
+-- wrapper, given the action preserves it.  This proves the SM3.E.6 lever is a
+-- usable tool, not a vacuous false-anchor.
+example (core : CoreId) (op : SystemState → SystemState × Unit) (s : SystemState)
+    (hwf : s.objStoreLock.wf)
+    (hAction : ∀ s', s'.objStoreLock.wf → (op s').1.objStoreLock.wf) :
+    (withLockSet lsW5 core op s).1.objStoreLock.wf :=
+  withLockSet_preserves_objStoreLock_wf lsW5 core op s hwf hAction
+
+-- And the underlying lock-insensitivity is genuinely discharged (not assumed):
+-- acquiring/releasing any lock preserves objStoreLock.wf.
+example (s : SystemState) (core : CoreId) (l : LockId) (m : AccessMode)
+    (h : s.objStoreLock.wf) : (acquireLockOnObject s core l m).objStoreLock.wf :=
+  acquireLockOnObject_preserves_objStoreLock_wf s core l m h
+
+-- The trivial `True` invariant remains inhabited too (the metatheorem is total).
 example (core : CoreId) (op : SystemState → SystemState × Unit) (s : SystemState) :
     (fun _ => True) (withLockSet lsW5 core op s).1 :=
   singleCore_proof_preservation lsW5 core op s (fun _ => True) (fun _ => True)
     trivial (fun _ _ _ _ => trivial) (fun _ _ => trivial) (fun _ _ _ _ => trivial)
+
+/-! ## SM3.E.3 — conflict-graph orientation completeness (uses the conflict relation) -/
+
+-- Under distinct commit times, a conflicting pair is comparable (one precedes).
+example (τ₁ τ₂ : KernelTransitionInstance)
+    (hc : ktiSharesConflictingLock τ₁ τ₂) (hne : τ₁.commitTime ≠ τ₂.commitTime) :
+    conflictPrecedes τ₁ τ₂ ∨ conflictPrecedes τ₂ τ₁ :=
+  conflictPrecedes_total_of_distinct_commit τ₁ τ₂ hc hne
+
+/-! ## SM3.E.3 — grounded serializability (outOfOrderCommute is a 2PL consequence) -/
+
+-- If conflicts are commit-ordered (strict-2PL lock exclusion) and non-conflicting
+-- transitions commute, the execution is serial-equivalent to its commit sort.
+example (interleaved : List KernelTransitionInstance) (s : SystemState)
+    (hnc : ∀ τ₁ τ₂ : KernelTransitionInstance,
+      ¬ ktiSharesConflictingLock τ₁ τ₂ → τ₁.actionsCommute τ₂)
+    (ho : conflictsCommitOrdered interleaved) :
+    serialEquivalent interleaved (commitSort interleaved) s :=
+  (serializability_under_2pl_of_conflicts_ordered interleaved s hnc ho).2.2
 
 -- ============================================================================
 -- §4 — Runtime assertions
@@ -286,6 +328,19 @@ private def runStrict2PLChecks : IO Unit := do
   assertBool "ofWithLockSet (acquire 0 ≤ commit 5) follows strict 2PL"
     (decide (KernelTransitionInstance.ofWithLockSet lsW5 c0 0 5 id).followsStrict2PL)
 
+private def runGroundingChecks : IO Unit := do
+  IO.println "--- §3b SM3.E.3 — strict-2PL grounding (conflictsCommitOrdered) ---"
+  -- A read-only schedule has no conflicts ⟹ conflictsCommitOrdered holds (vacuous).
+  assertBool "read-only schedule is conflictsCommitOrdered"
+    (decide (conflictsCommitOrdered schedUnsorted))
+  -- Conflicting writes IN commit order [τW5a(c=1), τW5b(c=2)] ⟹ conflictsCommitOrdered.
+  assertBool "conflicting writes in commit order ARE conflictsCommitOrdered"
+    (decide (conflictsCommitOrdered [τW5a, τW5b]))
+  -- Conflicting writes OUT of commit order [τW5b(c=2), τW5a(c=1)] ⟹ NOT (the
+  -- lock-exclusion property the predicate captures — strict 2PL forbids this).
+  assertBool "conflicting writes OUT of commit order are NOT conflictsCommitOrdered"
+    (decide (¬ conflictsCommitOrdered [τW5b, τW5a]))
+
 private def runCommitSortChecks : IO Unit := do
   IO.println "--- §4 SM3.E.3 — commit-sort serialization order ---"
   -- commitSort reorders the commit-unordered schedule into ascending commit time.
@@ -299,8 +354,8 @@ private def runCommitSortChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §5 SM3.E — inventory counts ---"
-  assertBool "serializabilityTheorems.length = 68"
-    (decide (serializabilityTheorems.length = 68))
+  assertBool "serializabilityTheorems.length = 76"
+    (decide (serializabilityTheorems.length = 76))
   assertBool "model count = 5"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .model)).length = 5))
   assertBool "conflict count = 6"
@@ -309,12 +364,12 @@ private def runInventoryChecks : IO Unit := do
     (decide ((serializabilityTheorems.filter (fun t => t.category == .strict2pl)).length = 6))
   assertBool "commutativity count = 23"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .commutativity)).length = 23))
-  assertBool "acyclicity count = 7"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 7))
-  assertBool "serializability count = 18"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 18))
-  assertBool "preservation count = 3"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 3))
+  assertBool "acyclicity count = 9"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 9))
+  assertBool "serializability count = 21"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 21))
+  assertBool "preservation count = 6"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 6))
 
 def runSerializabilityChecks : IO Unit := do
   IO.println "WS-SM SM3.E — serializability regression suite"
@@ -322,6 +377,7 @@ def runSerializabilityChecks : IO Unit := do
   runConflictChecks
   runConflictPrecedesChecks
   runStrict2PLChecks
+  runGroundingChecks
   runCommitSortChecks
   runInventoryChecks
   IO.println "==============================================="

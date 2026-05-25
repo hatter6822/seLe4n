@@ -174,7 +174,7 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       updateObjectAt_get? .commutativity,
     serlt! "updateObjectAt_objStoreEquiv_comm — write/write on distinct objects commute (obs)"
       updateObjectAt_objStoreEquiv_comm .commutativity,
-    -- §5 acyclicity (7)
+    -- §5 acyclicity (9)
     serlt! "conflictPrecedes — commit-oriented conflict edge (SM3.E.3)"
       conflictPrecedes .acyclicity,
     serlt! "conflictPrecedes_irreflexive — no self conflict-precedence (item 16)"
@@ -189,7 +189,11 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       ConflictAcyclic .acyclicity,
     serlt! "conflictGraph_acyclic — SM3.E.3 the acyclic conflict graph (Bernstein)"
       conflictGraph_acyclic .acyclicity,
-    -- §6 serializability (16)
+    serlt! "conflictPrecedes_total_of_distinct_commit — orientation completeness (uses conflict)"
+      conflictPrecedes_total_of_distinct_commit .acyclicity,
+    serlt! "conflictPrecedes_strict_total_of_distinct_commit — conflict graph is a strict total order"
+      conflictPrecedes_strict_total_of_distinct_commit .acyclicity,
+    -- §6 serializability (21)
     serlt! "insertByCommitTime — insert into a commit-sorted schedule"
       insertByCommitTime .serializability,
     serlt! "commitSort — insertion sort by commit time (the serialization order)"
@@ -226,17 +230,29 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       serializability_of_readOnly_schedule .serializability,
     serlt! "commitSorted_respects_conflictPrecedes — the sort respects conflict order"
       commitSorted_respects_conflictPrecedes .serializability,
-    -- §7 preservation (3)
+    serlt! "conflictsCommitOrdered — strict-2PL lock-exclusion property (conflicts in commit order)"
+      conflictsCommitOrdered .serializability,
+    serlt! "outOfOrderCommute_of_conflictsCommitOrdered — grounds outOfOrderCommute in strict 2PL"
+      outOfOrderCommute_of_conflictsCommitOrdered .serializability,
+    serlt! "serializability_under_2pl_of_conflicts_ordered — grounded Theorem 2.1.10 (honest under-2PL)"
+      serializability_under_2pl_of_conflicts_ordered .serializability,
+    -- §7 preservation (6)
     serlt! "singleCore_invariant_preservation — SM3.E.6 Cor 2.1.11 invariant form"
       singleCore_invariant_preservation .preservation,
     serlt! "singleCore_proof_preservation — SM3.E.6 Cor 2.1.11 pre→post meta-theorem"
       singleCore_proof_preservation .preservation,
+    serlt! "acquireLockOnObject_preserves_objStoreLock_wf — per-step lock-insensitivity (acquire)"
+      acquireLockOnObject_preserves_objStoreLock_wf .preservation,
+    serlt! "releaseLockOnObject_preserves_objStoreLock_wf — per-step lock-insensitivity (release)"
+      releaseLockOnObject_preserves_objStoreLock_wf .preservation,
+    serlt! "withLockSet_preserves_objStoreLock_wf — NON-VACUOUS Cor 2.1.11 witness on a real invariant"
+      withLockSet_preserves_objStoreLock_wf .preservation,
     serlt! "withLockSet_growing_phase_establishes_lockSetHeld — lockSetHeld is a consequence"
       withLockSet_growing_phase_establishes_lockSetHeld .preservation]
 
-/-- WS-SM SM3.E: the inventory has exactly 68 entries. -/
+/-- WS-SM SM3.E: the inventory has exactly 76 entries. -/
 theorem serializabilityTheorems_count :
-    serializabilityTheorems.length = 68 := by decide
+    serializabilityTheorems.length = 76 := by decide
 
 /-- WS-SM SM3.E: 5 entries in `model`. -/
 theorem serializabilityTheorems_model_count :
@@ -254,17 +270,17 @@ theorem serializabilityTheorems_strict2pl_count :
 theorem serializabilityTheorems_commutativity_count :
     (serializabilityTheorems.filter (fun t => t.category == .commutativity)).length = 23 := by decide
 
-/-- WS-SM SM3.E: 7 entries in `acyclicity`. -/
+/-- WS-SM SM3.E: 9 entries in `acyclicity`. -/
 theorem serializabilityTheorems_acyclicity_count :
-    (serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 7 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 9 := by decide
 
-/-- WS-SM SM3.E: 18 entries in `serializability`. -/
+/-- WS-SM SM3.E: 21 entries in `serializability`. -/
 theorem serializabilityTheorems_serializability_count :
-    (serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 18 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 21 := by decide
 
-/-- WS-SM SM3.E: 3 entries in `preservation`. -/
+/-- WS-SM SM3.E: 6 entries in `preservation`. -/
 theorem serializabilityTheorems_preservation_count :
-    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 3 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 6 := by decide
 
 /-- WS-SM SM3.E: per-category counts sum to the total. -/
 theorem serializabilityTheorems_partition_sum :

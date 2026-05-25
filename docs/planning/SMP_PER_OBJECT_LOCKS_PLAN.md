@@ -1603,8 +1603,8 @@ RwLock to work and proves the twin architectural keystones —
 deadlock-freedom (SM3.D, Theorem 2.1.9) and serializability (SM3.E,
 Theorem 2.1.10) — that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).  New files
-`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~960 LoC) +
-`Sm3EInventory.lean` (68-theorem inventory), both staged via
+`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
+`Sm3EInventory.lean` (76-theorem inventory), both staged via
 `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
 | Sub | Description | Files | Status |
@@ -1702,8 +1702,8 @@ cheaply in SM4..SM6 (Corollary 2.1.11).  New files
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms
 reachable through Std).  Items deferred past v1.0.0 with correctness
 impact: NONE.  The SM3.E theorem inventory (`serializabilityTheorems`)
-has 68 entries across 7 categories; the regression suite
-(`tests/SerializabilitySuite.lean`) has 23 runtime assertions across 5
+has 76 entries across 7 categories; the regression suite
+(`tests/SerializabilitySuite.lean`) has 25 runtime assertions across 6
 sections plus a non-vacuity witness
 (`serializability_of_readOnly_schedule`: an all-reads workload is
 unconditionally serializable to commit order).
@@ -1713,6 +1713,45 @@ hypothesis-free family of executions (read-only / all-identity-action
 schedules — the canonical all-non-conflicting case) is serial-equivalent
 to its commit sort, demonstrating `serializability_under_2pl` is not a
 vacuous statement.
+
+**Audit-pass-1 refinements** (post-landing self-audit; three
+honesty/completeness gaps closed per the `implement-the-improvement`
+rule — the initial theorems were all true and axiom-clean but
+under-delivered on their stated intent):
+
+* **Orientation completeness** (acyclicity now genuinely engages the
+  conflict relation): `conflictGraph_acyclic`'s proof
+  (`conflictReaches_commitTime_lt`) uses only the `commitTime <` conjunct
+  — it is `Nat.lt` irreflexivity with `ktiSharesConflictingLock` dead
+  weight.  Added `conflictPrecedes_total_of_distinct_commit` (under the
+  strict-2PL distinct-commit-times lock-exclusion property, every
+  conflicting pair is *comparable* — this is where the conflict relation,
+  via `ktiSharesConflictingLock_symm`, is essential) and the capstone
+  `conflictPrecedes_strict_total_of_distinct_commit` (the conflict graph
+  is a strict *total* order on mutually-conflicting transitions, not
+  merely acyclic — the genuine Bernstein "linear extension = serial
+  schedule" content).
+* **Strict-2PL grounding** (`outOfOrderCommute` is now a *consequence* of
+  2PL, not a bolt-on hypothesis): added `conflictsCommitOrdered` (the
+  decidable strict-2PL lock-exclusion predicate — conflicting pairs
+  appear in commit order), `outOfOrderCommute_of_conflictsCommitOrdered`
+  (derives `outOfOrderCommute` from it + a non-conflicting-commute
+  witness), and the grounded top-level
+  `serializability_under_2pl_of_conflicts_ordered` whose only assumptions
+  are the primitive strict-2PL conditions — mirroring SM3.D §7's grounding
+  bridge, making the "under 2PL" name rigorous rather than nominal.
+* **Non-vacuous Corollary 2.1.11 witness**: the
+  `singleCore_proof_preservation` test exercised only the trivial `True`
+  invariant.  Added the per-step lock-insensitivity lemmas
+  `acquireLockOnObject_preserves_objStoreLock_wf` /
+  `releaseLockOnObject_preserves_objStoreLock_wf` and the worked
+  instantiation `withLockSet_preserves_objStoreLock_wf` on the **real**
+  table-lock `objStoreLock.wf` invariant — proving the lever is a usable
+  tool, not a vacuous false-anchor.
+
+These closures grew the inventory 68 → 76 (+2 acyclicity, +3
+serializability, +3 preservation) and added a §3b grounding test section;
+all additions are axiom-clean (`propext` / `Quot.sound`).
 
 #### SM3.E.1 — `conflictOrder`
 
