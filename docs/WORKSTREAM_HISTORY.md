@@ -1046,10 +1046,23 @@ prefix" step.  The hypotheses are *consequences* of `withLockSet`,
 not assumptions.
 
 **Modules**: `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean`
-(~584 LoC) + `Sm3DInventory.lean` (37-theorem inventory), staged via
-`Concurrency.LockSet`.  **Axiom budget for SM3.D**: 0 Lean axioms, 0
-sorries.  **Items deferred past v1.0.0 with correctness impact**:
-NONE.
+(~1180 LoC after audit-pass-1) + `Sm3DInventory.lean` (66-theorem
+inventory), staged via `Concurrency.LockSet`.  **Axiom budget for
+SM3.D**: 0 Lean axioms, 0 sorries.  **Items deferred past v1.0.0 with
+correctness impact**: NONE.
+
+**Audit-pass-1** (deep self-audit; closes every plan §5.4 gap):
+SM3.D.6 `boundedWait_under_2pl` strengthened to the full plan
+signature (`KernelExecution` / `KernelOperation` / contention-
+sensitive `WCRT`; `noDeadlock ∧ WCRT ≤ bound`, both conjuncts using
+distinct hypotheses); `maxLockSetSize` discharged for all 25 real
+`lockSet_<τ>` (`lockSetTransitions_within_bound`); mode-aware
+`conflictWaitGraph_acyclic_under_2pl` (incorporates
+`AccessMode.conflicts` via `Acyclic_mono`); model↔kernel bridge
+`lockSetHeld_realizes_heldBy`; `twoCorePathScenario` (SM3.D.7);
+`lockOrder_strict_classes` (plan's `Irreflexive ∧ Transitive` form);
+tier-4 QEMU deadlock-stress SKIP-stub (plan §6.3).  Inventory 37 → 66;
+suite to 50+ assertions / 12 sections.
 
 Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
 lemmas + Corollary 2.1.11) closes the SM3 phase.

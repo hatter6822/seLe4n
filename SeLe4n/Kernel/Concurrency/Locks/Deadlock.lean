@@ -12,7 +12,9 @@
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Locks.LockSet
+import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
+import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 
 /-!
 # WS-SM SM3.D — Deadlock-freedom under two-phase locking + lock ordering
@@ -90,6 +92,7 @@ TCB-only instance of SM3.D's general theorem.
 namespace SeLe4n.Kernel.Concurrency
 
 open SeLe4n
+open SeLe4n.Model
 
 -- ============================================================================
 -- §1 — The abstract `KernelExecution` model (plan §5.4 SM3.D.1)
@@ -218,6 +221,29 @@ theorem lockOrder_strict :
     (∀ l : LockId, ¬ (l < l)) ∧
     (∀ l₁ l₂ l₃ : LockId, l₁ < l₂ → l₂ < l₃ → l₁ < l₃) :=
   ⟨LockId.lt_irrefl, LockId.lt_trans⟩
+
+/-- WS-SM SM3.D.3: a binary relation is irreflexive when no element relates
+to itself.  seLe4n is mathlib-free, so the `Irreflexive` order-class the
+plan §5.4 quotes does not exist in the core toolchain; this namespaced
+abbreviation reproduces its meaning so `lockOrder_strict_classes` can state
+the SM3.D.3 deliverable in the plan's exact `Irreflexive ∧ Transitive`
+form. -/
+abbrev Irreflexive {α : Type _} (r : α → α → Prop) : Prop := ∀ a, ¬ r a a
+
+/-- WS-SM SM3.D.3: a binary relation is transitive when it composes.
+Mathlib-free counterpart of the plan's `Transitive` order-class. -/
+abbrev Transitive {α : Type _} (r : α → α → Prop) : Prop :=
+  ∀ {a b c}, r a b → r b c → r a c
+
+/-- WS-SM SM3.D.3 (plan §5.4, exact `Irreflexive ∧ Transitive` form):
+restatement of `lockOrder_strict` in the plan's quoted notation, using the
+namespaced `Irreflexive` / `Transitive` abbreviations above.  Definitionally
+the same content as `lockOrder_strict`; provided so a reader matching the
+plan text finds the literal signature. -/
+theorem lockOrder_strict_classes :
+    Irreflexive (· < · : LockId → LockId → Prop) ∧
+    Transitive (· < · : LockId → LockId → Prop) :=
+  ⟨LockId.lt_irrefl, fun h₁ h₂ => LockId.lt_trans _ _ _ h₁ h₂⟩
 
 -- ============================================================================
 -- §4 — SM3.D.1 `noDeadlock` + SM3.D.4 main theorem (Theorem 2.1.9)
@@ -439,6 +465,103 @@ theorem noDeadlock_of_waitGraph_acyclic (e : KernelExecution)
   exact hAcyclic c₁ (ReachesPlus.step hEdge₁₂ (ReachesPlus.base hEdge₂₁))
 
 -- ============================================================================
+-- §5b — Mode-aware (conflict) wait graph (incorporates AccessMode.conflicts)
+-- ============================================================================
+--
+-- §5's `blockedWaitsFor` treats ANY held-lock overlap as a wait edge,
+-- regardless of access mode.  That is a *conservative over-approximation*:
+-- two cores both holding a lock in READ mode do not actually block each
+-- other (`AccessMode.conflicts .read .read = false`).  This section adds the
+-- realistic, mode-aware wait edge `conflictWaitsFor`, which only fires when
+-- the requested mode genuinely conflicts with a held mode (SM3.B's
+-- `AccessMode.conflicts`).  Since every conflict edge is also a plain
+-- `blockedWaitsFor` edge, the conflict-aware wait graph is a *subgraph* of
+-- the plain one, so its acyclicity follows from `waitGraph_acyclic_under_2pl`
+-- by monotonicity (`Acyclic_mono`).  This proves deadlock-freedom for the
+-- faithful, mode-distinguishing wait graph without weakening any result.
+--
+-- The per-lock modes are supplied as auxiliary functions (`wantMode`,
+-- `heldMode`) rather than carried inside `KernelExecution`, so the
+-- plan-signature `noDeadlock` / `blockedAt` / `heldBy` (SM3.D.1, bare
+-- `LockId`) and the §4/§5 theorems remain exactly as the plan specifies.
+
+/-- WS-SM SM3.D.5: `ReachesPlus` is monotone in its edge relation — a path
+under `R` is a path under any `R'` that contains every `R`-edge. -/
+theorem ReachesPlus_mono {R R' : CoreId → CoreId → Prop}
+    (h : ∀ a b, R a b → R' a b) {a b : CoreId}
+    (hr : ReachesPlus R a b) : ReachesPlus R' a b := by
+  induction hr with
+  | base hab => exact ReachesPlus.base (h _ _ hab)
+  | step hab _ ih => exact ReachesPlus.step (h _ _ hab) ih
+
+/-- WS-SM SM3.D.5: acyclicity is **anti-monotone** in the edge relation —
+removing edges cannot create a cycle.  If `R ⊆ R'` and the larger graph
+`R'` is acyclic, the smaller graph `R` is acyclic too.  This is the lever
+that lifts `waitGraph_acyclic_under_2pl` to every sub-relation of the wait
+graph (in particular, the mode-aware conflict graph). -/
+theorem Acyclic_mono {R R' : CoreId → CoreId → Prop}
+    (hsub : ∀ a b, R a b → R' a b) (h : Acyclic R') : Acyclic R :=
+  fun c hc => h c (ReachesPlus_mono hsub hc)
+
+/-- WS-SM SM3.D.5b: the **mode-aware** wait edge.  Core `c` (requesting lock
+`l` in mode `wantMode c`) waits for core `c'` only when `c'` is also blocked
+AND holds `l` in a mode `heldMode c' l` that *conflicts* with `c`'s
+request (SM3.B `AccessMode.conflicts`).  Two concurrent readers of `l` do
+NOT induce an edge (`conflicts .read .read = false`), so this is the
+realistic deadlock-relevant wait relation. -/
+def conflictWaitsFor (e : KernelExecution)
+    (wantMode : CoreId → AccessMode) (heldMode : CoreId → LockId → AccessMode)
+    (c c' : CoreId) : Prop :=
+  (e.blocked c').isSome = true ∧
+  ∃ l, e.blocked c = some l ∧ l ∈ e.held c' ∧
+    AccessMode.conflicts (wantMode c) (heldMode c' l) = true
+
+/-- WS-SM SM3.D.5b: `conflictWaitsFor` is decidable.  The existential lock
+is pinned by `e.blocked c`, so the `∃ l : LockId` collapses to a decidable
+per-state test (no unbounded search). -/
+instance (e : KernelExecution) (wm : CoreId → AccessMode)
+    (hm : CoreId → LockId → AccessMode) (c c' : CoreId) :
+    Decidable (conflictWaitsFor e wm hm c c') := by
+  unfold conflictWaitsFor
+  cases hb : e.blocked c with
+  | none => exact isFalse (by rintro ⟨_, l, hl, _, _⟩; simp at hl)
+  | some lc =>
+      refine
+        if hsome : (e.blocked c').isSome = true then
+          if hmem : lc ∈ e.held c' then
+            if hconf : AccessMode.conflicts (wm c) (hm c' lc) = true then
+              isTrue ⟨hsome, lc, rfl, hmem, hconf⟩
+            else isFalse ?_
+          else isFalse ?_
+        else isFalse ?_
+      · rintro ⟨_, l, hl, _, hc⟩; injection hl with h; subst h; exact hconf hc
+      · rintro ⟨_, l, hl, hm', _⟩; injection hl with h; subst h; exact hmem hm'
+      · rintro ⟨hs, _⟩; exact hsome hs
+
+/-- WS-SM SM3.D.5b: every mode-aware conflict edge is a plain
+`blockedWaitsFor` edge — the conflict graph is a subgraph of the wait graph
+(it just drops the `AccessMode.conflicts` conjunct). -/
+theorem conflictWaitsFor_sub_blockedWaitsFor (e : KernelExecution)
+    (wm : CoreId → AccessMode) (hm : CoreId → LockId → AccessMode) (c c' : CoreId) :
+    conflictWaitsFor e wm hm c c' → blockedWaitsFor e c c' := by
+  rintro ⟨hsome, l, hbl, hmem, _hconf⟩
+  exact ⟨hsome, l, hbl, hmem⟩
+
+/-- WS-SM SM3.D.5b (mode-aware deadlock-freedom): the **conflict** wait graph
+of any 2PL + ordered execution is acyclic.  This is the realistic,
+mode-distinguishing form of `waitGraph_acyclic_under_2pl` — it accounts for
+`AccessMode.conflicts` (read–read overlaps create no edge).  Proved by
+`Acyclic_mono`: the conflict graph is a subgraph of the plain wait graph
+(`conflictWaitsFor_sub_blockedWaitsFor`), which is already acyclic. -/
+theorem conflictWaitGraph_acyclic_under_2pl (e : KernelExecution)
+    (wm : CoreId → AccessMode) (hm : CoreId → LockId → AccessMode)
+    (h2pl : executionFollows2PL e)
+    (hOrder : executionAcquiresInLockIdOrder e) :
+    Acyclic (conflictWaitsFor e wm hm) :=
+  Acyclic_mono (fun a b => conflictWaitsFor_sub_blockedWaitsFor e wm hm a b)
+    (waitGraph_acyclic_under_2pl e h2pl hOrder)
+
+-- ============================================================================
 -- §6 — SM3.D.6 — Bounded-wait corollary
 -- ============================================================================
 
@@ -477,21 +600,418 @@ theorem totalWaitCost_eq (S : LockSet) (tCs : Nat) :
   unfold totalWaitCost perLockWaitCost
   rw [sum_const_map, LockSet.lockAcquireSequence_length]
 
-/-- WS-SM SM3.D.6 (plan §5.4): `boundedWait_under_2pl`.  A transition whose
-lock-set has size `≤ maxLockSetSize` has total worst-case wait bounded by
-`maxLockSetSize · (numCores − 1) · T_cs`.
-
-Combined with deadlock-freedom (every wait *terminates*), this gives the
-worst-case response-time bound the plan quotes
-(`WCRT ≤ maxLockSetSize × (coreCount − 1) × T_cs`, with
-`coreCount = numCores`).  The bound is the per-lock contention
-(`numCores − 1` other cores, one critical section each) times the static
-lock-set-size cap. -/
-theorem boundedWait_under_2pl (S : LockSet) (tCs : Nat)
+/-- WS-SM SM3.D.6: the *combinatorial* worst-case bound — total wait of a
+lock-set of size `≤ maxLockSetSize` is `≤ maxLockSetSize · (numCores−1) · T_cs`.
+This is the uniform (contention-agnostic) bound; the contention-sensitive
+`WCRT` below refines it (`WCRT_le_totalWaitCost`) and `boundedWait_under_2pl`
+bounds `WCRT` directly. -/
+theorem totalWaitCost_le_bound (S : LockSet) (tCs : Nat)
     (hSize : S.size ≤ maxLockSetSize) :
     totalWaitCost S tCs ≤ maxLockSetSize * ((numCores - 1) * tCs) := by
   rw [totalWaitCost_eq]
   exact Nat.mul_le_mul_right _ hSize
+
+-- ============================================================================
+-- §6b — Static lock-set size bounds (discharges the `maxLockSetSize` premise)
+-- ============================================================================
+--
+-- The `maxLockSetSize` premise of `boundedWait_under_2pl` / the
+-- `KernelOperation` invariant is not an assumption: every one of the 25
+-- SM3.B per-transition `lockSet_<τ>` declarations is proved here to have
+-- size ≤ `maxLockSetSize` (= 8).  The bounds factor through three generic
+-- size lemmas about the SM3.B `LockSet` builders plus four "shape" helpers
+-- (`size_le_1..4`) for the nested-`extendOpt` forms.
+
+/-- WS-SM SM3.D.6b: `insertOrMerge` grows the lock-set size by at most 1
+(the merge branch keeps the length; the prepend branch adds one key). -/
+theorem insertOrMerge_size_le (S : LockSet) (l : LockId) (m : AccessMode) :
+    (S.insertOrMerge l m).size ≤ S.size + 1 := by
+  unfold LockSet.insertOrMerge LockSet.size
+  split
+  · simp [List.length_map]
+  · simp
+
+/-- WS-SM SM3.D.6b: `lockSetOfList` has size at most the length of its
+source list (the fold of `insertOrMerge` over the empty set grows by ≤ 1
+per element). -/
+theorem lockSetOfList_size_le (pairs : List (LockId × AccessMode)) :
+    (lockSetOfList pairs).size ≤ pairs.length := by
+  unfold lockSetOfList
+  have hgen : ∀ (ps : List (LockId × AccessMode)) (acc : LockSet),
+      (ps.foldl (fun a p => a.insertOrMerge p.fst p.snd) acc).size
+        ≤ acc.size + ps.length := by
+    intro ps
+    induction ps with
+    | nil => intro acc; simp
+    | cons p rest ih =>
+        intro acc
+        simp only [List.foldl_cons, List.length_cons]
+        have h1 := ih (acc.insertOrMerge p.fst p.snd)
+        have h2 := insertOrMerge_size_le acc p.fst p.snd
+        omega
+  have := hgen pairs LockSet.empty
+  simpa [LockSet.size] using this
+
+/-- WS-SM SM3.D.6b: `lockSetExtendOpt` grows the size by at most 1. -/
+theorem lockSetExtendOpt_size_le (S : LockSet) (opt : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt S opt).size ≤ S.size + 1 := by
+  cases opt with
+  | none => exact Nat.le_succ _
+  | some p => exact insertOrMerge_size_le S p.fst p.snd
+
+/-- WS-SM SM3.D.6b shape helper: one optional extension over a base list. -/
+theorem size_le_1 (L : List (LockId × AccessMode)) (o₁ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetOfList L) o₁).size ≤ L.length + 1 :=
+  Nat.le_trans (lockSetExtendOpt_size_le _ _)
+    (Nat.add_le_add_right (lockSetOfList_size_le _) 1)
+
+/-- WS-SM SM3.D.6b shape helper: two optional extensions over a base list. -/
+theorem size_le_2 (L : List (LockId × AccessMode))
+    (o₁ o₂ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂).size ≤ L.length + 2 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_1 L o₁) 1) ?_
+  omega
+
+/-- WS-SM SM3.D.6b shape helper: three optional extensions over a base list. -/
+theorem size_le_3 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃).size
+      ≤ L.length + 3 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_2 L o₁ o₂) 1) ?_
+  omega
+
+/-- WS-SM SM3.D.6b shape helper: four optional extensions over a base list. -/
+theorem size_le_4 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt
+      (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄).size ≤ L.length + 4 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans (Nat.add_le_add_right (size_le_3 L o₁ o₂ o₃) 1) ?_
+  omega
+
+/-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
+and discharge the `≤ maxLockSetSize` goal. -/
+local macro "size_bound" : tactic =>
+  `(tactic| (simp only [List.length_cons, List.length_nil]; omega))
+
+-- The 25 per-transition size bounds (one per SyscallId variant).
+theorem lockSet_endpointSend_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
+    (lockSet_endpointSend a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_endpointSend maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
+    (lockSet_endpointReceive a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_endpointReceive maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
+    (d : Option ThreadId) (e : Option SchedContextId) :
+    (lockSet_endpointCall a b c d e).size ≤ maxLockSetSize := by
+  unfold lockSet_endpointCall maxLockSetSize
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+
+theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option SchedContextId) (e : Option ThreadId) :
+    (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize := by
+  unfold lockSet_endpointReply maxLockSetSize
+  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+
+theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId) :
+    (lockSet_replyRecv a b c d e f g).size ≤ maxLockSetSize := by
+  unfold lockSet_replyRecv maxLockSetSize
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
+
+theorem lockSet_notificationSignal_size_le (a : ThreadId) (b c : ObjId) (d : Option ThreadId) :
+    (lockSet_notificationSignal a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_notificationSignal maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_notificationWait_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_notificationWait a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_notificationWait maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_cspaceMint_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_cspaceMint a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_cspaceMint maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_cspaceCopy_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_cspaceCopy maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_cspaceMove_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_cspaceMove a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_cspaceMove maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_cspaceDelete_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_cspaceDelete a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_cspaceDelete maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_lifecycleRetype_size_le (a : ThreadId) (b c d : ObjId) :
+    (lockSet_lifecycleRetype a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_lifecycleRetype maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_vspaceMap_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_vspaceMap a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_vspaceMap maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_vspaceUnmap_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_vspaceUnmap maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_serviceRegister_size_le (a : ThreadId) (b c : ObjId) :
+    (lockSet_serviceRegister a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_serviceRegister maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_serviceRevoke_size_le (a : ThreadId) (b : ObjId) :
+    (lockSet_serviceRevoke a b).size ≤ maxLockSetSize := by
+  unfold lockSet_serviceRevoke maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_serviceQuery_size_le (a : ThreadId) (b : ObjId) :
+    (lockSet_serviceQuery a b).size ≤ maxLockSetSize := by
+  unfold lockSet_serviceQuery maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_schedContextConfigure_size_le (a : ThreadId) (b : ObjId)
+    (c : SchedContextId) (d : Option ThreadId) :
+    (lockSet_schedContextConfigure a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_schedContextConfigure maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_schedContextBind_size_le (a : ThreadId) (b : ObjId)
+    (c : SchedContextId) (d : ThreadId) :
+    (lockSet_schedContextBind a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_schedContextBind maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_schedContextUnbind_size_le (a : ThreadId) (b : ObjId)
+    (c : SchedContextId) (d : ThreadId) :
+    (lockSet_schedContextUnbind a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_schedContextUnbind maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_tcbSuspend_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId) :
+    (lockSet_tcbSuspend a b c d e f g).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSuspend maxLockSetSize
+  exact Nat.le_trans (size_le_4 _ _ _ _ _) (by size_bound)
+
+theorem lockSet_tcbResume_size_le (a : ThreadId) (b : ObjId) (c : ThreadId) :
+    (lockSet_tcbResume a b c).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbResume maxLockSetSize
+  exact Nat.le_trans (lockSetOfList_size_le _) (by size_bound)
+
+theorem lockSet_tcbSetPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option SchedContextId) :
+    (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSetPriority maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_tcbSetMCPriority_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option SchedContextId) :
+    (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSetMCPriority maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+theorem lockSet_tcbSetIPCBuffer_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : Option ObjId) :
+    (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize := by
+  unfold lockSet_tcbSetIPCBuffer maxLockSetSize
+  exact Nat.le_trans (size_le_1 _ _) (by size_bound)
+
+/-- WS-SM SM3.D.6b (aggregate): **every** one of the 25 SM3.B per-transition
+`lockSet_<τ>` declarations has size `≤ maxLockSetSize`, for all arguments.
+This discharges, once and for all, the size premise of
+`boundedWait_under_2pl` / the `KernelOperation` invariant for the real
+kernel transition surface — the bound is never vacuous. -/
+theorem lockSetTransitions_within_bound :
+    (∀ a b c d, (lockSet_endpointSend a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_endpointReceive a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e, (lockSet_endpointCall a b c d e).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e, (lockSet_endpointReply a b c d e).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g, (lockSet_replyRecv a b c d e f g).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_notificationSignal a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_notificationWait a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_cspaceMint a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_cspaceCopy a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_cspaceMove a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_cspaceDelete a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_lifecycleRetype a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_vspaceMap a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_vspaceUnmap a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_serviceRegister a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b, (lockSet_serviceRevoke a b).size ≤ maxLockSetSize) ∧
+    (∀ a b, (lockSet_serviceQuery a b).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_schedContextConfigure a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_schedContextBind a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_schedContextUnbind a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d e f g, (lockSet_tcbSuspend a b c d e f g).size ≤ maxLockSetSize) ∧
+    (∀ a b c, (lockSet_tcbResume a b c).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_tcbSetPriority a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_tcbSetMCPriority a b c d).size ≤ maxLockSetSize) ∧
+    (∀ a b c d, (lockSet_tcbSetIPCBuffer a b c d).size ≤ maxLockSetSize) :=
+  ⟨lockSet_endpointSend_size_le, lockSet_endpointReceive_size_le,
+   lockSet_endpointCall_size_le, lockSet_endpointReply_size_le,
+   lockSet_replyRecv_size_le, lockSet_notificationSignal_size_le,
+   lockSet_notificationWait_size_le, lockSet_cspaceMint_size_le,
+   lockSet_cspaceCopy_size_le, lockSet_cspaceMove_size_le,
+   lockSet_cspaceDelete_size_le, lockSet_lifecycleRetype_size_le,
+   lockSet_vspaceMap_size_le, lockSet_vspaceUnmap_size_le,
+   lockSet_serviceRegister_size_le, lockSet_serviceRevoke_size_le,
+   lockSet_serviceQuery_size_le, lockSet_schedContextConfigure_size_le,
+   lockSet_schedContextBind_size_le, lockSet_schedContextUnbind_size_le,
+   lockSet_tcbSuspend_size_le, lockSet_tcbResume_size_le,
+   lockSet_tcbSetPriority_size_le, lockSet_tcbSetMCPriority_size_le,
+   lockSet_tcbSetIPCBuffer_size_le⟩
+
+-- ============================================================================
+-- §6c — `KernelOperation` (a transition's lock footprint, size-bounded)
+-- ============================================================================
+
+/-- WS-SM SM3.D.6 (plan §5.4 `KernelOperation`): a kernel operation, modelled
+by its static lock-set footprint together with a proof that the footprint
+respects `maxLockSetSize`.  The size invariant is carried in the structure
+so `WCRT` is bounded by construction; the §6b per-transition bounds are the
+constructors' justification.  `lockSet_<τ>_size_le` smart constructors build
+a `KernelOperation` from any real transition. -/
+structure KernelOperation where
+  /-- The transition's declared lock-set footprint (SM3.B). -/
+  lockSet : LockSet
+  /-- The footprint respects the static size bound (discharged per-transition
+      in §6b). -/
+  sizeWithinBound : lockSet.size ≤ maxLockSetSize
+
+/-- WS-SM SM3.D.6: build the `KernelOperation` for an `endpointCall`. -/
+def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
+    (d : Option ThreadId) (e : Option SchedContextId) : KernelOperation :=
+  ⟨lockSet_endpointCall a b c d e, lockSet_endpointCall_size_le a b c d e⟩
+
+/-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` (a 7-arg,
+3-extension transition — the deepest static footprint). -/
+def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId) :
+    KernelOperation :=
+  ⟨lockSet_replyRecv a b c d e f g, lockSet_replyRecv_size_le a b c d e f g⟩
+
+/-- WS-SM SM3.D.6: build the `KernelOperation` for a `tcbSuspend` (the
+4-extension transition). -/
+def KernelOperation.ofTcbSuspend (a : ThreadId) (b : ObjId) (c : ThreadId)
+    (d e : Option ObjId) (f : Option SchedContextId) (g : Option ThreadId) :
+    KernelOperation :=
+  ⟨lockSet_tcbSuspend a b c d e f g, lockSet_tcbSuspend_size_le a b c d e f g⟩
+
+-- ============================================================================
+-- §6d — Worst-case response time (contention-sensitive)
+-- ============================================================================
+
+/-- WS-SM SM3.D.6: the cores other than `c`.  `otherCores_length_eq` proves
+this has exactly `numCores − 1` elements (`allCores` is `Nodup` and contains
+`c` exactly once). -/
+def otherCores (c : CoreId) : List CoreId := allCores.filter (fun c' => decide (c' ≠ c))
+
+/-- WS-SM SM3.D.6: `otherCores c` has `numCores − 1` elements.  Discharged by
+`decide` over the finite `CoreId = Fin numCores`. -/
+theorem otherCores_length_eq : ∀ c : CoreId, (otherCores c).length = numCores - 1 := by decide
+
+/-- WS-SM SM3.D.6: the number of cores *other than* `c` that currently hold
+lock `l` in execution `e` — the contention `c` faces for `l`.  This makes
+`WCRT` genuinely depend on the execution's contention and on the requesting
+core. -/
+def contendersAhead (e : KernelExecution) (c : CoreId) (l : LockId) : Nat :=
+  (otherCores c).countP (fun c' => decide (heldBy e c' l))
+
+/-- WS-SM SM3.D.6: at most `numCores − 1` cores contend for any lock (only
+the other cores can hold it).  `countP ≤ length = numCores − 1`. -/
+theorem contendersAhead_le (e : KernelExecution) (c : CoreId) (l : LockId) :
+    contendersAhead e c l ≤ numCores - 1 := by
+  unfold contendersAhead
+  rw [← otherCores_length_eq c]
+  exact List.countP_le_length
+
+/-- WS-SM SM3.D.6 helper: summing `f` over a list where each value is `≤ K`
+is bounded by `length · K`. -/
+theorem sum_le_length_mul {α : Type _} (L : List α) (f : α → Nat) (K : Nat)
+    (h : ∀ x ∈ L, f x ≤ K) : (L.map f).sum ≤ L.length * K := by
+  induction L with
+  | nil => simp
+  | cons a t ih =>
+      simp only [List.map_cons, List.sum_cons, List.length_cons, Nat.add_mul, Nat.one_mul]
+      have hhead := h a List.mem_cons_self
+      have htail := ih (fun x hx => h x (List.mem_cons_of_mem _ hx))
+      omega
+
+/-- WS-SM SM3.D.6 helper: pointwise-`≤` maps have `≤` sums. -/
+theorem sum_map_le_sum_map {α : Type _} (L : List α) (f g : α → Nat)
+    (h : ∀ x ∈ L, f x ≤ g x) : (L.map f).sum ≤ (L.map g).sum := by
+  induction L with
+  | nil => simp
+  | cons a t ih =>
+      simp only [List.map_cons, List.sum_cons]
+      have hhead := h a List.mem_cons_self
+      have htail := ih (fun x hx => h x (List.mem_cons_of_mem _ hx))
+      omega
+
+/-- WS-SM SM3.D.6 (plan §5.4 `WCRT`): the worst-case response time of
+operation `op` on core `c` in execution `e` (in units where one critical
+section costs `tCs`).  For each lock in `op`'s footprint, `c` waits behind
+the cores currently contending for it (`contendersAhead`), each for one
+critical section.  This genuinely depends on the execution `e` (contention)
+and the core `c`. -/
+def WCRT (e : KernelExecution) (c : CoreId) (op : KernelOperation) (tCs : Nat) : Nat :=
+  (op.lockSet.lockAcquireSequence.map (fun p => contendersAhead e c p.fst * tCs)).sum
+
+/-- WS-SM SM3.D.6 (plan §5.4, **full** `boundedWait_under_2pl`): under 2PL +
+`LockId`-order acquisition, an execution is deadlock-free AND every kernel
+operation's worst-case response time is bounded by
+`maxLockSetSize · (numCores − 1) · T_cs`.
+
+Both conjuncts are substantive and use distinct hypotheses:
+* `noDeadlock e` follows from the 2PL + ordering hypotheses
+  (`deadlockFreedom_under_2pl_and_ordering`) — without deadlock-freedom the
+  wait would be unbounded (a deadlocked core waits forever), so this is the
+  precondition that makes the WCRT bound *meaningful*;
+* `WCRT e c op tCs ≤ …` follows from the per-lock contention bound
+  (`contendersAhead_le`: ≤ `numCores − 1` per lock) summed over the
+  footprint, capped by `op.sizeWithinBound` (≤ `maxLockSetSize` locks). -/
+theorem boundedWait_under_2pl (e : KernelExecution) (c : CoreId)
+    (op : KernelOperation) (tCs : Nat)
+    (h2pl : executionFollows2PL e)
+    (hOrder : executionAcquiresInLockIdOrder e) :
+    noDeadlock e ∧ WCRT e c op tCs ≤ maxLockSetSize * ((numCores - 1) * tCs) := by
+  refine ⟨deadlockFreedom_under_2pl_and_ordering e h2pl hOrder, ?_⟩
+  unfold WCRT
+  have hbound : (op.lockSet.lockAcquireSequence.map
+      (fun p => contendersAhead e c p.fst * tCs)).sum
+      ≤ op.lockSet.lockAcquireSequence.length * ((numCores - 1) * tCs) := by
+    apply sum_le_length_mul
+    intro p _
+    exact Nat.mul_le_mul_right tCs (contendersAhead_le e c p.fst)
+  rw [LockSet.lockAcquireSequence_length] at hbound
+  exact Nat.le_trans hbound (Nat.mul_le_mul_right _ op.sizeWithinBound)
+
+/-- WS-SM SM3.D.6: the contention-sensitive `WCRT` never exceeds the uniform
+combinatorial `totalWaitCost` bound (each lock's actual contention is `≤
+numCores − 1 = perLockWaitCost / tCs`).  Bridges the two bounded-wait models. -/
+theorem WCRT_le_totalWaitCost (e : KernelExecution) (c : CoreId)
+    (op : KernelOperation) (tCs : Nat) :
+    WCRT e c op tCs ≤ totalWaitCost op.lockSet tCs := by
+  unfold WCRT totalWaitCost perLockWaitCost
+  apply sum_map_le_sum_map
+  intro p _
+  exact Nat.mul_le_mul_right tCs (contendersAhead_le e c p.fst)
 
 -- ============================================================================
 -- §7 — Grounding: the hypotheses are CONSEQUENCES of the SM3.B/C discipline
@@ -583,5 +1103,81 @@ theorem execution_satisfies_hypotheses_of_all_prefix (e : KernelExecution)
     | some w =>
         obtain ⟨S, hPre⟩ := h c (by rw [hb]; rfl)
         exact coreAcquiresInOrder_of_prefix e c S hPre
+
+-- ============================================================================
+-- §7b — Bridge: the abstract `held` model ↔ the SM3.C concrete lock state
+-- ============================================================================
+--
+-- §7 grounds the *hypotheses* in the SM3.B `lockAcquireSequence` discipline.
+-- This section grounds the *model itself*: it connects the abstract
+-- `heldBy` / `KernelExecution` to SM3.C's concrete `lockSetHeld` / `lockHeld`
+-- (which read the actual per-object `RwLockState` of a `SystemState`).
+-- `executionOfHeld` materialises the `KernelExecution` of a single core that
+-- holds a lock set `S` and is blocked on `blk`; `lockSetHeld_realizes_heldBy`
+-- proves that when the core *genuinely* holds `S` on a concrete state `s`
+-- (SM3.C `lockSetHeld`), the abstract `heldBy` agrees and each declared lock
+-- is concretely held (`lockHeld`).  This closes the abstract-model ↔
+-- concrete-kernel gap for the holding side.  (The *blocked* side has no
+-- concrete counterpart until SM5+ adds per-core blocked tracking to the
+-- kernel state; `blk` is supplied externally as the next-to-acquire lock.)
+
+/-- WS-SM SM3.D §7b: the `KernelExecution` of a single core `c` that holds
+exactly the lock set `S` (its `held` is `S`'s canonical `LockId` sequence)
+and is blocked on `blk`; all other cores are idle. -/
+def executionOfHeld (c : CoreId) (S : LockSet) (blk : Option LockId) : KernelExecution :=
+  { held := fun c' => if c' = c then acquireOrder S else [],
+    blocked := fun c' => if c' = c then blk else none }
+
+/-- WS-SM SM3.D §7b: in `executionOfHeld c S blk`, core `c` (abstractly)
+holds exactly the `LockId`s of `S`. -/
+theorem executionOfHeld_heldBy (c : CoreId) (S : LockSet) (blk : Option LockId)
+    (l : LockId) :
+    heldBy (executionOfHeld c S blk) c l ↔ l ∈ acquireOrder S := by
+  unfold heldBy executionOfHeld
+  simp
+
+/-- WS-SM SM3.D §7b (the model↔kernel bridge): if core `c` genuinely holds
+the lock set `S` on the concrete state `s` (SM3.C `lockSetHeld`), then for
+every declared `(l, m) ∈ S`:
+* the **concrete** lock is held — `lockHeld c l m s` (SM3.C, reads the actual
+  per-object `RwLockState`), and
+* the **abstract** model agrees — `heldBy (executionOfHeld c S blk) c l`.
+
+This is the missing connection between the abstract `KernelExecution` the
+deadlock theorems reason about and the concrete kernel lock state: a
+deadlock-relevant "held" edge in the abstract model is realised by a genuine
+`RwLockState` holding in the kernel. -/
+theorem lockSetHeld_realizes_heldBy (c : CoreId) (S : LockSet)
+    (s : SeLe4n.Model.SystemState) (blk : Option LockId)
+    (hHeld : lockSetHeld c S s) :
+    ∀ p ∈ S.pairs, lockHeld c p.fst p.snd s ∧ heldBy (executionOfHeld c S blk) c p.fst := by
+  intro p hp
+  refine ⟨hHeld p hp, ?_⟩
+  rw [executionOfHeld_heldBy]
+  unfold acquireOrder
+  exact List.mem_map.mpr
+    ⟨p, (LockSet.lockAcquireSequence_complete S p).mp ((LockSet.mem_def p S).mpr hp), rfl⟩
+
+-- ============================================================================
+-- §7c — `twoCorePathScenario` (plan §5.4 SM3.D.7)
+-- ============================================================================
+
+/-- WS-SM SM3.D.7 (plan §5.4): the canonical "two cores acquiring `{lo, hi}`"
+scenario.  Two distinct cores both want the ordered pair `lo < hi`: core
+`c₁` holds the lower lock `lo` and is blocked on `hi`; core `c₂` holds
+nothing and is blocked on `lo`.  Under ascending acquisition this is the
+deadlock-free interleaving — `c₁` will acquire `hi`, finish, and release,
+after which `c₂` proceeds.  The plan's SM3.D.7 example existentially
+witnesses such a scenario satisfying the 2PL + ordering hypotheses (see
+`DeadlockFreedomSuite`). -/
+def twoCorePathScenario (e : KernelExecution) (c₁ c₂ : CoreId) (lo hi : LockId) : Prop :=
+  c₁ ≠ c₂ ∧ lo < hi ∧
+  e.held c₁ = [lo] ∧ e.blocked c₁ = some hi ∧
+  e.held c₂ = [] ∧ e.blocked c₂ = some lo
+
+/-- WS-SM SM3.D.7: `twoCorePathScenario` is decidable. -/
+instance (e : KernelExecution) (c₁ c₂ : CoreId) (lo hi : LockId) :
+    Decidable (twoCorePathScenario e c₁ c₂ lo hi) := by
+  unfold twoCorePathScenario; exact inferInstance
 
 end SeLe4n.Kernel.Concurrency

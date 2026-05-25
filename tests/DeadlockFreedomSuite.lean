@@ -107,6 +107,54 @@ open SeLe4n.Kernel.Concurrency
 #check @coreAcquiresInOrder_of_prefix
 #check @execution_satisfies_hypotheses_of_all_prefix
 
+/-! ## SM3.D.3 — Irreflexive / Transitive (plan form) -/
+
+#check @Irreflexive
+#check @Transitive
+#check @lockOrder_strict_classes
+
+/-! ## SM3.D.5b — Mode-aware (conflict) wait graph -/
+
+#check @ReachesPlus_mono
+#check @Acyclic_mono
+#check @conflictWaitsFor
+#check @conflictWaitsFor_sub_blockedWaitsFor
+#check @conflictWaitGraph_acyclic_under_2pl
+
+/-! ## SM3.D.6b — Static lock-set size bounds -/
+
+#check @insertOrMerge_size_le
+#check @lockSetOfList_size_le
+#check @lockSetExtendOpt_size_le
+#check @size_le_1
+#check @size_le_2
+#check @size_le_3
+#check @size_le_4
+#check @lockSetTransitions_within_bound
+
+/-! ## SM3.D.6 — KernelOperation + contention-sensitive WCRT -/
+
+#check @KernelOperation
+#check @KernelOperation.ofEndpointCall
+#check @KernelOperation.ofReplyRecv
+#check @KernelOperation.ofTcbSuspend
+#check @otherCores
+#check @otherCores_length_eq
+#check @contendersAhead
+#check @contendersAhead_le
+#check @sum_le_length_mul
+#check @sum_map_le_sum_map
+#check @WCRT
+#check @totalWaitCost_le_bound
+#check @WCRT_le_totalWaitCost
+
+/-! ## SM3.D §7b/§7c — Model↔kernel bridge + twoCorePathScenario -/
+
+#check @executionOfHeld
+#check @executionOfHeld_heldBy
+#check @lockSetHeld_realizes_heldBy
+#check @twoCorePathScenario
+
 /-! ## SM3.D — Inventory aggregator -/
 
 #check @DeadlockCategory
@@ -210,11 +258,25 @@ example : noDeadlock execNoDeadlock :=
   noDeadlock_of_waitGraph_acyclic execNoDeadlock
     (waitGraph_acyclic_under_2pl execNoDeadlock (by decide) (by decide))
 
-/-- SM3.D.6 bounded-wait on a singleton lock set (size 1 ≤ 8). -/
+/-- SM3.D.6 bounded-wait (full): on the deadlock-free fixture, an
+`endpointCall` operation is deadlock-free AND its worst-case response time
+is bounded.  `KernelOperation.ofEndpointCall` carries the size proof. -/
+example :
+    noDeadlock execNoDeadlock ∧
+    WCRT execNoDeadlock c0
+        (KernelOperation.ofEndpointCall (ThreadId.ofNat 1)
+          (SeLe4n.ObjId.ofNat 2) (SeLe4n.ObjId.ofNat 3) none none) 10
+      ≤ maxLockSetSize * ((numCores - 1) * 10) :=
+  boundedWait_under_2pl execNoDeadlock c0
+    (KernelOperation.ofEndpointCall (ThreadId.ofNat 1)
+      (SeLe4n.ObjId.ofNat 2) (SeLe4n.ObjId.ofNat 3) none none) 10
+    (by decide) (by decide)
+
+/-- SM3.D.6 combinatorial bound on a singleton lock set (size 1 ≤ 8). -/
 example :
     totalWaitCost (LockSet.singleton tcb5 .write) 10
       ≤ maxLockSetSize * ((numCores - 1) * 10) :=
-  boundedWait_under_2pl (LockSet.singleton tcb5 .write) 10 (by decide)
+  totalWaitCost_le_bound (LockSet.singleton tcb5 .write) 10 (by decide)
 
 /-- SM3.D §7 grounding: a real `CorePrefixOf` witness on a 2-element lock
 set.  `execGrounded` holds the prefix `[tcb5]` of the canonical acquire
@@ -317,23 +379,97 @@ private def runGroundingChecks : IO Unit := do
   assertBool "acquireOrder twoLockSet = [tcb5, tcb7]"
     (decide (acquireOrder twoLockSet = [tcb5, tcb7]))
 
+private def runModeAwareChecks : IO Unit := do
+  IO.println "--- §8 SM3.D.5b — mode-aware (conflict) wait graph ---"
+  -- Auxiliary mode functions: every core requests write, every held lock is
+  -- held in write mode (so all overlaps conflict).
+  let wm : CoreId → AccessMode := fun _ => .write
+  let hm : CoreId → LockId → AccessMode := fun _ _ => .write
+  -- In execDeadlock both write-write edges are present (a genuine conflict).
+  assertBool "execDeadlock: c0 conflictWaitsFor c1 (write–write conflict edge)"
+    (decide (conflictWaitsFor execDeadlock wm hm c0 c1))
+  -- Read–read does NOT conflict: with everyone reading, no conflict edge.
+  let rd : CoreId → AccessMode := fun _ => .read
+  let rdHeld : CoreId → LockId → AccessMode := fun _ _ => .read
+  assertBool "execDeadlock: ¬ c0 conflictWaitsFor c1 under read–read (no conflict)"
+    (decide (¬ conflictWaitsFor execDeadlock rd rdHeld c0 c1))
+  -- Every conflict edge is a plain blocked-wait edge (subgraph witness).
+  assertBool "conflict edge ⟹ blocked-wait edge (subgraph) on execDeadlock"
+    (decide (¬ conflictWaitsFor execDeadlock wm hm c0 c1
+              ∨ blockedWaitsFor execDeadlock c0 c1))
+
+private def runSizeBoundChecks : IO Unit := do
+  IO.println "--- §9 SM3.D.6b — static lock-set size bounds ---"
+  -- A concrete largest-footprint lock set (tcbSuspend, 4 extensions) fits.
+  let suspendSet := lockSet_tcbSuspend (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (some (SeLe4n.ObjId.ofNat 4)) (some (SeLe4n.ObjId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7))
+  assertBool "lockSet_tcbSuspend (all options) size ≤ maxLockSetSize"
+    (decide (suspendSet.size ≤ maxLockSetSize))
+  -- replyRecv (3 extensions, base 4) — the other deepest footprint.
+  let replySet := lockSet_replyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7))
+  assertBool "lockSet_replyRecv (all options) size ≤ maxLockSetSize"
+    (decide (replySet.size ≤ maxLockSetSize))
+  -- A KernelOperation carries its size proof; its lockSet fits by construction.
+  let op := KernelOperation.ofTcbSuspend (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (some (SeLe4n.ObjId.ofNat 4)) (some (SeLe4n.ObjId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7))
+  assertBool "KernelOperation.ofTcbSuspend lockSet within bound"
+    (decide (op.lockSet.size ≤ maxLockSetSize))
+
+private def runWCRTChecks : IO Unit := do
+  IO.println "--- §10 SM3.D.6 — contention-sensitive WCRT ---"
+  -- contendersAhead ≤ numCores - 1 = 3 on any execution.
+  assertBool "contendersAhead execDeadlock c0 tcb5 ≤ numCores - 1"
+    (decide (contendersAhead execDeadlock c0 tcb5 ≤ numCores - 1))
+  -- otherCores has exactly numCores - 1 = 3 elements.
+  assertBool "otherCores c0 has numCores - 1 elements"
+    (decide ((otherCores c0).length = numCores - 1))
+  -- WCRT on a concrete op and execution is bounded by the static cap.
+  let op := KernelOperation.ofEndpointCall (ThreadId.ofNat 1)
+    (SeLe4n.ObjId.ofNat 2) (SeLe4n.ObjId.ofNat 3) none none
+  assertBool "WCRT execNoDeadlock c0 (endpointCall op) 10 ≤ 8*(3*10)"
+    (decide (WCRT execNoDeadlock c0 op 10 ≤ maxLockSetSize * ((numCores - 1) * 10)))
+  -- WCRT never exceeds the uniform combinatorial bound.
+  assertBool "WCRT ≤ totalWaitCost op.lockSet 10"
+    (decide (WCRT execNoDeadlock c0 op 10 ≤ totalWaitCost op.lockSet 10))
+
+private def runBridgeChecks : IO Unit := do
+  IO.println "--- §11 SM3.D §7b/§7c — model↔kernel bridge + twoCorePathScenario ---"
+  -- executionOfHeld: the abstract heldBy reflects lock-set membership.
+  let S := LockSet.singleton ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩ .write
+  let e := executionOfHeld c0 S none
+  assertBool "executionOfHeld c0 S: heldBy c0 (tcb 5) holds"
+    (decide (heldBy e c0 ⟨.tcb, (ThreadId.ofNat 5).toObjId⟩))
+  assertBool "executionOfHeld c0 S: heldBy c0 (tcb 99) does NOT hold"
+    (decide (¬ heldBy e c0 ⟨.tcb, (ThreadId.ofNat 99).toObjId⟩))
+  -- twoCorePathScenario: the deadlock-free fixture is a canonical two-core path.
+  assertBool "execNoDeadlock is a twoCorePathScenario c0 c1 tcb5 tcb7"
+    (decide (twoCorePathScenario execNoDeadlock c0 c1 tcb5 tcb7))
+
 private def runInventoryChecks : IO Unit := do
-  IO.println "--- §7 SM3.D — inventory aggregator ---"
-  assertBool "deadlockTheorems.length = 37" (decide (deadlockTheorems.length = 37))
+  IO.println "--- §12 SM3.D — inventory aggregator ---"
+  assertBool "deadlockTheorems.length = 66" (decide (deadlockTheorems.length = 66))
   assertBool "model count = 3"
     (decide ((deadlockTheorems.filter (fun t => t.category == .model)).length = 3))
   assertBool "hypotheses count = 5"
     (decide ((deadlockTheorems.filter (fun t => t.category == .hypotheses)).length = 5))
-  assertBool "order count = 4"
-    (decide ((deadlockTheorems.filter (fun t => t.category == .order)).length = 4))
+  assertBool "order count = 5"
+    (decide ((deadlockTheorems.filter (fun t => t.category == .order)).length = 5))
   assertBool "deadlock count = 6"
     (decide ((deadlockTheorems.filter (fun t => t.category == .deadlock)).length = 6))
   assertBool "waitGraph count = 9"
     (decide ((deadlockTheorems.filter (fun t => t.category == .waitGraph)).length = 9))
-  assertBool "boundedWait count = 5"
-    (decide ((deadlockTheorems.filter (fun t => t.category == .boundedWait)).length = 5))
-  assertBool "grounding count = 5"
-    (decide ((deadlockTheorems.filter (fun t => t.category == .grounding)).length = 5))
+  assertBool "modeAware count = 5"
+    (decide ((deadlockTheorems.filter (fun t => t.category == .modeAware)).length = 5))
+  assertBool "sizeBound count = 8"
+    (decide ((deadlockTheorems.filter (fun t => t.category == .sizeBound)).length = 8))
+  assertBool "boundedWait count = 16"
+    (decide ((deadlockTheorems.filter (fun t => t.category == .boundedWait)).length = 16))
+  assertBool "grounding count = 9"
+    (decide ((deadlockTheorems.filter (fun t => t.category == .grounding)).length = 9))
   assertBool "partition sum = total"
     (decide (
       (deadlockTheorems.filter (fun t => t.category == .model)).length +
@@ -341,6 +477,8 @@ private def runInventoryChecks : IO Unit := do
       (deadlockTheorems.filter (fun t => t.category == .order)).length +
       (deadlockTheorems.filter (fun t => t.category == .deadlock)).length +
       (deadlockTheorems.filter (fun t => t.category == .waitGraph)).length +
+      (deadlockTheorems.filter (fun t => t.category == .modeAware)).length +
+      (deadlockTheorems.filter (fun t => t.category == .sizeBound)).length +
       (deadlockTheorems.filter (fun t => t.category == .boundedWait)).length +
       (deadlockTheorems.filter (fun t => t.category == .grounding)).length =
       deadlockTheorems.length))
@@ -354,6 +492,10 @@ def runDeadlockFreedomChecks : IO Unit := do
   runWaitGraphChecks
   runBoundedWaitChecks
   runGroundingChecks
+  runModeAwareChecks
+  runSizeBoundChecks
+  runWCRTChecks
+  runBridgeChecks
   runInventoryChecks
   IO.println "==============================================="
   IO.println "All SM3.D deadlock-freedom checks PASS."

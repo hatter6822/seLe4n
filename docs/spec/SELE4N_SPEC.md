@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.31.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 136,887 across 198 Lean files |
-| **Test LoC** | 28,740 across 41 Lean test suites |
-| **Proved declarations** | 4,017 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 137,552 across 198 Lean files |
+| **Test LoC** | 28,882 across 41 Lean test suites |
+| **Proved declarations** | 4,065 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
@@ -2104,12 +2104,31 @@ preserves on a per-core basis.
    two-core SM3.D.4 from the N-core SM3.D.5 (a 2-cycle is a closed
    walk c₁ → c₂ → c₁).
 
-   **SM3.D.6 — `boundedWait_under_2pl`**: a transition with lock-set
-   size `≤ maxLockSetSize` (= 8) has total worst-case wait bounded by
-   `maxLockSetSize · (numCores − 1) · T_cs`.  `WCRT` is modelled
-   combinatorially as `totalWaitCost S tCs` — the sum of per-lock
-   waits over the canonical acquire sequence — proved equal to
-   `|S| · (numCores − 1) · T_cs` by `totalWaitCost_eq`.
+   **SM3.D.6 — `boundedWait_under_2pl`** (full form): under the 2PL +
+   ordering hypotheses, an execution is deadlock-free AND every kernel
+   operation's worst-case response time is bounded —
+   `noDeadlock e ∧ WCRT e c op tCs ≤ maxLockSetSize · (numCores − 1) ·
+   T_cs`.  `WCRT` is contention-sensitive: for each lock in the
+   operation's footprint, `contendersAhead e c` counts the cores
+   actually holding it (`≤ numCores − 1`).  `KernelOperation` carries a
+   `LockSet` footprint plus a `sizeWithinBound` proof, and
+   `lockSetTransitions_within_bound` discharges that proof for all 25
+   SM3.B `lockSet_<τ>` declarations (size `≤ 8`) — so the bound is
+   never vacuous.
+
+   **SM3.D.5b — mode-aware deadlock-freedom**: the plan-signature
+   `noDeadlock` / `waitGraph_acyclic_under_2pl` use bare `LockId`,
+   which over-approximates blocking.  `conflictWaitGraph_acyclic_under_2pl`
+   refines this — an edge fires only on a genuine
+   `AccessMode.conflicts` (two readers never block) — and is proved
+   acyclic via `Acyclic_mono` (it is a subgraph of the plain wait
+   graph).
+
+   **SM3.D §7b — model↔kernel bridge**: `lockSetHeld_realizes_heldBy`
+   connects the abstract `KernelExecution.heldBy` (via `executionOfHeld`)
+   to SM3.C's concrete `lockSetHeld` / `lockHeld`, which read the actual
+   per-object `RwLockState` of a `SystemState` — so a deadlock-relevant
+   abstract "held" edge is realised by a genuine kernel lock holding.
 
    **SM3.D §7 — grounding**: `execution_satisfies_hypotheses_of_all_prefix`
    discharges both abstract hypotheses from the SM3.B

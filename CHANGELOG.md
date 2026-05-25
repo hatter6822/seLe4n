@@ -85,6 +85,48 @@ and Tier 3 (invariant surface).  **Axiom budget for SM3.D**: 0 Lean
 axioms, 0 sorries.  Items deferred past v1.0.0 with correctness
 impact: NONE.
 
+**Audit-pass-1 refinements** (deep self-audit; closes every gap between
+the plan §5.4 and the initial landing — no version bump, refines ship
+inside the v0.31.9 cut):
+
+* **SM3.D.6 `boundedWait_under_2pl` strengthened to the full plan
+  signature.**  The initial theorem was a weak combinatorial
+  monotonicity fact (`totalWaitCost S ≤ bound`) using neither the
+  2PL/ordering hypotheses nor a `KernelExecution`/`KernelOperation`.
+  The full version takes `(e : KernelExecution) (c : CoreId) (op :
+  KernelOperation) (tCs)` + the two hypotheses and proves `noDeadlock e
+  ∧ WCRT e c op tCs ≤ maxLockSetSize · (numCores − 1) · tCs`.  `WCRT` is
+  contention-sensitive (`contendersAhead`, `≤ numCores − 1` via
+  `contendersAhead_le`), so it genuinely depends on `e` and `c`; the
+  `noDeadlock` conjunct uses the hypotheses, the WCRT conjunct uses
+  `op.sizeWithinBound`.  Weak form retained as `totalWaitCost_le_bound`;
+  `WCRT_le_totalWaitCost` bridges them.
+* **`KernelOperation` + `WCRT` modelled** (previously undefined);
+  `KernelOperation.of*` smart constructors build one from any real
+  transition.
+* **`maxLockSetSize` discharged for the real transition surface** —
+  `lockSetTransitions_within_bound` proves all **25** SM3.B
+  `lockSet_<τ>` declarations have size `≤ maxLockSetSize` (= 8), via
+  `insertOrMerge_size_le` / `lockSetOfList_size_le` /
+  `lockSetExtendOpt_size_le` + `size_le_1..4`.  Premise no longer
+  vacuous.
+* **Mode-aware (conflict) wait graph** — `AccessMode` was absent from the
+  initial model.  `conflictWaitsFor` only fires on a genuine
+  `AccessMode.conflicts` (two readers ⟹ no edge);
+  `conflictWaitGraph_acyclic_under_2pl` proves it acyclic via
+  `Acyclic_mono` (subgraph of the plain wait graph).  Plan-signature
+  theorems unchanged; the conflict layer is a proven refinement.
+* **Model↔kernel bridge** — `lockSetHeld_realizes_heldBy` connects the
+  abstract `heldBy` (via `executionOfHeld`) to SM3.C's concrete
+  `lockSetHeld` / `lockHeld` (per-object `RwLockState`).
+* **`twoCorePathScenario`** (SM3.D.7) + plan example; **`lockOrder_strict_classes`**
+  (plan's `Irreflexive ∧ Transitive` form); **tier-4 QEMU
+  deadlock-stress** SKIP-stub (`test_qemu_smp_deadlock_stress.sh`,
+  plan §6.3).
+* Inventory 37 → 66 entries (9 categories; added `.modeAware`,
+  `.sizeBound`); suite to 50+ runtime assertions across 12 sections.
+  Axiom budget unchanged: 0 axioms, 0 sorries.
+
 Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
 lemmas + `singleCore_proof_preservation` Corollary 2.1.11) closes the
 SM3 phase per

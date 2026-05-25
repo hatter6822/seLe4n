@@ -53,4 +53,12 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_sgi_roundtrip.sh"
 # stress-test routine isn't wired in the kernel image (SM5+ follow-on).
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_kprintln_stress.sh"
 
+# SM3.D.7 — cross-core deadlock-freedom stress (plan §6.3).  SKIPs at
+# SM3.D if the multi-core lock-contention driver isn't wired in the
+# kernel image (needs SM5+ per-core scheduler state).  Deadlock-freedom
+# is established FORMALLY for all executions in
+# tests/DeadlockFreedomSuite.lean; this is a complementary runtime
+# spot-check on real hardware-modelled cores.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
+
 finalize_report

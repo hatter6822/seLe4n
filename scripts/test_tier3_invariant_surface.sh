@@ -2237,19 +2237,56 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 #check @SeLe4n.Kernel.Concurrency.reachesPlus_wanted_lt
 #check @SeLe4n.Kernel.Concurrency.waitGraph_acyclic_under_2pl
 #check @SeLe4n.Kernel.Concurrency.noDeadlock_of_waitGraph_acyclic
--- SM3.D.6: bounded wait.
+-- SM3.D.3 audit-pass: Irreflexive / Transitive (plan form).
+#check @SeLe4n.Kernel.Concurrency.Irreflexive
+#check @SeLe4n.Kernel.Concurrency.Transitive
+#check @SeLe4n.Kernel.Concurrency.lockOrder_strict_classes
+-- SM3.D.5b audit-pass: mode-aware (conflict) wait graph.
+#check @SeLe4n.Kernel.Concurrency.ReachesPlus_mono
+#check @SeLe4n.Kernel.Concurrency.Acyclic_mono
+#check @SeLe4n.Kernel.Concurrency.conflictWaitsFor
+#check @SeLe4n.Kernel.Concurrency.conflictWaitsFor_sub_blockedWaitsFor
+#check @SeLe4n.Kernel.Concurrency.conflictWaitGraph_acyclic_under_2pl
+-- SM3.D.6b audit-pass: static lock-set size bounds.
+#check @SeLe4n.Kernel.Concurrency.insertOrMerge_size_le
+#check @SeLe4n.Kernel.Concurrency.lockSetOfList_size_le
+#check @SeLe4n.Kernel.Concurrency.lockSetExtendOpt_size_le
+#check @SeLe4n.Kernel.Concurrency.size_le_1
+#check @SeLe4n.Kernel.Concurrency.size_le_2
+#check @SeLe4n.Kernel.Concurrency.size_le_3
+#check @SeLe4n.Kernel.Concurrency.size_le_4
+#check @SeLe4n.Kernel.Concurrency.lockSetTransitions_within_bound
+-- SM3.D.6: bounded wait + KernelOperation + contention-sensitive WCRT.
 #check @SeLe4n.Kernel.Concurrency.maxLockSetSize
 #check @SeLe4n.Kernel.Concurrency.perLockWaitCost
 #check @SeLe4n.Kernel.Concurrency.totalWaitCost
 #check @SeLe4n.Kernel.Concurrency.sum_const_map
 #check @SeLe4n.Kernel.Concurrency.totalWaitCost_eq
+#check @SeLe4n.Kernel.Concurrency.totalWaitCost_le_bound
+#check @SeLe4n.Kernel.Concurrency.KernelOperation
+#check @SeLe4n.Kernel.Concurrency.KernelOperation.ofEndpointCall
+#check @SeLe4n.Kernel.Concurrency.KernelOperation.ofReplyRecv
+#check @SeLe4n.Kernel.Concurrency.KernelOperation.ofTcbSuspend
+#check @SeLe4n.Kernel.Concurrency.otherCores
+#check @SeLe4n.Kernel.Concurrency.otherCores_length_eq
+#check @SeLe4n.Kernel.Concurrency.contendersAhead
+#check @SeLe4n.Kernel.Concurrency.contendersAhead_le
+#check @SeLe4n.Kernel.Concurrency.sum_le_length_mul
+#check @SeLe4n.Kernel.Concurrency.sum_map_le_sum_map
+#check @SeLe4n.Kernel.Concurrency.WCRT
 #check @SeLe4n.Kernel.Concurrency.boundedWait_under_2pl
+#check @SeLe4n.Kernel.Concurrency.WCRT_le_totalWaitCost
 -- SM3.D §7: grounding bridge.
 #check @SeLe4n.Kernel.Concurrency.acquireOrder_nodup
 #check @SeLe4n.Kernel.Concurrency.CorePrefixOf
 #check @SeLe4n.Kernel.Concurrency.coreFollows2PL_of_prefix
 #check @SeLe4n.Kernel.Concurrency.coreAcquiresInOrder_of_prefix
 #check @SeLe4n.Kernel.Concurrency.execution_satisfies_hypotheses_of_all_prefix
+-- SM3.D §7b/§7c: model↔kernel bridge + twoCorePathScenario.
+#check @SeLe4n.Kernel.Concurrency.executionOfHeld
+#check @SeLe4n.Kernel.Concurrency.executionOfHeld_heldBy
+#check @SeLe4n.Kernel.Concurrency.lockSetHeld_realizes_heldBy
+#check @SeLe4n.Kernel.Concurrency.twoCorePathScenario
 -- SM3.D Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.DeadlockCategory
 #check @SeLe4n.Kernel.Concurrency.DeadlockTheorem
@@ -2260,6 +2297,8 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 #check @SeLe4n.Kernel.Concurrency.deadlockTheorems_order_count
 #check @SeLe4n.Kernel.Concurrency.deadlockTheorems_deadlock_count
 #check @SeLe4n.Kernel.Concurrency.deadlockTheorems_waitGraph_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_modeAware_count
+#check @SeLe4n.Kernel.Concurrency.deadlockTheorems_sizeBound_count
 #check @SeLe4n.Kernel.Concurrency.deadlockTheorems_boundedWait_count
 #check @SeLe4n.Kernel.Concurrency.deadlockTheorems_grounding_count
 #check @SeLe4n.Kernel.Concurrency.deadlockTheorems_partition_sum
