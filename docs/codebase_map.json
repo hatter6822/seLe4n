@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/friendly-rubin-5wOsy",
-      "commit_sha": "1d664c54421b20482ff49b6d7f2aa8f38e15d777",
-      "tree_sha": "453344b7a8db3ff88148c0b9fcd6c099ae5db092",
-      "committed_at_utc": "2026-05-25T02:48:20+00:00"
+      "branch": "claude/determined-pasteur-apMXc",
+      "commit_sha": "8112079e84ac318e004cd2d1bffde67a37b876dc",
+      "tree_sha": "66bd307375c40f704dffb0cf5e90f1f6544df32e",
+      "committed_at_utc": "2026-05-25T16:44:08-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a4335cf4a44f13f2f79d7bca68a53bed413cd7ac812578697074bd3b8e2bf358"
+    "source_digest": "0b82f856758f265481f32f428a6f44cd3f7aa9a7364c3498032161d4336ac66c"
   },
   "summary": {
-    "module_count": 239,
-    "declaration_count": 8206
+    "module_count": 242,
+    "declaration_count": 8344
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
-    "production_files": 198,
-    "production_loc": 137552,
-    "test_files": 41,
-    "test_loc": 28953,
-    "proved_theorem_lemma_decls": 4065,
+    "production_files": 200,
+    "production_loc": 138880,
+    "test_files": 42,
+    "test_loc": 29318,
+    "proved_theorem_lemma_decls": 4128,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1627,6 +1627,7 @@
             "AsidPool",
             "AsidPool.wellFormed_free_valid",
             "allocate",
+            "cons",
             "head",
             "maxAsidValue",
             "wellFormed"
@@ -1640,6 +1641,7 @@
             "AsidAllocResult",
             "AsidPool",
             "allocate",
+            "cons",
             "head",
             "lt_irrefl",
             "maxAsidValue",
@@ -1698,7 +1700,8 @@
             "AsidAllocResult",
             "AsidPool",
             "allocate",
-            "asidAllocRequiresFlush"
+            "asidAllocRequiresFlush",
+            "cons"
           ]
         },
         {
@@ -1733,6 +1736,7 @@
             "AsidAllocResult",
             "AsidPool",
             "allocate",
+            "cons",
             "head",
             "lt_irrefl",
             "wellFormed"
@@ -3457,6 +3461,7 @@
           "line": 372,
           "called": [
             "SystemState",
+            "cons",
             "default",
             "default_objects_absurd",
             "dualQueueSystemInvariant"
@@ -3818,6 +3823,7 @@
             "SystemState",
             "ThreadId",
             "advanceTimerState",
+            "cons",
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
@@ -3843,6 +3849,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "serviceEdge_of_services_eq",
             "serviceNontrivialPath"
           ]
@@ -3898,6 +3905,7 @@
             "RegValue",
             "SystemState",
             "ThreadId",
+            "cons",
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
@@ -3937,6 +3945,7 @@
             "RegisterFile",
             "SystemState",
             "ThreadId",
+            "cons",
             "contextSwitchState",
             "currentThreadIpcReady",
             "get",
@@ -5234,6 +5243,7 @@
           "line": 343,
           "called": [
             "bind",
+            "cons",
             "length",
             "pure"
           ]
@@ -12464,6 +12474,7 @@
           "called": [
             "CdtNodeId",
             "KernelError",
+            "cons",
             "revokeCdtFoldBody",
             "revokeCdtFoldBody_error"
           ]
@@ -12476,6 +12487,7 @@
             "CdtNodeId",
             "SystemState",
             "capabilityInvariantBundle",
+            "cons",
             "invExtK",
             "revokeCdtFoldBody",
             "revokeCdtFoldBody_foldl_error",
@@ -12542,6 +12554,7 @@
             "SystemState",
             "capabilityInvariantBundle",
             "capabilityInvariantBundle_of_cdt_update",
+            "cons",
             "cspaceDeleteSlotCore",
             "cspaceDeleteSlotCore_preserves_capabilityInvariantBundle",
             "cspaceDeleteSlotCore_preserves_cdtNodeSlot",
@@ -12584,6 +12597,7 @@
             "CdtNodeId",
             "SystemState",
             "capabilityInvariantBundle",
+            "cons",
             "invExtK",
             "processRevokeNode",
             "processRevokeNode_preserves_cdtNodeSlot",
@@ -15051,6 +15065,7 @@
           "name": "sum_const_map",
           "line": 589,
           "called": [
+            "cons",
             "length"
           ]
         },
@@ -15101,6 +15116,7 @@
             "AccessMode",
             "LockId",
             "LockSet",
+            "cons",
             "empty",
             "insertOrMerge",
             "insertOrMerge_size_le",
@@ -15710,6 +15726,7 @@
           "name": "sum_le_length_mul",
           "line": 946,
           "called": [
+            "cons",
             "length"
           ]
         },
@@ -15717,7 +15734,9 @@
           "kind": "theorem",
           "name": "sum_map_le_sum_map",
           "line": 957,
-          "called": []
+          "called": [
+            "cons"
+          ]
         },
         {
           "kind": "def",
@@ -16004,6 +16023,7 @@
             "SystemState",
             "WalkOutcome",
             "blockingServer",
+            "cons",
             "head",
             "none",
             "tail",
@@ -16120,6 +16140,7 @@
           "line": 516,
           "called": [
             "ThreadId",
+            "cons",
             "head",
             "lt_trans",
             "tail",
@@ -16236,6 +16257,7 @@
             "ThreadId",
             "blockingServer",
             "chainFollowsBlockingServer",
+            "cons",
             "head",
             "tail"
           ]
@@ -16422,6 +16444,7 @@
             "acquireLockOnObject_preserves_blockingServer",
             "acquireLockOnObject_preserves_invExt",
             "blockingServer",
+            "cons",
             "head",
             "invExt",
             "tail"
@@ -17269,7 +17292,8 @@
           "called": [
             "AccessMode",
             "LockId",
-            "LockSet"
+            "LockSet",
+            "cons"
           ]
         },
         {
@@ -17399,6 +17423,7 @@
             "AccessMode",
             "LockId",
             "LockSet",
+            "cons",
             "containsKey",
             "none"
           ]
@@ -17411,6 +17436,7 @@
             "AccessMode",
             "LockId",
             "LockSet",
+            "cons",
             "containsKey",
             "lub"
           ]
@@ -17569,6 +17595,7 @@
           "name": "list_fst_inj_of_nodup_keys",
           "line": 559,
           "called": [
+            "cons",
             "head",
             "tail"
           ]
@@ -17724,6 +17751,7 @@
             "SystemState",
             "acquireAll",
             "acquireLockOnObject",
+            "cons",
             "head",
             "tail"
           ]
@@ -17738,6 +17766,7 @@
             "LockId",
             "ReleaseInsensitive",
             "SystemState",
+            "cons",
             "head",
             "releaseAll",
             "releaseLockOnObject",
@@ -17789,6 +17818,7 @@
             "SystemState",
             "acquireAll",
             "acquireLockOnObject",
+            "cons",
             "head",
             "lockAcquireSequence"
           ]
@@ -17805,6 +17835,7 @@
             "SystemState",
             "acquireAll",
             "acquireLockOnObject",
+            "cons",
             "head",
             "lockAcquireSequence",
             "lockSet_invariant_preserved",
@@ -18250,6 +18281,7 @@
             "RwLockState.coreHolds",
             "RwLockState.unheld",
             "SystemState",
+            "cons",
             "default",
             "default_lookup_none",
             "default_objStoreLock_unheld",
@@ -18432,6 +18464,7 @@
             "acquireLockOnObject",
             "acquireLockOnObject_preserves_invExt",
             "acquireLockOnObject_preserves_lockHeld_of_ne_objId",
+            "cons",
             "head",
             "invExt",
             "lockHeld",
@@ -18454,6 +18487,7 @@
             "acquireLockOnObject_establishes_lockHeld_modeled",
             "acquireLockOnObject_objects_getElem",
             "acquireLockOnObject_preserves_invExt",
+            "cons",
             "head",
             "invExt",
             "lockHeld",
@@ -20014,6 +20048,7 @@
           "line": 721,
           "called": [
             "RwLockState",
+            "cons",
             "head",
             "none",
             "wf",
@@ -20473,6 +20508,7 @@
           "name": "dropWhile_eq_drop_takeWhile_length",
           "line": 1802,
           "called": [
+            "cons",
             "length"
           ]
         },
@@ -20483,6 +20519,7 @@
           "called": [
             "RwLockState",
             "RwLockState.promoteWaitersOnWriterRelease",
+            "cons",
             "dropWhile_eq_drop_takeWhile_length",
             "head",
             "length"
@@ -20495,6 +20532,7 @@
           "called": [
             "RwLockState",
             "RwLockState.promoteWaitersIfReadersEmpty",
+            "cons",
             "dropWhile_eq_drop_takeWhile_length",
             "head",
             "isEmpty",
@@ -20548,6 +20586,7 @@
           "name": "nodup_subset_length_le",
           "line": 1956,
           "called": [
+            "cons",
             "erase",
             "length"
           ]
@@ -20991,6 +21030,7 @@
           "called": [
             "AccessMode",
             "CoreId",
+            "cons",
             "length"
           ]
         },
@@ -21001,6 +21041,7 @@
           "called": [
             "CoreId",
             "RwLockState",
+            "cons",
             "idxOf_le_length_sub_one_pair",
             "length",
             "none",
@@ -21102,6 +21143,7 @@
           "called": [
             "AccessMode",
             "CoreId",
+            "cons",
             "head"
           ]
         },
@@ -21121,6 +21163,7 @@
           "name": "filter_ne_length_of_nodup",
           "line": 2830,
           "called": [
+            "cons",
             "filter",
             "head",
             "length",
@@ -21147,6 +21190,7 @@
           "called": [
             "RwLockState",
             "RwLockState.promoteWaitersIfReadersEmpty",
+            "cons",
             "isEmpty",
             "promoteWaitersIfReadersEmpty"
           ]
@@ -21238,6 +21282,7 @@
           "name": "mem_takeWhile_implies_pred",
           "line": 3020,
           "called": [
+            "cons",
             "head"
           ]
         },
@@ -21275,6 +21320,7 @@
             "RwLockState.promoteWaitersIfReadersEmpty",
             "RwLockState.promoteWaitersOnWriterRelease",
             "applyOp",
+            "cons",
             "head",
             "idxOf_cons_neq",
             "idxOf_eq_takeWhile_length_plus_dropWhile",
@@ -21492,6 +21538,7 @@
           "name": "drop_idxOf_eq_of_nodup",
           "line": 3549,
           "called": [
+            "cons",
             "head",
             "zero"
           ]
@@ -21604,6 +21651,7 @@
           "name": "mem_dropWhile_of_not_pred",
           "line": 3725,
           "called": [
+            "cons",
             "head",
             "tail"
           ]
@@ -21764,6 +21812,7 @@
           "called": [
             "CoreId",
             "RwLockState",
+            "cons",
             "length",
             "numCores",
             "rwLock_bounded_wait_read",
@@ -21808,6 +21857,7 @@
             "CoreId",
             "RwLockState",
             "RwLockState.promoteWaitersOnWriterRelease",
+            "cons",
             "head"
           ]
         },
@@ -21908,6 +21958,7 @@
           "called": [
             "CoreId",
             "RwLockState",
+            "cons",
             "encodeRwLock",
             "le_trans",
             "length"
@@ -21921,6 +21972,7 @@
             "CoreId",
             "RwLockState",
             "RwLockState.promoteWaitersOnWriterRelease",
+            "cons",
             "head"
           ]
         },
@@ -22022,6 +22074,7 @@
             "RwLockState.promoteWaitersIfReadersEmpty",
             "RwLockState.promoteWaitersOnWriterRelease",
             "applyOp",
+            "cons",
             "head",
             "length",
             "none",
@@ -22048,6 +22101,7 @@
             "RwLockState",
             "RwLockState.applyOp",
             "applyOp",
+            "cons",
             "drop_idxOf_eq_of_nodup",
             "length",
             "none",
@@ -22432,6 +22486,7 @@
             "RwLockState.promoteWaitersIfReadersEmpty",
             "RwLockState.promoteWaitersOnWriterRelease",
             "applyOp",
+            "cons",
             "coreInvolved",
             "filter",
             "head",
@@ -22492,6 +22547,7 @@
             "RwLockExecution",
             "RwLockState.unheld",
             "RwLockState.wf_fifoAdmissionDiscipline",
+            "cons",
             "fair_progress_one_step",
             "initial",
             "le_refl",
@@ -22653,6 +22709,7 @@
           "called": [
             "ConcreteRwLockOp",
             "RwLockOp",
+            "cons",
             "opCorresponds"
           ]
         },
@@ -22757,6 +22814,7 @@
             "RwLockState",
             "RwLockState.applyOp",
             "applyOp",
+            "cons",
             "head",
             "rwLockSim",
             "tail"
@@ -22795,7 +22853,8 @@
             "RwLockState",
             "applyOp",
             "blockBisim",
-            "concreteFoldBlock"
+            "concreteFoldBlock",
+            "cons"
           ]
         },
         {
@@ -22809,6 +22868,7 @@
             "RwLockState",
             "RwLockState.applyOp",
             "concreteFoldBlock",
+            "cons",
             "rwLockSim",
             "toNat"
           ]
@@ -22944,6 +23004,7 @@
             "blockBisim",
             "concreteApplyOp",
             "concreteFoldBlock",
+            "cons",
             "encodeRwLock",
             "encodeRwLock_at_least_one_when_reader",
             "filter",
@@ -23026,6 +23087,883 @@
             "concreteFoldBlock",
             "rwLockSim",
             "toNat"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.Serializability",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/Serializability.lean",
+      "declaration_count": 78,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 82,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "KernelTransitionInstance",
+          "line": 106,
+          "called": [
+            "CoreId",
+            "LockId",
+            "LockSet",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "applySequential",
+          "line": 123,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySequential_nil",
+          "line": 128,
+          "called": [
+            "SystemState",
+            "applySequential"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySequential_cons",
+          "line": 133,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "applySequential"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySequential_append",
+          "line": 140,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "applySequential"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ktiSharesConflictingLock",
+          "line": 153,
+          "called": [
+            "AccessMode",
+            "AccessMode.conflicts",
+            "KernelTransitionInstance",
+            "LockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ktiConflictsB",
+          "line": 161,
+          "called": [
+            "AccessMode.conflicts",
+            "KernelTransitionInstance",
+            "any"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ktiConflictsB_iff",
+          "line": 167,
+          "called": [
+            "KernelTransitionInstance",
+            "ktiConflictsB",
+            "ktiSharesConflictingLock"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:180>",
+          "line": 180,
+          "called": [
+            "KernelTransitionInstance",
+            "ktiConflictsB_iff",
+            "ktiSharesConflictingLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ktiSharesConflictingLock_symm",
+          "line": 187,
+          "called": [
+            "AccessMode.conflicts_symm",
+            "KernelTransitionInstance",
+            "ktiSharesConflictingLock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "conflictOrder",
+          "line": 197,
+          "called": [
+            "AccessMode",
+            "AccessMode.conflicts",
+            "KernelTransitionInstance",
+            "LockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "conflictOrder_sharesConflictingLock",
+          "line": 204,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictOrder",
+            "ktiSharesConflictingLock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "KernelTransitionInstance.followsStrict2PL",
+          "line": 217,
+          "called": [
+            "KernelTransitionInstance"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:223>",
+          "line": 223,
+          "called": [
+            "KernelTransitionInstance",
+            "KernelTransitionInstance.followsStrict2PL",
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scheduleFollowsStrict2PL",
+          "line": 229,
+          "called": [
+            "KernelTransitionInstance",
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "KernelTransitionInstance.ofWithLockSet",
+          "line": 241,
+          "called": [
+            "CoreId",
+            "KernelTransitionInstance",
+            "LockSet",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "strictly_2pl_preserved",
+          "line": 251,
+          "called": [
+            "CoreId",
+            "KernelTransitionInstance.ofWithLockSet",
+            "LockSet",
+            "SystemState",
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleFollowsStrict2PL_of_ofWithLockSet",
+          "line": 262,
+          "called": [
+            "CoreId",
+            "KernelTransitionInstance.ofWithLockSet",
+            "LockSet",
+            "SystemState",
+            "scheduleFollowsStrict2PL",
+            "strictly_2pl_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "conflictOrder_commit_le",
+          "line": 280,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictOrder",
+            "followsStrict2PL",
+            "le_trans"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "KernelTransitionInstance.actionsCommute",
+          "line": 295,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KernelTransitionInstance.actionsCommute_symm",
+          "line": 300,
+          "called": [
+            "KernelTransitionInstance",
+            "actionsCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KernelTransitionInstance.actionsCommute_of_action_id_left",
+          "line": 308,
+          "called": [
+            "KernelTransitionInstance",
+            "actionsCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "KernelTransitionInstance.actionsCommute_of_action_id_right",
+          "line": 315,
+          "called": [
+            "KernelTransitionInstance",
+            "actionsCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySequential_swap_adjacent",
+          "line": 327,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "actionsCommute",
+            "applySequential",
+            "applySequential_append",
+            "applySequential_cons"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "CommutingReorder",
+          "line": 342,
+          "called": [
+            "KernelTransitionInstance",
+            "actionsCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "CommutingReorder.cons",
+          "line": 357,
+          "called": [
+            "CommutingReorder",
+            "KernelTransitionInstance"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applySequential_eq_of_commutingReorder",
+          "line": 370,
+          "called": [
+            "CommutingReorder",
+            "KernelTransitionInstance",
+            "SystemState",
+            "applySequential",
+            "applySequential_swap_adjacent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "conflictPrecedes",
+          "line": 396,
+          "called": [
+            "KernelTransitionInstance",
+            "ktiSharesConflictingLock"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:400>",
+          "line": 400,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "conflictPrecedes_irreflexive",
+          "line": 408,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictPrecedes",
+            "lt_irrefl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "conflictPrecedes_asymm",
+          "line": 415,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictPrecedes",
+            "lt_asymm"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "ConflictReaches",
+          "line": 422,
+          "called": [
+            "KernelTransitionInstance"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "conflictReaches_commitTime_lt",
+          "line": 433,
+          "called": [
+            "ConflictReaches",
+            "KernelTransitionInstance",
+            "conflictPrecedes",
+            "lt_trans"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ConflictAcyclic",
+          "line": 442,
+          "called": [
+            "ConflictReaches",
+            "KernelTransitionInstance"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "conflictGraph_acyclic",
+          "line": 455,
+          "called": [
+            "ConflictAcyclic",
+            "conflictPrecedes",
+            "conflictReaches_commitTime_lt",
+            "lt_irrefl"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "insertByCommitTime",
+          "line": 473,
+          "called": [
+            "KernelTransitionInstance",
+            "head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertByCommitTime_nil",
+          "line": 480,
+          "called": [
+            "KernelTransitionInstance",
+            "insertByCommitTime"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertByCommitTime_cons",
+          "line": 483,
+          "called": [
+            "KernelTransitionInstance",
+            "head",
+            "insertByCommitTime"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "commitSort",
+          "line": 490,
+          "called": [
+            "KernelTransitionInstance",
+            "head",
+            "insertByCommitTime"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commitSort_nil",
+          "line": 495,
+          "called": [
+            "commitSort"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commitSort_cons",
+          "line": 497,
+          "called": [
+            "KernelTransitionInstance",
+            "commitSort",
+            "head",
+            "insertByCommitTime"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertByCommitTime_perm",
+          "line": 503,
+          "called": [
+            "KernelTransitionInstance",
+            "cons",
+            "head",
+            "insertByCommitTime",
+            "insertByCommitTime_cons"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commitSort_perm",
+          "line": 517,
+          "called": [
+            "KernelTransitionInstance",
+            "commitSort",
+            "commitSort_cons",
+            "cons",
+            "head",
+            "insertByCommitTime_perm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertByCommitTime_sorted",
+          "line": 528,
+          "called": [
+            "KernelTransitionInstance",
+            "cons",
+            "head",
+            "insertByCommitTime",
+            "insertByCommitTime_cons",
+            "insertByCommitTime_nil",
+            "insertByCommitTime_perm",
+            "le_trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commitSort_sorted",
+          "line": 561,
+          "called": [
+            "KernelTransitionInstance",
+            "commitSort",
+            "commitSort_cons",
+            "cons",
+            "head",
+            "insertByCommitTime_sorted"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "commutesWithSmaller",
+          "line": 575,
+          "called": [
+            "KernelTransitionInstance",
+            "actionsCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commutesWithSmaller_of_perm",
+          "line": 581,
+          "called": [
+            "KernelTransitionInstance",
+            "commutesWithSmaller"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertByCommitTime_commutingReorder",
+          "line": 590,
+          "called": [
+            "CommutingReorder",
+            "CommutingReorder.cons",
+            "KernelTransitionInstance",
+            "actionsCommute",
+            "commutesWithSmaller",
+            "cons",
+            "head",
+            "insertByCommitTime",
+            "insertByCommitTime_cons",
+            "insertByCommitTime_nil"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "outOfOrderCommute",
+          "line": 618,
+          "called": [
+            "KernelTransitionInstance",
+            "commutesWithSmaller",
+            "head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "outOfOrderCommute_nil",
+          "line": 622,
+          "called": [
+            "outOfOrderCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "outOfOrderCommute_cons",
+          "line": 624,
+          "called": [
+            "KernelTransitionInstance",
+            "commutesWithSmaller",
+            "head",
+            "outOfOrderCommute"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commitSort_commutingReorder",
+          "line": 634,
+          "called": [
+            "CommutingReorder",
+            "CommutingReorder.cons",
+            "KernelTransitionInstance",
+            "commitSort",
+            "commitSort_cons",
+            "commitSort_nil",
+            "commitSort_perm",
+            "commutesWithSmaller",
+            "commutesWithSmaller_of_perm",
+            "cons",
+            "head",
+            "insertByCommitTime_commutingReorder",
+            "outOfOrderCommute",
+            "outOfOrderCommute_cons"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "serialEquivalent",
+          "line": 660,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "applySequential"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serialEquivalent_refl",
+          "line": 665,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "serialEquivalent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializability_under_2pl",
+          "line": 685,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "applySequential_eq_of_commutingReorder",
+            "commitSort",
+            "commitSort_commutingReorder",
+            "commitSort_perm",
+            "commitSort_sorted",
+            "outOfOrderCommute",
+            "serialEquivalent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializability_under_2pl_exists",
+          "line": 701,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "commitSort",
+            "outOfOrderCommute",
+            "serialEquivalent",
+            "serializability_under_2pl"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "outOfOrderCommute_of_forall_action_id",
+          "line": 715,
+          "called": [
+            "KernelTransitionInstance",
+            "KernelTransitionInstance.actionsCommute_of_action_id_left",
+            "head",
+            "outOfOrderCommute",
+            "outOfOrderCommute_cons"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializability_of_readOnly_schedule",
+          "line": 733,
+          "called": [
+            "KernelTransitionInstance",
+            "SystemState",
+            "applySequential_eq_of_commutingReorder",
+            "commitSort",
+            "commitSort_commutingReorder",
+            "outOfOrderCommute_of_forall_action_id",
+            "serialEquivalent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "commitSorted_respects_conflictPrecedes",
+          "line": 750,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "readOnlyInstance",
+          "line": 789,
+          "called": [
+            "CoreId",
+            "KernelTransitionInstance",
+            "LockId",
+            "LockSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "readOnlyInstance_action",
+          "line": 795,
+          "called": [
+            "CoreId",
+            "LockId",
+            "LockSet",
+            "readOnlyInstance"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "readOnlyInstance_actionsCommute",
+          "line": 803,
+          "called": [
+            "CoreId",
+            "KernelTransitionInstance",
+            "KernelTransitionInstance.actionsCommute_of_action_id_left",
+            "LockId",
+            "LockSet",
+            "actionsCommute",
+            "readOnlyInstance"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "readOnlyInstance_actionsCommute_readOnly",
+          "line": 810,
+          "called": [
+            "CoreId",
+            "LockId",
+            "LockSet",
+            "actionsCommute",
+            "readOnlyInstance",
+            "readOnlyInstance_actionsCommute"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "setObjStoreLockAction",
+          "line": 819,
+          "called": [
+            "RwLockState",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "setSchedulerAction",
+          "line": 824,
+          "called": [
+            "SchedulerState",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setObjStoreLock_setScheduler_commute",
+          "line": 833,
+          "called": [
+            "RwLockState",
+            "SchedulerState",
+            "SystemState",
+            "setObjStoreLockAction",
+            "setSchedulerAction"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "disjointField_actionsCommute",
+          "line": 840,
+          "called": [
+            "CoreId",
+            "LockId",
+            "LockSet",
+            "RwLockState",
+            "SchedulerState",
+            "actionsCommute",
+            "setObjStoreLockAction",
+            "setObjStoreLock_setScheduler_commute",
+            "setSchedulerAction"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objStoreEquiv",
+          "line": 852,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objStoreEquiv_refl",
+          "line": 856,
+          "called": [
+            "SystemState",
+            "objStoreEquiv"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objStoreEquiv_symm",
+          "line": 859,
+          "called": [
+            "SystemState",
+            "objStoreEquiv"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "objStoreEquiv_trans",
+          "line": 863,
+          "called": [
+            "SystemState",
+            "objStoreEquiv"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateObjectAt_preserves_invExt",
+          "line": 870,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable.insert_preserves_invExt",
+            "SystemState",
+            "get",
+            "invExt",
+            "none",
+            "updateObjectAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateObjectAt_get",
+          "line": 885,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable.getElem",
+            "SystemState",
+            "get",
+            "insert",
+            "invExt",
+            "none",
+            "updateObjectAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updateObjectAt_objStoreEquiv_comm",
+          "line": 918,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "invExt",
+            "objStoreEquiv",
+            "updateObjectAt",
+            "updateObjectAt_get",
+            "updateObjectAt_preserves_invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "singleCore_invariant_preservation",
+          "line": 953,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "LockSet",
+            "SystemState",
+            "acquireLockOnObject",
+            "releaseLockOnObject",
+            "withLockSet",
+            "withLockSet_invariant_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "singleCore_proof_preservation",
+          "line": 981,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "LockId",
+            "LockSet",
+            "SystemState",
+            "acquireAll",
+            "acquireLockOnObject",
+            "cons",
+            "head",
+            "lockAcquireSequence",
+            "lockSet_invariant_preserved",
+            "releaseAll",
+            "releaseLockOnObject",
+            "withLockSet",
+            "withLockSet_fst"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "withLockSet_growing_phase_establishes_lockSetHeld",
+          "line": 1015,
+          "called": [
+            "CoreId",
+            "LockSet",
+            "RwLockState.unheld",
+            "SystemState",
+            "acquireAll",
+            "acquireAll_establishes_lockSetHeld",
+            "invExt",
+            "lockAcquireSequence",
+            "lockKind",
+            "lockSetHeld",
+            "objectLockOf"
           ]
         }
       ]
@@ -23469,6 +24407,215 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean",
+      "declaration_count": 17,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 45,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "SerializabilityCategory",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "SerializabilityTheorem",
+          "line": 68,
+          "called": [
+            "SerializabilityCategory"
+          ]
+        },
+        {
+          "kind": "syntax",
+          "name": "\"serlt!\"",
+          "line": 78,
+          "called": []
+        },
+        {
+          "kind": "macro_rules",
+          "name": "<anonymous:macro_rules:80>",
+          "line": 80,
+          "called": [
+            "SerializabilityTheorem"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "serializabilityTheorems",
+          "line": 92,
+          "called": [
+            "CommutingReorder",
+            "CommutingReorder.cons",
+            "ConflictAcyclic",
+            "ConflictReaches",
+            "KernelTransitionInstance",
+            "KernelTransitionInstance.actionsCommute",
+            "KernelTransitionInstance.actionsCommute_of_action_id_left",
+            "KernelTransitionInstance.actionsCommute_of_action_id_right",
+            "KernelTransitionInstance.actionsCommute_symm",
+            "KernelTransitionInstance.followsStrict2PL",
+            "KernelTransitionInstance.ofWithLockSet",
+            "SerializabilityTheorem",
+            "applySequential",
+            "applySequential_append",
+            "applySequential_cons",
+            "applySequential_eq_of_commutingReorder",
+            "applySequential_nil",
+            "applySequential_swap_adjacent",
+            "commitSort",
+            "commitSort_commutingReorder",
+            "commitSort_perm",
+            "commitSort_sorted",
+            "commitSorted_respects_conflictPrecedes",
+            "commutesWithSmaller",
+            "commutesWithSmaller_of_perm",
+            "conflictGraph_acyclic",
+            "conflictOrder",
+            "conflictOrder_commit_le",
+            "conflictOrder_sharesConflictingLock",
+            "conflictPrecedes",
+            "conflictPrecedes_asymm",
+            "conflictPrecedes_irreflexive",
+            "conflictReaches_commitTime_lt",
+            "disjointField_actionsCommute",
+            "insertByCommitTime",
+            "insertByCommitTime_commutingReorder",
+            "insertByCommitTime_perm",
+            "insertByCommitTime_sorted",
+            "ktiConflictsB",
+            "ktiConflictsB_iff",
+            "ktiSharesConflictingLock",
+            "ktiSharesConflictingLock_symm",
+            "objStoreEquiv",
+            "objStoreEquiv_refl",
+            "objStoreEquiv_symm",
+            "objStoreEquiv_trans",
+            "outOfOrderCommute",
+            "outOfOrderCommute_of_forall_action_id",
+            "readOnlyInstance",
+            "readOnlyInstance_action",
+            "readOnlyInstance_actionsCommute",
+            "readOnlyInstance_actionsCommute_readOnly",
+            "scheduleFollowsStrict2PL",
+            "scheduleFollowsStrict2PL_of_ofWithLockSet",
+            "serialEquivalent",
+            "serialEquivalent_refl",
+            "serializability_of_readOnly_schedule",
+            "serializability_under_2pl",
+            "serializability_under_2pl_exists",
+            "setObjStoreLockAction",
+            "setObjStoreLock_setScheduler_commute",
+            "setSchedulerAction",
+            "singleCore_invariant_preservation",
+            "singleCore_proof_preservation",
+            "strictly_2pl_preserved",
+            "updateObjectAt_get",
+            "updateObjectAt_objStoreEquiv_comm",
+            "updateObjectAt_preserves_invExt",
+            "withLockSet_growing_phase_establishes_lockSetHeld"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_count",
+          "line": 238,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_model_count",
+          "line": 242,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_conflict_count",
+          "line": 246,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_strict2pl_count",
+          "line": 250,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_commutativity_count",
+          "line": 254,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_acyclicity_count",
+          "line": 258,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_serializability_count",
+          "line": 262,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_preservation_count",
+          "line": 266,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_partition_sum",
+          "line": 270,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_identifiers_nodup",
+          "line": 281,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "serializabilityTheorems_descriptions_nodup",
+          "line": 285,
+          "called": []
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Concurrency.Locks.TicketLock",
       "path": "SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean",
       "declaration_count": 69,
@@ -23809,6 +24956,7 @@
           "line": 653,
           "called": [
             "TicketLockState",
+            "cons",
             "length",
             "wf",
             "wf_countParity"
@@ -23937,7 +25085,8 @@
           "name": "nodup_snd_unique_entry",
           "line": 1016,
           "called": [
-            "CoreId"
+            "CoreId",
+            "cons"
           ]
         },
         {
@@ -23945,7 +25094,8 @@
           "name": "nodup_fst_unique_entry",
           "line": 1048,
           "called": [
-            "CoreId"
+            "CoreId",
+            "cons"
           ]
         },
         {
@@ -23954,6 +25104,7 @@
           "line": 1084,
           "called": [
             "CoreId",
+            "cons",
             "filter",
             "length"
           ]
@@ -24105,6 +25256,7 @@
             "TicketLockState",
             "TicketLockState.applyOp",
             "applyOp",
+            "cons",
             "ticketLock_fifo"
           ]
         },
@@ -24127,6 +25279,7 @@
           "name": "nodup_subset_length_le",
           "line": 1666,
           "called": [
+            "cons",
             "erase",
             "length"
           ]
@@ -25177,6 +26330,7 @@
           "name": "pairwise_get_lt",
           "line": 447,
           "called": [
+            "cons",
             "get",
             "length",
             "lt_irrefl",
@@ -26900,6 +28054,7 @@
           "line": 1366,
           "called": [
             "SystemState",
+            "cons",
             "lookupService",
             "serviceCountBounded_of_eq",
             "serviceEdge",
@@ -26944,6 +28099,7 @@
           "line": 1440,
           "called": [
             "SystemState",
+            "cons",
             "length",
             "lookupService",
             "serviceCountBounded_monotone",
@@ -31095,6 +32251,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "cons",
             "toObjId"
           ]
         },
@@ -31115,7 +32272,8 @@
           "called": [
             "QueueNextPath",
             "SystemState",
-            "ThreadId"
+            "ThreadId",
+            "cons"
           ]
         },
         {
@@ -31126,6 +32284,7 @@
             "QueueNextPath",
             "SystemState",
             "ThreadId",
+            "cons",
             "toObjId"
           ]
         },
@@ -31163,6 +32322,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "cons",
             "tcbQueueChainAcyclic",
             "toObjId"
           ]
@@ -31547,6 +32707,7 @@
           "called": [
             "NoDupList",
             "ThreadId",
+            "cons",
             "isEmpty",
             "none",
             "notificationQueueWellFormed"
@@ -32387,6 +33548,7 @@
             "SchedContextId",
             "SystemState",
             "ThreadId",
+            "cons",
             "invExt",
             "returnDonatedSchedContext",
             "returnDonatedSchedContext_tcb_queue_backward",
@@ -36094,6 +37256,7 @@
             "Slot",
             "SystemState",
             "TCB",
+            "cons",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
             "invExt",
@@ -36173,6 +37336,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "cons",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
             "endpointId",
@@ -36543,7 +37707,8 @@
           "called": [
             "QueueNextPath",
             "SystemState",
-            "ThreadId"
+            "ThreadId",
+            "cons"
           ]
         },
         {
@@ -36566,6 +37731,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "cons",
             "invExt",
             "storeObject",
             "storeObject_objects_eq",
@@ -36598,6 +37764,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "cons",
             "invExt",
             "storeObject",
             "storeObject_objects_eq",
@@ -37056,6 +38223,7 @@
             "QueuePPrev",
             "SystemState",
             "ThreadId",
+            "cons",
             "invExt",
             "none",
             "storeTcbQueueLinks",
@@ -37075,6 +38243,7 @@
             "QueuePPrev",
             "SystemState",
             "ThreadId",
+            "cons",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -37096,6 +38265,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "cons",
             "invExt",
             "lookupTcb_some_objects",
             "none",
@@ -41778,6 +42948,7 @@
             "LabelingContext",
             "NonInterferenceStep",
             "SystemState",
+            "cons",
             "invExt",
             "objectIndexSetComplete"
           ]
@@ -41791,6 +42962,7 @@
             "LabelingContext",
             "NonInterferenceTrace",
             "SystemState",
+            "cons",
             "projectState",
             "step_preserves_projection"
           ]
@@ -41980,6 +43152,7 @@
             "NonInterferenceStep",
             "NonInterferenceTrace",
             "SystemState",
+            "cons",
             "invExt",
             "objectIndexSetComplete",
             "projectState",
@@ -42336,6 +43509,7 @@
           "name": "list_filter_ne_then_filter_eq",
           "line": 237,
           "called": [
+            "cons",
             "filter"
           ]
         },
@@ -43185,6 +44359,7 @@
             "LabelingContext",
             "SchedulerState.runnable",
             "SystemState",
+            "cons",
             "effectiveRunQueuePriority",
             "filter",
             "insert",
@@ -48918,6 +50093,7 @@
             "RHTable",
             "RHTable.fold",
             "Slot",
+            "cons",
             "fold",
             "insert",
             "none",
@@ -49063,6 +50239,7 @@
             "Capability",
             "RHEntry",
             "Slot",
+            "cons",
             "extractBits",
             "insert",
             "lookup",
@@ -49082,6 +50259,7 @@
             "Capability",
             "RHEntry",
             "Slot",
+            "cons",
             "extractBits",
             "insert",
             "lookup",
@@ -49101,6 +50279,7 @@
             "Capability",
             "RHEntry",
             "Slot",
+            "cons",
             "extractBits",
             "foldl_preserves_some",
             "insert",
@@ -49756,6 +50935,7 @@
           "name": "foldl_countSome_eq",
           "line": 231,
           "called": [
+            "cons",
             "countSome",
             "none"
           ]
@@ -49768,6 +50948,7 @@
             "CNodeRadix",
             "CNodeRadix.size",
             "Capability",
+            "cons",
             "countSome",
             "none",
             "size",
@@ -49779,6 +50960,7 @@
           "name": "countSome_set_some_le",
           "line": 257,
           "called": [
+            "cons",
             "countSome",
             "length",
             "none",
@@ -49791,6 +50973,7 @@
           "name": "countSome_set_none_le",
           "line": 276,
           "called": [
+            "cons",
             "countSome",
             "length",
             "none",
@@ -49854,6 +51037,7 @@
             "Capability",
             "Slot",
             "collectEntries",
+            "cons",
             "none",
             "ofNat"
           ]
@@ -49878,6 +51062,7 @@
           "called": [
             "Capability",
             "collectEntries",
+            "cons",
             "length",
             "none",
             "ofNat",
@@ -49906,6 +51091,7 @@
             "Capability",
             "Slot.toNat_ofNat",
             "collectEntries",
+            "cons",
             "none",
             "toNat"
           ]
@@ -49919,6 +51105,7 @@
             "Slot.toNat_ofNat",
             "collectEntries",
             "collectEntries_keys_ge",
+            "cons",
             "none",
             "ofNat",
             "toNat"
@@ -50088,6 +51275,7 @@
             "RHEntry",
             "RHTable",
             "RHTable.insertNoResize_size_le",
+            "cons",
             "insertNoResize",
             "none",
             "size"
@@ -50175,6 +51363,7 @@
             "RHEntry",
             "RHTable",
             "RHTable.insertNoResize_size_le",
+            "cons",
             "insertNoResize",
             "none",
             "size"
@@ -51910,6 +53099,7 @@
           "name": "List.countP_set_of_same",
           "line": 18,
           "called": [
+            "cons",
             "length",
             "set",
             "zero"
@@ -51920,6 +53110,7 @@
           "name": "List.countP_set_of_false_to_true",
           "line": 34,
           "called": [
+            "cons",
             "length",
             "set",
             "zero"
@@ -51930,6 +53121,7 @@
           "name": "List.countP_set_of_true_to_false",
           "line": 50,
           "called": [
+            "cons",
             "length",
             "set",
             "zero"
@@ -52013,6 +53205,7 @@
           "name": "List.countP_le_len",
           "line": 194,
           "called": [
+            "cons",
             "length"
           ]
         },
@@ -52739,6 +53932,7 @@
           "name": "List.exists_none_of_countP_lt",
           "line": 2309,
           "called": [
+            "cons",
             "length",
             "none"
           ]
@@ -53515,6 +54709,7 @@
           "name": "filter_mem_of_mem",
           "line": 200,
           "called": [
+            "cons",
             "filter"
           ]
         },
@@ -53684,6 +54879,7 @@
           "line": 409,
           "called": [
             "ReplenishmentEntry",
+            "cons",
             "filter",
             "sumReplenishments"
           ]
@@ -53694,6 +54890,7 @@
           "line": 421,
           "called": [
             "ReplenishmentEntry",
+            "cons",
             "length",
             "sumReplenishments"
           ]
@@ -54751,6 +55948,7 @@
           "line": 232,
           "called": [
             "SchedContextId",
+            "cons",
             "insertSorted",
             "scId",
             "tail"
@@ -54774,6 +55972,7 @@
           "line": 278,
           "called": [
             "SchedContextId",
+            "cons",
             "insertSorted",
             "insertSorted_head_time_ge",
             "pairwiseSortedBy",
@@ -54803,6 +56002,7 @@
           "line": 312,
           "called": [
             "SchedContextId",
+            "cons",
             "pairwiseSortedBy",
             "pairwiseSortedBy_tail",
             "scId",
@@ -54827,6 +56027,7 @@
           "line": 335,
           "called": [
             "SchedContextId",
+            "cons",
             "length",
             "scId",
             "splitDue",
@@ -54862,6 +56063,7 @@
           "line": 385,
           "called": [
             "SchedContextId",
+            "cons",
             "filter",
             "filter_head_time_ge",
             "pairwiseSortedBy",
@@ -54930,6 +56132,7 @@
           "line": 448,
           "called": [
             "SchedContextId",
+            "cons",
             "insertSorted",
             "length",
             "scId",
@@ -54967,6 +56170,7 @@
           "line": 475,
           "called": [
             "SchedContextId",
+            "cons",
             "insertSorted",
             "scId",
             "tail"
@@ -54979,6 +56183,7 @@
           "called": [
             "Kernel",
             "SchedContextId",
+            "cons",
             "insertSorted",
             "scId",
             "tail"
@@ -56237,6 +57442,7 @@
           "line": 53,
           "called": [
             "DomainScheduleEntry",
+            "cons",
             "head",
             "le_trans",
             "length",
@@ -56251,6 +57457,7 @@
           "line": 66,
           "called": [
             "DomainScheduleEntry",
+            "cons",
             "domainRotationBound",
             "domainRotationTotal",
             "length",
@@ -56787,6 +57994,7 @@
             "SchedulerStep",
             "SchedulerTrace",
             "SystemState",
+            "cons",
             "stepPost",
             "stepPrecondition"
           ]
@@ -57108,6 +58316,7 @@
             "SystemState",
             "ThreadId",
             "boolIfMonoLe",
+            "cons",
             "count",
             "countHigherOrEqualEffectivePriority",
             "le_refl",
@@ -57592,6 +58801,7 @@
           "line": 945,
           "called": [
             "DomainScheduleEntry",
+            "cons",
             "length",
             "schedule"
           ]
@@ -57614,6 +58824,7 @@
           "line": 967,
           "called": [
             "SystemState",
+            "cons",
             "invExt",
             "saveOutgoingContext_preserves_objects_invExt",
             "switchDomain"
@@ -58047,6 +59258,7 @@
           "called": [
             "SchedulerState.runnable",
             "SystemState",
+            "cons",
             "currentThreadValid",
             "effectiveRunQueuePriority",
             "insert_preserves_nodup",
@@ -58150,6 +59362,7 @@
             "TCB",
             "ThreadId",
             "chooseBestRunnableBy",
+            "cons",
             "isBetterCandidate",
             "isBetterCandidate_irrefl",
             "isBetterCandidate_not_better_trans",
@@ -58280,6 +59493,7 @@
           "called": [
             "SchedulerState.runnable",
             "SystemState",
+            "cons",
             "currentTimeSlicePositive",
             "effectiveRunQueuePriority",
             "insert",
@@ -58405,6 +59619,7 @@
           "line": 1260,
           "called": [
             "SystemState",
+            "cons",
             "currentTimeSlicePositive",
             "switchDomain"
           ]
@@ -58450,6 +59665,7 @@
           "line": 1347,
           "called": [
             "SystemState",
+            "cons",
             "edfCurrentHasEarliestDeadline",
             "switchDomain"
           ]
@@ -58460,6 +59676,7 @@
           "line": 1371,
           "called": [
             "SystemState",
+            "cons",
             "contextMatchesCurrent",
             "length",
             "none",
@@ -58474,6 +59691,7 @@
             "SchedulerState.runnable",
             "SystemState",
             "ThreadId",
+            "cons",
             "invExt",
             "mem_insert",
             "mem_toList_iff_mem",
@@ -58624,6 +59842,7 @@
           "line": 1793,
           "called": [
             "SystemState",
+            "cons",
             "effectiveRunQueuePriority",
             "insert",
             "invExt",
@@ -58722,6 +59941,7 @@
           "line": 2022,
           "called": [
             "SystemState",
+            "cons",
             "domainTimeRemainingPositive",
             "length",
             "switchDomain"
@@ -58733,6 +59953,7 @@
           "line": 2053,
           "called": [
             "SystemState",
+            "cons",
             "switchDomain"
           ]
         },
@@ -58855,6 +60076,7 @@
             "TCB",
             "ThreadId",
             "chooseBestRunnableBy",
+            "cons",
             "isBetterCandidate",
             "none",
             "runnable",
@@ -58873,6 +60095,7 @@
             "TCB",
             "ThreadId",
             "chooseBestRunnableBy",
+            "cons",
             "isBetterCandidate",
             "none",
             "toObjId"
@@ -59247,6 +60470,7 @@
           "line": 3368,
           "called": [
             "SystemState",
+            "cons",
             "insert_preserves_wellFormed",
             "none",
             "switchDomain",
@@ -59491,6 +60715,7 @@
           "called": [
             "SchedContextId",
             "SystemState",
+            "cons",
             "pairwiseSortedBy",
             "pairwiseSortedBy_head_le_all",
             "pairwiseSortedBy_tail",
@@ -59926,6 +61151,7 @@
             "ThreadId",
             "chooseBestRunnableBy",
             "chooseBestRunnableEffective",
+            "cons",
             "get",
             "hasSufficientBudget_unbound",
             "none",
@@ -60361,6 +61587,7 @@
             "ThreadId",
             "cmwpFoldBody",
             "cmwpFoldBody_frame",
+            "cons",
             "head",
             "tail"
           ]
@@ -60422,6 +61649,7 @@
             "SystemState",
             "ThreadId",
             "computeMaxWaiterPriority_lookup_equiv",
+            "cons",
             "head",
             "tail",
             "waitersOf"
@@ -60437,6 +61665,7 @@
             "ThreadId",
             "cmwpFoldBody",
             "computeMaxWaiterPriority_lookup_equiv",
+            "cons",
             "effectiveSchedParams",
             "effectiveSchedParams_frame_per_field",
             "getSchedContext",
@@ -61670,6 +62899,7 @@
           "name": "filter_filter_ne_of_false",
           "line": 431,
           "called": [
+            "cons",
             "filter"
           ]
         },
@@ -61744,6 +62974,7 @@
           "name": "filter_erase_of_false",
           "line": 498,
           "called": [
+            "cons",
             "erase",
             "filter"
           ]
@@ -62137,6 +63368,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "serviceEdge"
           ]
         },
@@ -62177,6 +63409,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "serviceNontrivialPath",
             "serviceReachable",
             "serviceReachable_of_edge"
@@ -62189,6 +63422,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "serviceEdge",
             "serviceNontrivialPath",
             "serviceReachable"
@@ -62213,6 +63447,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "serviceNontrivialPath"
           ]
         },
@@ -62223,6 +63458,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "serviceEdge",
             "serviceNontrivialPath"
           ]
@@ -62384,6 +63620,7 @@
           "name": "filter_mono",
           "line": 298,
           "called": [
+            "cons",
             "filter",
             "length"
           ]
@@ -62393,6 +63630,7 @@
           "name": "filter_strict",
           "line": 313,
           "called": [
+            "cons",
             "filter",
             "filter_mono",
             "length"
@@ -62469,6 +63707,7 @@
             "bfsClosed_skip",
             "bfsUniverse",
             "bfs_boundary_lemma",
+            "cons",
             "contains",
             "filter",
             "filter_vis_decrease",
@@ -62502,6 +63741,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "lookupService",
             "none",
             "serviceNontrivialPath"
@@ -62535,6 +63775,7 @@
             "ServiceGraphEntry",
             "ServiceId",
             "SystemState",
+            "cons",
             "invExt",
             "lookupService",
             "serviceEdge_post_insert",
@@ -62616,6 +63857,7 @@
             "ServiceGraphEntry",
             "ServiceId",
             "SystemState",
+            "cons",
             "invExt",
             "lookupService",
             "serviceEdge_of_storeServiceState_sameDeps",
@@ -62747,6 +63989,7 @@
           "name": "default_serviceGraphInvariant",
           "line": 851,
           "called": [
+            "cons",
             "default",
             "default_lookupService_none",
             "default_serviceCountBounded",
@@ -63575,6 +64818,7 @@
           "line": 371,
           "called": [
             "RHEntry",
+            "cons",
             "none"
           ]
         },
@@ -63584,6 +64828,7 @@
           "line": 386,
           "called": [
             "RHEntry",
+            "cons",
             "list_foldl_match_true_stays_true",
             "none"
           ]
@@ -63757,6 +65002,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "removeDependenciesOf",
             "removeDependenciesOf_objects_eq"
           ]
@@ -63768,6 +65014,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "removeDependenciesOf",
             "removeDependenciesOf_scheduler_eq"
           ]
@@ -63779,6 +65026,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "removeDependenciesOf",
             "removeDependenciesOf_lifecycle_eq"
           ]
@@ -63790,6 +65038,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "removeDependenciesOf",
             "removeDependenciesOf_serviceRegistry_eq"
           ]
@@ -63844,6 +65093,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "cons",
             "removeDependenciesOf",
             "removeDependenciesOf_interfaceRegistry_eq"
           ]
@@ -65456,6 +66706,7 @@
           "line": 59,
           "called": [
             "RHEntry",
+            "cons",
             "head",
             "none",
             "tail"
@@ -65467,6 +66718,7 @@
           "line": 89,
           "called": [
             "RHEntry",
+            "cons",
             "head",
             "none",
             "tail"
@@ -65514,6 +66766,7 @@
           "line": 190,
           "called": [
             "RHEntry",
+            "cons",
             "head",
             "length",
             "none",
@@ -65587,6 +66840,7 @@
           "called": [
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "get",
             "head",
             "insert",
@@ -65603,6 +66857,7 @@
           "called": [
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "get",
             "head",
             "insert",
@@ -65619,6 +66874,7 @@
           "called": [
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "freezeMap_indexMap_head",
             "get",
             "head",
@@ -65660,6 +66916,7 @@
           "line": 656,
           "called": [
             "RHTable",
+            "cons",
             "insert"
           ]
         },
@@ -65667,7 +66924,9 @@
           "kind": "theorem",
           "name": "map_snd_map_pair",
           "line": 671,
-          "called": []
+          "called": [
+            "cons"
+          ]
         },
         {
           "kind": "def",
@@ -65937,6 +67196,7 @@
             "Capability",
             "RHEntry",
             "Slot",
+            "cons",
             "extractBits",
             "insert",
             "length",
@@ -65956,6 +67216,7 @@
             "Capability",
             "RHEntry",
             "Slot",
+            "cons",
             "extractBits",
             "insert",
             "length",
@@ -65975,6 +67236,7 @@
             "Capability",
             "RHEntry",
             "Slot",
+            "cons",
             "extractBits",
             "foldl_generic_preserves_lookup",
             "insert",
@@ -66084,6 +67346,7 @@
           "called": [
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "get",
             "insert",
             "insert_preserves_invExt",
@@ -67117,6 +68380,7 @@
           "line": 634,
           "called": [
             "RHTable",
+            "cons",
             "insert",
             "length"
           ]
@@ -67156,6 +68420,7 @@
             "RHTable.empty",
             "RHTable.empty_invExtK",
             "RHTable.insert_preserves_invExtK",
+            "cons",
             "freezeMap",
             "insert",
             "invExtK",
@@ -67399,6 +68664,7 @@
           "name": "nodup_filter",
           "line": 103,
           "called": [
+            "cons",
             "filter"
           ]
         },
@@ -67593,6 +68859,7 @@
           "line": 242,
           "called": [
             "NoDupList",
+            "cons",
             "head"
           ]
         },
@@ -69037,6 +70304,7 @@
             "CdtNodeId",
             "DerivationOp",
             "addEdge",
+            "cons",
             "edgeWellFounded",
             "getElem",
             "head",
@@ -69072,6 +70340,7 @@
             "CapDerivationTree",
             "CdtNodeId",
             "cdtReachable",
+            "cons",
             "head",
             "length"
           ]
@@ -69178,6 +70447,7 @@
             "CdtNodeId",
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "erase",
             "erase_preserves_invExtK",
             "head",
@@ -69193,6 +70463,7 @@
             "CdtNodeId",
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "erase",
             "erase_preserves_invExtK",
             "get",
@@ -69208,6 +70479,7 @@
             "CdtNodeId",
             "RHTable",
             "RHTable.getElem",
+            "cons",
             "erase",
             "erase_preserves_invExtK",
             "foldl_erase_none",
@@ -69226,6 +70498,7 @@
             "RHTable",
             "RHTable.getElem",
             "childMapConsistent",
+            "cons",
             "erase",
             "erase_preserves_invExtK",
             "foldl_erase_mem",
@@ -69290,6 +70563,7 @@
             "CdtNodeId",
             "DerivationOp",
             "addEdge",
+            "cons",
             "edgeWellFounded",
             "getElem",
             "head",
@@ -69412,6 +70686,7 @@
             "CdtNodeId",
             "HashSet_contains_insert_iff",
             "HashSet_contains_insert_self",
+            "cons",
             "contains",
             "insert"
           ]
@@ -69467,6 +70742,7 @@
             "CapDerivationTree",
             "CdtNodeId",
             "childrenOf",
+            "cons",
             "contains",
             "descendantsOf_go_cons",
             "descendantsOf_go_nil",
@@ -69509,6 +70785,7 @@
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
+            "cons",
             "descendantsOf_go_acc_subset",
             "descendantsOf_go_cons",
             "descendantsOf_go_nil",
@@ -69561,6 +70838,7 @@
             "CapDerivationTree",
             "CdtNodeId",
             "childrenOf",
+            "cons",
             "contains",
             "descendantsOf_go_cons",
             "descendantsOf_go_head_children_found",
@@ -69574,7 +70852,9 @@
           "kind": "theorem",
           "name": "list_mem_split",
           "line": 2523,
-          "called": []
+          "called": [
+            "cons"
+          ]
         },
         {
           "kind": "theorem",
@@ -69614,6 +70894,7 @@
             "cdtMapsConsistent",
             "cdtReachable",
             "childrenOf_to_edge",
+            "cons",
             "getElem",
             "head",
             "length"
@@ -70297,6 +71578,7 @@
           "line": 305,
           "called": [
             "AccessRight",
+            "cons",
             "maxBits",
             "or_lt_maxBits",
             "singleton_lt_maxBits",
@@ -72562,6 +73844,7 @@
             "Slot",
             "SystemState",
             "cnodeId",
+            "cons",
             "erase"
           ]
         },
@@ -72591,6 +73874,7 @@
             "Slot",
             "SystemState",
             "cnodeId",
+            "cons",
             "erase"
           ]
         },
@@ -72620,6 +73904,7 @@
             "Slot",
             "SystemState",
             "cnodeId",
+            "cons",
             "erase"
           ]
         },
@@ -75274,6 +76559,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75284,6 +76570,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75294,6 +76581,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75304,6 +76592,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75314,6 +76603,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75324,6 +76614,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75334,6 +76625,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75344,6 +76636,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75354,6 +76647,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75364,6 +76658,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75374,6 +76669,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75384,6 +76680,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75394,6 +76691,7 @@
           "called": [
             "IntermediateState",
             "IrqEntry",
+            "cons",
             "foldIrqs"
           ]
         },
@@ -75404,6 +76702,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75414,6 +76713,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75424,6 +76724,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75434,6 +76735,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75444,6 +76746,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75454,6 +76757,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75464,6 +76768,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75474,6 +76779,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75484,6 +76790,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75494,6 +76801,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75504,6 +76812,7 @@
           "called": [
             "IntermediateState",
             "ObjectEntry",
+            "cons",
             "foldObjects"
           ]
         },
@@ -75778,6 +77087,7 @@
             "RHTable.getElem",
             "RHTable_getElem",
             "bootSafeObject",
+            "cons",
             "createObject",
             "createObject_objects",
             "foldObjects",
@@ -75814,6 +77124,7 @@
             "ObjectEntry",
             "RHTable.getElem",
             "RHTable_getElem",
+            "cons",
             "createObject",
             "createObject_objects",
             "foldObjects",
@@ -75870,6 +77181,7 @@
             "cnodeId",
             "collectQueueMembers_none",
             "config",
+            "cons",
             "contextMatchesCurrent",
             "crossSubsystemInvariant",
             "currentBudgetPositive",
@@ -76311,6 +77623,7 @@
             "MemoryRegion",
             "classifyMemoryRegion",
             "classifyMemoryRegionChecked",
+            "cons",
             "contains",
             "none",
             "ofNat"
@@ -79678,13 +80991,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 164,
+          "line": 170,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 170,
+          "line": 176,
           "called": []
         }
       ]
@@ -101834,6 +103147,488 @@
       ]
     },
     {
+      "module": "tests.SerializabilitySuite",
+      "path": "tests/SerializabilitySuite.lean",
+      "declaration_count": 43,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.Serializability",
+          "line": 38,
+          "called": [
+            "CommutingReorder",
+            "CommutingReorder.cons",
+            "ConflictAcyclic",
+            "ConflictReaches",
+            "KernelTransitionInstance",
+            "KernelTransitionInstance.actionsCommute",
+            "KernelTransitionInstance.actionsCommute_of_action_id_left",
+            "KernelTransitionInstance.actionsCommute_of_action_id_right",
+            "KernelTransitionInstance.actionsCommute_symm",
+            "KernelTransitionInstance.followsStrict2PL",
+            "KernelTransitionInstance.ofWithLockSet",
+            "SerializabilityCategory",
+            "SerializabilityTheorem",
+            "applySequential",
+            "applySequential_append",
+            "applySequential_cons",
+            "applySequential_eq_of_commutingReorder",
+            "applySequential_nil",
+            "applySequential_swap_adjacent",
+            "commitSort",
+            "commitSort_commutingReorder",
+            "commitSort_perm",
+            "commitSort_sorted",
+            "commitSorted_respects_conflictPrecedes",
+            "conflictGraph_acyclic",
+            "conflictOrder",
+            "conflictOrder_commit_le",
+            "conflictOrder_sharesConflictingLock",
+            "conflictPrecedes",
+            "conflictPrecedes_asymm",
+            "conflictPrecedes_irreflexive",
+            "conflictReaches_commitTime_lt",
+            "disjointField_actionsCommute",
+            "insertByCommitTime",
+            "ktiConflictsB",
+            "ktiConflictsB_iff",
+            "ktiSharesConflictingLock",
+            "ktiSharesConflictingLock_symm",
+            "objStoreEquiv",
+            "objStoreEquiv_refl",
+            "objStoreEquiv_symm",
+            "objStoreEquiv_trans",
+            "outOfOrderCommute_of_forall_action_id",
+            "readOnlyInstance",
+            "readOnlyInstance_actionsCommute",
+            "readOnlyInstance_actionsCommute_readOnly",
+            "scheduleFollowsStrict2PL",
+            "scheduleFollowsStrict2PL_of_ofWithLockSet",
+            "serialEquivalent",
+            "serializabilityTheorems",
+            "serializabilityTheorems_count",
+            "serializabilityTheorems_identifiers_nodup",
+            "serializabilityTheorems_partition_sum",
+            "serializability_of_readOnly_schedule",
+            "serializability_under_2pl",
+            "serializability_under_2pl_exists",
+            "setObjStoreLock_setScheduler_commute",
+            "singleCore_invariant_preservation",
+            "singleCore_proof_preservation",
+            "strictly_2pl_preserved",
+            "updateObjectAt_get",
+            "updateObjectAt_objStoreEquiv_comm",
+            "updateObjectAt_preserves_invExt",
+            "withLockSet_growing_phase_establishes_lockSetHeld"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c0",
+          "line": 133,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcb5",
+          "line": 136,
+          "called": [
+            "LockId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcb7",
+          "line": 138,
+          "called": [
+            "LockId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lsW5",
+          "line": 141,
+          "called": [
+            "LockSet",
+            "singleton",
+            "tcb5"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lsR5",
+          "line": 143,
+          "called": [
+            "LockSet",
+            "singleton",
+            "tcb5"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lsW7",
+          "line": 145,
+          "called": [
+            "LockSet",
+            "singleton",
+            "tcb7"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkInst",
+          "line": 149,
+          "called": [
+            "KernelTransitionInstance",
+            "LockSet",
+            "SystemState",
+            "c0"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkRead",
+          "line": 155,
+          "called": [
+            "KernelTransitionInstance",
+            "LockSet",
+            "c0",
+            "readOnlyInstance"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "<anonymous:def:159>",
+          "line": 159,
+          "called": [
+            "KernelTransitionInstance",
+            "lsW5",
+            "mkInst"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "<anonymous:def:161>",
+          "line": 161,
+          "called": [
+            "KernelTransitionInstance",
+            "lsW5",
+            "mkInst"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "<anonymous:def:163>",
+          "line": 163,
+          "called": [
+            "KernelTransitionInstance",
+            "lsW7",
+            "mkInst"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "<anonymous:def:165>",
+          "line": 165,
+          "called": [
+            "KernelTransitionInstance",
+            "lsR5",
+            "mkRead"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "<anonymous:def:167>",
+          "line": 167,
+          "called": [
+            "KernelTransitionInstance",
+            "lsR5",
+            "mkRead"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedUnsorted",
+          "line": 170,
+          "called": [
+            "KernelTransitionInstance",
+            "lsR5",
+            "mkRead"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:176>",
+          "line": 176,
+          "called": [
+            "ktiConflictsB"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:178>",
+          "line": 178,
+          "called": [
+            "ktiConflictsB"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:180>",
+          "line": 180,
+          "called": [
+            "ktiConflictsB"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:182>",
+          "line": 182,
+          "called": [
+            "ktiConflictsB"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:184>",
+          "line": 184,
+          "called": [
+            "ktiConflictsB"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:189>",
+          "line": 189,
+          "called": [
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:191>",
+          "line": 191,
+          "called": [
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:193>",
+          "line": 193,
+          "called": [
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:195>",
+          "line": 195,
+          "called": [
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:197>",
+          "line": 197,
+          "called": [
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:201>",
+          "line": 201,
+          "called": [
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:202>",
+          "line": 202,
+          "called": [
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:203>",
+          "line": 203,
+          "called": [
+            "KernelTransitionInstance.ofWithLockSet",
+            "c0",
+            "followsStrict2PL",
+            "lsW5"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedUnsorted_allRead",
+          "line": 210,
+          "called": [
+            "schedUnsorted"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:217>",
+          "line": 217,
+          "called": [
+            "SystemState",
+            "commitSort",
+            "outOfOrderCommute_of_forall_action_id",
+            "schedUnsorted",
+            "schedUnsorted_allRead",
+            "serialEquivalent",
+            "serializability_under_2pl"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:226>",
+          "line": 226,
+          "called": [
+            "SystemState",
+            "commitSort",
+            "schedUnsorted",
+            "schedUnsorted_allRead",
+            "serialEquivalent",
+            "serializability_of_readOnly_schedule"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:232>",
+          "line": 232,
+          "called": [
+            "ConflictAcyclic",
+            "conflictGraph_acyclic",
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:236>",
+          "line": 236,
+          "called": [
+            "actionsCommute",
+            "c0",
+            "lsR5",
+            "readOnlyInstance_actionsCommute"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:239>",
+          "line": 239,
+          "called": [
+            "KernelObject",
+            "SystemState",
+            "invExt",
+            "objStoreEquiv",
+            "updateObjectAt",
+            "updateObjectAt_objStoreEquiv_comm"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:248>",
+          "line": 248,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "lsW5",
+            "singleCore_proof_preservation",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 257,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runConflictChecks",
+          "line": 264,
+          "called": [
+            "assertBool",
+            "ktiConflictsB"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runConflictPrecedesChecks",
+          "line": 273,
+          "called": [
+            "assertBool",
+            "conflictPrecedes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runStrict2PLChecks",
+          "line": 283,
+          "called": [
+            "KernelTransitionInstance.ofWithLockSet",
+            "assertBool",
+            "c0",
+            "followsStrict2PL",
+            "lsW5"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCommitSortChecks",
+          "line": 289,
+          "called": [
+            "KernelTransitionInstance",
+            "assertBool",
+            "commitSort",
+            "length",
+            "schedUnsorted"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runInventoryChecks",
+          "line": 300,
+          "called": [
+            "assertBool",
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSerializabilityChecks",
+          "line": 319,
+          "called": [
+            "runCommitSortChecks",
+            "runConflictChecks",
+            "runConflictPrecedesChecks",
+            "runInventoryChecks",
+            "runStrict2PLChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 332,
+          "called": [
+            "runSerializabilityChecks"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.SmpFoundationsSuite",
       "path": "tests/SmpFoundationsSuite.lean",
       "declaration_count": 85,
@@ -102607,7 +104402,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpSurfaceAnchors",
-          "line": 38,
+          "line": 39,
           "called": [
             "LockPrimitiveCategory",
             "LockPrimitiveTheorem",
@@ -102621,6 +104416,8 @@
             "acquireTicketLock_eq_ffi",
             "acquireWriteLock",
             "acquireWriteLock_eq_ffi",
+            "conflictGraph_acyclic",
+            "conflictOrder",
             "default",
             "ffiRwLockAcquireRead",
             "ffiRwLockAcquireReadCount",
@@ -102674,6 +104471,10 @@
             "rwLockReleaseReadCount_eq_ffi",
             "rwLockReleaseWriteCount",
             "rwLockReleaseWriteCount_eq_ffi",
+            "serialEquivalent",
+            "serializability_of_readOnly_schedule",
+            "serializability_under_2pl",
+            "singleCore_proof_preservation",
             "snapshotRwLock",
             "snapshotRwLock_eq_ffi",
             "staticRwLockPoolSize",
@@ -102682,6 +104483,7 @@
             "staticTicketLockPoolSize",
             "staticTicketLockPoolSize_eq_numCores",
             "staticTicketLockPoolSize_pos",
+            "strictly_2pl_preserved",
             "ticketLockAcquireCount",
             "ticketLockAcquireCount_eq_ffi",
             "ticketLockReleaseCount",
@@ -102691,6 +104493,7 @@
             "ticketLockSim_preserved_by_release",
             "ticketLockSim_preserved_by_tryAcquire",
             "ticketLockSim_unheld",
+            "updateObjectAt_objStoreEquiv_comm",
             "withReadLock",
             "withReadLock_unfold",
             "withTicketLock",
@@ -102701,77 +104504,41 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:191>",
-          "line": 191,
+          "name": "<anonymous:example:216>",
+          "line": 216,
           "called": [
             "staticTicketLockPoolSize"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:192>",
-          "line": 192,
+          "name": "<anonymous:example:217>",
+          "line": 217,
           "called": [
             "staticRwLockPoolSize"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
+          "name": "<anonymous:example:218>",
+          "line": 218,
           "called": [
             "staticTicketLockPoolSize"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:194>",
-          "line": 194,
+          "name": "<anonymous:example:219>",
+          "line": 219,
           "called": [
             "staticRwLockPoolSize"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:198>",
-          "line": 198,
+          "name": "<anonymous:example:223>",
+          "line": 223,
           "called": [
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:200>",
-          "line": 200,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:205>",
-          "line": 205,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:210>",
-          "line": 210,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:215>",
-          "line": 215,
-          "called": [
-            "filter",
             "length"
           ]
         },
@@ -102780,37 +104547,73 @@
           "name": "<anonymous:example:225>",
           "line": 225,
           "called": [
-            "peekTicketLockNextTicket"
+            "filter",
+            "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:229>",
-          "line": 229,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
-            "peekTicketLockServing"
+            "filter",
+            "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:233>",
-          "line": 233,
+          "name": "<anonymous:example:235>",
+          "line": 235,
           "called": [
-            "peekTicketLockNextTicket"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
-          "called": [
-            "peekTicketLockServing"
+            "filter",
+            "length"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:240>",
           "line": 240,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:250>",
+          "line": 250,
+          "called": [
+            "peekTicketLockNextTicket"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:254>",
+          "line": 254,
+          "called": [
+            "peekTicketLockServing"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:258>",
+          "line": 258,
+          "called": [
+            "peekTicketLockNextTicket"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:261>",
+          "line": 261,
+          "called": [
+            "peekTicketLockServing"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:265>",
+          "line": 265,
           "called": [
             "peekTicketLockNextTicket",
             "peekTicketLockServing"
@@ -102819,7 +104622,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 251,
+          "line": 276,
           "called": [
             "pure",
             "throw"
@@ -102828,7 +104631,7 @@
         {
           "kind": "def",
           "name": "runSmpSurfaceAnchorChecks",
-          "line": 268,
+          "line": 293,
           "called": [
             "acquireReadLock_eq_ffi",
             "acquireTicketLock_eq_ffi",
@@ -102860,7 +104663,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 410,
+          "line": 442,
           "called": [
             "runSmpSurfaceAnchorChecks"
           ]

@@ -97,16 +97,22 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 -- witness.  Used by the cross-language symmetry script
 -- `scripts/check_lock_ffi_symmetry.sh`.
 import SeLe4n.Kernel.Concurrency.LockPrimitives
--- WS-SM SM3.B + SM3.C: LockSet + per-transition lockSet declarations + the
--- canonical sort and ordered/complete/canonical theorems +
+-- WS-SM SM3.B + SM3.C + SM3.D + SM3.E: LockSet + per-transition lockSet
+-- declarations + the canonical sort and ordered/complete/canonical theorems +
 -- LockId.fromObject / LockId.lookup projection layer +
 -- per-transition lockSet_consistent theorems + 72-theorem SM3.B inventory
 -- + SM3.C `withLockSet` 2PL combinator + per-object acquire/release
 -- primitives + `lockSetHeld` predicate + 2PL discipline theorems
 -- (`lockSet_acquired_in_order`, `lockSet_released_in_reverse`,
 -- `lockSet_atomic_under_2pl`, `lockSet_invariant_preserved`) + SM3.C.11
--- dynamic PIP-chain-walk machinery + 51-theorem SM3.C inventory.
--- Staged at SM3.C; SM5+ per-core scheduler integration is the first
+-- dynamic PIP-chain-walk machinery + 51-theorem SM3.C inventory + SM3.D
+-- deadlock-freedom (`deadlockFreedom_under_2pl_and_ordering`,
+-- `waitGraph_acyclic_under_2pl`, `boundedWait_under_2pl`) + 66-theorem
+-- SM3.D inventory + SM3.E serializability (`serializability_under_2pl`
+-- Theorem 2.1.10, `conflictGraph_acyclic`, `strictly_2pl_preserved`,
+-- the SM3.E.5 commutativity lemmas, `singleCore_proof_preservation`
+-- Corollary 2.1.11) + 68-theorem SM3.E inventory.
+-- Staged at SM3.C/D/E; SM5+ per-core scheduler integration is the first
 -- runtime exerciser.  Reachability: every `@[export]` body in the
 -- future SM3.C.9 migration wraps its kernel-transition action in
 -- `withLockSet (lockSet_τ args)`, threading the SM3.B canonical sort

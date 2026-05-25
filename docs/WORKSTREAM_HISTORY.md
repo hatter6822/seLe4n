@@ -994,6 +994,53 @@ and Tier 3 (invariant-surface) pipelines.
 
 Follow-on: SM3.B — **LANDED below**.
 
+**WS-SM SM3.E LANDED on branch `claude/determined-pasteur-apMXc`**
+(serializability — Theorem 2.1.10, conflict-graph acyclicity,
+commutativity, single-core proof preservation — Corollary 2.1.11;
+closes the fifth and final sub-phase of SM3 with all 8 sub-tasks
+LANDED — **SM3 CLOSED**).  Plan §5.5 of
+`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`; proves the second
+architectural keystone of SM3 (after SM3.D's deadlock-freedom):
+**every interleaved execution under strict 2PL is conflict-equivalent
+to a serial execution** (Bernstein et al. 1987), the serial order
+being the commit-time order.  Together SM3.D (liveness) and SM3.E
+(correctness) are the twin levers that let the single-core proofs
+migrate cheaply in SM4..SM6 (Corollary 2.1.11).  New file
+`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1023 LoC) +
+`Sm3EInventory.lean` (68-theorem inventory), staged via
+`Concurrency.LockSet`.
+
+- **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance`
+  schedule model; `ktiSharesConflictingLock` decidable via the Bool
+  `ktiConflictsB`.
+- **SM3.E.2**: `serialEquivalent` + `applySequential`.
+- **SM3.E.3 (Theorem 2.1.10)**: `serializability_under_2pl` via
+  `conflictGraph_acyclic` (the acyclic conflict graph — same
+  `ReachesPlus`/strict-`<` structure as SM3.D, over commit times) plus
+  the `CommutingReorder` closure and the commit-sort serialization
+  order (`commitSort`); `serializability_of_readOnly_schedule` is the
+  hypothesis-free non-vacuity witness.
+- **SM3.E.4**: `strictly_2pl_preserved` + `conflictOrder_commit_le`.
+- **SM3.E.5**: ≥8 commutativity lemmas — structural for read-only /
+  disjoint-subsystem pairs, observational `objStoreEquiv` for
+  write/write on distinct objects.
+- **SM3.E.6 (Corollary 2.1.11)**: `singleCore_proof_preservation`
+  reusing SM3.C.8's `withLockSet_invariant_preserved`;
+  `withLockSet_growing_phase_establishes_lockSetHeld` shows the
+  `lockSetHeld` precondition is a consequence of `withLockSet`.
+- **SM3.E.7/E.8**: `tests/SerializabilitySuite.lean` (23 runtime
+  assertions) + 8 major-theorem `#check` anchors in
+  `tests/SmpSurfaceAnchors.lean`.
+
+**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries.  68-theorem
+SM3.E inventory across 7 categories.  Full Tier 0+1+2+3 green.
+
+**SM3 CLOSED** — all five sub-phases LANDED (SM3.A–SM3.E).  The
+`@[export]`-body migration (SM3.C.9) remains deferred to SM5+ per the
+per-core kernel-state seam.  Follow-on: SM4 (per-core state).
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
 **WS-SM SM3.D LANDED on branch `claude/friendly-rubin-5wOsy`**
 (deadlock-freedom — Theorem 2.1.9, wait-graph acyclicity,
 bounded-wait, lock-discipline grounding; closes the fourth

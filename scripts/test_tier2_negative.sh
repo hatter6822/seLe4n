@@ -179,4 +179,15 @@ run_check_with_timeout "TRACE" lake exe with_lock_set_suite
 # deadlock fixture that necessarily violates the ordering hypothesis.
 run_check_with_timeout "TRACE" lake exe deadlock_freedom_suite
 
+# WS-SM SM3.E — serializability regression suite.  Exercises the SM3.E
+# `KernelTransitionInstance` schedule model, the SM3.E.1 conflict relation +
+# `conflictOrder`, the SM3.E.4 `strictly_2pl_preserved` discipline, the SM3.E.5
+# commutativity lemmas (read-only + disjoint-subsystem structural, write/write
+# observational `objStoreEquiv`), the SM3.E.3 conflict-graph acyclicity
+# (`conflictGraph_acyclic`) + the commit-sort serialization order +
+# `serializability_under_2pl` (Theorem 2.1.10) + the read-only non-vacuity
+# witness, the SM3.E.6 `singleCore_proof_preservation` (Corollary 2.1.11), and
+# the 68-theorem SM3.E inventory.
+run_check_with_timeout "TRACE" lake exe serializability_suite
+
 finalize_report

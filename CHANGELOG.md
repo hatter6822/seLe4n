@@ -1,3 +1,123 @@
+## Unreleased — WS-SM SM3.E LANDED: serializability (Theorem 2.1.10), conflict-graph acyclicity, commutativity, single-core proof preservation (Corollary 2.1.11) — SM3 CLOSED
+
+Closes §5.5 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+(3 PRs, 8 sub-tasks; all LANDED) within the v0.31.9 release cut
+(mirroring the SM3.A / SM3.B / SM3.C / SM3.D landing pattern — no
+version bump; SM3.A..SM3.E close out together en route to v1.0.0).
+**This closes the SM3 phase.**  Builds on SM3.D's deadlock-freedom to
+prove the second architectural keystone: **every interleaved execution
+of kernel transitions under strict two-phase locking is
+conflict-equivalent to a serial execution** — the serial order being
+the commit-time order (Bernstein et al. 1987).  Together, SM3.D
+(deadlock-freedom, liveness) and SM3.E (serializability, correctness)
+are the twin levers that let the existing single-core proofs migrate
+cheaply in SM4..SM6 (Corollary 2.1.11).
+
+**New modules**: `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean`
+(~960 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
+(68-theorem inventory).  Both staged via `Concurrency.LockSet` +
+`staged_module_allowlist.txt`; SM5+ per-core scheduler integration is
+the first runtime exerciser.
+
+* **SM3.E.1** — `conflictOrder`: two transition instances conflict-order
+  when they share a `LockId` in conflicting modes (`AccessMode.conflicts`,
+  SM3.B) and the first commits no later than the second acquires that
+  lock.  The schedule model `KernelTransitionInstance` records
+  `(lockSet, core, commitTime, acquireTime : LockId → Nat, action :
+  SystemState → SystemState)`.  The conflict test is decidable via the
+  Bool `ktiConflictsB` (a finite double `List.any` over the footprint
+  pairs — the existential over the infinite `LockId` type is bounded by
+  membership) bridged by `ktiConflictsB_iff`; `ktiSharesConflictingLock_symm`
+  proves symmetry.
+* **SM3.E.2** — `serialEquivalent`: an interleaved schedule is
+  serial-equivalent to a serial one when they produce the same final
+  state.  `applySequential` folds the schedule's actions in list order;
+  under strict 2PL each transition commits atomically (SM3.C.7
+  `lockSet_observer_atomic`), so this is the net effect of the
+  interleaved execution on the commit-order schedule.
+* **SM3.E.3 (Theorem 2.1.10)** — `serializability_under_2pl`: every
+  strict-2PL execution is serial-equivalent to the commit-sorted serial
+  order, which is moreover a permutation of the execution and ascending
+  in commit time (the topological sort of the acyclic conflict graph).
+  Proof in two halves: (a) **`conflictGraph_acyclic`** — the
+  commit-oriented conflict graph is acyclic (the "acyclic conflict
+  graph" Bernstein reduces serializability to), proved via the same
+  `ReachesPlus`/strict-`<`-along-edges structure SM3.D used for the
+  wait-graph, now over commit times (`conflictReaches_commitTime_lt` +
+  `Nat.lt_irrefl`); (b) the **state-equality** via the
+  adjacent-transposition lever `applySequential_swap_adjacent` lifted to
+  the `CommutingReorder` closure, with the serialization order the
+  insertion-sort `commitSort` (`commitSort_perm` permutation +
+  `commitSort_sorted` ascending + `commitSort_commutingReorder`
+  reachable from the interleaved schedule by commuting transpositions
+  under the strict-2PL `outOfOrderCommute` hypothesis).  The literal
+  `∃ serial, serialEquivalent` form is `serializability_under_2pl_exists`,
+  strengthened with the permutation + commit-ordering witnesses so it is
+  NOT vacuously witnessed by the interleaved schedule itself.
+  `commitSorted_respects_conflictPrecedes` proves the sort respects every
+  conflict edge (the valid-serialization half).
+* **SM3.E.4** — `strictly_2pl_preserved`: every `withLockSet`-built
+  transition holds all its locks until commit (`followsStrict2PL :=
+  ∀ p ∈ lockSet.pairs, acquireTime p.fst ≤ commitTime`).
+  `KernelTransitionInstance.ofWithLockSet` is the canonical
+  growing-phase-before-commit instance; `conflictOrder_commit_le` is the
+  lever showing strict 2PL forces every conflict to be resolved in
+  commit order (`commitTime τ₁ ≤ acquireTime τ₂ l ≤ commitTime τ₂`).
+* **SM3.E.5** — ≥8 commutativity lemmas at two fidelities (both honest):
+  **structural** `actionsCommute` for read-only (identity-action) pairs
+  (`readOnlyInstance_actionsCommute` — reads commute with everything,
+  the plan's `cspaceRead_commutes` analog) and disjoint-subsystem pairs
+  (`setObjStoreLock_setScheduler_commute` — transitions touching
+  different SystemState fields commute), feeding the structural
+  serializability theorem; and **observational** `objStoreEquiv` for two
+  writes to *different objects* (`updateObjectAt_objStoreEquiv_comm`).
+  The write/write case is observational rather than structural because
+  the object store is a Robin-Hood hash table whose internal slot layout
+  depends on insertion order — conflict-serializability IS an
+  observational property (Bernstein: equivalent schedules agree on the
+  database state), so `objStoreEquiv` is the faithful equivalence; the
+  distinction is documented in the module header rather than overclaimed.
+* **SM3.E.6 (Corollary 2.1.11)** — `singleCore_proof_preservation`: the
+  pre→post meta-theorem proving every single-core kernel-transition
+  theorem lifts to the SMP form, gated only by lock-insensitivity
+  (discharged structurally per invariant class) and the `lockSetHeld`
+  precondition.  Reuses SM3.C.8's `withLockSet_invariant_preserved`
+  lever; `withLockSet_growing_phase_establishes_lockSetHeld` (lifting
+  SM3.C.8's `acquireAll_establishes_lockSetHeld`) shows the `lockSetHeld`
+  precondition is a *consequence* of `withLockSet`, not an external
+  assumption.  `singleCore_invariant_preservation` is the invariant form.
+* **SM3.E.7** — `tests/SerializabilitySuite.lean`: surface anchors for
+  every public SM3.E symbol, decidable examples (conflict vs
+  non-conflict, commit-oriented precedence, strict 2PL), theorem-
+  application inhabitation witnesses, and 23 runtime `assertBool`
+  assertions across 5 sections (runnable as `lake exe
+  serializability_suite`).  Tier-2 + Tier-3 wired.
+* **SM3.E.8** — `#check` of the 8 major SM3.E theorems in
+  `tests/SmpSurfaceAnchors.lean` + a runtime inventory-count assertion.
+
+**Non-vacuity**: `serializability_of_readOnly_schedule` proves a
+hypothesis-free family of executions (read-only / all-identity-action
+schedules — the canonical all-non-conflicting case) is serial-equivalent
+to its commit sort, demonstrating `serializability_under_2pl` is not a
+vacuous statement.
+
+**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries (only the standard
+`propext` / `Quot.sound` / `Classical.choice` foundational axioms).  The
+SM3.E inventory (`serializabilityTheorems`) has 68 entries across 7
+categories (model 5, conflict 6, strict2pl 6, commutativity 23,
+acyclicity 7, serializability 18, preservation 3).  Full Tier 0+1+2+3
+green.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+**SM3 acceptance gate** (per
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+§8): all formal items checked.  WS-SM SM3 CLOSED with all five
+sub-phases LANDED (SM3.A per-object lock fields, SM3.B lock-set
+extraction, SM3.C 2PL discipline, SM3.D deadlock-freedom, SM3.E
+serializability).  The remaining `@[export]`-body migration (SM3.C.9)
+is deferred to SM5+ per the per-core kernel-state seam.  SM4 (per-core
+state) follows per the master overview.
+
 ## Unreleased — WS-SM SM3.D LANDED: deadlock-freedom (Theorem 2.1.9), wait-graph acyclicity, bounded-wait, lock-discipline grounding
 
 Closes §5.4 of
