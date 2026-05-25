@@ -1394,7 +1394,112 @@ covered by SM3.C.11.d; termination by SM3.C.11.e.
 
 **Total size**: L (sum of sub-tasks).
 
-### 5.4 Deadlock-freedom (SM3.D, 3 PRs, 7 sub-tasks)
+### 5.4 Deadlock-freedom (SM3.D, 3 PRs, 7 sub-tasks) — LANDED
+
+All 7 sub-tasks LANDED on branch `claude/friendly-rubin-5wOsy`
+within the v0.31.9 release cut (mirroring the SM3.A / SM3.B / SM3.C
+landing pattern — no version bump; SM3.A..SM3.E close out together
+en route to v1.0.0).  See the CHANGELOG entry "WS-SM SM3.D LANDED"
+and CLAUDE.md / AGENTS.md "Active workstream context" for the full
+per-sub-task description.
+
+| Sub | Description | Files | Status |
+|-----|-------------|-------|--------|
+| SM3.D.1 | `noDeadlock` predicate + `KernelExecution` model (`blockedAt` / `heldBy`) + `Decidable (noDeadlock e)` | `Locks/Deadlock.lean` | LANDED |
+| SM3.D.2 | `LockId.le_total` (recap; cited from SM0.I `Kind.lean`) | `Locks/Kind.lean` | LANDED |
+| SM3.D.3 | `lockOrder_strict` (+ `LockId.lt_irrefl` / `lt_trans` / `lt_asymm` in `Kind.lean`) | `Locks/Kind.lean`, `Locks/Deadlock.lean` | LANDED |
+| SM3.D.4 | `deadlockFreedom_under_2pl_and_ordering` (Theorem 2.1.9) | `Locks/Deadlock.lean` | LANDED |
+| SM3.D.5 | `waitGraph_acyclic_under_2pl` (N-core DAG) + `noDeadlock_of_waitGraph_acyclic` coherence corollary | `Locks/Deadlock.lean` | LANDED |
+| SM3.D.6 | `boundedWait_under_2pl` (full: `KernelExecution`/`KernelOperation`/contention-sensitive `WCRT`) + `lockSetTransitions_within_bound` (all 25 lockSets ≤ `maxLockSetSize`) + mode-aware `conflictWaitGraph_acyclic_under_2pl` | `Locks/Deadlock.lean` | LANDED |
+| SM3.D.7 | Tests `tests/DeadlockFreedomSuite.lean` (+ non-vacuity witness) | `tests/DeadlockFreedomSuite.lean` | LANDED |
+
+**Adaptations from the pseudocode in this section**:
+
+* **`KernelExecution` model** — the plan's pseudocode leaves
+  `KernelExecution`, `blockedAt`, `heldBy`, `waitGraph`,
+  `Acyclic`, `WCRT`, `T_cs`, `maxLockSetSize` abstract.  The landed
+  form realises `KernelExecution` as an abstract per-core lock-state
+  snapshot (`held : CoreId → List LockId`, `blocked : CoreId →
+  Option LockId`).  This is the minimal model that supports both the
+  two-core `noDeadlock` (SM3.D.4) and the N-core wait-graph
+  acyclicity (SM3.D.5) without committing to a scheduler.
+
+* **Two non-redundant hypotheses** — `deadlockFreedom_under_2pl_and_ordering`
+  takes `executionFollows2PL` (a blocked core does not already hold
+  the lock it waits for — the 2PL growing-phase property) AND
+  `executionAcquiresInLockIdOrder` (a blocked core's held locks are
+  all `≤` its wanted lock).  Ordering alone gives `held ≤ wanted`;
+  2PL upgrades it to the *strict* `held < wanted` that closes the
+  cycle.  Both are genuinely used (neither is dead weight).
+
+* **`waitGraph_acyclic_under_2pl`** — formalised via a mathlib-free
+  transitive closure `ReachesPlus` and `Acyclic R := ∀ c, ¬
+  ReachesPlus R c c` (no `mathlib` `Relation.TransGen` available).
+  The N-core form subsumes the two-core theorem
+  (`noDeadlock_of_waitGraph_acyclic`).
+
+* **`boundedWait_under_2pl`** (full plan signature) — takes
+  `(e : KernelExecution) (c : CoreId) (op : KernelOperation) (tCs)`
+  plus the 2PL + ordering hypotheses, and proves `noDeadlock e ∧
+  WCRT e c op tCs ≤ maxLockSetSize · (numCores − 1) · tCs`.  The
+  `noDeadlock` conjunct uses the hypotheses (the wait is bounded
+  *because* there is no deadlock); the WCRT conjunct uses
+  `op.sizeWithinBound`.  `WCRT` is **contention-sensitive** — for each
+  lock in `op`'s footprint, `contendersAhead e c` counts the cores
+  actually holding it (`≤ numCores − 1`, `contendersAhead_le`) — so it
+  genuinely depends on the execution `e` and core `c`.  `KernelOperation`
+  carries a `LockSet` footprint + a `sizeWithinBound` proof;
+  `KernelOperation.of*` smart constructors build one from any real
+  transition.  The uniform combinatorial form survives as
+  `totalWaitCost_le_bound` (= `|S| · (numCores − 1) · tCs` via
+  `totalWaitCost_eq`); `WCRT_le_totalWaitCost` bridges the two.
+  `coreCount` is `Concurrency.numCores`.
+
+* **`maxLockSetSize` discharged** — `lockSetTransitions_within_bound`
+  proves all **25** SM3.B `lockSet_<τ>` declarations have size `≤
+  maxLockSetSize` (= 8), via the generic `insertOrMerge_size_le` /
+  `lockSetOfList_size_le` / `lockSetExtendOpt_size_le` + `size_le_1..4`
+  shape helpers.  So the size premise is never vacuous on the real
+  transition surface.
+
+* **Mode-aware (conflict) wait graph** — the plan-signature
+  `noDeadlock` / `waitGraph_acyclic_under_2pl` use bare `LockId`
+  (matching SM3.D.1), which over-approximates blocking (any held-lock
+  overlap is an edge).  `conflictWaitsFor` refines this: an edge fires
+  only on a genuine `AccessMode.conflicts` (two readers create no
+  edge), and `conflictWaitGraph_acyclic_under_2pl` proves the refined
+  graph acyclic via `Acyclic_mono` (it is a subgraph of the plain wait
+  graph).
+
+* **Grounding (§7/§7b)** — the two abstract hypotheses are *not*
+  arbitrary: `execution_satisfies_hypotheses_of_all_prefix` discharges
+  both from the SM3.B `lockAcquireSequence` canonical sort (every
+  blocked core holds a `Nodup`-keyed ascending *prefix* of its
+  transition's acquire order and waits on the next element), realising
+  the plan §3.7 step "By 2PL, H_c is the prefix of c's
+  `lockAcquireSequence(S_c)`".  And the abstract model is connected to
+  the concrete kernel: `lockSetHeld_realizes_heldBy` proves that a core
+  genuinely holding a lock set `S` on a `SystemState` (SM3.C
+  `lockSetHeld`, reading the per-object `RwLockState`) realises the
+  abstract `heldBy (executionOfHeld c S blk)` and the concrete
+  `lockHeld`.
+
+* **SM3.D.7** — `twoCorePathScenario` is the plan's named two-core
+  scenario predicate; the plan's existential example is witnessed in
+  `DeadlockFreedomSuite`.  **SM3.D.3** is additionally restated in the
+  plan's exact `Irreflexive ∧ Transitive` form
+  (`lockOrder_strict_classes`, with mathlib-free namespaced abbrevs).
+  The plan §6.3 tier-4 QEMU deadlock-stress slot is reserved by
+  `scripts/test_qemu_smp_deadlock_stress.sh` (a SKIP-stub: the formal
+  guarantee holds for all executions; the runtime spot-check needs
+  SM5+ per-core scheduling).
+
+**Axiom budget for SM3.D**: 0 Lean axioms, 0 sorries (only the
+standard `propext` / `Quot.sound` / `Classical.choice` foundational
+axioms reachable through Std).  Items deferred past v1.0.0 with
+correctness impact: NONE.  The SM3.D theorem inventory
+(`deadlockTheorems`) has 66 entries across 9 categories; the
+regression suite has 50+ runtime assertions across 12 sections.
 
 #### SM3.D.1 — `noDeadlock` predicate
 
@@ -1656,19 +1761,19 @@ No new Lean axioms.
 
 ## 8. Acceptance gate for SM3
 
-- [ ] All kernel-object structs gain `lock : RwLock` field.
-- [ ] `default_objects_locks_unheld` proven.
-- [ ] `lockSet` defined for every kernel transition (~25 cases).
-- [ ] `lockSet_consistent` proven.
-- [ ] `lockAcquireSequence` defined and properties proven.
-- [ ] `withLockSet` combinator with RAII.
-- [ ] All `@[export]` bodies wrapped in `withLockSet`.
-- [ ] `deadlockFreedom_under_2pl_and_ordering` proven (Theorem 2.1.9).
-- [ ] `serializability_under_2pl` proven (Theorem 2.1.10).
-- [ ] `singleCore_proof_preservation` proven (Corollary 2.1.11).
-- [ ] 8+ commutativity lemmas proven.
-- [ ] Tier 0..3 tests green.
-- [ ] CHANGELOG aggregate entry.
+- [x] All kernel-object structs gain `lock : RwLock` field. (SM3.A)
+- [x] `default_objects_locks_unheld` proven. (SM3.A)
+- [x] `lockSet` defined for every kernel transition (~25 cases). (SM3.B)
+- [x] `lockSet_consistent` proven. (SM3.B)
+- [x] `lockAcquireSequence` defined and properties proven. (SM3.B)
+- [x] `withLockSet` combinator with RAII. (SM3.C)
+- [ ] All `@[export]` bodies wrapped in `withLockSet`. (SM3.C.9 — deferred to SM5+ per-core seam)
+- [x] `deadlockFreedom_under_2pl_and_ordering` proven (Theorem 2.1.9). (SM3.D)
+- [ ] `serializability_under_2pl` proven (Theorem 2.1.10). (SM3.E)
+- [ ] `singleCore_proof_preservation` proven (Corollary 2.1.11). (SM3.E)
+- [ ] 8+ commutativity lemmas proven. (SM3.E)
+- [x] Tier 0..3 tests green. (through SM3.D)
+- [x] CHANGELOG aggregate entry. (per-phase entries through SM3.D)
 
 ## 9. Cross-references
 

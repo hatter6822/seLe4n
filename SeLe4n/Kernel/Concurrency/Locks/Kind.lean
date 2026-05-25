@@ -280,6 +280,38 @@ and an ObjId without raw record syntax. -/
 def LockId.mk' (k : LockKind) (o : SeLe4n.ObjId) : LockId :=
   { kind := k, objId := o }
 
+/-- WS-SM SM0.I / SM3.D.3: irreflexivity of the strict order — no
+`LockId` is strictly below itself.  Immediate from the `LT` definition
+(`l₁ < l₂ := l₁ ≤ l₂ ∧ l₁ ≠ l₂`): `l < l` would require `l ≠ l`.
+
+This is the half of `lockOrder_strict` (SM3.D.3) that closes the
+deadlock-freedom cycle: a wait-for cycle forces some lock strictly
+below itself, contradicting this. -/
+theorem LockId.lt_irrefl (l : LockId) : ¬ (l < l) := fun h => h.2 rfl
+
+/-- WS-SM SM0.I / SM3.D.3: transitivity of the strict order.
+
+`l₁ < l₂` and `l₂ < l₃` give `l₁ ≤ l₃` by `le_trans`; the distinctness
+`l₁ ≠ l₃` follows because `l₁ = l₃` would force `l₁ = l₂` (via
+`le_antisymm` on `l₁ ≤ l₂` and `l₂ ≤ l₃ = l₁`), contradicting `l₁ ≠ l₂`.
+
+This is the second half of `lockOrder_strict` (SM3.D.3) and the engine
+of the N-core wait-graph acyclicity proof (`waitGraph_acyclic_under_2pl`):
+the wanted-lock measure strictly increases along every wait edge, so a
+closed walk would chain `w < w` by transitivity. -/
+theorem LockId.lt_trans (l₁ l₂ l₃ : LockId) (h₁ : l₁ < l₂) (h₂ : l₂ < l₃) :
+    l₁ < l₃ :=
+  ⟨LockId.le_trans _ _ _ h₁.1 h₂.1,
+   fun hEq => h₁.2 (LockId.le_antisymm _ _ h₁.1 (hEq ▸ h₂.1))⟩
+
+/-- WS-SM SM0.I / SM3.D.3: asymmetry of the strict order — `l₁ < l₂`
+rules out `l₂ < l₁`.  Derived from irreflexivity + transitivity.  This
+is the form the two-core deadlock-freedom theorem
+(`deadlockFreedom_under_2pl_and_ordering`) applies directly to the two
+mutually-blocked cores. -/
+theorem LockId.lt_asymm (l₁ l₂ : LockId) (h : l₁ < l₂) : ¬ (l₂ < l₁) :=
+  fun h' => LockId.lt_irrefl l₁ (LockId.lt_trans _ _ _ h h')
+
 /-- WS-SM SM0.I: trichotomy — for any two `LockId`s, exactly one of
 `l₁ < l₂`, `l₁ = l₂`, or `l₂ < l₁` holds.  Useful for SM3 ladder
 arguments that case-split on the relative position of two locks. -/

@@ -16,9 +16,11 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
+import SeLe4n.Kernel.Concurrency.Locks.Deadlock
+import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 
 /-!
-# WS-SM SM3.B + SM3.C — LockSet re-export hub
+# WS-SM SM3.B + SM3.C + SM3.D — LockSet re-export hub
 
 Re-exports the SM3.B + SM3.C modules into a single import surface,
 mirroring the `Operations / Invariant` split pattern documented in
@@ -53,6 +55,15 @@ the underlying modules.
   discipline.
 * `Sm3CInventory` — SM3.C typed theorem inventory.
 
-SM3.D (deadlock-freedom) and SM3.E (serializability) will consume
-this hub.
+## SM3.D modules (deadlock-freedom)
+
+* `Deadlock` — the abstract `KernelExecution` model + the 2PL +
+  ordering hypotheses + `deadlockFreedom_under_2pl_and_ordering`
+  (Theorem 2.1.9, SM3.D.4), `waitGraph_acyclic_under_2pl` (the
+  N-core DAG form, SM3.D.5), `boundedWait_under_2pl` (SM3.D.6), and
+  the §7 grounding bridge that discharges the hypotheses from the
+  SM3.B/SM3.C `lockAcquireSequence` discipline.
+* `Sm3DInventory` — SM3.D typed theorem inventory.
+
+SM3.E (serializability) will consume this hub.
 -/
