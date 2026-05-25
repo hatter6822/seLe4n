@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/friendly-rubin-5wOsy",
-      "commit_sha": "e31154ec40605a887724f59a5035f5eabe87ce48",
-      "tree_sha": "12c9cb852e382853636f5fbac7f926bae637a53b",
-      "committed_at_utc": "2026-05-24T23:18:13+00:00"
+      "commit_sha": "1d664c54421b20482ff49b6d7f2aa8f38e15d777",
+      "tree_sha": "453344b7a8db3ff88148c0b9fcd6c099ae5db092",
+      "committed_at_utc": "2026-05-25T02:48:20+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b860363cc225f8b0839b45b1bf2e85f2ab0be76762c07c3417f6b2217f4dc435"
+    "source_digest": "a4335cf4a44f13f2f79d7bca68a53bed413cd7ac812578697074bd3b8e2bf358"
   },
   "summary": {
     "module_count": 239,
-    "declaration_count": 8200
+    "declaration_count": 8206
   },
   "readme_sync": {
     "version": "0.31.9",
@@ -29,7 +29,7 @@
     "production_files": 198,
     "production_loc": 137552,
     "test_files": 41,
-    "test_loc": 28882,
+    "test_loc": 28953,
     "proved_theorem_lemma_decls": 4065,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -87302,7 +87302,7 @@
     {
       "module": "tests.DeadlockFreedomSuite",
       "path": "tests/DeadlockFreedomSuite.lean",
-      "declaration_count": 41,
+      "declaration_count": 47,
       "declarations": [
         {
           "kind": "namespace",
@@ -87622,8 +87622,85 @@
         },
         {
           "kind": "def",
+          "name": "execContention",
+          "line": 287,
+          "called": [
+            "KernelExecution",
+            "c0",
+            "c1",
+            "none",
+            "tcb5"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "opTcb5",
+          "line": 292,
+          "called": [
+            "KernelOperation",
+            "singleton",
+            "tcb5"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:298>",
+          "line": 298,
+          "called": [
+            "WCRT",
+            "boundedWait_under_2pl",
+            "c0",
+            "execContention",
+            "maxLockSetSize",
+            "noDeadlock",
+            "numCores",
+            "opTcb5"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:305>",
+          "line": 305,
+          "called": [
+            "Acyclic",
+            "conflictWaitGraph_acyclic_under_2pl",
+            "conflictWaitsFor",
+            "execNoDeadlock"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:312>",
+          "line": 312,
+          "called": [
+            "KernelOperation.ofReplyRecv",
+            "maxLockSetSize",
+            "ofNat",
+            "size"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:325>",
+          "line": 325,
+          "called": [
+            "SystemState",
+            "acquireLockOnObject",
+            "c0",
+            "default",
+            "executionOfHeld",
+            "heldBy",
+            "lockHeld",
+            "lockSetHeld_realizes_heldBy",
+            "none",
+            "ofNat",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "execGrounded",
-          "line": 284,
+          "line": 340,
           "called": [
             "KernelExecution",
             "c0",
@@ -87635,7 +87712,7 @@
         {
           "kind": "def",
           "name": "twoLockSet",
-          "line": 289,
+          "line": 345,
           "called": [
             "LockSet",
             "insertOrMerge",
@@ -87646,8 +87723,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:298>",
-          "line": 298,
+          "name": "<anonymous:example:354>",
+          "line": 354,
           "called": [
             "CorePrefixOf",
             "c0",
@@ -87660,13 +87737,13 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 305,
+          "line": 361,
           "called": []
         },
         {
           "kind": "def",
           "name": "runStrictOrderChecks",
-          "line": 312,
+          "line": 368,
           "called": [
             "assertBool",
             "tcb5",
@@ -87676,7 +87753,7 @@
         {
           "kind": "def",
           "name": "runHypothesisChecks",
-          "line": 318,
+          "line": 374,
           "called": [
             "assertBool",
             "c0",
@@ -87691,7 +87768,7 @@
         {
           "kind": "def",
           "name": "runDeadlockNonVacuityChecks",
-          "line": 327,
+          "line": 383,
           "called": [
             "assertBool",
             "c0",
@@ -87705,7 +87782,7 @@
         {
           "kind": "def",
           "name": "runWaitGraphChecks",
-          "line": 338,
+          "line": 394,
           "called": [
             "assertBool",
             "blockedWaitsFor",
@@ -87718,7 +87795,7 @@
         {
           "kind": "def",
           "name": "runBoundedWaitChecks",
-          "line": 353,
+          "line": 409,
           "called": [
             "assertBool",
             "maxLockSetSize",
@@ -87734,7 +87811,7 @@
         {
           "kind": "def",
           "name": "runGroundingChecks",
-          "line": 370,
+          "line": 426,
           "called": [
             "acquireOrder",
             "assertBool",
@@ -87749,7 +87826,7 @@
         {
           "kind": "def",
           "name": "runModeAwareChecks",
-          "line": 382,
+          "line": 438,
           "called": [
             "AccessMode",
             "CoreId",
@@ -87765,7 +87842,7 @@
         {
           "kind": "def",
           "name": "runSizeBoundChecks",
-          "line": 401,
+          "line": 457,
           "called": [
             "KernelOperation.ofTcbSuspend",
             "assertBool",
@@ -87779,20 +87856,25 @@
         {
           "kind": "def",
           "name": "runWCRTChecks",
-          "line": 422,
+          "line": 478,
           "called": [
             "KernelOperation.ofEndpointCall",
             "WCRT",
             "assertBool",
             "c0",
             "contendersAhead",
+            "execContention",
             "execDeadlock",
             "execNoDeadlock",
+            "executionAcquiresInLockIdOrder",
+            "executionFollows2PL",
             "length",
             "maxLockSetSize",
+            "noDeadlock",
             "none",
             "numCores",
             "ofNat",
+            "opTcb5",
             "otherCores",
             "tcb5",
             "totalWaitCost"
@@ -87801,7 +87883,7 @@
         {
           "kind": "def",
           "name": "runBridgeChecks",
-          "line": 439,
+          "line": 510,
           "called": [
             "assertBool",
             "c0",
@@ -87821,7 +87903,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 452,
+          "line": 523,
           "called": [
             "assertBool",
             "filter",
@@ -87832,7 +87914,7 @@
         {
           "kind": "def",
           "name": "runDeadlockFreedomChecks",
-          "line": 486,
+          "line": 557,
           "called": [
             "runBoundedWaitChecks",
             "runBridgeChecks",
@@ -87850,7 +87932,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 505,
+          "line": 576,
           "called": [
             "runDeadlockFreedomChecks"
           ]

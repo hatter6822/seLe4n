@@ -278,6 +278,62 @@ example :
       ≤ maxLockSetSize * ((numCores - 1) * 10) :=
   totalWaitCost_le_bound (LockSet.singleton tcb5 .write) 10 (by decide)
 
+/-- **Contention fixture** (positive-`WCRT` witness, deadlock-FREE): core 1
+holds `tcb5` and is *running* (not blocked); core 0 is blocked waiting for
+`tcb5`.  Core 1 will release, so there is no deadlock, and the fixture
+satisfies both hypotheses.  Unlike `execNoDeadlock`, here a lock core 0
+needs IS held by another core, so `contendersAhead` — and hence `WCRT` —
+is positive (≠ 0), exercising the contention-sensitive WCRT model. -/
+def execContention : KernelExecution :=
+  { held := fun c => if c = c1 then [tcb5] else [],
+    blocked := fun c => if c = c0 then some tcb5 else none }
+
+/-- The single-lock operation `{tcb5}` (size 1 ≤ maxLockSetSize). -/
+def opTcb5 : KernelOperation := ⟨LockSet.singleton tcb5 .write, by decide⟩
+
+/-- SM3.D.6 (positive WCRT): on `execContention` — deadlock-free, yet core 1
+holds the `tcb5` core 0 needs — the bounded-wait theorem gives deadlock-
+freedom AND a wait bound.  Here `WCRT` genuinely counts the one contending
+core (it is `> 0`, verified at runtime in §10). -/
+example :
+    noDeadlock execContention ∧
+    WCRT execContention c0 opTcb5 10 ≤ maxLockSetSize * ((numCores - 1) * 10) :=
+  boundedWait_under_2pl execContention c0 opTcb5 10 (by decide) (by decide)
+
+/-- SM3.D.5b: the mode-aware conflict wait graph of the deadlock-free
+fixture is acyclic (for any mode annotation — here all-write). -/
+example :
+    Acyclic (conflictWaitsFor execNoDeadlock (fun _ => AccessMode.write)
+      (fun _ _ => AccessMode.write)) :=
+  conflictWaitGraph_acyclic_under_2pl execNoDeadlock _ _ (by decide) (by decide)
+
+/-- SM3.D.6: the `replyRecv` smart constructor (the deepest base-4 footprint)
+builds a within-bound `KernelOperation`. -/
+example :
+    (KernelOperation.ofReplyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+      (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+      (some ⟨6⟩) (some (ThreadId.ofNat 7))).lockSet.size ≤ maxLockSetSize :=
+  (KernelOperation.ofReplyRecv (ThreadId.ofNat 1) (SeLe4n.ObjId.ofNat 2)
+    (ThreadId.ofNat 3) (SeLe4n.ObjId.ofNat 4) (some (ThreadId.ofNat 5))
+    (some ⟨6⟩) (some (ThreadId.ofNat 7))).sizeWithinBound
+
+/-- SM3.D §7b (non-vacuous bridge): after core 0 acquires the table lock on
+the default state (SM3.C `acquireLockOnObject`), it genuinely holds the
+singleton `{objStore 0}` (SM3.C `lockSetHeld`), so `lockSetHeld_realizes_heldBy`
+yields both the concrete `lockHeld` and the abstract `heldBy` for that lock.
+This exercises the bridge on a *non-empty, genuinely-held* lock set. -/
+example :
+    ∀ p ∈ (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write).pairs,
+      lockHeld c0 p.fst p.snd
+          (acquireLockOnObject (default : SeLe4n.Model.SystemState) c0
+            ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) ∧
+      heldBy (executionOfHeld c0
+          (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) none) c0 p.fst :=
+  lockSetHeld_realizes_heldBy c0
+    (LockSet.singleton ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write)
+    (acquireLockOnObject (default : SeLe4n.Model.SystemState) c0
+      ⟨.objStore, SeLe4n.ObjId.ofNat 0⟩ .write) none (by decide)
+
 /-- SM3.D §7 grounding: a real `CorePrefixOf` witness on a 2-element lock
 set.  `execGrounded` holds the prefix `[tcb5]` of the canonical acquire
 order `[tcb5, tcb7]` and is blocked on the next lock `tcb7`. -/
@@ -435,6 +491,21 @@ private def runWCRTChecks : IO Unit := do
   -- WCRT never exceeds the uniform combinatorial bound.
   assertBool "WCRT ≤ totalWaitCost op.lockSet 10"
     (decide (WCRT execNoDeadlock c0 op 10 ≤ totalWaitCost op.lockSet 10))
+  -- POSITIVE contention (non-vacuity): on execContention, core 1 holds tcb5,
+  -- so contendersAhead is 1 (not 0) and WCRT is genuinely positive.
+  assertBool "contendersAhead execContention c0 tcb5 = 1 (positive)"
+    (decide (contendersAhead execContention c0 tcb5 = 1))
+  assertBool "WCRT execContention c0 opTcb5 10 = 10 (positive, = 1 contender × T_cs)"
+    (decide (WCRT execContention c0 opTcb5 10 = 10))
+  assertBool "WCRT execContention c0 opTcb5 10 ≤ 8*(3*10) (bound still holds)"
+    (decide (WCRT execContention c0 opTcb5 10 ≤ maxLockSetSize * ((numCores - 1) * 10)))
+  -- execContention IS deadlock-free and satisfies both hypotheses.
+  assertBool "execContention follows 2PL"
+    (decide (executionFollows2PL execContention))
+  assertBool "execContention acquires in LockId order"
+    (decide (executionAcquiresInLockIdOrder execContention))
+  assertBool "execContention is deadlock-free"
+    (decide (noDeadlock execContention))
 
 private def runBridgeChecks : IO Unit := do
   IO.println "--- §11 SM3.D §7b/§7c — model↔kernel bridge + twoCorePathScenario ---"

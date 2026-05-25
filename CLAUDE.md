@@ -3467,6 +3467,23 @@ documentation lives under `docs/` and `docs/gitbook/`.
     assertions across 12 sections.  **Axiom budget unchanged**: 0
     axioms, 0 sorries.
 
+  **Audit-pass-2 refinements** (deeper test-soundness audit; the
+  production proofs were confirmed axiom-clean — every headline
+  theorem rests only on `propext`/`Quot.sound`, `ladder_of_2pl_and_order`
+  on none — so this pass closes a *test-coverage* vacuity, not a code
+  defect): the audit-pass-1 WCRT runtime test used a zero-contention
+  execution (`contendersAhead = 0 ⟹ WCRT = 0`), so it asserted the
+  bound only trivially.  Added the `execContention` fixture (core 1
+  holds `tcb5`, core 0 blocked on it — deadlock-FREE, satisfies both
+  hypotheses) plus runtime witnesses that `contendersAhead = 1` and
+  `WCRT = 10` are genuinely **positive**, demonstrating the
+  contention-sensitivity the `WCRT` model claims.  Also added
+  compile-time inhabitation `example`s for `conflictWaitGraph_acyclic_under_2pl`,
+  `KernelOperation.ofReplyRecv`, and a **non-vacuous**
+  `lockSetHeld_realizes_heldBy` application (on a genuinely-held
+  `objStore` singleton via SM3.C `acquireLockOnObject`).  No production
+  symbols changed; the deadlock suite now runs ~56 assertions.
+
   Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
   lemmas + the single-core-proof-preservation Corollary 2.1.11
   instantiations) closes the SM3 phase per

@@ -127,6 +127,20 @@ inside the v0.31.9 cut):
   `.sizeBound`); suite to 50+ runtime assertions across 12 sections.
   Axiom budget unchanged: 0 axioms, 0 sorries.
 
+**Audit-pass-2 refinements** (deeper test-soundness audit): confirmed
+every headline theorem is axiom-clean (`propext`/`Quot.sound` only;
+`ladder_of_2pl_and_order` depends on no axioms), then closed a
+*test-coverage* vacuity: the audit-pass-1 WCRT runtime test used a
+zero-contention execution (`WCRT = 0`, trivial bound).  Added the
+`execContention` fixture (deadlock-free, satisfies both hypotheses,
+core 1 holds a lock core 0 needs) with witnesses that `contendersAhead
+= 1` and `WCRT = 10` are genuinely **positive** — exercising the
+contention-sensitive WCRT model.  Plus compile-time inhabitation
+examples for `conflictWaitGraph_acyclic_under_2pl`,
+`KernelOperation.ofReplyRecv`, and a non-vacuous
+`lockSetHeld_realizes_heldBy` (genuinely-held `objStore` singleton).
+No production symbols changed; deadlock suite now ~56 assertions.
+
 Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
 lemmas + `singleCore_proof_preservation` Corollary 2.1.11) closes the
 SM3 phase per
