@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.31.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 140,015 across 200 Lean files |
+| **Production LoC** | 140,024 across 200 Lean files |
 | **Test LoC** | 29,849 across 43 Lean test suites |
 | **Proved declarations** | 4,180 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -2253,7 +2253,7 @@ preserves on a per-core basis.
      `get_eq_getElem` (`v.get i = v[i.val]`, by `rfl`).  Six helpers
      (`namespace SeLe4n.Vector`): `get_set_eq` (read-after-write at the
      same core), `get_set_ne` (a per-core write frames every other
-     core's slot), `length` (`v.toList.length = n`), `replicate_get`
+     core's slot), `toList_length` (`v.toList.length = n`), `replicate_get`
      (every slot of a replicate holds the value — the SM4.B.9 default-
      init workhorse), `ext` (per-core `Vector.get`-form extensionality;
      intentionally not `@[ext]`-tagged so the core `_root_.Vector.ext`

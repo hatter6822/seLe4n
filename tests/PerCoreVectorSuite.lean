@@ -67,7 +67,7 @@ open SeLe4n.Platform.Sim
 #check @SeLe4n.Vector.get_eq_toArray_getElem
 #check @SeLe4n.Vector.get_set_eq
 #check @SeLe4n.Vector.get_set_ne
-#check @SeLe4n.Vector.length
+#check @SeLe4n.Vector.toList_length
 #check @SeLe4n.Vector.replicate_get
 #check @SeLe4n.Vector.ext
 #check @SeLe4n.Vector.nodup_of_finRange
@@ -116,9 +116,9 @@ example (v : Vector Nat 4) :
     (v.set 1 7 (by decide)).get ⟨2, by decide⟩ = v.get ⟨2, by decide⟩ :=
   SeLe4n.Vector.get_set_ne v ⟨1, by decide⟩ ⟨2, by decide⟩ 7 (by decide)
 
-/-! ## SM4.A.2 lemma 3 — `length` -/
+/-! ## SM4.A.2 lemma 3 — `toList_length` -/
 example : (Vector.replicate 4 (0 : Nat)).toList.length = 4 :=
-  SeLe4n.Vector.length _
+  SeLe4n.Vector.toList_length _
 example : (Vector.replicate 7 (0 : Nat)).toList.length = 7 := by decide
 
 /-! ## SM4.A.2 lemma 4 — `replicate_get` -/
@@ -164,13 +164,13 @@ example : PlatformBinding.coreCount (platform := SimRestrictivePlatform) = 4 := 
 -- The binding's `coreCount` actually drives the per-core `Vector`
 -- machinery: a per-core field on the single-core topology is a
 -- one-element vector whose `length` (via the SM4.A.2 helper) is the
--- binding's `coreCount`.  This consumes `SeLe4n.Vector.length` at a
+-- binding's `coreCount`.  This consumes `SeLe4n.Vector.toList_length` at a
 -- binding-derived size rather than a literal.
 example :
     (Vector.replicate (PlatformBinding.coreCount (platform := SimSingleCorePlatform))
       (0 : Nat)).toList.length
       = PlatformBinding.coreCount (platform := SimSingleCorePlatform) :=
-  SeLe4n.Vector.length _
+  SeLe4n.Vector.toList_length _
 
 /-! ## SM4.A.6 / SM4.A.7 / SM4.A.8 — CoreId / bootCoreId / allCores recap -/
 example : numCores = 4 := rfl

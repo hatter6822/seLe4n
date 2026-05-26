@@ -1511,7 +1511,7 @@ Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0 deliverables.
   a `Fin n` value via `Vector.get`, so the block re-expresses them in
   `Vector.get` form on top of the definitional bridge `get_eq_getElem`
   (`v.get i = v[i.val]`, by `rfl`).  Six helpers (`namespace
-  SeLe4n.Vector`): `get_set_eq`, `get_set_ne`, `length`,
+  SeLe4n.Vector`): `get_set_eq`, `get_set_ne`, `toList_length`,
   `replicate_get`, `ext` (NOT `@[ext]`-tagged so the core
   `_root_.Vector.ext` keeps firing under the `ext` tactic), and
   `nodup_of_finRange` (`(List.finRange n).Nodup` for arbitrary `n` —

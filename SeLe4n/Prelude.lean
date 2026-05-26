@@ -1924,8 +1924,17 @@ theorem get_set_ne (v : _root_.Vector α n) (i j : Fin n) (x : α) (h : i ≠ j)
 /-- WS-SM SM4.A.2 (lemma 3 of 6): a `Vector α n` has exactly `n` elements
 when viewed as a list. Re-exports `Vector.length_toList` under the
 project namespace so list-folding per-core code (e.g. iterating a field's
-`toList` alongside `allCores`) has a stable length witness. -/
-theorem length (v : _root_.Vector α n) : v.toList.length = n :=
+`toList` alongside `allCores`) has a stable length witness.
+
+Deliberately named `toList_length`, **not** bare `length`: Lean core has
+no `Vector.length`, so a bare `SeLe4n.Vector.length` (which is `Prop`-
+valued — it is a *lemma*, not a count) would, under the `open SeLe4n`
+that every consuming kernel file uses, make `v.length` / `Vector.length`
+resolve to this proof instead of erroring — trapping a caller who wrote
+`v.length` expecting the `Nat` count (the count is `v.size` / the type's
+`n`). The `toList_length` name keeps `v.length` an honest "unknown" and
+also avoids a future ambiguity were core to add `Vector.length : Nat`. -/
+theorem toList_length (v : _root_.Vector α n) : v.toList.length = n :=
   _root_.Vector.length_toList
 
 /-- WS-SM SM4.A.2 (lemma 4 of 6): every slot of a replicated vector holds

@@ -182,7 +182,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20335 lines)
+- `CHANGELOG.md` (~20338 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~6765 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -216,7 +216,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
-- `SeLe4n/Prelude.lean` (~1977 lines)
+- `SeLe4n/Prelude.lean` (~1986 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
@@ -3778,7 +3778,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `get_eq_getElem` (`v.get i = v[i.val]`, by `rfl`).  Six helpers
     (`namespace SeLe4n.Vector`): `get_set_eq` (read-after-write at the
     same core returns the written value), `get_set_ne` (a per-core write
-    frames every other core's slot), `length` (`v.toList.length = n`),
+    frames every other core's slot), `toList_length` (`v.toList.length = n`),
     `replicate_get` (every slot of a replicate holds the value — the
     SM4.B.9 workhorse), `ext` (per-core `Vector.get`-form
     extensionality; deliberately NOT `@[ext]`-tagged so the core
@@ -3838,7 +3838,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   genuinely exercised** — a topology-parametric runtime fold of
   `Vector.get` over `List.finRange (coreCount P)` drives the binding's
   `coreCount` end-to-end (`SimSingleCore` = 1, `Sim`/`RPi5` = 4) and
-  gives `length` a binding-derived consumer.  Suite now: 22 / 34 / 31.
+  gives `toList_length` a binding-derived consumer.  Suite now: 22 / 34 / 31.
   (The Fin-indexed `set` wrapper was deliberately **not** added — YAGNI:
   the raw-`set` `get_set_eq`/`_ne` lemmas already match SM5's
   `v.set c.val x` call sites by proof irrelevance.)

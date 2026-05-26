@@ -25,8 +25,11 @@ per-core `Vector` machinery rests on.
   - `get_set_ne` — a per-core write leaves every other core's slot
     unchanged (the frame property; `i ≠ j` on `CoreId`s lowers to
     `i.val ≠ j.val` via `Fin.val_ne_of_ne`).
-  - `length` — a `Vector α n` has `n` elements as a list
-    (re-export of `Vector.length_toList`).
+  - `toList_length` — a `Vector α n` has `n` elements as a list
+    (re-export of `Vector.length_toList`; named `toList_length`, not
+    bare `length`, so it does not make `v.length` resolve to a `Prop`
+    under the `open SeLe4n` every kernel file uses — the count is
+    `v.size`).
   - `replicate_get` — every slot of a replicated vector holds the
     replicated value (the workhorse for SM4.B.9's
     `default_state_perCoreInitialized`).
@@ -119,7 +122,7 @@ through it (removing the literal-`4` `decide`); (3) **single-core sim
 genuinely exercised** — a topology-parametric runtime check folds
 `Vector.get` over `List.finRange (coreCount P)` for `SimSingleCore`
 (`= 1`), `Sim`/`RPi5` (`= 4`), driving the binding's `coreCount` through
-the per-core machinery end-to-end, and gives `length` a binding-derived
+the per-core machinery end-to-end, and gives `toList_length` a binding-derived
 consumer. The suite now reports **22 surface anchors / 34 decidable
 examples / 31 runtime assertions**. (The Fin-indexed `set` wrapper was
 deliberately **not** added — YAGNI: the raw-`set` `get_set_eq`/`_ne`

@@ -2461,7 +2461,7 @@ import SeLe4n.Platform.Sim.Contract
 #check @SeLe4n.Vector.get_eq_toArray_getElem
 #check @SeLe4n.Vector.get_set_eq
 #check @SeLe4n.Vector.get_set_ne
-#check @SeLe4n.Vector.length
+#check @SeLe4n.Vector.toList_length
 #check @SeLe4n.Vector.replicate_get
 #check @SeLe4n.Vector.ext
 #check @SeLe4n.Vector.nodup_of_finRange

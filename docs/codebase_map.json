@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/magical-turing-ZUaAB",
-      "commit_sha": "d86178090ae3c19c81a3127a582280512eb9d630",
-      "tree_sha": "d9a22ededee57d9885d5a302c13e6d5b480bd407",
-      "committed_at_utc": "2026-05-26T21:34:59+00:00"
+      "commit_sha": "0407e2d2c972003dee2f6277ff445c87a5987c20",
+      "tree_sha": "de18d71030daf8f0932ccffc5a8bdcb3a463746d",
+      "committed_at_utc": "2026-05-26T22:25:46+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ed90daa602d9e4bf1fe5ea9fd4cc71a5c79846335e6e07c2560e7947e23fac29"
+    "source_digest": "34f5f6e30cba8869a768a23d9275a1f0c16b16027c5e738d04ba317b3a4e9ceb"
   },
   "summary": {
     "module_count": 243,
@@ -27,7 +27,7 @@
     "version": "0.31.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 200,
-    "production_loc": 140015,
+    "production_loc": 140024,
     "test_files": 43,
     "test_loc": 29849,
     "proved_theorem_lemma_decls": 4180,
@@ -84891,14 +84891,16 @@
         },
         {
           "kind": "theorem",
-          "name": "length",
-          "line": 1928,
-          "called": []
+          "name": "toList_length",
+          "line": 1937,
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
           "name": "replicate_get",
-          "line": 1937,
+          "line": 1946,
           "called": [
             "get",
             "get_eq_getElem"
@@ -84907,7 +84909,7 @@
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 1948,
+          "line": 1957,
           "called": [
             "get",
             "get_eq_getElem"
@@ -84916,7 +84918,7 @@
         {
           "kind": "theorem",
           "name": "nodup_of_finRange",
-          "line": 1964,
+          "line": 1973,
           "called": [
             "zero"
           ]
@@ -100548,7 +100550,8 @@
           "name": "<anonymous:example:120>",
           "line": 120,
           "called": [
-            "length"
+            "length",
+            "toList_length"
           ]
         },
         {
@@ -100707,7 +100710,8 @@
           "line": 169,
           "called": [
             "SimSingleCorePlatform",
-            "length"
+            "length",
+            "toList_length"
           ]
         },
         {
