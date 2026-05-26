@@ -1490,6 +1490,63 @@ Follow-on: SM3.C (`withLockSet` 2PL combinator), SM3.D
 [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
 §§5.3..5.5.
 
+**WS-SM SM4.A LANDED at v0.31.11 on branch
+`claude/magical-turing-ZUaAB`** (per-core `Vector` bootstrap +
+PlatformBinding; opens SM4 — the path-a replacement of the singular
+`SchedulerState` fields with `Vector α coreCount` indexed by
+`CoreId`).  Plan §5.1 of
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](planning/SMP_PER_CORE_STATE_PLAN.md).
+All eight sub-tasks landed in one cut; SM4.A.1 + SM4.A.2 are the new
+Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0 deliverables.
+
+**SM4.A sub-tasks**:
+
+- **SM4.A.1 + SM4.A.2**: `SeLe4n.Vector` bootstrap in
+  `SeLe4n/Prelude.lean`.  Per plan §4.2 the implementation uses Lean
+  core's `Array`-backed `Vector α n` (not `List.Vector`) — the only
+  choice giving compile-time length safety (`CoreId = Fin n` indexing
+  in-bounds by construction), O(1) random access, decidable equality,
+  AND an `Array`-backed runtime.  Lean core's vector lemmas are
+  `getElem`-form (`Nat`-indexed); the SM4 per-core accessors index with
+  a `Fin n` value via `Vector.get`, so the block re-expresses them in
+  `Vector.get` form on top of the definitional bridge `get_eq_getElem`
+  (`v.get i = v[i.val]`, by `rfl`).  Six helpers (`namespace
+  SeLe4n.Vector`): `get_set_eq`, `get_set_ne`, `length`,
+  `replicate_get`, `ext` (NOT `@[ext]`-tagged so the core
+  `_root_.Vector.ext` keeps firing under the `ext` tactic), and
+  `nodup_of_finRange` (`(List.finRange n).Nodup` for arbitrary `n` —
+  Lean core lacks it; proved by induction via `finRange_succ` +
+  `Fin.succ_ne_zero` + `Fin.succ_inj`; generalises
+  `Concurrency.allCores_nodup`'s literal-4 `decide` to a
+  platform-parameterised `coreCount`).  0 axioms, 0 sorries.
+- **SM4.A.3**: runtime efficiency — confirmed `Vector α n` is
+  `Array`-backed with `@[inline, expose]` `get`/`set`/`replicate`, so
+  it compiles to O(1) `Array` ops.  Full `lake exe sele4n`
+  per-core-access trace lands at SM4.B.15.
+- **SM4.A.4**: RPi5 `coreCount = 4` confirmed, pinned to
+  `Concurrency.numCores` via `numCores_eq_rpi5_coreCount`.
+- **SM4.A.5**: added the single-core simulation binding
+  `SimSingleCorePlatform` (`coreCount := 1`) alongside the 4-core SMP
+  sims (`SimPlatform` / `SimRestrictivePlatform`), realising the
+  single-core variant the SM0.G code comment anticipated — the
+  SM4.B.15 byte-identical single-core trace target.
+- **SM4.A.6 / SM4.A.7 / SM4.A.8**: recaps of `CoreId = Fin numCores`,
+  `bootCoreId`, and `allCores` (`allCores_length`, `allCores_nodup`).
+
+**Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
+(`lake exe per_core_vector_suite`) — 23 surface anchors, 26 decidable
+examples, 25 runtime assertions across five sections.  Tier 2 +
+Tier 3 wired.  Full default build (320 jobs) green; Tier 0+1+2+3
+green.  **Version bumped 0.31.10 → 0.31.11.**  Items deferred past
+v1.0.0 with correctness impact: NONE.
+
+Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
+(scheduler + cross-subsystem theorem migrations), SM4.E
+(`bootFromPlatform_singleCore_witness` retirement +
+`bootFromPlatform_smp_witness`) per
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](planning/SMP_PER_CORE_STATE_PLAN.md)
+§§5.2..5.5.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

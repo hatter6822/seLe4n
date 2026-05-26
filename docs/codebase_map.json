@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/determined-pasteur-apMXc",
-      "commit_sha": "f84f7c992382ea7c98fa3897fa5e40700084459c",
-      "tree_sha": "0d89f2234897c730476579e4bd42864a0cb7707a",
-      "committed_at_utc": "2026-05-26T03:05:48+00:00"
+      "branch": "claude/magical-turing-ZUaAB",
+      "commit_sha": "b820385f8a2d2205f3ecd16475e797cdbb645c1c",
+      "tree_sha": "1ec47e51db5925c7b9dbe7fd88a97fc56bc3a853",
+      "committed_at_utc": "2026-05-26T02:07:20-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "21034e253426b0cab52b99cd5c30010ac42e699982e2e4e027d11a24a1628c81"
+    "source_digest": "8d5c24a09204db52023f533d088c37b2ff1bacdc2993a8741aeea1dd4684dee4"
   },
   "summary": {
-    "module_count": 242,
-    "declaration_count": 8412
+    "module_count": 243,
+    "declaration_count": 8465
   },
   "readme_sync": {
-    "version": "0.31.10",
+    "version": "0.31.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 200,
-    "production_loc": 139826,
-    "test_files": 42,
-    "test_loc": 29506,
-    "proved_theorem_lemma_decls": 4172,
+    "production_loc": 139992,
+    "test_files": 43,
+    "test_loc": 29792,
+    "proved_theorem_lemma_decls": 4179,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -27137,6 +27137,7 @@
             "eventPos",
             "eventPos_lt_length",
             "get",
+            "get_eq_getElem",
             "length"
           ]
         },
@@ -81417,7 +81418,7 @@
     {
       "module": "SeLe4n.Platform.Sim.Contract",
       "path": "SeLe4n/Platform/Sim/Contract.lean",
-      "declaration_count": 15,
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "namespace",
@@ -81566,9 +81567,30 @@
           ]
         },
         {
+          "kind": "structure",
+          "name": "SimSingleCorePlatform",
+          "line": 225,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "simSingleCorePlatformBinding",
+          "line": 245,
+          "called": [
+            "PlatformBinding",
+            "SimSingleCorePlatform",
+            "bootCoreId",
+            "simBootContract",
+            "simBootVSpaceRootEntry",
+            "simInterruptContract",
+            "simMachineConfig",
+            "simRuntimeContractPermissive"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "simSubstantiveMemoryMap_eq_machineConfig",
-          "line": 228,
+          "line": 265,
           "called": [
             "simSubstantiveMemoryMap"
           ]
@@ -81763,7 +81785,7 @@
     {
       "module": "SeLe4n.Prelude",
       "path": "SeLe4n/Prelude.lean",
-      "declaration_count": 354,
+      "declaration_count": 364,
       "declarations": [
         {
           "kind": "namespace",
@@ -84810,6 +84832,84 @@
             "SchedContextId",
             "ThreadId",
             "toKinded"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Vector",
+          "line": 1871,
+          "called": []
+        },
+        {
+          "kind": "universe",
+          "name": "u",
+          "line": 1873,
+          "called": []
+        },
+        {
+          "kind": "variable",
+          "name": "<anonymous:variable:1874>",
+          "line": 1874,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "get_eq_getElem",
+          "line": 1883,
+          "called": [
+            "get"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "get_set_eq",
+          "line": 1891,
+          "called": [
+            "get",
+            "get_eq_getElem",
+            "set"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "get_set_ne",
+          "line": 1901,
+          "called": [
+            "get",
+            "get_eq_getElem",
+            "set"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "length",
+          "line": 1910,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "replicate_get",
+          "line": 1919,
+          "called": [
+            "get",
+            "get_eq_getElem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ext",
+          "line": 1930,
+          "called": [
+            "get",
+            "get_eq_getElem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_of_finRange",
+          "line": 1946,
+          "called": [
+            "zero"
           ]
         }
       ]
@@ -100378,6 +100478,379 @@
           "line": 2207,
           "called": [
             "runOperationChainSuite"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.PerCoreVectorSuite",
+      "path": "tests/PerCoreVectorSuite.lean",
+      "declaration_count": 41,
+      "declarations": [
+        {
+          "kind": "example",
+          "name": "<anonymous:example:99>",
+          "line": 99,
+          "called": [
+            "get",
+            "get_eq_getElem"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:104>",
+          "line": 104,
+          "called": [
+            "get",
+            "set"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:106>",
+          "line": 106,
+          "called": [
+            "get",
+            "get_set_eq",
+            "set"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:110>",
+          "line": 110,
+          "called": [
+            "get",
+            "set"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:114>",
+          "line": 114,
+          "called": [
+            "get",
+            "get_set_ne",
+            "set"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:119>",
+          "line": 119,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:121>",
+          "line": 121,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:124>",
+          "line": 124,
+          "called": [
+            "get",
+            "none",
+            "replicate_get"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:126>",
+          "line": 126,
+          "called": [
+            "get",
+            "none"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:130>",
+          "line": 130,
+          "called": [
+            "ext",
+            "get"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:133>",
+          "line": 133,
+          "called": [
+            "set"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:138>",
+          "line": 138,
+          "called": [
+            "nodup_of_finRange"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:139>",
+          "line": 139,
+          "called": [
+            "nodup_of_finRange"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:140>",
+          "line": 140,
+          "called": [
+            "nodup_of_finRange"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:143>",
+          "line": 143,
+          "called": [
+            "size"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:144>",
+          "line": 144,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:147>",
+          "line": 147,
+          "called": [
+            "RPi5Platform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:148>",
+          "line": 148,
+          "called": [
+            "RPi5Platform",
+            "numCores",
+            "numCores_eq_rpi5_coreCount"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:152>",
+          "line": 152,
+          "called": [
+            "SimSingleCorePlatform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:153>",
+          "line": 153,
+          "called": [
+            "SimSingleCorePlatform",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:154>",
+          "line": 154,
+          "called": [
+            "SimSingleCorePlatform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:155>",
+          "line": 155,
+          "called": [
+            "SimPlatform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:156>",
+          "line": 156,
+          "called": [
+            "SimRestrictivePlatform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:159>",
+          "line": 159,
+          "called": [
+            "numCores"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:160>",
+          "line": 160,
+          "called": [
+            "CoreId",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:161>",
+          "line": 161,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:162>",
+          "line": 162,
+          "called": [
+            "bootCoreId_valid",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:163>",
+          "line": 163,
+          "called": [
+            "allCores_length",
+            "length",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:164>",
+          "line": 164,
+          "called": [
+            "allCores_nodup"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:167>",
+          "line": 167,
+          "called": [
+            "allCores",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:168>",
+          "line": 168,
+          "called": [
+            "nodup_of_finRange",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:169>",
+          "line": 169,
+          "called": [
+            "RPi5Platform",
+            "nodup_of_finRange"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.PerCoreVector",
+          "line": 176,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 178,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runVectorHelperChecks",
+          "line": 188,
+          "called": [
+            "assertBool",
+            "get",
+            "length",
+            "none",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runExtAndNodupChecks",
+          "line": 204,
+          "called": [
+            "allCores",
+            "assertBool",
+            "numCores",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runArrayBackingChecks",
+          "line": 223,
+          "called": [
+            "assertBool",
+            "get",
+            "set",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runPlatformCoreCountChecks",
+          "line": 237,
+          "called": [
+            "RPi5Platform",
+            "SimPlatform",
+            "SimRestrictivePlatform",
+            "SimSingleCorePlatform",
+            "assertBool",
+            "bootCoreId",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCoreIdRecapChecks",
+          "line": 256,
+          "called": [
+            "all",
+            "assertBool",
+            "length",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runPerCoreVectorChecks",
+          "line": 272,
+          "called": [
+            "runArrayBackingChecks",
+            "runCoreIdRecapChecks",
+            "runExtAndNodupChecks",
+            "runPlatformCoreCountChecks",
+            "runVectorHelperChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 285,
+          "called": [
+            "runPerCoreVectorChecks"
           ]
         }
       ]

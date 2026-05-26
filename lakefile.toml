@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.10"
+version = "0.31.11"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -309,3 +309,15 @@ root = "tests.DeadlockFreedomSuite"
 [[lean_exe]]
 name = "serializability_suite"
 root = "tests.SerializabilitySuite"
+
+# WS-SM SM4.A — Per-core Vector bootstrap test suite.  Surface anchors +
+# decidable examples + runtime assertions for the SM4.A.1/A.2
+# `SeLe4n.Vector` helper surface (get_eq_getElem bridge + the six lemmas
+# get_set_eq / get_set_ne / length / replicate_get / ext /
+# nodup_of_finRange), the SM4.A.3 Array-backed runtime check, the SM4.A.4
+# RPi5 coreCount=4 pinning, the SM4.A.5 single-core + 4-core simulation
+# bindings, and the SM4.A.6/A.7/A.8 CoreId / bootCoreId / allCores recap.
+# Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "per_core_vector_suite"
+root = "tests.PerCoreVectorSuite"

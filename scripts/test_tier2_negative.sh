@@ -190,4 +190,13 @@ run_check_with_timeout "TRACE" lake exe deadlock_freedom_suite
 # the 111-theorem SM3.E inventory.
 run_check_with_timeout "TRACE" lake exe serializability_suite
 
+# WS-SM SM4.A — per-core Vector bootstrap regression suite.  Exercises the
+# SM4.A.1/A.2 `SeLe4n.Vector` helper surface (the get_eq_getElem bridge plus
+# the six lemmas get_set_eq / get_set_ne / length / replicate_get / ext /
+# nodup_of_finRange) on concrete vectors, the SM4.A.3 Array-backed runtime
+# check, the SM4.A.4 RPi5 coreCount=4 pinning, the SM4.A.5 single-core +
+# 4-core simulation bindings, and the SM4.A.6/A.7/A.8 CoreId / bootCoreId /
+# allCores recap.
+run_check_with_timeout "TRACE" lake exe per_core_vector_suite
+
 finalize_report

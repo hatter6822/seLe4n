@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.10` (`lakefile.toml`) |
+| **Package version** | `0.31.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 139,826 across 200 Lean files |
-| **Test LoC** | 29,506 across 42 Lean test suites |
-| **Proved declarations** | 4,172 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 139,992 across 200 Lean files |
+| **Test LoC** | 29,792 across 43 Lean test suites |
+| **Proved declarations** | 4,179 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
@@ -2233,6 +2233,59 @@ preserves on a per-core basis.
    its commit sort.  **Axiom budget for SM3.E**: 0 Lean axioms, 0
    sorries.  **SM3 CLOSED** — all five sub-phases LANDED (SM3.A–SM3.E);
    the `@[export]`-body migration (SM3.C.9) remains deferred to SM5+.
+
+2.13. **WS-SM Phase SM4.A (v0.31.11) per-core `Vector` bootstrap +
+   PlatformBinding** — opens SM4, the path-a replacement of the singular
+   `SchedulerState` fields with `Vector α coreCount` indexed by
+   `CoreId`.  All eight sub-tasks landed in one cut; SM4.A.1 + SM4.A.2
+   are the new Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0
+   deliverables the per-core `Vector` machinery rests on.
+
+   - **SM4.A.1 + SM4.A.2 — `SeLe4n.Vector` bootstrap** (`Prelude.lean`):
+     per plan §4.2 the implementation uses Lean core's `Array`-backed
+     `Vector α n` (not `List.Vector`) — the only choice giving
+     compile-time length safety (`CoreId = Fin n` indexing in-bounds by
+     construction), O(1) random access, decidable equality, AND an
+     `Array`-backed runtime.  Lean core's vector lemmas are stated in
+     `getElem` (`Nat`-indexed) form; the SM4 per-core accessors index
+     with a `Fin n` value via `Vector.get`, so the block re-expresses
+     them in `Vector.get` form on top of the definitional bridge
+     `get_eq_getElem` (`v.get i = v[i.val]`, by `rfl`).  Six helpers
+     (`namespace SeLe4n.Vector`): `get_set_eq` (read-after-write at the
+     same core), `get_set_ne` (a per-core write frames every other
+     core's slot), `length` (`v.toList.length = n`), `replicate_get`
+     (every slot of a replicate holds the value — the SM4.B.9 default-
+     init workhorse), `ext` (per-core `Vector.get`-form extensionality;
+     intentionally not `@[ext]`-tagged so the core `_root_.Vector.ext`
+     keeps firing under the `ext` tactic), and `nodup_of_finRange`
+     (`(List.finRange n).Nodup` for arbitrary `n` — Lean core has
+     `nodup_range` but no `nodup_finRange`; proved by induction via
+     `finRange_succ` + `Fin.succ_ne_zero` + `Fin.succ_inj`, generalising
+     `Concurrency.allCores_nodup`'s literal-4 `decide` to a platform-
+     parameterised `coreCount`).
+   - **SM4.A.3 — runtime efficiency**: `Vector α n` is `Array`-backed
+     (`structure Vector where toArray : Array α`) with `@[inline,
+     expose]` `get`/`set`/`replicate`, so it compiles to O(1) `Array`
+     operations.  (The full `lake exe sele4n` per-core-access trace
+     lands at SM4.B.15, once `SchedulerState` is itself `Vector`-shaped.)
+   - **SM4.A.4 — RPi5 `coreCount = 4`**: confirmed, pinned to
+     `Concurrency.numCores` via `numCores_eq_rpi5_coreCount` (`rfl`).
+   - **SM4.A.5 — simulation bindings**: added the single-core sim
+     `SimSingleCorePlatform` (`coreCount := 1`) alongside the 4-core SMP
+     sims (`SimPlatform` / `SimRestrictivePlatform`, `coreCount := 4`),
+     realising the single-core variant the SM0.G code comment
+     anticipated — the minimal non-degenerate per-core topology and the
+     SM4.B.15 byte-identical single-core trace target.
+   - **SM4.A.6 / SM4.A.7 / SM4.A.8 — recaps** of `CoreId = Fin
+     numCores`, `bootCoreId`, and `allCores` (`allCores_length`,
+     `allCores_nodup`).
+
+   **Test coverage**: `tests/PerCoreVectorSuite.lean`
+   (`lake exe per_core_vector_suite`) — 23 surface anchors, 26 decidable
+   examples, 25 runtime assertions across five sections; Tier 2 + Tier 3
+   wired.  **Axiom budget for SM4.A**: 0 Lean axioms, 0 sorries.
+   Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
+   (theorem migrations), SM4.E (`bootFromPlatform_smp_witness`).
 
 ---
 

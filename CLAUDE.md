@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.10.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.11.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,15 +182,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20156 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~6697 lines)
+- `CHANGELOG.md` (~20296 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~6754 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4029 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3908 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3783 lines)
-- `docs/spec/SELE4N_SPEC.md` (~3553 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3617 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3390 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
@@ -217,6 +217,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
+- `SeLe4n/Prelude.lean` (~1959 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -227,7 +228,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~1865 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1860 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 lines)
-- `SeLe4n/Prelude.lean` (~1830 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1792 lines)
@@ -3755,6 +3755,79 @@ documentation lives under `docs/` and `docs/gitbook/`.
   5 → 10; suite + surface anchors + tier-3 updated.  All 111 inventory
   theorems re-verified axiom-clean via `#print axioms`; full Tier 0+1+2+3
   green.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM4.A LANDED at v0.31.11 on branch
+  `claude/magical-turing-ZUaAB`** (per-core `Vector` bootstrap +
+  PlatformBinding; opens SM4 — the path-a replacement of the singular
+  `SchedulerState` fields with `Vector α coreCount` indexed by
+  `CoreId`).  All eight sub-tasks landed in one cut per
+  [`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+  §5.1; SM4.A.1 + SM4.A.2 are the new Lean-side work, SM4.A.3..SM4.A.8
+  confirm/recap the SM0 deliverables the per-core `Vector` machinery
+  rests on.
+
+  - **SM4.A.1 + SM4.A.2**: `SeLe4n.Vector` bootstrap in
+    `SeLe4n/Prelude.lean`.  Per plan §4.2 the implementation uses Lean
+    core's `Array`-backed `Vector α n` (not `List.Vector`) — the only
+    choice giving compile-time length safety (`CoreId = Fin n` indexing
+    in-bounds by construction), O(1) random access, decidable equality,
+    AND an `Array`-backed runtime.  Lean core's vector lemmas are stated
+    in `getElem` (`Nat`-indexed) form; the SM4 per-core accessors index
+    with a `Fin n` value via `Vector.get`, so this block re-expresses
+    them in `Vector.get` form on top of the definitional bridge
+    `get_eq_getElem` (`v.get i = v[i.val]`, by `rfl`).  Six helpers
+    (`namespace SeLe4n.Vector`): `get_set_eq` (read-after-write at the
+    same core returns the written value), `get_set_ne` (a per-core write
+    frames every other core's slot), `length` (`v.toList.length = n`),
+    `replicate_get` (every slot of a replicate holds the value — the
+    SM4.B.9 workhorse), `ext` (per-core `Vector.get`-form
+    extensionality; deliberately NOT `@[ext]`-tagged so the core
+    `_root_.Vector.ext` keeps firing under the `ext` tactic), and
+    `nodup_of_finRange` (`(List.finRange n).Nodup` for arbitrary `n` —
+    Lean core has `nodup_range` but no `nodup_finRange`; proved by
+    induction via `finRange_succ` + `Fin.succ_ne_zero` + `Fin.succ_inj`;
+    generalises `Concurrency.allCores_nodup`'s literal-4 `decide` to a
+    platform-parameterised `coreCount`).  Helpers are untagged (no
+    global `@[simp]`/`@[ext]` perturbation; consumers opt in locally).
+    0 Lean axioms, 0 sorries.
+  - **SM4.A.3**: runtime efficiency — confirmed `Vector α n` is
+    `Array`-backed (`structure Vector where toArray : Array α`) with
+    `@[inline, expose]` `get`/`set`/`replicate`, so it compiles to O(1)
+    `Array` ops.  The full `lake exe sele4n` per-core-access trace lands
+    at SM4.B.15 once `SchedulerState` is itself `Vector`-shaped.
+  - **SM4.A.4**: RPi5 `coreCount = 4` confirmed, pinned to
+    `Concurrency.numCores` via the existing
+    `numCores_eq_rpi5_coreCount` (`rfl`).
+  - **SM4.A.5**: added the single-core simulation binding
+    `SimSingleCorePlatform` (`coreCount := 1`) alongside the 4-core SMP
+    sims (`SimPlatform` / `SimRestrictivePlatform`, `coreCount := 4`),
+    realising the single-core variant the SM0.G code comment
+    anticipated.  `coreCount := 1` is the minimal non-degenerate
+    per-core topology — the SM4.B.15 byte-identical single-core trace
+    target, and the cheapest way to surface an implicit "exactly one
+    current thread" assumption (plan §4.1).  Reuses every contract from
+    the permissive sim binding; only the topology differs.
+  - **SM4.A.6 / SM4.A.7 / SM4.A.8**: recaps of `CoreId = Fin numCores`,
+    `bootCoreId`, and `allCores` (`allCores_length`, `allCores_nodup`).
+    No new code; the suite anchors them and ties `nodup_of_finRange
+    numCores` back to `allCores_nodup` (since `allCores =
+    List.finRange numCores`).
+
+  **Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
+  (`lake exe per_core_vector_suite`) — 23 surface-anchor `#check`s, 26
+  decidable/definitional examples, 25 runtime `assertBool` assertions
+  across five sections (Vector helpers, ext + nodup, Array backing,
+  platform core-count topologies, CoreId/bootCoreId/allCores recap).
+  Wired into Tier 2 (negative) + Tier 3 (invariant surface).  Full
+  default build (320 jobs) green; Tier 0+1+2+3 green.  Items deferred
+  past v1.0.0 with correctness impact: NONE.
+
+  Follow-on: SM4.B (`SchedulerState` path-a field replacement),
+  SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E
+  (`bootFromPlatform_singleCore_witness` retirement +
+  `bootFromPlatform_smp_witness`) per
+  [`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+  §§5.2..5.5.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

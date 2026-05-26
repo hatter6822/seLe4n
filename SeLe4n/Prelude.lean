@@ -1828,3 +1828,132 @@ theorem ThreadId.toKinded_ne_schedContext_toKinded
     simp [ThreadId.toKinded, SchedContextId.toKinded])
 
 end SeLe4n
+
+/-! ## WS-SM SM4.A.1 + SM4.A.2 — Per-core `Vector` bootstrap
+
+SM4 replaces every singular `SchedulerState` field with a `Vector α
+coreCount` indexed by `CoreId` (`= Fin coreCount`), so a per-core field
+is read with `field.get c` and written with `field.set c.val x c.isLt`.
+This block bootstraps the small, name-stable `Vector` helper surface the
+SM4.B path-a replacement and SM4.C/SM4.D theorem migrations consume.
+
+**Design (plan §4.2): use Lean core's `Vector α n`, not `List.Vector`.**
+Lean 4.28 ships two length-indexed vector types: the `Array`-backed
+`Vector α n` (`structure Vector where toArray : Array α; size_toArray :
+toArray.size = n`) and the `List`-backed `List.Vector`. SM4 picks the
+`Array`-backed one because it is the only choice that satisfies all three
+requirements simultaneously — compile-time length safety (`n` is in the
+type, so `CoreId = Fin n` indexing never goes out of bounds), O(1) random
+access (per-core reads sit on hot kernel paths), and decidable equality
+(needed for the `SchedulerState` `BEq`/`DecidableEq` instances). Crucially
+it **compiles to `Array`** at runtime (SM4.A.3), unlike `List.Vector`
+whose O(n) access would regress the single-core trace harness.
+
+**Why a thin adapter rather than raw Std lemmas.** Lean core's vector
+lemmas are stated in `getElem` (`xs[i]`, `Nat`-indexed with a side proof)
+form: `Vector.getElem_set_self`, `Vector.getElem_set_ne`,
+`Vector.getElem_replicate`, `Vector.ext`. The SM4 accessors index with a
+`Fin n` value (`CoreId`) via `Vector.get`, so this block re-expresses the
+exact lemmas SM4 needs in `Vector.get` form on top of `get_eq_getElem`
+(the definitional bridge between the two indexings). It also supplies
+`nodup_of_finRange`, which Lean 4.28's core does **not** export, so that
+per-core iteration over `List.finRange coreCount` is provably
+duplicate-free for an *arbitrary* `coreCount` (the existing
+`Concurrency.allCores_nodup` only `decide`s the literal `numCores = 4`).
+
+These live under `namespace SeLe4n.Vector` (project-owned, so a future
+Std lemma rename cannot silently break SM4). The helpers are deliberately
+**not** tagged `@[simp]`/`@[ext]`: leaving them untagged keeps the core
+`@[ext]`-tagged `_root_.Vector.ext` as the one the `ext` tactic fires, and
+lets each consuming proof opt into these `.get`-form rewrites locally
+rather than perturbing the global simp set for all vector reasoning. -/
+
+namespace SeLe4n.Vector
+
+universe u
+variable {α : Type u} {n : Nat}
+
+/-- WS-SM SM4.A.2: the definitional bridge between the two `Vector`
+indexings. `Vector.get` (the `Fin n`-indexed accessor the SM4 per-core
+fields use) equals the `getElem` (`Nat`-indexed with a side proof) form
+that Lean core's vector lemmas are stated in. Holds by `rfl`: the
+`GetElem` instance defines `xs[i]'h := get xs ⟨i, h⟩`, and `⟨i.val,
+i.isLt⟩ = i` by structure eta. This is the lever every `.get`-form helper
+below rewrites through. -/
+theorem get_eq_getElem (v : _root_.Vector α n) (i : Fin n) :
+    v.get i = v[i.val]'i.isLt := rfl
+
+/-- WS-SM SM4.A.2 (lemma 1 of 6): reading a per-core slot at the core it
+was just written to returns the written value. The `Fin n`-indexed form
+of `Vector.getElem_set_self`; the SM5 per-core update operations
+(`field.set c.val x c.isLt`) rely on it to compute the post-write value
+at the updated core. -/
+theorem get_set_eq (v : _root_.Vector α n) (i : Fin n) (x : α) :
+    (v.set i.val x i.isLt).get i = x := by
+  rw [get_eq_getElem]
+  exact _root_.Vector.getElem_set_self i.isLt
+
+/-- WS-SM SM4.A.2 (lemma 2 of 6): writing a per-core slot leaves every
+*other* core's slot unchanged — the frame property that makes per-core
+operations independent (cf. the SM4.C.30 per-core-pairwise theorem). The
+`Fin n`-indexed form of `Vector.getElem_set_ne`; the `i ≠ j` hypothesis
+on `CoreId`s lowers to `i.val ≠ j.val` via `Fin.val_ne_of_ne`. -/
+theorem get_set_ne (v : _root_.Vector α n) (i j : Fin n) (x : α) (h : i ≠ j) :
+    (v.set i.val x i.isLt).get j = v.get j := by
+  rw [get_eq_getElem, get_eq_getElem]
+  exact _root_.Vector.getElem_set_ne i.isLt j.isLt (Fin.val_ne_of_ne h)
+
+/-- WS-SM SM4.A.2 (lemma 3 of 6): a `Vector α n` has exactly `n` elements
+when viewed as a list. Re-exports `Vector.length_toList` under the
+project namespace so list-folding per-core code (e.g. iterating a field's
+`toList` alongside `allCores`) has a stable length witness. -/
+theorem length (v : _root_.Vector α n) : v.toList.length = n :=
+  _root_.Vector.length_toList
+
+/-- WS-SM SM4.A.2 (lemma 4 of 6): every slot of a replicated vector holds
+the replicated value. The `Fin n`-indexed form of
+`Vector.getElem_replicate`; this is the workhorse for SM4.B.9's
+`default_state_perCoreInitialized` — each per-core `SchedulerState` field
+defaults to `Vector.replicate coreCount <neutral>`, so `field.get c`
+reduces to the neutral value at every `c`. -/
+theorem replicate_get (m : Nat) (x : α) (i : Fin m) :
+    (_root_.Vector.replicate m x).get i = x := by
+  rw [get_eq_getElem]
+  exact _root_.Vector.getElem_replicate i.isLt
+
+/-- WS-SM SM4.A.2 (lemma 5 of 6): per-core extensionality. Two vectors are
+equal once they agree at every `Fin n` index. The `Vector.get`-form of
+`Vector.ext`, supplied so SM4.B.10's `SchedulerState.ext` can discharge
+each per-core field by `fun c => ...` over `CoreId`s without dropping to
+`getElem`. Intentionally **not** `@[ext]`-tagged — the `ext` tactic keeps
+firing the core `_root_.Vector.ext`. -/
+theorem ext {v w : _root_.Vector α n} (h : ∀ i : Fin n, v.get i = w.get i) :
+    v = w := by
+  apply _root_.Vector.ext
+  intro i hi
+  have := h ⟨i, hi⟩
+  rwa [get_eq_getElem, get_eq_getElem] at this
+
+/-- WS-SM SM4.A.2 (lemma 6 of 6): the canonical core enumeration
+`List.finRange n` is duplicate-free for *any* `n`. Lean 4.28's core does
+not export this (it has `List.nodup_range` but no `nodup_finRange`), so
+SM4 proves it directly by induction: `finRange (k+1) = 0 :: (finRange
+k).map Fin.succ`, the head `0` is absent from the tail (`Fin.succ` is
+never `0`), and the mapped tail stays `Nodup` because `Fin.succ` is
+injective. Generalises `Concurrency.allCores_nodup` (which `decide`s only
+the literal `numCores = 4`) to a platform-parameterised `coreCount`, so a
+per-core fold over every core visits each exactly once. -/
+theorem nodup_of_finRange (m : Nat) : (List.finRange m).Nodup := by
+  induction m with
+  | zero => simp
+  | succ k ih =>
+    rw [List.finRange_succ, List.nodup_cons]
+    refine ⟨?_, ?_⟩
+    · intro hmem
+      rw [List.mem_map] at hmem
+      obtain ⟨a, _, ha⟩ := hmem
+      exact Fin.succ_ne_zero a ha
+    · rw [List.Nodup, List.pairwise_map]
+      exact ih.imp (fun {_ _} hne hsucc => hne (Fin.succ_inj.mp hsucc))
+
+end SeLe4n.Vector
