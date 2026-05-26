@@ -27,6 +27,43 @@ if [ -f "$HOME/.elan/env" ]; then
     source "$HOME/.elan/env"
 fi
 
+# --- Version-sync check (CLAUDE.md: every PR bumps the patch version and
+#     updates ALL version locations) ---
+# Runs only when a version-bearing file is staged, so commits that touch no
+# version site are never blocked.  The site list and verifier are shared via
+# scripts/version_locations.sh + scripts/check_version_sync.sh (Tier 0 also
+# runs the verifier).  This needs no Lean toolchain, so it precedes the lake
+# check below.
+PRE_COMMIT_REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -n "${PRE_COMMIT_REPO_ROOT}" ] \
+   && [ -f "${PRE_COMMIT_REPO_ROOT}/scripts/version_locations.sh" ] \
+   && [ -f "${PRE_COMMIT_REPO_ROOT}/scripts/check_version_sync.sh" ]; then
+    # shellcheck source=scripts/version_locations.sh
+    source "${PRE_COMMIT_REPO_ROOT}/scripts/version_locations.sh"
+    mapfile -t STAGED_FOR_VERSION < <(git diff --cached --name-only --diff-filter=ACMR || true)
+    VERSION_FILE_STAGED=0
+    if [ "${#STAGED_FOR_VERSION[@]}" -gt 0 ]; then
+        for _staged in "${STAGED_FOR_VERSION[@]}"; do
+            # shellcheck disable=SC2154
+            for _site in "${VERSION_SITE_FILE[@]}"; do
+                if [ "${_staged}" = "${_site}" ]; then
+                    VERSION_FILE_STAGED=1
+                    break 2
+                fi
+            done
+        done
+    fi
+    if [ "${VERSION_FILE_STAGED}" -eq 1 ]; then
+        echo "pre-commit: version-bearing file staged — verifying version sync..."
+        if ! "${PRE_COMMIT_REPO_ROOT}/scripts/check_version_sync.sh"; then
+            echo ""
+            echo "COMMIT BLOCKED: version locations are out of sync (see above)."
+            echo "Sync every site with: ./scripts/bump_version.sh <version>"
+            exit 1
+        fi
+    fi
+fi
+
 if ! command -v lake &>/dev/null; then
     echo "⚠ pre-commit: lake not found, skipping Lean build check"
     exit 0

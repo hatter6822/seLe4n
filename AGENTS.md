@@ -10,14 +10,53 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.9.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.10.
 
-> The version line above is **CI-enforced** by
-> `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
-> `lakefile.toml`, you must bump that line in the same PR, on a single
-> line, with the canonical trigger phrase intact. Do not reword the
-> sentence and do not split it across a line wrap — the script greps
-> for the literal phrase on one line.
+> The version line above is one of the version sites that
+> `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
+> pre-commit hook) holds equal to `lakefile.toml`. When you bump
+> `lakefile.toml` you must bump every site in the same PR — see the
+> **Versioning policy** section below. Keep this sentence on a single
+> line with the canonical trigger phrase (`Lake build system, version
+> <x.y.z>`) intact: the verifier greps for the literal phrase on one
+> line, so do not reword it or split it across a wrap.
+
+## Versioning policy (every PR bumps the patch version)
+
+**Every PR bumps the patch version and updates all version locations.**
+There is no "release cut" accumulation under an `Unreleased` heading —
+each merged PR ships its own `vX.Y.Z` and the docs always reflect the
+live version.
+
+- **Canonical source:** the `version` field in `lakefile.toml`. Every
+  other site must equal it.
+- **Bump in one step:** run `./scripts/bump_version.sh <new-version>`
+  (e.g. `./scripts/bump_version.sh 0.31.11`). It rewrites every site
+  listed in `scripts/version_locations.sh`, then self-verifies. Add a
+  matching `## v<new-version> — <summary>` entry at the top of
+  `CHANGELOG.md` by hand (the bumper reminds you).
+- **Enforcement (sync gate):** `scripts/check_version_sync.sh` verifies
+  that all sites equal `lakefile.toml`. It runs as a Tier 0 hygiene gate
+  (CI, on every PR and push) and from the pre-commit hook (whenever a
+  version-bearing file is staged), so a bump that forgets a location is
+  a hard failure, never a silent drift. There is deliberately **no**
+  force-bump (increment-vs-`main`) gate, so automated contributors
+  (e.g. dependabot) are never blocked.
+- **The version sites** (authoritative list in
+  `scripts/version_locations.sh`): `lakefile.toml`; the four `sele4n-*`
+  crates in `rust/Cargo.toml` / `rust/Cargo.lock`; `KERNEL_VERSION` in
+  `rust/sele4n-hal/src/boot.rs`; `docs/spec/SELE4N_SPEC.md`; `CLAUDE.md`
+  + `AGENTS.md`; the root `README.md` badge + `Version` row; the ten
+  `docs/i18n/*/README.md` badges (+ the `de` / `fr` `Version` rows); the
+  GitBook `README.md`, `navigation_manifest.json`, and
+  `05-specification-and-roadmap.md`; and `docs/codebase_map.json`.
+- **Adding a site:** register it once in
+  `scripts/version_locations.sh` — both the verifier and the bumper pick
+  it up automatically.
+- **Not version sites (never auto-bumped):** historical prose such as
+  `CHANGELOG.md` headers, "LANDED at vX.Y.Z" / "Version bumped A → B"
+  notes, the Lean toolchain version (`4.28.0`), and audit-document
+  filenames (`AUDIT_v0.30.6_*`).
 
 ## Build and run
 
@@ -4095,6 +4134,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
 - [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem
       changes
 - [ ] Documentation synchronized (see "Documentation rules")
+- [ ] Patch version bumped and all version locations synced
+      (`./scripts/bump_version.sh <version>`; verified by
+      `scripts/check_version_sync.sh`) + `CHANGELOG.md` entry added
+      (see "Versioning policy")
 - [ ] No website-linked paths renamed or removed (see
       `scripts/website_link_manifest.txt`)
 - [ ] No `claude.ai/code/session_*` URL in commit messages or PR

@@ -1,4 +1,43 @@
-## Unreleased — WS-SM SM3.E audit-pass-4: concrete non-vacuity witness for the atomicity bridge (§9b)
+## v0.31.10 — version-sync gate hardening + per-PR patch-version-bump policy
+
+Adopts the **every-PR-bumps-the-patch-version** workflow and makes a forgotten
+version location a hard CI failure instead of a silent drift.
+
+**Version bumped 0.31.9 → 0.31.10** across all 26 canonical version sites
+(`lakefile.toml`; the four `sele4n-*` Rust crates in `Cargo.toml` / `Cargo.lock`;
+`boot.rs` `KERNEL_VERSION` const + its pinning assert; `docs/spec/SELE4N_SPEC.md`;
+`CLAUDE.md`; `AGENTS.md`; the root `README.md` badge + `Version` table row; all
+ten `docs/i18n/*/README.md` badges; the GitBook `README.md`,
+`navigation_manifest.json`, and `05-specification-and-roadmap.md`; and
+`docs/codebase_map.json`).
+
+**Three latent stale docs repaired** that the previous checker silently missed:
+`docs/gitbook/05-specification-and-roadmap.md` (was `0.30.11`) and the
+`docs/i18n/de/` + `docs/i18n/fr/` README `Version` table rows (were `0.30.6`).
+
+**Root cause.** The previous `scripts/check_version_sync.sh` covered only 14
+files and, for the i18n READMEs, only the shields.io badge — never the root
+`README.md`, any GitBook file, `docs/codebase_map.json`, `AGENTS.md`,
+`Cargo.lock`, or the i18n `Version` table rows. So a bump that updated the
+badge but not the table row (or any uncovered file) passed CI.
+
+**Enforcement (comprehensive sync gate).** A single manifest
+`scripts/version_locations.sh` now lists every version site and is consumed by
+both `scripts/check_version_sync.sh` (verify — the Tier 0 hygiene gate plus the
+pre-commit hook, which runs it whenever a version-bearing file is staged) and
+the new `scripts/bump_version.sh <version>` (rewrite every site, then
+self-verify). Sharing one manifest means the verifier and the bumper can never
+disagree about what "all version locations" means; adding a new version-bearing
+file is a one-line registration that both pick up automatically. Per maintainer
+decision there is **no** force-bump (increment-vs-main) gate, so automated
+contributors (e.g. dependabot) are never blocked.
+
+The per-PR patch-bump + full-sync policy is documented in `CLAUDE.md`, its
+byte-identical `AGENTS.md` mirror, and the PR checklist.
+
+Refs: CLAUDE.md "Versioning policy (every PR bumps the patch version)"
+
+### Also released in v0.31.10 — WS-SM SM3.E audit-pass-4: concrete non-vacuity witness for the atomicity bridge (§9b)
 
 Further deep audit of §5.5
 ([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
@@ -6,7 +45,7 @@ A comprehensive axiom sweep over all 106 inventory theorems confirmed they
 are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only; zero
 `sorryAx` / `native_decide` / `unsafe`), and a full code read found the §1–§10
 proofs mathematically sound.  The audit surfaced ONE genuine gap and two stale
-docstrings, all closed here.  No version bump.
+docstrings, all closed here.
 
 **Gap (closed) — the atomicity bridge's non-vacuity was never demonstrated.**
 The §9 bridge (`withLockSet_observation_eq_action` /
