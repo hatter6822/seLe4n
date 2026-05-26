@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # VERSION_SITE_* arrays are defined in the sourced manifest
 # seLe4n  - A Lean Microkernel
 # Copyright (C) 2026  Adam Hall
 # This program comes with ABSOLUTELY NO WARRANTY.
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
-# check_version_sync.sh — validate that all version-bearing files match
+# check_version_sync.sh — validate that EVERY version-bearing file matches
 # the canonical version in lakefile.toml.
 #
-# AH4-E: Prevents version drift by checking 14 files against the single
-# source of truth.  Called from test_tier0_hygiene.sh (Tier 0 CI gate).
+# The authoritative list of version sites lives in
+# scripts/version_locations.sh (shared with scripts/bump_version.sh so the
+# verifier and the bumper can never disagree).  Per CLAUDE.md, every PR bumps
+# the patch version and updates ALL version locations (README.md, GitBook,
+# i18n badges, Rust crates, the spec, codebase_map.json, …); this Tier 0 gate
+# (called from test_tier0_hygiene.sh) and the pre-commit hook make a forgotten
+# location a hard failure rather than a silent drift.
 #
 # Exit codes:
-#   0  All version-bearing files match lakefile.toml.
+#   0  All version-bearing sites match lakefile.toml.
 #   1  One or more mismatches found.
-#   2  Could not extract canonical version (setup error).
+#   2  Could not extract canonical version / load the site manifest.
 
 set -euo pipefail
 
@@ -21,54 +27,80 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
-# Extract canonical version from lakefile.toml
+# Canonical version — the single source of truth.
 CANONICAL=$(grep '^version' lakefile.toml | sed 's/.*"\(.*\)"/\1/')
 if [[ -z "${CANONICAL}" ]]; then
   echo "ERROR: Could not extract version from lakefile.toml" >&2
   exit 2
 fi
 
+# Regex-escaped canonical (dots are regex metacharacters).
+VER_ESC="${CANONICAL//./\\.}"
+
+MANIFEST="${SCRIPT_DIR}/version_locations.sh"
+if [[ ! -f "${MANIFEST}" ]]; then
+  echo "ERROR: version-site manifest missing at ${MANIFEST}" >&2
+  exit 2
+fi
+# shellcheck source=scripts/version_locations.sh
+source "${MANIFEST}"
+
 FAIL=0
 
-check_file() {
-  local file="$1" pattern="$2" label="$3"
-  if [[ ! -f "${file}" ]]; then
-    echo "WARN: ${file} not found (skipped)"
-    return
-  fi
-  if ! grep -q "${CANONICAL}" <(grep "${pattern}" "${file}"); then
-    local actual
-    actual=$(grep "${pattern}" "${file}" | head -1)
-    echo "MISMATCH: ${label}"
-    echo "  Expected: ${CANONICAL}"
-    echo "  Found:    ${actual}"
-    echo "  File:     ${file}"
-    FAIL=1
-  fi
+# count_matches PATTERN FILE — number of lines matching the grep -E PATTERN
+# (0 on no match, never aborts under `set -e`).
+count_matches() {
+  grep -Ec "$1" "$2" 2>/dev/null || true
 }
 
-# 1. Rust HAL boot banner
-check_file "rust/sele4n-hal/src/boot.rs" "KERNEL_VERSION" "Rust HAL KERNEL_VERSION"
+report_mismatch() {
+  local label="$1" file="$2" detail="$3"
+  echo "MISMATCH: ${label}"
+  echo "  Expected: ${CANONICAL} (from lakefile.toml)"
+  echo "  File:     ${file}"
+  echo "  Detail:   ${detail}"
+  FAIL=1
+}
 
-# 2. Rust workspace Cargo.toml
-check_file "rust/Cargo.toml" 'version' "Rust workspace version"
+for i in "${!VERSION_SITE_FILE[@]}"; do
+  file="${VERSION_SITE_FILE[$i]}"
+  verify="${VERSION_SITE_VERIFY[$i]}"
+  label="${VERSION_SITE_LABEL[$i]}"
+  occurs="${VERSION_SITE_OCCURS[$i]}"
 
-# 3. Spec document
-check_file "docs/spec/SELE4N_SPEC.md" "Package version" "SELE4N_SPEC package version"
+  if [[ ! -f "${file}" ]]; then
+    report_mismatch "${label}" "${file}" "version-bearing file is missing"
+    continue
+  fi
 
-# 4. CLAUDE.md project description
-check_file "CLAUDE.md" "Lake build system, version" "CLAUDE.md version reference"
+  if [[ "${verify}" == "__CARGO_LOCK__" ]]; then
+    # Bespoke verifier: each sele4n-* crate's `version` line (the line
+    # immediately after its `name` line) must equal the canonical version.
+    found=$(grep -A1 -E '^name = "sele4n-' "${file}" \
+              | grep -Ec "^version = \"${VER_ESC}\"" || true)
+    if [[ "${found}" -ne "${occurs}" ]]; then
+      report_mismatch "${label}" "${file}" \
+        "expected ${occurs} sele4n-* crate(s) at ${CANONICAL}, found ${found}"
+    fi
+    continue
+  fi
 
-# 5-14. i18n README badges (10 files)
-for lang in ar de es fr hi ja ko pt-BR ru zh-CN; do
-  readme="docs/i18n/${lang}/README.md"
-  check_file "${readme}" "version-" "i18n README (${lang})"
+  pattern="${verify//@VER@/${VER_ESC}}"
+  found=$(count_matches "${pattern}" "${file}")
+  if [[ "${found}" -ne "${occurs}" ]]; then
+    other=$(grep -En "${verify//@VER@/[0-9]+[.][0-9]+[.][0-9]+}" "${file}" \
+              | head -1 || true)
+    report_mismatch "${label}" "${file}" \
+      "expected ${occurs} line(s) at ${CANONICAL}, found ${found}${other:+ — actual: ${other}}"
+  fi
 done
 
 echo "Canonical version: ${CANONICAL}"
+echo "Checked ${#VERSION_SITE_FILE[@]} version sites."
 if [[ "${FAIL}" -eq 1 ]]; then
   echo "FAIL: Version sync check found mismatches." >&2
+  echo "Fix every location (or run: ./scripts/bump_version.sh ${CANONICAL})." >&2
   exit 1
 else
-  echo "PASS: All version-bearing files match lakefile.toml."
+  echo "PASS: All version-bearing sites match lakefile.toml."
 fi
