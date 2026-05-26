@@ -111,7 +111,7 @@ import SeLe4n.Kernel.Concurrency.LockPrimitives
 -- SM3.D inventory + SM3.E serializability (`serializability_under_2pl`
 -- Theorem 2.1.10, `conflictGraph_acyclic`, `strictly_2pl_preserved`,
 -- the SM3.E.5 commutativity lemmas, `singleCore_proof_preservation`
--- Corollary 2.1.11) + 78-theorem SM3.E inventory.
+-- Corollary 2.1.11) + 106-theorem SM3.E inventory.
 -- Staged at SM3.C/D/E; SM5+ per-core scheduler integration is the first
 -- runtime exerciser.  Reachability: every `@[export]` body in the
 -- future SM3.C.9 migration wraps its kernel-transition action in

@@ -69,7 +69,7 @@ SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory # infra (WS-SM SM3.C 51-theorem in
 SeLe4n.Kernel.Concurrency.Locks.Deadlock      # infra (WS-SM SM3.D deadlock-freedom: KernelExecution model, Theorem 2.1.9, wait-graph acyclicity, bounded-wait; SM3.E first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory # infra (WS-SM SM3.D 37-theorem inventory aggregator; mirrors SM3.A/SM3.B/SM3.C inventories)
 SeLe4n.Kernel.Concurrency.Locks.Serializability # infra (WS-SM SM3.E serializability: KernelTransitionInstance schedule model, Theorem 2.1.10, conflict-graph acyclicity, commutativity lemmas, Cor 2.1.11; SM5+ first runtime exerciser)
-SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory # infra (WS-SM SM3.E 78-theorem inventory aggregator; mirrors SM3.A/SM3.B/SM3.C/SM3.D inventories)
+SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory # infra (WS-SM SM3.E 106-theorem inventory aggregator; mirrors SM3.A/SM3.B/SM3.C/SM3.D inventories)
 SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement # infra (WS-SM SM2.C.20 RwLock refinement bridge; Lean→Rust bit-packed-state simulation; staged-only — not yet wired to a runtime consumer)
 SeLe4n.Kernel.Concurrency.Locks.TicketLock    # infra (WS-SM SM2.B abstract TicketLock spec; SM3 first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement # infra (WS-SM SM2.D TicketLock refinement bridge — F-01 anchor)

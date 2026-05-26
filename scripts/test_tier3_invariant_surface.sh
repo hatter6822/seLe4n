@@ -2307,7 +2307,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 EOF'
 
 # WS-SM SM3.E — serializability + conflict-graph acyclicity + commit-sort
-# serialization order + single-core proof preservation + 78-theorem inventory.
+# serialization order + single-core proof preservation + 106-theorem inventory.
 # Surface anchors verify every SM3.E public symbol survives renames at
 # elaboration time.  SM3.E.8: `#check` of the major theorems.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory'
@@ -2400,6 +2400,34 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 #check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objStoreLock_wf
 #check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objStoreLock_wf
 #check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_objStoreLock_wf
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_invExt
+#check @SeLe4n.Kernel.Concurrency.updateObjectLockAt_preserves_objectType_at
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_objectType_at
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_objectType_at
+#check @SeLe4n.Kernel.Concurrency.withLockSet_preserves_objectType_at
+#check @SeLe4n.Kernel.Concurrency.ActionPiCongr
+#check @SeLe4n.Kernel.Concurrency.applySequential_piCongr
+#check @SeLe4n.Kernel.Concurrency.withLockSet_observation_eq_action
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_observation
+#check @SeLe4n.Kernel.Concurrency.ActionObsCongr
+#check @SeLe4n.Kernel.Concurrency.ActionPreservesInvExt
+#check @SeLe4n.Kernel.Concurrency.KernelTransitionInstance.wellBehavedObs
+#check @SeLe4n.Kernel.Concurrency.KernelTransitionInstance.actionsCommuteObs
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_actionObsCongr
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_actionPreservesInvExt
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_wellBehavedObs
+#check @SeLe4n.Kernel.Concurrency.applySequential_preservesInvExt
+#check @SeLe4n.Kernel.Concurrency.applySequential_obsCongr
+#check @SeLe4n.Kernel.Concurrency.applySequential_swap_front_obs
+#check @SeLe4n.Kernel.Concurrency.applySequential_cons_obs
+#check @SeLe4n.Kernel.Concurrency.outOfOrderCommuteObs
+#check @SeLe4n.Kernel.Concurrency.insertByCommitTime_obs
+#check @SeLe4n.Kernel.Concurrency.commitSort_obs
+#check @SeLe4n.Kernel.Concurrency.serializability_under_2pl_obs
+#check @SeLe4n.Kernel.Concurrency.objStoreWriteInstance
+#check @SeLe4n.Kernel.Concurrency.objStoreWriteInstance_wellBehavedObs
+#check @SeLe4n.Kernel.Concurrency.objStoreWriteInstance_actionsCommuteObs
 -- SM3.E Inventory aggregator.
 #check @SeLe4n.Kernel.Concurrency.SerializabilityCategory
 #check @SeLe4n.Kernel.Concurrency.SerializabilityTheorem

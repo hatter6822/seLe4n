@@ -206,6 +206,10 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Kernel.Concurrency.singleCore_proof_preservation
 -- SM3.E.3 — unconditional serializability of a read-only schedule (non-vacuity).
 #check @SeLe4n.Kernel.Concurrency.serializability_of_readOnly_schedule
+-- SM3.E.3/E.5 — OBSERVATIONAL serializability (covers write/write on distinct objects).
+#check @SeLe4n.Kernel.Concurrency.serializability_under_2pl_obs
+-- SM3.E.2 — atomicity bridge (applySequential models the withLockSet execution).
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_observation
 
 -- ============================================================================
 -- §7 — Decidable structural examples
@@ -431,8 +435,8 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   -- The SM3.E inventory size witness reached and evaluates (the 8 major-theorem
   -- `#check` anchors above are elaboration-time gates; this exercises the
   -- runtime path of the SM3.E inventory aggregator).
-  assertBool "SM3.E inventory has 78 entries"
-    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 78))
+  assertBool "SM3.E inventory has 106 entries"
+    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 106))
 
   IO.println "============================================================"
   IO.println "All SM2.D + SM3.E.8 surface anchor checks PASS."

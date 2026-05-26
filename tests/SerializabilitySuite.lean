@@ -126,6 +126,38 @@ open SeLe4n.Kernel.Concurrency
 #check @acquireLockOnObject_preserves_objStoreLock_wf
 #check @releaseLockOnObject_preserves_objStoreLock_wf
 #check @withLockSet_preserves_objStoreLock_wf
+#check @releaseLockOnObject_preserves_invExt
+#check @updateObjectLockAt_preserves_objectType_at
+#check @acquireLockOnObject_preserves_objectType_at
+#check @releaseLockOnObject_preserves_objectType_at
+#check @withLockSet_preserves_objectType_at
+
+/-! ## SM3.E.2 — Atomicity bridge (applySequential models the withLockSet execution) -/
+#check @ActionPiCongr
+#check @applySequential_piCongr
+#check @withLockSet_observation_eq_action
+#check @applySequentialWithLockSet
+#check @applySequentialWithLockSet_observation
+
+/-! ## SM3.E.3/E.5 — Observational serializability (covers write/write) -/
+#check @ActionObsCongr
+#check @ActionPreservesInvExt
+#check @KernelTransitionInstance.wellBehavedObs
+#check @KernelTransitionInstance.actionsCommuteObs
+#check @updateObjectAt_actionObsCongr
+#check @updateObjectAt_actionPreservesInvExt
+#check @updateObjectAt_wellBehavedObs
+#check @applySequential_preservesInvExt
+#check @applySequential_obsCongr
+#check @applySequential_swap_front_obs
+#check @applySequential_cons_obs
+#check @outOfOrderCommuteObs
+#check @insertByCommitTime_obs
+#check @commitSort_obs
+#check @serializability_under_2pl_obs
+#check @objStoreWriteInstance
+#check @objStoreWriteInstance_wellBehavedObs
+#check @objStoreWriteInstance_actionsCommuteObs
 
 /-! ## SM3.E inventory -/
 #check @SerializabilityCategory
@@ -302,6 +334,71 @@ example (interleaved : List KernelTransitionInstance) (s : SystemState)
     serialEquivalent interleaved (commitSort interleaved) s :=
   (serializability_under_2pl_of_conflicts_ordered interleaved s hnc ho).2.2
 
+/-! ## SM3.E.2 — atomicity bridge: applySequential models the withLockSet execution -/
+
+-- A withLockSet-wrapped schedule, observed lock-insensitively (every action a
+-- π-congruence), equals the bare applySequential model — the formal grounding
+-- that `applySequential` faithfully represents the real `withLockSet` execution.
+example (β : Type) (π : SystemState → β)
+    (hAcq : ∀ c : CoreId, AcquireInsensitive c π)
+    (hRel : ∀ c : CoreId, ReleaseInsensitive c π)
+    (sched : List KernelTransitionInstance)
+    (hCongr : ∀ τ ∈ sched, ActionPiCongr π τ.action) (s : SystemState) :
+    π (applySequentialWithLockSet sched s) = π (applySequential sched s) :=
+  applySequentialWithLockSet_observation π hAcq hRel sched hCongr s
+
+/-! ## SM3.E.3/E.5 — OBSERVATIONAL serializability on a real write/write schedule -/
+
+-- Two object-store WRITES to DIFFERENT objects (tcb5, tcb7), out of commit order
+-- (commit 2 then 1), are observationally serial-equivalent to their commit sort.
+-- This is the realistic write-heavy case the structural theorem cannot cover.
+private def wA : KernelTransitionInstance :=
+  objStoreWriteInstance lsW5 c0 2 (fun _ => 0) tcb5.objId id
+private def wB : KernelTransitionInstance :=
+  objStoreWriteInstance lsW7 c0 1 (fun _ => 0) tcb7.objId id
+
+theorem writeWriteSched_wellBehavedObs :
+    ∀ τ ∈ [wA, wB], KernelTransitionInstance.wellBehavedObs τ := by
+  intro τ hτ
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hτ
+  rcases hτ with rfl | rfl <;>
+    exact objStoreWriteInstance_wellBehavedObs _ _ _ _ _ _
+
+theorem writeWriteSched_outOfOrderCommuteObs : outOfOrderCommuteObs [wA, wB] := by
+  rw [outOfOrderCommuteObs_cons, outOfOrderCommuteObs_cons]
+  refine ⟨fun x hx _ => ?_, fun x hx _ => ?_, trivial⟩
+  · -- x ∈ [wB]: wA commutes-obs with wB (writes to distinct objects tcb5 ≠ tcb7)
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hx
+    subst hx
+    exact objStoreWriteInstance_actionsCommuteObs lsW5 lsW7 c0 c0 2 1 _ _
+      tcb5.objId tcb7.objId id id (by decide)
+  · exact absurd hx List.not_mem_nil
+
+-- The headline observational serializability on the concrete write/write schedule.
+example (s : SystemState) (hExt : s.objects.invExt) :
+    objStoreEquiv (applySequential [wA, wB] s) (applySequential (commitSort [wA, wB]) s) :=
+  (serializability_under_2pl_obs [wA, wB] s hExt
+    writeWriteSched_wellBehavedObs writeWriteSched_outOfOrderCommuteObs).2.2
+
+/-! ## SM3.E.6 — second real-invariant witness: the kind-discipline (objectType) invariant -/
+
+-- The kind-discipline invariant (every object's objectType tag preserved relative
+-- to s₀) survives the withLockSet wrapper when the action preserves it — a real,
+-- invExt-dependent invariant class (NOT the trivial True).
+example (core : CoreId) (op : SystemState → SystemState × Unit) (s s₀ : SystemState)
+    (hInv : s.objects.invExt ∧
+      ∀ k, Option.map KernelObject.objectType (s.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k))
+    (hAction : ∀ s',
+      (s'.objects.invExt ∧ ∀ k, Option.map KernelObject.objectType (s'.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k)) →
+      ((op s').1.objects.invExt ∧ ∀ k, Option.map KernelObject.objectType ((op s').1.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k))) :
+    (withLockSet lsW5 core op s).1.objects.invExt ∧
+    ∀ k, Option.map KernelObject.objectType ((withLockSet lsW5 core op s).1.objects.get? k)
+      = Option.map KernelObject.objectType (s₀.objects.get? k) :=
+  withLockSet_preserves_objectType_at lsW5 core op s s₀ hInv hAction
+
 -- ============================================================================
 -- §4 — Runtime assertions
 -- ============================================================================
@@ -364,8 +461,8 @@ private def runCommitSortChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §5 SM3.E — inventory counts ---"
-  assertBool "serializabilityTheorems.length = 78"
-    (decide (serializabilityTheorems.length = 78))
+  assertBool "serializabilityTheorems.length = 106"
+    (decide (serializabilityTheorems.length = 106))
   assertBool "model count = 5"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .model)).length = 5))
   assertBool "conflict count = 7"
@@ -378,8 +475,12 @@ private def runInventoryChecks : IO Unit := do
     (decide ((serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 9))
   assertBool "serializability count = 22"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22))
-  assertBool "preservation count = 6"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 6))
+  assertBool "preservation count = 11"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 11))
+  assertBool "atomicityBridge count = 5"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 5))
+  assertBool "observational count = 18"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .observational)).length = 18))
 
 def runSerializabilityChecks : IO Unit := do
   IO.println "WS-SM SM3.E — serializability regression suite"

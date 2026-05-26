@@ -1,3 +1,96 @@
+## Unreleased — WS-SM SM3.E audit-pass-3: atomicity bridge, observational serializability (write/write coverage), second real Corollary 2.1.11 instantiation
+
+Deepest deep audit of §5.5
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+Closes the three SM3.E gaps the initial landing *documented as
+deferred* but did not implement.  Per CLAUDE.md's
+`implement-the-improvement` rule, acknowledged-but-unbuilt scope is the
+inferior artefact: the documentation describing the better behaviour is
+made true rather than caveated.  No version bump (the v0.31.9 SM3 cut
+remains open); axiom-clean (`propext` / `Quot.sound` / `Classical.choice`
+only, verified via `#print axioms`).
+
+**Gap 1 — atomicity bridge (the avoided SM3.E.2/SM3.E.7 connection).**
+The initial landing modelled `applySequential` as a `foldl` of *bare*
+`action`s and proved serial-equivalence at that abstraction, but never
+connected it back to SM3.C.7's `withLockSet` atomicity result — so the
+headline theorem reasoned about a schedule of raw actions rather than a
+schedule of *2PL-wrapped transitions*.  New §9 (5 inventory entries,
+category `.atomicityBridge`):
+
+* `withLockSet_observation_eq_action` — the observable post-state of a
+  `withLockSet`-wrapped transition equals the action applied to the
+  post-acquire state.  The acquire/release fold is invisible to any
+  lock-insensitive observer, discharged through SM3.C.7
+  `lockSet_observer_atomic` + `AcquireInsensitive`/`ReleaseInsensitive`.
+* `applySequentialWithLockSet` (+ nil/cons simp lemmas) — folds a list
+  of `withLockSet`-wrapped transitions.
+* `applySequentialWithLockSet_observation` — lifts the single-step
+  bridge to the whole schedule via `ActionPiCongr` /
+  `applySequential_piCongr`.
+
+This makes `serializability_under_2pl` a statement about the *real* 2PL
+kernel, not an idealised raw-action fold.
+
+**Gap 2 — observational serializability (the avoided write/write
+coverage).**  SM3.E.5 proved `objStoreEquiv`-commutativity for
+write/write-to-distinct-objects as an *isolated* lemma, but the top-level
+`serializability_under_2pl` reorders via the *structural* `actionsCommute`
+(`Eq`) — which write/write pairs do NOT satisfy (the Robin-Hood object
+store's slot layout is insertion-order-dependent).  So the most important
+case for a real kernel — two cores writing distinct objects — was provably
+commuting in the lemma library but NOT carried by the headline theorem.
+New §10 (18 inventory entries, category `.observational`):
+
+* `serializability_under_2pl_obs` — serial-equivalence *up to
+  `objStoreEquiv`* for any schedule whose actions commute observationally
+  and preserve `invExt`, threading the RHTable extension invariant through
+  the entire `commitSort` reorder.
+* Supporting stack: `ActionObsCongr` / `ActionPreservesInvExt` /
+  `KernelTransitionInstance.wellBehavedObs` / `.actionsCommuteObs`,
+  `applySequential_preservesInvExt` / `_obsCongr` / `_swap_front_obs` /
+  `_cons_obs`, `outOfOrderCommuteObs` (+ nil/cons), `insertByCommitTime_obs`,
+  `commitSort_obs`.
+* `objStoreWriteInstance` + `_wellBehavedObs` + `_actionsCommuteObs` —
+  the canonical write/write instance the headline now genuinely covers.
+
+Since conflict-serializability IS an observational property (Bernstein:
+equivalent schedules agree on the database state), `objStoreEquiv` is the
+faithful equivalence for the write/write case — this is a fidelity match,
+not a weakening.
+
+**Gap 3 — second real Corollary 2.1.11 instantiation (the avoided
+generality demonstration).**  Audit-pass-1 grounded Cor 2.1.11 on the
+single `objStoreLock.wf` invariant, leaving the impression the lever might
+only handle that one toy invariant.  New §8c (5 inventory entries,
+category `.preservation`):
+
+* `withLockSet_preserves_objectType_at` — the 2PL machinery preserves a
+  SECOND, structurally-different real invariant: the per-key kind-tag
+  equality against the pre-state, bundled with `invExt`.
+* Supporting: `releaseLockOnObject_preserves_invExt`,
+  `updateObjectLockAt_preserves_objectType_at`,
+  `acquireLockOnObject_preserves_objectType_at`,
+  `releaseLockOnObject_preserves_objectType_at`.
+
+This is exactly the object-store structural invariant class SM4..SM6
+phase migrations consume, demonstrating the lever generalises beyond
+`objStoreLock.wf`.
+
+**Inventory + tests.** `serializabilityTheorems` grew 78 → 106 (+5
+preservation, +5 atomicityBridge, +18 observational); two new
+`SerializabilityCategory` variants `.atomicityBridge` / `.observational`;
+`serializabilityTheorems_partition_sum` now sums 9 categories.
+`tests/SerializabilitySuite.lean` gains a write/write observational
+example (`writeWriteSched_wellBehavedObs` / `_outOfOrderCommuteObs`), an
+atomicity-bridge example, and a second-invariant `objectType` example
+(27 runtime assertions / 102 surface anchors); `tests/SmpSurfaceAnchors.lean`
+gains the `serializability_under_2pl_obs` +
+`applySequentialWithLockSet_observation` headline anchors;
+`scripts/test_tier3_invariant_surface.sh` covers the 28 new symbols.
+Full Tier 0+1+2+3 green.  Items deferred past v1.0.0 with correctness
+impact: NONE.
+
 ## Unreleased — WS-SM SM3.E LANDED: serializability (Theorem 2.1.10), conflict-graph acyclicity, commutativity, single-core proof preservation (Corollary 2.1.11) — SM3 CLOSED
 
 Closes §5.5 of
@@ -15,8 +108,8 @@ are the twin levers that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).
 
 **New modules**: `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean`
-(~1233 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
-(78-theorem inventory).  Both staged via `Concurrency.LockSet` +
+(~1775 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
+(106-theorem inventory).  Both staged via `Concurrency.LockSet` +
 `staged_module_allowlist.txt`; SM5+ per-core scheduler integration is
 the first runtime exerciser.
 
@@ -90,8 +183,8 @@ the first runtime exerciser.
 * **SM3.E.7** — `tests/SerializabilitySuite.lean`: surface anchors for
   every public SM3.E symbol, decidable examples (conflict vs
   non-conflict, commit-oriented precedence, strict 2PL), theorem-
-  application inhabitation witnesses, and 23 runtime `assertBool`
-  assertions across 5 sections (runnable as `lake exe
+  application inhabitation witnesses, and 27 runtime `assertBool`
+  assertions across 6 sections (runnable as `lake exe
   serializability_suite`).  Tier-2 + Tier-3 wired.
 * **SM3.E.8** — `#check` of the 8 major SM3.E theorems in
   `tests/SmpSurfaceAnchors.lean` + a runtime inventory-count assertion.
@@ -104,10 +197,11 @@ vacuous statement.
 
 **Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries (only the standard
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms).  The
-SM3.E inventory (`serializabilityTheorems`) has 78 entries across 7
-categories (model 5, conflict 6, strict2pl 6, commutativity 23,
-acyclicity 7, serializability 18, preservation 3).  Full Tier 0+1+2+3
-green.  Items deferred past v1.0.0 with correctness impact: NONE.
+SM3.E inventory (`serializabilityTheorems`) has 106 entries across 9
+categories (model 5, conflict 7, strict2pl 6, commutativity 23,
+acyclicity 9, serializability 22, preservation 11, atomicityBridge 5,
+observational 18).  Full Tier 0+1+2+3 green.  Items deferred past
+v1.0.0 with correctness impact: NONE.
 
 **SM3 acceptance gate** (per
 [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)

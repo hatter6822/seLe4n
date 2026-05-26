@@ -1273,4 +1273,503 @@ theorem withLockSet_preserves_objStoreLock_wf {α : Type} (S : LockSet)
     hActionWf
     (fun l m s' h => releaseLockOnObject_preserves_objStoreLock_wf s' core l m h)
 
+-- ============================================================================
+-- §8c — A SECOND non-vacuous Cor 2.1.11 witness: the kind-discipline invariant
+-- ============================================================================
+--
+-- `withLockSet_preserves_objStoreLock_wf` (§8b) demonstrated the lever on one
+-- real invariant whose preservation is `invExt`-free.  This section demonstrates
+-- it on a SECOND real invariant — the **kind-discipline** invariant (every
+-- object's `objectType` tag is preserved), the most important real invariant
+-- class (`tcbStoredUnderTidObjId`, `cnodeKindConsistent`, … all dispatch on
+-- `objectType`).  Its lock-insensitivity genuinely depends on `invExt` (the
+-- RHTable insert/lookup characterisation), so the invariant is bundled with
+-- `invExt` and threaded through — showing the lever works on the realistic,
+-- `invExt`-dependent invariant class, not only the `invExt`-free table lock.
+
+/-- WS-SM SM3.E.6 foundation: releasing a lock preserves `invExt` (symmetric to
+the imported `acquireLockOnObject_preserves_invExt`; both route through
+`updateObjectLockAt_preserves_invExt`). -/
+theorem releaseLockOnObject_preserves_invExt (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (hExt : s.objects.invExt) :
+    (releaseLockOnObject s core l m).objects.invExt := by
+  unfold releaseLockOnObject
+  cases l.kind with
+  | objStore => exact hExt
+  | reply => exact hExt
+  | page => exact hExt
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext =>
+      all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
+
+/-- WS-SM SM3.E.6 foundation: `updateObjectLockAt` preserves the `objectType` tag
+at every key.  The kind-matched branch re-inserts `obj.updateLock op`, which
+preserves `objectType` (`KernelObject.updateLock_preserves_objectType`), so
+`updateObjectAt_preserves_objectType_at` applies; the fail-closed branch is the
+identity. -/
+theorem updateObjectLockAt_preserves_objectType_at (s : SystemState) (l : LockId)
+    (op : RwLockOp) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
+    Option.map KernelObject.objectType ((updateObjectLockAt s l op).objects.get? k)
+      = Option.map KernelObject.objectType (s.objects.get? k) := by
+  unfold updateObjectLockAt
+  cases LockId.lookup s l with
+  | none => rfl
+  | some _ =>
+      exact updateObjectAt_preserves_objectType_at s l.objId k
+        (fun obj => obj.updateLock op) hExt
+        (fun o => KernelObject.updateLock_preserves_objectType o op)
+
+/-- WS-SM SM3.E.6 foundation: acquiring a lock preserves the `objectType` tag at
+every key.  The `.objStore` branch only touches `objStoreLock` (objects
+unchanged); the modeled branches route through
+`updateObjectLockAt_preserves_objectType_at`; `.reply`/`.page` are no-ops. -/
+theorem acquireLockOnObject_preserves_objectType_at (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
+    Option.map KernelObject.objectType ((acquireLockOnObject s core l m).objects.get? k)
+      = Option.map KernelObject.objectType (s.objects.get? k) := by
+  unfold acquireLockOnObject
+  cases l.kind with
+  | objStore => rfl
+  | reply => rfl
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext =>
+      all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toAcquireOp core) k hExt
+
+/-- WS-SM SM3.E.6 foundation: releasing a lock preserves the `objectType` tag at
+every key.  Symmetric to the acquire form. -/
+theorem releaseLockOnObject_preserves_objectType_at (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) (k : SeLe4n.ObjId) (hExt : s.objects.invExt) :
+    Option.map KernelObject.objectType ((releaseLockOnObject s core l m).objects.get? k)
+      = Option.map KernelObject.objectType (s.objects.get? k) := by
+  unfold releaseLockOnObject
+  cases l.kind with
+  | objStore => rfl
+  | reply => rfl
+  | page => rfl
+  | tcb | endpoint | notification | cnode
+  | vspaceRoot | untyped | schedContext =>
+      all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toReleaseOp core) k hExt
+
+/-- WS-SM SM3.E.6 (SECOND non-vacuous Cor 2.1.11 witness): the **kind-discipline**
+invariant — every object's `objectType` tag equals the reference state `s₀`'s —
+survives a `withLockSet`-wrapped transition whose action preserves it.
+
+This instantiates `singleCore_proof_preservation` on a genuinely
+`invExt`-dependent real-invariant class (bundling `invExt` with the kind-tag
+equality so the lock-insensitivity hypotheses are dischargeable).  Together with
+`withLockSet_preserves_objStoreLock_wf` (the `invExt`-free table lock), it shows
+the Corollary 2.1.11 lever transfers BOTH invariant flavours — the `invExt`-free
+field invariants and the `invExt`-dependent object-store-structural invariants
+(the dominant real-invariant class).  The single-core obligation reduces to
+`hAction` — the action's own kind-preservation, exactly the single-core theorem. -/
+theorem withLockSet_preserves_objectType_at {α : Type} (S : LockSet) (core : CoreId)
+    (op : SystemState → SystemState × α) (s s₀ : SystemState)
+    (hInv : s.objects.invExt ∧
+      ∀ k, Option.map KernelObject.objectType (s.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k))
+    (hAction : ∀ s',
+      (s'.objects.invExt ∧
+        ∀ k, Option.map KernelObject.objectType (s'.objects.get? k)
+          = Option.map KernelObject.objectType (s₀.objects.get? k)) →
+      ((op s').1.objects.invExt ∧
+        ∀ k, Option.map KernelObject.objectType ((op s').1.objects.get? k)
+          = Option.map KernelObject.objectType (s₀.objects.get? k))) :
+    (withLockSet S core op s).1.objects.invExt ∧
+    ∀ k, Option.map KernelObject.objectType ((withLockSet S core op s).1.objects.get? k)
+      = Option.map KernelObject.objectType (s₀.objects.get? k) :=
+  singleCore_proof_preservation S core op s
+    (fun st => st.objects.invExt ∧
+      ∀ k, Option.map KernelObject.objectType (st.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k))
+    (fun st => st.objects.invExt ∧
+      ∀ k, Option.map KernelObject.objectType (st.objects.get? k)
+        = Option.map KernelObject.objectType (s₀.objects.get? k))
+    hInv
+    (fun l m s' hpre => ⟨acquireLockOnObject_preserves_invExt s' core l m hpre.1,
+      fun k => by
+        rw [acquireLockOnObject_preserves_objectType_at s' core l m k hpre.1]; exact hpre.2 k⟩)
+    hAction
+    (fun l m s' hpost => ⟨releaseLockOnObject_preserves_invExt s' core l m hpost.1,
+      fun k => by
+        rw [releaseLockOnObject_preserves_objectType_at s' core l m k hpost.1]; exact hpost.2 k⟩)
+
+-- ============================================================================
+-- §9 — Atomicity bridge: `applySequential` faithfully models the `withLockSet`
+--      execution under a lock-insensitive observer (SM3.E.2 grounding)
+-- ============================================================================
+--
+-- The schedule model (§1) folds *bare business actions* (`applySequential`).
+-- The real kernel runs each transition wrapped in `withLockSet` (SM3.C), which
+-- additionally acquires/releases locks.  This section proves — rather than
+-- merely asserts in prose — that the two agree under any lock-insensitive
+-- observer `π` (a business-state projection): the lock machinery is invisible,
+-- so `applySequential` of the business actions IS the observable net effect of
+-- the `withLockSet`-wrapped execution.  This grounds the SM3.E model in the
+-- SM3.C `withLockSet` semantics via SM3.C.7's `lockSet_observer_atomic`.
+
+/-- WS-SM SM3.E.2 (atomicity bridge): an action is a **`π`-congruence** when it
+respects the observer `π` — equal observations map to equal observations.  The
+business actions of kernel transitions are `π`-congruences for the business-state
+observer `π` (their effect on `π` depends only on the `π`-visible input). -/
+def ActionPiCongr {β : Type} (π : SystemState → β) (a : SystemState → SystemState) :
+    Prop :=
+  ∀ s₁ s₂, π s₁ = π s₂ → π (a s₁) = π (a s₂)
+
+/-- WS-SM SM3.E.2: the `applySequential` fold is a `π`-congruence when every
+action in the schedule is.  Equal observations of the start state yield equal
+observations of the end state.  Induction on the schedule. -/
+theorem applySequential_piCongr {β : Type} (π : SystemState → β) :
+    ∀ (l : List KernelTransitionInstance), (∀ τ ∈ l, ActionPiCongr π τ.action) →
+      ∀ s₁ s₂, π s₁ = π s₂ → π (applySequential l s₁) = π (applySequential l s₂)
+  | [], _, _, _, h => h
+  | τ :: rest, hCongr, s₁, s₂, h => by
+      rw [applySequential_cons, applySequential_cons]
+      exact applySequential_piCongr π rest
+        (fun x hx => hCongr x (List.mem_cons_of_mem _ hx))
+        (τ.action s₁) (τ.action s₂) (hCongr τ List.mem_cons_self s₁ s₂ h)
+
+/-- WS-SM SM3.E.2 (atomicity bridge — single transition): wrapping a business
+action in `withLockSet` is **observationally identical** to the bare action, for
+any lock-insensitive observer `π`.  The acquire/release lock machinery is
+invisible: `π (withLockSet S core (action, ()) s).1 = π (action s)`.
+
+Proof via SM3.C.7's `lockSet_observer_atomic`: the acquire fold is `π`-invisible
+(`π (acquireAll …) = π s`) and the release fold is `π`-invisible (so
+`π (withLockSet …).1 = π (action (acquireAll …))`); the action being a
+`π`-congruence then collapses `π (action (acquireAll …)) = π (action s)`.  This
+is the formal content behind "`applySequential` models the interleaved
+execution" — not an assumption but a theorem grounded in the SM3.C semantics. -/
+theorem withLockSet_observation_eq_action {β : Type} (S : LockSet) (core : CoreId)
+    (businessAction : SystemState → SystemState) (s : SystemState) (π : SystemState → β)
+    (hAcq : AcquireInsensitive core π) (hRel : ReleaseInsensitive core π)
+    (hCongr : ActionPiCongr π businessAction) :
+    π (withLockSet S core (fun st => (businessAction st, ())) s).1 = π (businessAction s) := by
+  obtain ⟨hAcqEq, hRelEq⟩ :=
+    lockSet_observer_atomic S core (fun st => (businessAction st, ())) s π hAcq hRel
+  rw [hRelEq]
+  exact hCongr _ _ hAcqEq
+
+/-- WS-SM SM3.E.2 (atomicity bridge): a `withLockSet`-wrapped schedule — each
+transition's business action wrapped in its own `withLockSet`.  This is the
+*real* kernel execution shape (modulo the per-core seam SM5 adds); SM3.E proves
+its observable effect equals the bare `applySequential` model. -/
+def applySequentialWithLockSet (sched : List KernelTransitionInstance)
+    (s : SystemState) : SystemState :=
+  sched.foldl
+    (fun st τ => (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) st).1) s
+
+@[simp] theorem applySequentialWithLockSet_nil (s : SystemState) :
+    applySequentialWithLockSet [] s = s := rfl
+
+@[simp] theorem applySequentialWithLockSet_cons (τ : KernelTransitionInstance)
+    (rest : List KernelTransitionInstance) (s : SystemState) :
+    applySequentialWithLockSet (τ :: rest) s =
+      applySequentialWithLockSet rest
+        (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) s).1 := rfl
+
+/-- WS-SM SM3.E.2 (atomicity bridge — full schedule): the lock-insensitive
+observation of a `withLockSet`-wrapped execution equals the observation of the
+bare `applySequential` model.  So the SM3.E serializability results about
+`applySequential` transfer verbatim to the real `withLockSet`-wrapped execution
+under any business-state observer `π` whose actions are `π`-congruences.
+
+Induction on the schedule: the single-transition bridge collapses the head's
+`withLockSet` to its bare action (up to `π`), the IH handles the tail, and
+`applySequential_piCongr` threads the head's `π`-equal post-states through the
+tail fold.  This closes the "`applySequential` models the interleaved execution"
+gap with a theorem rather than prose. -/
+theorem applySequentialWithLockSet_observation {β : Type} (π : SystemState → β)
+    (hAcq : ∀ c : CoreId, AcquireInsensitive c π)
+    (hRel : ∀ c : CoreId, ReleaseInsensitive c π) :
+    ∀ (sched : List KernelTransitionInstance),
+      (∀ τ ∈ sched, ActionPiCongr π τ.action) →
+      ∀ s, π (applySequentialWithLockSet sched s) = π (applySequential sched s)
+  | [], _, _ => rfl
+  | τ :: rest, hCongr, s => by
+      rw [applySequentialWithLockSet_cons, applySequential_cons]
+      have hW : π (withLockSet τ.lockSet τ.core (fun s' => (τ.action s', ())) s).1
+          = π (τ.action s) :=
+        withLockSet_observation_eq_action τ.lockSet τ.core τ.action s π
+          (hAcq τ.core) (hRel τ.core) (hCongr τ List.mem_cons_self)
+      rw [applySequentialWithLockSet_observation π hAcq hRel rest
+        (fun x hx => hCongr x (List.mem_cons_of_mem _ hx))]
+      exact applySequential_piCongr π rest
+        (fun x hx => hCongr x (List.mem_cons_of_mem _ hx)) _ _ hW
+
+-- ============================================================================
+-- §10 — Observational serializability: covers write/write on distinct objects
+-- ============================================================================
+--
+-- §6b's `serializability_under_2pl` proves *structural* state equality, which
+-- holds for the read-only / disjoint-subsystem actions that commute structurally.
+-- Two writes to *different objects* commute only OBSERVATIONALLY (`objStoreEquiv`,
+-- §7c) because the Robin-Hood store's slot layout is insertion-order-dependent.
+-- This section closes that coverage gap: it re-derives the full serializability
+-- result up to `objStoreEquiv`, so it applies to the realistic write-heavy
+-- workload (transitions whose business action is `updateObjectAt`).  The price is
+-- threading the RHTable extension invariant `invExt` (which `updateObjectAt`'s
+-- lookup characterisation `updateObjectAt_get?` requires) through the schedule.
+
+/-- WS-SM SM3.E.5 (observational): an action is an **`objStoreEquiv`-congruence**
+on `invExt` states — it maps observationally-equal `invExt` states to
+observationally-equal states.  `updateObjectAt` actions satisfy this (their
+effect on a lookup depends only on the observable store), but only on `invExt`
+states, so the predicate is `invExt`-guarded. -/
+def ActionObsCongr (a : SystemState → SystemState) : Prop :=
+  ∀ s₁ s₂, s₁.objects.invExt → s₂.objects.invExt → objStoreEquiv s₁ s₂ →
+    objStoreEquiv (a s₁) (a s₂)
+
+/-- WS-SM SM3.E.5 (observational): an action **preserves `invExt`** — needed so
+the `invExt` precondition threads through the schedule fold. -/
+def ActionPreservesInvExt (a : SystemState → SystemState) : Prop :=
+  ∀ s, s.objects.invExt → (a s).objects.invExt
+
+/-- WS-SM SM3.E.5 (observational): a transition is **well-behaved** for the
+observational layer when its action is both an `objStoreEquiv`-congruence and
+`invExt`-preserving.  Discharged for `updateObjectAt`-shaped (object-store-write)
+transitions below. -/
+def KernelTransitionInstance.wellBehavedObs (τ : KernelTransitionInstance) : Prop :=
+  ActionObsCongr τ.action ∧ ActionPreservesInvExt τ.action
+
+/-- WS-SM SM3.E.5 (observational): two transitions **commute observationally** —
+applying them in either order yields observationally-equal object stores (on
+`invExt` states).  Write/write on distinct objects satisfies this
+(`updateObjectAt_objStoreEquiv_comm`), where structural commutation fails. -/
+def KernelTransitionInstance.actionsCommuteObs (τ₁ τ₂ : KernelTransitionInstance) :
+    Prop :=
+  ∀ s : SystemState, s.objects.invExt →
+    objStoreEquiv (τ₁.action (τ₂.action s)) (τ₂.action (τ₁.action s))
+
+/-- WS-SM SM3.E.5: an `updateObjectAt` action is an `objStoreEquiv`-congruence.
+Two observationally-equal `invExt` states yield observationally-equal post-stores
+because `updateObjectAt`'s per-key effect (`updateObjectAt_get?`) reads only the
+observable store. -/
+theorem updateObjectAt_actionObsCongr (oid : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) :
+    ActionObsCongr (fun s => updateObjectAt s oid f) := by
+  intro s₁ s₂ h1 h2 heq k
+  rw [updateObjectAt_get? s₁ oid k f h1, updateObjectAt_get? s₂ oid k f h2]
+  by_cases hk : k = oid
+  · rw [if_pos hk, if_pos hk, heq oid]
+  · rw [if_neg hk, if_neg hk]; exact heq k
+
+/-- WS-SM SM3.E.5: an `updateObjectAt` action preserves `invExt`. -/
+theorem updateObjectAt_actionPreservesInvExt (oid : SeLe4n.ObjId)
+    (f : KernelObject → KernelObject) :
+    ActionPreservesInvExt (fun s => updateObjectAt s oid f) :=
+  fun s hExt => updateObjectAt_preserves_invExt s oid f hExt
+
+/-- WS-SM SM3.E.5: an object-store-write transition is well-behaved (both
+conjuncts hold). -/
+theorem updateObjectAt_wellBehavedObs (S : LockSet) (core : CoreId) (ct : Nat)
+    (at_ : LockId → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    KernelTransitionInstance.wellBehavedObs
+      ⟨S, core, ct, at_, fun s => updateObjectAt s oid f⟩ :=
+  ⟨updateObjectAt_actionObsCongr oid f, updateObjectAt_actionPreservesInvExt oid f⟩
+
+/-- WS-SM SM3.E.5 (observational): the `applySequential` fold preserves `invExt`
+when every action does. -/
+theorem applySequential_preservesInvExt :
+    ∀ (l : List KernelTransitionInstance), (∀ τ ∈ l, ActionPreservesInvExt τ.action) →
+      ∀ s : SystemState, s.objects.invExt → (applySequential l s).objects.invExt
+  | [], _, _, hExt => hExt
+  | τ :: rest, hWB, s, hExt => by
+      rw [applySequential_cons]
+      exact applySequential_preservesInvExt rest
+        (fun x hx => hWB x (List.mem_cons_of_mem _ hx))
+        (τ.action s) (hWB τ List.mem_cons_self s hExt)
+
+/-- WS-SM SM3.E.5 (observational): the `applySequential` fold is an
+`objStoreEquiv`-congruence on `invExt` states when every action is well-behaved.
+Equal observable start stores yield equal observable end stores.  Induction
+threads both `objStoreEquiv` and `invExt` through the fold. -/
+theorem applySequential_obsCongr :
+    ∀ (l : List KernelTransitionInstance),
+      (∀ τ ∈ l, KernelTransitionInstance.wellBehavedObs τ) →
+      ∀ (s₁ s₂ : SystemState), s₁.objects.invExt → s₂.objects.invExt →
+        objStoreEquiv s₁ s₂ →
+        objStoreEquiv (applySequential l s₁) (applySequential l s₂)
+  | [], _, _, _, _, _, heq => heq
+  | τ :: rest, hWB, s₁, s₂, h1, h2, heq => by
+      rw [applySequential_cons, applySequential_cons]
+      have hτ := hWB τ List.mem_cons_self
+      exact applySequential_obsCongr rest
+        (fun x hx => hWB x (List.mem_cons_of_mem _ hx))
+        (τ.action s₁) (τ.action s₂) (hτ.2 s₁ h1) (hτ.2 s₂ h2) (hτ.1 s₁ s₂ h1 h2 heq)
+
+/-- WS-SM SM3.E.3 (observational): swapping two observationally-commuting
+transitions at the front of a schedule preserves `applySequential` up to
+`objStoreEquiv`, provided the suffix actions are well-behaved (to thread the
+congruence through the suffix fold) and the swapped actions preserve `invExt`. -/
+theorem applySequential_swap_front_obs (τ₁ τ₂ : KernelTransitionInstance)
+    (suf : List KernelTransitionInstance) (s : SystemState) (hExt : s.objects.invExt)
+    (hSufWB : ∀ τ ∈ suf, KernelTransitionInstance.wellBehavedObs τ)
+    (h1Ext : ActionPreservesInvExt τ₁.action) (h2Ext : ActionPreservesInvExt τ₂.action)
+    (hComm : KernelTransitionInstance.actionsCommuteObs τ₁ τ₂) :
+    objStoreEquiv (applySequential (τ₁ :: τ₂ :: suf) s)
+                  (applySequential (τ₂ :: τ₁ :: suf) s) := by
+  rw [applySequential_cons, applySequential_cons, applySequential_cons, applySequential_cons]
+  exact applySequential_obsCongr suf hSufWB
+    (τ₂.action (τ₁.action s)) (τ₁.action (τ₂.action s))
+    (h2Ext _ (h1Ext _ hExt)) (h1Ext _ (h2Ext _ hExt)) (objStoreEquiv_symm (hComm s hExt))
+
+/-- WS-SM SM3.E.3 (observational): consing a common `invExt`-preserving head onto
+two schedules that are observationally `applySequential`-equal (on every `invExt`
+state) preserves the observational equality. -/
+theorem applySequential_cons_obs (a : KernelTransitionInstance)
+    (l₁ l₂ : List KernelTransitionInstance) (hAExt : ActionPreservesInvExt a.action)
+    (h : ∀ s, s.objects.invExt →
+      objStoreEquiv (applySequential l₁ s) (applySequential l₂ s))
+    (s : SystemState) (hExt : s.objects.invExt) :
+    objStoreEquiv (applySequential (a :: l₁) s) (applySequential (a :: l₂) s) := by
+  rw [applySequential_cons, applySequential_cons]
+  exact h (a.action s) (hAExt s hExt)
+
+/-- WS-SM SM3.E.3 (observational): the strict-2PL lock-exclusion hypothesis for
+the observational layer — out-of-commit-order pairs commute observationally.
+Mirrors `outOfOrderCommute` (§6) but with `actionsCommuteObs`. -/
+def outOfOrderCommuteObs : List KernelTransitionInstance → Prop
+  | [] => True
+  | head :: rest =>
+      (∀ x ∈ rest, x.commitTime < head.commitTime →
+        KernelTransitionInstance.actionsCommuteObs head x) ∧
+      outOfOrderCommuteObs rest
+
+@[simp] theorem outOfOrderCommuteObs_nil : outOfOrderCommuteObs [] = True := rfl
+
+@[simp] theorem outOfOrderCommuteObs_cons (head : KernelTransitionInstance)
+    (rest : List KernelTransitionInstance) :
+    outOfOrderCommuteObs (head :: rest) =
+      ((∀ x ∈ rest, x.commitTime < head.commitTime →
+        KernelTransitionInstance.actionsCommuteObs head x) ∧
+       outOfOrderCommuteObs rest) := rfl
+
+/-- WS-SM SM3.E.3 (observational): inserting `τ` into `l` is observationally
+`applySequential`-equal to `τ :: l`, provided `l`'s actions are well-behaved, `τ`
+preserves `invExt`, and `τ` commutes observationally with the smaller-commit
+elements it moves past.  The obs counterpart of `insertByCommitTime_commutingReorder`:
+each hop past a smaller predecessor is one observational front-swap. -/
+theorem insertByCommitTime_obs (τ : KernelTransitionInstance)
+    (h1Ext : ActionPreservesInvExt τ.action) :
+    ∀ (l : List KernelTransitionInstance),
+      (∀ x ∈ l, KernelTransitionInstance.wellBehavedObs x) →
+      (∀ x ∈ l, x.commitTime < τ.commitTime →
+        KernelTransitionInstance.actionsCommuteObs τ x) →
+      ∀ s, s.objects.invExt →
+        objStoreEquiv (applySequential (τ :: l) s)
+                      (applySequential (insertByCommitTime τ l) s)
+  | [], _, _, s, _ => by rw [insertByCommitTime_nil]; exact objStoreEquiv_refl _
+  | head :: rest, hWB, hcomm, s, hExt => by
+      rw [insertByCommitTime_cons]
+      by_cases hle : τ.commitTime ≤ head.commitTime
+      · rw [if_pos hle]; exact objStoreEquiv_refl _
+      · rw [if_neg hle]
+        have hHeadWB := hWB head List.mem_cons_self
+        have hRestWB : ∀ x ∈ rest, KernelTransitionInstance.wellBehavedObs x :=
+          fun x hx => hWB x (List.mem_cons_of_mem _ hx)
+        have hCommHead : KernelTransitionInstance.actionsCommuteObs τ head :=
+          hcomm head List.mem_cons_self (Nat.lt_of_not_le hle)
+        have hStep1 :
+            objStoreEquiv (applySequential (τ :: head :: rest) s)
+                          (applySequential (head :: τ :: rest) s) :=
+          applySequential_swap_front_obs τ head rest s hExt hRestWB h1Ext hHeadWB.2 hCommHead
+        have hStep2 :
+            objStoreEquiv (applySequential (head :: τ :: rest) s)
+                          (applySequential (head :: insertByCommitTime τ rest) s) := by
+          refine applySequential_cons_obs head (τ :: rest) (insertByCommitTime τ rest)
+            hHeadWB.2 ?_ s hExt
+          intro s' hs'
+          exact insertByCommitTime_obs τ h1Ext rest hRestWB
+            (fun x hx hlt => hcomm x (List.mem_cons_of_mem _ hx) hlt) s' hs'
+        exact objStoreEquiv_trans hStep1 hStep2
+
+/-- WS-SM SM3.E.3 (observational): the commit sort is observationally
+`applySequential`-equal to the input schedule, under well-behavedness +
+`outOfOrderCommuteObs` (the strict-2PL hypothesis) on an `invExt` start state.
+The obs counterpart of `commitSort_commutingReorder`. -/
+theorem commitSort_obs :
+    ∀ (l : List KernelTransitionInstance),
+      (∀ x ∈ l, KernelTransitionInstance.wellBehavedObs x) →
+      outOfOrderCommuteObs l →
+      ∀ s, s.objects.invExt →
+        objStoreEquiv (applySequential l s) (applySequential (commitSort l) s)
+  | [], _, _, s, _ => by rw [commitSort_nil]; exact objStoreEquiv_refl _
+  | head :: rest, hWB, hooc, s, hExt => by
+      rw [outOfOrderCommuteObs_cons] at hooc
+      obtain ⟨hHeadComm, hRestOoc⟩ := hooc
+      rw [commitSort_cons]
+      have hHeadWB := hWB head List.mem_cons_self
+      have hRestWB : ∀ x ∈ rest, KernelTransitionInstance.wellBehavedObs x :=
+        fun x hx => hWB x (List.mem_cons_of_mem _ hx)
+      have hStep1 :
+          objStoreEquiv (applySequential (head :: rest) s)
+                        (applySequential (head :: commitSort rest) s) := by
+        refine applySequential_cons_obs head rest (commitSort rest) hHeadWB.2 ?_ s hExt
+        intro s' hs'
+        exact commitSort_obs rest hRestWB hRestOoc s' hs'
+      have hCommSortRestWB : ∀ x ∈ commitSort rest,
+          KernelTransitionInstance.wellBehavedObs x :=
+        fun x hx => hRestWB x ((commitSort_perm rest).mem_iff.mp hx)
+      have hHeadCommSmaller : ∀ x ∈ commitSort rest, x.commitTime < head.commitTime →
+          KernelTransitionInstance.actionsCommuteObs head x :=
+        fun x hx hlt => hHeadComm x ((commitSort_perm rest).mem_iff.mp hx) hlt
+      have hStep2 :
+          objStoreEquiv (applySequential (head :: commitSort rest) s)
+                        (applySequential (insertByCommitTime head (commitSort rest)) s) :=
+        insertByCommitTime_obs head hHeadWB.2 (commitSort rest) hCommSortRestWB
+          hHeadCommSmaller s hExt
+      exact objStoreEquiv_trans hStep1 hStep2
+
+/-- WS-SM SM3.E.3 (Theorem 2.1.10, **observational form** — closes the write/write
+coverage gap): every strict-2PL execution of well-behaved object-store
+transitions is **observationally** serial-equivalent to its commit-sorted serial
+order (which is a commit-ordered permutation).  Unlike the structural
+`serializability_under_2pl` (which only covers read-only / disjoint-field
+actions that commute structurally), this form covers the realistic write-heavy
+workload: transitions whose business action is `updateObjectAt` (writes to
+possibly-different objects), whose only non-conflicting commutation is
+observational.  The hypotheses are exactly the genuine strict-2PL conditions
+(`outOfOrderCommuteObs`) plus the object-store well-behavedness discharged for
+`updateObjectAt` actions by `updateObjectAt_wellBehavedObs`. -/
+theorem serializability_under_2pl_obs (interleaved : List KernelTransitionInstance)
+    (s : SystemState) (hExt : s.objects.invExt)
+    (hWB : ∀ τ ∈ interleaved, KernelTransitionInstance.wellBehavedObs τ)
+    (hooc : outOfOrderCommuteObs interleaved) :
+    (commitSort interleaved).Perm interleaved ∧
+    (commitSort interleaved).Pairwise (fun a b => a.commitTime ≤ b.commitTime) ∧
+    objStoreEquiv (applySequential interleaved s)
+                  (applySequential (commitSort interleaved) s) :=
+  ⟨commitSort_perm interleaved, commitSort_sorted interleaved,
+   commitSort_obs interleaved hWB hooc s hExt⟩
+
+/-- WS-SM SM3.E.5 (the realistic write transition): an **object-store-write**
+transition instance whose business action writes object `oid` via `f`
+(`updateObjectAt`).  This is the shape every real write transition takes; the
+observational layer is built precisely so these are serializable. -/
+def objStoreWriteInstance (S : LockSet) (core : CoreId) (ct : Nat)
+    (at_ : LockId → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    KernelTransitionInstance :=
+  ⟨S, core, ct, at_, fun s => updateObjectAt s oid f⟩
+
+/-- WS-SM SM3.E.5: an object-store-write transition is observationally
+well-behaved. -/
+theorem objStoreWriteInstance_wellBehavedObs (S : LockSet) (core : CoreId) (ct : Nat)
+    (at_ : LockId → Nat) (oid : SeLe4n.ObjId) (f : KernelObject → KernelObject) :
+    KernelTransitionInstance.wellBehavedObs (objStoreWriteInstance S core ct at_ oid f) :=
+  updateObjectAt_wellBehavedObs S core ct at_ oid f
+
+/-- WS-SM SM3.E.5 (the realistic non-conflicting write pair commutes
+observationally): two object-store-write transitions to **distinct** objects
+commute observationally — the canonical write/write case that structural
+commutation cannot capture.  Lifts `updateObjectAt_objStoreEquiv_comm`. -/
+theorem objStoreWriteInstance_actionsCommuteObs (S₁ S₂ : LockSet) (c₁ c₂ : CoreId)
+    (ct₁ ct₂ : Nat) (at₁ at₂ : LockId → Nat) (oid₁ oid₂ : SeLe4n.ObjId)
+    (f₁ f₂ : KernelObject → KernelObject) (hNe : oid₁ ≠ oid₂) :
+    KernelTransitionInstance.actionsCommuteObs
+      (objStoreWriteInstance S₁ c₁ ct₁ at₁ oid₁ f₁)
+      (objStoreWriteInstance S₂ c₂ ct₂ at₂ oid₂ f₂) := by
+  intro s hExt
+  exact updateObjectAt_objStoreEquiv_comm s oid₂ oid₁ f₂ f₁ hExt (Ne.symm hNe)
+
 end SeLe4n.Kernel.Concurrency

@@ -1603,8 +1603,8 @@ RwLock to work and proves the twin architectural keystones —
 deadlock-freedom (SM3.D, Theorem 2.1.9) and serializability (SM3.E,
 Theorem 2.1.10) — that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).  New files
-`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
-`Sm3EInventory.lean` (78-theorem inventory), both staged via
+`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1775 LoC) +
+`Sm3EInventory.lean` (106-theorem inventory), both staged via
 `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
 | Sub | Description | Files | Status |
@@ -1702,8 +1702,8 @@ cheaply in SM4..SM6 (Corollary 2.1.11).  New files
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms
 reachable through Std).  Items deferred past v1.0.0 with correctness
 impact: NONE.  The SM3.E theorem inventory (`serializabilityTheorems`)
-has 78 entries across 7 categories; the regression suite
-(`tests/SerializabilitySuite.lean`) has 25 runtime assertions across 6
+has 106 entries across 9 categories; the regression suite
+(`tests/SerializabilitySuite.lean`) has 27 runtime assertions across 6
 sections plus a non-vacuity witness
 (`serializability_of_readOnly_schedule`: an all-reads workload is
 unconditionally serializable to commit order).
@@ -1762,6 +1762,71 @@ under-delivered on their stated intent):
 These closures grew the inventory 68 → 78 (+1 conflict, +2 acyclicity, +4
 serializability, +3 preservation) and added a §3b grounding test section;
 all additions are axiom-clean (`propext` / `Quot.sound`).
+
+**Audit-pass-3 refinements** (deepest deep audit; the three SM3.E gaps
+that the initial landing *documented as deferred* but did not implement
+are now materialised as code, per the `implement-the-improvement` rule —
+acknowledged-but-unbuilt scope is the inferior artefact, so the
+documentation describing the better behaviour is made true rather than
+caveated):
+
+* **Atomicity bridge (closes the avoided SM3.E.2/SM3.E.7 connection)**:
+  the initial landing modelled `applySequential` as a `foldl` of *bare*
+  `action`s and proved serial-equivalence at that abstraction — but never
+  connected it back to SM3.C.7's `withLockSet` atomicity result, so the
+  headline theorem was about a schedule of raw actions rather than a
+  schedule of *2PL-wrapped transitions*.  New §9 (5 theorems):
+  `withLockSet_observation_eq_action` proves the observable post-state of
+  a `withLockSet`-wrapped transition equals the action applied to the
+  post-acquire state (the acquire/release fold is invisible to any
+  lock-insensitive observer — discharged through SM3.C.7
+  `lockSet_observer_atomic` + `AcquireInsensitive`/`ReleaseInsensitive`);
+  `applySequentialWithLockSet` (+ nil/cons simp lemmas) folds a list of
+  `withLockSet`-wrapped transitions; `applySequentialWithLockSet_observation`
+  lifts the single-step bridge to the whole schedule via `ActionPiCongr` /
+  `applySequential_piCongr`.  This makes `serializability_under_2pl` a
+  statement about the *real* 2PL kernel, not an idealised raw-action fold.
+* **Observational serializability (closes the avoided write/write
+  coverage)**: SM3.E.5 proved `objStoreEquiv`-commutativity for
+  write/write-to-distinct-objects as an *isolated* lemma, but the
+  top-level `serializability_under_2pl` reorders via the *structural*
+  `actionsCommute` (`Eq`) — which write/write pairs do NOT satisfy (the
+  Robin-Hood object store's slot layout is insertion-order-dependent).  So
+  the most important case for a real kernel — two cores writing distinct
+  objects — was provably commuting in the lemma library but NOT carried by
+  the headline theorem.  New §10 (18 theorems):
+  `serializability_under_2pl_obs` proves serial-equivalence *up to
+  `objStoreEquiv`* for any schedule whose actions commute observationally
+  and preserve `invExt`, threading the RHTable extension invariant through
+  the entire `commitSort` reorder (`ActionObsCongr` /
+  `ActionPreservesInvExt` / `KernelTransitionInstance.wellBehavedObs` /
+  `.actionsCommuteObs`, `applySequential_preservesInvExt` / `_obsCongr` /
+  `_swap_front_obs` / `_cons_obs`, `outOfOrderCommuteObs`,
+  `insertByCommitTime_obs`, `commitSort_obs`).  `objStoreWriteInstance` +
+  `_wellBehavedObs` + `_actionsCommuteObs` provide the canonical
+  write/write instance the headline now genuinely covers.  Since
+  conflict-serializability IS an observational property (Bernstein), the
+  `objStoreEquiv` fidelity is faithful, not a weakening.
+* **Second real Corollary 2.1.11 instantiation (closes the avoided
+  generality demonstration)**: audit-pass-1 grounded Cor 2.1.11 on the
+  single `objStoreLock.wf` invariant, leaving the impression the lever
+  might only handle that one toy invariant.  New §8c (5 theorems):
+  `withLockSet_preserves_objectType_at` proves the 2PL machinery
+  preserves a SECOND, structurally-different real invariant — the per-key
+  kind-tag equality against the pre-state, bundled with `invExt`
+  (`releaseLockOnObject_preserves_invExt`,
+  `updateObjectLockAt_preserves_objectType_at`,
+  `acquire`/`releaseLockOnObject_preserves_objectType_at`).  This is
+  exactly the object-store structural invariant class SM4..SM6 phase
+  migrations consume, demonstrating the lever generalises beyond
+  `objStoreLock.wf`.
+
+These closures grew the inventory 78 → 106 (+5 preservation, +5
+atomicityBridge, +18 observational; two new `SerializabilityCategory`
+variants `.atomicityBridge` / `.observational`) and added a write/write
+observational example, an atomicity-bridge example, and a second-invariant
+`objectType` example to the suite.  All additions verified axiom-clean
+(`propext` / `Quot.sound` / `Classical.choice` only via `#print axioms`).
 
 #### SM3.E.1 — `conflictOrder`
 

@@ -62,6 +62,12 @@ inductive SerializabilityCategory where
   | serializability
   /-- Single-core proof preservation (SM3.E.6, Corollary 2.1.11). -/
   | preservation
+  /-- Atomicity bridge: `applySequential` models the `withLockSet` execution
+      under a lock-insensitive observer (SM3.E.2 grounding, §9). -/
+  | atomicityBridge
+  /-- Observational serializability covering write/write on distinct objects
+      (SM3.E.3/E.5 up to `objStoreEquiv`, §10). -/
+  | observational
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM3.E: a theorem entry in the SM3.E inventory. -/
@@ -252,11 +258,70 @@ def serializabilityTheorems : List SerializabilityTheorem :=
     serlt! "withLockSet_preserves_objStoreLock_wf — NON-VACUOUS Cor 2.1.11 witness on a real invariant"
       withLockSet_preserves_objStoreLock_wf .preservation,
     serlt! "withLockSet_growing_phase_establishes_lockSetHeld — lockSetHeld is a consequence"
-      withLockSet_growing_phase_establishes_lockSetHeld .preservation]
+      withLockSet_growing_phase_establishes_lockSetHeld .preservation,
+    -- §8c preservation (5 more) — SECOND real invariant: kind-discipline (objectType)
+    serlt! "releaseLockOnObject_preserves_invExt — release preserves the RHTable invExt"
+      releaseLockOnObject_preserves_invExt .preservation,
+    serlt! "updateObjectLockAt_preserves_objectType_at — lock update preserves objectType at a key"
+      updateObjectLockAt_preserves_objectType_at .preservation,
+    serlt! "acquireLockOnObject_preserves_objectType_at — acquire preserves objectType (kind-discipline)"
+      acquireLockOnObject_preserves_objectType_at .preservation,
+    serlt! "releaseLockOnObject_preserves_objectType_at — release preserves objectType (kind-discipline)"
+      releaseLockOnObject_preserves_objectType_at .preservation,
+    serlt! "withLockSet_preserves_objectType_at — SECOND Cor 2.1.11 witness (kind-discipline, invExt-dependent)"
+      withLockSet_preserves_objectType_at .preservation,
+    -- §9 atomicityBridge (5)
+    serlt! "ActionPiCongr — an action respects a lock-insensitive observer"
+      ActionPiCongr .atomicityBridge,
+    serlt! "applySequential_piCongr — the fold respects a lock-insensitive observer"
+      applySequential_piCongr .atomicityBridge,
+    serlt! "withLockSet_observation_eq_action — withLockSet is observationally the bare action (SM3.C.7)"
+      withLockSet_observation_eq_action .atomicityBridge,
+    serlt! "applySequentialWithLockSet — the real withLockSet-wrapped execution shape"
+      applySequentialWithLockSet .atomicityBridge,
+    serlt! "applySequentialWithLockSet_observation — applySequential models the withLockSet execution"
+      applySequentialWithLockSet_observation .atomicityBridge,
+    -- §10 observational (18)
+    serlt! "ActionObsCongr — an action is an objStoreEquiv-congruence on invExt states"
+      ActionObsCongr .observational,
+    serlt! "ActionPreservesInvExt — an action preserves the RHTable invExt"
+      ActionPreservesInvExt .observational,
+    serlt! "KernelTransitionInstance.wellBehavedObs — congruence + invExt-preservation"
+      KernelTransitionInstance.wellBehavedObs .observational,
+    serlt! "KernelTransitionInstance.actionsCommuteObs — observational commutation (write/write)"
+      KernelTransitionInstance.actionsCommuteObs .observational,
+    serlt! "updateObjectAt_actionObsCongr — updateObjectAt is an objStoreEquiv-congruence"
+      updateObjectAt_actionObsCongr .observational,
+    serlt! "updateObjectAt_actionPreservesInvExt — updateObjectAt preserves invExt"
+      updateObjectAt_actionPreservesInvExt .observational,
+    serlt! "updateObjectAt_wellBehavedObs — object-store writes are well-behaved"
+      updateObjectAt_wellBehavedObs .observational,
+    serlt! "applySequential_preservesInvExt — the fold preserves invExt"
+      applySequential_preservesInvExt .observational,
+    serlt! "applySequential_obsCongr — the fold is an objStoreEquiv-congruence"
+      applySequential_obsCongr .observational,
+    serlt! "applySequential_swap_front_obs — observational front-swap of commuting transitions"
+      applySequential_swap_front_obs .observational,
+    serlt! "applySequential_cons_obs — observational congruence under a common head"
+      applySequential_cons_obs .observational,
+    serlt! "outOfOrderCommuteObs — observational strict-2PL lock-exclusion hypothesis"
+      outOfOrderCommuteObs .observational,
+    serlt! "insertByCommitTime_obs — insertion is an observational reorder"
+      insertByCommitTime_obs .observational,
+    serlt! "commitSort_obs — the commit sort is observationally applySequential-equal"
+      commitSort_obs .observational,
+    serlt! "serializability_under_2pl_obs — SM3.E.3 Theorem 2.1.10 OBSERVATIONAL form (covers write/write)"
+      serializability_under_2pl_obs .observational,
+    serlt! "objStoreWriteInstance — the realistic object-store-write transition"
+      objStoreWriteInstance .observational,
+    serlt! "objStoreWriteInstance_wellBehavedObs — object-store writes are well-behaved"
+      objStoreWriteInstance_wellBehavedObs .observational,
+    serlt! "objStoreWriteInstance_actionsCommuteObs — writes to distinct objects commute observationally"
+      objStoreWriteInstance_actionsCommuteObs .observational]
 
-/-- WS-SM SM3.E: the inventory has exactly 78 entries. -/
+/-- WS-SM SM3.E: the inventory has exactly 106 entries. -/
 theorem serializabilityTheorems_count :
-    serializabilityTheorems.length = 78 := by decide
+    serializabilityTheorems.length = 106 := by decide
 
 /-- WS-SM SM3.E: 5 entries in `model`. -/
 theorem serializabilityTheorems_model_count :
@@ -282,9 +347,17 @@ theorem serializabilityTheorems_acyclicity_count :
 theorem serializabilityTheorems_serializability_count :
     (serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22 := by decide
 
-/-- WS-SM SM3.E: 6 entries in `preservation`. -/
+/-- WS-SM SM3.E: 11 entries in `preservation`. -/
 theorem serializabilityTheorems_preservation_count :
-    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 6 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 11 := by decide
+
+/-- WS-SM SM3.E: 5 entries in `atomicityBridge`. -/
+theorem serializabilityTheorems_atomicityBridge_count :
+    (serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 5 := by decide
+
+/-- WS-SM SM3.E: 18 entries in `observational`. -/
+theorem serializabilityTheorems_observational_count :
+    (serializabilityTheorems.filter (fun t => t.category == .observational)).length = 18 := by decide
 
 /-- WS-SM SM3.E: per-category counts sum to the total. -/
 theorem serializabilityTheorems_partition_sum :
@@ -294,7 +367,9 @@ theorem serializabilityTheorems_partition_sum :
     (serializabilityTheorems.filter (fun t => t.category == .commutativity)).length +
     (serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length +
     (serializabilityTheorems.filter (fun t => t.category == .serializability)).length +
-    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length =
+    (serializabilityTheorems.filter (fun t => t.category == .preservation)).length +
+    (serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length +
+    (serializabilityTheorems.filter (fun t => t.category == .observational)).length =
     serializabilityTheorems.length := by decide
 
 /-- WS-SM SM3.E: every inventory identifier is unique. -/
