@@ -2456,8 +2456,9 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.Sim.Contract
 
--- SM4.A.1/A.2 — Per-core Vector helper surface.
+-- SM4.A.1/A.2/A.3 — Per-core Vector helper surface.
 #check @SeLe4n.Vector.get_eq_getElem
+#check @SeLe4n.Vector.get_eq_toArray_getElem
 #check @SeLe4n.Vector.get_set_eq
 #check @SeLe4n.Vector.get_set_ne
 #check @SeLe4n.Vector.length

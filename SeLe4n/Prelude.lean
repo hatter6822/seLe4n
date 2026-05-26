@@ -1829,7 +1829,7 @@ theorem ThreadId.toKinded_ne_schedContext_toKinded
 
 end SeLe4n
 
-/-! ## WS-SM SM4.A.1 + SM4.A.2 — Per-core `Vector` bootstrap
+/-! ## WS-SM SM4.A.1 + SM4.A.2 + SM4.A.3 — Per-core `Vector` bootstrap
 
 SM4 replaces every singular `SchedulerState` field with a `Vector α
 coreCount` indexed by `CoreId` (`= Fin coreCount`), so a per-core field
@@ -1855,11 +1855,15 @@ form: `Vector.getElem_set_self`, `Vector.getElem_set_ne`,
 `Vector.getElem_replicate`, `Vector.ext`. The SM4 accessors index with a
 `Fin n` value (`CoreId`) via `Vector.get`, so this block re-expresses the
 exact lemmas SM4 needs in `Vector.get` form on top of `get_eq_getElem`
-(the definitional bridge between the two indexings). It also supplies
-`nodup_of_finRange`, which Lean 4.28's core does **not** export, so that
-per-core iteration over `List.finRange coreCount` is provably
-duplicate-free for an *arbitrary* `coreCount` (the existing
-`Concurrency.allCores_nodup` only `decide`s the literal `numCores = 4`).
+(the definitional bridge between the two indexings). `get_eq_toArray_getElem`
+(SM4.A.3) is the type-level witness that `.get` is an `Array` index — its
+codegen counterpart is the emitted C, where `get` lowers to
+`lean_array_fget`. The block also supplies `nodup_of_finRange`, which Lean
+4.28's core does **not** export, so that per-core iteration over
+`List.finRange coreCount` is provably duplicate-free for an *arbitrary*
+`coreCount`; `Concurrency.allCores_nodup` is itself rewired to route
+through this general lemma (replacing its former literal-`4` `decide`), so
+the generalisation is load-bearing in production rather than test-only.
 
 These live under `namespace SeLe4n.Vector` (project-owned, so a future
 Std lemma rename cannot silently break SM4). The helpers are deliberately
@@ -1882,6 +1886,20 @@ i.isLt⟩ = i` by structure eta. This is the lever every `.get`-form helper
 below rewrites through. -/
 theorem get_eq_getElem (v : _root_.Vector α n) (i : Fin n) :
     v.get i = v[i.val]'i.isLt := rfl
+
+/-- WS-SM SM4.A.3: formal witness that a per-core read is an `Array`
+element access — `Vector.get` routes directly through the backing
+`toArray`, with no list traversal. This is the type-level half of the
+"compiles to `Array`, O(1)" guarantee; the codegen half is confirmed by
+emitting the C for a `Vector.get`/`set`/`replicate` call site, where
+`get` lowers to `lean_array_fget` and `set` to `lean_array_fset` (no
+`lean_list_*` ops). Kept as a persistent, version-stable anchor: a future
+refactor that made `Vector.get` do anything other than index `toArray`
+would fail this `rfl`-after-bridge proof. -/
+theorem get_eq_toArray_getElem (v : _root_.Vector α n) (i : Fin n) :
+    v.get i = v.toArray[i.val]'(v.size_toArray.symm ▸ i.isLt) := by
+  rw [get_eq_getElem]
+  exact (_root_.Vector.getElem_toArray _).symm
 
 /-- WS-SM SM4.A.2 (lemma 1 of 6): reading a per-core slot at the core it
 was just written to returns the written value. The `Fin n`-indexed form

@@ -49,8 +49,15 @@ per-core `Vector` machinery rests on.
 - **SM4.A.3 — runtime efficiency.** Confirmed that Lean core's
   `Vector α n` is `Array`-backed (`structure Vector where toArray :
   Array α`) and its `get`/`set`/`replicate` are `@[inline, expose]`,
-  so they compile to the underlying O(1) `Array` operations. The test
-  suite observes the `Array` backing (`toArray.size`,
+  so they compile to the underlying O(1) `Array` operations. Backed by
+  **two layers of evidence**: (a) the codegen — emitting the C for a
+  `Vector.get`/`set`/`replicate` call site shows `get` lowering to
+  `lean_array_fget` and `set` to `lean_array_fset`, with zero
+  `lean_list_*` ops; (b) the type-level witness
+  `get_eq_toArray_getElem` (`v.get i = v.toArray[i.val]`), a persistent
+  anchor that `.get` indexes `toArray` directly (no list traversal),
+  so a future refactor breaking the array routing fails the build. The
+  suite also observes the `Array` backing (`toArray.size`,
   `toArray = Array.replicate …`) and a deep index/round-trip
   (`get`/`set` at slot 255 of a 256-wide vector) computing correctly.
   (The full `lake exe sele4n` per-core-access trace lands with
@@ -72,34 +79,52 @@ per-core `Vector` machinery rests on.
   sim binding; only the topology differs.
 - **SM4.A.6 / SM4.A.7 / SM4.A.8 — recaps** of the SM0.E/SM0.G
   deliverables `CoreId = Fin numCores`, `bootCoreId`, and `allCores`
-  (`allCores_length`, `allCores_nodup`). No new code; the test suite
-  anchors them and ties `nodup_of_finRange numCores` back to
-  `allCores_nodup` (since `allCores = List.finRange numCores`).
+  (`allCores_length`, `allCores_nodup`). `Concurrency.allCores_nodup`
+  is **rewired** to prove via `SeLe4n.Vector.nodup_of_finRange numCores`
+  (replacing its former literal-`4` `decide`), so the SM4.A.2
+  generalisation is load-bearing in production rather than test-only —
+  and the proof stays valid once a future build parameterises
+  `numCores` by `PlatformBinding.coreCount` (where `decide` on a
+  non-literal would not reduce).
 
 **Test coverage**: new suite `tests/PerCoreVectorSuite.lean`
-(`lake exe per_core_vector_suite`) — 21 surface-anchor `#check`s, 32
-decidable/definitional examples, and 26 runtime `assertBool` assertions
-across five sections (Vector helpers, ext + nodup, Array backing,
-platform core-count topologies, CoreId/bootCoreId/allCores recap).
+(`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 34
+decidable/definitional examples, and 31 runtime `assertBool` assertions
+across six sections (Vector helpers, ext + nodup, Array backing,
+platform core-count topologies, CoreId/bootCoreId/allCores recap, and
+the SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise).
 Wired into Tier 2 (negative) via `scripts/test_tier2_negative.sh` and
 Tier 3 (invariant surface) via `scripts/test_tier3_invariant_surface.sh`.
 Full default build (320 jobs) green; Tier 0+1+2+3 green. Zero Lean
 axioms, zero sorries. Items deferred past v1.0.0 with correctness
 impact: NONE.
 
-**Post-landing audit** (same cut): a `#print axioms` sweep confirmed all
-seven `SeLe4n.Vector` declarations depend only on `propext` / `Quot.sound`
-(no `sorryAx`, no custom axiom). A consumer-usability probe (a struct
-mimicking `SchedulerState` with a `Vector (Option ThreadId) numCores`
-field) confirmed the helpers match downstream call sites under both `rw`
-and `simp` even when `Vector.set`'s bounds proof is synthesized by
-`get_elem_tactic` rather than written as `c.isLt` (proof irrelevance makes
-the differing proof terms defeq during `kabstract` matching) — so SM4.B.9's
-default-init (`replicate_get`), SM4.B.10's `ext`, and SM5's per-core writes
-(`get_set_eq` / `get_set_ne`) can consume them directly. The audit also
-corrected the test-element counts to the verified **21 surface anchors /
-32 decidable examples / 26 runtime assertions** (the initial landing prose
-said 23/26/25 — miscounts; the suite content was unchanged).
+**Post-landing audit + completion pass** (same cut): a `#print axioms`
+sweep confirmed all `SeLe4n.Vector` declarations depend only on
+`propext` / `Quot.sound` (no `sorryAx`, no custom axiom). A
+consumer-usability probe (a struct mimicking `SchedulerState` with a
+`Vector (Option ThreadId) numCores` field) confirmed the helpers match
+downstream call sites under both `rw` and `simp` even when
+`Vector.set`'s bounds proof is synthesized by `get_elem_tactic` rather
+than written as `c.isLt` (proof irrelevance makes the differing proof
+terms defeq during `kabstract` matching) — so SM4.B.9's default-init
+(`replicate_get`), SM4.B.10's `ext`, and SM5's per-core writes
+(`get_set_eq` / `get_set_ne`) can consume them directly. The audit
+corrected the initial landing's `23/26/25` count miscount, and a
+completion pass closed the remaining non-optimal items: (1) **SM4.A.3
+rigor** — added the codegen evidence (`Vector.get` → `lean_array_fget`)
+plus the persistent type-level witness `get_eq_toArray_getElem`; (2)
+**`nodup_of_finRange` made load-bearing** — rewired `allCores_nodup`
+through it (removing the literal-`4` `decide`); (3) **single-core sim
+genuinely exercised** — a topology-parametric runtime check folds
+`Vector.get` over `List.finRange (coreCount P)` for `SimSingleCore`
+(`= 1`), `Sim`/`RPi5` (`= 4`), driving the binding's `coreCount` through
+the per-core machinery end-to-end, and gives `length` a binding-derived
+consumer. The suite now reports **22 surface anchors / 34 decidable
+examples / 31 runtime assertions**. (The Fin-indexed `set` wrapper was
+deliberately **not** added — YAGNI: the raw-`set` `get_set_eq`/`_ne`
+lemmas already match SM5's `v.set c.val x` call sites by proof
+irrelevance, so a `setCore` alias would presume SM5's API without need.)
 
 **Version bumped 0.31.10 → 0.31.11** across all 26 canonical version
 sites.

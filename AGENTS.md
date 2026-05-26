@@ -182,15 +182,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20310 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~6754 lines)
+- `CHANGELOG.md` (~20335 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~6765 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4029 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3908 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3783 lines)
-- `docs/spec/SELE4N_SPEC.md` (~3617 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3627 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3390 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
@@ -216,8 +216,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
+- `SeLe4n/Prelude.lean` (~1977 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `SeLe4n/Prelude.lean` (~1959 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -3814,21 +3814,34 @@ documentation lives under `docs/` and `docs/gitbook/`.
     List.finRange numCores`).
 
   **Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
-  (`lake exe per_core_vector_suite`) — 21 surface-anchor `#check`s, 32
-  decidable/definitional examples, 26 runtime `assertBool` assertions
-  across five sections (Vector helpers, ext + nodup, Array backing,
-  platform core-count topologies, CoreId/bootCoreId/allCores recap).
+  (`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 34
+  decidable/definitional examples, 31 runtime `assertBool` assertions
+  across six sections (Vector helpers, ext + nodup, Array backing,
+  platform core-count topologies, CoreId/bootCoreId/allCores recap, and
+  the SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise).
   Wired into Tier 2 (negative) + Tier 3 (invariant surface).  Full
   default build (320 jobs) green; Tier 0+1+2+3 green.  Items deferred
   past v1.0.0 with correctness impact: NONE.
 
-  **Post-landing audit**: `#print axioms` confirmed all seven helpers
-  depend only on `propext` / `Quot.sound`; a `SchedulerState`-mimicking
-  probe confirmed they match downstream call sites under `rw`/`simp`
-  even when `Vector.set`'s bounds proof is synthesized by
-  `get_elem_tactic` (proof irrelevance ⇒ defeq), so SM4.B/SM5 consume
-  them directly.  Corrected the test-element counts to the verified
-  21 / 32 / 26 (initial prose said 23/26/25; suite content unchanged).
+  **Post-landing audit + completion pass**: `#print axioms` confirmed
+  all `SeLe4n.Vector` declarations depend only on `propext` /
+  `Quot.sound`; a `SchedulerState`-mimicking probe confirmed they match
+  downstream call sites under `rw`/`simp` even when `Vector.set`'s
+  bounds proof is synthesized by `get_elem_tactic` (proof irrelevance ⇒
+  defeq), so SM4.B/SM5 consume them directly.  The audit corrected the
+  initial `23/26/25` count miscount, and a completion pass closed the
+  remaining non-optimal items: (1) **SM4.A.3 rigor** — codegen evidence
+  (`Vector.get` → `lean_array_fget`) plus the persistent witness
+  `get_eq_toArray_getElem` (`.get` indexes `toArray` directly); (2)
+  **`nodup_of_finRange` made load-bearing** — `allCores_nodup` rewired
+  through it, replacing the literal-`4` `decide`; (3) **single-core sim
+  genuinely exercised** — a topology-parametric runtime fold of
+  `Vector.get` over `List.finRange (coreCount P)` drives the binding's
+  `coreCount` end-to-end (`SimSingleCore` = 1, `Sim`/`RPi5` = 4) and
+  gives `length` a binding-derived consumer.  Suite now: 22 / 34 / 31.
+  (The Fin-indexed `set` wrapper was deliberately **not** added — YAGNI:
+  the raw-`set` `get_set_eq`/`_ne` lemmas already match SM5's
+  `v.set c.val x` call sites by proof irrelevance.)
 
   Follow-on: SM4.B (`SchedulerState` path-a field replacement),
   SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E

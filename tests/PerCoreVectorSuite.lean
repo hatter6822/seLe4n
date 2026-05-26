@@ -62,8 +62,9 @@ open SeLe4n.Platform.Sim
 -- §1 — Surface anchors: every SM4.A public symbol resolves at elaboration
 -- ============================================================================
 
-/-! ## SM4.A.1 / SM4.A.2 — Per-core `Vector` helpers -/
+/-! ## SM4.A.1 / SM4.A.2 / SM4.A.3 — Per-core `Vector` helpers -/
 #check @SeLe4n.Vector.get_eq_getElem
+#check @SeLe4n.Vector.get_eq_toArray_getElem
 #check @SeLe4n.Vector.get_set_eq
 #check @SeLe4n.Vector.get_set_ne
 #check @SeLe4n.Vector.length
@@ -142,6 +143,12 @@ example : (List.finRange 1).Nodup := SeLe4n.Vector.nodup_of_finRange 1
 /-! ## SM4.A.3 — `Vector` is `Array`-backed (compiles to `Array`) -/
 example : (Vector.replicate 5 (9 : Nat)).toArray.size = 5 := by decide
 example : (Vector.replicate 5 (9 : Nat)).toArray = Array.replicate 5 9 := rfl
+-- Formal witness that a per-core read is an `Array` element access (the
+-- type-level half of "O(1), compiles to Array"; the codegen half is the
+-- emitted C where `get` lowers to `lean_array_fget`).
+example (v : Vector Nat 4) (i : Fin 4) :
+    v.get i = v.toArray[i.val]'(v.size_toArray.symm ▸ i.isLt) :=
+  SeLe4n.Vector.get_eq_toArray_getElem v i
 
 /-! ## SM4.A.4 — RPi5 coreCount = 4, pinned to numCores -/
 example : PlatformBinding.coreCount (platform := RPi5Platform) = 4 := rfl
@@ -154,6 +161,16 @@ example : (PlatformBinding.bootCoreId (platform := SimSingleCorePlatform)).val =
 example : PlatformBinding.coreCount (platform := SimSingleCorePlatform) > 0 := by decide
 example : PlatformBinding.coreCount (platform := SimPlatform) = 4 := rfl
 example : PlatformBinding.coreCount (platform := SimRestrictivePlatform) = 4 := rfl
+-- The binding's `coreCount` actually drives the per-core `Vector`
+-- machinery: a per-core field on the single-core topology is a
+-- one-element vector whose `length` (via the SM4.A.2 helper) is the
+-- binding's `coreCount`.  This consumes `SeLe4n.Vector.length` at a
+-- binding-derived size rather than a literal.
+example :
+    (Vector.replicate (PlatformBinding.coreCount (platform := SimSingleCorePlatform))
+      (0 : Nat)).toList.length
+      = PlatformBinding.coreCount (platform := SimSingleCorePlatform) :=
+  SeLe4n.Vector.length _
 
 /-! ## SM4.A.6 / SM4.A.7 / SM4.A.8 — CoreId / bootCoreId / allCores recap -/
 example : numCores = 4 := rfl
@@ -181,6 +198,18 @@ private def assertBool (name : String) (b : Bool) : IO Unit := do
   else
     IO.println s!"  FAIL: {name}"
     throw (IO.userError s!"Assertion failed: {name}")
+
+/-- SM4.A.5 topology-parametric driver: build a per-core field of size `k`
+    (every slot `= 7`) and fold `Vector.get` over `List.finRange k`,
+    summing to `7 * k`.  Driven by a platform binding's `coreCount`, this
+    exercises the binding END-TO-END through the per-core `Vector`
+    machinery — `Vector.replicate`, `Fin k` indexing, and `Vector.get` —
+    rather than merely field-checking `coreCount`.  At `k = 1`
+    (`SimSingleCorePlatform`) it is the minimal non-degenerate per-core
+    topology. -/
+private def perCoreReadSum (k : Nat) : Nat :=
+  let v : Vector Nat k := Vector.replicate k 7
+  (List.finRange k).foldl (fun acc c => acc + v.get c) 0
 
 /-- SM4.A.2 lemmas 1-4 (`get_set_eq`, `get_set_ne`, `length`,
     `replicate_get`) plus the `get_eq_getElem` bridge, on concrete
@@ -269,6 +298,33 @@ private def runCoreIdRecapChecks : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all
       (fun c => decide (c.val < SeLe4n.Kernel.Concurrency.numCores)))
 
+/-- SM4.A.3 array-access witness + SM4.A.5 topology-parametric exercise:
+    the `get_eq_toArray_getElem` witness on a concrete vector, and the
+    platform bindings' `coreCount` driving the per-core `Vector` machinery
+    end-to-end (so `SimSingleCorePlatform` is genuinely exercised, not just
+    field-checked). -/
+private def runArrayWitnessAndTopologyChecks : IO Unit := do
+  IO.println "--- §3.6 SM4.A.3 array-access witness + SM4.A.5 topology-parametric ---"
+  -- A.3 witness: `.get` equals the underlying `toArray` element (via the
+  -- panicking index `[·]!`, sidestepping the getElem bounds proof at runtime;
+  -- 2 < 4 so it never panics).
+  assertBool "get_eq_toArray_getElem: (replicate 4 9).get ⟨2⟩ = toArray[2]!"
+    (decide ((Vector.replicate 4 (9 : Nat)).get ⟨2, by decide⟩
+              = (Vector.replicate 4 (9 : Nat)).toArray[2]!))
+  -- Each binding's coreCount drives the per-core read-fold (sum = 7 * k).
+  assertBool "SimSingleCore (coreCount=1): per-core read-fold = 7*1 = 7"
+    (decide (perCoreReadSum (PlatformBinding.coreCount (platform := SimSingleCorePlatform)) = 7))
+  assertBool "SimPlatform (coreCount=4): per-core read-fold = 7*4 = 28"
+    (decide (perCoreReadSum (PlatformBinding.coreCount (platform := SimPlatform)) = 28))
+  assertBool "RPi5 (coreCount=4): per-core read-fold = 7*4 = 28"
+    (decide (perCoreReadSum (PlatformBinding.coreCount (platform := RPi5Platform)) = 28))
+  -- `length` (SM4.A.2) at the binding-derived size: the single-core field
+  -- is a one-element vector.
+  assertBool "SimSingleCore: (replicate coreCount 0).toList.length = coreCount (=1)"
+    (decide ((Vector.replicate (PlatformBinding.coreCount (platform := SimSingleCorePlatform))
+              (0 : Nat)).toList.length
+              = PlatformBinding.coreCount (platform := SimSingleCorePlatform)))
+
 def runPerCoreVectorChecks : IO Unit := do
   IO.println "WS-SM SM4.A — Per-core Vector bootstrap test suite"
   IO.println "===================================="
@@ -277,6 +333,7 @@ def runPerCoreVectorChecks : IO Unit := do
   runArrayBackingChecks
   runPlatformCoreCountChecks
   runCoreIdRecapChecks
+  runArrayWitnessAndTopologyChecks
   IO.println "===================================="
   IO.println "All SM4.A per-core Vector bootstrap checks PASS."
 
