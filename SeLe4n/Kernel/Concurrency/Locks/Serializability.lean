@@ -1498,6 +1498,88 @@ theorem applySequentialWithLockSet_observation {β : Type} (π : SystemState →
         (fun x hx => hCongr x (List.mem_cons_of_mem _ hx)) _ _ hW
 
 -- ============================================================================
+-- §9b — Concrete NON-VACUOUS witness for the atomicity bridge
+-- ============================================================================
+--
+-- §9's bridge takes `AcquireInsensitive` / `ReleaseInsensitive` as hypotheses.
+-- To prove the bridge is a usable result — not one resting on unsatisfiable
+-- hypotheses — this section exhibits a genuine non-trivial business-state
+-- observer (the `scheduler` projection) that discharges BOTH insensitivity
+-- hypotheses unconditionally, and instantiates the bridge on a transition that
+-- genuinely writes the scheduler: the bridge correctly reports the action's
+-- effect (`= sch`) while the lock acquire/release machinery stays invisible.
+-- Mirrors the concrete non-vacuity witnesses of §8b (objStoreLock.wf), §8c
+-- (objectType), and §10 (write/write).
+
+/-- WS-SM SM3.E.2 foundation (plumbing): `updateObjectLockAt` leaves the
+`scheduler` subsystem field untouched — the kind-matched branch writes only the
+`objects` table (`updateObjectAt`), the fail-closed branch is the identity. -/
+private theorem updateObjectLockAt_preserves_scheduler (s : SystemState) (l : LockId)
+    (op : RwLockOp) : (updateObjectLockAt s l op).scheduler = s.scheduler := by
+  unfold updateObjectLockAt
+  cases LockId.lookup s l with
+  | none => rfl
+  | some _ => unfold updateObjectAt; cases s.objects.get? l.objId <;> rfl
+
+/-- WS-SM SM3.E.2 (atomicity-bridge non-vacuity foundation): acquiring a lock
+leaves the `scheduler` subsystem field untouched.  Every `acquireLockOnObject`
+branch touches only `objStoreLock` (`.objStore`), the `objects` table (modeled
+kinds, via `updateObjectLockAt`), or nothing (`.reply`/`.page`) — never
+`scheduler`. -/
+theorem acquireLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    (acquireLockOnObject s core l m).scheduler = s.scheduler := by
+  unfold acquireLockOnObject
+  cases l.kind <;>
+    first
+      | rfl
+      | exact updateObjectLockAt_preserves_scheduler s l (m.toAcquireOp core)
+
+/-- WS-SM SM3.E.2 (atomicity-bridge non-vacuity foundation): releasing a lock
+leaves the `scheduler` subsystem field untouched.  Symmetric to the acquire
+form. -/
+theorem releaseLockOnObject_preserves_scheduler (s : SystemState) (core : CoreId)
+    (l : LockId) (m : AccessMode) :
+    (releaseLockOnObject s core l m).scheduler = s.scheduler := by
+  unfold releaseLockOnObject
+  cases l.kind <;>
+    first
+      | rfl
+      | exact updateObjectLockAt_preserves_scheduler s l (m.toReleaseOp core)
+
+/-- WS-SM SM3.E.2 (CONCRETE non-vacuity witness): the `scheduler` projection is a
+genuine non-trivial business-state observer that is **acquire-insensitive** —
+discharging the `AcquireInsensitive` hypothesis of the §9 bridge for a real
+observer, proving the hypothesis is satisfiable (the bridge is not vacuous). -/
+theorem schedulerObserver_acquireInsensitive (core : CoreId) :
+    AcquireInsensitive core (fun s => s.scheduler) :=
+  fun s l m => acquireLockOnObject_preserves_scheduler s core l m
+
+/-- WS-SM SM3.E.2 (CONCRETE non-vacuity witness): the `scheduler` projection is
+**release-insensitive**.  Together with `schedulerObserver_acquireInsensitive`
+this discharges both hypotheses of `withLockSet_observation_eq_action` for a real
+observer. -/
+theorem schedulerObserver_releaseInsensitive (core : CoreId) :
+    ReleaseInsensitive core (fun s => s.scheduler) :=
+  fun s l m => releaseLockOnObject_preserves_scheduler s core l m
+
+/-- WS-SM SM3.E.2 (the atomicity bridge applied NON-VACUOUSLY): a transition that
+writes the scheduler (`setSchedulerAction sch`), wrapped in the full `withLockSet`
+2PL lock machinery, has its scheduler effect correctly observed (`= sch`) — the
+acquire/release folds are invisible.  Instantiates the §9 bridge
+(`withLockSet_observation_eq_action`) on the concrete scheduler observer, proving
+the bridge is a usable result on a real (observer, action) pair, not a vacuous
+theorem resting on unsatisfiable insensitivity hypotheses. -/
+theorem withLockSet_observation_scheduler_witness (S : LockSet) (core : CoreId)
+    (sch : SchedulerState) (s : SystemState) :
+    (withLockSet S core (fun st => (setSchedulerAction sch st, ())) s).1.scheduler = sch :=
+  withLockSet_observation_eq_action S core (setSchedulerAction sch) s
+    (fun s => s.scheduler)
+    (schedulerObserver_acquireInsensitive core)
+    (schedulerObserver_releaseInsensitive core)
+    (fun _ _ _ => rfl)
+
+-- ============================================================================
 -- §10 — Observational serializability: covers write/write on distinct objects
 -- ============================================================================
 --

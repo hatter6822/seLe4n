@@ -138,6 +138,12 @@ open SeLe4n.Kernel.Concurrency
 #check @withLockSet_observation_eq_action
 #check @applySequentialWithLockSet
 #check @applySequentialWithLockSet_observation
+-- §9b concrete non-vacuity witness (scheduler observer)
+#check @acquireLockOnObject_preserves_scheduler
+#check @releaseLockOnObject_preserves_scheduler
+#check @schedulerObserver_acquireInsensitive
+#check @schedulerObserver_releaseInsensitive
+#check @withLockSet_observation_scheduler_witness
 
 /-! ## SM3.E.3/E.5 — Observational serializability (covers write/write) -/
 #check @ActionObsCongr
@@ -347,6 +353,17 @@ example (β : Type) (π : SystemState → β)
     π (applySequentialWithLockSet sched s) = π (applySequential sched s) :=
   applySequentialWithLockSet_observation π hAcq hRel sched hCongr s
 
+-- §9b NON-VACUITY: the scheduler projection is a CONCRETE non-trivial observer
+-- that discharges both insensitivity hypotheses — so the bridge above is not
+-- vacuous.  A scheduler write wrapped in the full withLockSet 2PL machinery has
+-- its effect (= sch) correctly observed, the lock folds invisible.
+example (S : LockSet) (core : CoreId) (sch : SchedulerState) (s : SystemState) :
+    (withLockSet S core (fun st => (setSchedulerAction sch st, ())) s).1.scheduler = sch :=
+  withLockSet_observation_scheduler_witness S core sch s
+
+example (core : CoreId) : AcquireInsensitive core (fun s => s.scheduler) :=
+  schedulerObserver_acquireInsensitive core
+
 /-! ## SM3.E.3/E.5 — OBSERVATIONAL serializability on a real write/write schedule -/
 
 -- Two object-store WRITES to DIFFERENT objects (tcb5, tcb7), out of commit order
@@ -461,8 +478,8 @@ private def runCommitSortChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §5 SM3.E — inventory counts ---"
-  assertBool "serializabilityTheorems.length = 106"
-    (decide (serializabilityTheorems.length = 106))
+  assertBool "serializabilityTheorems.length = 111"
+    (decide (serializabilityTheorems.length = 111))
   assertBool "model count = 5"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .model)).length = 5))
   assertBool "conflict count = 7"
@@ -477,8 +494,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22))
   assertBool "preservation count = 11"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 11))
-  assertBool "atomicityBridge count = 5"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 5))
+  assertBool "atomicityBridge count = 10"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 10))
   assertBool "observational count = 18"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .observational)).length = 18))
 

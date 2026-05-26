@@ -19,7 +19,8 @@ inventory with size and per-category witnesses.  Mirrors the SM3.A
 `PerObjectLockInventory.lean`, SM3.B `LockSetInventory.lean`, SM3.C
 `Sm3CInventory.lean`, and SM3.D `Sm3DInventory.lean` patterns.
 
-Seven categories matching the plan §5.5 sub-tasks:
+Nine categories matching the plan §5.5 sub-tasks (the last two added by the
+audit-pass-3 atomicity-bridge and observational-serializability closures):
 
 * `.model` — `KernelTransitionInstance` + `applySequential` (SM3.E.2 infra).
 * `.conflict` — `ktiSharesConflictingLock` + `conflictOrder` (SM3.E.1).
@@ -33,7 +34,13 @@ Seven categories matching the plan §5.5 sub-tasks:
 * `.serializability` — `commitSort` (the serialization order) + `serialEquivalent`
   (SM3.E.2) + `serializability_under_2pl` (SM3.E.3, Theorem 2.1.10) +
   conflict-consistency of the sort.
-* `.preservation` — `singleCore_proof_preservation` (SM3.E.6, Corollary 2.1.11).
+* `.preservation` — `singleCore_proof_preservation` (SM3.E.6, Corollary 2.1.11) +
+  the §8b/§8c non-vacuous instantiations (objStoreLock.wf + objectType).
+* `.atomicityBridge` — `withLockSet_observation_eq_action` +
+  `applySequentialWithLockSet_observation` (SM3.E.2 grounding, §9) + the §9b
+  concrete scheduler-observer non-vacuity witness.
+* `.observational` — `serializability_under_2pl_obs` covering write/write on
+  distinct objects up to `objStoreEquiv` (SM3.E.3/E.5, §10).
 
 ## Identifier validation
 
@@ -270,7 +277,7 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       releaseLockOnObject_preserves_objectType_at .preservation,
     serlt! "withLockSet_preserves_objectType_at — SECOND Cor 2.1.11 witness (kind-discipline, invExt-dependent)"
       withLockSet_preserves_objectType_at .preservation,
-    -- §9 atomicityBridge (5)
+    -- §9 atomicityBridge (10)
     serlt! "ActionPiCongr — an action respects a lock-insensitive observer"
       ActionPiCongr .atomicityBridge,
     serlt! "applySequential_piCongr — the fold respects a lock-insensitive observer"
@@ -281,6 +288,16 @@ def serializabilityTheorems : List SerializabilityTheorem :=
       applySequentialWithLockSet .atomicityBridge,
     serlt! "applySequentialWithLockSet_observation — applySequential models the withLockSet execution"
       applySequentialWithLockSet_observation .atomicityBridge,
+    serlt! "acquireLockOnObject_preserves_scheduler — acquire leaves the scheduler field untouched (§9b)"
+      acquireLockOnObject_preserves_scheduler .atomicityBridge,
+    serlt! "releaseLockOnObject_preserves_scheduler — release leaves the scheduler field untouched (§9b)"
+      releaseLockOnObject_preserves_scheduler .atomicityBridge,
+    serlt! "schedulerObserver_acquireInsensitive — concrete acquire-insensitive observer (non-vacuity)"
+      schedulerObserver_acquireInsensitive .atomicityBridge,
+    serlt! "schedulerObserver_releaseInsensitive — concrete release-insensitive observer (non-vacuity)"
+      schedulerObserver_releaseInsensitive .atomicityBridge,
+    serlt! "withLockSet_observation_scheduler_witness — bridge applied non-vacuously to a scheduler write"
+      withLockSet_observation_scheduler_witness .atomicityBridge,
     -- §10 observational (18)
     serlt! "ActionObsCongr — an action is an objStoreEquiv-congruence on invExt states"
       ActionObsCongr .observational,
@@ -319,9 +336,9 @@ def serializabilityTheorems : List SerializabilityTheorem :=
     serlt! "objStoreWriteInstance_actionsCommuteObs — writes to distinct objects commute observationally"
       objStoreWriteInstance_actionsCommuteObs .observational]
 
-/-- WS-SM SM3.E: the inventory has exactly 106 entries. -/
+/-- WS-SM SM3.E: the inventory has exactly 111 entries. -/
 theorem serializabilityTheorems_count :
-    serializabilityTheorems.length = 106 := by decide
+    serializabilityTheorems.length = 111 := by decide
 
 /-- WS-SM SM3.E: 5 entries in `model`. -/
 theorem serializabilityTheorems_model_count :
@@ -351,9 +368,9 @@ theorem serializabilityTheorems_serializability_count :
 theorem serializabilityTheorems_preservation_count :
     (serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 11 := by decide
 
-/-- WS-SM SM3.E: 5 entries in `atomicityBridge`. -/
+/-- WS-SM SM3.E: 10 entries in `atomicityBridge`. -/
 theorem serializabilityTheorems_atomicityBridge_count :
-    (serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 5 := by decide
+    (serializabilityTheorems.filter (fun t => t.category == .atomicityBridge)).length = 10 := by decide
 
 /-- WS-SM SM3.E: 18 entries in `observational`. -/
 theorem serializabilityTheorems_observational_count :

@@ -1006,8 +1006,8 @@ to a serial execution** (Bernstein et al. 1987), the serial order
 being the commit-time order.  Together SM3.D (liveness) and SM3.E
 (correctness) are the twin levers that let the single-core proofs
 migrate cheaply in SM4..SM6 (Corollary 2.1.11).  New file
-`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1775 LoC) +
-`Sm3EInventory.lean` (106-theorem inventory), staged via
+`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 LoC) +
+`Sm3EInventory.lean` (111-theorem inventory), staged via
 `Concurrency.LockSet`.
 
 - **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance`
@@ -1032,7 +1032,7 @@ migrate cheaply in SM4..SM6 (Corollary 2.1.11).  New file
   assertions) + 8 major-theorem `#check` anchors in
   `tests/SmpSurfaceAnchors.lean`.
 
-**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries.  106-theorem
+**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries.  111-theorem
 SM3.E inventory across 9 categories.  Full Tier 0+1+2+3 green.
 
 **SM3 CLOSED** — all five sub-phases LANDED (SM3.A–SM3.E).  The
@@ -1075,6 +1075,21 @@ SM4..SM6 consume.  Inventory 78 → 106 (+5 preservation, +5
 atomicityBridge, +18 observational; two new `SerializabilityCategory`
 variants).  All axiom-clean (`propext` / `Quot.sound` /
 `Classical.choice`); full Tier 0+1+2+3 green.
+
+**SM3.E audit-pass-4** (comprehensive axiom sweep + full code re-read): a
+`#print axioms` sweep over all 106 inventory theorems confirmed every one is
+axiom-clean (zero `sorryAx` / `native_decide` / `unsafe`), and a §1–§10
+line-by-line read found the proofs sound.  Closed ONE genuine gap — the §9
+atomicity bridge's `AcquireInsensitive` / `ReleaseInsensitive` hypotheses were
+never discharged for a concrete observer (unlike §8b / §8c / §10, which each
+have a non-vacuity witness).  New §9b:
+`acquireLockOnObject_preserves_scheduler` /
+`releaseLockOnObject_preserves_scheduler`,
+`schedulerObserver_acquireInsensitive` / `schedulerObserver_releaseInsensitive`
+(the `scheduler` projection discharges both hypotheses unconditionally), and
+`withLockSet_observation_scheduler_witness` (the bridge applied non-vacuously).
+Also fixed `Sm3EInventory.lean`'s stale "Seven categories" header (nine since
+audit-pass-3).  Inventory 106 → 111 (+5 atomicityBridge); axiom-clean.
 
 **WS-SM SM3.D LANDED on branch `claude/friendly-rubin-5wOsy`**
 (deadlock-freedom — Theorem 2.1.9, wait-graph acyclicity,

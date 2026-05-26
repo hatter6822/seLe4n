@@ -143,8 +143,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20110 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~6682 lines)
+- `CHANGELOG.md` (~20156 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~6697 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -173,8 +173,8 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
 - `tests/OperationChainSuite.lean` (~2208 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
+- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
-- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2055 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -187,13 +187,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Operations.lean` (~1868 lines)
 - `SeLe4n/Model/Object/Types.lean` (~1865 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1860 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 lines)
 - `SeLe4n/Prelude.lean` (~1830 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1792 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1791 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1775 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1753 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
@@ -3512,8 +3512,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
   single-core proofs migrate cheaply in SM4..SM6 (Corollary 2.1.11).
   Lands within the v0.31.9 release cut (no version bump; SM3.A..SM3.E
   close out together en route to v1.0.0).  New file
-  `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1775 LoC) +
-  `Sm3EInventory.lean` (106-theorem inventory), both staged via
+  `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 LoC) +
+  `Sm3EInventory.lean` (111-theorem inventory), both staged via
   `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
   - **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance` schedule
@@ -3573,7 +3573,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (`lake exe serializability_suite`); 8 major-theorem `#check` anchors
   (SM3.E.8) + runtime inventory check in `tests/SmpSurfaceAnchors.lean`.
   Tier-2 + Tier-3 wired.  **Axiom budget**: 0 Lean axioms, 0 sorries
-  (only `propext` / `Quot.sound` / `Classical.choice`).  106-theorem
+  (only `propext` / `Quot.sound` / `Classical.choice`).  111-theorem
   SM3.E inventory across 9 categories.  Full Tier 0+1+2+3 green.  Items
   deferred past v1.0.0 with correctness impact: NONE.
 
@@ -3687,6 +3687,35 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (`propext` / `Quot.sound` / `Classical.choice` only via
   `#print axioms`); full Tier 0+1+2+3 green.  Items deferred past
   v1.0.0 with correctness impact: NONE.
+
+  **Audit-pass-4 refinements** (comprehensive axiom sweep + full code
+  re-read): a `#print axioms` sweep over all 106 inventory theorems
+  confirmed every one is axiom-clean (zero `sorryAx` / `native_decide` /
+  `unsafe`; only `propext` / `Quot.sound` / `Classical.choice`), and a
+  line-by-line read of §1–§10 found the proofs mathematically sound (no
+  vacuity, no assumed-conclusion).  The audit surfaced ONE genuine gap
+  and two stale docstrings, all closed:
+  - **Atomicity-bridge non-vacuity (the gap)**: the §9 bridge takes
+    `AcquireInsensitive` / `ReleaseInsensitive` as hypotheses but — unlike
+    §8b (objStoreLock.wf), §8c (objectType), and §10 (write/write), each of
+    which carries a concrete non-vacuity witness — no concrete non-trivial
+    observer satisfying them was exhibited anywhere (SM3.C only `#check`s
+    the predicates), so a reader could not rule out vacuity.  Closed with a
+    new §9b: `acquireLockOnObject_preserves_scheduler` /
+    `releaseLockOnObject_preserves_scheduler` (the lock primitives leave the
+    `scheduler` field untouched), `schedulerObserver_acquireInsensitive` /
+    `schedulerObserver_releaseInsensitive` (the `scheduler` projection is a
+    genuine non-trivial observer discharging both hypotheses
+    unconditionally), and `withLockSet_observation_scheduler_witness` (the
+    bridge applied non-vacuously: a scheduler write wrapped in the full 2PL
+    machinery is observed as `= sch`, the lock folds invisible).
+  - **Stale docstring**: `Sm3EInventory.lean`'s header said "Seven
+    categories" (nine since audit-pass-3) — corrected with the two new
+    category bullets + the §8b/§8c/§9b sub-notes.
+  Inventory grew 106 → 111 (+5 atomicityBridge); `atomicityBridge` count
+  5 → 10; suite + surface anchors + tier-3 updated.  All 111 inventory
+  theorems re-verified axiom-clean via `#print axioms`; full Tier 0+1+2+3
+  green.  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

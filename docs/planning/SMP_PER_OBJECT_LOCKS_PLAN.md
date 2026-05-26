@@ -1603,8 +1603,8 @@ RwLock to work and proves the twin architectural keystones —
 deadlock-freedom (SM3.D, Theorem 2.1.9) and serializability (SM3.E,
 Theorem 2.1.10) — that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).  New files
-`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1775 LoC) +
-`Sm3EInventory.lean` (106-theorem inventory), both staged via
+`SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 LoC) +
+`Sm3EInventory.lean` (111-theorem inventory), both staged via
 `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
 | Sub | Description | Files | Status |
@@ -1702,7 +1702,7 @@ cheaply in SM4..SM6 (Corollary 2.1.11).  New files
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms
 reachable through Std).  Items deferred past v1.0.0 with correctness
 impact: NONE.  The SM3.E theorem inventory (`serializabilityTheorems`)
-has 106 entries across 9 categories; the regression suite
+has 111 entries across 9 categories; the regression suite
 (`tests/SerializabilitySuite.lean`) has 27 runtime assertions across 6
 sections plus a non-vacuity witness
 (`serializability_of_readOnly_schedule`: an all-reads workload is
@@ -1827,6 +1827,24 @@ variants `.atomicityBridge` / `.observational`) and added a write/write
 observational example, an atomicity-bridge example, and a second-invariant
 `objectType` example to the suite.  All additions verified axiom-clean
 (`propext` / `Quot.sound` / `Classical.choice` only via `#print axioms`).
+
+**Audit-pass-4 refinements** (comprehensive axiom sweep + full code
+re-read): a `#print axioms` sweep over all 106 inventory theorems confirmed
+every one is axiom-clean (zero `sorryAx` / `native_decide` / `unsafe`), and a
+§1–§10 line-by-line read found the proofs sound.  The audit closed ONE genuine
+gap: the §9 atomicity bridge takes `AcquireInsensitive` / `ReleaseInsensitive`
+as hypotheses, but — unlike §8b / §8c / §10, each of which carries a concrete
+non-vacuity witness — no concrete non-trivial observer satisfying them was
+exhibited anywhere (SM3.C only `#check`s the predicates).  New §9b closes it:
+`acquireLockOnObject_preserves_scheduler` /
+`releaseLockOnObject_preserves_scheduler` (the lock primitives leave the
+`scheduler` field untouched), `schedulerObserver_acquireInsensitive` /
+`schedulerObserver_releaseInsensitive` (the `scheduler` projection discharges
+both hypotheses unconditionally — proving them satisfiable), and
+`withLockSet_observation_scheduler_witness` (the bridge applied non-vacuously
+to a scheduler write).  Also corrected `Sm3EInventory.lean`'s stale "Seven
+categories" header (nine since audit-pass-3).  Inventory 106 → 111 (+5
+atomicityBridge); axiom-clean; suite + tier-3 surface updated.
 
 #### SM3.E.1 — `conflictOrder`
 

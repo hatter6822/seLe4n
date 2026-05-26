@@ -304,7 +304,7 @@ root = "tests.DeadlockFreedomSuite"
 # acyclicity (`conflictGraph_acyclic`) + the commit-sort serialization
 # order + `serializability_under_2pl` (Theorem 2.1.10) + the
 # `serializability_of_readOnly_schedule` non-vacuity witness, the SM3.E.6
-# `singleCore_proof_preservation` (Corollary 2.1.11), and the 106-theorem
+# `singleCore_proof_preservation` (Corollary 2.1.11), and the 111-theorem
 # SM3.E inventory aggregator.  Tier-2 + Tier-3 wired.
 [[lean_exe]]
 name = "serializability_suite"

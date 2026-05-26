@@ -2307,7 +2307,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 EOF'
 
 # WS-SM SM3.E — serializability + conflict-graph acyclicity + commit-sort
-# serialization order + single-core proof preservation + 106-theorem inventory.
+# serialization order + single-core proof preservation + 111-theorem inventory.
 # Surface anchors verify every SM3.E public symbol survives renames at
 # elaboration time.  SM3.E.8: `#check` of the major theorems.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory'
@@ -2410,6 +2410,11 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 #check @SeLe4n.Kernel.Concurrency.withLockSet_observation_eq_action
 #check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
 #check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_observation
+#check @SeLe4n.Kernel.Concurrency.acquireLockOnObject_preserves_scheduler
+#check @SeLe4n.Kernel.Concurrency.releaseLockOnObject_preserves_scheduler
+#check @SeLe4n.Kernel.Concurrency.schedulerObserver_acquireInsensitive
+#check @SeLe4n.Kernel.Concurrency.schedulerObserver_releaseInsensitive
+#check @SeLe4n.Kernel.Concurrency.withLockSet_observation_scheduler_witness
 #check @SeLe4n.Kernel.Concurrency.ActionObsCongr
 #check @SeLe4n.Kernel.Concurrency.ActionPreservesInvExt
 #check @SeLe4n.Kernel.Concurrency.KernelTransitionInstance.wellBehavedObs

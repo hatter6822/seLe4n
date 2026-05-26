@@ -1,3 +1,49 @@
+## Unreleased — WS-SM SM3.E audit-pass-4: concrete non-vacuity witness for the atomicity bridge (§9b)
+
+Further deep audit of §5.5
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+A comprehensive axiom sweep over all 106 inventory theorems confirmed they
+are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only; zero
+`sorryAx` / `native_decide` / `unsafe`), and a full code read found the §1–§10
+proofs mathematically sound.  The audit surfaced ONE genuine gap and two stale
+docstrings, all closed here.  No version bump.
+
+**Gap (closed) — the atomicity bridge's non-vacuity was never demonstrated.**
+The §9 bridge (`withLockSet_observation_eq_action` /
+`applySequentialWithLockSet_observation`) takes `AcquireInsensitive` /
+`ReleaseInsensitive` as hypotheses but — unlike §8b (objStoreLock.wf), §8c
+(objectType), and §10 (write/write), which each carry a concrete non-vacuity
+witness — NO concrete non-trivial observer satisfying those hypotheses was
+exhibited anywhere in the codebase (SM3.C only `#check`s the predicates).  A
+reader could not confirm the bridge isn't vacuous.  Closed with a new §9b:
+
+* `acquireLockOnObject_preserves_scheduler` / `releaseLockOnObject_preserves_scheduler`
+  — the lock-acquire/release primitives leave the `scheduler` subsystem field
+  untouched (every branch touches only `objStoreLock`, the `objects` table, or
+  nothing).
+* `schedulerObserver_acquireInsensitive` / `schedulerObserver_releaseInsensitive`
+  — the `scheduler` projection is a genuine non-trivial business-state observer
+  that discharges BOTH insensitivity hypotheses unconditionally, proving they
+  are satisfiable.
+* `withLockSet_observation_scheduler_witness` — the §9 bridge applied
+  non-vacuously: a transition writing the scheduler (`setSchedulerAction sch`),
+  wrapped in the full `withLockSet` 2PL machinery, has its effect correctly
+  observed (`= sch`) with the acquire/release folds invisible.
+
+**Stale docstrings (closed).** The `Sm3EInventory.lean` header said "Seven
+categories" (the code has had nine since audit-pass-3) — corrected, with the two
+new category bullets and the §8b/§8c/§9b sub-notes added.
+
+**Inventory + tests.** `serializabilityTheorems` grew 106 → 111 (+5
+atomicityBridge: the two preserves-scheduler lemmas, the two insensitive-observer
+witnesses, and the non-vacuous bridge application); `atomicityBridge` count
+5 → 10; partition still sums to the total.  `tests/SerializabilitySuite.lean`
+gains the §9b scheduler-witness + acquire-insensitive examples and 5 surface
+anchors; `tests/SmpSurfaceAnchors.lean` + `scripts/test_tier3_invariant_surface.sh`
+updated.  All 111 inventory theorems verified axiom-clean via `#print axioms`.
+Full Tier 0+1+2+3 green.  Items deferred past v1.0.0 with correctness impact:
+NONE.
+
 ## Unreleased — WS-SM SM3.E audit-pass-3: atomicity bridge, observational serializability (write/write coverage), second real Corollary 2.1.11 instantiation
 
 Deepest deep audit of §5.5
@@ -108,8 +154,8 @@ are the twin levers that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).
 
 **New modules**: `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean`
-(~1775 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
-(106-theorem inventory).  Both staged via `Concurrency.LockSet` +
+(~1857 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
+(111-theorem inventory).  Both staged via `Concurrency.LockSet` +
 `staged_module_allowlist.txt`; SM5+ per-core scheduler integration is
 the first runtime exerciser.
 
@@ -197,9 +243,9 @@ vacuous statement.
 
 **Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries (only the standard
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms).  The
-SM3.E inventory (`serializabilityTheorems`) has 106 entries across 9
+SM3.E inventory (`serializabilityTheorems`) has 111 entries across 9
 categories (model 5, conflict 7, strict2pl 6, commutativity 23,
-acyclicity 9, serializability 22, preservation 11, atomicityBridge 5,
+acyclicity 9, serializability 22, preservation 11, atomicityBridge 10,
 observational 18).  Full Tier 0+1+2+3 green.  Items deferred past
 v1.0.0 with correctness impact: NONE.
 
