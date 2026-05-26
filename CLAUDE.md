@@ -143,22 +143,26 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~14336 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~5243 lines)
+- `CHANGELOG.md` (~20156 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~6697 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4029 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3908 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3783 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3553 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3390 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3040 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~2809 lines)
+- `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~3006 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2672 lines)
 - `SeLe4n/Platform/Boot.lean` (~2591 lines)
+- `SeLe4n/Model/State.lean` (~2580 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
@@ -167,34 +171,36 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
-- `SeLe4n/Model/State.lean` (~2237 lines)
-- `docs/spec/SELE4N_SPEC.md` (~2216 lines)
 - `tests/OperationChainSuite.lean` (~2208 lines)
-- `docs/planning/SMP_RUST_HAL_PLAN.md` (~2204 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
+- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
+- `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1885 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~1868 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1865 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1860 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 lines)
 - `SeLe4n/Prelude.lean` (~1830 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1794 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1792 lines)
+- `SeLe4n/Model/FreezeProofs.lean` (~1791 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1753 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
-- `SeLe4n/Model/FreezeProofs.lean` (~1663 lines)
-- `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1646 lines)
+- `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1648 lines)
 - `tests/InformationFlowSuite.lean` (~1623 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1619 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1520 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
@@ -205,11 +211,16 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
+- `tests/LockSetSuite.lean` (~1307 lines)
+- `SeLe4n/Platform/FFI.lean` (~1267 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1243 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1211 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1210 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1185 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1183 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1180 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
@@ -217,7 +228,7 @@ To find files that need pagination today, run:
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
-- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~1098 lines)
+- `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1039 lines)
@@ -230,18 +241,21 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~977 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~969 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~943 lines)
+- `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
-- `SeLe4n/Platform/FFI.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~887 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
+- `tests/SmpFoundationsSuite.lean` (~873 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~836 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~827 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `tests/TwoPhaseArchSuite.lean` (~811 lines)
+- `tests/WithLockSetSuite.lean` (~809 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 
@@ -3484,11 +3498,224 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `objStore` singleton via SM3.C `acquireLockOnObject`).  No production
   symbols changed; the deadlock suite now runs ~56 assertions.
 
-  Follow-on: SM3.E (serializability Theorem 2.1.10 + commutativity
-  lemmas + the single-core-proof-preservation Corollary 2.1.11
-  instantiations) closes the SM3 phase per
+  **WS-SM SM3.E LANDED on branch
+  `claude/determined-pasteur-apMXc`** (serializability — Theorem 2.1.10,
+  conflict-graph acyclicity, commutativity, single-core proof
+  preservation; closes the fifth and final sub-phase of SM3 with all 8
+  sub-tasks LANDED — **SM3 CLOSED**).  Plan §5.5 of
+  [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md);
+  proves the second architectural keystone of SM3 (after SM3.D's
+  deadlock-freedom): **every interleaved execution under strict 2PL is
+  conflict-equivalent to a serial execution** (Bernstein et al. 1987),
+  the serial order being the commit-time order.  Together SM3.D
+  (liveness) and SM3.E (correctness) are the twin levers that let the
+  single-core proofs migrate cheaply in SM4..SM6 (Corollary 2.1.11).
+  Lands within the v0.31.9 release cut (no version bump; SM3.A..SM3.E
+  close out together en route to v1.0.0).  New file
+  `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 LoC) +
+  `Sm3EInventory.lean` (111-theorem inventory), both staged via
+  `Concurrency.LockSet` + `staged_module_allowlist.txt`.
+
+  - **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance` schedule
+    model `(lockSet, core, commitTime, acquireTime : LockId → Nat,
+    action : SystemState → SystemState)`; `ktiSharesConflictingLock`
+    (decidable via the Bool `ktiConflictsB` + `ktiConflictsB_iff` —
+    finite double `List.any` over footprint pairs, bounding the
+    `LockId` existential) + `ktiSharesConflictingLock_symm`.
+  - **SM3.E.2**: `serialEquivalent` (same final state) + `applySequential`
+    (foldl of actions); under strict 2PL each transition commits
+    atomically (SM3.C.7), so this is the interleaved net effect on the
+    commit-order schedule.
+  - **SM3.E.3 (Theorem 2.1.10)**: `serializability_under_2pl` — every
+    strict-2PL execution is serial-equivalent to the commit-sorted serial
+    order (a permutation, commit-ascending = topological sort).  Proof:
+    (a) `conflictGraph_acyclic` (the acyclic conflict graph) via the same
+    `ReachesPlus`/strict-`<`-along-edges structure SM3.D used, now over
+    commit times; (b) the state-equality via `applySequential_swap_adjacent`
+    lifted to the `CommutingReorder` closure, with the insertion-sort
+    `commitSort` (`commitSort_perm` + `commitSort_sorted` +
+    `commitSort_commutingReorder` under the strict-2PL `outOfOrderCommute`
+    hypothesis).  `serializability_under_2pl_exists` is the literal
+    `∃ serial` form (non-vacuously witnessed by the commit sort, not the
+    interleaved schedule); `commitSorted_respects_conflictPrecedes` is the
+    valid-serialization half.
+  - **SM3.E.4**: `strictly_2pl_preserved` (locks held until commit) +
+    `KernelTransitionInstance.ofWithLockSet` (canonical growing-phase-
+    before-commit instance) + `conflictOrder_commit_le` (strict 2PL forces
+    conflict resolution in commit order).
+  - **SM3.E.5**: ≥8 commutativity lemmas at two honest fidelities —
+    **structural** `actionsCommute` for read-only
+    (`readOnlyInstance_actionsCommute`, the plan's `cspaceRead_commutes`
+    analog) and disjoint-subsystem (`setObjStoreLock_setScheduler_commute`)
+    pairs (feeding the structural theorem); and **observational**
+    `objStoreEquiv` for write/write on distinct objects
+    (`updateObjectAt_objStoreEquiv_comm`).  The write/write case is
+    observational because the Robin-Hood object store's slot layout is
+    insertion-order-dependent; conflict-serializability IS an
+    observational property (Bernstein), so this is faithful (documented,
+    not overclaimed).
+  - **SM3.E.6 (Corollary 2.1.11)**: `singleCore_proof_preservation` (the
+    pre→post meta-theorem: single-core theorems lift to SMP gated only by
+    lock-insensitivity + `lockSetHeld`), reusing SM3.C.8's
+    `withLockSet_invariant_preserved`; `withLockSet_growing_phase_establishes_lockSetHeld`
+    shows the `lockSetHeld` precondition is a *consequence* of
+    `withLockSet`, not an assumption; `singleCore_invariant_preservation`
+    is the invariant form.
+
+  **Non-vacuity**: `serializability_of_readOnly_schedule` proves a
+  hypothesis-free family (read-only / all-identity-action schedules) is
+  serial-equivalent to its commit sort, so `serializability_under_2pl`
+  is not vacuous.
+
+  **Test coverage**: `tests/SerializabilitySuite.lean` — 60+ surface
+  anchors + 18 decidable examples + 6 theorem-application inhabitation
+  witnesses + 27 runtime `assertBool` assertions across 6 sections
+  (`lake exe serializability_suite`); 8 major-theorem `#check` anchors
+  (SM3.E.8) + runtime inventory check in `tests/SmpSurfaceAnchors.lean`.
+  Tier-2 + Tier-3 wired.  **Axiom budget**: 0 Lean axioms, 0 sorries
+  (only `propext` / `Quot.sound` / `Classical.choice`).  111-theorem
+  SM3.E inventory across 9 categories.  Full Tier 0+1+2+3 green.  Items
+  deferred past v1.0.0 with correctness impact: NONE.
+
+  **SM3 acceptance gate** (per
   [`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
-  §5.5.
+  §8): all formal items checked.  WS-SM SM3 CLOSED with all five
+  sub-phases LANDED (SM3.A–SM3.E).  The `@[export]`-body migration
+  (SM3.C.9) remains deferred to SM5+ per the per-core kernel-state seam.
+  SM4 (per-core state) follows per the master overview.
+
+  **Audit-pass-1 refinements** (post-landing self-audit; closed three
+  honesty/completeness gaps per the `implement-the-improvement` rule —
+  the initial theorems were true + axiom-clean but under-delivered on
+  their stated intent):
+  - **Orientation completeness**: `conflictGraph_acyclic`'s proof did not
+    use the conflict relation (it is `Nat.lt` irreflexivity).  Added
+    `conflictPrecedes_total_of_distinct_commit` (under the strict-2PL
+    distinct-commit lock-exclusion property every conflicting pair is
+    *comparable* — where `ktiSharesConflictingLock`/its symmetry is
+    essential) + `conflictPrecedes_strict_total_of_distinct_commit` (the
+    conflict graph is a strict *total* order, not merely acyclic — the
+    genuine Bernstein content).
+  - **Strict-2PL grounding**: `serializability_under_2pl`'s
+    `outOfOrderCommute` hypothesis was prose-linked to 2PL only.  Added
+    `conflictsCommitOrdered` (decidable lock-exclusion predicate),
+    `outOfOrderCommute_of_conflictsCommitOrdered`, and the grounded
+    `serializability_under_2pl_of_conflicts_ordered` (assumes only the
+    primitive strict-2PL conditions) — mirroring SM3.D §7.
+  - **Non-vacuous Cor 2.1.11**: the `singleCore_proof_preservation` test
+    used the trivial `True` invariant.  Added per-step
+    `acquire/releaseLockOnObject_preserves_objStoreLock_wf` +
+    `withLockSet_preserves_objStoreLock_wf` (the lever on the REAL
+    `objStoreLock.wf` invariant).
+  - **`conflictOrder` connected to the serialization order**: the plan's
+    primary SM3.E.1 relation was a near-orphan (no theorem proved the
+    serialization respects it).  Added `conflictOrder_implies_conflictPrecedes`
+    (under strict 2PL + distinct commit a `conflictOrder` edge IS a
+    `conflictPrecedes` edge) + `commitSorted_respects_conflictOrder` (the
+    commit sort never places a `conflictOrder` edge backward).
+  SM3.E inventory grew 68 → 78 (+1 conflict, +2 acyclicity, +4
+  serializability, +3 preservation); suite gains a §3b grounding section +
+  the `objStoreLock.wf` and `conflictOrder`-bridge examples.  All
+  axiom-clean; full Tier 0+1+2+3 green.
+
+  **Audit-pass-3 refinements** (deepest deep audit; closed the three
+  "honestly-deferred" SM3.E gaps the initial landing documented but did
+  not implement — per the `implement-the-improvement` rule the
+  acknowledged-but-unbuilt scope is the inferior artefact, so it is now
+  materialised as code rather than a caveat.  No version bump; refines
+  ship inside the v0.31.9 cut):
+  - **Atomicity bridge (the avoided SM3.E.2/SM3.E.7 connection)**: the
+    initial landing modelled `applySequential` as a `foldl` of *bare*
+    `action`s and proved serial-equivalence at that abstraction, but
+    never connected it back to the SM3.C.7 `withLockSet` atomicity
+    result — so the headline theorem was about a schedule of raw
+    actions, not a schedule of *2PL-wrapped transitions*.  Closed via
+    a new §9 (5 theorems): `withLockSet_observation_eq_action` proves
+    the observable post-state of a `withLockSet`-wrapped transition
+    equals the action applied to the post-acquire state (the
+    acquire/release fold is invisible to any lock-insensitive observer,
+    discharged through SM3.C.7 `lockSet_observer_atomic` +
+    `AcquireInsensitive`/`ReleaseInsensitive`); `applySequentialWithLockSet`
+    (+ nil/cons simp lemmas) folds a list of `withLockSet`-wrapped
+    transitions; `applySequentialWithLockSet_observation` lifts the
+    single-step bridge to the whole schedule via `ActionPiCongr` /
+    `applySequential_piCongr`.  This is the theorem that makes
+    `serializability_under_2pl` a statement about the *real* 2PL kernel
+    rather than an idealised raw-action fold.
+  - **Observational serializability (the avoided write/write coverage)**:
+    the initial SM3.E.5 proved `objStoreEquiv`-commutativity for
+    write/write-to-distinct-objects as an *isolated* lemma, but the
+    top-level `serializability_under_2pl` reordered via the *structural*
+    `actionsCommute` (`Eq`), which write/write pairs do NOT satisfy (the
+    Robin-Hood object store's slot layout is insertion-order-dependent).
+    So the most important case for a real kernel — two cores writing
+    distinct objects — was provably commuting in the lemma library but
+    NOT carried by the headline theorem.  Closed via a new §10 (18
+    theorems): `serializability_under_2pl_obs` proves serial-equivalence
+    *up to `objStoreEquiv`* for any schedule whose actions commute
+    observationally and preserve `invExt`, threading the RHTable
+    extension invariant through the entire `commitSort` reorder
+    (`ActionObsCongr` / `ActionPreservesInvExt` /
+    `KernelTransitionInstance.wellBehavedObs` / `.actionsCommuteObs`,
+    `applySequential_preservesInvExt` / `_obsCongr` /
+    `_swap_front_obs` / `_cons_obs`, `outOfOrderCommuteObs`,
+    `insertByCommitTime_obs`, `commitSort_obs`).  `objStoreWriteInstance`
+    + `_wellBehavedObs` + `_actionsCommuteObs` provide the canonical
+    write/write instance the headline now genuinely covers.  Conflict-
+    serializability IS an observational property (Bernstein), so the
+    `objStoreEquiv` fidelity is faithful, not a weakening.
+  - **Second real Cor 2.1.11 instantiation (the avoided generality
+    demonstration)**: audit-pass-1 grounded Cor 2.1.11 on the single
+    `objStoreLock.wf` invariant, leaving the impression the lever might
+    only work for that one toy invariant.  Closed via a new §8c (5
+    theorems): `withLockSet_preserves_objectType_at` proves the 2PL
+    machinery preserves a SECOND, structurally-different real invariant
+    — the per-key kind-tag equality against the pre-state, bundled with
+    `invExt` (`releaseLockOnObject_preserves_invExt`,
+    `updateObjectLockAt_preserves_objectType_at`,
+    `acquire`/`releaseLockOnObject_preserves_objectType_at`).  This is
+    exactly the object-store structural invariant class SM4..SM6 phase
+    migrations consume, demonstrating the Cor 2.1.11 lever generalises
+    beyond `objStoreLock.wf`.
+  SM3.E inventory grew 78 → 106 (+5 preservation, +5 atomicityBridge,
+  +18 observational; two new `SerializabilityCategory` variants
+  `.atomicityBridge` / `.observational`); the suite gains a write/write
+  observational-serializability example (`writeWriteSched_wellBehavedObs`
+  / `_outOfOrderCommuteObs`), an atomicity-bridge example, and a second-
+  invariant `objectType` example, taking it to 27 runtime assertions /
+  102 surface anchors.  All new theorems verified axiom-clean
+  (`propext` / `Quot.sound` / `Classical.choice` only via
+  `#print axioms`); full Tier 0+1+2+3 green.  Items deferred past
+  v1.0.0 with correctness impact: NONE.
+
+  **Audit-pass-4 refinements** (comprehensive axiom sweep + full code
+  re-read): a `#print axioms` sweep over all 106 inventory theorems
+  confirmed every one is axiom-clean (zero `sorryAx` / `native_decide` /
+  `unsafe`; only `propext` / `Quot.sound` / `Classical.choice`), and a
+  line-by-line read of §1–§10 found the proofs mathematically sound (no
+  vacuity, no assumed-conclusion).  The audit surfaced ONE genuine gap
+  and two stale docstrings, all closed:
+  - **Atomicity-bridge non-vacuity (the gap)**: the §9 bridge takes
+    `AcquireInsensitive` / `ReleaseInsensitive` as hypotheses but — unlike
+    §8b (objStoreLock.wf), §8c (objectType), and §10 (write/write), each of
+    which carries a concrete non-vacuity witness — no concrete non-trivial
+    observer satisfying them was exhibited anywhere (SM3.C only `#check`s
+    the predicates), so a reader could not rule out vacuity.  Closed with a
+    new §9b: `acquireLockOnObject_preserves_scheduler` /
+    `releaseLockOnObject_preserves_scheduler` (the lock primitives leave the
+    `scheduler` field untouched), `schedulerObserver_acquireInsensitive` /
+    `schedulerObserver_releaseInsensitive` (the `scheduler` projection is a
+    genuine non-trivial observer discharging both hypotheses
+    unconditionally), and `withLockSet_observation_scheduler_witness` (the
+    bridge applied non-vacuously: a scheduler write wrapped in the full 2PL
+    machinery is observed as `= sch`, the lock folds invisible).
+  - **Stale docstring**: `Sm3EInventory.lean`'s header said "Seven
+    categories" (nine since audit-pass-3) — corrected with the two new
+    category bullets + the §8b/§8c/§9b sub-notes.
+  Inventory grew 106 → 111 (+5 atomicityBridge); `atomicityBridge` count
+  5 → 10; suite + surface anchors + tier-3 updated.  All 111 inventory
+  theorems re-verified axiom-clean via `#print axioms`; full Tier 0+1+2+3
+  green.  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

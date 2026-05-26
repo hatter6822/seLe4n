@@ -18,9 +18,11 @@ import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
 import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
 import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
+import SeLe4n.Kernel.Concurrency.Locks.Serializability
+import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 
 /-!
-# WS-SM SM3.B + SM3.C + SM3.D — LockSet re-export hub
+# WS-SM SM3.B + SM3.C + SM3.D + SM3.E — LockSet re-export hub
 
 Re-exports the SM3.B + SM3.C modules into a single import surface,
 mirroring the `Operations / Invariant` split pattern documented in
@@ -65,5 +67,14 @@ the underlying modules.
   SM3.B/SM3.C `lockAcquireSequence` discipline.
 * `Sm3DInventory` — SM3.D typed theorem inventory.
 
-SM3.E (serializability) will consume this hub.
+## SM3.E modules (serializability)
+
+* `Serializability` — the `KernelTransitionInstance` schedule model +
+  `conflictOrder` (SM3.E.1) + `serialEquivalent` (SM3.E.2) +
+  `serializability_under_2pl` (Theorem 2.1.10, SM3.E.3) +
+  `strictly_2pl_preserved` (SM3.E.4) + the commutativity lemmas
+  (SM3.E.5) + `singleCore_proof_preservation` (Corollary 2.1.11,
+  SM3.E.6), built on the conflict-graph acyclicity
+  (`conflictGraph_acyclic`).
+* `Sm3EInventory` — SM3.E typed theorem inventory.
 -/

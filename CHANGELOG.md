@@ -1,3 +1,317 @@
+## Unreleased — WS-SM SM3.E audit-pass-4: concrete non-vacuity witness for the atomicity bridge (§9b)
+
+Further deep audit of §5.5
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+A comprehensive axiom sweep over all 106 inventory theorems confirmed they
+are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only; zero
+`sorryAx` / `native_decide` / `unsafe`), and a full code read found the §1–§10
+proofs mathematically sound.  The audit surfaced ONE genuine gap and two stale
+docstrings, all closed here.  No version bump.
+
+**Gap (closed) — the atomicity bridge's non-vacuity was never demonstrated.**
+The §9 bridge (`withLockSet_observation_eq_action` /
+`applySequentialWithLockSet_observation`) takes `AcquireInsensitive` /
+`ReleaseInsensitive` as hypotheses but — unlike §8b (objStoreLock.wf), §8c
+(objectType), and §10 (write/write), which each carry a concrete non-vacuity
+witness — NO concrete non-trivial observer satisfying those hypotheses was
+exhibited anywhere in the codebase (SM3.C only `#check`s the predicates).  A
+reader could not confirm the bridge isn't vacuous.  Closed with a new §9b:
+
+* `acquireLockOnObject_preserves_scheduler` / `releaseLockOnObject_preserves_scheduler`
+  — the lock-acquire/release primitives leave the `scheduler` subsystem field
+  untouched (every branch touches only `objStoreLock`, the `objects` table, or
+  nothing).
+* `schedulerObserver_acquireInsensitive` / `schedulerObserver_releaseInsensitive`
+  — the `scheduler` projection is a genuine non-trivial business-state observer
+  that discharges BOTH insensitivity hypotheses unconditionally, proving they
+  are satisfiable.
+* `withLockSet_observation_scheduler_witness` — the §9 bridge applied
+  non-vacuously: a transition writing the scheduler (`setSchedulerAction sch`),
+  wrapped in the full `withLockSet` 2PL machinery, has its effect correctly
+  observed (`= sch`) with the acquire/release folds invisible.
+
+**Stale docstrings (closed).** The `Sm3EInventory.lean` header said "Seven
+categories" (the code has had nine since audit-pass-3) — corrected, with the two
+new category bullets and the §8b/§8c/§9b sub-notes added.
+
+**Inventory + tests.** `serializabilityTheorems` grew 106 → 111 (+5
+atomicityBridge: the two preserves-scheduler lemmas, the two insensitive-observer
+witnesses, and the non-vacuous bridge application); `atomicityBridge` count
+5 → 10; partition still sums to the total.  `tests/SerializabilitySuite.lean`
+gains the §9b scheduler-witness + acquire-insensitive examples and 5 surface
+anchors; `tests/SmpSurfaceAnchors.lean` + `scripts/test_tier3_invariant_surface.sh`
+updated.  All 111 inventory theorems verified axiom-clean via `#print axioms`.
+Full Tier 0+1+2+3 green.  Items deferred past v1.0.0 with correctness impact:
+NONE.
+
+## Unreleased — WS-SM SM3.E audit-pass-3: atomicity bridge, observational serializability (write/write coverage), second real Corollary 2.1.11 instantiation
+
+Deepest deep audit of §5.5
+([`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)).
+Closes the three SM3.E gaps the initial landing *documented as
+deferred* but did not implement.  Per CLAUDE.md's
+`implement-the-improvement` rule, acknowledged-but-unbuilt scope is the
+inferior artefact: the documentation describing the better behaviour is
+made true rather than caveated.  No version bump (the v0.31.9 SM3 cut
+remains open); axiom-clean (`propext` / `Quot.sound` / `Classical.choice`
+only, verified via `#print axioms`).
+
+**Gap 1 — atomicity bridge (the avoided SM3.E.2/SM3.E.7 connection).**
+The initial landing modelled `applySequential` as a `foldl` of *bare*
+`action`s and proved serial-equivalence at that abstraction, but never
+connected it back to SM3.C.7's `withLockSet` atomicity result — so the
+headline theorem reasoned about a schedule of raw actions rather than a
+schedule of *2PL-wrapped transitions*.  New §9 (5 inventory entries,
+category `.atomicityBridge`):
+
+* `withLockSet_observation_eq_action` — the observable post-state of a
+  `withLockSet`-wrapped transition equals the action applied to the
+  post-acquire state.  The acquire/release fold is invisible to any
+  lock-insensitive observer, discharged through SM3.C.7
+  `lockSet_observer_atomic` + `AcquireInsensitive`/`ReleaseInsensitive`.
+* `applySequentialWithLockSet` (+ nil/cons simp lemmas) — folds a list
+  of `withLockSet`-wrapped transitions.
+* `applySequentialWithLockSet_observation` — lifts the single-step
+  bridge to the whole schedule via `ActionPiCongr` /
+  `applySequential_piCongr`.
+
+This makes `serializability_under_2pl` a statement about the *real* 2PL
+kernel, not an idealised raw-action fold.
+
+**Gap 2 — observational serializability (the avoided write/write
+coverage).**  SM3.E.5 proved `objStoreEquiv`-commutativity for
+write/write-to-distinct-objects as an *isolated* lemma, but the top-level
+`serializability_under_2pl` reorders via the *structural* `actionsCommute`
+(`Eq`) — which write/write pairs do NOT satisfy (the Robin-Hood object
+store's slot layout is insertion-order-dependent).  So the most important
+case for a real kernel — two cores writing distinct objects — was provably
+commuting in the lemma library but NOT carried by the headline theorem.
+New §10 (18 inventory entries, category `.observational`):
+
+* `serializability_under_2pl_obs` — serial-equivalence *up to
+  `objStoreEquiv`* for any schedule whose actions commute observationally
+  and preserve `invExt`, threading the RHTable extension invariant through
+  the entire `commitSort` reorder.
+* Supporting stack: `ActionObsCongr` / `ActionPreservesInvExt` /
+  `KernelTransitionInstance.wellBehavedObs` / `.actionsCommuteObs`,
+  `applySequential_preservesInvExt` / `_obsCongr` / `_swap_front_obs` /
+  `_cons_obs`, `outOfOrderCommuteObs` (+ nil/cons), `insertByCommitTime_obs`,
+  `commitSort_obs`.
+* `objStoreWriteInstance` + `_wellBehavedObs` + `_actionsCommuteObs` —
+  the canonical write/write instance the headline now genuinely covers.
+
+Since conflict-serializability IS an observational property (Bernstein:
+equivalent schedules agree on the database state), `objStoreEquiv` is the
+faithful equivalence for the write/write case — this is a fidelity match,
+not a weakening.
+
+**Gap 3 — second real Corollary 2.1.11 instantiation (the avoided
+generality demonstration).**  Audit-pass-1 grounded Cor 2.1.11 on the
+single `objStoreLock.wf` invariant, leaving the impression the lever might
+only handle that one toy invariant.  New §8c (5 inventory entries,
+category `.preservation`):
+
+* `withLockSet_preserves_objectType_at` — the 2PL machinery preserves a
+  SECOND, structurally-different real invariant: the per-key kind-tag
+  equality against the pre-state, bundled with `invExt`.
+* Supporting: `releaseLockOnObject_preserves_invExt`,
+  `updateObjectLockAt_preserves_objectType_at`,
+  `acquireLockOnObject_preserves_objectType_at`,
+  `releaseLockOnObject_preserves_objectType_at`.
+
+This is exactly the object-store structural invariant class SM4..SM6
+phase migrations consume, demonstrating the lever generalises beyond
+`objStoreLock.wf`.
+
+**Inventory + tests.** `serializabilityTheorems` grew 78 → 106 (+5
+preservation, +5 atomicityBridge, +18 observational); two new
+`SerializabilityCategory` variants `.atomicityBridge` / `.observational`;
+`serializabilityTheorems_partition_sum` now sums 9 categories.
+`tests/SerializabilitySuite.lean` gains a write/write observational
+example (`writeWriteSched_wellBehavedObs` / `_outOfOrderCommuteObs`), an
+atomicity-bridge example, and a second-invariant `objectType` example
+(27 runtime assertions / 102 surface anchors); `tests/SmpSurfaceAnchors.lean`
+gains the `serializability_under_2pl_obs` +
+`applySequentialWithLockSet_observation` headline anchors;
+`scripts/test_tier3_invariant_surface.sh` covers the 28 new symbols.
+Full Tier 0+1+2+3 green.  Items deferred past v1.0.0 with correctness
+impact: NONE.
+
+## Unreleased — WS-SM SM3.E LANDED: serializability (Theorem 2.1.10), conflict-graph acyclicity, commutativity, single-core proof preservation (Corollary 2.1.11) — SM3 CLOSED
+
+Closes §5.5 of
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+(3 PRs, 8 sub-tasks; all LANDED) within the v0.31.9 release cut
+(mirroring the SM3.A / SM3.B / SM3.C / SM3.D landing pattern — no
+version bump; SM3.A..SM3.E close out together en route to v1.0.0).
+**This closes the SM3 phase.**  Builds on SM3.D's deadlock-freedom to
+prove the second architectural keystone: **every interleaved execution
+of kernel transitions under strict two-phase locking is
+conflict-equivalent to a serial execution** — the serial order being
+the commit-time order (Bernstein et al. 1987).  Together, SM3.D
+(deadlock-freedom, liveness) and SM3.E (serializability, correctness)
+are the twin levers that let the existing single-core proofs migrate
+cheaply in SM4..SM6 (Corollary 2.1.11).
+
+**New modules**: `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean`
+(~1857 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
+(111-theorem inventory).  Both staged via `Concurrency.LockSet` +
+`staged_module_allowlist.txt`; SM5+ per-core scheduler integration is
+the first runtime exerciser.
+
+* **SM3.E.1** — `conflictOrder`: two transition instances conflict-order
+  when they share a `LockId` in conflicting modes (`AccessMode.conflicts`,
+  SM3.B) and the first commits no later than the second acquires that
+  lock.  The schedule model `KernelTransitionInstance` records
+  `(lockSet, core, commitTime, acquireTime : LockId → Nat, action :
+  SystemState → SystemState)`.  The conflict test is decidable via the
+  Bool `ktiConflictsB` (a finite double `List.any` over the footprint
+  pairs — the existential over the infinite `LockId` type is bounded by
+  membership) bridged by `ktiConflictsB_iff`; `ktiSharesConflictingLock_symm`
+  proves symmetry.
+* **SM3.E.2** — `serialEquivalent`: an interleaved schedule is
+  serial-equivalent to a serial one when they produce the same final
+  state.  `applySequential` folds the schedule's actions in list order;
+  under strict 2PL each transition commits atomically (SM3.C.7
+  `lockSet_observer_atomic`), so this is the net effect of the
+  interleaved execution on the commit-order schedule.
+* **SM3.E.3 (Theorem 2.1.10)** — `serializability_under_2pl`: every
+  strict-2PL execution is serial-equivalent to the commit-sorted serial
+  order, which is moreover a permutation of the execution and ascending
+  in commit time (the topological sort of the acyclic conflict graph).
+  Proof in two halves: (a) **`conflictGraph_acyclic`** — the
+  commit-oriented conflict graph is acyclic (the "acyclic conflict
+  graph" Bernstein reduces serializability to), proved via the same
+  `ReachesPlus`/strict-`<`-along-edges structure SM3.D used for the
+  wait-graph, now over commit times (`conflictReaches_commitTime_lt` +
+  `Nat.lt_irrefl`); (b) the **state-equality** via the
+  adjacent-transposition lever `applySequential_swap_adjacent` lifted to
+  the `CommutingReorder` closure, with the serialization order the
+  insertion-sort `commitSort` (`commitSort_perm` permutation +
+  `commitSort_sorted` ascending + `commitSort_commutingReorder`
+  reachable from the interleaved schedule by commuting transpositions
+  under the strict-2PL `outOfOrderCommute` hypothesis).  The literal
+  `∃ serial, serialEquivalent` form is `serializability_under_2pl_exists`,
+  strengthened with the permutation + commit-ordering witnesses so it is
+  NOT vacuously witnessed by the interleaved schedule itself.
+  `commitSorted_respects_conflictPrecedes` proves the sort respects every
+  conflict edge (the valid-serialization half).
+* **SM3.E.4** — `strictly_2pl_preserved`: every `withLockSet`-built
+  transition holds all its locks until commit (`followsStrict2PL :=
+  ∀ p ∈ lockSet.pairs, acquireTime p.fst ≤ commitTime`).
+  `KernelTransitionInstance.ofWithLockSet` is the canonical
+  growing-phase-before-commit instance; `conflictOrder_commit_le` is the
+  lever showing strict 2PL forces every conflict to be resolved in
+  commit order (`commitTime τ₁ ≤ acquireTime τ₂ l ≤ commitTime τ₂`).
+* **SM3.E.5** — ≥8 commutativity lemmas at two fidelities (both honest):
+  **structural** `actionsCommute` for read-only (identity-action) pairs
+  (`readOnlyInstance_actionsCommute` — reads commute with everything,
+  the plan's `cspaceRead_commutes` analog) and disjoint-subsystem pairs
+  (`setObjStoreLock_setScheduler_commute` — transitions touching
+  different SystemState fields commute), feeding the structural
+  serializability theorem; and **observational** `objStoreEquiv` for two
+  writes to *different objects* (`updateObjectAt_objStoreEquiv_comm`).
+  The write/write case is observational rather than structural because
+  the object store is a Robin-Hood hash table whose internal slot layout
+  depends on insertion order — conflict-serializability IS an
+  observational property (Bernstein: equivalent schedules agree on the
+  database state), so `objStoreEquiv` is the faithful equivalence; the
+  distinction is documented in the module header rather than overclaimed.
+* **SM3.E.6 (Corollary 2.1.11)** — `singleCore_proof_preservation`: the
+  pre→post meta-theorem proving every single-core kernel-transition
+  theorem lifts to the SMP form, gated only by lock-insensitivity
+  (discharged structurally per invariant class) and the `lockSetHeld`
+  precondition.  Reuses SM3.C.8's `withLockSet_invariant_preserved`
+  lever; `withLockSet_growing_phase_establishes_lockSetHeld` (lifting
+  SM3.C.8's `acquireAll_establishes_lockSetHeld`) shows the `lockSetHeld`
+  precondition is a *consequence* of `withLockSet`, not an external
+  assumption.  `singleCore_invariant_preservation` is the invariant form.
+* **SM3.E.7** — `tests/SerializabilitySuite.lean`: surface anchors for
+  every public SM3.E symbol, decidable examples (conflict vs
+  non-conflict, commit-oriented precedence, strict 2PL), theorem-
+  application inhabitation witnesses, and 27 runtime `assertBool`
+  assertions across 6 sections (runnable as `lake exe
+  serializability_suite`).  Tier-2 + Tier-3 wired.
+* **SM3.E.8** — `#check` of the 8 major SM3.E theorems in
+  `tests/SmpSurfaceAnchors.lean` + a runtime inventory-count assertion.
+
+**Non-vacuity**: `serializability_of_readOnly_schedule` proves a
+hypothesis-free family of executions (read-only / all-identity-action
+schedules — the canonical all-non-conflicting case) is serial-equivalent
+to its commit sort, demonstrating `serializability_under_2pl` is not a
+vacuous statement.
+
+**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries (only the standard
+`propext` / `Quot.sound` / `Classical.choice` foundational axioms).  The
+SM3.E inventory (`serializabilityTheorems`) has 111 entries across 9
+categories (model 5, conflict 7, strict2pl 6, commutativity 23,
+acyclicity 9, serializability 22, preservation 11, atomicityBridge 10,
+observational 18).  Full Tier 0+1+2+3 green.  Items deferred past
+v1.0.0 with correctness impact: NONE.
+
+**SM3 acceptance gate** (per
+[`docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md`](docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md)
+§8): all formal items checked.  WS-SM SM3 CLOSED with all five
+sub-phases LANDED (SM3.A per-object lock fields, SM3.B lock-set
+extraction, SM3.C 2PL discipline, SM3.D deadlock-freedom, SM3.E
+serializability).  The remaining `@[export]`-body migration (SM3.C.9)
+is deferred to SM5+ per the per-core kernel-state seam.  SM4 (per-core
+state) follows per the master overview.
+
+**Audit-pass-1 refinements** (post-initial-landing self-audit; the
+initial SM3.E theorems were all true and axiom-clean, but three carried
+*honesty/completeness* gaps between what they proved and what their
+names/docstrings claimed — closed per CLAUDE.md's
+`implement-the-improvement` rule rather than weakening the claims):
+
+* **Orientation completeness (acyclicity engaged the conflict
+  relation).** `conflictGraph_acyclic` is true but its proof
+  (`conflictReaches_commitTime_lt`) only uses the `commitTime <` conjunct
+  — it is `Nat.lt` irreflexivity, with `ktiSharesConflictingLock` dead
+  weight.  Added `conflictPrecedes_total_of_distinct_commit` (under the
+  strict-2PL distinct-commit-times lock-exclusion property every
+  conflicting pair is *comparable* — this is where the conflict relation,
+  via its symmetry, is essential) and the capstone
+  `conflictPrecedes_strict_total_of_distinct_commit` (the conflict graph
+  is a strict *total* order on mutually-conflicting transitions, not
+  merely acyclic — the genuine Bernstein "linear extension = serial
+  schedule" content).
+* **Strict-2PL grounding of `outOfOrderCommute`.** `serializability_under_2pl`
+  is named "under 2PL" but its `outOfOrderCommute` hypothesis was only
+  prose-linked to strict 2PL.  Added the strict-2PL lock-exclusion
+  predicate `conflictsCommitOrdered` (conflicting pairs appear in commit
+  order — decidable), `outOfOrderCommute_of_conflictsCommitOrdered`
+  (derives the hypothesis from `conflictsCommitOrdered` + a
+  non-conflicting-commute witness), and the grounded top-level
+  `serializability_under_2pl_of_conflicts_ordered` whose only assumptions
+  are the genuine strict-2PL conditions — mirroring SM3.D §7's grounding
+  bridge, making the "under 2PL" name rigorous rather than nominal.
+* **Non-vacuous Corollary 2.1.11 witness.** The `singleCore_proof_preservation`
+  test exercised only the trivial `True` invariant.  Added the per-step
+  lock-insensitivity lemmas `acquireLockOnObject_preserves_objStoreLock_wf`
+  / `releaseLockOnObject_preserves_objStoreLock_wf` and the worked
+  instantiation `withLockSet_preserves_objStoreLock_wf` on the **real**
+  table-lock `objStoreLock.wf` invariant (a genuine SM2.C/SM3.C invariant),
+  proving the lever is a usable tool, not a vacuous false-anchor.
+* **`conflictOrder` connected to the serialization order.** The plan's
+  primary SM3.E.1 relation `conflictOrder` was a near-orphan — only
+  `conflictOrder_commit_le` consumed it, and no theorem proved the
+  serialization respects it (despite its docstring "the precedence the
+  serialization order must respect").  Added
+  `conflictOrder_implies_conflictPrecedes` (under strict 2PL with distinct
+  commit times, a `conflictOrder` edge IS a `conflictPrecedes` edge) and
+  `commitSorted_respects_conflictOrder` (the commit-sort serialization
+  never places a `conflictOrder` edge backward) — making `conflictOrder` a
+  first-class participant in the serializability argument.
+
+  SM3.E inventory grew 68 → 78 entries (+1 conflict, +2 acyclicity, +4
+  serializability, +3 preservation); `tests/SerializabilitySuite.lean`
+  gains a §3b grounding section (`conflictsCommitOrdered` true on
+  commit-ordered conflicts, false on out-of-order conflicts) + the
+  non-trivial `objStoreLock.wf` preservation example + the `conflictOrder`
+  bridge example + new surface anchors.  All additions axiom-clean
+  (`propext` / `Quot.sound`); full Tier 0+1+2+3 green.
+
 ## Unreleased — WS-SM SM3.D LANDED: deadlock-freedom (Theorem 2.1.9), wait-graph acyclicity, bounded-wait, lock-discipline grounding
 
 Closes §5.4 of

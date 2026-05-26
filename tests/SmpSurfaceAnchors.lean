@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Platform.FFI
 
 /-!
@@ -181,6 +182,34 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
 #check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
 #check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
+
+-- ============================================================================
+-- §6b — WS-SM SM3.E.8 — Serializability major-theorem surface anchors
+-- ============================================================================
+--
+-- The 8 major SM3.E theorems (one per plan §5.5 sub-task plus the acyclic
+-- conflict graph the proof reduces to).  Each `#check` is an elaboration-time
+-- gate: a rename or signature drift fails the suite.
+
+-- SM3.E.1 — conflict order.
+#check @SeLe4n.Kernel.Concurrency.conflictOrder
+-- SM3.E.2 — serial equivalence.
+#check @SeLe4n.Kernel.Concurrency.serialEquivalent
+-- SM3.E.3 — main serializability theorem (Theorem 2.1.10) + acyclic conflict graph.
+#check @SeLe4n.Kernel.Concurrency.serializability_under_2pl
+#check @SeLe4n.Kernel.Concurrency.conflictGraph_acyclic
+-- SM3.E.4 — strict-2PL preservation.
+#check @SeLe4n.Kernel.Concurrency.strictly_2pl_preserved
+-- SM3.E.5 — commutativity (the realistic write/write observational lemma).
+#check @SeLe4n.Kernel.Concurrency.updateObjectAt_objStoreEquiv_comm
+-- SM3.E.6 — single-core proof preservation (Corollary 2.1.11).
+#check @SeLe4n.Kernel.Concurrency.singleCore_proof_preservation
+-- SM3.E.3 — unconditional serializability of a read-only schedule (non-vacuity).
+#check @SeLe4n.Kernel.Concurrency.serializability_of_readOnly_schedule
+-- SM3.E.3/E.5 — OBSERVATIONAL serializability (covers write/write on distinct objects).
+#check @SeLe4n.Kernel.Concurrency.serializability_under_2pl_obs
+-- SM3.E.2 — atomicity bridge (applySequential models the withLockSet execution).
+#check @SeLe4n.Kernel.Concurrency.applySequentialWithLockSet_observation
 
 -- ============================================================================
 -- §7 — Decidable structural examples
@@ -402,8 +431,15 @@ def runSmpSurfaceAnchorChecks : IO Unit := do
   assertBool "peekServing(low_only) = max32 (low bits preserved)"
     (decide (SeLe4n.Kernel.Concurrency.peekTicketLockServing low_only = (0xFFFFFFFF : UInt64)))
 
+  IO.println "--- §7 WS-SM SM3.E.8 — serializability major-theorem reachability ---"
+  -- The SM3.E inventory size witness reached and evaluates (the 8 major-theorem
+  -- `#check` anchors above are elaboration-time gates; this exercises the
+  -- runtime path of the SM3.E inventory aggregator).
+  assertBool "SM3.E inventory has 111 entries"
+    (decide (SeLe4n.Kernel.Concurrency.serializabilityTheorems.length = 111))
+
   IO.println "============================================================"
-  IO.println "All SM2.D surface anchor checks PASS."
+  IO.println "All SM2.D + SM3.E.8 surface anchor checks PASS."
 
 end SeLe4n.Testing.SmpSurfaceAnchors
 
