@@ -2281,8 +2281,8 @@ preserves on a per-core basis.
      `allCores_nodup`).
 
    **Test coverage**: `tests/PerCoreVectorSuite.lean`
-   (`lake exe per_core_vector_suite`) — 23 surface anchors, 26 decidable
-   examples, 25 runtime assertions across five sections; Tier 2 + Tier 3
+   (`lake exe per_core_vector_suite`) — 21 surface anchors, 32 decidable
+   examples, 26 runtime assertions across five sections; Tier 2 + Tier 3
    wired.  **Axiom budget for SM4.A**: 0 Lean axioms, 0 sorries.
    Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
    (theorem migrations), SM4.E (`bootFromPlatform_smp_witness`).

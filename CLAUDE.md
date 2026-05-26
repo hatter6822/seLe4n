@@ -182,7 +182,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20296 lines)
+- `CHANGELOG.md` (~20310 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~6754 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -3814,13 +3814,21 @@ documentation lives under `docs/` and `docs/gitbook/`.
     List.finRange numCores`).
 
   **Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
-  (`lake exe per_core_vector_suite`) — 23 surface-anchor `#check`s, 26
-  decidable/definitional examples, 25 runtime `assertBool` assertions
+  (`lake exe per_core_vector_suite`) — 21 surface-anchor `#check`s, 32
+  decidable/definitional examples, 26 runtime `assertBool` assertions
   across five sections (Vector helpers, ext + nodup, Array backing,
   platform core-count topologies, CoreId/bootCoreId/allCores recap).
   Wired into Tier 2 (negative) + Tier 3 (invariant surface).  Full
   default build (320 jobs) green; Tier 0+1+2+3 green.  Items deferred
   past v1.0.0 with correctness impact: NONE.
+
+  **Post-landing audit**: `#print axioms` confirmed all seven helpers
+  depend only on `propext` / `Quot.sound`; a `SchedulerState`-mimicking
+  probe confirmed they match downstream call sites under `rw`/`simp`
+  even when `Vector.set`'s bounds proof is synthesized by
+  `get_elem_tactic` (proof irrelevance ⇒ defeq), so SM4.B/SM5 consume
+  them directly.  Corrected the test-element counts to the verified
+  21 / 32 / 26 (initial prose said 23/26/25; suite content unchanged).
 
   Follow-on: SM4.B (`SchedulerState` path-a field replacement),
   SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E

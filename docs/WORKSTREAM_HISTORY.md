@@ -1534,8 +1534,8 @@ Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0 deliverables.
   `bootCoreId`, and `allCores` (`allCores_length`, `allCores_nodup`).
 
 **Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
-(`lake exe per_core_vector_suite`) — 23 surface anchors, 26 decidable
-examples, 25 runtime assertions across five sections.  Tier 2 +
+(`lake exe per_core_vector_suite`) — 21 surface anchors, 32 decidable
+examples, 26 runtime assertions across five sections.  Tier 2 +
 Tier 3 wired.  Full default build (320 jobs) green; Tier 0+1+2+3
 green.  **Version bumped 0.31.10 → 0.31.11.**  Items deferred past
 v1.0.0 with correctness impact: NONE.

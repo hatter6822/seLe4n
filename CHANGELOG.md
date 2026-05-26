@@ -77,8 +77,8 @@ per-core `Vector` machinery rests on.
   `allCores_nodup` (since `allCores = List.finRange numCores`).
 
 **Test coverage**: new suite `tests/PerCoreVectorSuite.lean`
-(`lake exe per_core_vector_suite`) — 23 surface-anchor `#check`s, 26
-decidable/definitional examples, and 25 runtime `assertBool` assertions
+(`lake exe per_core_vector_suite`) — 21 surface-anchor `#check`s, 32
+decidable/definitional examples, and 26 runtime `assertBool` assertions
 across five sections (Vector helpers, ext + nodup, Array backing,
 platform core-count topologies, CoreId/bootCoreId/allCores recap).
 Wired into Tier 2 (negative) via `scripts/test_tier2_negative.sh` and
@@ -86,6 +86,20 @@ Tier 3 (invariant surface) via `scripts/test_tier3_invariant_surface.sh`.
 Full default build (320 jobs) green; Tier 0+1+2+3 green. Zero Lean
 axioms, zero sorries. Items deferred past v1.0.0 with correctness
 impact: NONE.
+
+**Post-landing audit** (same cut): a `#print axioms` sweep confirmed all
+seven `SeLe4n.Vector` declarations depend only on `propext` / `Quot.sound`
+(no `sorryAx`, no custom axiom). A consumer-usability probe (a struct
+mimicking `SchedulerState` with a `Vector (Option ThreadId) numCores`
+field) confirmed the helpers match downstream call sites under both `rw`
+and `simp` even when `Vector.set`'s bounds proof is synthesized by
+`get_elem_tactic` rather than written as `c.isLt` (proof irrelevance makes
+the differing proof terms defeq during `kabstract` matching) — so SM4.B.9's
+default-init (`replicate_get`), SM4.B.10's `ext`, and SM5's per-core writes
+(`get_set_eq` / `get_set_ne`) can consume them directly. The audit also
+corrected the test-element counts to the verified **21 surface anchors /
+32 decidable examples / 26 runtime assertions** (the initial landing prose
+said 23/26/25 — miscounts; the suite content was unchanged).
 
 **Version bumped 0.31.10 → 0.31.11** across all 26 canonical version
 sites.
