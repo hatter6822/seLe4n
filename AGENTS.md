@@ -143,7 +143,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20005 lines)
+- `CHANGELOG.md` (~20016 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~6647 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -176,7 +176,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
-- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~1980 lines)
+- `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~1990 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
@@ -212,11 +212,11 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
 - `tests/LockSetSuite.lean` (~1307 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1276 lines)
 - `SeLe4n/Platform/FFI.lean` (~1267 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1243 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1211 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1210 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1185 lines)
@@ -3513,7 +3513,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   Lands within the v0.31.9 release cut (no version bump; SM3.A..SM3.E
   close out together en route to v1.0.0).  New file
   `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
-  `Sm3EInventory.lean` (76-theorem inventory), both staged via
+  `Sm3EInventory.lean` (78-theorem inventory), both staged via
   `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
   - **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance` schedule
@@ -3573,7 +3573,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (`lake exe serializability_suite`); 8 major-theorem `#check` anchors
   (SM3.E.8) + runtime inventory check in `tests/SmpSurfaceAnchors.lean`.
   Tier-2 + Tier-3 wired.  **Axiom budget**: 0 Lean axioms, 0 sorries
-  (only `propext` / `Quot.sound` / `Classical.choice`).  76-theorem
+  (only `propext` / `Quot.sound` / `Classical.choice`).  78-theorem
   SM3.E inventory across 7 categories.  Full Tier 0+1+2+3 green.  Items
   deferred past v1.0.0 with correctness impact: NONE.
 
@@ -3607,8 +3607,16 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `acquire/releaseLockOnObject_preserves_objStoreLock_wf` +
     `withLockSet_preserves_objStoreLock_wf` (the lever on the REAL
     `objStoreLock.wf` invariant).
-  SM3.E inventory grew 68 → 76; suite gains a §3b grounding section + the
-  `objStoreLock.wf` example.  All axiom-clean; full Tier 0+1+2+3 green.
+  - **`conflictOrder` connected to the serialization order**: the plan's
+    primary SM3.E.1 relation was a near-orphan (no theorem proved the
+    serialization respects it).  Added `conflictOrder_implies_conflictPrecedes`
+    (under strict 2PL + distinct commit a `conflictOrder` edge IS a
+    `conflictPrecedes` edge) + `commitSorted_respects_conflictOrder` (the
+    commit sort never places a `conflictOrder` edge backward).
+  SM3.E inventory grew 68 → 78 (+1 conflict, +2 acyclicity, +4
+  serializability, +3 preservation); suite gains a §3b grounding section +
+  the `objStoreLock.wf` and `conflictOrder`-bridge examples.  All
+  axiom-clean; full Tier 0+1+2+3 green.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

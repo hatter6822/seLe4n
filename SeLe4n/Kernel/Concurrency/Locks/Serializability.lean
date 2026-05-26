@@ -500,6 +500,26 @@ theorem conflictPrecedes_strict_total_of_distinct_commit
   ⟨conflictPrecedes_total_of_distinct_commit τ₁ τ₂ hconf hne,
    fun ⟨h₁, h₂⟩ => conflictPrecedes_asymm τ₁ τ₂ h₁ h₂⟩
 
+/-- WS-SM SM3.E.3 (bridge — connects the plan's SM3.E.1 `conflictOrder` to the
+serialization order): under strict 2PL, a `conflictOrder` edge with distinct
+commit times IS a `conflictPrecedes` edge.
+
+`conflictOrder` (SM3.E.1, "the precedence the serialization order must respect")
+is stated in terms of `commitTime τ₁ ≤ acquireTime τ₂ l` (the lock-exclusion
+inequality on the shared lock).  `conflictOrder_commit_le` lifts this to
+`commitTime τ₁ ≤ commitTime τ₂` under strict 2PL; with distinct commit times it
+becomes the strict `commitTime τ₁ < commitTime τ₂`, which — together with the
+shared conflicting lock — is exactly a `conflictPrecedes` edge.  This makes
+`conflictOrder` a first-class participant in the serialization argument rather
+than an isolated definition: combined with `commitSorted_respects_conflictPrecedes`
+it yields `commitSorted_respects_conflictOrder` (the serialization respects every
+`conflictOrder` edge). -/
+theorem conflictOrder_implies_conflictPrecedes (τ₁ τ₂ : KernelTransitionInstance)
+    (h2pl : τ₂.followsStrict2PL) (h : conflictOrder τ₁ τ₂)
+    (hne : τ₁.commitTime ≠ τ₂.commitTime) : conflictPrecedes τ₁ τ₂ :=
+  ⟨conflictOrder_sharesConflictingLock τ₁ τ₂ h,
+   Nat.lt_of_le_of_ne (conflictOrder_commit_le τ₁ τ₂ h2pl h) hne⟩
+
 -- ============================================================================
 -- §6 — The commit-time serialization order + main theorem (SM3.E.2/E.3)
 -- ============================================================================
@@ -805,6 +825,29 @@ theorem commitSorted_respects_conflictPrecedes
     obtain ⟨_, hTail, _⟩ := hSorted
     exact (List.pairwise_cons.mp hTail).1 τ₁ hmem
   exact (Nat.not_lt.mpr hle) hcp.2
+
+/-- WS-SM SM3.E.3 (the serialization respects the plan's SM3.E.1 `conflictOrder`):
+a commit-sorted serial schedule never places a `conflictOrder` edge backward.  If
+`τ₂` appears before `τ₁` in the schedule and `τ₂` follows strict 2PL (with distinct
+commit times), then `τ₁` does NOT `conflictOrder` before `τ₂` — i.e. the serial
+order is a valid serialization w.r.t. the plan's `conflictOrder` precedence, not
+just the derived `conflictPrecedes`.
+
+Fulfils `conflictOrder`'s docstring claim ("the precedence the serialization order
+must respect"): factors through `conflictOrder_implies_conflictPrecedes` (turning
+the `conflictOrder` edge into a `conflictPrecedes` edge under strict 2PL) +
+`commitSorted_respects_conflictPrecedes` (which forbids backward
+`conflictPrecedes` edges). -/
+theorem commitSorted_respects_conflictOrder
+    (serial : List KernelTransitionInstance)
+    (hSorted : serial.Pairwise (fun a b => a.commitTime ≤ b.commitTime))
+    (pre rest : List KernelTransitionInstance)
+    (τ₁ τ₂ : KernelTransitionInstance)
+    (hSplit : serial = pre ++ τ₂ :: rest) (hmem : τ₁ ∈ rest)
+    (h2pl : τ₂.followsStrict2PL) (hne : τ₁.commitTime ≠ τ₂.commitTime) :
+    ¬ conflictOrder τ₁ τ₂ := fun hco =>
+  commitSorted_respects_conflictPrecedes serial hSorted pre rest τ₁ τ₂ hSplit hmem
+    (conflictOrder_implies_conflictPrecedes τ₁ τ₂ h2pl hco hne)
 
 -- ============================================================================
 -- §6c — Grounding: `outOfOrderCommute` is a CONSEQUENCE of strict 2PL

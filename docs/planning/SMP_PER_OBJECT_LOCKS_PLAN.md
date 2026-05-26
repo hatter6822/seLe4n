@@ -1604,7 +1604,7 @@ deadlock-freedom (SM3.D, Theorem 2.1.9) and serializability (SM3.E,
 Theorem 2.1.10) — that let the existing single-core proofs migrate
 cheaply in SM4..SM6 (Corollary 2.1.11).  New files
 `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
-`Sm3EInventory.lean` (76-theorem inventory), both staged via
+`Sm3EInventory.lean` (78-theorem inventory), both staged via
 `Concurrency.LockSet` + `staged_module_allowlist.txt`.
 
 | Sub | Description | Files | Status |
@@ -1702,7 +1702,7 @@ cheaply in SM4..SM6 (Corollary 2.1.11).  New files
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms
 reachable through Std).  Items deferred past v1.0.0 with correctness
 impact: NONE.  The SM3.E theorem inventory (`serializabilityTheorems`)
-has 76 entries across 7 categories; the regression suite
+has 78 entries across 7 categories; the regression suite
 (`tests/SerializabilitySuite.lean`) has 25 runtime assertions across 6
 sections plus a non-vacuity witness
 (`serializability_of_readOnly_schedule`: an all-reads workload is
@@ -1748,8 +1748,18 @@ under-delivered on their stated intent):
   instantiation `withLockSet_preserves_objStoreLock_wf` on the **real**
   table-lock `objStoreLock.wf` invariant — proving the lever is a usable
   tool, not a vacuous false-anchor.
+* **`conflictOrder` connected to the serialization order** (the plan's
+  primary SM3.E.1 relation was a near-orphan — only `conflictOrder_commit_le`
+  consumed it, and no theorem proved the serialization respects it, despite
+  its docstring claim "the precedence the serialization order must
+  respect").  Added `conflictOrder_implies_conflictPrecedes` (under strict
+  2PL with distinct commit times, a `conflictOrder` edge IS a
+  `conflictPrecedes` edge) and `commitSorted_respects_conflictOrder` (the
+  commit-sort serialization never places a `conflictOrder` edge backward) —
+  making `conflictOrder` a first-class participant in the serializability
+  argument.
 
-These closures grew the inventory 68 → 76 (+2 acyclicity, +3
+These closures grew the inventory 68 → 78 (+1 conflict, +2 acyclicity, +4
 serializability, +3 preservation) and added a §3b grounding test section;
 all additions are axiom-clean (`propext` / `Quot.sound`).
 

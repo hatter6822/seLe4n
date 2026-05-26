@@ -59,6 +59,7 @@ open SeLe4n.Kernel.Concurrency
 #check @ktiSharesConflictingLock_symm
 #check @conflictOrder
 #check @conflictOrder_sharesConflictingLock
+#check @conflictOrder_implies_conflictPrecedes
 
 /-! ## SM3.E.4 — Strict 2PL -/
 #check @KernelTransitionInstance.followsStrict2PL
@@ -113,6 +114,7 @@ open SeLe4n.Kernel.Concurrency
 #check @outOfOrderCommute_of_forall_action_id
 #check @serializability_of_readOnly_schedule
 #check @commitSorted_respects_conflictPrecedes
+#check @commitSorted_respects_conflictOrder
 #check @conflictsCommitOrdered
 #check @outOfOrderCommute_of_conflictsCommitOrdered
 #check @serializability_under_2pl_of_conflicts_ordered
@@ -281,6 +283,14 @@ example (τ₁ τ₂ : KernelTransitionInstance)
     conflictPrecedes τ₁ τ₂ ∨ conflictPrecedes τ₂ τ₁ :=
   conflictPrecedes_total_of_distinct_commit τ₁ τ₂ hc hne
 
+-- The plan's SM3.E.1 `conflictOrder` is connected to the serialization order:
+-- under strict 2PL (+distinct commit times) it IS a `conflictPrecedes` edge, so
+-- the commit-sort serialization respects it (`commitSorted_respects_conflictOrder`).
+example (τ₁ τ₂ : KernelTransitionInstance) (h2pl : τ₂.followsStrict2PL)
+    (h : conflictOrder τ₁ τ₂) (hne : τ₁.commitTime ≠ τ₂.commitTime) :
+    conflictPrecedes τ₁ τ₂ :=
+  conflictOrder_implies_conflictPrecedes τ₁ τ₂ h2pl h hne
+
 /-! ## SM3.E.3 — grounded serializability (outOfOrderCommute is a 2PL consequence) -/
 
 -- If conflicts are commit-ordered (strict-2PL lock exclusion) and non-conflicting
@@ -354,20 +364,20 @@ private def runCommitSortChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §5 SM3.E — inventory counts ---"
-  assertBool "serializabilityTheorems.length = 76"
-    (decide (serializabilityTheorems.length = 76))
+  assertBool "serializabilityTheorems.length = 78"
+    (decide (serializabilityTheorems.length = 78))
   assertBool "model count = 5"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .model)).length = 5))
-  assertBool "conflict count = 6"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .conflict)).length = 6))
+  assertBool "conflict count = 7"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .conflict)).length = 7))
   assertBool "strict2pl count = 6"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .strict2pl)).length = 6))
   assertBool "commutativity count = 23"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .commutativity)).length = 23))
   assertBool "acyclicity count = 9"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .acyclicity)).length = 9))
-  assertBool "serializability count = 21"
-    (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 21))
+  assertBool "serializability count = 22"
+    (decide ((serializabilityTheorems.filter (fun t => t.category == .serializability)).length = 22))
   assertBool "preservation count = 6"
     (decide ((serializabilityTheorems.filter (fun t => t.category == .preservation)).length = 6))
 

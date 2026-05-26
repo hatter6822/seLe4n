@@ -1007,7 +1007,7 @@ being the commit-time order.  Together SM3.D (liveness) and SM3.E
 (correctness) are the twin levers that let the single-core proofs
 migrate cheaply in SM4..SM6 (Corollary 2.1.11).  New file
 `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1233 LoC) +
-`Sm3EInventory.lean` (76-theorem inventory), staged via
+`Sm3EInventory.lean` (78-theorem inventory), staged via
 `Concurrency.LockSet`.
 
 - **SM3.E.1**: `conflictOrder` + the `KernelTransitionInstance`
@@ -1032,7 +1032,7 @@ migrate cheaply in SM4..SM6 (Corollary 2.1.11).  New file
   assertions) + 8 major-theorem `#check` anchors in
   `tests/SmpSurfaceAnchors.lean`.
 
-**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries.  76-theorem
+**Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries.  78-theorem
 SM3.E inventory across 7 categories.  Full Tier 0+1+2+3 green.
 
 **SM3 CLOSED** — all five sub-phases LANDED (SM3.A–SM3.E).  The

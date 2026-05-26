@@ -187,7 +187,7 @@ run_check_with_timeout "TRACE" lake exe deadlock_freedom_suite
 # (`conflictGraph_acyclic`) + the commit-sort serialization order +
 # `serializability_under_2pl` (Theorem 2.1.10) + the read-only non-vacuity
 # witness, the SM3.E.6 `singleCore_proof_preservation` (Corollary 2.1.11), and
-# the 76-theorem SM3.E inventory.
+# the 78-theorem SM3.E inventory.
 run_check_with_timeout "TRACE" lake exe serializability_suite
 
 finalize_report

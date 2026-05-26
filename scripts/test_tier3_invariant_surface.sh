@@ -2307,7 +2307,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
 EOF'
 
 # WS-SM SM3.E — serializability + conflict-graph acyclicity + commit-sort
-# serialization order + single-core proof preservation + 76-theorem inventory.
+# serialization order + single-core proof preservation + 78-theorem inventory.
 # Surface anchors verify every SM3.E public symbol survives renames at
 # elaboration time.  SM3.E.8: `#check` of the major theorems.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory'
@@ -2328,6 +2328,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 #check @SeLe4n.Kernel.Concurrency.ktiSharesConflictingLock_symm
 #check @SeLe4n.Kernel.Concurrency.conflictOrder
 #check @SeLe4n.Kernel.Concurrency.conflictOrder_sharesConflictingLock
+#check @SeLe4n.Kernel.Concurrency.conflictOrder_implies_conflictPrecedes
 -- SM3.E.4: strict 2PL.
 #check @SeLe4n.Kernel.Concurrency.KernelTransitionInstance.followsStrict2PL
 #check @SeLe4n.Kernel.Concurrency.scheduleFollowsStrict2PL
@@ -2388,6 +2389,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 #check @SeLe4n.Kernel.Concurrency.outOfOrderCommute_of_forall_action_id
 #check @SeLe4n.Kernel.Concurrency.serializability_of_readOnly_schedule
 #check @SeLe4n.Kernel.Concurrency.commitSorted_respects_conflictPrecedes
+#check @SeLe4n.Kernel.Concurrency.commitSorted_respects_conflictOrder
 #check @SeLe4n.Kernel.Concurrency.conflictsCommitOrdered
 #check @SeLe4n.Kernel.Concurrency.outOfOrderCommute_of_conflictsCommitOrdered
 #check @SeLe4n.Kernel.Concurrency.serializability_under_2pl_of_conflicts_ordered

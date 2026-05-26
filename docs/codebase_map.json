@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/determined-pasteur-apMXc",
-      "commit_sha": "f3e7d93e53cc5061fc6a0a589fef62b84a28a39a",
-      "tree_sha": "c478f1fd9856fe01c8ffb48ee19333abc0e6c04f",
-      "committed_at_utc": "2026-05-25T22:21:51+00:00"
+      "commit_sha": "fdfa15a8d60cf0fe456ee6fbb30d91b88533fe35",
+      "tree_sha": "cffa2b2d9046e7432c78ad2efdedc834b4f2432c",
+      "committed_at_utc": "2026-05-25T22:58:38+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c6c1cafbb0178e8173b57156bd74d467541dc2b1d41a65ff7771af727f1816aa"
+    "source_digest": "b5e18f748be1ba760eaccdb5369106ddf5d8c245fe9a4c82d60a16e037e78bd8"
   },
   "summary": {
     "module_count": 242,
-    "declaration_count": 8360
+    "declaration_count": 8363
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 200,
-    "production_loc": 139106,
+    "production_loc": 139153,
     "test_files": 42,
-    "test_loc": 29374,
-    "proved_theorem_lemma_decls": 4137,
+    "test_loc": 29384,
+    "proved_theorem_lemma_decls": 4139,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -23094,7 +23094,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.Serializability",
       "path": "SeLe4n/Kernel/Concurrency/Locks/Serializability.lean",
-      "declaration_count": 89,
+      "declaration_count": 91,
       "declarations": [
         {
           "kind": "namespace",
@@ -23477,9 +23477,22 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "conflictOrder_implies_conflictPrecedes",
+          "line": 517,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictOrder",
+            "conflictOrder_commit_le",
+            "conflictOrder_sharesConflictingLock",
+            "conflictPrecedes",
+            "followsStrict2PL"
+          ]
+        },
+        {
           "kind": "def",
           "name": "insertByCommitTime",
-          "line": 517,
+          "line": 537,
           "called": [
             "KernelTransitionInstance",
             "head"
@@ -23488,7 +23501,7 @@
         {
           "kind": "theorem",
           "name": "insertByCommitTime_nil",
-          "line": 524,
+          "line": 544,
           "called": [
             "KernelTransitionInstance",
             "insertByCommitTime"
@@ -23497,7 +23510,7 @@
         {
           "kind": "theorem",
           "name": "insertByCommitTime_cons",
-          "line": 527,
+          "line": 547,
           "called": [
             "KernelTransitionInstance",
             "head",
@@ -23507,7 +23520,7 @@
         {
           "kind": "def",
           "name": "commitSort",
-          "line": 534,
+          "line": 554,
           "called": [
             "KernelTransitionInstance",
             "head",
@@ -23517,7 +23530,7 @@
         {
           "kind": "theorem",
           "name": "commitSort_nil",
-          "line": 539,
+          "line": 559,
           "called": [
             "commitSort"
           ]
@@ -23525,7 +23538,7 @@
         {
           "kind": "theorem",
           "name": "commitSort_cons",
-          "line": 541,
+          "line": 561,
           "called": [
             "KernelTransitionInstance",
             "commitSort",
@@ -23536,7 +23549,7 @@
         {
           "kind": "theorem",
           "name": "insertByCommitTime_perm",
-          "line": 547,
+          "line": 567,
           "called": [
             "KernelTransitionInstance",
             "cons",
@@ -23548,7 +23561,7 @@
         {
           "kind": "theorem",
           "name": "commitSort_perm",
-          "line": 561,
+          "line": 581,
           "called": [
             "KernelTransitionInstance",
             "commitSort",
@@ -23561,7 +23574,7 @@
         {
           "kind": "theorem",
           "name": "insertByCommitTime_sorted",
-          "line": 572,
+          "line": 592,
           "called": [
             "KernelTransitionInstance",
             "cons",
@@ -23576,7 +23589,7 @@
         {
           "kind": "theorem",
           "name": "commitSort_sorted",
-          "line": 605,
+          "line": 625,
           "called": [
             "KernelTransitionInstance",
             "commitSort",
@@ -23589,7 +23602,7 @@
         {
           "kind": "def",
           "name": "commutesWithSmaller",
-          "line": 619,
+          "line": 639,
           "called": [
             "KernelTransitionInstance",
             "actionsCommute"
@@ -23598,7 +23611,7 @@
         {
           "kind": "theorem",
           "name": "commutesWithSmaller_of_perm",
-          "line": 625,
+          "line": 645,
           "called": [
             "KernelTransitionInstance",
             "commutesWithSmaller"
@@ -23607,7 +23620,7 @@
         {
           "kind": "theorem",
           "name": "insertByCommitTime_commutingReorder",
-          "line": 634,
+          "line": 654,
           "called": [
             "CommutingReorder",
             "CommutingReorder.cons",
@@ -23624,7 +23637,7 @@
         {
           "kind": "def",
           "name": "outOfOrderCommute",
-          "line": 662,
+          "line": 682,
           "called": [
             "KernelTransitionInstance",
             "commutesWithSmaller",
@@ -23634,7 +23647,7 @@
         {
           "kind": "theorem",
           "name": "outOfOrderCommute_nil",
-          "line": 666,
+          "line": 686,
           "called": [
             "outOfOrderCommute"
           ]
@@ -23642,7 +23655,7 @@
         {
           "kind": "theorem",
           "name": "outOfOrderCommute_cons",
-          "line": 668,
+          "line": 688,
           "called": [
             "KernelTransitionInstance",
             "commutesWithSmaller",
@@ -23653,7 +23666,7 @@
         {
           "kind": "theorem",
           "name": "commitSort_commutingReorder",
-          "line": 678,
+          "line": 698,
           "called": [
             "CommutingReorder",
             "CommutingReorder.cons",
@@ -23674,7 +23687,7 @@
         {
           "kind": "def",
           "name": "serialEquivalent",
-          "line": 704,
+          "line": 724,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -23684,7 +23697,7 @@
         {
           "kind": "theorem",
           "name": "serialEquivalent_refl",
-          "line": 709,
+          "line": 729,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -23694,7 +23707,7 @@
         {
           "kind": "theorem",
           "name": "serializability_under_2pl",
-          "line": 729,
+          "line": 749,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -23710,7 +23723,7 @@
         {
           "kind": "theorem",
           "name": "serializability_under_2pl_exists",
-          "line": 745,
+          "line": 765,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -23723,7 +23736,7 @@
         {
           "kind": "theorem",
           "name": "outOfOrderCommute_of_forall_action_id",
-          "line": 759,
+          "line": 779,
           "called": [
             "KernelTransitionInstance",
             "KernelTransitionInstance.actionsCommute_of_action_id_left",
@@ -23735,7 +23748,7 @@
         {
           "kind": "theorem",
           "name": "serializability_of_readOnly_schedule",
-          "line": 777,
+          "line": 797,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -23749,16 +23762,28 @@
         {
           "kind": "theorem",
           "name": "commitSorted_respects_conflictPrecedes",
-          "line": 794,
+          "line": 814,
           "called": [
             "KernelTransitionInstance",
             "conflictPrecedes"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "commitSorted_respects_conflictOrder",
+          "line": 841,
+          "called": [
+            "KernelTransitionInstance",
+            "commitSorted_respects_conflictPrecedes",
+            "conflictOrder",
+            "conflictOrder_implies_conflictPrecedes",
+            "followsStrict2PL"
+          ]
+        },
+        {
           "kind": "def",
           "name": "conflictsCommitOrdered",
-          "line": 834,
+          "line": 877,
           "called": [
             "KernelTransitionInstance",
             "head",
@@ -23768,7 +23793,7 @@
         {
           "kind": "theorem",
           "name": "conflictsCommitOrdered_nil",
-          "line": 841,
+          "line": 884,
           "called": [
             "conflictsCommitOrdered"
           ]
@@ -23776,7 +23801,7 @@
         {
           "kind": "theorem",
           "name": "conflictsCommitOrdered_cons",
-          "line": 844,
+          "line": 887,
           "called": [
             "KernelTransitionInstance",
             "conflictsCommitOrdered",
@@ -23786,8 +23811,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:853>",
-          "line": 853,
+          "name": "<anonymous:instance:896>",
+          "line": 896,
           "called": [
             "KernelTransitionInstance",
             "conflictsCommitOrdered",
@@ -23799,7 +23824,7 @@
         {
           "kind": "theorem",
           "name": "outOfOrderCommute_of_conflictsCommitOrdered",
-          "line": 875,
+          "line": 918,
           "called": [
             "KernelTransitionInstance",
             "actionsCommute",
@@ -23814,7 +23839,7 @@
         {
           "kind": "theorem",
           "name": "serializability_under_2pl_of_conflicts_ordered",
-          "line": 896,
+          "line": 939,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -23830,7 +23855,7 @@
         {
           "kind": "def",
           "name": "readOnlyInstance",
-          "line": 931,
+          "line": 974,
           "called": [
             "CoreId",
             "KernelTransitionInstance",
@@ -23841,7 +23866,7 @@
         {
           "kind": "theorem",
           "name": "readOnlyInstance_action",
-          "line": 937,
+          "line": 980,
           "called": [
             "CoreId",
             "LockId",
@@ -23852,7 +23877,7 @@
         {
           "kind": "theorem",
           "name": "readOnlyInstance_actionsCommute",
-          "line": 945,
+          "line": 988,
           "called": [
             "CoreId",
             "KernelTransitionInstance",
@@ -23866,7 +23891,7 @@
         {
           "kind": "theorem",
           "name": "readOnlyInstance_actionsCommute_readOnly",
-          "line": 952,
+          "line": 995,
           "called": [
             "CoreId",
             "LockId",
@@ -23879,7 +23904,7 @@
         {
           "kind": "def",
           "name": "setObjStoreLockAction",
-          "line": 961,
+          "line": 1004,
           "called": [
             "RwLockState",
             "SystemState"
@@ -23888,7 +23913,7 @@
         {
           "kind": "def",
           "name": "setSchedulerAction",
-          "line": 966,
+          "line": 1009,
           "called": [
             "SchedulerState",
             "SystemState"
@@ -23897,7 +23922,7 @@
         {
           "kind": "theorem",
           "name": "setObjStoreLock_setScheduler_commute",
-          "line": 975,
+          "line": 1018,
           "called": [
             "RwLockState",
             "SchedulerState",
@@ -23909,7 +23934,7 @@
         {
           "kind": "theorem",
           "name": "disjointField_actionsCommute",
-          "line": 982,
+          "line": 1025,
           "called": [
             "CoreId",
             "LockId",
@@ -23925,7 +23950,7 @@
         {
           "kind": "def",
           "name": "objStoreEquiv",
-          "line": 994,
+          "line": 1037,
           "called": [
             "ObjId",
             "SystemState",
@@ -23935,7 +23960,7 @@
         {
           "kind": "theorem",
           "name": "objStoreEquiv_refl",
-          "line": 998,
+          "line": 1041,
           "called": [
             "SystemState",
             "objStoreEquiv"
@@ -23944,7 +23969,7 @@
         {
           "kind": "theorem",
           "name": "objStoreEquiv_symm",
-          "line": 1001,
+          "line": 1044,
           "called": [
             "SystemState",
             "objStoreEquiv"
@@ -23953,7 +23978,7 @@
         {
           "kind": "theorem",
           "name": "objStoreEquiv_trans",
-          "line": 1005,
+          "line": 1048,
           "called": [
             "SystemState",
             "objStoreEquiv"
@@ -23962,7 +23987,7 @@
         {
           "kind": "theorem",
           "name": "updateObjectAt_preserves_invExt",
-          "line": 1012,
+          "line": 1055,
           "called": [
             "KernelObject",
             "ObjId",
@@ -23977,7 +24002,7 @@
         {
           "kind": "theorem",
           "name": "updateObjectAt_get",
-          "line": 1027,
+          "line": 1070,
           "called": [
             "KernelObject",
             "ObjId",
@@ -23993,7 +24018,7 @@
         {
           "kind": "theorem",
           "name": "updateObjectAt_objStoreEquiv_comm",
-          "line": 1060,
+          "line": 1103,
           "called": [
             "KernelObject",
             "ObjId",
@@ -24008,7 +24033,7 @@
         {
           "kind": "theorem",
           "name": "singleCore_invariant_preservation",
-          "line": 1095,
+          "line": 1138,
           "called": [
             "AccessMode",
             "CoreId",
@@ -24024,7 +24049,7 @@
         {
           "kind": "theorem",
           "name": "singleCore_proof_preservation",
-          "line": 1123,
+          "line": 1166,
           "called": [
             "AccessMode",
             "CoreId",
@@ -24046,7 +24071,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_growing_phase_establishes_lockSetHeld",
-          "line": 1157,
+          "line": 1200,
           "called": [
             "CoreId",
             "LockSet",
@@ -24064,7 +24089,7 @@
         {
           "kind": "theorem",
           "name": "acquireLockOnObject_preserves_objStoreLock_wf",
-          "line": 1181,
+          "line": 1224,
           "called": [
             "AccessMode",
             "CoreId",
@@ -24080,7 +24105,7 @@
         {
           "kind": "theorem",
           "name": "releaseLockOnObject_preserves_objStoreLock_wf",
-          "line": 1198,
+          "line": 1241,
           "called": [
             "AccessMode",
             "CoreId",
@@ -24096,7 +24121,7 @@
         {
           "kind": "theorem",
           "name": "withLockSet_preserves_objStoreLock_wf",
-          "line": 1222,
+          "line": 1265,
           "called": [
             "CoreId",
             "LockSet",
@@ -24615,12 +24640,14 @@
             "commitSort_commutingReorder",
             "commitSort_perm",
             "commitSort_sorted",
+            "commitSorted_respects_conflictOrder",
             "commitSorted_respects_conflictPrecedes",
             "commutesWithSmaller",
             "commutesWithSmaller_of_perm",
             "conflictGraph_acyclic",
             "conflictOrder",
             "conflictOrder_commit_le",
+            "conflictOrder_implies_conflictPrecedes",
             "conflictOrder_sharesConflictingLock",
             "conflictPrecedes",
             "conflictPrecedes_asymm",
@@ -24674,7 +24701,7 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_count",
-          "line": 254,
+          "line": 258,
           "called": [
             "length"
           ]
@@ -24682,15 +24709,6 @@
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_model_count",
-          "line": 258,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "serializabilityTheorems_conflict_count",
           "line": 262,
           "called": [
             "filter",
@@ -24699,7 +24717,7 @@
         },
         {
           "kind": "theorem",
-          "name": "serializabilityTheorems_strict2pl_count",
+          "name": "serializabilityTheorems_conflict_count",
           "line": 266,
           "called": [
             "filter",
@@ -24708,7 +24726,7 @@
         },
         {
           "kind": "theorem",
-          "name": "serializabilityTheorems_commutativity_count",
+          "name": "serializabilityTheorems_strict2pl_count",
           "line": 270,
           "called": [
             "filter",
@@ -24717,7 +24735,7 @@
         },
         {
           "kind": "theorem",
-          "name": "serializabilityTheorems_acyclicity_count",
+          "name": "serializabilityTheorems_commutativity_count",
           "line": 274,
           "called": [
             "filter",
@@ -24726,7 +24744,7 @@
         },
         {
           "kind": "theorem",
-          "name": "serializabilityTheorems_serializability_count",
+          "name": "serializabilityTheorems_acyclicity_count",
           "line": 278,
           "called": [
             "filter",
@@ -24735,7 +24753,7 @@
         },
         {
           "kind": "theorem",
-          "name": "serializabilityTheorems_preservation_count",
+          "name": "serializabilityTheorems_serializability_count",
           "line": 282,
           "called": [
             "filter",
@@ -24744,7 +24762,7 @@
         },
         {
           "kind": "theorem",
-          "name": "serializabilityTheorems_partition_sum",
+          "name": "serializabilityTheorems_preservation_count",
           "line": 286,
           "called": [
             "filter",
@@ -24753,14 +24771,23 @@
         },
         {
           "kind": "theorem",
+          "name": "serializabilityTheorems_partition_sum",
+          "line": 290,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "serializabilityTheorems_identifiers_nodup",
-          "line": 297,
+          "line": 301,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "serializabilityTheorems_descriptions_nodup",
-          "line": 301,
+          "line": 305,
           "called": []
         }
       ]
@@ -103299,7 +103326,7 @@
     {
       "module": "tests.SerializabilitySuite",
       "path": "tests/SerializabilitySuite.lean",
-      "declaration_count": 48,
+      "declaration_count": 49,
       "declarations": [
         {
           "kind": "namespace",
@@ -103330,10 +103357,12 @@
             "commitSort_commutingReorder",
             "commitSort_perm",
             "commitSort_sorted",
+            "commitSorted_respects_conflictOrder",
             "commitSorted_respects_conflictPrecedes",
             "conflictGraph_acyclic",
             "conflictOrder",
             "conflictOrder_commit_le",
+            "conflictOrder_implies_conflictPrecedes",
             "conflictOrder_sharesConflictingLock",
             "conflictPrecedes",
             "conflictPrecedes_asymm",
@@ -103383,7 +103412,7 @@
         {
           "kind": "def",
           "name": "c0",
-          "line": 141,
+          "line": 143,
           "called": [
             "CoreId"
           ]
@@ -103391,15 +103420,6 @@
         {
           "kind": "def",
           "name": "tcb5",
-          "line": 144,
-          "called": [
-            "LockId",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "tcb7",
           "line": 146,
           "called": [
             "LockId",
@@ -103408,17 +103428,16 @@
         },
         {
           "kind": "def",
-          "name": "lsW5",
-          "line": 149,
+          "name": "tcb7",
+          "line": 148,
           "called": [
-            "LockSet",
-            "singleton",
-            "tcb5"
+            "LockId",
+            "ofNat"
           ]
         },
         {
           "kind": "def",
-          "name": "lsR5",
+          "name": "lsW5",
           "line": 151,
           "called": [
             "LockSet",
@@ -103428,8 +103447,18 @@
         },
         {
           "kind": "def",
-          "name": "lsW7",
+          "name": "lsR5",
           "line": 153,
+          "called": [
+            "LockSet",
+            "singleton",
+            "tcb5"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lsW7",
+          "line": 155,
           "called": [
             "LockSet",
             "singleton",
@@ -103439,7 +103468,7 @@
         {
           "kind": "def",
           "name": "mkInst",
-          "line": 157,
+          "line": 159,
           "called": [
             "KernelTransitionInstance",
             "LockSet",
@@ -103450,22 +103479,12 @@
         {
           "kind": "def",
           "name": "mkRead",
-          "line": 163,
+          "line": 165,
           "called": [
             "KernelTransitionInstance",
             "LockSet",
             "c0",
             "readOnlyInstance"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "<anonymous:def:167>",
-          "line": 167,
-          "called": [
-            "KernelTransitionInstance",
-            "lsW5",
-            "mkInst"
           ]
         },
         {
@@ -103484,7 +103503,7 @@
           "line": 171,
           "called": [
             "KernelTransitionInstance",
-            "lsW7",
+            "lsW5",
             "mkInst"
           ]
         },
@@ -103494,8 +103513,8 @@
           "line": 173,
           "called": [
             "KernelTransitionInstance",
-            "lsR5",
-            "mkRead"
+            "lsW7",
+            "mkInst"
           ]
         },
         {
@@ -103510,8 +103529,8 @@
         },
         {
           "kind": "def",
-          "name": "schedUnsorted",
-          "line": 178,
+          "name": "<anonymous:def:177>",
+          "line": 177,
           "called": [
             "KernelTransitionInstance",
             "lsR5",
@@ -103519,11 +103538,13 @@
           ]
         },
         {
-          "kind": "example",
-          "name": "<anonymous:example:184>",
-          "line": 184,
+          "kind": "def",
+          "name": "schedUnsorted",
+          "line": 180,
           "called": [
-            "ktiConflictsB"
+            "KernelTransitionInstance",
+            "lsR5",
+            "mkRead"
           ]
         },
         {
@@ -103560,10 +103581,10 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:197>",
-          "line": 197,
+          "name": "<anonymous:example:194>",
+          "line": 194,
           "called": [
-            "conflictPrecedes"
+            "ktiConflictsB"
           ]
         },
         {
@@ -103600,24 +103621,32 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:209>",
-          "line": 209,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
-            "followsStrict2PL"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:210>",
-          "line": 210,
-          "called": [
-            "followsStrict2PL"
+            "conflictPrecedes"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:211>",
           "line": 211,
+          "called": [
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:212>",
+          "line": 212,
+          "called": [
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:213>",
+          "line": 213,
           "called": [
             "KernelTransitionInstance.ofWithLockSet",
             "c0",
@@ -103628,15 +103657,15 @@
         {
           "kind": "theorem",
           "name": "schedUnsorted_allRead",
-          "line": 218,
+          "line": 220,
           "called": [
             "schedUnsorted"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:225>",
-          "line": 225,
+          "name": "<anonymous:example:227>",
+          "line": 227,
           "called": [
             "SystemState",
             "commitSort",
@@ -103649,8 +103678,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:234>",
-          "line": 234,
+          "name": "<anonymous:example:236>",
+          "line": 236,
           "called": [
             "SystemState",
             "commitSort",
@@ -103662,8 +103691,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:240>",
-          "line": 240,
+          "name": "<anonymous:example:242>",
+          "line": 242,
           "called": [
             "ConflictAcyclic",
             "conflictGraph_acyclic",
@@ -103672,8 +103701,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
+          "name": "<anonymous:example:246>",
+          "line": 246,
           "called": [
             "actionsCommute",
             "c0",
@@ -103683,8 +103712,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:247>",
-          "line": 247,
+          "name": "<anonymous:example:249>",
+          "line": 249,
           "called": [
             "KernelObject",
             "SystemState",
@@ -103696,8 +103725,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:258>",
-          "line": 258,
+          "name": "<anonymous:example:260>",
+          "line": 260,
           "called": [
             "CoreId",
             "SystemState",
@@ -103709,8 +103738,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:266>",
-          "line": 266,
+          "name": "<anonymous:example:268>",
+          "line": 268,
           "called": [
             "AccessMode",
             "CoreId",
@@ -103723,8 +103752,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:271>",
-          "line": 271,
+          "name": "<anonymous:example:273>",
+          "line": 273,
           "called": [
             "CoreId",
             "SystemState",
@@ -103735,8 +103764,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:279>",
-          "line": 279,
+          "name": "<anonymous:example:281>",
+          "line": 281,
           "called": [
             "KernelTransitionInstance",
             "conflictPrecedes",
@@ -103746,8 +103775,20 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:288>",
-          "line": 288,
+          "name": "<anonymous:example:289>",
+          "line": 289,
+          "called": [
+            "KernelTransitionInstance",
+            "conflictOrder",
+            "conflictOrder_implies_conflictPrecedes",
+            "conflictPrecedes",
+            "followsStrict2PL"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:298>",
+          "line": 298,
           "called": [
             "KernelTransitionInstance",
             "SystemState",
@@ -103762,13 +103803,13 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 299,
+          "line": 309,
           "called": []
         },
         {
           "kind": "def",
           "name": "runConflictChecks",
-          "line": 306,
+          "line": 316,
           "called": [
             "assertBool",
             "ktiConflictsB"
@@ -103777,7 +103818,7 @@
         {
           "kind": "def",
           "name": "runConflictPrecedesChecks",
-          "line": 315,
+          "line": 325,
           "called": [
             "assertBool",
             "conflictPrecedes"
@@ -103786,7 +103827,7 @@
         {
           "kind": "def",
           "name": "runStrict2PLChecks",
-          "line": 325,
+          "line": 335,
           "called": [
             "KernelTransitionInstance.ofWithLockSet",
             "assertBool",
@@ -103798,7 +103839,7 @@
         {
           "kind": "def",
           "name": "runGroundingChecks",
-          "line": 331,
+          "line": 341,
           "called": [
             "assertBool",
             "conflictsCommitOrdered",
@@ -103808,7 +103849,7 @@
         {
           "kind": "def",
           "name": "runCommitSortChecks",
-          "line": 344,
+          "line": 354,
           "called": [
             "KernelTransitionInstance",
             "assertBool",
@@ -103820,7 +103861,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 355,
+          "line": 365,
           "called": [
             "assertBool",
             "filter",
@@ -103830,7 +103871,7 @@
         {
           "kind": "def",
           "name": "runSerializabilityChecks",
-          "line": 374,
+          "line": 384,
           "called": [
             "runCommitSortChecks",
             "runConflictChecks",
@@ -103843,7 +103884,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 388,
+          "line": 398,
           "called": [
             "runSerializabilityChecks"
           ]

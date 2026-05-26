@@ -16,7 +16,7 @@ cheaply in SM4..SM6 (Corollary 2.1.11).
 
 **New modules**: `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean`
 (~1233 LoC) + `SeLe4n/Kernel/Concurrency/Locks/Sm3EInventory.lean`
-(76-theorem inventory).  Both staged via `Concurrency.LockSet` +
+(78-theorem inventory).  Both staged via `Concurrency.LockSet` +
 `staged_module_allowlist.txt`; SM5+ per-core scheduler integration is
 the first runtime exerciser.
 
@@ -104,7 +104,7 @@ vacuous statement.
 
 **Axiom budget for SM3.E**: 0 Lean axioms, 0 sorries (only the standard
 `propext` / `Quot.sound` / `Classical.choice` foundational axioms).  The
-SM3.E inventory (`serializabilityTheorems`) has 76 entries across 7
+SM3.E inventory (`serializabilityTheorems`) has 78 entries across 7
 categories (model 5, conflict 6, strict2pl 6, commutativity 23,
 acyclicity 7, serializability 18, preservation 3).  Full Tier 0+1+2+3
 green.  Items deferred past v1.0.0 with correctness impact: NONE.
@@ -153,12 +153,23 @@ names/docstrings claimed — closed per CLAUDE.md's
   instantiation `withLockSet_preserves_objStoreLock_wf` on the **real**
   table-lock `objStoreLock.wf` invariant (a genuine SM2.C/SM3.C invariant),
   proving the lever is a usable tool, not a vacuous false-anchor.
+* **`conflictOrder` connected to the serialization order.** The plan's
+  primary SM3.E.1 relation `conflictOrder` was a near-orphan — only
+  `conflictOrder_commit_le` consumed it, and no theorem proved the
+  serialization respects it (despite its docstring "the precedence the
+  serialization order must respect").  Added
+  `conflictOrder_implies_conflictPrecedes` (under strict 2PL with distinct
+  commit times, a `conflictOrder` edge IS a `conflictPrecedes` edge) and
+  `commitSorted_respects_conflictOrder` (the commit-sort serialization
+  never places a `conflictOrder` edge backward) — making `conflictOrder` a
+  first-class participant in the serializability argument.
 
-  SM3.E inventory grew 68 → 76 entries (+2 acyclicity, +3 serializability,
-  +3 preservation); `tests/SerializabilitySuite.lean` gains a §3b grounding
-  section (`conflictsCommitOrdered` true on commit-ordered conflicts, false
-  on out-of-order conflicts) + the non-trivial `objStoreLock.wf`
-  preservation example + new surface anchors.  All additions axiom-clean
+  SM3.E inventory grew 68 → 78 entries (+1 conflict, +2 acyclicity, +4
+  serializability, +3 preservation); `tests/SerializabilitySuite.lean`
+  gains a §3b grounding section (`conflictsCommitOrdered` true on
+  commit-ordered conflicts, false on out-of-order conflicts) + the
+  non-trivial `objStoreLock.wf` preservation example + the `conflictOrder`
+  bridge example + new surface anchors.  All additions axiom-clean
   (`propext` / `Quot.sound`); full Tier 0+1+2+3 green.
 
 ## Unreleased — WS-SM SM3.D LANDED: deadlock-freedom (Theorem 2.1.9), wait-graph acyclicity, bounded-wait, lock-discipline grounding
