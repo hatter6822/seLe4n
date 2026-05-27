@@ -649,3 +649,93 @@ mechanical (textual rewrites following §3.4 pattern) but the
 volume is substantial. Decision #4 (path-a, no compat shim)
 forces explicit CoreId reasoning at every callsite, which is the
 right architectural choice but extends the timeline.*
+
+## 11. Implementation progress + continuation (SM4.B)
+
+### 11.1 Landed: SM4.B foundation (green checkpoint)
+
+The SM4.B foundation has landed as the first green checkpoint of the
+path-a migration (`SeLe4n/Model/State.lean` +
+`tests/PerCoreSchedulerStateSuite.lean`):
+
+- **SM4.B.8** — the seven per-core accessors (`currentOnCore`,
+  `runQueueOnCore`, `replenishQueueOnCore`, `activeDomainOnCore`,
+  `domainTimeRemainingOnCore`, `domainScheduleIndexOnCore`,
+  `lastTimeoutErrorsOnCore`), each `(s : SchedulerState) → (c : CoreId) → …`.
+- **SM4.B.9** — `default_state_perCoreInitialized` (plan §3.6).
+- **SM4.B.10** — `SchedulerState.ext_perCore` (plan §3.3; named `ext_perCore`
+  to avoid the structure's auto-generated `SchedulerState.ext`).
+- Tier-2 runtime suite (`lake exe per_core_scheduler_state_suite`) + Tier-3
+  surface anchors, both wired.
+
+### 11.2 Execution model: two-phase, green-checkpoint, bottom-up
+
+A literal field-type replacement (`Option ThreadId → Vector … numCores`)
+is a single global break: ~700 reads + ~72 record-update writes + the
+entire scheduler/IPC/info-flow/lifecycle/arch proof surface (~58 files)
+go red at once. To keep every commit green (decision: green-checkpoint
+commits), the migration is split:
+
+- **Phase 1 (read migration, green-incremental).** The accessors are first
+  introduced as **scalar wrappers** (the `c : CoreId` argument is ignored
+  while the underlying field is still scalar), tagged `@[simp]`. Every
+  `s.scheduler.<field>` read migrates to `s.scheduler.<field>OnCore bootCoreId`
+  (single-core ⇒ boot core). Because the wrapper is *definitionally equal*
+  to the field, this phase is **soundness-safe**: no proof's meaning can
+  change, only build-greenness — so a regression is always a build failure,
+  never a silent incorrectness.
+- **Phase 2 (field flip, localized).** Flip the seven field *types* to
+  `Vector α numCores`; change only the 14 accessor/setter definitions
+  (`fieldOnCore s c := s.field.get c`); fix the ~72 record-update writes
+  (`{ s with field := s.field.set bootCoreId.val v bootCoreId.isLt }`);
+  re-discharge B.9/B.10 substantively via `PerCoreVector.replicate_get` /
+  `.ext`; retire `bootFromPlatform_singleCore_witness` and add
+  `bootFromPlatform_smp_witness` (SM4.E); restore the byte-identical
+  single-core trace (SM4.B.15).
+
+### 11.3 Validated migration recipe (per file, phase 1)
+
+1. Add `open SeLe4n.Kernel.Concurrency (bootCoreId)` to the file.
+2. Migrate **statement-level** reads: `EXPR.scheduler.<field>` →
+   `EXPR.scheduler.<field>OnCore bootCoreId`. Parenthesise when the result
+   is further projected: `EXPR.scheduler.runQueue.insert …` →
+   `(EXPR.scheduler.runQueueOnCore bootCoreId).insert …`.
+3. Leave `.runnable` (the `runQueue.toList` abbrev) **unchanged** — its
+   definition absorbs the boot-core slice in phase 2 (≈336 callsites need
+   no edit).
+4. Repair proofs: where a migrated hypothesis (`…OnCore bootCoreId`) meets a
+   still-scalar operation body, add `simp only [SchedulerState.<field>OnCore]`
+   to normalise both sides to the scalar field. Leave proof-internal reads
+   that are *coupled to an un-migrated operation body's shape* (e.g. a
+   `show` whose `rw` lemma pins the queue via a generated `hNotMem`) — those
+   align once the operation body migrates.
+5. `lake build <Module>` green before moving on.
+
+### 11.4 Ordering + cascade (empirical)
+
+- Migrate **bottom-up** (providers before consumers): a consumer's migrated
+  goal (`…OnCore`) only matches a provider's lemma once the provider's
+  statement is migrated.
+- The cascade per migrated file is **small**: most consumers use a migrated
+  lemma via `exact`/`apply` (defeq-safe, unaffected); only syntactic
+  `rw`/`simp [lemma]` consumers break. A pilot migration of
+  `IPC/Operations/SchedulerLemmas.lean` broke exactly **one** consumer
+  (`IPC/Invariant/EndpointPreservation.lean`).
+- The first *scheduler-subsystem* checkpoint is necessarily large: the
+  lowest files (`Scheduler/Operations/Core.lean`,
+  `Scheduler/Invariant.lean`) have the widest consumer fan-out
+  (`Scheduler/Operations/Preservation.lean` ≈227 refs, then IPC/lifecycle),
+  so that checkpoint should be planned as a coupled unit, not file-by-file.
+
+### 11.5 Remaining read-migration set (bottom-up, by subsystem)
+
+~58 files, ≈700 reads. Heaviest: `Scheduler/Operations/Preservation.lean`
+(227), `InformationFlow/Invariant/Operations.lean` (58),
+`Scheduler/Operations/Core.lean` (37), `Scheduler/Invariant.lean` (29),
+`Scheduler/PriorityInheritance/Preservation.lean` (24),
+`Testing/MainTraceHarness.lean` (23). Suggested layer order: Model
+(`Builder`, `FrozenState`, `FreezeProofs`, the `allTablesInvExtK` reads in
+`State`) → Scheduler (`Operations/*`, `Invariant`, `PriorityInheritance/*`,
+`Liveness/*`) → SchedContext → IPC → Lifecycle → Capability → Architecture →
+InformationFlow → Service → CrossSubsystem → API → Platform → Testing →
+`tests/`.
