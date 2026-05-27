@@ -926,15 +926,18 @@ committed in-tree.
   `ext_perCore` re-proved via `PerCoreVector.ext`; `runnable` →
   `(s.runQueueOnCore bootCoreId).toList`; `Inhabited` → `{}`;
   `default_state_perCoreInitialized` via `PerCoreVector.replicate_get`.
-- **The 63-lemma `@[simp]` store/load algebra** (State.lean): for each
+- **The 70-lemma `@[simp]` store/load algebra** (State.lean): for each
   (setter, accessor) pair, `set<X>OnCore_<x>OnCore_self : (s.set<X>OnCore
-  c v).<x>OnCore c = v` (7) + cross-field `set<X>OnCore_<y>OnCore :
-  (s.set<X>OnCore c v).<y>OnCore c' = s.<y>OnCore c'` (42) +
-  system-wide-field preservation (14).  Plus `PerCoreVector.get_set_eq`
-  / `replicate_get` promoted to `@[simp]`.  This is the lever that makes
-  post-write reads reduce automatically under `simp` — `Vector.get
-  (Vector.set …)` is not definitional, so raw `simp [accessor]`/`rfl`
-  no longer suffices.
+  c v).<x>OnCore c = v` (7) + same-field cross-core independence
+  `set<X>OnCore_<x>OnCore_ne : c ≠ c' → (s.set<X>OnCore c v).<x>OnCore c'
+  = s.<x>OnCore c'` (7, lifted from `PerCoreVector.get_set_ne` — the
+  theorem-level per-core-independence property) + cross-field
+  `set<X>OnCore_<y>OnCore : (s.set<X>OnCore c v).<y>OnCore c' =
+  s.<y>OnCore c'` (42) + system-wide-field preservation (14).  Plus
+  `PerCoreVector.get_set_eq` / `replicate_get` promoted to `@[simp]`.
+  This is the lever that makes post-write reads reduce automatically
+  under `simp` — `Vector.get (Vector.set …)` is not definitional, so raw
+  `simp [accessor]`/`rfl` no longer suffices.
 - **Whole production import closure re-proved**: `Model.State`,
   `Scheduler.Operations.{Core,Preservation}` (incl. `switchDomain` /
   `scheduleDomain` and the EDF / priority-match / context /

@@ -3885,10 +3885,12 @@ documentation lives under `docs/` and `docs/gitbook/`.
   - **SM4.B.8**: the seven `…OnCore (c : CoreId)` read accessors (phase-1
     scalar wrappers) are now `Vector.get`-backed; seven matching
     `set…OnCore (c) (v)` writers added.  Accessors are deliberately
-    **not** `@[simp]`; instead a **63-lemma `@[simp]` store/load
-    algebra** (7 read-after-write `set…OnCore_…OnCore_self` + 42
-    cross-field frame `set…OnCore_…OnCore` + 14 system-wide-field frame
-    lemmas) drives proof automation.  Because `Vector.get (Vector.set …)`
+    **not** `@[simp]`; instead a **70-lemma `@[simp]` store/load
+    algebra** (7 read-after-write `set…OnCore_…OnCore_self` + 7 same-field
+    cross-core independence `set…OnCore_…OnCore_ne` (write core `c` leaves
+    a distinct core `c'`'s same-field slot unchanged) + 42 cross-field
+    frame `set…OnCore_…OnCore` + 14 system-wide-field frame lemmas) drives
+    proof automation.  Because `Vector.get (Vector.set …)`
     is **not** definitional, these proved lemmas — not `rfl`/iota — are
     what let setter-state reads reduce under `simp`.
   - **SM4.B.9**: `default_state_perCoreInitialized` — every per-core

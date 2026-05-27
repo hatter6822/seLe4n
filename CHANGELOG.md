@@ -21,9 +21,12 @@ shim). The migration is observably transparent — the executable trace
   read accessors (introduced as scalar wrappers in phase 1) are now
   backed by `Vector.get`; seven matching `set…OnCore (c) (v)` writers
   (`{ s with field := s.field.set c.val v c.isLt }`) are added. The
-  accessors are deliberately **not** `@[simp]`; instead a **63-lemma
+  accessors are deliberately **not** `@[simp]`; instead a **70-lemma
   `@[simp]` store/load algebra** drives proof automation: 7
-  read-after-write lemmas (`set…OnCore_…OnCore_self`), 42 cross-field
+  read-after-write lemmas (`set…OnCore_…OnCore_self`), 7 same-field
+  cross-core independence lemmas (`set…OnCore_…OnCore_ne` — a write to
+  core `c` leaves a distinct core `c'`'s same-field slot unchanged, the
+  theorem-level path-a per-core-independence property), 42 cross-field
   frame lemmas (`set…OnCore_…OnCore` for the other six per-core
   accessors), and 14 system-wide-field frame lemmas
   (`domainSchedule`/`configDefaultTimeSlice` preserved by every

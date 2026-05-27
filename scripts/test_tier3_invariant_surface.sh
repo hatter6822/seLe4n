@@ -2518,6 +2518,14 @@ import SeLe4n.Kernel.Concurrency.Types
 #check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_currentOnCore
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_domainSchedule
+-- SM4.B.phase-2 — per-core independence: the seven same-field cross-core (`_ne`) frames.
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore_activeDomainOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_ne
 -- SM4.B.9 — default-state per-core initialisation.
 #check @SeLe4n.Model.default_state_perCoreInitialized
 -- SM4.B.10 — per-core extensionality.

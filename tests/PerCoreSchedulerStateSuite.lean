@@ -82,6 +82,17 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self
 #check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_self
 #check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self
+-- SM4.B.phase-2: per-core independence — the seven same-field cross-core
+-- (`_ne`) frames (a write to core `c` leaves a different core `c'`'s same-field
+-- slot unchanged). The theorem-level statement of the path-a per-core
+-- independence property.
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore_activeDomainOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_ne
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_currentOnCore        -- cross-field frame
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_domainSchedule        -- system-wide frame
 
@@ -144,6 +155,44 @@ example (c c' : CoreId) (s : SchedulerState) (v : Option SeLe4n.ThreadId) :
 example (c : CoreId) (s : SchedulerState) (rq : SeLe4n.Kernel.RunQueue) :
     (s.setRunQueueOnCore c rq).domainSchedule = s.domainSchedule :=
   SchedulerState.setRunQueueOnCore_domainSchedule _ c _
+
+-- SM4.B.phase-2 PER-CORE INDEPENDENCE (theorem-level): a write to core `c`
+-- leaves a *different* core `c'`'s same-field slot unchanged — the defining
+-- property of the path-a `Vector` replacement, now a proven theorem (one per
+-- per-core field), not merely a runtime `decide`.
+example (s : SchedulerState) (c c' : CoreId) (h : c ≠ c') (v : Option SeLe4n.ThreadId) :
+    (s.setCurrentOnCore c v).currentOnCore c' = s.currentOnCore c' :=
+  SchedulerState.setCurrentOnCore_currentOnCore_ne s c c' v h
+example (s : SchedulerState) (c c' : CoreId) (h : c ≠ c') (v : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' :=
+  SchedulerState.setRunQueueOnCore_runQueueOnCore_ne s c c' v h
+example (s : SchedulerState) (c c' : CoreId) (h : c ≠ c') (v : SeLe4n.DomainId) :
+    (s.setActiveDomainOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' :=
+  SchedulerState.setActiveDomainOnCore_activeDomainOnCore_ne s c c' v h
+
+-- SM4.B.phase-2 ALGEBRA COMPOSITION: a multi-field write reads back per field
+-- (the `_self` lemmas) AND frames the untouched fields (the cross-field
+-- lemmas), all through real `@[simp]`-driven reduction of a 3-setter chain.
+example (s : SchedulerState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (d : SeLe4n.DomainId) (n : Nat) :
+    let s' := ((s.setCurrentOnCore c (some tid)).setActiveDomainOnCore c d).setDomainTimeRemainingOnCore c n
+    s'.currentOnCore c = some tid ∧ s'.activeDomainOnCore c = d
+      ∧ s'.domainTimeRemainingOnCore c = n
+      -- the three untouched per-core fields are framed back to `s`:
+      ∧ s'.runQueueOnCore c = s.runQueueOnCore c
+      ∧ s'.replenishQueueOnCore c = s.replenishQueueOnCore c
+      ∧ s'.domainScheduleIndexOnCore c = s.domainScheduleIndexOnCore c
+      -- and the system-wide field is untouched:
+      ∧ s'.domainSchedule = s.domainSchedule := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> simp
+
+-- Independence composes across cores: a chain of writes to `c` is invisible at
+-- a distinct core `c'` for every per-core field touched.
+example (s : SchedulerState) (c c' : CoreId) (h : c ≠ c')
+    (tid : SeLe4n.ThreadId) (d : SeLe4n.DomainId) :
+    let s' := (s.setCurrentOnCore c (some tid)).setActiveDomainOnCore c d
+    s'.currentOnCore c' = s.currentOnCore c' ∧ s'.activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  refine ⟨?_, ?_⟩ <;> simp [h]
 
 -- SM4.B.10: per-core extensionality is usable — agreement at every core (and
 -- on the system-wide fields) collapses two states to equal.

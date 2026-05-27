@@ -2306,9 +2306,10 @@ preserves on a per-core basis.
    `Vector.replicate numCores <neutral>` defaults; `domainSchedule` and
    `configDefaultTimeSlice` stay system-wide. The seven `…OnCore`
    accessors are now `Vector.get`-backed and gain seven matching
-   `set…OnCore` writers, governed by a 63-lemma `@[simp]` store/load
-   algebra (7 read-after-write + 42 cross-field frame + 14
-   system-wide-field frame). Because `Vector.get (Vector.set …)` is not
+   `set…OnCore` writers, governed by a 70-lemma `@[simp]` store/load
+   algebra (7 read-after-write + 7 same-field cross-core independence
+   `_ne` + 42 cross-field frame + 14 system-wide-field frame). Because
+   `Vector.get (Vector.set …)` is not
    definitional, these proved lemmas — not `rfl`/iota — drive every
    post-write read reduction, which is how the whole production import
    closure (scheduler operations + preservation, SchedContext,

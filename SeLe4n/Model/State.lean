@@ -303,6 +303,42 @@ every pair of cores (the fields are independent `Vector`s). -/
 @[simp] theorem setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self (s : SchedulerState) (c : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
     (s.setLastTimeoutErrorsOnCore c v).lastTimeoutErrorsOnCore c = v := by
   simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.lastTimeoutErrorsOnCore]
+/-! Per-core independence: writing core `c`'s slot leaves a *different* core
+`c'`'s slot of the *same* field unchanged.  These are the same-field
+cross-core frames (conditional on `c ≠ c'`), lifted from
+`SeLe4n.PerCoreVector.get_set_ne`.  Together with the `_self` and cross-field
+lemmas they make every per-core read after a per-core write reduce.  Unused
+at single-core (every SM4.B operation writes `bootCoreId`); they are the
+theorem-level statement of the path-a per-core-independence property that the
+runtime suite exercises and that SM5's genuine cross-core writes consume. -/
+@[simp] theorem setCurrentOnCore_currentOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) (h : c ≠ c') :
+    (s.setCurrentOnCore c v).currentOnCore c' = s.currentOnCore c' := by
+  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.current c c' v h
+@[simp] theorem setRunQueueOnCore_runQueueOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) (h : c ≠ c') :
+    (s.setRunQueueOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
+  simp only [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.runQueue c c' v h
+@[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) (h : c ≠ c') :
+    (s.setReplenishQueueOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
+  simp only [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.replenishQueue c c' v h
+@[simp] theorem setActiveDomainOnCore_activeDomainOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) (h : c ≠ c') :
+    (s.setActiveDomainOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
+  simp only [SchedulerState.setActiveDomainOnCore, SchedulerState.activeDomainOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.activeDomain c c' v h
+@[simp] theorem setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Nat) (h : c ≠ c') :
+    (s.setDomainTimeRemainingOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
+  simp only [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.domainTimeRemainingOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.domainTimeRemaining c c' v h
+@[simp] theorem setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : Nat) (h : c ≠ c') :
+    (s.setDomainScheduleIndexOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
+  simp only [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.domainScheduleIndexOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.domainScheduleIndex c c' v h
+@[simp] theorem setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_ne (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) (h : c ≠ c') :
+    (s.setLastTimeoutErrorsOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
+  simp only [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.lastTimeoutErrorsOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne s.lastTimeoutErrors c c' v h
 @[simp] theorem setCurrentOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
     (s.setCurrentOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
   simp [SchedulerState.setCurrentOnCore, SchedulerState.runQueueOnCore]
