@@ -826,3 +826,78 @@ multi-goal cluster); the IPC/Lifecycle/Capability/InformationFlow/Service/
 CrossSubsystem/API/Platform/Testing/`tests/` layers not yet built. Delete
 this patch once the migration lands green. (The §11.6 recipe regenerates the
 mechanical bulk if the patch is ever lost.)
+
+> **SUPERSEDED (phase 1 LANDED — see §11.8).** The WIP patch above
+> captured a mid-grind red state and is now obsolete: phase 1 is fully
+> green and committed, so the in-tree source is the canonical record.
+> The patch file may be deleted.
+
+### 11.8 Phase 1 LANDED (green checkpoint — accessor read-migration)
+
+Phase 1 (per §11.2 — introduce the per-core accessors as scalar wrappers
+and route every scheduler-field *read* through them; field types stay
+scalar) is **complete and green**.  Committed + pushed to branch
+`claude/sharp-carson-V2Y59`:
+
+- `760ecea` — the read-migration across all 56 affected `.lean` files
+  (Model, Scheduler, IPC, Lifecycle, Capability, Architecture,
+  InformationFlow, SchedContext, Service, Platform, FrozenOps, Testing,
+  and the `tests/` suites).
+- `2c2cc8e` — regenerated `docs/codebase_map.json` (docs-sync gate green).
+
+**Validation at the checkpoint**: whole tree green — 320 default-build
+jobs + every modified module + the staged anchor (`Platform.Staged`) +
+179 test-module jobs, all zero-error.  Tier 0–2 smoke: hygiene + build +
+trace fixture (**227/227 matched** — runtime behaviour byte-identical,
+confirming the accessors are faithful scalar wrappers) + every Tier-2
+suite + Rust conformance, all green.  Pre-commit hook (43 modules built +
+sorry check) passed; version-sync gate passed (26 sites, v0.31.11).
+
+**Two decisions resolved during the phase-1 grind** (both phase-2-correct,
+so they carry forward unchanged):
+
+1. **`queueCurrentConsistent` migrated to accessor form**
+   (`match s.currentOnCore bootCoreId with …`), matching its sibling
+   bundle invariants (`currentThreadValid`, `currentThreadIpcReady`,
+   `currentNotEndpointQueueHead`) and every `*_scheduler_current`
+   rewrite lemma.  Earlier attempts left it scalar (an "island") which
+   forced scalar↔accessor bridging at every IPC boundary; migrating it
+   is both less code and the shape phase-2 requires.  Consumer/builder
+   sites that pattern-match on it now use `simp [queueCurrentConsistent,
+   SchedulerState.currentOnCore, …]` (builders) or drop the prior
+   `simp only [SchedulerState.currentOnCore] at hCur` normalize
+   (consumers — `hCur` stays accessor).
+2. **Frozen-state false positives corrected.** The bulk migration perl
+   matched `.scheduler.current` etc. on `FrozenSystemState` /
+   `FrozenSchedulerState` values too, but the frozen variant has **no**
+   per-core accessors (its fields are `current`, `activeDomain`, …).
+   Reverted to the raw frozen fields in `Model/FreezeProofs.lean`,
+   `Kernel/FrozenOps/{Core,Operations}.lean`, and the frozen-state test
+   suites (`FrozenStateSuite`, `FreezeProofSuite`, `TwoPhaseArchSuite`,
+   `FrozenOpsSuite`).  Rule for phase 2: frozen state is **not** part of
+   the per-core `Vector` flip — `FrozenSchedulerState` stays scalar.
+
+**Phase 2 (remaining for full SM4.B — the field-type flip).** Still to do
+to reach the path-a end state (per §3.1–§3.4):
+
+- Flip the 7 `SchedulerState` fields from scalar to `Vector α numCores`
+  (`current`, `runQueue`, `activeDomain`, `domainTimeRemaining`,
+  `domainScheduleIndex`, `replenishQueue`, `lastTimeoutErrors`); keep
+  `domainSchedule` / `configDefaultTimeSlice` system-wide.
+- Re-point each accessor from the scalar wrapper
+  (`def currentOnCore s _c := s.current`) to the indexed form
+  (`s.current.get c`), and introduce the per-core **setters**
+  (`setCurrentOnCore` etc.) the operation bodies' record-updates flip to.
+- Re-prove the `get_set_eq` / `get_set_ne` reductions at every literal
+  the phase-1 proofs currently discharge by record-update iota (the
+  `SeLe4n.PerCoreVector` lemmas land this: §3.2).
+- Rework the `SchedulerState.runnable` abbrev (currently `s.runQueue.toList`
+  on the raw field) to `(s.runQueueOnCore bootCoreId).toList`.
+- SM4.E witness retire/replace; byte-identical trace fixture
+  (single-core boot must still emit 227/227); full doc sync + the PR
+  version bump.
+
+The phase-1 accessor seam means phase 2 touches the 9 `SchedulerState`
+field sites + the accessor/setter defs + the per-literal `get_set`
+reductions — the ~768 read sites do **not** change again (they already
+route through the accessors).
