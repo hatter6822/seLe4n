@@ -182,15 +182,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20338 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~6765 lines)
+- `CHANGELOG.md` (~20351 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~6768 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4029 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3908 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3783 lines)
-- `docs/spec/SELE4N_SPEC.md` (~3627 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3630 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3390 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
@@ -3814,33 +3814,44 @@ documentation lives under `docs/` and `docs/gitbook/`.
     List.finRange numCores`).
 
   **Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
-  (`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 34
-  decidable/definitional examples, 31 runtime `assertBool` assertions
-  across six sections (Vector helpers, ext + nodup, Array backing,
-  platform core-count topologies, CoreId/bootCoreId/allCores recap, and
-  the SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise).
-  Wired into Tier 2 (negative) + Tier 3 (invariant surface).  Full
-  default build (320 jobs) green; Tier 0+1+2+3 green.  Items deferred
-  past v1.0.0 with correctness impact: NONE.
+  (`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 40
+  decidable/definitional examples, 34 runtime `assertBool` assertions
+  across seven sections (Vector helpers, ext + nodup, Array backing,
+  platform core-count topologies, CoreId/bootCoreId/allCores recap, the
+  SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise, and the
+  SM4.A.1 instance anchors — `DecidableEq`/`Repr`/`Inhabited`/`BEq` on
+  `Vector (Option ThreadId) numCores`).  Wired into Tier 2 (negative) +
+  Tier 3 (invariant surface).  Full default build (320 jobs) green;
+  Tier 0+1+2+3 green.  Items deferred past v1.0.0 with correctness
+  impact: NONE.
 
-  **Post-landing audit + completion pass**: `#print axioms` confirmed
-  all `SeLe4n.Vector` declarations depend only on `propext` /
-  `Quot.sound`; a `SchedulerState`-mimicking probe confirmed they match
-  downstream call sites under `rw`/`simp` even when `Vector.set`'s
-  bounds proof is synthesized by `get_elem_tactic` (proof irrelevance ⇒
-  defeq), so SM4.B/SM5 consume them directly.  The audit corrected the
-  initial `23/26/25` count miscount, and a completion pass closed the
-  remaining non-optimal items: (1) **SM4.A.3 rigor** — codegen evidence
-  (`Vector.get` → `lean_array_fget`) plus the persistent witness
-  `get_eq_toArray_getElem` (`.get` indexes `toArray` directly); (2)
-  **`nodup_of_finRange` made load-bearing** — `allCores_nodup` rewired
-  through it, replacing the literal-`4` `decide`; (3) **single-core sim
-  genuinely exercised** — a topology-parametric runtime fold of
-  `Vector.get` over `List.finRange (coreCount P)` drives the binding's
-  `coreCount` end-to-end (`SimSingleCore` = 1, `Sim`/`RPi5` = 4) and
-  gives `toList_length` a binding-derived consumer.  Suite now: 22 / 34 / 31.
-  (The Fin-indexed `set` wrapper was deliberately **not** added — YAGNI:
-  the raw-`set` `get_set_eq`/`_ne` lemmas already match SM5's
+  **Post-landing audit + completion pass** (+ two further audit passes):
+  `#print axioms` confirmed all `SeLe4n.Vector` declarations depend only
+  on `propext` / `Quot.sound`; a `SchedulerState`-mimicking probe
+  confirmed they match downstream call sites under `rw`/`simp` even when
+  `Vector.set`'s bounds proof is synthesized by `get_elem_tactic` (proof
+  irrelevance ⇒ defeq), so SM4.B/SM5 consume them directly.  The audit
+  corrected the initial `23/26/25` count miscount; subsequent passes
+  closed the remaining non-optimal items: (1) **SM4.A.3 rigor** —
+  codegen evidence (`Vector.get` → `lean_array_fget`, `set` →
+  `lean_array_fset`, `replicate` → `lean_mk_array`; no `lean_list_*`)
+  plus the persistent witness `get_eq_toArray_getElem` (`.get` indexes
+  `toArray` directly); (2) **`nodup_of_finRange` made load-bearing** —
+  `allCores_nodup` rewired through it, replacing the literal-`4`
+  `decide`; (3) **single-core sim genuinely exercised** — a
+  topology-parametric runtime fold of `Vector.get` over
+  `List.finRange (coreCount P)` drives the binding's `coreCount`
+  end-to-end (`SimSingleCore` = 1, `Sim`/`RPi5` = 4) and gives
+  `toList_length` a binding-derived consumer; (4) **`length` renamed to
+  `toList_length`** — bare `length` made `v.length` / `Vector.length`
+  resolve to this `Prop`-valued lemma under the `open SeLe4n` every
+  kernel file uses (a trap — the count is `v.size`; core has no
+  `Vector.length`); (5) **instance anchors** — the suite verifies
+  `Vector (Option ThreadId) numCores` carries
+  `DecidableEq`/`Repr`/`Inhabited`/`BEq` (the §4.2 rationale SM4.B's
+  `SchedulerState` depends on).  Suite now: 22 / 40 / 34.  (The
+  Fin-indexed `set` wrapper was deliberately **not** added — YAGNI: the
+  raw-`set` `get_set_eq`/`_ne` lemmas already match SM5's
   `v.set c.val x` call sites by proof irrelevance.)
 
   Follow-on: SM4.B (`SchedulerState` path-a field replacement),

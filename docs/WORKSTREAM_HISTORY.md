@@ -1522,9 +1522,11 @@ Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0 deliverables.
 - **SM4.A.3**: runtime efficiency — confirmed `Vector α n` is
   `Array`-backed with `@[inline, expose]` `get`/`set`/`replicate`, so
   it compiles to O(1) `Array` ops.  Backed by codegen evidence
-  (`Vector.get` → `lean_array_fget`) and the persistent type-level
-  witness `get_eq_toArray_getElem` (`.get` indexes `toArray` directly).
-  Full `lake exe sele4n` per-core-access trace lands at SM4.B.15.
+  (`Vector.get` → `lean_array_fget`, `set` → `lean_array_fset`,
+  `replicate` → `lean_mk_array`; no `lean_list_*`) and the persistent
+  type-level witness `get_eq_toArray_getElem` (`.get` indexes `toArray`
+  directly).  Full `lake exe sele4n` per-core-access trace lands at
+  SM4.B.15.
 - **SM4.A.4**: RPi5 `coreCount = 4` confirmed, pinned to
   `Concurrency.numCores` via `numCores_eq_rpi5_coreCount`.
 - **SM4.A.5**: added the single-core simulation binding
@@ -1541,8 +1543,9 @@ Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0 deliverables.
   generalisation load-bearing in production.
 
 **Test coverage**: NEW FILE `tests/PerCoreVectorSuite.lean`
-(`lake exe per_core_vector_suite`) — 22 surface anchors, 34 decidable
-examples, 31 runtime assertions across six sections.  Tier 2 +
+(`lake exe per_core_vector_suite`) — 22 surface anchors, 40 decidable
+examples, 34 runtime assertions across seven sections (incl. SM4.A.1
+instance anchors).  Tier 2 +
 Tier 3 wired.  Full default build (320 jobs) green; Tier 0+1+2+3
 green.  **Version bumped 0.31.10 → 0.31.11.**  Items deferred past
 v1.0.0 with correctness impact: NONE.  (Post-landing audit + completion

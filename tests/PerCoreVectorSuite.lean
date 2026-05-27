@@ -96,6 +96,24 @@ open SeLe4n.Platform.Sim
 -- §2 — Decidable / definitional examples
 -- ============================================================================
 
+/-! ## SM4.A.1 — instances the §4.2 rationale relies on (consumed by SM4.B's
+`SchedulerState` `BEq`/`DecidableEq`/`Repr`/`default`).  These verify the
+chosen `Array`-backed `Vector α n` actually provides them for the canonical
+per-core element type `Option ThreadId` — a missing instance here would
+break SM4.B, so the bootstrap anchors them. -/
+example : DecidableEq (Vector (Option SeLe4n.ThreadId) numCores) := inferInstance
+example : Repr (Vector (Option SeLe4n.ThreadId) numCores) := inferInstance
+example : Inhabited (Vector (Option SeLe4n.ThreadId) numCores) := inferInstance
+example : BEq (Vector (Option SeLe4n.ThreadId) numCores) := inferInstance
+-- The `Inhabited` default of a per-core field is the all-`none` vector, and a
+-- read at any core is `none` — the exact shape SM4.B.9's
+-- `default_state_perCoreInitialized` discharges (via `replicate_get`).
+example : (default : Vector (Option SeLe4n.ThreadId) numCores)
+            = Vector.replicate numCores default := rfl
+example (c : CoreId) :
+    (default : Vector (Option SeLe4n.ThreadId) numCores).get c = none :=
+  SeLe4n.Vector.replicate_get numCores default c
+
 /-! ## SM4.A.2 lemma 0 — `get_eq_getElem` bridge -/
 example : (Vector.replicate 4 (5 : Nat)).get ⟨2, by decide⟩
             = (Vector.replicate 4 (5 : Nat))[2] :=
@@ -325,6 +343,23 @@ private def runArrayWitnessAndTopologyChecks : IO Unit := do
               (0 : Nat)).toList.length
               = PlatformBinding.coreCount (platform := SimSingleCorePlatform)))
 
+/-- SM4.A.1: the `Vector` instances SM4.B's `SchedulerState` relies on
+    actually *compute* — `DecidableEq` decides per-core-field equality
+    (default vs. a one-slot write), the foundation of the derived `BEq`. -/
+private def runInstanceChecks : IO Unit := do
+  IO.println "--- §3.7 SM4.A.1 Vector instances compute (DecidableEq for SchedulerState BEq) ---"
+  -- DecidableEq reflexive: a default per-core field equals itself.
+  assertBool "DecidableEq: default per-core field equals itself"
+    (decide ((default : Vector (Option Nat) numCores) = default))
+  -- DecidableEq distinguishes a per-core write from the default (non-vacuous).
+  assertBool "DecidableEq: a one-core write differs from the default"
+    (decide ((default : Vector (Option Nat) numCores).set 0 (some 5) (by decide)
+              ≠ (default : Vector (Option Nat) numCores)))
+  -- The default per-core field reads `none` at every core (SM4.B.9 shape).
+  assertBool "default per-core field reads none at every core"
+    (SeLe4n.Kernel.Concurrency.allCores.all
+      (fun c => decide ((default : Vector (Option Nat) numCores).get c = none)))
+
 def runPerCoreVectorChecks : IO Unit := do
   IO.println "WS-SM SM4.A — Per-core Vector bootstrap test suite"
   IO.println "===================================="
@@ -334,6 +369,7 @@ def runPerCoreVectorChecks : IO Unit := do
   runPlatformCoreCountChecks
   runCoreIdRecapChecks
   runArrayWitnessAndTopologyChecks
+  runInstanceChecks
   IO.println "===================================="
   IO.println "All SM4.A per-core Vector bootstrap checks PASS."
 

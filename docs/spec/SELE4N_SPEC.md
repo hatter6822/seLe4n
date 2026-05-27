@@ -52,7 +52,7 @@ enforcement, and scheduling.
 | **Package version** | `0.31.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 140,024 across 200 Lean files |
-| **Test LoC** | 29,849 across 43 Lean test suites |
+| **Test LoC** | 29,885 across 43 Lean test suites |
 | **Proved declarations** | 4,180 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
@@ -2268,7 +2268,8 @@ preserves on a per-core basis.
      expose]` `get`/`set`/`replicate`, so it compiles to O(1) `Array`
      operations.  Backed by two layers of evidence: the codegen
      (emitting the C shows `Vector.get` → `lean_array_fget`, `set` →
-     `lean_array_fset`, no `lean_list_*` ops) and the persistent
+     `lean_array_fset`, `replicate` → `lean_mk_array`, no `lean_list_*`
+     ops) and the persistent
      type-level witness `get_eq_toArray_getElem` (`v.get i =
      v.toArray[i.val]`, so `.get` indexes `toArray` directly — a future
      refactor breaking the array routing fails the build).  (The full
@@ -2291,9 +2292,11 @@ preserves on a per-core basis.
      `decide`), so the generalisation is load-bearing in production.
 
    **Test coverage**: `tests/PerCoreVectorSuite.lean`
-   (`lake exe per_core_vector_suite`) — 22 surface anchors, 34 decidable
-   examples, 31 runtime assertions across six sections; Tier 2 + Tier 3
-   wired.  **Axiom budget for SM4.A**: 0 Lean axioms, 0 sorries.
+   (`lake exe per_core_vector_suite`) — 22 surface anchors, 40 decidable
+   examples, 34 runtime assertions across seven sections (incl. SM4.A.1
+   instance anchors verifying `Vector (Option ThreadId) numCores` carries
+   `DecidableEq`/`Repr`/`Inhabited`/`BEq`); Tier 2 + Tier 3 wired.
+   **Axiom budget for SM4.A**: 0 Lean axioms, 0 sorries.
    Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
    (theorem migrations), SM4.E (`bootFromPlatform_smp_witness`).
 

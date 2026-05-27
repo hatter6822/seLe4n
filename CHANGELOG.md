@@ -91,11 +91,14 @@ per-core `Vector` machinery rests on.
   non-literal would not reduce).
 
 **Test coverage**: new suite `tests/PerCoreVectorSuite.lean`
-(`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 34
-decidable/definitional examples, and 31 runtime `assertBool` assertions
-across six sections (Vector helpers, ext + nodup, Array backing,
-platform core-count topologies, CoreId/bootCoreId/allCores recap, and
-the SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise).
+(`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 40
+decidable/definitional examples, and 34 runtime `assertBool` assertions
+across seven sections (Vector helpers, ext + nodup, Array backing,
+platform core-count topologies, CoreId/bootCoreId/allCores recap, the
+SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise, and the
+SM4.A.1 instance anchors — `DecidableEq`/`Repr`/`Inhabited`/`BEq` on
+`Vector (Option ThreadId) numCores`, the instances SM4.B's
+`SchedulerState` relies on).
 Wired into Tier 2 (negative) via `scripts/test_tier2_negative.sh` and
 Tier 3 (invariant surface) via `scripts/test_tier3_invariant_surface.sh`.
 Full default build (320 jobs) green; Tier 0+1+2+3 green. Zero Lean
@@ -114,20 +117,30 @@ terms defeq during `kabstract` matching) — so SM4.B.9's default-init
 (`replicate_get`), SM4.B.10's `ext`, and SM5's per-core writes
 (`get_set_eq` / `get_set_ne`) can consume them directly. The audit
 corrected the initial landing's `23/26/25` count miscount, and a
-completion pass closed the remaining non-optimal items: (1) **SM4.A.3
-rigor** — added the codegen evidence (`Vector.get` → `lean_array_fget`)
-plus the persistent type-level witness `get_eq_toArray_getElem`; (2)
-**`nodup_of_finRange` made load-bearing** — rewired `allCores_nodup`
-through it (removing the literal-`4` `decide`); (3) **single-core sim
-genuinely exercised** — a topology-parametric runtime check folds
-`Vector.get` over `List.finRange (coreCount P)` for `SimSingleCore`
-(`= 1`), `Sim`/`RPi5` (`= 4`), driving the binding's `coreCount` through
-the per-core machinery end-to-end, and gives `toList_length` a binding-derived
-consumer. The suite now reports **22 surface anchors / 34 decidable
-examples / 31 runtime assertions**. (The Fin-indexed `set` wrapper was
-deliberately **not** added — YAGNI: the raw-`set` `get_set_eq`/`_ne`
-lemmas already match SM5's `v.set c.val x` call sites by proof
-irrelevance, so a `setCore` alias would presume SM5's API without need.)
+completion pass + two further audit passes closed the remaining
+non-optimal items: (1) **SM4.A.3 rigor** — added the codegen evidence
+(`Vector.get` → `lean_array_fget`, `set` → `lean_array_fset`,
+`replicate` → `lean_mk_array`; no `lean_list_*`) plus the persistent
+type-level witness `get_eq_toArray_getElem`; (2) **`nodup_of_finRange`
+made load-bearing** — rewired `allCores_nodup` through it (removing the
+literal-`4` `decide`); (3) **single-core sim genuinely exercised** — a
+topology-parametric runtime check folds `Vector.get` over
+`List.finRange (coreCount P)` for `SimSingleCore` (`= 1`), `Sim`/`RPi5`
+(`= 4`), driving the binding's `coreCount` through the per-core
+machinery end-to-end, and gives `toList_length` a binding-derived
+consumer; (4) **`length` renamed to `toList_length`** — bare `length`
+made `v.length` / `Vector.length` resolve to this `Prop`-valued lemma
+under the `open SeLe4n` every kernel file uses (a trap — the count is
+`v.size`; core has no `Vector.length`), now an honest "unknown"; (5)
+**instance anchors** — the suite now verifies `Vector (Option ThreadId)
+numCores` carries `DecidableEq` / `Repr` / `Inhabited` / `BEq` (the
+§4.2 rationale SM4.B's `SchedulerState` depends on) and that
+`DecidableEq` genuinely decides per-core-field equality. The suite now
+reports **22 surface anchors / 40 decidable examples / 34 runtime
+assertions**. (The Fin-indexed `set` wrapper was deliberately **not**
+added — YAGNI: the raw-`set` `get_set_eq`/`_ne` lemmas already match
+SM5's `v.set c.val x` call sites by proof irrelevance, so a `setCore`
+alias would presume SM5's API without need.)
 
 **Version bumped 0.31.10 → 0.31.11** across all 26 canonical version
 sites.
