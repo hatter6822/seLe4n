@@ -3898,8 +3898,11 @@ documentation lives under `docs/` and `docs/gitbook/`.
     core (via `PerCoreVector.replicate_get`).
   - **SM4.B.10**: `SchedulerState.ext_perCore` — per-core
     extensionality (reproved through `PerCoreVector.ext`).
-  - **SM4.B.11..13**: `Repr` / `BEq` / `Inhabited` re-derived for the
-    `Vector`-shaped record; `default` is the all-`replicate` scheduler.
+  - **SM4.B.11..13**: `Repr` derived and the explicit `Inhabited`
+    instance re-derived for the `Vector`-shaped record; `default` is
+    the all-`replicate` scheduler.  No `BEq`/`DecidableEq` instance
+    exists or is needed (nothing compares schedulers via `==`), so
+    SM4.B.12 is N/A.
   - **SM4.B.14**: immediate caller sites in `Model/State.lean`
     (`setCurrentThread`, freeze boundary, `runnable` =
     `(runQueueOnCore bootCoreId).toList`).

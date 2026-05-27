@@ -40,9 +40,11 @@ shim). The migration is observably transparent — the executable trace
   extensionality: agreement of all seven accessors at every core plus
   the two system-wide fields collapses two schedulers to equal,
   reproved through `PerCoreVector.ext`.
-- **SM4.B.11–13 — `Repr` / `BEq` / `Inhabited`.** Re-derived for the
-  `Vector`-shaped record; `Inhabited.default` is the all-`replicate`
-  scheduler.
+- **SM4.B.11–13 — `Repr` / `Inhabited`.** `Repr` derived and the
+  explicit `Inhabited` instance re-derived for the `Vector`-shaped
+  record; `Inhabited.default` is the all-`replicate` scheduler. No
+  `BEq`/`DecidableEq` instance exists or is needed (nothing compares
+  schedulers via `==`), so SM4.B.12 is N/A.
 - **SM4.B.14 — immediate caller sites (`Model/State.lean`).**
   `setCurrentThread` and the freeze boundary route through the new
   setters/accessors; `runnable` is the boot-core's

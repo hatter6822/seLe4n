@@ -379,7 +379,7 @@ are the new Lean-side work.
 | SM4.B.9 | `default_state_perCoreInitialized` theorem | Per §3.6 | M |
 | SM4.B.10 | `SchedulerState.ext` per-core extensionality | Per §3.3 | M |
 | SM4.B.11 | `Repr` instance updated | Compiles | T |
-| SM4.B.12 | `BEq` instance updated | Compiles; LawfulBEq if applicable | S |
+| SM4.B.12 | `BEq` instance updated | Compiles; LawfulBEq if applicable (landed N/A — no `BEq`/`DecidableEq` on `SchedulerState`; nothing compares schedulers via `==`; see §11.9) | S |
 | SM4.B.13 | `Inhabited` instance updated | Default exists | T |
 | SM4.B.14 | Immediate-caller sites in `Model/State.lean` | All compile | M |
 | SM4.B.15 | Regression test: single-core trace fixture preserved | `main_trace_smoke.expected` byte-identical at single-core scenario | M |
@@ -924,7 +924,10 @@ committed in-tree.
   Added 7 per-core **setters** `set<Field>OnCore (c) (v) := { s with
   field := s.field.set c.val v c.isLt }` (the clean write API).
   `ext_perCore` re-proved via `PerCoreVector.ext`; `runnable` →
-  `(s.runQueueOnCore bootCoreId).toList`; `Inhabited` → `{}`;
+  `(s.runQueueOnCore bootCoreId).toList`; `Repr` derived (SM4.B.11) +
+  explicit `Inhabited` → `{}` (SM4.B.13); **SM4.B.12 (`BEq`) is N/A**
+  — no `BEq`/`DecidableEq` instance exists or is needed (nothing
+  compares schedulers via `==`);
   `default_state_perCoreInitialized` via `PerCoreVector.replicate_get`.
 - **The 70-lemma `@[simp]` store/load algebra** (State.lean): for each
   (setter, accessor) pair, `set<X>OnCore_<x>OnCore_self : (s.set<X>OnCore
