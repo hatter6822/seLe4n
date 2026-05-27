@@ -199,4 +199,9 @@ run_check_with_timeout "TRACE" lake exe serializability_suite
 # allCores recap.
 run_check_with_timeout "TRACE" lake exe per_core_vector_suite
 
+# WS-SM SM4.B foundation suite — runtime mirror of the seven per-core
+# SchedulerState accessors (SM4.B.8), the default-state per-core
+# initialisation theorem (SM4.B.9), and per-core extensionality (SM4.B.10).
+run_check_with_timeout "TRACE" lake exe per_core_scheduler_state_suite
+
 finalize_report

@@ -2481,4 +2481,28 @@ import SeLe4n.Platform.Sim.Contract
 #check @SeLe4n.Kernel.Concurrency.allCores_nodup
 EOF'
 
+# WS-SM SM4.B — per-core SchedulerState foundation surface anchors.  Covers
+# the SM4.B.8 seven per-core accessors, the SM4.B.9 default-state per-core
+# initialisation theorem, and the SM4.B.10 per-core extensionality theorem.
+# A rename / removal of any SM4.B foundation symbol fails here at
+# elaboration time, before the SM4.C/SM4.D migrations can consume them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.State'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.State
+import SeLe4n.Kernel.Concurrency.Types
+
+-- SM4.B.8 — the seven per-core accessors.
+#check @SeLe4n.Model.SchedulerState.currentOnCore
+#check @SeLe4n.Model.SchedulerState.runQueueOnCore
+#check @SeLe4n.Model.SchedulerState.replenishQueueOnCore
+#check @SeLe4n.Model.SchedulerState.activeDomainOnCore
+#check @SeLe4n.Model.SchedulerState.domainTimeRemainingOnCore
+#check @SeLe4n.Model.SchedulerState.domainScheduleIndexOnCore
+#check @SeLe4n.Model.SchedulerState.lastTimeoutErrorsOnCore
+-- SM4.B.9 — default-state per-core initialisation.
+#check @SeLe4n.Model.default_state_perCoreInitialized
+-- SM4.B.10 — per-core extensionality.
+#check @SeLe4n.Model.SchedulerState.ext_perCore
+EOF'
+
 finalize_report

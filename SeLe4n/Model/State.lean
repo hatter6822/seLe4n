@@ -17,6 +17,7 @@ import SeLe4n.Kernel.RobinHood.Set
 namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId)
 
 /-- F-04: Kernel error codes. This inductive has 49 variants.
 **Coding convention**: Prefer explicit match arms over `| _ =>` catch-all
@@ -165,6 +166,78 @@ structure SchedulerState where
       survive across rounds. -/
   lastTimeoutErrors : List (SeLe4n.ThreadId × KernelError) := []
   deriving Repr
+
+/-! ### WS-SM SM4.B.8: per-core scheduler-state accessors (path-a)
+
+Per `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §3.1, every per-core
+`SchedulerState` field is read through an explicit `…OnCore (c : CoreId)`
+accessor rather than the bare field projection.  This is the decision-#4
+"path-a" discipline: there is no scalar-field shim in the final state, so
+every callsite names the core it is reasoning about.
+
+These accessors are introduced first as scalar wrappers (SM4.B phase-1,
+single-core semantics: the core argument is ignored while the underlying
+field is still a scalar) and are flipped to genuine `Vector.get c`
+projections once the fields become `Vector α numCores` (SM4.B phase-2).
+The two-step keeps the build green while the ~768 read callsites migrate to
+the accessor form. -/
+namespace SchedulerState
+
+/-- Per-core current-thread of `s` on core `c`. -/
+@[simp] def currentOnCore (s : SchedulerState) (_c : CoreId) : Option SeLe4n.ThreadId :=
+  s.current
+/-- Per-core run queue of `s` on core `c`. -/
+@[simp] def runQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.RunQueue :=
+  s.runQueue
+/-- Per-core CBS replenishment queue of `s` on core `c`. -/
+@[simp] def replenishQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
+  s.replenishQueue
+/-- Per-core active scheduling domain of `s` on core `c`. -/
+@[simp] def activeDomainOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.DomainId :=
+  s.activeDomain
+/-- Per-core remaining domain ticks of `s` on core `c`. -/
+@[simp] def domainTimeRemainingOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
+  s.domainTimeRemaining
+/-- Per-core domain-schedule index of `s` on core `c`. -/
+@[simp] def domainScheduleIndexOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
+  s.domainScheduleIndex
+/-- Per-core diagnostic timeout-error log of `s` on core `c`. -/
+@[simp] def lastTimeoutErrorsOnCore (s : SchedulerState) (_c : CoreId) :
+    List (SeLe4n.ThreadId × KernelError) :=
+  s.lastTimeoutErrors
+
+/-- WS-SM SM4.B.10: per-core extensionality (plan §3.3).  Two scheduler
+states are equal once their per-core fields agree at *every* `CoreId` and
+their system-wide fields agree.  Named `ext_perCore` to avoid clashing with
+the structure's auto-generated `SchedulerState.ext`.
+
+Phase-1: the per-core accessors are scalar wrappers, so the `∀ c`
+hypotheses are discharged at `bootCoreId` (the accessor ignores its core
+argument).  The statement is the genuine per-core shape that SM4.B phase-2
+discharges via `SeLe4n.PerCoreVector.ext` on each `Vector` field. -/
+theorem ext_perCore {s₁ s₂ : SchedulerState}
+    (hCur  : ∀ c : CoreId, s₁.currentOnCore c = s₂.currentOnCore c)
+    (hRQ   : ∀ c : CoreId, s₁.runQueueOnCore c = s₂.runQueueOnCore c)
+    (hRepl : ∀ c : CoreId, s₁.replenishQueueOnCore c = s₂.replenishQueueOnCore c)
+    (hAD   : ∀ c : CoreId, s₁.activeDomainOnCore c = s₂.activeDomainOnCore c)
+    (hDTR  : ∀ c : CoreId, s₁.domainTimeRemainingOnCore c = s₂.domainTimeRemainingOnCore c)
+    (hDSI  : ∀ c : CoreId, s₁.domainScheduleIndexOnCore c = s₂.domainScheduleIndexOnCore c)
+    (hLTE  : ∀ c : CoreId, s₁.lastTimeoutErrorsOnCore c = s₂.lastTimeoutErrorsOnCore c)
+    (hSched : s₁.domainSchedule = s₂.domainSchedule)
+    (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice) :
+    s₁ = s₂ := by
+  have h1 : s₁.current = s₂.current := hCur bootCoreId
+  have h2 : s₁.runQueue = s₂.runQueue := hRQ bootCoreId
+  have h3 : s₁.replenishQueue = s₂.replenishQueue := hRepl bootCoreId
+  have h4 : s₁.activeDomain = s₂.activeDomain := hAD bootCoreId
+  have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := hDTR bootCoreId
+  have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := hDSI bootCoreId
+  have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := hLTE bootCoreId
+  obtain ⟨rq1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1⟩ := s₁
+  obtain ⟨rq2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2⟩ := s₂
+  simp_all
+
+end SchedulerState
 
 /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
     inside `RunQueue` for proof/projection compatibility. -/
@@ -380,6 +453,22 @@ abbrev CSpaceOwner := SeLe4n.ObjId
 
 instance : Inhabited SchedulerState where
   default := { runQueue := SeLe4n.Kernel.RunQueue.empty, current := none }
+
+/-- WS-SM SM4.B.9: the default scheduler state is per-core initialised to the
+neutral value on *every* core (plan §3.6).  Phase-1: the per-core accessors
+are scalar wrappers over the `default` field values, so each conjunct holds
+by `rfl`; the statement is the genuine per-core shape that SM4.B phase-2
+discharges via `SeLe4n.PerCoreVector.replicate_get` once the fields become
+`Vector.replicate numCores <neutral>`. -/
+theorem default_state_perCoreInitialized (c : CoreId) :
+    (default : SchedulerState).currentOnCore c = none ∧
+    (default : SchedulerState).runQueueOnCore c = SeLe4n.Kernel.RunQueue.empty ∧
+    (default : SchedulerState).replenishQueueOnCore c = SeLe4n.Kernel.ReplenishQueue.empty ∧
+    (default : SchedulerState).activeDomainOnCore c = ⟨0⟩ ∧
+    (default : SchedulerState).domainTimeRemainingOnCore c = 5 ∧
+    (default : SchedulerState).domainScheduleIndexOnCore c = 0 ∧
+    (default : SchedulerState).lastTimeoutErrorsOnCore c = [] := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> rfl
 
 instance : Inhabited SystemState where
   default := {
