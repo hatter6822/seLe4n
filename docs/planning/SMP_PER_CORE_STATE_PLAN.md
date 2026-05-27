@@ -901,3 +901,80 @@ The phase-1 accessor seam means phase 2 touches the 9 `SchedulerState`
 field sites + the accessor/setter defs + the per-literal `get_set`
 reductions — the ~768 read sites do **not** change again (they already
 route through the accessors).
+
+### 11.9 Phase 2 in progress — foundation LANDED, proof cascade pending
+
+Phase 2 (the field-type flip from scalar to `Vector α numCores`) has its
+**foundation complete and green**; the remaining work is the (mechanical
+but voluminous) proof-cascade re-prove.  The in-progress migration is
+preserved as a re-appliable patch:
+`docs/dev_history/SM4B_phase2_migration.wip.patch` (~1038 lines, 12
+files).  To resume:
+
+```
+git apply docs/dev_history/SM4B_phase2_migration.wip.patch
+```
+
+**Foundation LANDED (green in the patch)**:
+
+- **`SeLe4n/Model/State.lean`**: the 7 per-core `SchedulerState` fields
+  flipped scalar → `Vector α numCores` with `Vector.replicate numCores
+  <neutral>` defaults (`runQueue`, `current`, `activeDomain`,
+  `domainTimeRemaining`, `domainScheduleIndex`, `replenishQueue`,
+  `lastTimeoutErrors`; `domainSchedule` / `configDefaultTimeSlice` stay
+  system-wide).  Accessors flipped scalar-wrapper → `s.field.get c`.
+  Added 7 per-core **setters** `set<Field>OnCore (c) (v) := { s with
+  field := s.field.set c.val v c.isLt }` (the clean write API).
+  `ext_perCore` re-proved via `PerCoreVector.ext`; `runnable` →
+  `(s.runQueueOnCore bootCoreId).toList`; `Inhabited` → `{}`;
+  `default_state_perCoreInitialized` via `PerCoreVector.replicate_get`.
+- **The 63-lemma `@[simp]` store/load algebra** (State.lean): for each
+  (setter, accessor) pair, `set<X>OnCore_<x>OnCore_self : (s.set<X>OnCore
+  c v).<x>OnCore c = v` (7) + cross-field `set<X>OnCore_<y>OnCore :
+  (s.set<X>OnCore c v).<y>OnCore c' = s.<y>OnCore c'` (42) +
+  system-wide-field preservation (14).  Plus `PerCoreVector.get_set_eq`
+  / `replicate_get` promoted to `@[simp]`.  This is the lever that makes
+  post-write reads reduce automatically under `simp`.
+- **Operation bodies migrated to setters (green)**: `setCurrentThread`
+  (State), `removeRunnable` + `ensureRunnable` (Endpoint),
+  `contextSwitchState` (Adapter), `updatePipBoost` (Propagate),
+  `freezeScheduler` reads → accessors (FrozenState), and **all** of
+  `Scheduler/Operations/Core.lean` (`schedule`, `handleYield`,
+  `timerTick`, `timerTickWithBudget`, `processReplenishmentsDue`,
+  `switchDomain` 5-field chain, `scheduleDomain`).
+- **Green modules**: `Model.State`, `Scheduler.Operations.Core`,
+  `IPC.Operations.SchedulerLemmas` (all frame lemmas re-proved via the
+  algebra + `removeRunnable_runQueueOnCore` frame lemma),
+  `Platform.RPi5.RuntimeContract`, `Scheduler.PriorityInheritance.Propagate`,
+  `Model.FrozenState`, `Kernel.Architecture.Adapter`,
+  `Kernel.InformationFlow.Projection`, `Kernel.Scheduler.Invariant`
+  (the directly-State-importing frontier).
+
+**Remaining (the proof cascade)**:
+
+- `Scheduler/Operations/Preservation.lean` (~103 errors): the phase-1
+  preservation proofs reduced record-update *literals* via `simp only
+  [<accessor>]` + iota.  With setter-states the reduction needs the
+  `@[simp]` algebra — change those `simp only [<accessor>]` to `simp
+  [<accessor>]` (full simp picks up the algebra) or add the specific
+  `set<X>OnCore_<y>OnCore` lemma.  All proof-side scheduler *literals*
+  in this file are already converted to setter form in the patch; the
+  residue is reduction-tactic updates.
+- The downstream cascade: `Lifecycle/Operations/CleanupPreservation`,
+  `PriorityInheritance/Preservation`, then (bottom-up) the
+  IPC/Lifecycle/Capability/InformationFlow/Service/SchedContext/
+  CrossSubsystem/API/Platform/Testing/`tests/` layers — each re-proving
+  its scheduler-touching proofs via the same pattern (and converting any
+  residual write sites to setters).
+
+**Recipe** (per file): (1) convert any `{ X.scheduler with field := V }`
+write to `X.scheduler.set<Field>OnCore bootCoreId (V)` (single-line — the
+structure-update parser stops a multi-line value indented below the
+value-start column); (2) for proofs that read a setter-written field,
+prefer `simp [...]` over `simp only [...]` so the `@[simp]` algebra fires,
+or add the explicit `set<X>OnCore_<y>OnCore` / `get_set_eq` lemma.
+
+**SM4.E + closure** (after the cascade is green): retire
+`bootFromPlatform_singleCore_witness`, add `bootFromPlatform_smp_witness`,
+confirm the byte-identical single-core trace fixture (227/227), full doc
+sync + version bump.

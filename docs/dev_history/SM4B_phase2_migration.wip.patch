@@ -1,0 +1,1038 @@
+diff --git a/SeLe4n/Kernel/Architecture/Adapter.lean b/SeLe4n/Kernel/Architecture/Adapter.lean
+index a0257b7..79c4dfc 100644
+--- a/SeLe4n/Kernel/Architecture/Adapter.lean
++++ b/SeLe4n/Kernel/Architecture/Adapter.lean
+@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Architecture.Assumptions
+ namespace SeLe4n.Kernel.Architecture
+ 
+ open SeLe4n.Model
++open SeLe4n.Kernel.Concurrency (bootCoreId)
+ 
+ /-- Explicit architecture-binding failure branches for WS-M6-B adapter entrypoints. -/
+ inductive AdapterErrorKind where
+@@ -147,7 +148,7 @@ def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile
+     (st : SystemState) : SystemState :=
+   { st with
+       machine := { st.machine with regs := newRegs }
+-      scheduler := { st.scheduler with current := some newTid } }
++      scheduler := st.scheduler.setCurrentOnCore bootCoreId (some newTid) }
+ 
+ /-- X1-F: Context-switch adapter operation. Performs an atomic context switch
+     guarded by the runtime contract's `registerContextStable` predicate.
+diff --git a/SeLe4n/Kernel/IPC/Operations/Endpoint.lean b/SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+index c257061..5ccf5fa 100644
+--- a/SeLe4n/Kernel/IPC/Operations/Endpoint.lean
++++ b/SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+@@ -105,11 +105,10 @@ finding ID, the affected site, and the remediation applied.
+ /-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
+ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+   { st with
+-      scheduler := {
+-        st.scheduler with
+-          runQueue := (st.scheduler.runQueueOnCore bootCoreId).remove tid
+-          current := if (st.scheduler.currentOnCore bootCoreId) = some tid then none else (st.scheduler.currentOnCore bootCoreId)
+-      }
++      scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
++          ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
++          (if (st.scheduler.currentOnCore bootCoreId) = some tid then none
++            else (st.scheduler.currentOnCore bootCoreId))
+   }
+ 
+ /-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
+@@ -161,10 +160,8 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+     match st.getTcb? tid with
+     | some tcb =>
+         { st with
+-            scheduler := {
+-              st.scheduler with
+-                runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)
+-            }
++            scheduler := st.scheduler.setRunQueueOnCore bootCoreId
++              ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb))
+         }
+     | none => st
+ 
+diff --git a/SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean b/SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean
+index f5669f5..5b92c03 100644
+--- a/SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean
++++ b/SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean
+@@ -18,17 +18,25 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
+ -- WS-E3/H-09: Scheduler lemmas for removeRunnable and ensureRunnable
+ -- ============================================================================
+ 
++/-- WS-SM SM4.B phase-2 frame lemma: `removeRunnable` writes core `bootCoreId`'s
++run-queue slot to `remove tid`. -/
++@[simp] theorem removeRunnable_runQueueOnCore
++    (st : SystemState) (tid : SeLe4n.ThreadId) :
++    ((removeRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
++      (st.scheduler.runQueueOnCore bootCoreId).remove tid := by
++  simp [removeRunnable]
++
+ theorem removeRunnable_scheduler_current
+     (st : SystemState) (tid : SeLe4n.ThreadId) :
+     ((removeRunnable st tid).scheduler.currentOnCore bootCoreId) =
+       if (st.scheduler.currentOnCore bootCoreId) = some tid then none else (st.scheduler.currentOnCore bootCoreId) := by
+-  rfl
++  simp [removeRunnable]
+ 
+ theorem removeRunnable_mem
+     (st : SystemState) (tid x : SeLe4n.ThreadId) :
+     x ∈ ((removeRunnable st tid).scheduler.runQueueOnCore bootCoreId) ↔
+     x ∈ (st.scheduler.runQueueOnCore bootCoreId) ∧ x ≠ tid := by
+-  simp only [removeRunnable]
++  rw [removeRunnable_runQueueOnCore]
+   exact RunQueue.mem_remove (st.scheduler.runQueueOnCore bootCoreId) tid x
+ 
+ /-- WS-G4: Flat-list version of `removeRunnable_mem` for proof compatibility.
+@@ -37,7 +45,7 @@ theorem removeRunnable_runnable_mem
+     (st : SystemState) (tid x : SeLe4n.ThreadId) :
+     x ∈ (removeRunnable st tid).scheduler.runnable ↔
+     x ∈ st.scheduler.runnable ∧ x ≠ tid := by
+-  simp only [SchedulerState.runnable, removeRunnable, RunQueue.toList]
++  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList]
+   unfold RunQueue.remove
+   constructor
+   · intro hx
+@@ -50,8 +58,8 @@ theorem removeRunnable_nodup
+     (st : SystemState) (tid : SeLe4n.ThreadId)
+     (hNodup : st.scheduler.runnable.Nodup) :
+     (removeRunnable st tid).scheduler.runnable.Nodup := by
+-  simp only [SchedulerState.runnable, removeRunnable, RunQueue.toList]
+-  unfold RunQueue.remove
++  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList] at *
++  unfold RunQueue.remove at *
+   exact hNodup.sublist List.filter_sublist
+ 
+ theorem ensureRunnable_scheduler_current
+@@ -60,7 +68,7 @@ theorem ensureRunnable_scheduler_current
+   unfold ensureRunnable
+   split
+   · rfl
+-  · split <;> rfl
++  · split <;> simp
+ 
+ theorem ensureRunnable_mem_self
+     (st : SystemState) (tid : SeLe4n.ThreadId)
+@@ -74,7 +82,7 @@ theorem ensureRunnable_mem_self
+   unfold ensureRunnable
+   split
+   · assumption
+-  · simp only [hTcbTyped, SchedulerState.runQueueOnCore]
++  · simp only [hTcbTyped, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+     rw [RunQueue.mem_insert]
+     exact Or.inr rfl
+ 
+@@ -86,7 +94,8 @@ theorem ensureRunnable_mem_old
+   split
+   · exact hMem
+   · split
+-    · simp only [SchedulerState.runQueueOnCore]; rw [RunQueue.mem_insert]; exact Or.inl hMem
++    · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
++      rw [RunQueue.mem_insert]; exact Or.inl hMem
+     · exact hMem
+ 
+ /-- WS-G4: Flat-list version of `ensureRunnable_mem_old` for proof compatibility.
+@@ -101,7 +110,7 @@ theorem ensureRunnable_runnable_mem_old
+   · rename_i hNotMem
+     split
+     · rename_i tcb hTcb
+-      show x ∈ ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)).toList
++      simp only [SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
+       exact List.mem_append_left _ hMem
+     · exact hMem
+@@ -116,7 +125,7 @@ theorem ensureRunnable_nodup
+   · rename_i hNotMem
+     split
+     · rename_i tcb hTcb
+-      show ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)).toList.Nodup
++      simp only [SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
+       have hNotFlat : tid ∉ st.scheduler.runnable :=
+         RunQueue.not_mem_toList_of_not_mem _ _ hNotMem
+@@ -150,8 +159,8 @@ theorem ensureRunnable_inserts_at_effective_priority
+   have hTcbTyped : st.getTcb? tid = some tcb :=
+     (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
+   unfold ensureRunnable
+-  simp only [SchedulerState.runQueueOnCore] at hNotMem ⊢
+-  simp only [hNotMem, if_false, hTcbTyped]
++  rw [if_neg hNotMem]
++  simp only [hTcbTyped, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+ 
+ /-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
+     priority (not their base priority) when awakened via `ensureRunnable`.
+@@ -206,7 +215,8 @@ theorem ensureRunnable_mem_reverse
+   · rename_i hNotMem
+     split at hMem
+     · -- TCB case: runnable = (rq.insert tid prio).toList
+-      simp only [SchedulerState.runnable, RunQueue.toList] at hMem ⊢
++      simp only [SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
++        RunQueue.toList] at hMem ⊢
+       unfold RunQueue.insert at hMem
+       split at hMem
+       · exact .inl hMem
+@@ -218,7 +228,7 @@ theorem ensureRunnable_mem_reverse
+ theorem removeRunnable_not_mem_self
+     (st : SystemState) (tid : SeLe4n.ThreadId) :
+     tid ∉ (removeRunnable st tid).scheduler.runnable := by
+-  simp only [SchedulerState.runnable, removeRunnable]
++  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore]
+   exact RunQueue.not_mem_remove_toList (st.scheduler.runQueueOnCore bootCoreId) tid
+ 
+ /-- WS-H12b: If a thread is not in the runnable queue, it remains absent after
+diff --git a/SeLe4n/Kernel/InformationFlow/Projection.lean b/SeLe4n/Kernel/InformationFlow/Projection.lean
+index 2bf73c7..aaf9c45 100644
+--- a/SeLe4n/Kernel/InformationFlow/Projection.lean
++++ b/SeLe4n/Kernel/InformationFlow/Projection.lean
+@@ -589,7 +589,7 @@ are invisible to information-flow analysis. Used by
+ theorem projectState_replenishQueue_eq (ctx : LabelingContext) (observer : IfObserver)
+     (st : SystemState) (rq : SeLe4n.Kernel.ReplenishQueue) :
+     projectState ctx observer
+-      { st with scheduler := { st.scheduler with replenishQueue := rq } } =
++      { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq } =
+     projectState ctx observer st := by rfl
+ 
+ /-- AK6-F.2a: Clearing `scheduler.current` when the previous current was
+@@ -607,23 +607,31 @@ theorem projectState_scheduler_current_cleared_when_high
+     (hCurrHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
+                        threadObservable ctx observer t = false) :
+     projectState ctx observer
+-      { st with scheduler := { st.scheduler with current := none } } =
++      { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
+     projectState ctx observer st := by
+   -- Only projectCurrent and projectMachineRegs read scheduler.current.
+   have hCur : projectCurrent ctx observer
+-                { st with scheduler := { st.scheduler with current := none } } =
++                { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
+               projectCurrent ctx observer st := by
+-    simp only [projectCurrent]
++    have hLHS : projectCurrent ctx observer
++        { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
++      simp only [projectCurrent, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
++        PerCoreVector.get_set_eq]
++    rw [hLHS]; unfold projectCurrent
+     cases hSome : (st.scheduler.currentOnCore bootCoreId) with
+     | none => rfl
+-    | some tid => have := hCurrHigh tid hSome; simp [this, SchedulerState.currentOnCore]
++    | some tid => have := hCurrHigh tid hSome; simp [this]
+   have hMachine : projectMachineRegs ctx observer
+-                    { st with scheduler := { st.scheduler with current := none } } =
++                    { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
+                   projectMachineRegs ctx observer st := by
+-    simp only [projectMachineRegs]
++    have hLHS : projectMachineRegs ctx observer
++        { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
++      simp only [projectMachineRegs, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
++        PerCoreVector.get_set_eq]
++    rw [hLHS]; unfold projectMachineRegs
+     cases hSome : (st.scheduler.currentOnCore bootCoreId) with
+     | none => rfl
+-    | some tid => have := hCurrHigh tid hSome; simp [this, SchedulerState.currentOnCore]
++    | some tid => have := hCurrHigh tid hSome; simp [this]
+   simp only [projectState]
+   congr 1 <;> first | rfl | exact hCur | exact hMachine
+ 
+diff --git a/SeLe4n/Kernel/Scheduler/Invariant.lean b/SeLe4n/Kernel/Scheduler/Invariant.lean
+index 4d03d1c..dcfdad4 100644
+--- a/SeLe4n/Kernel/Scheduler/Invariant.lean
++++ b/SeLe4n/Kernel/Scheduler/Invariant.lean
+@@ -725,7 +725,9 @@ def currentBudgetPositive (st : SystemState) : Prop :=
+ /-- Z4-L: Default state has no current thread — vacuously true. -/
+ theorem default_currentBudgetPositive :
+     currentBudgetPositive (default : SystemState) := by
+-  simp [currentBudgetPositive, SchedulerState.currentOnCore]
++  have h : (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
++    (default_state_perCoreInitialized bootCoreId).1
++  simp [currentBudgetPositive, h]
+ 
+ -- ============================================================================
+ -- Z4-M: schedContextsWellFormed invariant
+diff --git a/SeLe4n/Kernel/Scheduler/Operations/Core.lean b/SeLe4n/Kernel/Scheduler/Operations/Core.lean
+index d9df125..1018436 100644
+--- a/SeLe4n/Kernel/Scheduler/Operations/Core.lean
++++ b/SeLe4n/Kernel/Scheduler/Operations/Core.lean
+@@ -369,8 +369,7 @@ def schedule : Kernel Unit :=
+               -- WS-H12c: save outgoing thread's register context
+               let stSaved := saveOutgoingContext st'
+               -- WS-H12b: dequeue before dispatch (seL4 tcbSchedDequeue)
+-              let stDequeued := { stSaved with scheduler := { stSaved.scheduler with
+-                  runQueue := (stSaved.scheduler.runQueueOnCore bootCoreId).remove tid } }
++              let stDequeued := { stSaved with scheduler := stSaved.scheduler.setRunQueueOnCore bootCoreId ((stSaved.scheduler.runQueueOnCore bootCoreId).remove tid) }
+               -- WS-H12c: restore incoming thread's register context
+               let stRestored := restoreIncomingContext stDequeued tid
+               setCurrentThread (some tid) stRestored
+@@ -446,7 +445,7 @@ def handleYield : Kernel Unit :=
+             -- equals `(resolveEffectivePrioDeadline st tcb).1` read by
+             -- selection. `schedulerPriorityMatch` therefore holds post-insert.
+             let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+-            let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
++            let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
+             schedule st'
+         | _ => .error .schedulerInvariantViolation
+ 
+@@ -502,8 +501,7 @@ def timerTick : Kernel Unit :=
+               -- across the timeSlice mutation. Under the AK2-B Option B
+               -- propagation invariant this value equals the SC-aware priority
+               -- used by selection (see Core.lean module docstring).
+-              let st'' := { st' with scheduler := { st'.scheduler with
+-                  runQueue := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) } }
++              let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb))) }
+               schedule st''
+             else
+               -- Time-slice not expired: decrement and continue
+@@ -549,8 +547,7 @@ again. Only `timerTickBudget`'s budget-exhaustion branch (Z4-F3) triggers
+ never calls `timeoutBlockedThreads`. -/
+ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
+   let (remainingQueue, dueIds) := popDueReplenishments st now
+-  let st' := { st with scheduler := { st.scheduler with
+-    replenishQueue := remainingQueue } }
++  let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId remainingQueue }
+   dueIds.foldl (fun acc scId =>
+     let wasExhausted := match acc.objects[scId.toObjId]? with
+       | some (.schedContext sc) => sc.budgetRemaining.isZero
+@@ -567,8 +564,7 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
+           -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
+           if tid ∈ (refilled.scheduler.runQueueOnCore bootCoreId) then refilled
+           else if (refilled.scheduler.currentOnCore bootCoreId) == some tid then refilled
+-          else { refilled with scheduler := { refilled.scheduler with
+-            runQueue := (refilled.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority refilled tid sc) } }
++          else { refilled with scheduler := refilled.scheduler.setRunQueueOnCore bootCoreId (((refilled.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority refilled tid sc))) }
+         | none => refilled
+       else refilled
+     | _ => refilled
+@@ -665,8 +661,7 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+       -- `effectiveRunQueuePriority` is unambiguously correct (no SchedContext
+       -- resolution needed). SC-bound branches at lines :696 and :716 use
+       -- `resolveInsertPriority` directly.
+-      let st'' := { st' with scheduler := { st'.scheduler with
+-          runQueue := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) } }
++      let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb))) }
+       .ok (st'', true)
+     else
+       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
+@@ -693,9 +688,7 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+         -- Insert into system replenish queue for future refill
+         let rq := (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
+         -- AG1-A: Re-enqueue current thread at effective priority (base + PIP boost)
+-        let st'' := { st' with scheduler := { st'.scheduler with
+-          replenishQueue := rq,
+-          runQueue := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc) } }
++        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore bootCoreId rq).setRunQueueOnCore bootCoreId ((st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc))) }
+         -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
+         -- by this SchedContext. Budget is now 0, so all such threads must unblock.
+         -- AK2-D (S-M02): Errors are surfaced via the diagnostic
+@@ -704,7 +697,7 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+         -- `crossSubsystemInvariant`, the list is always empty.
+         let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
+         let st'''' := { st''' with scheduler :=
+-          { st'''.scheduler with lastTimeoutErrors := timeoutErrors } }
++          st'''.scheduler.setLastTimeoutErrorsOnCore bootCoreId timeoutErrors }
+         .ok (st'''', true)
+       else
+         -- Z4-F2: Budget remains — decrement and continue
+@@ -755,8 +748,7 @@ def scheduleEffective : Kernel Unit :=
+         | some (.tcb tcb) =>
+             if tid ∈ (st'.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (st'.scheduler.activeDomainOnCore bootCoreId) then
+               let stSaved := saveOutgoingContext st'
+-              let stDequeued := { stSaved with scheduler := { stSaved.scheduler with
+-                  runQueue := (stSaved.scheduler.runQueueOnCore bootCoreId).remove tid } }
++              let stDequeued := { stSaved with scheduler := stSaved.scheduler.setRunQueueOnCore bootCoreId ((stSaved.scheduler.runQueueOnCore bootCoreId).remove tid) }
+               let stRestored := restoreIncomingContext stDequeued tid
+               setCurrentThread (some tid) stRestored
+             else
+@@ -786,7 +778,7 @@ def timerTickWithBudget : Kernel Unit :=
+     -- AK2-D (S-M02): clear the diagnostic timeout-error record at the start of
+     -- each tick so a stale list never survives across rounds.
+     let st := { st with scheduler :=
+-      { st.scheduler with lastTimeoutErrors := [] } }
++      st.scheduler.setLastTimeoutErrorsOnCore bootCoreId [] }
+     -- Step 1: Process due replenishments
+     let now := st.machine.timer
+     let stReplenished := processReplenishmentsDue st now
+@@ -832,7 +824,7 @@ def handleYieldWithBudget : Kernel Unit :=
+         | .unbound =>
+           -- AI3-A (M-04): Legacy yield with effective priority (base + PIP boost)
+           let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+-          let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
++          let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
+           scheduleEffective st'
+         | .bound scId | .donated scId _ =>
+           match st.objects[scId.toObjId]? with
+@@ -847,16 +839,16 @@ def handleYieldWithBudget : Kernel Unit :=
+             -- Write updated SchedContext
+             let st' := { st with
+               objects := st.objects.insert scId.toObjId (.schedContext sc''),
+-              scheduler := { st.scheduler with replenishQueue := rq } }
++              scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq }
+             -- AG1-A: Re-enqueue thread at effective priority (base + PIP boost)
+             let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc)
+-            let st'' := { st' with scheduler := { st'.scheduler with runQueue := rq' } }
++            let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId rq' }
+             scheduleEffective st''
+           | _ =>
+             -- SchedContext not found — fall back to legacy yield
+             -- AI3-A (M-04): Use effective priority (base + PIP boost)
+             let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+-            let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
++            let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
+             scheduleEffective st'
+       | _ => .error .schedulerInvariantViolation
+ 
+@@ -931,13 +923,9 @@ def switchDomain : Kernel Unit :=
+                   | some (.tcb tcb) =>
+                       (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
+                   | _ => (st.scheduler.runQueueOnCore bootCoreId)
+-            let sched' := { st.scheduler with
+-              runQueue := rq'
+-              current := none
+-              activeDomain := DomainScheduleEntry.domain entry
+-              domainTimeRemaining := DomainScheduleEntry.length entry
+-              domainScheduleIndex := nextIdx
+-            }
++            let sched' := ((((st.scheduler.setRunQueueOnCore bootCoreId rq').setCurrentOnCore
++                  bootCoreId none).setActiveDomainOnCore bootCoreId (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
++                  bootCoreId (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore bootCoreId nextIdx
+             .ok ((), { stSaved with scheduler := sched' })
+ 
+ /-- LOW-04: The modular index computation in `switchDomain` always produces a valid
+@@ -989,9 +977,8 @@ def scheduleDomain : Kernel Unit :=
+       | .error e => .error e
+       | .ok ((), st') => schedule st'
+     else
+-      let sched' := { st.scheduler with
+-        domainTimeRemaining := (st.scheduler.domainTimeRemainingOnCore bootCoreId) - 1
+-      }
++      let sched' := st.scheduler.setDomainTimeRemainingOnCore bootCoreId
++        ((st.scheduler.domainTimeRemainingOnCore bootCoreId) - 1)
+       .ok ((), { st with scheduler := sched' })
+ 
+ -- ============================================================================
+diff --git a/SeLe4n/Kernel/Scheduler/Operations/Preservation.lean b/SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+index 6d15665..2c63b8e 100644
+--- a/SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
++++ b/SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+@@ -291,7 +291,7 @@ private theorem schedule_preserves_runQueueUnique
+                   | tcb tcb =>
+                       by_cases hSchedOk : tid ∈ (stChoose.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)
+                       · simp only [hChoose, hObj, hSchedOk] at hStep
+-                        have hRemovedUnique : runQueueUnique { stChoose.scheduler with runQueue := (stChoose.scheduler.runQueueOnCore bootCoreId).remove tid } := by
++                        have hRemovedUnique : runQueueUnique stChoose.scheduler.setRunQueueOnCore bootCoreId ((stChoose.scheduler.runQueueOnCore bootCoreId).remove tid) := by
+                           simp only [runQueueUnique, SchedulerState.runnable]
+                           exact remove_preserves_nodup (stChoose.scheduler.runQueueOnCore bootCoreId) tid hUniqueChoose
+                         have hSet := hStep
+@@ -893,7 +893,7 @@ the surviving runnable threads are a subset of the original, and their objects a
+ private theorem remove_preserves_timeSlicePositive
+     (st : SystemState) (tid : SeLe4n.ThreadId)
+     (hInv : timeSlicePositive st) :
+-    timeSlicePositive { st with scheduler := { st.scheduler with runQueue := (st.scheduler.runQueueOnCore bootCoreId).remove tid } } := by
++    timeSlicePositive { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid) } := by
+   intro t hMem
+   simp only [SchedulerState.runnable] at hMem
+   have hMemOrig : t ∈ st.scheduler.runnable := by
+@@ -979,8 +979,7 @@ private theorem handleYield_preserves_timeSlicePositive
+         simp only [hObj] at hStep
+         -- Build timeSlicePositive for the intermediate state with insert+rotateToBack
+         have hInvMid : timeSlicePositive
+-            { st with scheduler := { st.scheduler with
+-                runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid } } := by
++            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) } := by
+           intro t hMemRot
+           simp only [SchedulerState.runnable] at hMemRot
+           -- t is in the rotated queue → t is in the inserted queue
+@@ -997,8 +996,7 @@ private theorem handleYield_preserves_timeSlicePositive
+             -- t = tid: use currentTimeSlicePositive
+             simp [currentTimeSlicePositive, hCur, hObj] at hCurTS
+             simp [hObj]; exact hCurTS
+-        let stMid : SystemState := { st with scheduler := { st.scheduler with
+-            runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid } }
++        let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) }
+         have hObjInvMid : stMid.objects.invExt := hObjInv
+         exact schedule_preserves_timeSlicePositive stMid st' hInvMid hObjInvMid hStep
+       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+@@ -1103,8 +1101,7 @@ private theorem timerTick_preserves_timeSlicePositive
+               { st with
+                 objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })
+                 machine := tick st.machine
+-                scheduler := { st.scheduler with
+-                  runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) } } := by
++                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)) } := by
+             intro t hMem
+             simp only [SchedulerState.runnable] at hMem
+             have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) :=
+@@ -1233,8 +1230,7 @@ private theorem handleYield_preserves_currentTimeSlicePositive
+         -- After insert+rotateToBack, the intermediate state's timeSlicePositive
+         -- covers the inserted tid (via hCurTS). schedule then preserves it.
+         have hInvMid : timeSlicePositive
+-            { st with scheduler := { st.scheduler with
+-                runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid } } := by
++            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) } := by
+           intro t hMemRot
+           simp only [SchedulerState.runnable] at hMemRot
+           have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) :=
+@@ -1248,8 +1244,7 @@ private theorem handleYield_preserves_currentTimeSlicePositive
+             subst hEq
+             simp [currentTimeSlicePositive, hCur, hObj] at hCurTS
+             simp [hObj]; exact hCurTS
+-        let stMid : SystemState := { st with scheduler := { st.scheduler with
+-            runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid } }
++        let stMid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid) }
+         have hObjInvMid : stMid.objects.invExt := hObjInv
+         exact schedule_preserves_currentTimeSlicePositive stMid st' hInvMid hObjInvMid hStep
+       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+@@ -1301,8 +1296,7 @@ private theorem timerTick_preserves_currentTimeSlicePositive
+               { st with
+                 objects := st.objects.insert tid.toObjId (.tcb { tcb with timeSlice := st.scheduler.configDefaultTimeSlice })
+                 machine := tick st.machine
+-                scheduler := { st.scheduler with
+-                  runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) } } := by
++                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)) } := by
+             intro t hMem
+             simp only [SchedulerState.runnable] at hMem
+             have hMemInsert : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb) :=
+@@ -1913,7 +1907,7 @@ theorem schedule_preserves_domainTimeRemainingPositive
+         -- st' = { saveOutgoingContext stChoose with scheduler.current := none }
+         unfold domainTimeRemainingPositive at *
+         -- domainTimeRemaining is in scheduler, current change doesn't affect it
+-        show ({ saveOutgoingContext stChoose with scheduler := { (saveOutgoingContext stChoose).scheduler with current := none }}).scheduler.domainTimeRemainingOnCore bootCoreId > 0
++        show ({ saveOutgoingContext stChoose with scheduler := (saveOutgoingContext stChoose).scheduler.setCurrentOnCore bootCoreId none }).scheduler.domainTimeRemainingOnCore bootCoreId > 0
+         simp only []
+         show ((saveOutgoingContext stChoose).scheduler.domainTimeRemainingOnCore bootCoreId) > 0
+         rw [saveOutgoingContext_domainTimeRemaining_eq, hState]
+@@ -2554,7 +2548,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
+             -- Simplify hMem: scheduler went through restoreIncomingContext + saveOutgoingContext
+             -- but both preserve scheduler, so reduce to (st.scheduler.runQueueOnCore bootCoreId).remove tid
+             simp only [SchedulerState.runnable] at hMem
+-            have hMemOrig : t ∈ { st.scheduler with runQueue := (st.scheduler.runQueueOnCore bootCoreId).remove tid }.runnable := by
++            have hMemOrig : t ∈ st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid).runnable := by
+               simpa [SchedulerState.runnable] using hMem
+             have hBridgeT := hBridge t hMemOrig
+             -- Case split on whether t has a TCB in original state
+@@ -2647,8 +2641,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
+         have hwf' : RunQueue.wellFormed (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) :=
+           RunQueue.rotateToBack_preserves_wellFormed _ (RunQueue.insert_preserves_wellFormed (st.scheduler.runQueueOnCore bootCoreId) hwf curTid (effectiveRunQueuePriority tcb)) curTid
+         have hpm' : schedulerPriorityMatch
+-            { st with scheduler := { st.scheduler with
+-                runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid } } := by
++            { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) } := by
+           intro t hMem
+           simp only [SchedulerState.runQueueOnCore]
+           have hMemIns : t ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb) :=
+@@ -2675,8 +2668,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
+             rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
+             simp only [beq_self_eq_true, ↓reduceIte]
+             simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
+-        have hAllTcb' : ∀ t, t ∈ { st with scheduler := { st.scheduler with
+-            runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid } }.scheduler.runnable →
++        have hAllTcb' : ∀ t, t ∈ { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) }.scheduler.runnable →
+             ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) := by
+           intro t hMem
+           simp only [SchedulerState.runnable, RunQueue.toList] at hMem
+@@ -2686,8 +2678,7 @@ private theorem handleYield_preserves_edfCurrentHasEarliestDeadline
+           cases hMemIns with
+           | inl hOld => exact hAllTcb t (by simp only [SchedulerState.runnable]; exact (RunQueue.mem_toList_iff_mem _ t).mpr hOld)
+           | inr hEq => subst hEq; exact ⟨tcb, hObj⟩
+-        let st_mid : SystemState := { st with scheduler := { st.scheduler with
+-            runQueue := ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid } }
++        let st_mid : SystemState := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority tcb)).rotateToBack curTid) }
+         exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwf' hpm' hAllTcb' (show st_mid.objects.invExt from hObjInv) hStep
+       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+ 
+@@ -2745,7 +2736,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
+               { st with
+                 objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
+                 machine := tick st.machine
+-                scheduler := { st.scheduler with runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) } } := by
++                scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) } := by
+             intro t hMem
+             simp only [SchedulerState.runQueueOnCore] at hMem
+             simp only [SchedulerState.runQueueOnCore, RunQueue.insert_threadPriority, hContainsFalse, Bool.false_eq_true, ↓reduceIte]
+@@ -2780,7 +2771,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
+           have hAllTcb' : ∀ t, t ∈ { st with
+               objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
+               machine := tick st.machine
+-              scheduler := { st.scheduler with runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) } }.scheduler.runnable →
++              scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) }.scheduler.runnable →
+               ∃ tcb, (st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice }))[t.toObjId]? = some (.tcb tcb) := by
+             intro t hMem
+             simp only [SchedulerState.runnable, RunQueue.toList] at hMem
+@@ -2801,7 +2792,7 @@ private theorem timerTick_preserves_edfCurrentHasEarliestDeadline
+           let st_mid : SystemState := { st with
+               objects := st.objects.insert curTid.toObjId (.tcb { curTcb with timeSlice := st.scheduler.configDefaultTimeSlice })
+               machine := tick st.machine
+-              scheduler := { st.scheduler with runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) } }
++              scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)) }
+           exact schedule_preserves_edfCurrentHasEarliestDeadline st_mid st' hwf' hpm' hAllTcb' hObjInv' hStep
+         · -- Time-slice not expired: only timeSlice changes
+           rw [if_neg hExpire] at hStep
+diff --git a/SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean b/SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+index 8f565fa..92bf701 100644
+--- a/SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
++++ b/SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+@@ -58,10 +58,8 @@ def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
+         let newPrio := (resolveEffectivePrioDeadline st' tcb').1
+         if oldPrio != newPrio then
+           { st' with
+-            scheduler := {
+-              st'.scheduler with
+-              runQueue := ((st'.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid newPrio
+-            }
++            scheduler := st'.scheduler.setRunQueueOnCore bootCoreId
++              (((st'.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid newPrio)
+           }
+         else st'
+       else st'
+diff --git a/SeLe4n/Model/FrozenState.lean b/SeLe4n/Model/FrozenState.lean
+index 2cb4a16..342cb93 100644
+--- a/SeLe4n/Model/FrozenState.lean
++++ b/SeLe4n/Model/FrozenState.lean
+@@ -474,17 +474,19 @@ theorem freezeObject_preserves_type (obj : KernelObject) :
+ /-- Q5-C: Freeze the scheduler state.
+ AG1-E: Now includes `replenishQueue` for CBS scheduling support. -/
+ def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
+-  { byPriority := freezeMap sched.runQueue.byPriority
+-    threadPriority := freezeMap sched.runQueue.threadPriority
+-    membership := freezeMap sched.runQueue.membership.table
+-    current := sched.current
+-    activeDomain := sched.activeDomain
+-    domainTimeRemaining := sched.domainTimeRemaining
++  -- WS-SM SM4.B phase-2: the frozen execution-phase snapshot is single-core;
++  -- it captures `bootCoreId`'s per-core slots.
++  { byPriority := freezeMap (sched.runQueueOnCore bootCoreId).byPriority
++    threadPriority := freezeMap (sched.runQueueOnCore bootCoreId).threadPriority
++    membership := freezeMap (sched.runQueueOnCore bootCoreId).membership.table
++    current := sched.currentOnCore bootCoreId
++    activeDomain := sched.activeDomainOnCore bootCoreId
++    domainTimeRemaining := sched.domainTimeRemainingOnCore bootCoreId
+     domainSchedule := sched.domainSchedule
+-    domainScheduleIndex := sched.domainScheduleIndex
++    domainScheduleIndex := sched.domainScheduleIndexOnCore bootCoreId
+     configDefaultTimeSlice := sched.configDefaultTimeSlice
+-    replenishQueue := { entries := sched.replenishQueue.entries
+-                        size := sched.replenishQueue.size } }
++    replenishQueue := { entries := (sched.replenishQueueOnCore bootCoreId).entries
++                        size := (sched.replenishQueueOnCore bootCoreId).size } }
+ 
+ /-- Q5-C: Master freeze function — converts an `IntermediateState` (builder
+ phase with invariant witnesses) into a `FrozenSystemState` (execution phase
+diff --git a/SeLe4n/Model/State.lean b/SeLe4n/Model/State.lean
+index d899eaa..4dd12f6 100644
+--- a/SeLe4n/Model/State.lean
++++ b/SeLe4n/Model/State.lean
+@@ -136,18 +136,20 @@ structure SchedulerState where
+       Provides O(1) amortized membership, insert, remove; O(1) best-candidate
+       via cached maxPriority. The `toList` projection maintains proof/projection
+       compatibility with information-flow subsystem. -/
+-  runQueue : SeLe4n.Kernel.RunQueue := SeLe4n.Kernel.RunQueue.empty
+-  current : Option SeLe4n.ThreadId
++  runQueue : Vector SeLe4n.Kernel.RunQueue numCores :=
++    Vector.replicate numCores SeLe4n.Kernel.RunQueue.empty
++  current : Vector (Option SeLe4n.ThreadId) numCores :=
++    Vector.replicate numCores none
+   /-- M-05/WS-E6: Currently active scheduling domain. Only threads in this
+       domain are eligible for selection. Default domain 0. -/
+-  activeDomain : SeLe4n.DomainId := ⟨0⟩
++  activeDomain : Vector SeLe4n.DomainId numCores := Vector.replicate numCores ⟨0⟩
+   /-- M-05/WS-E6: Remaining ticks in the current domain schedule entry.
+       When this reaches 0, the scheduler advances to the next domain. -/
+-  domainTimeRemaining : Nat := 5
++  domainTimeRemaining : Vector Nat numCores := Vector.replicate numCores 5
+   /-- M-05/WS-E6: Round-robin domain schedule table. Empty = single-domain mode. -/
+   domainSchedule : List DomainScheduleEntry := []
+   /-- M-05/WS-E6: Current index into `domainSchedule`. -/
+-  domainScheduleIndex : Nat := 0
++  domainScheduleIndex : Vector Nat numCores := Vector.replicate numCores 0
+   /-- V5-L (L-SCH-1): Configurable default time-slice quantum (ticks per
+       scheduling round). Defaults to 5, matching seL4's default. Used by
+       `timerTick` to reset time-slices on preemption. Thread-level time
+@@ -156,7 +158,8 @@ structure SchedulerState where
+   /-- Z4-A: System-wide CBS replenishment queue. Tracks when each active
+       SchedContext's budget becomes eligible for refill. Sorted by eligibility
+       time for O(1) peek and O(k) prefix split on timer tick. -/
+-  replenishQueue : SeLe4n.Kernel.ReplenishQueue := SeLe4n.Kernel.ReplenishQueue.empty
++  replenishQueue : Vector SeLe4n.Kernel.ReplenishQueue numCores :=
++    Vector.replicate numCores SeLe4n.Kernel.ReplenishQueue.empty
+   /-- AK2-D (S-M02): Diagnostic-only record of per-thread timeout errors
+       collected during the most recent `timeoutBlockedThreads` run. A non-empty
+       list indicates an invariant violation was observed (e.g., a TCB in the
+@@ -164,7 +167,8 @@ structure SchedulerState where
+       Under `crossSubsystemInvariant` the list is always empty. The field is
+       cleared at the start of each timer tick so stale diagnostics never
+       survive across rounds. -/
+-  lastTimeoutErrors : List (SeLe4n.ThreadId × KernelError) := []
++  lastTimeoutErrors : Vector (List (SeLe4n.ThreadId × KernelError)) numCores :=
++    Vector.replicate numCores []
+   deriving Repr
+ 
+ /-! ### WS-SM SM4.B.8: per-core scheduler-state accessors (path-a)
+@@ -184,27 +188,60 @@ the accessor form. -/
+ namespace SchedulerState
+ 
+ /-- Per-core current-thread of `s` on core `c`. -/
+-def currentOnCore (s : SchedulerState) (_c : CoreId) : Option SeLe4n.ThreadId :=
+-  s.current
++def currentOnCore (s : SchedulerState) (c : CoreId) : Option SeLe4n.ThreadId :=
++  s.current.get c
+ /-- Per-core run queue of `s` on core `c`. -/
+-def runQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.RunQueue :=
+-  s.runQueue
++def runQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.RunQueue :=
++  s.runQueue.get c
+ /-- Per-core CBS replenishment queue of `s` on core `c`. -/
+-def replenishQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
+-  s.replenishQueue
++def replenishQueueOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
++  s.replenishQueue.get c
+ /-- Per-core active scheduling domain of `s` on core `c`. -/
+-def activeDomainOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.DomainId :=
+-  s.activeDomain
++def activeDomainOnCore (s : SchedulerState) (c : CoreId) : SeLe4n.DomainId :=
++  s.activeDomain.get c
+ /-- Per-core remaining domain ticks of `s` on core `c`. -/
+-def domainTimeRemainingOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
+-  s.domainTimeRemaining
++def domainTimeRemainingOnCore (s : SchedulerState) (c : CoreId) : Nat :=
++  s.domainTimeRemaining.get c
+ /-- Per-core domain-schedule index of `s` on core `c`. -/
+-def domainScheduleIndexOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
+-  s.domainScheduleIndex
++def domainScheduleIndexOnCore (s : SchedulerState) (c : CoreId) : Nat :=
++  s.domainScheduleIndex.get c
+ /-- Per-core diagnostic timeout-error log of `s` on core `c`. -/
+-def lastTimeoutErrorsOnCore (s : SchedulerState) (_c : CoreId) :
++def lastTimeoutErrorsOnCore (s : SchedulerState) (c : CoreId) :
+     List (SeLe4n.ThreadId × KernelError) :=
+-  s.lastTimeoutErrors
++  s.lastTimeoutErrors.get c
++
++/-! ### WS-SM SM4.B.phase-2: per-core scheduler-state setters (path-a)
++
++Each per-core field has a matching `set…OnCore (c : CoreId)` setter that
++writes only core `c`'s slot (`Vector.set c.val … c.isLt`), leaving every
++other core's slot and the system-wide fields untouched.  Operation bodies
++write per-core fields through these setters rather than the raw `Vector.set`
++so the get-after-set reductions (`…OnCore_set…OnCore_*` below) match
++syntactically.  Single-core operations write `bootCoreId`'s slot; SM5
++cross-core operations write the target core's slot. -/
++
++/-- Write core `c`'s current-thread slot. -/
++def setCurrentOnCore (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.ThreadId) :
++    SchedulerState := { s with current := s.current.set c.val v c.isLt }
++/-- Write core `c`'s run-queue slot. -/
++def setRunQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    SchedulerState := { s with runQueue := s.runQueue.set c.val v c.isLt }
++/-- Write core `c`'s CBS replenishment-queue slot. -/
++def setReplenishQueueOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    SchedulerState := { s with replenishQueue := s.replenishQueue.set c.val v c.isLt }
++/-- Write core `c`'s active-domain slot. -/
++def setActiveDomainOnCore (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
++    SchedulerState := { s with activeDomain := s.activeDomain.set c.val v c.isLt }
++/-- Write core `c`'s remaining-domain-ticks slot. -/
++def setDomainTimeRemainingOnCore (s : SchedulerState) (c : CoreId) (v : Nat) :
++    SchedulerState := { s with domainTimeRemaining := s.domainTimeRemaining.set c.val v c.isLt }
++/-- Write core `c`'s domain-schedule-index slot. -/
++def setDomainScheduleIndexOnCore (s : SchedulerState) (c : CoreId) (v : Nat) :
++    SchedulerState := { s with domainScheduleIndex := s.domainScheduleIndex.set c.val v c.isLt }
++/-- Write core `c`'s diagnostic timeout-error-log slot. -/
++def setLastTimeoutErrorsOnCore (s : SchedulerState) (c : CoreId)
++    (v : List (SeLe4n.ThreadId × KernelError)) : SchedulerState :=
++  { s with lastTimeoutErrors := s.lastTimeoutErrors.set c.val v c.isLt }
+ 
+ /-- WS-SM SM4.B.10: per-core extensionality (plan §3.3).  Two scheduler
+ states are equal once their per-core fields agree at *every* `CoreId` and
+@@ -226,23 +263,221 @@ theorem ext_perCore {s₁ s₂ : SchedulerState}
+     (hSched : s₁.domainSchedule = s₂.domainSchedule)
+     (hSlice : s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice) :
+     s₁ = s₂ := by
+-  have h1 : s₁.current = s₂.current := hCur bootCoreId
+-  have h2 : s₁.runQueue = s₂.runQueue := hRQ bootCoreId
+-  have h3 : s₁.replenishQueue = s₂.replenishQueue := hRepl bootCoreId
+-  have h4 : s₁.activeDomain = s₂.activeDomain := hAD bootCoreId
+-  have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := hDTR bootCoreId
+-  have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := hDSI bootCoreId
+-  have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := hLTE bootCoreId
++  have h1 : s₁.current = s₂.current := PerCoreVector.ext fun c => hCur c
++  have h2 : s₁.runQueue = s₂.runQueue := PerCoreVector.ext fun c => hRQ c
++  have h3 : s₁.replenishQueue = s₂.replenishQueue := PerCoreVector.ext fun c => hRepl c
++  have h4 : s₁.activeDomain = s₂.activeDomain := PerCoreVector.ext fun c => hAD c
++  have h5 : s₁.domainTimeRemaining = s₂.domainTimeRemaining := PerCoreVector.ext fun c => hDTR c
++  have h6 : s₁.domainScheduleIndex = s₂.domainScheduleIndex := PerCoreVector.ext fun c => hDSI c
++  have h7 : s₁.lastTimeoutErrors = s₂.lastTimeoutErrors := PerCoreVector.ext fun c => hLTE c
+   obtain ⟨rq1, cu1, ad1, dtr1, dsch1, dsi1, cdts1, rpl1, lte1⟩ := s₁
+   obtain ⟨rq2, cu2, ad2, dtr2, dsch2, dsi2, cdts2, rpl2, lte2⟩ := s₂
+   simp_all
+ 
++
++/-! ### WS-SM SM4.B phase-2: per-core setter/accessor reduction algebra
++
++The store-load algebra for the per-core setters: reading core `c`'s slot
++after writing core `c` returns the written value (`_self`); reading any
++other field, or another core's slot, is unaffected.  All `@[simp]` so
++post-write reads reduce automatically; the cross-field lemmas hold for
++every pair of cores (the fields are independent `Vector`s). -/
++
++@[simp] theorem setCurrentOnCore_currentOnCore_self (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).currentOnCore c = v := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setRunQueueOnCore_runQueueOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).runQueueOnCore c = v := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setReplenishQueueOnCore_replenishQueueOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).replenishQueueOnCore c = v := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setActiveDomainOnCore_activeDomainOnCore_self (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).activeDomainOnCore c = v := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self (s : SchedulerState) (c : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).domainTimeRemainingOnCore c = v := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_self (s : SchedulerState) (c : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).domainScheduleIndexOnCore c = v := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self (s : SchedulerState) (c : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).lastTimeoutErrorsOnCore c = v := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setCurrentOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setCurrentOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setCurrentOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setCurrentOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setCurrentOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setCurrentOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
++  simp [SchedulerState.setCurrentOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setRunQueueOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).currentOnCore c' = s.currentOnCore c' := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setRunQueueOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setRunQueueOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setRunQueueOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setRunQueueOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setRunQueueOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
++  simp [SchedulerState.setRunQueueOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setReplenishQueueOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).currentOnCore c' = s.currentOnCore c' := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setReplenishQueueOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setReplenishQueueOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setReplenishQueueOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setReplenishQueueOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setReplenishQueueOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
++  simp [SchedulerState.setReplenishQueueOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setActiveDomainOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).currentOnCore c' = s.currentOnCore c' := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setActiveDomainOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setActiveDomainOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setActiveDomainOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setActiveDomainOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setActiveDomainOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
++  simp [SchedulerState.setActiveDomainOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).currentOnCore c' = s.currentOnCore c' := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).currentOnCore c' = s.currentOnCore c' := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_lastTimeoutErrorsOnCore (s : SchedulerState) (c c' : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).lastTimeoutErrorsOnCore c' = s.lastTimeoutErrorsOnCore c' := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore, SchedulerState.lastTimeoutErrorsOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_currentOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).currentOnCore c' = s.currentOnCore c' := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.currentOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_runQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.runQueueOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_replenishQueueOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).replenishQueueOnCore c' = s.replenishQueueOnCore c' := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.replenishQueueOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_activeDomainOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).activeDomainOnCore c' = s.activeDomainOnCore c' := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.activeDomainOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_domainTimeRemainingOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).domainTimeRemainingOnCore c' = s.domainTimeRemainingOnCore c' := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.domainTimeRemainingOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_domainScheduleIndexOnCore (s : SchedulerState) (c c' : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).domainScheduleIndexOnCore c' = s.domainScheduleIndexOnCore c' := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore, SchedulerState.domainScheduleIndexOnCore]
++@[simp] theorem setCurrentOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setCurrentOnCore]
++@[simp] theorem setCurrentOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Option SeLe4n.ThreadId) :
++    (s.setCurrentOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setCurrentOnCore]
++@[simp] theorem setRunQueueOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setRunQueueOnCore]
++@[simp] theorem setRunQueueOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.RunQueue) :
++    (s.setRunQueueOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setRunQueueOnCore]
++@[simp] theorem setReplenishQueueOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setReplenishQueueOnCore]
++@[simp] theorem setReplenishQueueOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : SeLe4n.Kernel.ReplenishQueue) :
++    (s.setReplenishQueueOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setReplenishQueueOnCore]
++@[simp] theorem setActiveDomainOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setActiveDomainOnCore]
++@[simp] theorem setActiveDomainOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : SeLe4n.DomainId) :
++    (s.setActiveDomainOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setActiveDomainOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore]
++@[simp] theorem setDomainTimeRemainingOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Nat) :
++    (s.setDomainTimeRemainingOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setDomainTimeRemainingOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore]
++@[simp] theorem setDomainScheduleIndexOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : Nat) :
++    (s.setDomainScheduleIndexOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setDomainScheduleIndexOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_domainSchedule (s : SchedulerState) (c : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).domainSchedule = s.domainSchedule := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore]
++@[simp] theorem setLastTimeoutErrorsOnCore_configDefaultTimeSlice (s : SchedulerState) (c : CoreId) (v : List (SeLe4n.ThreadId × KernelError)) :
++    (s.setLastTimeoutErrorsOnCore c v).configDefaultTimeSlice = s.configDefaultTimeSlice := by
++  simp [SchedulerState.setLastTimeoutErrorsOnCore]
+ end SchedulerState
+ 
+ /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
+     inside `RunQueue` for proof/projection compatibility. -/
+ abbrev SchedulerState.runnable (s : SchedulerState) : List SeLe4n.ThreadId :=
+-  s.runQueue.toList
++  (s.runQueueOnCore bootCoreId).toList
+ 
+ /-- X2-B/H-2: Check that all domain schedule entries have positive length.
+ This is a runtime-checkable predicate for validating domain schedule
+@@ -452,7 +687,7 @@ structure SystemState where
+ abbrev CSpaceOwner := SeLe4n.ObjId
+ 
+ instance : Inhabited SchedulerState where
+-  default := { runQueue := SeLe4n.Kernel.RunQueue.empty, current := none }
++  default := {}
+ 
+ /-- WS-SM SM4.B.9: the default scheduler state is per-core initialised to the
+ neutral value on *every* core (plan §3.6).  Phase-1: the per-core accessors
+@@ -468,7 +703,7 @@ theorem default_state_perCoreInitialized (c : CoreId) :
+     (default : SchedulerState).domainTimeRemainingOnCore c = 5 ∧
+     (default : SchedulerState).domainScheduleIndexOnCore c = 0 ∧
+     (default : SchedulerState).lastTimeoutErrorsOnCore c = [] := by
+-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> rfl
++  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> exact PerCoreVector.replicate_get _ _ c
+ 
+ instance : Inhabited SystemState where
+   default := {
+@@ -1460,7 +1695,7 @@ theorem revokeAndClearRefsState_preserves_objectIndexSet
+ 
+ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
+   fun st =>
+-    let sched := { st.scheduler with current := tid }
++    let sched := st.scheduler.setCurrentOnCore bootCoreId tid
+     .ok ((), { st with scheduler := sched })
+ 
+ /-- Read one service graph entry. -/
+diff --git a/SeLe4n/Platform/RPi5/RuntimeContract.lean b/SeLe4n/Platform/RPi5/RuntimeContract.lean
+index 60a8b53..c65c030 100644
+--- a/SeLe4n/Platform/RPi5/RuntimeContract.lean
++++ b/SeLe4n/Platform/RPi5/RuntimeContract.lean
+@@ -231,9 +231,11 @@ theorem registerContextStableCheck_budget
+     (hStable : registerContextStableCheck st (contextSwitchState newTid newRegs st) = true) :
+     SeLe4n.Kernel.currentBudgetPositive (contextSwitchState newTid newRegs st) := by
+   unfold registerContextStableCheck contextSwitchState at hStable
+-  simp only [SchedulerState.currentOnCore, hObj, Bool.and_eq_true] at hStable
++  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
++    PerCoreVector.get_set_eq, hObj, Bool.and_eq_true] at hStable
+   unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState
+-  simp only [SchedulerState.currentOnCore, hObj]
++  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
++    PerCoreVector.get_set_eq, hObj]
+   have hBud := hStable.2
+   -- budgetSufficientCheck mirrors currentBudgetPositive structure
+   match hBind : tcb.schedContextBinding with
+diff --git a/SeLe4n/Prelude.lean b/SeLe4n/Prelude.lean
+index c7db0db..0749582 100644
+--- a/SeLe4n/Prelude.lean
++++ b/SeLe4n/Prelude.lean
+@@ -1914,7 +1914,7 @@ was just written to returns the written value. The `Fin n`-indexed form
+ of `Vector.getElem_set_self`; the SM5 per-core update operations
+ (`field.set c.val x c.isLt`) rely on it to compute the post-write value
+ at the updated core. -/
+-theorem get_set_eq (v : _root_.Vector α n) (i : Fin n) (x : α) :
++@[simp] theorem get_set_eq (v : _root_.Vector α n) (i : Fin n) (x : α) :
+     (v.set i.val x i.isLt).get i = x := by
+   rw [get_eq_getElem]
+   exact _root_.Vector.getElem_set_self i.isLt
+@@ -1949,7 +1949,7 @@ the replicated value. The `Fin n`-indexed form of
+ `default_state_perCoreInitialized` — each per-core `SchedulerState` field
+ defaults to `Vector.replicate coreCount <neutral>`, so `field.get c`
+ reduces to the neutral value at every `c`. -/
+-theorem replicate_get (m : Nat) (x : α) (i : Fin m) :
++@[simp] theorem replicate_get (m : Nat) (x : α) (i : Fin m) :
+     (_root_.Vector.replicate m x).get i = x := by
+   rw [get_eq_getElem]
+   exact _root_.Vector.getElem_replicate i.isLt
