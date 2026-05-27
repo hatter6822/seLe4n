@@ -49,6 +49,7 @@ hooks for the production contract.
 namespace SeLe4n.Platform.RPi5
 
 open SeLe4n.Kernel.Architecture
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 
 /-- WS-H15d/A-33: Concrete `AdapterProofHooks` for the RPi5 restrictive
@@ -130,7 +131,7 @@ private theorem registerContextStable_writeRegister_contextMatch
   -- registerContextStableCheck examines post-state; writeRegisterState only changes regs
   -- When check passes for some tid / .tcb tcb case, the && chain has regs == ctx as first conjunct
   unfold contextMatchesCurrent; simp only [writeRegisterState]
-  match hCurr : st.scheduler.current with
+  match hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => simp
   | some tid =>
     simp only []
@@ -177,7 +178,7 @@ def rpi5ProductionAdapterProofHooks :
     -- Extract all conditions from registerContextStablePred
     unfold rpi5RuntimeContract at hStable
     simp only [registerContextStablePred, registerContextStableCheck,
-      contextSwitchState] at hStable
+      contextSwitchState, SchedulerState.currentOnCore] at hStable
     -- Match on objects[newTid.toObjId]?
     match hObj : st.objects[newTid.toObjId]? with
     | some (.tcb tcb) =>

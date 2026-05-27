@@ -40,6 +40,7 @@ will fail the suite immediately.
 -/
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Testing
@@ -439,9 +440,9 @@ def an10_e_removeRunnableValid_reduces_to_raw : IO Bool := do
   let viaWrapper : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
   let viaRaw : SystemState := SeLe4n.Kernel.removeRunnable st vtid.val
   -- Both must clear `current` (rfl-equality enforced by the `_eq` lemma).
-  return viaWrapper.scheduler.current == none
-      && viaRaw.scheduler.current == none
-      && viaWrapper.scheduler.current == viaRaw.scheduler.current
+  return (viaWrapper.scheduler.currentOnCore bootCoreId) == none
+      && (viaRaw.scheduler.currentOnCore bootCoreId) == none
+      && (viaWrapper.scheduler.currentOnCore bootCoreId) == (viaRaw.scheduler.currentOnCore bootCoreId)
 
 /-- AN10-E.H7.2 — `removeRunnableValid` is a no-op on a state where the
 thread is not in the run queue (the empty default state has an empty
@@ -452,7 +453,7 @@ def an10_e_removeRunnableValid_no_op_on_empty_queue : IO Bool := do
   let st : SystemState := default
   let st' : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
   -- Empty queue stays empty after a no-op remove.
-  return st'.scheduler.runQueue.threadPriority.size == 0
+  return (st'.scheduler.runQueueOnCore bootCoreId).threadPriority.size == 0
 
 /-- AN10-E.H2 — `clearPendingStateValid` reduces to `clearPendingState`
 on a populated state with a TCB carrying a non-default `pendingMessage`.

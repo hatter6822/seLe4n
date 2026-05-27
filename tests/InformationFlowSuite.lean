@@ -15,6 +15,7 @@ import SeLe4n.Platform.Boot
 set_option maxRecDepth 1024
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 namespace SeLe4n.Testing
 
@@ -434,7 +435,7 @@ def runInformationFlowChecks : IO Unit := do
     (!(sampleState.objects[(⟨2⟩ : SeLe4n.ObjId)]? == altState.objects[(⟨2⟩ : SeLe4n.ObjId)]?))
 
   expect "altState differs from sampleState (current thread changed)"
-    (sampleState.scheduler.current ≠ altState.scheduler.current)
+    ((sampleState.scheduler.currentOnCore bootCoreId) ≠ (altState.scheduler.currentOnCore bootCoreId))
 
   -- Verify public projections of distinct states are equal (non-trivial low-equivalence)
   expect "distinct states: public object projection matches for public observer"
@@ -733,10 +734,10 @@ def runInformationFlowChecks : IO Unit := do
   let adminActiveDomain := adminProjection.activeDomain
 
   expect "activeDomain visible to public observer"
-    (publicActiveDomain = sampleState.scheduler.activeDomain)
+    (publicActiveDomain = (sampleState.scheduler.activeDomainOnCore bootCoreId))
 
   expect "activeDomain visible to admin observer"
-    (adminActiveDomain = sampleState.scheduler.activeDomain)
+    (adminActiveDomain = (sampleState.scheduler.activeDomainOnCore bootCoreId))
 
   expect "activeDomain consistent across observers"
     (publicActiveDomain = adminActiveDomain)

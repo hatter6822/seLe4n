@@ -184,25 +184,25 @@ the accessor form. -/
 namespace SchedulerState
 
 /-- Per-core current-thread of `s` on core `c`. -/
-@[simp] def currentOnCore (s : SchedulerState) (_c : CoreId) : Option SeLe4n.ThreadId :=
+def currentOnCore (s : SchedulerState) (_c : CoreId) : Option SeLe4n.ThreadId :=
   s.current
 /-- Per-core run queue of `s` on core `c`. -/
-@[simp] def runQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.RunQueue :=
+def runQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.RunQueue :=
   s.runQueue
 /-- Per-core CBS replenishment queue of `s` on core `c`. -/
-@[simp] def replenishQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
+def replenishQueueOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.Kernel.ReplenishQueue :=
   s.replenishQueue
 /-- Per-core active scheduling domain of `s` on core `c`. -/
-@[simp] def activeDomainOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.DomainId :=
+def activeDomainOnCore (s : SchedulerState) (_c : CoreId) : SeLe4n.DomainId :=
   s.activeDomain
 /-- Per-core remaining domain ticks of `s` on core `c`. -/
-@[simp] def domainTimeRemainingOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
+def domainTimeRemainingOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
   s.domainTimeRemaining
 /-- Per-core domain-schedule index of `s` on core `c`. -/
-@[simp] def domainScheduleIndexOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
+def domainScheduleIndexOnCore (s : SchedulerState) (_c : CoreId) : Nat :=
   s.domainScheduleIndex
 /-- Per-core diagnostic timeout-error log of `s` on core `c`. -/
-@[simp] def lastTimeoutErrorsOnCore (s : SchedulerState) (_c : CoreId) :
+def lastTimeoutErrorsOnCore (s : SchedulerState) (_c : CoreId) :
     List (SeLe4n.ThreadId × KernelError) :=
   s.lastTimeoutErrors
 
@@ -543,11 +543,11 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.interfaceRegistry.invExtK ∧
   st.serviceRegistry.invExtK ∧
   -- RunQueue
-  st.scheduler.runQueue.byPriority.invExtK ∧
-  st.scheduler.runQueue.threadPriority.invExtK ∧
+  (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK ∧
+  (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK ∧
   -- RHSet invExtK (via table field)
   st.objectIndexSet.table.invExtK ∧
-  st.scheduler.runQueue.membership.table.invExtK ∧
+  (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK ∧
   -- S-05/PERF-O1: Per-SchedContext thread index
   st.scThreadIndex.invExtK
 
@@ -767,10 +767,10 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.services.invExtK ∧
     st.interfaceRegistry.invExtK ∧
     st.serviceRegistry.invExtK ∧
-    st.scheduler.runQueue.byPriority.invExtK ∧
-    st.scheduler.runQueue.threadPriority.invExtK ∧
+    (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK ∧
+    (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK ∧
     st.objectIndexSet.table.invExtK ∧
-    st.scheduler.runQueue.membership.table.invExtK ∧
+    (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK ∧
     st.scThreadIndex.invExtK := h
 
 -- ============================================================================

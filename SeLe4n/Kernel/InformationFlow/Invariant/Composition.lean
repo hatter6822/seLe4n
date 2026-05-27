@@ -12,6 +12,7 @@ import SeLe4n.Kernel.InformationFlow.Invariant.Operations
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
 -- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
 open Internal
@@ -118,7 +119,7 @@ inductive NonInterferenceStep
       (hStep : cspaceInsertSlot dst cap st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | schedule
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
           threadObservable ctx observer tid = false)
@@ -234,7 +235,7 @@ inductive NonInterferenceStep
   | setCurrentThread
       (tid : Option SeLe4n.ThreadId)
       (hTidHigh : ∀ t, tid = some t → threadObservable ctx observer t = false)
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hStep : setCurrentThread tid st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
@@ -265,16 +266,16 @@ inductive NonInterferenceStep
       (hStep : cspaceMutate addr rights badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | handleYield
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
           threadObservable ctx observer tid = false)
       (hStep : SeLe4n.Kernel.handleYield st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | timerTick
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
-      (hCurrentObjHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentObjHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           objectObservable ctx observer t.toObjId = false)
       (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
           threadObservable ctx observer tid = false)
@@ -296,7 +297,7 @@ inductive NonInterferenceStep
       register lookup is read-only, and the dispatch delegates to an existing
       kernel operation whose NI step is already covered by other constructors. -/
   | syscallDispatchHigh
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
@@ -314,7 +315,7 @@ inductive NonInterferenceStep
       that occur after `endpointCall`. The projection proof is discharged by
       `endpointCallWithDonation_preserves_lowEquivalent`. -/
   | endpointCallWithDonationHigh
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
@@ -322,7 +323,7 @@ inductive NonInterferenceStep
       Covers `applyReplyDonation` and `revertPriorityInheritance` after
       `endpointReply`. -/
   | endpointReplyWithReversionHigh
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hProj : projectState ctx observer st' = projectState ctx observer st)
     : NonInterferenceStep ctx observer st st'
@@ -334,9 +335,9 @@ inductive NonInterferenceStep
       - Device: reuses `notificationSignal` projection (notification high)
       - Unmapped/spurious: state unchanged (trivial preservation) -/
   | handleInterrupt
-      (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
-      (hCurrentObjHigh : ∀ t, st.scheduler.current = some t →
+      (hCurrentObjHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
           objectObservable ctx observer t.toObjId = false)
       (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable →
           threadObservable ctx observer tid = false)
@@ -618,9 +619,9 @@ inductive ComposedNonInterferenceStep
       are unconditionally projected and therefore identical across
       low-equivalent states. -/
   | switchDomain
-      (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t →
+      (hCurrentHigh₁ : ∀ t, (s₁.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
-      (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t →
+      (hCurrentHigh₂ : ∀ t, (s₂.scheduler.currentOnCore bootCoreId) = some t →
           threadObservable ctx observer t = false)
       (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
       (hStep₂ : switchDomain s₂ = .ok ((), s₂'))

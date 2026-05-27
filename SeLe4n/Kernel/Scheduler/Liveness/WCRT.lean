@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.Liveness.DomainRotation
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- D5-K: CBS-aware WCRT hypotheses
@@ -22,7 +23,7 @@ the bounded scheduling latency theorem. Each field corresponds to a concrete
 system property that must hold at the start of analysis. -/
 structure WCRTHypotheses (st : SystemState) (tid : ThreadId) where
   /-- Target thread is in the run queue at analysis start -/
-  threadRunnable : st.scheduler.runQueue.contains tid = true
+  threadRunnable : (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
   /-- Target thread has sufficient budget -/
   threadHasBudget : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) →
     hasSufficientBudget st tcb = true
@@ -189,15 +190,15 @@ theorem bounded_scheduling_latency_exists
         st.scheduler.domainSchedule.length
         (maxDomainLength st.scheduler.domainSchedule) ∧
       match traceStateAt trace k₁ with
-      | some st₁ => st₁.scheduler.activeDomain = hyp.targetDomain ∧
-                     st₁.scheduler.runQueue.contains tid = true
+      | some st₁ => (st₁.scheduler.activeDomainOnCore bootCoreId) = hyp.targetDomain ∧
+                     (st₁.scheduler.runQueueOnCore bootCoreId).contains tid = true
       | none => False)
     -- Band exhaustion hypothesis: once domain is active and thread is runnable,
     -- thread is selected within N×(B+P) additional steps
     (hBandProgress : ∀ k₁ st₁,
       traceStateAt trace k₁ = some st₁ →
-      st₁.scheduler.activeDomain = hyp.targetDomain →
-      st₁.scheduler.runQueue.contains tid = true →
+      (st₁.scheduler.activeDomainOnCore bootCoreId) = hyp.targetDomain →
+      (st₁.scheduler.runQueueOnCore bootCoreId).contains tid = true →
       ∃ k₂, k₂ ≤ bandExhaustionBound hyp.N hyp.B hyp.P ∧
         selectedAt trace (k₁ + k₂) tid) :
     ∃ k, k ≤ wcrtBound

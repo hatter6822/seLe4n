@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
 namespace SeLe4n.Kernel.PriorityInheritance
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- D4-G: updatePipBoost (single-thread priority update)
@@ -52,14 +53,14 @@ def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
       let tcb' := { tcb with pipBoost := newBoost }
       let st' := { st with objects := st.objects.insert tid.toObjId (KernelObject.tcb tcb') }
       -- Conditional run queue bucket migration
-      if tid ∈ st.scheduler.runQueue then
+      if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
         let oldPrio := (resolveEffectivePrioDeadline st tcb).1
         let newPrio := (resolveEffectivePrioDeadline st' tcb').1
         if oldPrio != newPrio then
           { st' with
             scheduler := {
               st'.scheduler with
-              runQueue := (st'.scheduler.runQueue.remove tid).insert tid newPrio
+              runQueue := ((st'.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid newPrio
             }
           }
         else st'
@@ -225,7 +226,7 @@ theorem updatePipBoost_self_ipcState (st : SystemState) (tid : ThreadId)
       RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
     refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
     -- All scheduler branches have .objects = st.objects.insert ..., so hSelf applies
-    by_cases hRQ : tid ∈ st.scheduler.runQueue
+    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
     · simp only [hRQ, ite_true]; split <;> exact hSelf
     · simp only [hRQ, ite_false]; exact hSelf
 
@@ -278,7 +279,7 @@ theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : Thread
               (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }))[tid.toObjId]? =
               some (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) :=
             RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
-          by_cases hRQ : tid ∈ st.scheduler.runQueue
+          by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
           · simp only [hRQ, ite_true]; split <;> exact hSelf
           · simp only [hRQ, ite_false]; exact hSelf
       | _ => rfl

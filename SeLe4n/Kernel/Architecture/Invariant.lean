@@ -58,6 +58,7 @@ cross-subsystem coherency proofs.
 namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel
 
 /-- WS-M6-C composed theorem surface: architecture-adapter hooks over all active invariant bundles.
@@ -281,7 +282,7 @@ theorem contextSwitchState_preserves_contextMatchesCurrent
     (hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb))
     (hRegs : newRegs = tcb.registerContext) :
     contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
-  simp [contextMatchesCurrent, contextSwitchState, hLookup, hRegs]
+  simp [contextMatchesCurrent, contextSwitchState, SchedulerState.currentOnCore, hLookup, hRegs]
   exact RegisterFile.beq_self _
 
 /-- X1-G: Context-switch preserves `currentThreadValid` when the target
@@ -325,11 +326,11 @@ private theorem default_schedulerInvariantBundle :
   -- For default state: current = none, runnable = [], objects = none
   refine ⟨?_, ?_, ?_⟩
   · -- queueCurrentConsistent: current = none → True
-    simp [queueCurrentConsistent]
+    simp [queueCurrentConsistent, SchedulerState.currentOnCore]
   · -- runQueueUnique: [].Nodup
     exact List.nodup_nil
   · -- currentThreadValid: current = none → True
-    simp [currentThreadValid]
+    simp [currentThreadValid, SchedulerState.currentOnCore]
 
 private theorem default_ipcInvariant :
     ipcInvariant (default : SystemState) := by
@@ -450,17 +451,17 @@ private theorem default_ipcInvariantFull :
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
-  simp [contextMatchesCurrent]
+  simp [contextMatchesCurrent, SchedulerState.currentOnCore]
 
 private theorem default_currentThreadDequeueCoherent :
     currentThreadDequeueCoherent (default : SystemState) := by
   refine ⟨?_, ?_, ?_⟩
   · -- currentThreadIpcReady: current = none → True
-    simp [currentThreadIpcReady]
+    simp [currentThreadIpcReady, SchedulerState.currentOnCore]
   · -- currentNotEndpointQueueHead: current = none → True
-    unfold currentNotEndpointQueueHead; simp
+    unfold currentNotEndpointQueueHead; simp [SchedulerState.currentOnCore]
   · -- currentNotOnNotificationWaitList: current = none → True
-    unfold currentNotOnNotificationWaitList; simp
+    unfold currentNotOnNotificationWaitList; simp [SchedulerState.currentOnCore]
 
 private theorem default_schedulerInvariantBundleFull :
     schedulerInvariantBundleFull (default : SystemState) :=
@@ -470,13 +471,13 @@ private theorem default_schedulerInvariantBundleFull :
     intro tid hMem
     have : (default : SystemState).scheduler.runnable = [] := by decide
     rw [this] at hMem; simp at hMem,
-   by unfold currentTimeSlicePositive; simp,
-   by unfold edfCurrentHasEarliestDeadline; simp,
+   by unfold currentTimeSlicePositive; simp [SchedulerState.currentOnCore],
+   by unfold edfCurrentHasEarliestDeadline; simp [SchedulerState.currentOnCore],
    default_contextMatchesCurrent,
    default_runnableThreadsAreTCBs,
    by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
     intro tid hMem
-    have hFlat : (default : SystemState).scheduler.runQueue.flat = [] := by decide
+    have hFlat : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).flat = [] := by decide
     have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
     simp [RunQueue.toList, hFlat] at hInFlat,
    by  -- V5-H: domainTimeRemainingPositive — default domainTimeRemaining is 5
@@ -1007,10 +1008,10 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
            hOwner.imp fun ownerTcb ⟨hO, hEp⟩ => ⟨hObjs ▸ hO, hEp⟩⟩
   -- passiveServerIdle: scheduler.current changes from old to some newTid
   · intro tid tcb hObj hUnbound hNotInRQ hNotCurr
-    -- hNotCurr : (contextSwitchState ...).scheduler.current ≠ some tid
+    -- hNotCurr : ((contextSwitchState ...).scheduler.currentOnCore bootCoreId) ≠ some tid
     -- i.e., some newTid ≠ some tid
     -- Case split on whether tid was the old current thread
-    by_cases hOld : st.scheduler.current = some tid
+    by_cases hOld : (st.scheduler.currentOnCore bootCoreId) = some tid
     · -- tid was old current; currentThreadIpcReady gives ipcState = .ready
       simp [currentThreadIpcReady, hOld] at hCurIpc
       exact Or.inl (hCurIpc tcb (hObjs ▸ hObj))
@@ -1071,7 +1072,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   have hCurIpcReady : currentThreadIpcReady st := hCoupling.2.2.2.1
   -- contextMatchesCurrent for the post-state: directly from BEq hypothesis
   have hCtxPost : contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
-    simp [contextMatchesCurrent, contextSwitchState, hLookup]; exact hRegs
+    simp [contextMatchesCurrent, contextSwitchState, SchedulerState.currentOnCore, hLookup]; exact hRegs
   -- currentThreadValid for the post-state
   have hValidPost : currentThreadValid (contextSwitchState newTid newRegs st) :=
     contextSwitchState_preserves_currentThreadValid st newTid newRegs tcb hLookup
@@ -1107,11 +1108,11 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   -- currentTimeSlicePositive for the post-state
   have hTsPost : currentTimeSlicePositive (contextSwitchState newTid newRegs st) := by
     show currentTimeSlicePositive { st with machine := _, scheduler := _ }
-    unfold currentTimeSlicePositive; simp; rw [hLookup]; exact hTimeSlice
+    unfold currentTimeSlicePositive; simp [SchedulerState.currentOnCore]; rw [hLookup]; exact hTimeSlice
   -- edfCurrentHasEarliestDeadline: deadline = 0 → trivially satisfied
   have hEdfPost : edfCurrentHasEarliestDeadline (contextSwitchState newTid newRegs st) := by
     show edfCurrentHasEarliestDeadline { st with machine := _, scheduler := _ }
-    unfold edfCurrentHasEarliestDeadline; simp; rw [hLookup]
+    unfold edfCurrentHasEarliestDeadline; simp [SchedulerState.currentOnCore]; rw [hLookup]
     intro tid _
     cases h : st.objects[tid.toObjId]? with
     | none => trivial
@@ -1221,14 +1222,14 @@ stated separately for composability with `syscallEntry` soundness theorems. -/
 its register context is available for syscall decode. This is the bridge
 between `contextMatchesCurrent` (scheduler invariant) and the decode layer. -/
 def registerDecodeConsistent (st : SystemState) : Prop :=
-  ∀ tid, st.scheduler.current = some tid →
+  ∀ tid, (st.scheduler.currentOnCore bootCoreId) = some tid →
     ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)
 
 /-- WS-J1-D: The default (empty) system state satisfies `registerDecodeConsistent`
 vacuously — there is no current thread. -/
 theorem default_registerDecodeConsistent :
     registerDecodeConsistent (default : SystemState) := by
-  intro tid hCur; simp at hCur
+  intro tid hCur; simp [SchedulerState.currentOnCore] at hCur
 
 /-- WS-J1-D: `registerDecodeConsistent` is implied by `schedulerInvariantBundleFull`,
 which includes `currentThreadValid`. This bridges the existing scheduler invariant

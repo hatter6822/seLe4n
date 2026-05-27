@@ -51,6 +51,7 @@ and invariant discipline:
 -/
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Testing
 
@@ -662,7 +663,7 @@ def r4b_mkRetypeTarget_reachable : IO Unit := do
             (_hTypeMeta : ∀ obj, st.objects[target]? = some obj →
               SystemState.lookupObjectTypeMeta st target = some obj.objectType)
             (_hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-              ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+              ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
             (_token : SeLe4n.Kernel.ScrubToken st target),
           SeLe4n.Kernel.RetypeTarget st :=
     @SeLe4n.Kernel.mkRetypeTarget
@@ -691,7 +692,7 @@ def r4b_scrubToken_to_retypeTarget_endToEnd : IO Unit := do
       (∀ obj, stClean.objects[target]? = some obj →
         SystemState.lookupObjectTypeMeta stClean target = some obj.objectType) →
       (∀ tcb, stClean.objects[target]? = some (.tcb tcb) →
-        ¬ (tcb.tid ∈ stClean.scheduler.runQueue.flat)) →
+        ¬ (tcb.tid ∈ (stClean.scheduler.runQueueOnCore bootCoreId).flat)) →
       SeLe4n.Kernel.RetypeTarget stClean :=
     fun _ stClean _ _ hCleanup hTypeMeta hNoStaleRefs =>
       SeLe4n.Kernel.mkRetypeTarget stClean target hTypeMeta hNoStaleRefs

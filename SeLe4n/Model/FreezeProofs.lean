@@ -28,6 +28,7 @@ equals the corresponding `FrozenMap.get? k` in the frozen execution-phase state.
 namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RadixTree
 
 -- ============================================================================
@@ -806,25 +807,25 @@ theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedC
 Mirrors `lookup_freeze_serviceRegistry` for the scheduler priority-indexed
 thread queues. -/
 theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority) :
-    ist.state.scheduler.runQueue.byPriority.get? p =
+    (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority.get? p =
       (freeze ist).scheduler.byPriority.get? p := by
-  exact freezeMap_get?_eq ist.state.scheduler.runQueue.byPriority p
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).byPriority p
     ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- AK7-B: Lookup equivalence for `runQueue.threadPriority` across freeze. -/
 theorem lookup_freeze_threadPriority (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
-    ist.state.scheduler.runQueue.threadPriority.get? tid =
+    (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid =
       (freeze ist).scheduler.threadPriority.get? tid := by
-  exact freezeMap_get?_eq ist.state.scheduler.runQueue.threadPriority tid
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).threadPriority tid
     ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 /-- AK7-B: Lookup equivalence for `runQueue.membership` (RHSet) across freeze.
 `membership` wraps an underlying `RHTable κ Unit`; the freeze discards the
 set wrapper and keeps the table. -/
 theorem lookup_freeze_membership (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
-    ist.state.scheduler.runQueue.membership.table.get? tid =
+    (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid =
       (freeze ist).scheduler.membership.get? tid := by
-  exact freezeMap_get?_eq ist.state.scheduler.runQueue.membership.table tid
+  exact freezeMap_get?_eq (ist.state.scheduler.runQueueOnCore bootCoreId).membership.table tid
     ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
 
 -- ============================================================================
@@ -1439,11 +1440,11 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
         sst.scThreadIndex.get? scId = fst.scThreadIndex.get? scId) ∧
     -- Scheduler sub-maps
     (∀ (p : SeLe4n.Priority),
-        sst.scheduler.runQueue.byPriority.get? p = fst.scheduler.byPriority.get? p) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).byPriority.get? p = fst.scheduler.byPriority.get? p) ∧
     (∀ (tid : SeLe4n.ThreadId),
-        sst.scheduler.runQueue.threadPriority.get? tid = fst.scheduler.threadPriority.get? tid) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid = fst.scheduler.threadPriority.get? tid) ∧
     (∀ (tid : SeLe4n.ThreadId),
-        sst.scheduler.runQueue.membership.table.get? tid = fst.scheduler.membership.get? tid) ∧
+        (sst.scheduler.runQueueOnCore bootCoreId).membership.table.get? tid = fst.scheduler.membership.get? tid) ∧
     -- --------------------------------------------------------------------
     -- Non-map fields: bitwise equality
     -- --------------------------------------------------------------------
@@ -1452,14 +1453,14 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     sst.tlb = fst.tlb ∧
     sst.cdtNextNode = fst.cdtNextNode ∧
     sst.cdt.edges = fst.cdtEdges ∧
-    sst.scheduler.current = fst.scheduler.current ∧
-    sst.scheduler.activeDomain = fst.scheduler.activeDomain ∧
-    sst.scheduler.domainTimeRemaining = fst.scheduler.domainTimeRemaining ∧
+    (sst.scheduler.currentOnCore bootCoreId) = fst.scheduler.current ∧
+    (sst.scheduler.activeDomainOnCore bootCoreId) = fst.scheduler.activeDomain ∧
+    (sst.scheduler.domainTimeRemainingOnCore bootCoreId) = fst.scheduler.domainTimeRemaining ∧
     sst.scheduler.domainSchedule = fst.scheduler.domainSchedule ∧
-    sst.scheduler.domainScheduleIndex = fst.scheduler.domainScheduleIndex ∧
+    (sst.scheduler.domainScheduleIndexOnCore bootCoreId) = fst.scheduler.domainScheduleIndex ∧
     sst.scheduler.configDefaultTimeSlice = fst.scheduler.configDefaultTimeSlice ∧
-    sst.scheduler.replenishQueue.entries = fst.scheduler.replenishQueue.entries ∧
-    sst.scheduler.replenishQueue.size = fst.scheduler.replenishQueue.size
+    (sst.scheduler.replenishQueueOnCore bootCoreId).entries = fst.scheduler.replenishQueue.entries ∧
+    (sst.scheduler.replenishQueueOnCore bootCoreId).size = fst.scheduler.replenishQueue.size
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly

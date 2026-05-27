@@ -30,6 +30,7 @@ disposition in the AN3-F work log.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- WS-E4/M-12: Preservation theorems for endpointReply
@@ -84,7 +85,7 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                   refine ⟨?_, ?_, ?_⟩
                   · unfold queueCurrentConsistent
                     rw [ensureRunnable_scheduler_current, hSchedEq]
-                    cases hCurr : st.scheduler.current with
+                    cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                     | none => trivial
                     | some x =>
                       have hNotMem : x ∉ st.scheduler.runnable := by
@@ -101,7 +102,7 @@ theorem endpointReply_preserves_schedulerInvariantBundle
                   · show currentThreadValid (ensureRunnable st1 target)
                     unfold currentThreadValid
                     simp only [ensureRunnable_scheduler_current, ensureRunnable_preserves_objects, hSchedEq]
-                    cases hCurr : st.scheduler.current with
+                    cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                     | none => simp
                     | some x =>
                       simp only []
@@ -481,7 +482,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent
               rw [ensureRunnable_scheduler_current, hSchedEq]
-              cases hCurr : st.scheduler.current with
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => trivial
               | some x =>
                 have hNotMem : x ∉ st.scheduler.runnable := by
@@ -497,7 +498,7 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
             · show currentThreadValid (ensureRunnable st2 pair.1)
               unfold currentThreadValid
               simp only [ensureRunnable_scheduler_current, ensureRunnable_preserves_objects, hSchedEq]
-              cases hCurr : st.scheduler.current with
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 simp only []
@@ -528,8 +529,8 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
             have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedEnq
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent
-              rw [removeRunnable_scheduler_current, congrArg SchedulerState.current hSchedEq]
-              cases hCurr : st.scheduler.current with
+              rw [removeRunnable_scheduler_current, hSchedEq]
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 by_cases hEq' : x = sender
@@ -542,8 +543,8 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
             · exact removeRunnable_nodup st2 sender (hSchedEq ▸ hRQU)
             · unfold currentThreadValid
               rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
-                  congrArg SchedulerState.current hSchedEq]
-              cases hCurr : st.scheduler.current with
+                  hSchedEq]
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 by_cases hEq' : x = sender
@@ -903,7 +904,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 · show st4.scheduler.runnable.Nodup
                   rw [show st4.scheduler.runnable = st2.scheduler.runnable from congrArg SchedulerState.runnable hSchedPend, hSchedEq]; exact hRQU
                 · unfold currentThreadValid; rw [hSchedPend, hSchedEq]
-                  cases hCurr : st.scheduler.current with
+                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                   | none => simp
                   | some x =>
                     simp only []
@@ -930,7 +931,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
               have hInvER : schedulerInvariantBundle (ensureRunnable st2 pair.1) := by
                 refine ⟨?_, ?_, ?_⟩
                 · unfold queueCurrentConsistent; rw [ensureRunnable_scheduler_current, hSchedEq]
-                  cases hCurr : st.scheduler.current with
+                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                   | none => trivial
                   | some x =>
                     have hNotMem : x ∉ st.scheduler.runnable := by
@@ -946,7 +947,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 · show currentThreadValid (ensureRunnable st2 pair.1)
                   unfold currentThreadValid
                   simp only [ensureRunnable_scheduler_current, ensureRunnable_preserves_objects, hSchedEq]
-                  cases hCurr : st.scheduler.current with
+                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                   | none => simp
                   | some x =>
                     simp only []
@@ -972,7 +973,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 · show st4.scheduler.runnable.Nodup
                   rw [show st4.scheduler.runnable = (ensureRunnable st2 pair.1).scheduler.runnable from congrArg SchedulerState.runnable hSchedPend]; exact hRQU'
                 · unfold currentThreadValid; rw [hSchedPend]
-                  cases hCurr : (ensureRunnable st2 pair.1).scheduler.current with
+                  cases hCurr : ((ensureRunnable st2 pair.1).scheduler.currentOnCore bootCoreId) with
                   | none => simp
                   | some x =>
                     simp only []
@@ -1007,8 +1008,8 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
               have hSchedEq : st2.scheduler = st.scheduler := hSchedIpc.trans (hSchedEnq.trans hSchedClean)
               refine ⟨?_, ?_, ?_⟩
               · unfold queueCurrentConsistent
-                rw [removeRunnable_scheduler_current, congrArg SchedulerState.current hSchedEq]
-                cases hCurr : st.scheduler.current with
+                rw [removeRunnable_scheduler_current, hSchedEq]
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => simp
                 | some x =>
                   by_cases hEq' : x = receiver
@@ -1021,8 +1022,8 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
               · exact removeRunnable_nodup st2 receiver (hSchedEq ▸ hRQU)
               · unfold currentThreadValid
                 rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
-                    congrArg SchedulerState.current hSchedEq]
-                cases hCurr : st.scheduler.current with
+                    hSchedEq]
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => simp
                 | some x =>
                   by_cases hEq' : x = receiver
@@ -1427,7 +1428,7 @@ theorem endpointQueueRemoveDual_preserves_schedulerInvariantBundle
   refine ⟨hSchedEq ▸ hQCC, hSchedEq ▸ hRQU, ?_⟩
   unfold currentThreadValid
   rw [hSchedEq]
-  cases hCurr : st.scheduler.current with
+  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => trivial
   | some ctid =>
     have hCTV' : ∃ tcb', st.objects[ctid.toObjId]? = some (.tcb tcb') := by

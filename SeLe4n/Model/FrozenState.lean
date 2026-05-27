@@ -58,6 +58,7 @@ runtime execution (frozen phase):
 namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RadixTree
 
 -- ============================================================================
@@ -559,11 +560,11 @@ theorem freeze_preserves_tlb (ist : IntermediateState) :
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :
-    (freeze ist).scheduler.current = ist.state.scheduler.current := rfl
+    (freeze ist).scheduler.current = (ist.state.scheduler.currentOnCore bootCoreId) := rfl
 
 /-- Q5-C: `freeze` preserves the active domain. -/
 theorem freeze_preserves_activeDomain (ist : IntermediateState) :
-    (freeze ist).scheduler.activeDomain = ist.state.scheduler.activeDomain := rfl
+    (freeze ist).scheduler.activeDomain = (ist.state.scheduler.activeDomainOnCore bootCoreId) := rfl
 
 /-- Q5-C: `freeze` preserves the domain schedule. -/
 theorem freeze_preserves_domainSchedule (ist : IntermediateState) :

@@ -18,6 +18,7 @@ import SeLe4n.Platform.RPi5.BootContract
 set_option maxRecDepth 1024
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- S2-A: BEq for Except, enabling structural equality (`==`) in determinism checks.
 Lean 4's Except does not derive BEq or DecidableEq automatically. -/
@@ -878,7 +879,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |>.buildChecked)
   let (_, stPriorityScheduled) ← expectOkSt "schedule chooses highest-priority runnable"
     (SeLe4n.Kernel.schedule schedPriorityState)
-  if stPriorityScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+  if (stPriorityScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule priority order]: current = tid 8"
   else
     throw <| IO.userError "schedule priority order expected current = tid 8"
@@ -896,12 +897,12 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             ipcState := .ready
           })
       scheduler := { schedPriorityState.scheduler with
-        runQueue := schedPriorityState.scheduler.runQueue.insert (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
+        runQueue := (schedPriorityState.scheduler.runQueueOnCore bootCoreId).insert (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
         activeDomain := ⟨0⟩
         current := none } }
   let (_, stCrossDomainScheduled) ← expectOkSt "schedule filters runnable set to active domain"
     (SeLe4n.Kernel.schedule crossDomainState)
-  if stCrossDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+  if (stCrossDomainScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [schedule domain filter]: active domain thread selected"
   else
     throw <| IO.userError "schedule domain filter expected current = tid 8"
@@ -910,7 +911,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     { crossDomainState with scheduler := { crossDomainState.scheduler with activeDomain := ⟨2⟩ } }
   let (_, stNoActiveDomainRunnable) ← expectOkSt "schedule returns idle when no active-domain runnable threads"
     (SeLe4n.Kernel.schedule noActiveDomainRunnableState)
-  if stNoActiveDomainRunnable.scheduler.current = none then
+  if (stNoActiveDomainRunnable.scheduler.currentOnCore bootCoreId) = none then
     IO.println "positive check passed [schedule domain isolation]: no cross-domain fallback"
   else
     throw <| IO.userError "schedule domain isolation expected current = none"
@@ -953,7 +954,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |> fun st => { st with scheduler := { st.scheduler with activeDomain := ⟨1⟩ } }
   let (_, stMixedDomainScheduled) ← expectOkSt "schedule ignores higher-priority cross-domain runnable"
     (SeLe4n.Kernel.schedule mixedDomainFifoState)
-  if stMixedDomainScheduled.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+  if (stMixedDomainScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [schedule mixed domain priority]: active-domain runnable wins"
   else
     throw <| IO.userError "schedule mixed domain priority expected current = tid 10"
@@ -971,7 +972,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
             ipcState := .ready
           }) })
-  if stMixedDomainScheduledFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+  if (stMixedDomainScheduledFifo.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [schedule mixed domain FIFO]: earlier queue element retained"
   else
     throw <| IO.userError "schedule mixed domain FIFO expected current = tid 10"
@@ -990,19 +991,19 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       } }
   let (_, stScheduleDomainSwitched) ← expectOkSt "scheduleDomain switches domain and reschedules"
     (SeLe4n.Kernel.scheduleDomain scheduleDomainSwitchState)
-  if stScheduleDomainSwitched.scheduler.activeDomain = ⟨1⟩ then
+  if (stScheduleDomainSwitched.scheduler.activeDomainOnCore bootCoreId) = ⟨1⟩ then
     IO.println "positive check passed [scheduleDomain active domain advance]: activeDomain = 1"
   else
     throw <| IO.userError "scheduleDomain active domain advance expected activeDomain = 1"
-  if stScheduleDomainSwitched.scheduler.domainScheduleIndex = 1 then
+  if (stScheduleDomainSwitched.scheduler.domainScheduleIndexOnCore bootCoreId) = 1 then
     IO.println "positive check passed [scheduleDomain index advance]: index = 1"
   else
     throw <| IO.userError "scheduleDomain index advance expected index = 1"
-  if stScheduleDomainSwitched.scheduler.domainTimeRemaining = 2 then
+  if (stScheduleDomainSwitched.scheduler.domainTimeRemainingOnCore bootCoreId) = 2 then
     IO.println "positive check passed [scheduleDomain refresh domain budget]: remaining = 2"
   else
     throw <| IO.userError "scheduleDomain refresh domain budget expected remaining = 2"
-  if stScheduleDomainSwitched.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+  if (stScheduleDomainSwitched.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [scheduleDomain reschedule respects new active domain]: current = tid 10"
   else
     throw <| IO.userError "scheduleDomain reschedule expected current = tid 10"
@@ -1013,21 +1014,21 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       scheduler := { scheduleDomainSwitchState.scheduler with
         activeDomain := ⟨1⟩
         current := some (SeLe4n.ThreadId.ofNat 10)
-        runQueue := scheduleDomainSwitchState.scheduler.runQueue.remove (SeLe4n.ThreadId.ofNat 10)
+        runQueue := (scheduleDomainSwitchState.scheduler.runQueueOnCore bootCoreId).remove (SeLe4n.ThreadId.ofNat 10)
         domainTimeRemaining := 3
         domainScheduleIndex := 1
       } }
   let (_, stScheduleDomainTickOnly) ← expectOkSt "scheduleDomain decrements budget without switching"
     (SeLe4n.Kernel.scheduleDomain scheduleDomainTickOnlyState)
-  if stScheduleDomainTickOnly.scheduler.activeDomain = ⟨1⟩ ∧ stScheduleDomainTickOnly.scheduler.domainScheduleIndex = 1 then
+  if (stScheduleDomainTickOnly.scheduler.activeDomainOnCore bootCoreId) = ⟨1⟩ ∧ (stScheduleDomainTickOnly.scheduler.domainScheduleIndexOnCore bootCoreId) = 1 then
     IO.println "positive check passed [scheduleDomain no switch]: domain/index unchanged"
   else
     throw <| IO.userError "scheduleDomain no switch expected domain/index unchanged"
-  if stScheduleDomainTickOnly.scheduler.domainTimeRemaining = 2 then
+  if (stScheduleDomainTickOnly.scheduler.domainTimeRemainingOnCore bootCoreId) = 2 then
     IO.println "positive check passed [scheduleDomain no switch budget decrement]: remaining = 2"
   else
     throw <| IO.userError "scheduleDomain no switch budget expected remaining = 2"
-  if stScheduleDomainTickOnly.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
+  if (stScheduleDomainTickOnly.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
     IO.println "positive check passed [scheduleDomain no switch current consistency]: current preserved"
   else
     throw <| IO.userError "scheduleDomain no switch current consistency expected current = tid 10"
@@ -1042,10 +1043,10 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     throw <| IO.userError s!"yield runnable rotation expected [7], got {toString stYielded.scheduler.runnable}"
 
   -- Verify which thread is current after yield (should be tid 8, the highest priority)
-  if stYielded.scheduler.current = some (SeLe4n.ThreadId.ofNat 8) then
+  if (stYielded.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
     IO.println "positive check passed [yield current thread]: current = tid 8 (highest priority after rotation)"
   else
-    throw <| IO.userError s!"yield current thread expected tid 8, got {toString stYielded.scheduler.current}"
+    throw <| IO.userError s!"yield current thread expected tid 8, got {toString (stYielded.scheduler.currentOnCore bootCoreId)}"
 
   -- Uses .build intentionally: runnable [tid 77] references non-existent TCB
   -- (check 3 would reject). Tests scheduler handling of malformed runnable list.
@@ -2022,7 +2023,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let (_, stInternal) ← expectOkState "AN4-A.5-01 Internal.lifecycleRetypeObject ok"
     (SeLe4n.Kernel.Internal.lifecycleRetypeObject a5AuthSlot a5RetypeTcbId a5NewObj a5State)
   expectCond "AN4-A.5-01" "Internal.lifecycleRetypeObject leaves dangling run-queue entry"
-    (stInternal.scheduler.runQueue.flat.contains a5Tcb.tid)
+    ((stInternal.scheduler.runQueueOnCore bootCoreId).flat.contains a5Tcb.tid)
 
   -- AN4-A.5-02: `lifecycleRetypeWithCleanup` runs the cleanup phase first, so
   -- the run-queue reference is purged. This is the exact difference the
@@ -2030,7 +2031,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
   let (_, stWrapped) ← expectOkState "AN4-A.5-02 lifecycleRetypeWithCleanup ok"
     (SeLe4n.Kernel.lifecycleRetypeWithCleanup a5AuthSlot a5RetypeTcbId a5NewObj a5State)
   expectCond "AN4-A.5-02" "lifecycleRetypeWithCleanup scrubs run-queue reference"
-    (!stWrapped.scheduler.runQueue.flat.contains a5Tcb.tid)
+    (!(stWrapped.scheduler.runQueueOnCore bootCoreId).flat.contains a5Tcb.tid)
 
   IO.println "all AN4-A.5 lifecycle visibility regression checks passed"
 

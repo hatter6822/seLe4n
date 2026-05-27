@@ -55,6 +55,7 @@ and is guaranteed by the deterministic semantics of all builder operations.
 namespace SeLe4n.Platform.Boot
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model.Builder
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Kernel
@@ -2129,16 +2130,16 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hSlots := (bootFromPlatform config).hPerObjectSlots
   have hAllTables := (bootFromPlatform config).hAllTables
   -- Scheduler sub-field facts
-  have hCur : (bootFromPlatform config).state.scheduler.current = none := by
+  have hCur : ((bootFromPlatform config).state.scheduler.currentOnCore bootCoreId) = none := by
     rw [hSch]; decide
   have hRun : (bootFromPlatform config).state.scheduler.runnable = [] := by
     rw [hSch]; decide
-  have hRQflat : (bootFromPlatform config).state.scheduler.runQueue.flat = [] := by
+  have hRQflat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
     rw [hSch]; decide
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
     refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · simp [queueCurrentConsistent, hSch]
+    · simp [queueCurrentConsistent, SchedulerState.currentOnCore, hSch]
     · show (bootFromPlatform config).state.scheduler.runnable.Nodup
       rw [hRun]; exact List.nodup_nil
     · unfold currentThreadValid; rw [hCur]; trivial
@@ -2522,7 +2523,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [hNone] at hBound; cases hBound
     · -- effectiveParamsMatchRunQueue: empty runQueue at boot
       intro tid hMem
-      have hFlat : (bootFromPlatform config).state.scheduler.runQueue.flat = [] := by
+      have hFlat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
         rw [hSch]; decide
       have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
       simp [RunQueue.toList, hFlat] at hInFlat

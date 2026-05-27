@@ -39,6 +39,7 @@ set_option linter.unusedVariables false
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 
 
@@ -462,14 +463,14 @@ theorem storeObject_preserves_contextMatchesCurrent
     (hValid : currentThreadValid st)
     (hObjInv : st.objects.invExt)
     (hStore : storeObject oid obj st = .ok ((), st'))
-    (hRegCtx : ∀ tid tcb, st.scheduler.current = some tid → tid.toObjId = oid →
+    (hRegCtx : ∀ tid tcb, (st.scheduler.currentOnCore bootCoreId) = some tid → tid.toObjId = oid →
       st.objects[oid]? = some (.tcb tcb) →
       ∃ tcb', obj = .tcb tcb' ∧ tcb'.registerContext = tcb.registerContext) :
     contextMatchesCurrent st' := by
   have hSched : st'.scheduler = st.scheduler := storeObject_scheduler_eq st st' oid obj hStore
   have hMach : st'.machine = st.machine := storeObject_machine_eq st st' oid obj hStore
   unfold contextMatchesCurrent at hInv ⊢; rw [hSched, hMach]
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => trivial
   | some tid =>
     simp only [hCur] at hInv ⊢
@@ -586,11 +587,11 @@ theorem ensureRunnable_preserves_contextMatchesCurrent
   · cases hTcb : st.getTcb? tid with
     | none => exact hInv
     | some tcb =>
-      simp only [contextMatchesCurrent]
+      simp only [contextMatchesCurrent, SchedulerState.currentOnCore]
       cases hCur : st.scheduler.current with
       | none => trivial
       | some curTid =>
-        simp only [contextMatchesCurrent, hCur] at hInv
+        simp only [contextMatchesCurrent, SchedulerState.currentOnCore, hCur] at hInv
         exact hInv
 
 /-- WS-H12c: `removeRunnable` preserves `contextMatchesCurrent`. -/
@@ -600,9 +601,9 @@ theorem removeRunnable_preserves_contextMatchesCurrent
     contextMatchesCurrent (removeRunnable st tid) := by
   simp only [removeRunnable]
   show contextMatchesCurrent { st with scheduler := { st.scheduler with
-    runQueue := st.scheduler.runQueue.remove tid,
-    current := if st.scheduler.current = some tid then none else st.scheduler.current } }
-  simp only [contextMatchesCurrent]
+    runQueue := (st.scheduler.runQueueOnCore bootCoreId).remove tid,
+    current := if (st.scheduler.currentOnCore bootCoreId) = some tid then none else (st.scheduler.currentOnCore bootCoreId) } }
+  simp only [contextMatchesCurrent, SchedulerState.currentOnCore]
   by_cases hEq : st.scheduler.current = some tid
   · simp only [hEq, ite_true]
   · simp only [hEq, ite_false]; exact hInv

@@ -30,6 +30,7 @@ operations make execution a capability-controlled resource.
 namespace SeLe4n.Kernel.SchedContextOps
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 
@@ -142,7 +143,7 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
           -- AK2-G: purge stale system replenishQueue entries for this vScId.val
           -- before storing the reconfigured object.
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove st.scheduler.replenishQueue scIdTyped
+          let cleanedQueue := ReplenishQueue.remove (st.scheduler.replenishQueueOnCore bootCoreId) scIdTyped
           let stCleaned := { st with scheduler :=
             { st.scheduler with replenishQueue := cleanedQueue } }
           -- AK2-B option B (S-H04): if the SchedContext is currently bound to a
@@ -177,8 +178,8 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                     let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
                       | none => newPri
                       | some boostPri => ⟨Nat.max priority boostPri.val⟩
-                    if boundTid ∈ stWithTcb.scheduler.runQueue then
-                      let rqRemoved := stWithTcb.scheduler.runQueue.remove boundTid
+                    if boundTid ∈ (stWithTcb.scheduler.runQueueOnCore bootCoreId) then
+                      let rqRemoved := (stWithTcb.scheduler.runQueueOnCore bootCoreId).remove boundTid
                       let rqInserted := rqRemoved.insert boundTid effectivePri
                       { stWithTcb with scheduler :=
                         { stWithTcb.scheduler with runQueue := rqInserted } }
@@ -288,8 +289,8 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- AE3-J/SC-09: Run queue insertion uses pre-update sc.priority.
             -- AG1-A: Now uses effective priority (base + PIP boost) to ensure
             -- PIP-boosted threads are placed in the correct bucket.
-            let st3 := if vThreadId.val ∈ st2.scheduler.runQueue then
-              let rqRemoved := st2.scheduler.runQueue.remove vThreadId.val
+            let st3 := if vThreadId.val ∈ (st2.scheduler.runQueueOnCore bootCoreId) then
+              let rqRemoved := (st2.scheduler.runQueueOnCore bootCoreId).remove vThreadId.val
               let rqInserted := rqRemoved.insert vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
               { st2 with scheduler := { st2.scheduler with runQueue := rqInserted } }
             else st2
@@ -332,15 +333,15 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- Z5-H1: Preemption guard — if bound thread is current, clear current
           -- to force rescheduling. Under dequeue-on-dispatch, the current thread
           -- is not in the RunQueue, so clearing current is sufficient.
-          let st0 := if st.scheduler.current == some tid then
+          let st0 := if (st.scheduler.currentOnCore bootCoreId) == some tid then
             { st with scheduler := { st.scheduler with current := none } }
           else st
           -- Z5-H2: If thread is in RunQueue (runnable but not current), remove it.
           -- After unbind the thread reverts to legacy priority; the next schedule
           -- call will re-enqueue it correctly if still runnable.
-          let st1 := if tid ∈ st0.scheduler.runQueue then
+          let st1 := if tid ∈ (st0.scheduler.runQueueOnCore bootCoreId) then
             { st0 with scheduler := { st0.scheduler with
-                runQueue := st0.scheduler.runQueue.remove tid } }
+                runQueue := (st0.scheduler.runQueueOnCore bootCoreId).remove tid } }
           else st0
           -- Z5-H2 cont: Clear both sides of the binding
           let updatedSc := { sc with boundThread := none, isActive := false }
@@ -349,7 +350,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
           -- Z5-H3: Remove SchedContext from replenish queue
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove st3.scheduler.replenishQueue scIdTyped
+          let cleanedQueue := ReplenishQueue.remove (st3.scheduler.replenishQueueOnCore bootCoreId) scIdTyped
           let st4 := { st3 with scheduler := { st3.scheduler with replenishQueue := cleanedQueue } }
           -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
           let st5 := { st4 with scThreadIndex :=
@@ -360,7 +361,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let updatedSc := { sc with boundThread := none, isActive := false }
           let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-          let cleanedQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scIdTyped
+          let cleanedQueue := ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scIdTyped
           let st2 := { st1 with scheduler := { st1.scheduler with replenishQueue := cleanedQueue } }
           -- S-05/PERF-O1: Remove stale index entry even when TCB is missing
           let st3 := { st2 with scThreadIndex :=
@@ -420,9 +421,9 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
         match targetSc.boundThread with
         | some tid =>
           -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
-          if tid ∉ st2.scheduler.runQueue && st2.scheduler.current != some tid then
+          if tid ∉ (st2.scheduler.runQueueOnCore bootCoreId) && (st2.scheduler.currentOnCore bootCoreId) != some tid then
             { st2 with scheduler := { st2.scheduler with
-                runQueue := st2.scheduler.runQueue.insert tid (resolveInsertPriority st2 tid targetSc) } }
+                runQueue := (st2.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st2 tid targetSc) } }
           else st2
         | none => st2
       else st2

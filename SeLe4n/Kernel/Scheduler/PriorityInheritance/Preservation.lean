@@ -13,6 +13,7 @@ import SeLe4n.Kernel.RobinHood.Bridge
 namespace SeLe4n.Kernel.PriorityInheritance
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- D4-O: Frame lemmas for updatePipBoost
@@ -42,14 +43,14 @@ private theorem updatePipBoost_frame {F : Type}
 
 /-- D4-O: `updatePipBoost` preserves the scheduler's `current` field. -/
 theorem updatePipBoost_preserves_current (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).scheduler.current = st.scheduler.current :=
-  updatePipBoost_frame (fun s => s.scheduler.current) st tid
+    ((updatePipBoost st tid).scheduler.currentOnCore bootCoreId) = (st.scheduler.currentOnCore bootCoreId) :=
+  updatePipBoost_frame (fun s => (s.scheduler.currentOnCore bootCoreId)) st tid
     (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
 
 /-- D4-O: `updatePipBoost` preserves the scheduler's `activeDomain`. -/
 theorem updatePipBoost_preserves_activeDomain (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).scheduler.activeDomain = st.scheduler.activeDomain :=
-  updatePipBoost_frame (fun s => s.scheduler.activeDomain) st tid
+    ((updatePipBoost st tid).scheduler.activeDomainOnCore bootCoreId) = (st.scheduler.activeDomainOnCore bootCoreId) :=
+  updatePipBoost_frame (fun s => (s.scheduler.activeDomainOnCore bootCoreId)) st tid
     (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
 
 /-- D4-P: `updatePipBoost` preserves the machine state. -/
@@ -138,9 +139,9 @@ theorem updatePipBoost_preserves_tlb (st : SystemState) (tid : ThreadId) :
 
 /-- AE1-F: `updatePipBoost` preserves `scheduler.domainTimeRemaining`. -/
 theorem updatePipBoost_preserves_domainTimeRemaining (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).scheduler.domainTimeRemaining =
-    st.scheduler.domainTimeRemaining :=
-  updatePipBoost_frame (fun s => s.scheduler.domainTimeRemaining) st tid
+    ((updatePipBoost st tid).scheduler.domainTimeRemainingOnCore bootCoreId) =
+    (st.scheduler.domainTimeRemainingOnCore bootCoreId) :=
+  updatePipBoost_frame (fun s => (s.scheduler.domainTimeRemainingOnCore bootCoreId)) st tid
     (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
 
 /-- AE1-F: `updatePipBoost` preserves `scheduler.domainSchedule`. -/
@@ -152,9 +153,9 @@ theorem updatePipBoost_preserves_domainSchedule (st : SystemState) (tid : Thread
 
 /-- AE1-F: `updatePipBoost` preserves `scheduler.domainScheduleIndex`. -/
 theorem updatePipBoost_preserves_domainScheduleIndex (st : SystemState) (tid : ThreadId) :
-    (updatePipBoost st tid).scheduler.domainScheduleIndex =
-    st.scheduler.domainScheduleIndex :=
-  updatePipBoost_frame (fun s => s.scheduler.domainScheduleIndex) st tid
+    ((updatePipBoost st tid).scheduler.domainScheduleIndexOnCore bootCoreId) =
+    (st.scheduler.domainScheduleIndexOnCore bootCoreId) :=
+  updatePipBoost_frame (fun s => (s.scheduler.domainScheduleIndexOnCore bootCoreId)) st tid
     (by intro _; rfl) (by intro _; rfl) (by intro _ _; rfl)
 
 /-- AE1-F: `updatePipBoost` preserves `objects.invExt`. -/
@@ -195,15 +196,15 @@ preservation: since `tid` is non-observable, `threadObservable` excludes it,
 so the filtered runnable list is unchanged. -/
 theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
     (p : ThreadId → Bool) (hp : p tid = false) :
-    (updatePipBoost st tid).scheduler.runQueue.toList.filter p =
-    st.scheduler.runQueue.toList.filter p := by
+    ((updatePipBoost st tid).scheduler.runQueueOnCore bootCoreId).toList.filter p =
+    (st.scheduler.runQueueOnCore bootCoreId).toList.filter p := by
   simp only [updatePipBoost]
   split
   · split
     · rfl
     · split
       · split
-        · simp only []
+        · simp only [SchedulerState.runQueueOnCore]
           rw [RunQueue.toList_filter_insert_neg' _ tid _ _ hp,
               RunQueue.toList_filter_remove_neg _ tid _ hp]
         · rfl
@@ -217,8 +218,8 @@ theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
 /-- D4-P: `propagatePriorityInheritance` preserves the scheduler's `current`. -/
 theorem propagate_preserves_current (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).scheduler.current =
-    st.scheduler.current := by
+    ((propagatePriorityInheritance st tid fuel).scheduler.currentOnCore bootCoreId) =
+    (st.scheduler.currentOnCore bootCoreId) := by
   induction fuel generalizing st tid with
   | zero => simp [propagatePriorityInheritance]
   | succ n ih =>
@@ -230,8 +231,8 @@ theorem propagate_preserves_current (st : SystemState) (tid : ThreadId)
 /-- D4-P: `propagatePriorityInheritance` preserves `activeDomain`. -/
 theorem propagate_preserves_activeDomain (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).scheduler.activeDomain =
-    st.scheduler.activeDomain := by
+    ((propagatePriorityInheritance st tid fuel).scheduler.activeDomainOnCore bootCoreId) =
+    (st.scheduler.activeDomainOnCore bootCoreId) := by
   induction fuel generalizing st tid with
   | zero => simp [propagatePriorityInheritance]
   | succ n ih =>
@@ -414,8 +415,8 @@ theorem propagate_preserves_tlb (st : SystemState) (tid : ThreadId)
 /-- AE1-F: `propagatePriorityInheritance` preserves `scheduler.domainTimeRemaining`. -/
 theorem propagate_preserves_domainTimeRemaining (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).scheduler.domainTimeRemaining =
-    st.scheduler.domainTimeRemaining := by
+    ((propagatePriorityInheritance st tid fuel).scheduler.domainTimeRemainingOnCore bootCoreId) =
+    (st.scheduler.domainTimeRemainingOnCore bootCoreId) := by
   induction fuel generalizing st tid with
   | zero => simp [propagatePriorityInheritance]
   | succ n ih =>
@@ -440,8 +441,8 @@ theorem propagate_preserves_domainSchedule (st : SystemState) (tid : ThreadId)
 /-- AE1-F: `propagatePriorityInheritance` preserves `scheduler.domainScheduleIndex`. -/
 theorem propagate_preserves_domainScheduleIndex (st : SystemState) (tid : ThreadId)
     (fuel : Nat) :
-    (propagatePriorityInheritance st tid fuel).scheduler.domainScheduleIndex =
-    st.scheduler.domainScheduleIndex := by
+    ((propagatePriorityInheritance st tid fuel).scheduler.domainScheduleIndexOnCore bootCoreId) =
+    (st.scheduler.domainScheduleIndexOnCore bootCoreId) := by
   induction fuel generalizing st tid with
   | zero => simp [propagatePriorityInheritance]
   | succ n ih =>
@@ -456,14 +457,14 @@ theorem propagate_preserves_domainScheduleIndex (st : SystemState) (tid : Thread
 
 /-- D4-P: `revertPriorityInheritance` preserves `scheduler.current`. -/
 theorem revert_preserves_current (st : SystemState) (tid : ThreadId) (fuel : Nat) :
-    (revertPriorityInheritance st tid fuel).scheduler.current =
-    st.scheduler.current := by
+    ((revertPriorityInheritance st tid fuel).scheduler.currentOnCore bootCoreId) =
+    (st.scheduler.currentOnCore bootCoreId) := by
   rw [revert_eq_propagate]; exact propagate_preserves_current st tid fuel
 
 /-- D4-P: `revertPriorityInheritance` preserves `scheduler.activeDomain`. -/
 theorem revert_preserves_activeDomain (st : SystemState) (tid : ThreadId) (fuel : Nat) :
-    (revertPriorityInheritance st tid fuel).scheduler.activeDomain =
-    st.scheduler.activeDomain := by
+    ((revertPriorityInheritance st tid fuel).scheduler.activeDomainOnCore bootCoreId) =
+    (st.scheduler.activeDomainOnCore bootCoreId) := by
   rw [revert_eq_propagate]; exact propagate_preserves_activeDomain st tid fuel
 
 /-- D4-P: `revertPriorityInheritance` preserves `machine`. -/

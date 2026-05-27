@@ -19,6 +19,7 @@ import SeLe4n.Kernel.Architecture.VSpace
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
 -- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
 open Internal
@@ -273,7 +274,7 @@ theorem removeRunnable_preserves_projection
     simp only [projectRunnable, removeRunnable]
     exact list_filter_ne_then_filter_eq st.scheduler.runnable tid (threadObservable ctx observer) hTidHigh
   have hCur : projectCurrent ctx observer (removeRunnable st tid) = projectCurrent ctx observer st := by
-    simp only [projectCurrent, removeRunnable]
+    simp only [projectCurrent, removeRunnable, SchedulerState.currentOnCore]
     cases hC : st.scheduler.current with
     | none => simp
     | some x =>
@@ -297,7 +298,7 @@ theorem removeRunnable_preserves_projection
       projectDomainScheduleIndex ctx observer st := rfl
   have hMR : projectMachineRegs ctx observer (removeRunnable st tid) =
       projectMachineRegs ctx observer st := by
-    simp only [projectMachineRegs, removeRunnable]
+    simp only [projectMachineRegs, removeRunnable, SchedulerState.currentOnCore]
     cases hC : st.scheduler.current with
     | none => simp
     | some x =>
@@ -327,7 +328,7 @@ theorem ensureRunnable_preserves_projection
     | some tcb =>
           show projectState ctx observer
               { st with scheduler := { st.scheduler with
-                  runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb) } } =
+                  runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb) } } =
               projectState ctx observer st
           simp only [projectState]; congr 1
           · -- projectRunnable

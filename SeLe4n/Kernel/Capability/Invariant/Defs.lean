@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- WS-RC R4.A close-out (Phase A2.c4): the historical state-level
 -- `cspaceSlotUnique` predicate and its `cspaceSlotUnique_trivial`
@@ -479,7 +480,7 @@ def cleanupHookDischarged (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
   (∀ obj, st.objects[target]? = some obj →
     SystemState.lookupObjectTypeMeta st target = some obj.objectType)
   ∧ (∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
   ∧ SeLe4n.Kernel.ScrubToken st target
 
 /-- AN4-F.4 (CAP-M04): Precondition subtype for cleanup-aware retype entry
@@ -514,7 +515,7 @@ def mkRetypeTarget (st : SystemState) (target : SeLe4n.ObjId)
     (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
       SystemState.lookupObjectTypeMeta st target = some obj.objectType)
     (hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
     (token : SeLe4n.Kernel.ScrubToken st target) :
     RetypeTarget st :=
   { id := target,
@@ -526,7 +527,7 @@ def mkRetypeTarget (st : SystemState) (target : SeLe4n.ObjId)
     (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
       SystemState.lookupObjectTypeMeta st target = some obj.objectType)
     (hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
-      ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+      ¬ (tcb.tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat))
     (token : SeLe4n.Kernel.ScrubToken st target) :
     (mkRetypeTarget st target hTypeMeta hNoStaleRefs token).id = target := rfl
 

@@ -64,6 +64,7 @@ here unchanged. -/
 namespace SeLe4n.Kernel.SchedContext.PriorityManagement
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 
@@ -232,8 +233,8 @@ a PIP-boosted thread would drop it to the new base priority, causing
 priority inversion for the entire blocking chain. -/
 def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) : SystemState :=
-  if tid ∈ st.scheduler.runQueue then
-    let rq := st.scheduler.runQueue.remove tid
+  if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
+    let rq := (st.scheduler.runQueueOnCore bootCoreId).remove tid
     -- AI3-B (M-22): Apply PIP boost to new priority.
     -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
     -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
@@ -245,7 +246,7 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
         | none => newPriority
         | some boostPrio => ⟨Nat.max newPriority.val boostPrio.val⟩
       | none =>
-        match st.scheduler.runQueue.threadPriority[tid]? with
+        match (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? with
         | some rqPrio => ⟨Nat.max newPriority.val rqPrio.val⟩
         | none => newPriority
     let rq := rq.insert tid effectivePrio
@@ -292,7 +293,7 @@ def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThread
         let st := migrateRunQueueBucket st vTargetTid.val newPriority
         -- E5: Conditional preemption check
         -- If target is current and priority decreased, reschedule
-        if st.scheduler.current == some vTargetTid.val &&
+        if (st.scheduler.currentOnCore bootCoreId) == some vTargetTid.val &&
            newPriority.val < oldPriority.val then
           match schedule st with
           | .ok ((), st') => .ok st'
@@ -347,7 +348,7 @@ def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThre
           let st := updatePrioritySource st vTargetTid.val targetTcb' newMCP
           -- F4: Run queue migration + preemption check for capped priority
           let st := migrateRunQueueBucket st vTargetTid.val newMCP
-          if st.scheduler.current == some vTargetTid.val then
+          if (st.scheduler.currentOnCore bootCoreId) == some vTargetTid.val then
             match schedule st with
             | .ok ((), st') => .ok st'
             | .error e => .error e

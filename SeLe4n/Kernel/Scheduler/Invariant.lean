@@ -72,6 +72,7 @@ provides only the invariant definitions and basic structural lemmas.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- WS-H12b/H-04: Dequeue-on-dispatch queue/current consistency.
 
@@ -82,7 +83,7 @@ When `current = some tid`, `tid` must **not** appear in the runnable queue.
 This inverts the pre-H12b "strict" policy (`tid ∈ runnable`) to match seL4's
 `switchToThread` which calls `tcbSchedDequeue` before setting `ksCurThread`. -/
 def queueCurrentConsistent (s : SchedulerState) : Prop :=
-  match s.current with
+  match s.currentOnCore bootCoreId with
   | none => True
   | some tid => tid ∉ s.runnable
 
@@ -99,7 +100,7 @@ def runQueueUnique (s : SchedulerState) : Prop :=
 /-- Scheduler invariant component #2 (M1 bundle v1): the selected current thread, if any,
 resolves to a TCB in the object store. -/
 def currentThreadValid (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid => ∃ tcb : TCB, st.objects[tid.toObjId]? = some (.tcb tcb)
 
@@ -107,11 +108,11 @@ def currentThreadValid (st : SystemState) : Prop :=
 active scheduling domain. This is the basic temporal partitioning guarantee:
 the scheduler only runs threads in the current domain. -/
 def currentThreadInActiveDomain (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
       match st.objects[tid.toObjId]? with
-      | some (.tcb tcb) => tcb.domain = st.scheduler.activeDomain
+      | some (.tcb tcb) => tcb.domain = (st.scheduler.activeDomainOnCore bootCoreId)
       | _ => True
 
 /-- Scheduler Invariant Bundle v1 entrypoint used by composed IPC/architecture bundles.
@@ -195,7 +196,7 @@ would leave due-but-unprocessed entries in the queue, falsifying this
 invariant at the expected post-state. -/
 def replenishmentPipelineOrder (st : SystemState) : Prop :=
   ∀ (pair : SchedContextId × Nat),
-    pair ∈ st.scheduler.replenishQueue.entries → pair.2 > st.machine.timer
+    pair ∈ (st.scheduler.replenishQueueOnCore bootCoreId).entries → pair.2 > st.machine.timer
 
 /-- AN5-B (SCH-M03): The default state has an empty `replenishQueue` so
 `replenishmentPipelineOrder` holds vacuously. -/
@@ -203,7 +204,7 @@ theorem default_replenishmentPipelineOrder :
     replenishmentPipelineOrder (default : SystemState) := by
   intro pair hMem
   -- Default ReplenishQueue has empty entries list
-  have : (default : SystemState).scheduler.replenishQueue.entries = [] := by
+  have : ((default : SystemState).scheduler.replenishQueueOnCore bootCoreId).entries = [] := by
     rfl
   rw [this] at hMem
   exact absurd hMem (by simp)
@@ -212,7 +213,7 @@ theorem default_replenishmentPipelineOrder :
 invariant holds vacuously. -/
 theorem replenishmentPipelineOrder_of_empty
     (st : SystemState)
-    (hEmpty : st.scheduler.replenishQueue.entries = []) :
+    (hEmpty : (st.scheduler.replenishQueueOnCore bootCoreId).entries = []) :
     replenishmentPipelineOrder st := by
   intro pair hMem
   rw [hEmpty] at hMem
@@ -238,7 +239,7 @@ run queue at dispatch time, so `timeSlicePositive` (which quantifies over
 runnable threads) no longer covers it. This companion predicate closes the gap
 and is included in `schedulerInvariantBundleFull`. -/
 def currentTimeSlicePositive (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
     match st.objects[tid.toObjId]? with
@@ -429,7 +430,7 @@ threads in the same effective priority bucket. Threads at a lower effective
 priority are not considered during bucket-based selection and thus fall
 outside the EDF comparison scope. -/
 def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some curTid =>
       match st.objects[curTid.toObjId]? with
@@ -470,7 +471,7 @@ where it guarantees register-TCB synchronization for the dispatched thread.
 Under `currentThreadValid`, the "not a TCB" branch is unreachable, making the
 match on `st.objects[tid.toObjId]?` effectively a two-case analysis. -/
 def contextMatchesCurrent (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | some tid =>
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) => (st.machine.regs == tcb.registerContext) = true
@@ -482,7 +483,7 @@ def contextMatchesCurrent (st : SystemState) : Prop :=
     via definitional equality (e.g., inline context restore in `schedule`). -/
 theorem contextMatchesCurrent_of_regs_eq {st : SystemState} {tid : SeLe4n.ThreadId}
     {tcb : TCB}
-    (hCurr : st.scheduler.current = some tid)
+    (hCurr : (st.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st.objects[tid.toObjId]? = some (.tcb tcb))
     (hRegs : st.machine.regs = tcb.registerContext) :
     contextMatchesCurrent st := by
@@ -543,10 +544,10 @@ Together with `RunQueue.wellFormed`, this enables the bucket-first scheduling
 proof: if a thread has the same effective priority as the selected candidate,
 it must reside in the same priority bucket. -/
 def schedulerPriorityMatch (st : SystemState) : Prop :=
-  ∀ tid, tid ∈ st.scheduler.runQueue →
+  ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId) →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-        st.scheduler.runQueue.threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
+        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
     | _ => True
 
 /-- V5-H (M-HW-7): The scheduler's `domainTimeRemaining` is always positive (> 0).
@@ -563,7 +564,7 @@ and maintained by:
 - `schedule`: does not modify `domainTimeRemaining`.
 - `handleYield`: does not modify `domainTimeRemaining`. -/
 def domainTimeRemainingPositive (st : SystemState) : Prop :=
-  st.scheduler.domainTimeRemaining > 0
+  (st.scheduler.domainTimeRemainingOnCore bootCoreId) > 0
 
 /-- X2-A/H-2: All entries in the domain schedule table have positive length.
 This validates that `switchDomain` will never set `domainTimeRemaining` to 0
@@ -626,7 +627,7 @@ are unchanged. -/
 theorem schedulerPriorityMatch_of_runQueue_objects_eq
     (st st' : SystemState)
     (hInv : schedulerPriorityMatch st)
-    (hRQEq : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hRQEq : (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId))
     (hObjEq : st'.objects = st.objects) :
     schedulerPriorityMatch st' := by
   intro tid hMem; rw [hRQEq] at hMem; rw [hRQEq, hObjEq]; exact hInv tid hMem
@@ -638,20 +639,20 @@ theorem schedulerPriorityMatch_insert
     (st : SystemState) (curTid : ThreadId) (curTcb : TCB)
     (hPM : schedulerPriorityMatch st)
     (hQCC : queueCurrentConsistent st.scheduler)
-    (hCur : st.scheduler.current = some curTid)
+    (hCur : (st.scheduler.currentOnCore bootCoreId) = some curTid)
     (hObj : st.objects[curTid.toObjId]? = some (.tcb curTcb)) :
-    ∀ tid, tid ∈ st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb) →
+    ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb) →
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
-        (st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb)).threadPriority[tid]?
+        ((st.scheduler.runQueueOnCore bootCoreId).insert curTid (effectiveRunQueuePriority curTcb)).threadPriority[tid]?
           = some (effectiveRunQueuePriority tcb)
       | _ => True := by
   intro tid hMem
-  have hNotMem : curTid ∉ st.scheduler.runQueue := by
+  have hNotMem : curTid ∉ (st.scheduler.runQueueOnCore bootCoreId) := by
     simp [queueCurrentConsistent, hCur] at hQCC
     intro h; exact hQCC ((RunQueue.mem_toList_iff_mem _ _).2 h)
-  have hContF : st.scheduler.runQueue.contains curTid = false := by
-    cases h : st.scheduler.runQueue.contains curTid; rfl; exact absurd h hNotMem
+  have hContF : (st.scheduler.runQueueOnCore bootCoreId).contains curTid = false := by
+    cases h : (st.scheduler.runQueueOnCore bootCoreId).contains curTid; rfl; exact absurd h hNotMem
   rw [RunQueue.mem_insert] at hMem
   rw [RunQueue.insert_threadPriority]; simp only [hContF, Bool.false_eq_true, ↓reduceIte]
   cases hMem with
@@ -660,14 +661,14 @@ theorem schedulerPriorityMatch_insert
     have hBEq : (curTid == tid) = false := by
       cases h : (curTid == tid) <;> simp_all
     simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
+    rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
     simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
     have := hPM tid hOld
     simp only [RHTable_getElem?_eq_get?] at this; exact this
   | inr hEq =>
     subst hEq
     simp only [RHTable_getElem?_eq_get?]
-    rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
+    rw [RHTable_getElem?_insert (st.scheduler.runQueueOnCore bootCoreId).threadPriority _ _ (st.scheduler.runQueueOnCore bootCoreId).threadPrio_invExtK.1]
     simp only [beq_self_eq_true, ↓reduceIte]
     simp only [RHTable_getElem?_eq_get?] at hObj; rw [hObj]
 
@@ -708,7 +709,7 @@ theorem default_budgetPositive :
 Under dequeue-on-dispatch, `budgetPositive` does not cover the current thread.
 This companion predicate closes the gap. -/
 def currentBudgetPositive (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
     match st.objects[tid.toObjId]? with
@@ -724,7 +725,7 @@ def currentBudgetPositive (st : SystemState) : Prop :=
 /-- Z4-L: Default state has no current thread — vacuously true. -/
 theorem default_currentBudgetPositive :
     currentBudgetPositive (default : SystemState) := by
-  simp [currentBudgetPositive]
+  simp [currentBudgetPositive, SchedulerState.currentOnCore]
 
 -- ============================================================================
 -- Z4-M: schedContextsWellFormed invariant
@@ -757,8 +758,8 @@ theorem default_schedContextsWellFormed :
 /-- Z4-N: The system replenish queue is sorted and every entry references an
 active SchedContext. Connects Z3's queue invariants to system state. -/
 def replenishQueueValid (st : SystemState) : Prop :=
-  replenishQueueSorted st.scheduler.replenishQueue ∧
-  replenishQueueSizeConsistent st.scheduler.replenishQueue
+  replenishQueueSorted (st.scheduler.replenishQueueOnCore bootCoreId) ∧
+  replenishQueueSizeConsistent (st.scheduler.replenishQueueOnCore bootCoreId)
 
 /-- Z4-N: Default state has empty replenish queue — trivially valid. -/
 theorem default_replenishQueueValid :
@@ -813,16 +814,16 @@ the effective priority from SchedContext resolution. This extends
 `schedulerPriorityMatch` to the SchedContext world — when a thread is bound
 to a SchedContext, the RunQueue entry reflects the SchedContext's priority. -/
 def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
-  ∀ tid, tid ∈ st.scheduler.runQueue →
+  ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId) →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
       match tcb.schedContextBinding with
       | .unbound =>
-        st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
+        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
       | .bound scId | .donated scId _ =>
         match st.objects[scId.toObjId]? with
         | some (.schedContext sc) =>
-          st.scheduler.runQueue.threadPriority[tid]? = some sc.priority
+          (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some sc.priority
         | _ => True
     | _ => True
 
@@ -830,7 +831,7 @@ def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
 theorem default_effectiveParamsMatchRunQueue :
     effectiveParamsMatchRunQueue (default : SystemState) := by
   intro tid hMem
-  have hEmpty : (default : SystemState).scheduler.runQueue.membership.contains tid = false :=
+  have hEmpty : ((default : SystemState).scheduler.runQueueOnCore bootCoreId).membership.contains tid = false :=
     RobinHood.RHSet.contains_empty tid
   simp [Membership.mem, RunQueue.contains] at hMem
   simp [hEmpty] at hMem

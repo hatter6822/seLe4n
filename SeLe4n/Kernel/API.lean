@@ -107,6 +107,7 @@ completed before implementation.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- L-01/WS-E6: Unified public API invariant bundle.
 Alias for `Architecture.proofLayerInvariantBundle` — the composed bundle of all
@@ -1248,7 +1249,7 @@ def syscallEntryChecked (ctx : LabelingContext)
     -- AI5-C (M-19): Reject insecure default labeling context in checked mode
     if isInsecureDefaultContext ctx then .error .policyDenied
     else
-    match st.scheduler.current with
+    match (st.scheduler.currentOnCore bootCoreId) with
     | none => .error .illegalState
     | some tid =>
       match lookupThreadRegisterContext tid st with
@@ -1616,7 +1617,7 @@ indices are within architectural bounds. -/
 def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
     (regCount : Nat := 32) : Kernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.currentOnCore bootCoreId) with
     | none => .error .illegalState
     | some tid =>
       match lookupThreadRegisterContext tid st with
@@ -1641,7 +1642,7 @@ theorem syscallEntry_requires_valid_decode
     (st : SystemState) (st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st')) :
     ∃ tid regs decoded,
-      st.scheduler.current = some tid ∧
+      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout regs regCount = .ok decoded := by
@@ -1709,7 +1710,7 @@ theorem syscallEntry_implies_capability_held
     (st : SystemState) (st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st')) :
     ∃ tid regs decoded,
-      st.scheduler.current = some tid ∧
+      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
       SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
         st tid layout regs regCount = .ok decoded ∧
@@ -2116,7 +2117,7 @@ theorem syscallEntry_success_yields_NI_step
     (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
     (st st' : SystemState)
     (hOk : syscallEntry layout regCount st = .ok ((), st'))
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t →
+    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
     (hDispatchProj : ∀ decoded tid,
         dispatchSyscall decoded tid st = .ok ((), st') →

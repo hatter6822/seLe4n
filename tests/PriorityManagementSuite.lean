@@ -15,6 +15,7 @@ import SeLe4n.Model.FrozenState
 import SeLe4n.Kernel.SchedContext.Types
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel
 open SeLe4n.Kernel.SchedContext.PriorityManagement
 open SeLe4n.Kernel.FrozenOps
@@ -456,12 +457,12 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
   -- Insert the bound thread into the RunQueue at its current priority 50.
   let st : SystemState := { stBase with scheduler :=
     { stBase.scheduler with
-      runQueue := stBase.scheduler.runQueue.insert targetTid ⟨50⟩ } }
+      runQueue := (stBase.scheduler.runQueueOnCore bootCoreId).insert targetTid ⟨50⟩ } }
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
   | .ok ((), st') =>
     -- After reconfigure, the RunQueue's cached priority for this thread
     -- must match the new priority (123), not the old (50).
-    match st'.scheduler.runQueue.threadPriority[targetTid]? with
+    match (st'.scheduler.runQueueOnCore bootCoreId).threadPriority[targetTid]? with
     | some prio =>
       expect "RunQueue bucket migrated to new priority (50 -> 123)"
         (prio == ⟨123⟩)
