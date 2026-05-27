@@ -1539,19 +1539,19 @@ def an6f_cxm01_collectQueueMembers_structural_signatures : IO Unit := do
 def an6f_cxm03_singleCore_witness_reachable : IO Unit := do
   let sEmpty : SeLe4n.Model.SchedulerState := default
   let _witnessEmpty :
-      sEmpty.current = none ∨ ∃ tid, sEmpty.current = some tid :=
+      sEmpty.currentOnCore bootCoreId = none ∨ ∃ tid, sEmpty.currentOnCore bootCoreId = some tid :=
     SeLe4n.Kernel.bootFromPlatform_singleCore_witness sEmpty
-  -- Default `SchedulerState.current` is `none`, so the structural witness
+  -- Default boot-core `current` is `none`, so the structural witness
   -- must match the `.inl` branch.
   expect "CX-M03: default sched has current = none"
-    (sEmpty.current.isNone)
+    ((sEmpty.currentOnCore bootCoreId).isNone)
   let sWithTid : SeLe4n.Model.SchedulerState :=
-    { sEmpty with current := some (SeLe4n.ThreadId.ofNat 7) }
+    sEmpty.setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 7))
   let _witnessTid :
-      sWithTid.current = none ∨ ∃ tid, sWithTid.current = some tid :=
+      sWithTid.currentOnCore bootCoreId = none ∨ ∃ tid, sWithTid.currentOnCore bootCoreId = some tid :=
     SeLe4n.Kernel.bootFromPlatform_singleCore_witness sWithTid
   expect "CX-M03: explicit current has tid 7"
-    (sWithTid.current == some (SeLe4n.ThreadId.ofNat 7))
+    ((sWithTid.currentOnCore bootCoreId) == some (SeLe4n.ThreadId.ofNat 7))
 
 /-- AN6-F (CX-M04): The `InterruptsEnabledPreservationBundle` structure
     packages the eight individual `_preserves_interruptsEnabled`

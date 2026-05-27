@@ -474,17 +474,19 @@ theorem freezeObject_preserves_type (obj : KernelObject) :
 /-- Q5-C: Freeze the scheduler state.
 AG1-E: Now includes `replenishQueue` for CBS scheduling support. -/
 def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
-  { byPriority := freezeMap sched.runQueue.byPriority
-    threadPriority := freezeMap sched.runQueue.threadPriority
-    membership := freezeMap sched.runQueue.membership.table
-    current := sched.current
-    activeDomain := sched.activeDomain
-    domainTimeRemaining := sched.domainTimeRemaining
+  -- WS-SM SM4.B phase-2: the frozen execution-phase snapshot is single-core;
+  -- it captures `bootCoreId`'s per-core slots.
+  { byPriority := freezeMap (sched.runQueueOnCore bootCoreId).byPriority
+    threadPriority := freezeMap (sched.runQueueOnCore bootCoreId).threadPriority
+    membership := freezeMap (sched.runQueueOnCore bootCoreId).membership.table
+    current := sched.currentOnCore bootCoreId
+    activeDomain := sched.activeDomainOnCore bootCoreId
+    domainTimeRemaining := sched.domainTimeRemainingOnCore bootCoreId
     domainSchedule := sched.domainSchedule
-    domainScheduleIndex := sched.domainScheduleIndex
+    domainScheduleIndex := sched.domainScheduleIndexOnCore bootCoreId
     configDefaultTimeSlice := sched.configDefaultTimeSlice
-    replenishQueue := { entries := sched.replenishQueue.entries
-                        size := sched.replenishQueue.size } }
+    replenishQueue := { entries := (sched.replenishQueueOnCore bootCoreId).entries
+                        size := (sched.replenishQueueOnCore bootCoreId).size } }
 
 /-- Q5-C: Master freeze function — converts an `IntermediateState` (builder
 phase with invariant witnesses) into a `FrozenSystemState` (execution phase

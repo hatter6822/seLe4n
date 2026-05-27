@@ -482,17 +482,13 @@ private def schedulerStressChecks : IO Unit := do
     (domainThreads.foldl (fun b (oid, obj) => b.withObject oid obj) domainStateBaseBuilder).buildChecked
   let domainState :=
     { domainStateBase with
-      scheduler := { domainStateBase.scheduler with
+      scheduler := { ((domainStateBase.scheduler.setActiveDomainOnCore bootCoreId ⟨0⟩).setDomainScheduleIndexOnCore bootCoreId 0).setDomainTimeRemainingOnCore bootCoreId 2 with
         domainSchedule := [
           { domain := ⟨0⟩, length := 2 },
           { domain := ⟨1⟩, length := 2 },
           { domain := ⟨2⟩, length := 2 },
           { domain := ⟨3⟩, length := 2 }
-        ]
-        activeDomain := ⟨0⟩
-        domainScheduleIndex := 0
-        domainTimeRemaining := 2
-      } }
+        ] } }
   let mut st := domainState
   let mut isolated := true
   for _ in List.range 16 do
@@ -589,9 +585,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
   | _ => throw <| IO.userError "chain10: sender TCB not found after send"
 
   -- Step 2: Dispatch receiver — remove from runQueue before making current
-  let stRecv := { stAfterSend with scheduler := { stAfterSend.scheduler with
-    current := some ⟨301⟩,
-    runQueue := (stAfterSend.scheduler.runQueueOnCore bootCoreId).remove ⟨301⟩ } }
+  let stRecv := { stAfterSend with scheduler := (stAfterSend.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩)).setRunQueueOnCore bootCoreId ((stAfterSend.scheduler.runQueueOnCore bootCoreId).remove ⟨301⟩) }
   let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
   | .ok (_, stAfterRecv) =>
       -- After receive, endpoint sendQ should be empty (sender was dequeued)
@@ -1885,8 +1879,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     -- === serviceQuery (syscallId=13): dispatch on registered state
     -- (Uses stAfter from serviceRegister, not a fresh state)
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
-        { stAfter with scheduler := { stAfter.scheduler with
-            current := some ⟨500⟩ } } with
+        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
     | .ok _ =>
       IO.println "operation-chain check passed [chain30: serviceQuery dispatch]"
     | .error _ =>
@@ -1895,8 +1888,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     -- === serviceRevoke (syscallId=12): dispatch on registered state
     -- (Uses stAfter from serviceRegister, not a fresh state)
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
-        { stAfter with scheduler := { stAfter.scheduler with
-            current := some ⟨500⟩ } } with
+        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
     | .ok (_, stFinal) =>
       IO.println "operation-chain check passed [chain30: serviceRevoke dispatch]"
       let _ := stFinal

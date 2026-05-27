@@ -896,10 +896,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
             ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
             ipcState := .ready
           })
-      scheduler := { schedPriorityState.scheduler with
-        runQueue := (schedPriorityState.scheduler.runQueueOnCore bootCoreId).insert (SeLe4n.ThreadId.ofNat 7) ⟨80⟩
-        activeDomain := ⟨0⟩
-        current := none } }
+      scheduler := ((schedPriorityState.scheduler.setRunQueueOnCore bootCoreId ((schedPriorityState.scheduler.runQueueOnCore bootCoreId).insert (SeLe4n.ThreadId.ofNat 7) ⟨80⟩)).setActiveDomainOnCore bootCoreId ⟨0⟩).setCurrentOnCore bootCoreId none }
   let (_, stCrossDomainScheduled) ← expectOkSt "schedule filters runnable set to active domain"
     (SeLe4n.Kernel.schedule crossDomainState)
   if (stCrossDomainScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 8) then
@@ -908,7 +905,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     throw <| IO.userError "schedule domain filter expected current = tid 8"
 
   let noActiveDomainRunnableState : SystemState :=
-    { crossDomainState with scheduler := { crossDomainState.scheduler with activeDomain := ⟨2⟩ } }
+    { crossDomainState with scheduler := crossDomainState.scheduler.setActiveDomainOnCore bootCoreId ⟨2⟩ }
   let (_, stNoActiveDomainRunnable) ← expectOkSt "schedule returns idle when no active-domain runnable threads"
     (SeLe4n.Kernel.schedule noActiveDomainRunnableState)
   if (stNoActiveDomainRunnable.scheduler.currentOnCore bootCoreId) = none then
@@ -951,7 +948,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
       |>.withCurrent none
       |>.buildChecked)
-      |> fun st => { st with scheduler := { st.scheduler with activeDomain := ⟨1⟩ } }
+      |> fun st => { st with scheduler := st.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
   let (_, stMixedDomainScheduled) ← expectOkSt "schedule ignores higher-priority cross-domain runnable"
     (SeLe4n.Kernel.schedule mixedDomainFifoState)
   if (stMixedDomainScheduled.scheduler.currentOnCore bootCoreId) = some (SeLe4n.ThreadId.ofNat 10) then
@@ -979,16 +976,11 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
 
   let scheduleDomainSwitchState : SystemState :=
     { mixedDomainFifoState with
-      scheduler := { mixedDomainFifoState.scheduler with
-        activeDomain := ⟨0⟩
-        current := some (SeLe4n.ThreadId.ofNat 12)
-        domainTimeRemaining := 1
+      scheduler := { (((mixedDomainFifoState.scheduler.setActiveDomainOnCore bootCoreId ⟨0⟩).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 12))).setDomainTimeRemainingOnCore bootCoreId 1).setDomainScheduleIndexOnCore bootCoreId 0 with
         domainSchedule := [
           { domain := ⟨0⟩, length := 3 },
           { domain := ⟨1⟩, length := 2 }
-        ]
-        domainScheduleIndex := 0
-      } }
+        ] } }
   let (_, stScheduleDomainSwitched) ← expectOkSt "scheduleDomain switches domain and reschedules"
     (SeLe4n.Kernel.scheduleDomain scheduleDomainSwitchState)
   if (stScheduleDomainSwitched.scheduler.activeDomainOnCore bootCoreId) = ⟨1⟩ then
@@ -1011,13 +1003,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   -- WS-H12b: dequeue-on-dispatch — current thread must NOT be in runnable queue
   let scheduleDomainTickOnlyState : SystemState :=
     { scheduleDomainSwitchState with
-      scheduler := { scheduleDomainSwitchState.scheduler with
-        activeDomain := ⟨1⟩
-        current := some (SeLe4n.ThreadId.ofNat 10)
-        runQueue := (scheduleDomainSwitchState.scheduler.runQueueOnCore bootCoreId).remove (SeLe4n.ThreadId.ofNat 10)
-        domainTimeRemaining := 3
-        domainScheduleIndex := 1
-      } }
+      scheduler := ((((scheduleDomainSwitchState.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 10))).setRunQueueOnCore bootCoreId ((scheduleDomainSwitchState.scheduler.runQueueOnCore bootCoreId).remove (SeLe4n.ThreadId.ofNat 10))).setDomainTimeRemainingOnCore bootCoreId 3).setDomainScheduleIndexOnCore bootCoreId 1 }
   let (_, stScheduleDomainTickOnly) ← expectOkSt "scheduleDomain decrements budget without switching"
     (SeLe4n.Kernel.scheduleDomain scheduleDomainTickOnlyState)
   if (stScheduleDomainTickOnly.scheduler.activeDomainOnCore bootCoreId) = ⟨1⟩ ∧ (stScheduleDomainTickOnly.scheduler.domainScheduleIndexOnCore bootCoreId) = 1 then
@@ -1060,7 +1046,7 @@ private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
     .schedulerInvariantViolation
 
   let malformedOffDomain : SystemState :=
-    { malformedSched with scheduler := { malformedSched.scheduler with activeDomain := ⟨1⟩ } }
+    { malformedSched with scheduler := malformedSched.scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
   expectErr "schedule malformed runnable target in non-active domain still rejected"
     (SeLe4n.Kernel.schedule malformedOffDomain)
     .schedulerInvariantViolation

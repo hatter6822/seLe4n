@@ -1137,10 +1137,8 @@ def runInformationFlowChecks : IO Unit := do
   -- Verify that projectState includes domain timing fields
   let timingState :=
     { (BootstrapBuilder.empty.buildChecked) with
-        scheduler := { (BootstrapBuilder.empty.buildChecked).scheduler with
-          domainTimeRemaining := 42
-          domainSchedule := [{ domain := ⟨0⟩, length := 10 }, { domain := ⟨1⟩, length := 5 }]
-          domainScheduleIndex := 1 } }
+        scheduler := { ((BootstrapBuilder.empty.buildChecked).scheduler.setDomainTimeRemainingOnCore bootCoreId 42).setDomainScheduleIndexOnCore bootCoreId 1 with
+          domainSchedule := [{ domain := ⟨0⟩, length := 10 }, { domain := ⟨1⟩, length := 5 }] } }
 
   let projection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
     { clearance := publicLabel } timingState
@@ -1530,10 +1528,10 @@ def runInformationFlowChecks : IO Unit := do
     let tidB := SeLe4n.ThreadId.ofNat 2
     let stA : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with current := some tidA } }
+        scheduler := (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some tidA) }
     let stB : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with current := some tidB } }
+        scheduler := (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some tidB) }
     let pA :=
       SeLe4n.Kernel.projectState
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
@@ -1552,10 +1550,10 @@ def runInformationFlowChecks : IO Unit := do
   do
     let stA : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with activeDomain := ⟨0⟩ } }
+        scheduler := (default : SystemState).scheduler.setActiveDomainOnCore bootCoreId ⟨0⟩ }
     let stB : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with activeDomain := ⟨1⟩ } }
+        scheduler := (default : SystemState).scheduler.setActiveDomainOnCore bootCoreId ⟨1⟩ }
     let pA :=
       SeLe4n.Kernel.projectState
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
@@ -1573,10 +1571,10 @@ def runInformationFlowChecks : IO Unit := do
   do
     let stA : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with domainTimeRemaining := 100 } }
+        scheduler := (default : SystemState).scheduler.setDomainTimeRemainingOnCore bootCoreId 100 }
     let stB : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with domainTimeRemaining := 200 } }
+        scheduler := (default : SystemState).scheduler.setDomainTimeRemainingOnCore bootCoreId 200 }
     let pA :=
       SeLe4n.Kernel.projectState
         SeLe4n.Kernel.defaultLabelingContext reviewer stA
@@ -1593,10 +1591,10 @@ def runInformationFlowChecks : IO Unit := do
   do
     let stA : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with domainScheduleIndex := 0 } }
+        scheduler := (default : SystemState).scheduler.setDomainScheduleIndexOnCore bootCoreId 0 }
     let stB : SystemState :=
       { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with domainScheduleIndex := 3 } }
+        scheduler := (default : SystemState).scheduler.setDomainScheduleIndexOnCore bootCoreId 3 }
     let pA :=
       SeLe4n.Kernel.projectState
         SeLe4n.Kernel.defaultLabelingContext reviewer stA

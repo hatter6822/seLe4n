@@ -89,7 +89,7 @@ theorem cancelDonatedDonation_scheduler_runQueue_eq
   split at h
   · -- .donated case: delegate to cleanupDonatedSchedContext
     have hSched := cleanupDonatedSchedContext_scheduler_eq st st' tid h
-    exact ⟨congrArg SchedulerState.runQueue hSched, congrArg SchedulerState.current hSched⟩
+    exact ⟨congrArg (·.runQueueOnCore bootCoreId) hSched, congrArg (·.currentOnCore bootCoreId) hSched⟩
   · simp at h
 
 /-- D1-I/AE3-B/AE3-C/R5.A: cancelDonation preserves `runQueue` and `current`
@@ -732,8 +732,7 @@ theorem schedule_lookup_equiv
             -- Use restoreIncomingContext_objects_eq to propagate through dequeue+restoreIncomingContext.
             have hObjEq :
                 ((restoreIncomingContext { (saveOutgoingContext st) with
-                      scheduler := { (saveOutgoingContext st).scheduler with
-                        runQueue := ((saveOutgoingContext st).scheduler.runQueueOnCore bootCoreId).remove tid } }
+                      scheduler := (saveOutgoingContext st).scheduler.setRunQueueOnCore bootCoreId (((saveOutgoingContext st).scheduler.runQueueOnCore bootCoreId).remove tid) }
                       tid)).objects[objId]?
                 = (saveOutgoingContext st).objects[objId]? := by
               rw [show (restoreIncomingContext _ tid).objects =
@@ -782,8 +781,7 @@ theorem schedule_getSchedContext?_eq
             unfold SystemState.getSchedContext?
             have hObjEq :
                 ((restoreIncomingContext { (saveOutgoingContext st) with
-                      scheduler := { (saveOutgoingContext st).scheduler with
-                        runQueue := ((saveOutgoingContext st).scheduler.runQueueOnCore bootCoreId).remove tid } }
+                      scheduler := (saveOutgoingContext st).scheduler.setRunQueueOnCore bootCoreId (((saveOutgoingContext st).scheduler.runQueueOnCore bootCoreId).remove tid) }
                       tid)).objects[scId.toObjId]?
                 = (saveOutgoingContext st).objects[scId.toObjId]? := by
               rw [show (restoreIncomingContext _ tid).objects =

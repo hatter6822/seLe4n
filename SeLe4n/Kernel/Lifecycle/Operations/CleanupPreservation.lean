@@ -141,6 +141,8 @@ theorem cleanupTcbReferences_removes_from_runnable
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
   unfold removeRunnable
+  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   exact RunQueue.not_mem_remove_self _ _
 
 /-- Cleanup preserves lifecycle metadata. -/
@@ -269,7 +271,8 @@ theorem cleanupTcbReferences_flat_subset
   rw [removeFromAllNotificationWaitLists_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
   unfold removeRunnable at h
-  simp only [] at h
+  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
   exact (List.mem_filter.mp h).1
 
 /-- CDT cleanup preserves the scheduler. -/
@@ -319,7 +322,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
         | _ => stDon).scheduler = stDon.scheduler := by
         cases tcb.schedContextBinding <;> rfl
       rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h; simp only [] at h
+      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h
+      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
       exact (List.mem_filter.mp h).1
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk

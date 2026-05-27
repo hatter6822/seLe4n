@@ -76,11 +76,12 @@ example (c : CoreId) : (default : SchedulerState).domainScheduleIndexOnCore c = 
 example (c : CoreId) : (default : SchedulerState).lastTimeoutErrorsOnCore c = [] :=
   (default_state_perCoreInitialized c).2.2.2.2.2.2
 
--- SM4.B.8: an accessor reads back a value written into the underlying field.
+-- SM4.B.8: an accessor reads back a value written into the per-core field at
+-- the same core (read-after-write at one core).
 example (c : CoreId) :
-    ({ (default : SchedulerState) with current := some (SeLe4n.ThreadId.ofNat 1) }).currentOnCore c
+    ((default : SchedulerState).setCurrentOnCore c (some (SeLe4n.ThreadId.ofNat 1))).currentOnCore c
       = some (SeLe4n.ThreadId.ofNat 1) :=
-  rfl
+  SchedulerState.setCurrentOnCore_currentOnCore_self _ c _
 
 -- SM4.B.10: per-core extensionality is usable — agreement at every core (and
 -- on the system-wide fields) collapses two states to equal.
@@ -121,17 +122,18 @@ private def runDefaultInitChecks : IO Unit := do
   assertBool "lastTimeoutErrorsOnCore = [] on every core"
     (allCores.all (fun c => decide ((default : SchedulerState).lastTimeoutErrorsOnCore c = [])))
 
-/-- SM4.B.8 runtime mirror: an accessor reads back a written value, and reads
-    are consistent across cores (single-core phase: identical on every core). -/
+/-- SM4.B.8 runtime mirror: an accessor reads back a value written at the boot
+    core, the write frames `runQueue`, and (per-core independence) the other
+    cores' `current` stays at the neutral `none`. -/
 private def runAccessorReadChecks : IO Unit := do
   IO.println "--- §3.2 SM4.B.8 accessor read-back ---"
-  let s : SchedulerState := { (default : SchedulerState) with current := some (SeLe4n.ThreadId.ofNat 1) }
-  assertBool "currentOnCore reads the written value on every core"
-    (allCores.all (fun c => decide (s.currentOnCore c = some (SeLe4n.ThreadId.ofNat 1))))
+  let s : SchedulerState := (default : SchedulerState).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 1))
+  assertBool "currentOnCore reads the written value at the boot core"
+    (decide (s.currentOnCore bootCoreId = some (SeLe4n.ThreadId.ofNat 1)))
   assertBool "writing current leaves runQueueOnCore empty (frame) on every core"
     (allCores.all (fun c => decide ((s.runQueueOnCore c).toList = [])))
-  assertBool "currentOnCore at bootCoreId agrees with the read on every core"
-    (allCores.all (fun c => decide (s.currentOnCore c = s.currentOnCore bootCoreId)))
+  assertBool "per-core independence: a non-boot core's current is unchanged (none)"
+    (allCores.all (fun c => decide (c = bootCoreId ∨ s.currentOnCore c = none)))
 
 def runPerCoreSchedulerStateChecks : IO Unit := do
   IO.println "WS-SM SM4.B — Per-core SchedulerState accessor + theorem suite"

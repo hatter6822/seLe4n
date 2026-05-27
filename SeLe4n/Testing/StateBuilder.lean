@@ -93,12 +93,11 @@ def build (builder : BootstrapBuilder) : SystemState :=
     objectIndex := builder.objects.map Prod.fst
     objectIndexSet := SeLe4n.Kernel.RobinHood.RHSet.ofList (builder.objects.map Prod.fst)
     services := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.services
-    scheduler := {
-      -- WS-G4 fix: use actual TCB priorities for RunQueue bucketing
-      runQueue := SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
-        (tid, lookupThreadPriority builder.objects tid)))
-      current := builder.current
-    }
+    -- SM4.B: per-core scheduler fields; the test builder populates only the boot core.
+    scheduler := ((default : SchedulerState).setRunQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId
+        (SeLe4n.Kernel.RunQueue.ofList (builder.runnable.map (fun tid =>
+          (tid, lookupThreadPriority builder.objects tid))))).setCurrentOnCore
+          SeLe4n.Kernel.Concurrency.bootCoreId builder.current
     irqHandlers := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.irqHandlers
     lifecycle := {
       objectTypes := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes

@@ -436,7 +436,7 @@ def an10_e_removeRunnableValid_reduces_to_raw : IO Bool := do
   -- field clears observably (validates the wrapper invokes the same
   -- effect path as the raw form).
   let st : SystemState := { (default : SystemState) with
-    scheduler := { (default : SystemState).scheduler with current := some tid } }
+    scheduler := (default : SystemState).scheduler.setCurrentOnCore bootCoreId (some tid) }
   let viaWrapper : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
   let viaRaw : SystemState := SeLe4n.Kernel.removeRunnable st vtid.val
   -- Both must clear `current` (rfl-equality enforced by the `_eq` lemma).

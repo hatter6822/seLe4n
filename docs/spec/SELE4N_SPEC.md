@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.11` (`lakefile.toml`) |
+| **Package version** | `0.31.12` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 140,030 across 200 Lean files |
 | **Test LoC** | 29,885 across 43 Lean test suites |
@@ -2297,8 +2297,31 @@ preserves on a per-core basis.
    instance anchors verifying `Vector (Option ThreadId) numCores` carries
    `DecidableEq`/`Repr`/`Inhabited`/`BEq`); Tier 2 + Tier 3 wired.
    **Axiom budget for SM4.A**: 0 Lean axioms, 0 sorries.
-   Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
-   (theorem migrations), SM4.E (`bootFromPlatform_smp_witness`).
+
+   **SM4.B — `SchedulerState` path-a `Vector` replacement (v0.31.12).**
+   The seven singular per-core `SchedulerState` fields (`runQueue`,
+   `current`, `replenishQueue`, `activeDomain`, `domainTimeRemaining`,
+   `domainScheduleIndex`, `lastTimeoutErrors`) flip from scalars to
+   `Vector α Concurrency.numCores` indexed by `CoreId`, with
+   `Vector.replicate numCores <neutral>` defaults; `domainSchedule` and
+   `configDefaultTimeSlice` stay system-wide. The seven `…OnCore`
+   accessors are now `Vector.get`-backed and gain seven matching
+   `set…OnCore` writers, governed by a 63-lemma `@[simp]` store/load
+   algebra (7 read-after-write + 42 cross-field frame + 14
+   system-wide-field frame). Because `Vector.get (Vector.set …)` is not
+   definitional, these proved lemmas — not `rfl`/iota — drive every
+   post-write read reduction, which is how the whole production import
+   closure (scheduler operations + preservation, SchedContext,
+   lifecycle, IPC, priority inheritance, information-flow projection +
+   NI, architecture invariants, cross-subsystem, boot, freeze) re-proves
+   without behavioural change. `default_state_perCoreInitialized`
+   (SM4.B.9) and `SchedulerState.ext_perCore` (SM4.B.10) anchor the
+   per-core defaults and extensionality. The executable trace remains
+   **byte-identical** to `main_trace_smoke.expected` (SM4.B.15) because
+   the boot core behaves exactly as the former scalar. Axiom budget for
+   SM4.B: 0 axioms, 0 sorries. Follow-on: SM4.C/SM4.D (theorem
+   migrations), SM4.E (`bootFromPlatform_smp_witness` + witness
+   retirement).
 
 ---
 
@@ -3568,21 +3591,29 @@ Three complementary guards enforce the index cannot silently drift:
 
 #### 11.2.3 Single-core kernel model witness (AN6-F / CX-M03)
 
-WS-AN Phase AN6-F adds `bootFromPlatform_singleCore_witness` in
-`Kernel/CrossSubsystem.lean` proving that `SchedulerState.current` is a
-single `Option ThreadId`, not a per-core indexed map. The theorem is a
-structural witness of the Lean kernel model's single-core shape; the
-Rust HAL enforces the corresponding hardware-level assumption via
+WS-AN Phase AN6-F added `bootFromPlatform_singleCore_witness` in
+`Kernel/CrossSubsystem.lean`. As anticipated below, the WS-SM SMP
+bring-up workstream took **path (a)**: at **SM4.B** (v0.31.12) the
+`SchedulerState.current` field flipped from a single `Option ThreadId`
+to `Vector (Option ThreadId) Concurrency.numCores` indexed by `CoreId`
+(the path-a per-core `Vector` replacement). The witness is therefore
+restated over the boot core's accessor — `currentOnCore bootCoreId =
+none ∨ ∃ tid, currentOnCore bootCoreId = some tid` — and remains the
+structural anchor for the `singleCoreOperation` `ArchAssumption`. The
+Rust HAL still enforces the hardware-level boot assumption via
 `MPIDR_CORE_ID_MASK = 0x00FFFFFF` and the core-0 wake gate in
-`rust/sele4n-hal/src/boot.S`.
+`rust/sele4n-hal/src/boot.S` (secondary-core wake-up is staged in the
+SM1 HAL but not yet driven from the verified kernel).
 
-Any future SMP extension (tracked as DEF-R-HAL-L20 / AN9-J in the v0.30.6
-workstream plan) that adds per-core scheduler state will either (a)
-change the `current` field's type (breaking this theorem statement) or
-(b) introduce a separate per-core-map field (requiring an explicit SMP
-invariant). Both paths force the SMP-bring-up workstream to retire the
-single-core witness explicitly rather than letting the assumption slip
-silently.
+The original AN6-F note anticipated exactly this: "any future SMP
+extension that adds per-core scheduler state will either (a) change the
+`current` field's type (breaking this theorem statement) or (b)
+introduce a separate per-core-map field." SM4.B is option (a). The
+**full** retirement of the single-core witness — replacing it with
+`bootFromPlatform_smp_witness` and repointing the `singleCoreOperation`
+`ArchAssumption` — is scheduled for **SM4.E**; SM4.B keeps the witness
+valid (restated, not deleted) so the SMP assumption is never silently
+dropped mid-migration.
 
 ## 12. Licensing and Third-Party Attribution
 

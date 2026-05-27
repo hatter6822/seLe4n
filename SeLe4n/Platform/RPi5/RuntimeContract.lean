@@ -231,9 +231,11 @@ theorem registerContextStableCheck_budget
     (hStable : registerContextStableCheck st (contextSwitchState newTid newRegs st) = true) :
     SeLe4n.Kernel.currentBudgetPositive (contextSwitchState newTid newRegs st) := by
   unfold registerContextStableCheck contextSwitchState at hStable
-  simp only [SchedulerState.currentOnCore, hObj, Bool.and_eq_true] at hStable
+  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+    PerCoreVector.get_set_eq, hObj, Bool.and_eq_true] at hStable
   unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState
-  simp only [SchedulerState.currentOnCore, hObj]
+  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+    PerCoreVector.get_set_eq, hObj]
   have hBud := hStable.2
   -- budgetSufficientCheck mirrors currentBudgetPositive structure
   match hBind : tcb.schedContextBinding with

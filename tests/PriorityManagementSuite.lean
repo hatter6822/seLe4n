@@ -455,9 +455,7 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
     (scObjId, .schedContext sc)
   ]
   -- Insert the bound thread into the RunQueue at its current priority 50.
-  let st : SystemState := { stBase with scheduler :=
-    { stBase.scheduler with
-      runQueue := (stBase.scheduler.runQueueOnCore bootCoreId).insert targetTid ⟨50⟩ } }
+  let st : SystemState := { stBase with scheduler := stBase.scheduler.setRunQueueOnCore bootCoreId ((stBase.scheduler.runQueueOnCore bootCoreId).insert targetTid ⟨50⟩) }
   match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
   | .ok ((), st') =>
     -- After reconfigure, the RunQueue's cached priority for this thread

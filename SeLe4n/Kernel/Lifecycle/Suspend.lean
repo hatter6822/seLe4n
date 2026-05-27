@@ -183,8 +183,7 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
       | none => st
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
-    let st2 := { st1 with scheduler := { st1.scheduler with
-        replenishQueue := ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId } }
+    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
     -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }

@@ -589,7 +589,7 @@ are invisible to information-flow analysis. Used by
 theorem projectState_replenishQueue_eq (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (rq : SeLe4n.Kernel.ReplenishQueue) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with replenishQueue := rq } } =
+      { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq } =
     projectState ctx observer st := by rfl
 
 /-- AK6-F.2a: Clearing `scheduler.current` when the previous current was
@@ -607,23 +607,31 @@ theorem projectState_scheduler_current_cleared_when_high
     (hCurrHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
                        threadObservable ctx observer t = false) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with current := none } } =
+      { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
     projectState ctx observer st := by
   -- Only projectCurrent and projectMachineRegs read scheduler.current.
   have hCur : projectCurrent ctx observer
-                { st with scheduler := { st.scheduler with current := none } } =
+                { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
               projectCurrent ctx observer st := by
-    simp only [projectCurrent]
+    have hLHS : projectCurrent ctx observer
+        { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
+      simp only [projectCurrent, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+        PerCoreVector.get_set_eq]
+    rw [hLHS]; unfold projectCurrent
     cases hSome : (st.scheduler.currentOnCore bootCoreId) with
     | none => rfl
-    | some tid => have := hCurrHigh tid hSome; simp [this, SchedulerState.currentOnCore]
+    | some tid => have := hCurrHigh tid hSome; simp [this]
   have hMachine : projectMachineRegs ctx observer
-                    { st with scheduler := { st.scheduler with current := none } } =
+                    { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
                   projectMachineRegs ctx observer st := by
-    simp only [projectMachineRegs]
+    have hLHS : projectMachineRegs ctx observer
+        { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
+      simp only [projectMachineRegs, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+        PerCoreVector.get_set_eq]
+    rw [hLHS]; unfold projectMachineRegs
     cases hSome : (st.scheduler.currentOnCore bootCoreId) with
     | none => rfl
-    | some tid => have := hCurrHigh tid hSome; simp [this, SchedulerState.currentOnCore]
+    | some tid => have := hCurrHigh tid hSome; simp [this]
   simp only [projectState]
   congr 1 <;> first | rfl | exact hCur | exact hMachine
 

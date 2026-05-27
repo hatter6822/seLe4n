@@ -110,7 +110,7 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
         let sc' := processReplenishments sc currentTime
         { acc with objects := acc.objects.insert scId.toObjId (.schedContext sc') }
       | _ => acc
-    ) { st with scheduler := { st.scheduler with replenishQueue := rq' } }
+    ) { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
     .ok st'
   | .ipcTimeoutTick scId =>
     .ok (timeoutBlockedThreads st scId).1

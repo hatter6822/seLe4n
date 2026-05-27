@@ -204,7 +204,7 @@ theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
     · rfl
     · split
       · split
-        · simp only [SchedulerState.runQueueOnCore]
+        · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [RunQueue.toList_filter_insert_neg' _ tid _ _ hp,
               RunQueue.toList_filter_remove_neg _ tid _ hp]
         · rfl

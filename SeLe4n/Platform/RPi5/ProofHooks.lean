@@ -178,7 +178,7 @@ def rpi5ProductionAdapterProofHooks :
     -- Extract all conditions from registerContextStablePred
     unfold rpi5RuntimeContract at hStable
     simp only [registerContextStablePred, registerContextStableCheck,
-      contextSwitchState, SchedulerState.currentOnCore] at hStable
+      contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self] at hStable
     -- Match on objects[newTid.toObjId]?
     match hObj : st.objects[newTid.toObjId]? with
     | some (.tcb tcb) =>

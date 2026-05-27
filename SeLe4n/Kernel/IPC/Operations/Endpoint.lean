@@ -105,11 +105,10 @@ finding ID, the affected site, and the remediation applied.
 /-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   { st with
-      scheduler := {
-        st.scheduler with
-          runQueue := (st.scheduler.runQueueOnCore bootCoreId).remove tid
-          current := if (st.scheduler.currentOnCore bootCoreId) = some tid then none else (st.scheduler.currentOnCore bootCoreId)
-      }
+      scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
+          ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
+          (if (st.scheduler.currentOnCore bootCoreId) = some tid then none
+            else (st.scheduler.currentOnCore bootCoreId))
   }
 
 /-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
@@ -161,10 +160,8 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     match st.getTcb? tid with
     | some tcb =>
         { st with
-            scheduler := {
-              st.scheduler with
-                runQueue := (st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)
-            }
+            scheduler := st.scheduler.setRunQueueOnCore bootCoreId
+              ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb))
         }
     | none => st
 

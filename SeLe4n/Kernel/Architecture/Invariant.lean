@@ -282,7 +282,8 @@ theorem contextSwitchState_preserves_contextMatchesCurrent
     (hLookup : st.objects[newTid.toObjId]? = some (.tcb tcb))
     (hRegs : newRegs = tcb.registerContext) :
     contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
-  simp [contextMatchesCurrent, contextSwitchState, SchedulerState.currentOnCore, hLookup, hRegs]
+  simp [contextMatchesCurrent, contextSwitchState,
+    SchedulerState.setCurrentOnCore_currentOnCore_self, hLookup, hRegs]
   exact RegisterFile.beq_self _
 
 /-- X1-G: Context-switch preserves `currentThreadValid` when the target
@@ -315,6 +316,13 @@ private theorem default_objects_absurd {α : Prop} {oid : SeLe4n.ObjId} {v : Ker
     (hObj : (default : SystemState).objects[oid]? = some v) : α := by
   rw [default_objects_none] at hObj; exact absurd hObj (by simp)
 
+/-- SM4.B: the default state's boot-core `current` is `none`, via the per-core
+initialization witness.  Reused across the default-state proofs below (the
+per-core `Vector` fields no longer reduce by `rfl`/`simp` on the raw accessor). -/
+private theorem default_currentOnCore_none :
+    (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
+  (default_state_perCoreInitialized bootCoreId).1
+
 /-- L-06/WS-E3: The default (empty) `SystemState` satisfies the full composed
 `proofLayerInvariantBundle`. This provides the base case for invariant induction:
 the system starts in a valid state. All invariant components hold vacuously
@@ -326,11 +334,11 @@ private theorem default_schedulerInvariantBundle :
   -- For default state: current = none, runnable = [], objects = none
   refine ⟨?_, ?_, ?_⟩
   · -- queueCurrentConsistent: current = none → True
-    simp [queueCurrentConsistent, SchedulerState.currentOnCore]
+    simp [queueCurrentConsistent, default_currentOnCore_none]
   · -- runQueueUnique: [].Nodup
     exact List.nodup_nil
   · -- currentThreadValid: current = none → True
-    simp [currentThreadValid, SchedulerState.currentOnCore]
+    simp [currentThreadValid, default_currentOnCore_none]
 
 private theorem default_ipcInvariant :
     ipcInvariant (default : SystemState) := by
@@ -451,17 +459,17 @@ private theorem default_ipcInvariantFull :
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
-  simp [contextMatchesCurrent, SchedulerState.currentOnCore]
+  simp [contextMatchesCurrent, default_currentOnCore_none]
 
 private theorem default_currentThreadDequeueCoherent :
     currentThreadDequeueCoherent (default : SystemState) := by
   refine ⟨?_, ?_, ?_⟩
   · -- currentThreadIpcReady: current = none → True
-    simp [currentThreadIpcReady, SchedulerState.currentOnCore]
+    simp [currentThreadIpcReady, default_currentOnCore_none]
   · -- currentNotEndpointQueueHead: current = none → True
-    unfold currentNotEndpointQueueHead; simp [SchedulerState.currentOnCore]
+    unfold currentNotEndpointQueueHead; simp [default_currentOnCore_none]
   · -- currentNotOnNotificationWaitList: current = none → True
-    unfold currentNotOnNotificationWaitList; simp [SchedulerState.currentOnCore]
+    unfold currentNotOnNotificationWaitList; simp [default_currentOnCore_none]
 
 private theorem default_schedulerInvariantBundleFull :
     schedulerInvariantBundleFull (default : SystemState) :=
@@ -471,8 +479,8 @@ private theorem default_schedulerInvariantBundleFull :
     intro tid hMem
     have : (default : SystemState).scheduler.runnable = [] := by decide
     rw [this] at hMem; simp at hMem,
-   by unfold currentTimeSlicePositive; simp [SchedulerState.currentOnCore],
-   by unfold edfCurrentHasEarliestDeadline; simp [SchedulerState.currentOnCore],
+   by unfold currentTimeSlicePositive; simp [default_currentOnCore_none],
+   by unfold edfCurrentHasEarliestDeadline; simp [default_currentOnCore_none],
    default_contextMatchesCurrent,
    default_runnableThreadsAreTCBs,
    by  -- R6-D: schedulerPriorityMatch — default runQueue empty, vacuously true
@@ -1072,7 +1080,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   have hCurIpcReady : currentThreadIpcReady st := hCoupling.2.2.2.1
   -- contextMatchesCurrent for the post-state: directly from BEq hypothesis
   have hCtxPost : contextMatchesCurrent (contextSwitchState newTid newRegs st) := by
-    simp [contextMatchesCurrent, contextSwitchState, SchedulerState.currentOnCore, hLookup]; exact hRegs
+    simp [contextMatchesCurrent, contextSwitchState, SchedulerState.setCurrentOnCore_currentOnCore_self, hLookup]; exact hRegs
   -- currentThreadValid for the post-state
   have hValidPost : currentThreadValid (contextSwitchState newTid newRegs st) :=
     contextSwitchState_preserves_currentThreadValid st newTid newRegs tcb hLookup
@@ -1108,11 +1116,11 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   -- currentTimeSlicePositive for the post-state
   have hTsPost : currentTimeSlicePositive (contextSwitchState newTid newRegs st) := by
     show currentTimeSlicePositive { st with machine := _, scheduler := _ }
-    unfold currentTimeSlicePositive; simp [SchedulerState.currentOnCore]; rw [hLookup]; exact hTimeSlice
+    unfold currentTimeSlicePositive; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]; rw [hLookup]; exact hTimeSlice
   -- edfCurrentHasEarliestDeadline: deadline = 0 → trivially satisfied
   have hEdfPost : edfCurrentHasEarliestDeadline (contextSwitchState newTid newRegs st) := by
     show edfCurrentHasEarliestDeadline { st with machine := _, scheduler := _ }
-    unfold edfCurrentHasEarliestDeadline; simp [SchedulerState.currentOnCore]; rw [hLookup]
+    unfold edfCurrentHasEarliestDeadline; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]; rw [hLookup]
     intro tid _
     cases h : st.objects[tid.toObjId]? with
     | none => trivial
@@ -1127,7 +1135,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   -- 1. schedulerInvariantBundleFull
   · obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     have hQCC : queueCurrentConsistent
-        { st.scheduler with current := some newTid } := by
+        (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨hQCC, hUniq, hValidPost⟩,
            hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩
@@ -1137,14 +1145,14 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   -- 3. coreIpcInvariantBundle: scheduler base + cap + ipcFull preserved
   · obtain ⟨⟨_, hUniq, _⟩, hC, hI⟩ := hIpc
     have hQCC : queueCurrentConsistent
-        { st.scheduler with current := some newTid } := by
+        (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨hQCC, hUniq, hValidPost⟩, hC,
            contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI hCurIpcReady⟩
   -- 4. ipcSchedulerCouplingInvariantBundle: rebuild with new current-thread predicates
   · obtain ⟨⟨⟨_, hUniq, _⟩, hC, hI⟩, hCoh, _, _⟩ := hCoupling
     have hQCC : queueCurrentConsistent
-        { st.scheduler with current := some newTid } := by
+        (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩, hC,
             contextSwitchState_preserves_ipcInvariantFull newTid newRegs st hI hCurIpcReady⟩,
@@ -1183,7 +1191,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   · obtain ⟨hFull, hBud, _, hWf, hRq, hBind, hEff, hBound⟩ := hExt
     obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hFull
     have hQCC : queueCurrentConsistent
-        { st.scheduler with current := some newTid } := by
+        (st.scheduler.setCurrentOnCore bootCoreId (some newTid)) := by
       unfold queueCurrentConsistent; simp; exact hNotRunnable
     exact ⟨⟨⟨hQCC, hUniq, hValidPost⟩,
             hTs, hTsPost, hEdfPost, hCtxPost, hRunn, hPri, hDom, hDomE⟩,
@@ -1229,7 +1237,7 @@ def registerDecodeConsistent (st : SystemState) : Prop :=
 vacuously — there is no current thread. -/
 theorem default_registerDecodeConsistent :
     registerDecodeConsistent (default : SystemState) := by
-  intro tid hCur; simp [SchedulerState.currentOnCore] at hCur
+  intro tid hCur; simp [default_currentOnCore_none] at hCur
 
 /-- WS-J1-D: `registerDecodeConsistent` is implied by `schedulerInvariantBundleFull`,
 which includes `currentThreadValid`. This bridges the existing scheduler invariant

@@ -2139,7 +2139,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   -- 1. schedulerInvariantBundleFull
   have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
     refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · simp [queueCurrentConsistent, SchedulerState.currentOnCore, hSch]
+    · simp [queueCurrentConsistent, hCur]
     · show (bootFromPlatform config).state.scheduler.runnable.Nodup
       rw [hRun]; exact List.nodup_nil
     · unfold currentThreadValid; rw [hCur]; trivial

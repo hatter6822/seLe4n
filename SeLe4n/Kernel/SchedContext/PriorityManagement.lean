@@ -250,7 +250,7 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
         | some rqPrio => ⟨Nat.max newPriority.val rqPrio.val⟩
         | none => newPriority
     let rq := rq.insert tid effectivePrio
-    { st with scheduler := { st.scheduler with runQueue := rq } }
+    { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq }
   else
     st
 

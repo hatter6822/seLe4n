@@ -259,7 +259,7 @@ private def sd011_updateKernelState : IO Unit := do
     ((st'.scheduler.currentOnCore bootCoreId) == some tid)
     "identity updateKernelState must preserve scheduler.current"
   -- Substantive transformation: clear scheduler.current.
-  updateKernelState (fun s => { s with scheduler := { s.scheduler with current := none } })
+  updateKernelState (fun s => { s with scheduler := s.scheduler.setCurrentOnCore bootCoreId none })
   let st'' ← getKernelState
   expect "sd011b_substantive_update_clears_current"
     ((st''.scheduler.currentOnCore bootCoreId) == none)

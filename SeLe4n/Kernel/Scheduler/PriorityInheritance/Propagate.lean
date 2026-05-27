@@ -58,10 +58,8 @@ def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
         let newPrio := (resolveEffectivePrioDeadline st' tcb').1
         if oldPrio != newPrio then
           { st' with
-            scheduler := {
-              st'.scheduler with
-              runQueue := ((st'.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid newPrio
-            }
+            scheduler := st'.scheduler.setRunQueueOnCore bootCoreId
+              (((st'.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid newPrio)
           }
         else st'
       else st'

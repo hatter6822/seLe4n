@@ -1782,11 +1782,11 @@ theorem freezeMap_insert_step [BEq κ] [Hashable κ] [LawfulBEq κ]
 The frozen `replenishQueue` contains exactly the same entries and size
 as the runtime `ReplenishQueue`. -/
 theorem freezeScheduler_replenishQueue_entries (sched : SchedulerState) :
-    (freezeScheduler sched).replenishQueue.entries = sched.replenishQueue.entries :=
+    (freezeScheduler sched).replenishQueue.entries = (sched.replenishQueueOnCore bootCoreId).entries :=
   rfl
 
 theorem freezeScheduler_replenishQueue_size (sched : SchedulerState) :
-    (freezeScheduler sched).replenishQueue.size = sched.replenishQueue.size :=
+    (freezeScheduler sched).replenishQueue.size = (sched.replenishQueueOnCore bootCoreId).size :=
   rfl
 
 end SeLe4n.Model

@@ -409,8 +409,8 @@ private def row_schedulerInvariantViolation : KernelErrorRejection :=
                      " unreachable; the wrapper provides defense-in-depth)"
     runScenario   := fun _ =>
       let st : SystemState := { (default : SystemState) with
-        scheduler := { (default : SystemState).scheduler with
-          current := some (ThreadId.ofNat 999) } }
+        scheduler := (default : SystemState).scheduler.setCurrentOnCore
+          SeLe4n.Kernel.Concurrency.bootCoreId (some (ThreadId.ofNat 999)) }
       runUnit (scheduleChecked st) }
 
 /-- Row: `validateIpcBufferAddress` rejects unaligned address with

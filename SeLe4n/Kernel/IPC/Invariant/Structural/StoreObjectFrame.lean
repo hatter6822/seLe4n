@@ -587,26 +587,19 @@ theorem ensureRunnable_preserves_contextMatchesCurrent
   · cases hTcb : st.getTcb? tid with
     | none => exact hInv
     | some tcb =>
-      simp only [contextMatchesCurrent, SchedulerState.currentOnCore]
-      cases hCur : st.scheduler.current with
-      | none => trivial
-      | some curTid =>
-        simp only [contextMatchesCurrent, SchedulerState.currentOnCore, hCur] at hInv
-        exact hInv
+      -- setRunQueueOnCore preserves current/objects/machine, so contextMatchesCurrent is framed.
+      simpa only [contextMatchesCurrent, SchedulerState.setRunQueueOnCore_currentOnCore] using hInv
 
 /-- WS-H12c: `removeRunnable` preserves `contextMatchesCurrent`. -/
 theorem removeRunnable_preserves_contextMatchesCurrent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : contextMatchesCurrent st) :
     contextMatchesCurrent (removeRunnable st tid) := by
-  simp only [removeRunnable]
-  show contextMatchesCurrent { st with scheduler := { st.scheduler with
-    runQueue := (st.scheduler.runQueueOnCore bootCoreId).remove tid,
-    current := if (st.scheduler.currentOnCore bootCoreId) = some tid then none else (st.scheduler.currentOnCore bootCoreId) } }
-  simp only [contextMatchesCurrent, SchedulerState.currentOnCore]
-  by_cases hEq : st.scheduler.current = some tid
-  · simp only [hEq, ite_true]
-  · simp only [hEq, ite_false]; exact hInv
+  simp only [removeRunnable, contextMatchesCurrent,
+    SchedulerState.setCurrentOnCore_currentOnCore_self]
+  by_cases hEq : (st.scheduler.currentOnCore bootCoreId) = some tid
+  · rw [if_pos hEq]; trivial
+  · rw [if_neg hEq]; exact hInv
 
 -- ============================================================================
 -- WS-H12e: allPendingMessagesBounded preservation (frame lemmas)

@@ -18,17 +18,25 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- WS-E3/H-09: Scheduler lemmas for removeRunnable and ensureRunnable
 -- ============================================================================
 
+/-- WS-SM SM4.B phase-2 frame lemma: `removeRunnable` writes core `bootCoreId`'s
+run-queue slot to `remove tid`. -/
+@[simp] theorem removeRunnable_runQueueOnCore
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    ((removeRunnable st tid).scheduler.runQueueOnCore bootCoreId) =
+      (st.scheduler.runQueueOnCore bootCoreId).remove tid := by
+  simp [removeRunnable]
+
 theorem removeRunnable_scheduler_current
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     ((removeRunnable st tid).scheduler.currentOnCore bootCoreId) =
       if (st.scheduler.currentOnCore bootCoreId) = some tid then none else (st.scheduler.currentOnCore bootCoreId) := by
-  rfl
+  simp [removeRunnable]
 
 theorem removeRunnable_mem
     (st : SystemState) (tid x : SeLe4n.ThreadId) :
     x ∈ ((removeRunnable st tid).scheduler.runQueueOnCore bootCoreId) ↔
     x ∈ (st.scheduler.runQueueOnCore bootCoreId) ∧ x ≠ tid := by
-  simp only [removeRunnable]
+  rw [removeRunnable_runQueueOnCore]
   exact RunQueue.mem_remove (st.scheduler.runQueueOnCore bootCoreId) tid x
 
 /-- WS-G4: Flat-list version of `removeRunnable_mem` for proof compatibility.
@@ -37,7 +45,7 @@ theorem removeRunnable_runnable_mem
     (st : SystemState) (tid x : SeLe4n.ThreadId) :
     x ∈ (removeRunnable st tid).scheduler.runnable ↔
     x ∈ st.scheduler.runnable ∧ x ≠ tid := by
-  simp only [SchedulerState.runnable, removeRunnable, RunQueue.toList]
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList]
   unfold RunQueue.remove
   constructor
   · intro hx
@@ -50,8 +58,8 @@ theorem removeRunnable_nodup
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hNodup : st.scheduler.runnable.Nodup) :
     (removeRunnable st tid).scheduler.runnable.Nodup := by
-  simp only [SchedulerState.runnable, removeRunnable, RunQueue.toList]
-  unfold RunQueue.remove
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore, RunQueue.toList] at *
+  unfold RunQueue.remove at *
   exact hNodup.sublist List.filter_sublist
 
 theorem ensureRunnable_scheduler_current
@@ -60,7 +68,7 @@ theorem ensureRunnable_scheduler_current
   unfold ensureRunnable
   split
   · rfl
-  · split <;> rfl
+  · split <;> simp
 
 theorem ensureRunnable_mem_self
     (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -74,7 +82,7 @@ theorem ensureRunnable_mem_self
   unfold ensureRunnable
   split
   · assumption
-  · simp only [hTcbTyped, SchedulerState.runQueueOnCore]
+  · simp only [hTcbTyped, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     rw [RunQueue.mem_insert]
     exact Or.inr rfl
 
@@ -86,7 +94,8 @@ theorem ensureRunnable_mem_old
   split
   · exact hMem
   · split
-    · simp only [SchedulerState.runQueueOnCore]; rw [RunQueue.mem_insert]; exact Or.inl hMem
+    · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      rw [RunQueue.mem_insert]; exact Or.inl hMem
     · exact hMem
 
 /-- WS-G4: Flat-list version of `ensureRunnable_mem_old` for proof compatibility.
@@ -101,7 +110,7 @@ theorem ensureRunnable_runnable_mem_old
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      show x ∈ ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)).toList
+      simp only [SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
       exact List.mem_append_left _ hMem
     · exact hMem
@@ -116,7 +125,7 @@ theorem ensureRunnable_nodup
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      show ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb)).toList.Nodup
+      simp only [SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
       have hNotFlat : tid ∉ st.scheduler.runnable :=
         RunQueue.not_mem_toList_of_not_mem _ _ hNotMem
@@ -150,8 +159,8 @@ theorem ensureRunnable_inserts_at_effective_priority
   have hTcbTyped : st.getTcb? tid = some tcb :=
     (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
   unfold ensureRunnable
-  simp only [SchedulerState.runQueueOnCore] at hNotMem ⊢
-  simp only [hNotMem, if_false, hTcbTyped]
+  rw [if_neg hNotMem]
+  simp only [hTcbTyped, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
     priority (not their base priority) when awakened via `ensureRunnable`.
@@ -206,7 +215,8 @@ theorem ensureRunnable_mem_reverse
   · rename_i hNotMem
     split at hMem
     · -- TCB case: runnable = (rq.insert tid prio).toList
-      simp only [SchedulerState.runnable, RunQueue.toList] at hMem ⊢
+      simp only [SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+        RunQueue.toList] at hMem ⊢
       unfold RunQueue.insert at hMem
       split at hMem
       · exact .inl hMem
@@ -218,7 +228,7 @@ theorem ensureRunnable_mem_reverse
 theorem removeRunnable_not_mem_self
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     tid ∉ (removeRunnable st tid).scheduler.runnable := by
-  simp only [SchedulerState.runnable, removeRunnable]
+  simp only [SchedulerState.runnable, removeRunnable_runQueueOnCore]
   exact RunQueue.not_mem_remove_toList (st.scheduler.runQueueOnCore bootCoreId) tid
 
 /-- WS-H12b: If a thread is not in the runnable queue, it remains absent after

@@ -23,6 +23,12 @@ namespace SeLe4n.Testing
 private def mkRunQueue (tids : List SeLe4n.ThreadId) : SeLe4n.Kernel.RunQueue :=
   SeLe4n.Kernel.RunQueue.ofList (tids.map (fun tid => (tid, ⟨0⟩)))
 
+/-- SM4.B test helper: set the boot core's `runQueue` + `current` on a scheduler
+(the per-core fields are now `Vector`-shaped, so fixtures populate the boot core). -/
+private def setBootRqCur (s : SchedulerState) (rq : SeLe4n.Kernel.RunQueue)
+    (cur : Option SeLe4n.ThreadId) : SchedulerState :=
+  (s.setRunQueueOnCore bootCoreId rq).setCurrentOnCore bootCoreId cur
+
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
 def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 0, depth := 0 }
 def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 1, depth := 0 }
@@ -429,7 +435,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let largeRunnable : List SeLe4n.ThreadId :=
     [⟨1⟩, ⟨12⟩]
   let stLargeQueue : SystemState :=
-    { st1 with scheduler := { st1.scheduler with runQueue := mkRunQueue largeRunnable, current := none } }
+    { st1 with scheduler := setBootRqCur st1.scheduler (mkRunQueue largeRunnable) none }
   IO.println s!"[SST-028] large runnable queue length: {reprStr stLargeQueue.scheduler.runnable.length}"
   match SeLe4n.Kernel.schedule stLargeQueue with
   | .error err => IO.println s!"[SST-029] large queue schedule error: {reprStr err}"
@@ -444,7 +450,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     ipcState := .ready, registerContext := ctxRegFile }
   let stCtx : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ ctxTcb1,
-    scheduler := { st1.scheduler with runQueue := mkRunQueue [⟨1⟩], current := none } }
+    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩]) none }
   match SeLe4n.Kernel.schedule stCtx with
   | .error err => IO.println s!"[SST-031] context switch schedule error: {reprStr err}"
   | .ok (_, stCtxSched) =>
@@ -689,8 +695,8 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
     tid := replyTarget, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     ipcState := .blockedOnReply demoEndpoint (some replierTid) }
-  let replySched := { st1.scheduler with
-    runQueue := (st1.scheduler.runQueueOnCore bootCoreId).remove replyTarget }
+  let replySched := st1.scheduler.setRunQueueOnCore bootCoreId
+    ((st1.scheduler.runQueueOnCore bootCoreId).remove replyTarget)
   let stReply : SystemState := { st1 with objects := st1.objects.insert replyTarget.toObjId replyTcb, scheduler := replySched }
   -- WS-H1/M-02: endpointReply now requires a replier that matches replyTarget.
   match SeLe4n.Kernel.endpointReply replierTid replyTarget .empty stReply with
@@ -716,7 +722,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
     ipcState := .ready, deadline := ⟨30⟩ }
   let stEdf : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ edfTcbA |>.insert ⟨12⟩ edfTcbB,
-    scheduler := { st1.scheduler with runQueue := mkRunQueue [⟨1⟩, ⟨12⟩], current := none } }
+    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) none }
   match SeLe4n.Kernel.chooseThread stEdf with
   | .error err => IO.println s!"[STD-001] EDF choose error: {reprStr err}"
   | .ok (chosen, _) =>
@@ -729,7 +735,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
     ipcState := .ready, timeSlice := 2 }
   let stTick : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ tickTcb,
-    scheduler := { st1.scheduler with runQueue := mkRunQueue [⟨1⟩, ⟨12⟩], current := some ⟨1⟩ } }
+    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩) }
   match SeLe4n.Kernel.timerTick stTick with
   | .error err => IO.println s!"[STD-003] timer tick decrement error: {reprStr err}"
   | .ok ((), stTicked) =>
@@ -745,7 +751,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
     ipcState := .ready, timeSlice := 1 }
   let stExpiry : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ expiryTcb,
-    scheduler := { st1.scheduler with runQueue := mkRunQueue [⟨1⟩, ⟨12⟩], current := some ⟨1⟩ } }
+    scheduler := setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩) }
   match SeLe4n.Kernel.timerTick stExpiry with
   | .error err => IO.println s!"[STD-006] timer tick expiry error: {reprStr err}"
   | .ok ((), stExpired) =>
@@ -763,10 +769,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   let domSchedule : List DomainScheduleEntry :=
     [{ domain := ⟨0⟩, length := 3 }, { domain := ⟨1⟩, length := 5 }]
   let stDom : SystemState := { st1 with
-    scheduler := { st1.scheduler with
-      runQueue := mkRunQueue [⟨1⟩, ⟨12⟩], current := some ⟨1⟩,
-      activeDomain := ⟨0⟩, domainTimeRemaining := 1,
-      domainSchedule := domSchedule, domainScheduleIndex := 0 } }
+    scheduler := { (((setBootRqCur st1.scheduler (mkRunQueue [⟨1⟩, ⟨12⟩]) (some ⟨1⟩)).setActiveDomainOnCore bootCoreId ⟨0⟩).setDomainTimeRemainingOnCore bootCoreId 1).setDomainScheduleIndexOnCore bootCoreId 0 with domainSchedule := domSchedule } }
   match SeLe4n.Kernel.switchDomain stDom with
   | .error err => IO.println s!"[STD-010] domain switch error: {reprStr err}"
   | .ok ((), stSwitched) =>
@@ -1147,9 +1150,8 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
     ipcState := .ready }
   let stDispatch : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ highTcb |>.insert ⟨12⟩ lowTcb,
-    scheduler := { st1.scheduler with
-      runQueue := SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio), (⟨12⟩, lowPrio)],
-      current := none } }
+    scheduler := setBootRqCur st1.scheduler
+      (SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio), (⟨12⟩, lowPrio)]) none }
   -- Schedule — higher-priority thread (1) should become current
   match SeLe4n.Kernel.schedule stDispatch with
   | .error err => IO.println s!"[DDT-001] H12f dequeue-on-dispatch schedule error: {reprStr err}"
@@ -1171,9 +1173,8 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
     ipcState := .ready, timeSlice := 1 }
   let stPreempt : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ highTcb |>.insert ⟨12⟩ preemptLow,
-    scheduler := { st1.scheduler with
-      runQueue := SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio)],
-      current := some ⟨12⟩ } }
+    scheduler := setBootRqCur st1.scheduler
+      (SeLe4n.Kernel.RunQueue.ofList [(⟨1⟩, highPrio)]) (some ⟨12⟩) }
   -- Thread 12 is current (low priority, timeSlice=1). Thread 1 in queue (high priority).
   -- Tick → expires → re-enqueue 12 → schedule picks thread 1 → 12 stays in queue.
   match SeLe4n.Kernel.timerTick stPreempt with
@@ -1209,9 +1210,8 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
   let stCtx : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ outgoingTcb |>.insert ⟨12⟩ incomingTcb,
     machine := { st1.machine with regs := outgoingRegs },
-    scheduler := { st1.scheduler with
-      runQueue := SeLe4n.Kernel.RunQueue.ofList [(⟨12⟩, inPrio)],
-      current := some ⟨1⟩ } }
+    scheduler := setBootRqCur st1.scheduler
+      (SeLe4n.Kernel.RunQueue.ofList [(⟨12⟩, inPrio)]) (some ⟨1⟩) }
   -- Yield triggers re-enqueue + schedule
   match SeLe4n.Kernel.handleYield stCtx with
   | .error err => IO.println s!"[ICS-001] H12f context switch yield error: {reprStr err}"
@@ -2297,9 +2297,8 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨200⟩, budgetRemaining := ⟨100⟩ }
   let stForRQ := { st1 with
     objects := st1.objects.insert scId (.schedContext scForRQ)
-    scheduler := { st1.scheduler with
-      runQueue := mkRunQueue [tidRQ]   -- thread in RunQueue at default prio 0
-      current := none } }
+    -- thread in RunQueue at default prio 0
+    scheduler := setBootRqCur st1.scheduler (mkRunQueue [tidRQ]) none }
   match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tidRQ, by decide⟩ stForRQ with
   | .error err =>
     IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: error {reprStr err}"
@@ -2324,7 +2323,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stForCur := { st1 with
     objects := (st1.objects.insert scId (.schedContext scBoundCur)).insert
       tidCur.toObjId tcbBoundCur
-    scheduler := { st1.scheduler with current := some tidCur } }
+    scheduler := st1.scheduler.setCurrentOnCore bootCoreId (some tidCur) }
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForCur with
   | .error err =>
     IO.println s!"[SCO-014] schedContextUnbind current-thread: error {reprStr err}"
@@ -2346,9 +2345,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stForRQUnbind := { st1 with
     objects := (st1.objects.insert scId (.schedContext scBoundRQ)).insert
       tidInRQ.toObjId tcbBoundRQ
-    scheduler := { st1.scheduler with
-      runQueue := mkRunQueue [tidInRQ]
-      current := none } }
+    scheduler := setBootRqCur st1.scheduler (mkRunQueue [tidInRQ]) none }
   match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForRQUnbind with
   | .error err =>
     IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: error {reprStr err}"
@@ -2372,9 +2369,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stYieldStarve := { st1 with
     objects := (st1.objects.insert fromIdS (.schedContext fromScStarve)).insert
       targetIdS (.schedContext targetScStarve)
-    scheduler := { st1.scheduler with
-      runQueue := SeLe4n.Kernel.RunQueue.empty
-      current := none } }
+    scheduler := setBootRqCur st1.scheduler SeLe4n.Kernel.RunQueue.empty none }
   let stAfterYieldStarve := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYieldStarve ⟨5001⟩ ⟨5002⟩
   let targetEnqueued := (stAfterYieldStarve.scheduler.runQueueOnCore bootCoreId).contains tidTarget
@@ -2426,9 +2421,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stYieldNoBound := { st1 with
     objects := (st1.objects.insert fromIdS (.schedContext fromScNoBound)).insert
       targetIdS (.schedContext targetScNoBound)
-    scheduler := { st1.scheduler with
-      runQueue := SeLe4n.Kernel.RunQueue.empty
-      current := none } }
+    scheduler := setBootRqCur st1.scheduler SeLe4n.Kernel.RunQueue.empty none }
   let stAfterNoBound := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
     stYieldNoBound ⟨5001⟩ ⟨5002⟩
   let rqEmpty := (stAfterNoBound.scheduler.runQueueOnCore bootCoreId).toList.length == 0

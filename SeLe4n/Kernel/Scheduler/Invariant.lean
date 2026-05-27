@@ -725,7 +725,9 @@ def currentBudgetPositive (st : SystemState) : Prop :=
 /-- Z4-L: Default state has no current thread — vacuously true. -/
 theorem default_currentBudgetPositive :
     currentBudgetPositive (default : SystemState) := by
-  simp [currentBudgetPositive, SchedulerState.currentOnCore]
+  have h : (default : SystemState).scheduler.currentOnCore bootCoreId = none :=
+    (default_state_perCoreInitialized bootCoreId).1
+  simp [currentBudgetPositive, h]
 
 -- ============================================================================
 -- Z4-M: schedContextsWellFormed invariant

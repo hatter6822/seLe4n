@@ -902,20 +902,18 @@ field sites + the accessor/setter defs + the per-literal `get_set`
 reductions — the ~768 read sites do **not** change again (they already
 route through the accessors).
 
-### 11.9 Phase 2 in progress — foundation LANDED, proof cascade pending
+### 11.9 Phase 2 LANDED — full SM4.B green at v0.31.12
 
-Phase 2 (the field-type flip from scalar to `Vector α numCores`) has its
-**foundation complete and green**; the remaining work is the (mechanical
-but voluminous) proof-cascade re-prove.  The in-progress migration is
-preserved as a re-appliable patch:
-`docs/dev_history/SM4B_phase2_migration.wip.patch` (~1038 lines, 12
-files).  To resume:
+Phase 2 (the field-type flip from scalar to `Vector α numCores`) is
+**fully LANDED and green** at v0.31.12.  All seven fields are
+`Vector`-shaped, the whole production import closure re-proves, every
+test suite builds, and the executable trace is byte-identical to
+`tests/fixtures/main_trace_smoke.expected`.  The mid-grind WIP patch
+(`docs/dev_history/SM4B_phase2_migration.wip.patch`) used during the
+multi-session grind has been removed now that the migration is
+committed in-tree.
 
-```
-git apply docs/dev_history/SM4B_phase2_migration.wip.patch
-```
-
-**Foundation LANDED (green in the patch)**:
+**What landed**:
 
 - **`SeLe4n/Model/State.lean`**: the 7 per-core `SchedulerState` fields
   flipped scalar → `Vector α numCores` with `Vector.replicate numCores
@@ -934,47 +932,46 @@ git apply docs/dev_history/SM4B_phase2_migration.wip.patch
   (s.set<X>OnCore c v).<y>OnCore c' = s.<y>OnCore c'` (42) +
   system-wide-field preservation (14).  Plus `PerCoreVector.get_set_eq`
   / `replicate_get` promoted to `@[simp]`.  This is the lever that makes
-  post-write reads reduce automatically under `simp`.
-- **Operation bodies migrated to setters (green)**: `setCurrentThread`
-  (State), `removeRunnable` + `ensureRunnable` (Endpoint),
-  `contextSwitchState` (Adapter), `updatePipBoost` (Propagate),
-  `freezeScheduler` reads → accessors (FrozenState), and **all** of
-  `Scheduler/Operations/Core.lean` (`schedule`, `handleYield`,
-  `timerTick`, `timerTickWithBudget`, `processReplenishmentsDue`,
-  `switchDomain` 5-field chain, `scheduleDomain`).
-- **Green modules**: `Model.State`, `Scheduler.Operations.Core`,
-  `IPC.Operations.SchedulerLemmas` (all frame lemmas re-proved via the
-  algebra + `removeRunnable_runQueueOnCore` frame lemma),
-  `Platform.RPi5.RuntimeContract`, `Scheduler.PriorityInheritance.Propagate`,
-  `Model.FrozenState`, `Kernel.Architecture.Adapter`,
-  `Kernel.InformationFlow.Projection`, `Kernel.Scheduler.Invariant`
-  (the directly-State-importing frontier).
+  post-write reads reduce automatically under `simp` — `Vector.get
+  (Vector.set …)` is not definitional, so raw `simp [accessor]`/`rfl`
+  no longer suffices.
+- **Whole production import closure re-proved**: `Model.State`,
+  `Scheduler.Operations.{Core,Preservation}` (incl. `switchDomain` /
+  `scheduleDomain` and the EDF / priority-match / context /
+  domain-time preservation proofs), `IPC.Operations.SchedulerLemmas`,
+  `IPC.Operations.Endpoint`, `SchedContext.{Operations,PriorityManagement}`,
+  `Lifecycle.{Suspend,Operations.CleanupPreservation,Invariant.SuspendPreservation}`,
+  `Scheduler.PriorityInheritance.{Propagate,Preservation}`,
+  `IPC.Invariant.{QueueNextBlocking,Structural.StoreObjectFrame}`,
+  `InformationFlow.{Projection,Invariant.Operations,Invariant.Helpers}`,
+  `Architecture.{Adapter,Invariant}`, `CrossSubsystem`,
+  `Scheduler.Liveness.TraceModel`, `Platform.Boot`,
+  `Platform.RPi5.{RuntimeContract,ProofHooks}`,
+  `Model.{FrozenState,FreezeProofs}`.
+- **Test suites migrated**: `PerCoreSchedulerStateSuite` (now tests
+  genuine per-core independence), `Testing.StateBuilder`,
+  `Testing.MainTraceHarness` (new `setBootRqCur` helper),
+  `NegativeStateSuite`, `OperationChainSuite`, `InformationFlowSuite`,
+  `ModelIntegritySuite`, `TraceSequenceProbe`, and the
+  syscall/error/cascade/priority suites.
 
-**Remaining (the proof cascade)**:
-
-- `Scheduler/Operations/Preservation.lean` (~103 errors): the phase-1
-  preservation proofs reduced record-update *literals* via `simp only
-  [<accessor>]` + iota.  With setter-states the reduction needs the
-  `@[simp]` algebra — change those `simp only [<accessor>]` to `simp
-  [<accessor>]` (full simp picks up the algebra) or add the specific
-  `set<X>OnCore_<y>OnCore` lemma.  All proof-side scheduler *literals*
-  in this file are already converted to setter form in the patch; the
-  residue is reduction-tactic updates.
-- The downstream cascade: `Lifecycle/Operations/CleanupPreservation`,
-  `PriorityInheritance/Preservation`, then (bottom-up) the
-  IPC/Lifecycle/Capability/InformationFlow/Service/SchedContext/
-  CrossSubsystem/API/Platform/Testing/`tests/` layers — each re-proving
-  its scheduler-touching proofs via the same pattern (and converting any
-  residual write sites to setters).
-
-**Recipe** (per file): (1) convert any `{ X.scheduler with field := V }`
-write to `X.scheduler.set<Field>OnCore bootCoreId (V)` (single-line — the
+**Recurring proof patterns** (for SM4.C/SM4.D and future per-core work):
+(1) convert any `{ X.scheduler with field := V }` write to
+`X.scheduler.set<Field>OnCore bootCoreId (V)` — single-line, since the
 structure-update parser stops a multi-line value indented below the
-value-start column); (2) for proofs that read a setter-written field,
-prefer `simp [...]` over `simp only [...]` so the `@[simp]` algebra fires,
-or add the explicit `set<X>OnCore_<y>OnCore` / `get_set_eq` lemma.
+value-start column; (2) for proofs that read a setter-written field,
+add the explicit `set<X>OnCore_<y>OnCore` / `set<X>OnCore_<x>OnCore_self`
+lemma to a `simp only` (preferred — keeps the simp set tight) or use
+`simp` (picks up the `@[simp]` algebra); (3) `setRunQueueOnCore` frames
+every `projectState` component except `projectRunnable`, so NI
+projection-preservation proofs reduce the other scheduler projections
+via the cross lemmas and discharge only the runnable filter; (4)
+`saveOutgoingContext` / `restoreIncomingContext` preserve `scheduler`
+*definitionally* (they touch objects / machine), so their frame lemmas
+are often unused under the per-core algebra — the non-defeq operations
+are exactly the `set…OnCore` writers.
 
-**SM4.E + closure** (after the cascade is green): retire
-`bootFromPlatform_singleCore_witness`, add `bootFromPlatform_smp_witness`,
-confirm the byte-identical single-core trace fixture (227/227), full doc
-sync + version bump.
+**SM4.E + closure** (the next sub-phase): retire
+`bootFromPlatform_singleCore_witness` (restated over `currentOnCore
+bootCoreId` at SM4.B), add `bootFromPlatform_smp_witness`, and update
+the AN12-B SMP-latent inventory entry.

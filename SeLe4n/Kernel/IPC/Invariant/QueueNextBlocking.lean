@@ -61,7 +61,9 @@ theorem ensureRunnable_preserves_queueNextBlockingConsistent
     (hInv : queueNextBlockingConsistent st) :
     queueNextBlockingConsistent (ensureRunnable st tid) := by
   apply queueNextBlockingConsistent_of_objects_eq st (ensureRunnable st tid)
-  · intro x; unfold ensureRunnable; split <;> simp [*] <;> split <;> simp [*]
+  · intro x; unfold ensureRunnable; split
+    · rfl
+    · split <;> rfl
   · exact hInv
 
 theorem removeRunnable_preserves_queueNextBlockingConsistent

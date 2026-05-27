@@ -3271,9 +3271,10 @@ theorem collectQueueMembers_head_is_start
     very theorem. -/
 theorem bootFromPlatform_singleCore_witness :
     ∀ (s : SchedulerState),
-      s.current = none ∨ ∃ tid : SeLe4n.ThreadId, s.current = some tid := by
+      s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId = none ∨
+        ∃ tid : SeLe4n.ThreadId, s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId = some tid := by
   intro s
-  cases h : s.current with
+  cases h : s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId with
   | none => exact Or.inl rfl
   | some tid => exact Or.inr ⟨tid, rfl⟩
 
