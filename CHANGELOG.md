@@ -8,7 +8,7 @@ All eight sub-tasks landed in one cut; SM4.A.1 + SM4.A.2 are the new
 Lean-side work, SM4.A.3–SM4.A.8 confirm/recap the SM0 deliverables the
 per-core `Vector` machinery rests on.
 
-- **SM4.A.1 + SM4.A.2 — `SeLe4n.Vector` bootstrap (`SeLe4n/Prelude.lean`).**
+- **SM4.A.1 + SM4.A.2 — `SeLe4n.PerCoreVector` bootstrap (`SeLe4n/Prelude.lean`).**
   Per plan §4.2 the implementation uses **Lean core's `Array`-backed
   `Vector α n`** (not `List.Vector`): it is the only choice that
   simultaneously gives compile-time length safety (`CoreId = Fin n`
@@ -45,7 +45,7 @@ per-core `Vector` machinery rests on.
     `numCores = 4`) to a platform-parameterised `coreCount`, so a
     per-core fold visits each core exactly once.
 
-  The helpers live under a project-owned `namespace SeLe4n.Vector` and
+  The helpers live under a project-owned `namespace SeLe4n.PerCoreVector` and
   are deliberately untagged (no global `@[simp]`/`@[ext]` perturbation);
   consumers opt into the `.get`-form rewrites locally. 0 Lean axioms,
   0 sorries.
@@ -83,7 +83,7 @@ per-core `Vector` machinery rests on.
 - **SM4.A.6 / SM4.A.7 / SM4.A.8 — recaps** of the SM0.E/SM0.G
   deliverables `CoreId = Fin numCores`, `bootCoreId`, and `allCores`
   (`allCores_length`, `allCores_nodup`). `Concurrency.allCores_nodup`
-  is **rewired** to prove via `SeLe4n.Vector.nodup_of_finRange numCores`
+  is **rewired** to prove via `SeLe4n.PerCoreVector.nodup_of_finRange numCores`
   (replacing its former literal-`4` `decide`), so the SM4.A.2
   generalisation is load-bearing in production rather than test-only —
   and the proof stays valid once a future build parameterises
@@ -106,7 +106,7 @@ axioms, zero sorries. Items deferred past v1.0.0 with correctness
 impact: NONE.
 
 **Post-landing audit + completion pass** (same cut): a `#print axioms`
-sweep confirmed all `SeLe4n.Vector` declarations depend only on
+sweep confirmed all `SeLe4n.PerCoreVector` declarations depend only on
 `propext` / `Quot.sound` (no `sorryAx`, no custom axiom). A
 consumer-usability probe (a struct mimicking `SchedulerState` with a
 `Vector (Option ThreadId) numCores` field) confirmed the helpers match
@@ -117,7 +117,7 @@ terms defeq during `kabstract` matching) — so SM4.B.9's default-init
 (`replicate_get`), SM4.B.10's `ext`, and SM5's per-core writes
 (`get_set_eq` / `get_set_ne`) can consume them directly. The audit
 corrected the initial landing's `23/26/25` count miscount, and a
-completion pass + two further audit passes closed the remaining
+completion pass + three further audit passes closed the remaining
 non-optimal items: (1) **SM4.A.3 rigor** — added the codegen evidence
 (`Vector.get` → `lean_array_fget`, `set` → `lean_array_fset`,
 `replicate` → `lean_mk_array`; no `lean_list_*`) plus the persistent
@@ -135,8 +135,16 @@ under the `open SeLe4n` every kernel file uses (a trap — the count is
 **instance anchors** — the suite now verifies `Vector (Option ThreadId)
 numCores` carries `DecidableEq` / `Repr` / `Inhabited` / `BEq` (the
 §4.2 rationale SM4.B's `SchedulerState` depends on) and that
-`DecidableEq` genuinely decides per-core-field equality. The suite now
-reports **22 surface anchors / 40 decidable examples / 34 runtime
+`DecidableEq` genuinely decides per-core-field equality; (6) **the
+`SeLe4n.Vector` namespace was retired to `SeLe4n.PerCoreVector`** — a
+sub-namespace whose final component is `Vector` exposed every helper as
+`Vector.<name>` under the `open SeLe4n` every kernel file uses,
+shadowing/aliasing core's `_root_.Vector` (the `length` trap behind (4),
+plus the benign `ext` alias). A non-`Vector` namespace removes that
+entire collision class *structurally* — so `toList_length` is now kept
+purely for semantic precision, not collision-avoidance — and no helper
+name can shadow a (present or future) core `Vector` member. The suite
+now reports **22 surface anchors / 40 decidable examples / 34 runtime
 assertions**. (The Fin-indexed `set` wrapper was deliberately **not**
 added — YAGNI: the raw-`set` `get_set_eq`/`_ne` lemmas already match
 SM5's `v.set c.val x` call sites by proof irrelevance, so a `setCore`

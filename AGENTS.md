@@ -182,7 +182,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~20351 lines)
+- `CHANGELOG.md` (~20359 lines)
 - `docs/WORKSTREAM_HISTORY.md` (~6768 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -215,8 +215,8 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
+- `SeLe4n/Prelude.lean` (~1992 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
-- `SeLe4n/Prelude.lean` (~1986 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `tests/ModelIntegritySuite.lean` (~1950 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
@@ -3766,7 +3766,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   confirm/recap the SM0 deliverables the per-core `Vector` machinery
   rests on.
 
-  - **SM4.A.1 + SM4.A.2**: `SeLe4n.Vector` bootstrap in
+  - **SM4.A.1 + SM4.A.2**: `SeLe4n.PerCoreVector` bootstrap in
     `SeLe4n/Prelude.lean`.  Per plan §4.2 the implementation uses Lean
     core's `Array`-backed `Vector α n` (not `List.Vector`) — the only
     choice giving compile-time length safety (`CoreId = Fin n` indexing
@@ -3776,7 +3776,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     with a `Fin n` value via `Vector.get`, so this block re-expresses
     them in `Vector.get` form on top of the definitional bridge
     `get_eq_getElem` (`v.get i = v[i.val]`, by `rfl`).  Six helpers
-    (`namespace SeLe4n.Vector`): `get_set_eq` (read-after-write at the
+    (`namespace SeLe4n.PerCoreVector`): `get_set_eq` (read-after-write at the
     same core returns the written value), `get_set_ne` (a per-core write
     frames every other core's slot), `toList_length` (`v.toList.length = n`),
     `replicate_get` (every slot of a replicate holds the value — the
@@ -3825,8 +3825,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
   Tier 0+1+2+3 green.  Items deferred past v1.0.0 with correctness
   impact: NONE.
 
-  **Post-landing audit + completion pass** (+ two further audit passes):
-  `#print axioms` confirmed all `SeLe4n.Vector` declarations depend only
+  **Post-landing audit + completion pass** (+ three further audit passes):
+  `#print axioms` confirmed all `SeLe4n.PerCoreVector` declarations depend only
   on `propext` / `Quot.sound`; a `SchedulerState`-mimicking probe
   confirmed they match downstream call sites under `rw`/`simp` even when
   `Vector.set`'s bounds proof is synthesized by `get_elem_tactic` (proof
@@ -3849,7 +3849,13 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `Vector.length`); (5) **instance anchors** — the suite verifies
   `Vector (Option ThreadId) numCores` carries
   `DecidableEq`/`Repr`/`Inhabited`/`BEq` (the §4.2 rationale SM4.B's
-  `SchedulerState` depends on).  Suite now: 22 / 40 / 34.  (The
+  `SchedulerState` depends on); (6) **`SeLe4n.Vector` namespace retired**
+  → `SeLe4n.PerCoreVector` — a sub-namespace whose final component is
+  `Vector` exposed every helper as `Vector.<name>` under `open SeLe4n`,
+  shadowing/aliasing core's `_root_.Vector` (the `length` trap behind
+  (4), plus the benign `ext` alias); a non-`Vector` namespace removes
+  that whole collision class structurally, so `toList_length` is kept
+  purely for semantic precision now.  Suite now: 22 / 40 / 34.  (The
   Fin-indexed `set` wrapper was deliberately **not** added — YAGNI: the
   raw-`set` `get_set_eq`/`_ne` lemmas already match SM5's
   `v.set c.val x` call sites by proof irrelevance.)

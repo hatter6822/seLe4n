@@ -19,7 +19,7 @@ Tier-2 (runtime) + Tier-3 (surface anchor) coverage for WS-SM Phase
 SM4.A "Vector + PlatformBinding".  Covers all eight sub-tasks:
 
 * **SM4.A.1 / SM4.A.2** — the per-core `Vector` bootstrap in
-  `Prelude.lean` (`namespace SeLe4n.Vector`): the `get_eq_getElem`
+  `Prelude.lean` (`namespace SeLe4n.PerCoreVector`): the `get_eq_getElem`
   bridge plus the six helper theorems `get_set_eq`, `get_set_ne`,
   `length`, `replicate_get`, `ext`, `nodup_of_finRange`.  Each is
   exercised both at elaboration time (`#check` + `by decide`/`rfl`
@@ -63,14 +63,14 @@ open SeLe4n.Platform.Sim
 -- ============================================================================
 
 /-! ## SM4.A.1 / SM4.A.2 / SM4.A.3 — Per-core `Vector` helpers -/
-#check @SeLe4n.Vector.get_eq_getElem
-#check @SeLe4n.Vector.get_eq_toArray_getElem
-#check @SeLe4n.Vector.get_set_eq
-#check @SeLe4n.Vector.get_set_ne
-#check @SeLe4n.Vector.toList_length
-#check @SeLe4n.Vector.replicate_get
-#check @SeLe4n.Vector.ext
-#check @SeLe4n.Vector.nodup_of_finRange
+#check @SeLe4n.PerCoreVector.get_eq_getElem
+#check @SeLe4n.PerCoreVector.get_eq_toArray_getElem
+#check @SeLe4n.PerCoreVector.get_set_eq
+#check @SeLe4n.PerCoreVector.get_set_ne
+#check @SeLe4n.PerCoreVector.toList_length
+#check @SeLe4n.PerCoreVector.replicate_get
+#check @SeLe4n.PerCoreVector.ext
+#check @SeLe4n.PerCoreVector.nodup_of_finRange
 
 /-! ## SM4.A.4 — RPi5 PlatformBinding core count + pinning -/
 #check @SeLe4n.Platform.PlatformBinding.coreCount
@@ -112,18 +112,18 @@ example : (default : Vector (Option SeLe4n.ThreadId) numCores)
             = Vector.replicate numCores default := rfl
 example (c : CoreId) :
     (default : Vector (Option SeLe4n.ThreadId) numCores).get c = none :=
-  SeLe4n.Vector.replicate_get numCores default c
+  SeLe4n.PerCoreVector.replicate_get numCores default c
 
 /-! ## SM4.A.2 lemma 0 — `get_eq_getElem` bridge -/
 example : (Vector.replicate 4 (5 : Nat)).get ⟨2, by decide⟩
             = (Vector.replicate 4 (5 : Nat))[2] :=
-  SeLe4n.Vector.get_eq_getElem _ ⟨2, by decide⟩
+  SeLe4n.PerCoreVector.get_eq_getElem _ ⟨2, by decide⟩
 
 /-! ## SM4.A.2 lemma 1 — `get_set_eq` -/
 example : ((Vector.replicate 4 (0 : Nat)).set 1 7 (by decide)).get ⟨1, by decide⟩ = 7 := by
   decide
 example (v : Vector Nat 4) : (v.set 1 7 (by decide)).get ⟨1, by decide⟩ = 7 :=
-  SeLe4n.Vector.get_set_eq v ⟨1, by decide⟩ 7
+  SeLe4n.PerCoreVector.get_set_eq v ⟨1, by decide⟩ 7
 
 /-! ## SM4.A.2 lemma 2 — `get_set_ne` -/
 example :
@@ -132,31 +132,31 @@ example :
   decide
 example (v : Vector Nat 4) :
     (v.set 1 7 (by decide)).get ⟨2, by decide⟩ = v.get ⟨2, by decide⟩ :=
-  SeLe4n.Vector.get_set_ne v ⟨1, by decide⟩ ⟨2, by decide⟩ 7 (by decide)
+  SeLe4n.PerCoreVector.get_set_ne v ⟨1, by decide⟩ ⟨2, by decide⟩ 7 (by decide)
 
 /-! ## SM4.A.2 lemma 3 — `toList_length` -/
 example : (Vector.replicate 4 (0 : Nat)).toList.length = 4 :=
-  SeLe4n.Vector.toList_length _
+  SeLe4n.PerCoreVector.toList_length _
 example : (Vector.replicate 7 (0 : Nat)).toList.length = 7 := by decide
 
 /-! ## SM4.A.2 lemma 4 — `replicate_get` -/
 example : (Vector.replicate 4 (none : Option Nat)).get ⟨2, by decide⟩ = none :=
-  SeLe4n.Vector.replicate_get 4 none ⟨2, by decide⟩
+  SeLe4n.PerCoreVector.replicate_get 4 none ⟨2, by decide⟩
 example : (Vector.replicate 4 (none : Option Nat)).get ⟨2, by decide⟩ = none := by decide
 
 /-! ## SM4.A.2 lemma 5 — `ext` -/
 -- Abstract application: pointwise-equal vectors are equal.
 example (v w : Vector Nat 3) (h : ∀ i : Fin 3, v.get i = w.get i) : v = w :=
-  SeLe4n.Vector.ext h
+  SeLe4n.PerCoreVector.ext h
 -- Concrete witness of the equality `ext` guarantees (decidable form).
 example :
     ((Vector.replicate 2 (0 : Nat)).set 0 3 (by decide)).set 1 3 (by decide)
       = Vector.replicate 2 (3 : Nat) := by decide
 
 /-! ## SM4.A.2 lemma 6 — `nodup_of_finRange` -/
-example : (List.finRange 4).Nodup := SeLe4n.Vector.nodup_of_finRange 4
-example : (List.finRange 0).Nodup := SeLe4n.Vector.nodup_of_finRange 0
-example : (List.finRange 1).Nodup := SeLe4n.Vector.nodup_of_finRange 1
+example : (List.finRange 4).Nodup := SeLe4n.PerCoreVector.nodup_of_finRange 4
+example : (List.finRange 0).Nodup := SeLe4n.PerCoreVector.nodup_of_finRange 0
+example : (List.finRange 1).Nodup := SeLe4n.PerCoreVector.nodup_of_finRange 1
 
 /-! ## SM4.A.3 — `Vector` is `Array`-backed (compiles to `Array`) -/
 example : (Vector.replicate 5 (9 : Nat)).toArray.size = 5 := by decide
@@ -166,7 +166,7 @@ example : (Vector.replicate 5 (9 : Nat)).toArray = Array.replicate 5 9 := rfl
 -- emitted C where `get` lowers to `lean_array_fget`).
 example (v : Vector Nat 4) (i : Fin 4) :
     v.get i = v.toArray[i.val]'(v.size_toArray.symm ▸ i.isLt) :=
-  SeLe4n.Vector.get_eq_toArray_getElem v i
+  SeLe4n.PerCoreVector.get_eq_toArray_getElem v i
 
 /-! ## SM4.A.4 — RPi5 coreCount = 4, pinned to numCores -/
 example : PlatformBinding.coreCount (platform := RPi5Platform) = 4 := rfl
@@ -182,13 +182,13 @@ example : PlatformBinding.coreCount (platform := SimRestrictivePlatform) = 4 := 
 -- The binding's `coreCount` actually drives the per-core `Vector`
 -- machinery: a per-core field on the single-core topology is a
 -- one-element vector whose `length` (via the SM4.A.2 helper) is the
--- binding's `coreCount`.  This consumes `SeLe4n.Vector.toList_length` at a
+-- binding's `coreCount`.  This consumes `SeLe4n.PerCoreVector.toList_length` at a
 -- binding-derived size rather than a literal.
 example :
     (Vector.replicate (PlatformBinding.coreCount (platform := SimSingleCorePlatform))
       (0 : Nat)).toList.length
       = PlatformBinding.coreCount (platform := SimSingleCorePlatform) :=
-  SeLe4n.Vector.toList_length _
+  SeLe4n.PerCoreVector.toList_length _
 
 /-! ## SM4.A.6 / SM4.A.7 / SM4.A.8 — CoreId / bootCoreId / allCores recap -/
 example : numCores = 4 := rfl
@@ -200,9 +200,9 @@ example : allCores.Nodup := allCores_nodup
 -- The SM4.A.2 generalisation reproduces `allCores_nodup` (allCores =
 -- finRange numCores), and discharges the platform-parameterised form.
 example : allCores = List.finRange numCores := rfl
-example : allCores.Nodup := SeLe4n.Vector.nodup_of_finRange numCores
+example : allCores.Nodup := SeLe4n.PerCoreVector.nodup_of_finRange numCores
 example : (List.finRange (PlatformBinding.coreCount (platform := RPi5Platform))).Nodup :=
-  SeLe4n.Vector.nodup_of_finRange _
+  SeLe4n.PerCoreVector.nodup_of_finRange _
 
 -- ============================================================================
 -- §3 — Runtime assertions: every check above also runs in `main`

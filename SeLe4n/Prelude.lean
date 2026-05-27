@@ -1865,14 +1865,22 @@ codegen counterpart is the emitted C, where `get` lowers to
 through this general lemma (replacing its former literal-`4` `decide`), so
 the generalisation is load-bearing in production rather than test-only.
 
-These live under `namespace SeLe4n.Vector` (project-owned, so a future
-Std lemma rename cannot silently break SM4). The helpers are deliberately
-**not** tagged `@[simp]`/`@[ext]`: leaving them untagged keeps the core
-`@[ext]`-tagged `_root_.Vector.ext` as the one the `ext` tactic fires, and
-lets each consuming proof opt into these `.get`-form rewrites locally
-rather than perturbing the global simp set for all vector reasoning. -/
+These live under `namespace SeLe4n.PerCoreVector` — deliberately **not**
+`SeLe4n.Vector`. A `SeLe4n.Vector` sub-namespace would, under the `open
+SeLe4n` that every consuming kernel file uses, expose every member as
+`Vector.<name>`, shadowing or aliasing core's `_root_.Vector` namespace:
+a project lemma named like a core member then becomes a silent trap
+(`v.length` resolving to a `Prop`, or `Vector.ext` ambiguous). Choosing a
+namespace whose final component is **not** `Vector` removes that entire
+class of collision *structurally*, rather than relying on per-name
+vigilance against the (large, growing) core `Vector` namespace. The
+helpers are still deliberately **not** tagged `@[simp]`/`@[ext]`: leaving
+them untagged keeps the core `@[ext]`-tagged `_root_.Vector.ext` as the
+one the `ext` tactic fires, and lets each consuming proof opt into these
+`.get`-form rewrites locally rather than perturbing the global simp set
+for all vector reasoning. -/
 
-namespace SeLe4n.Vector
+namespace SeLe4n.PerCoreVector
 
 universe u
 variable {α : Type u} {n : Nat}
@@ -1926,14 +1934,12 @@ when viewed as a list. Re-exports `Vector.length_toList` under the
 project namespace so list-folding per-core code (e.g. iterating a field's
 `toList` alongside `allCores`) has a stable length witness.
 
-Deliberately named `toList_length`, **not** bare `length`: Lean core has
-no `Vector.length`, so a bare `SeLe4n.Vector.length` (which is `Prop`-
-valued — it is a *lemma*, not a count) would, under the `open SeLe4n`
-that every consuming kernel file uses, make `v.length` / `Vector.length`
-resolve to this proof instead of erroring — trapping a caller who wrote
-`v.length` expecting the `Nat` count (the count is `v.size` / the type's
-`n`). The `toList_length` name keeps `v.length` an honest "unknown" and
-also avoids a future ambiguity were core to add `Vector.length : Nat`. -/
+Named `toList_length`, **not** bare `length`, for semantic precision: it
+is a `Prop`-valued *lemma* about `toList.length`, not a `Nat` count
+accessor (the count is `v.size` / the type's `n`). Naming a proof
+`length` would mislead a reader (and `v.toList.length`'s own lemma in
+core is `length_toList`, mirrored here in `toList_`-first order to stay
+distinct from it). -/
 theorem toList_length (v : _root_.Vector α n) : v.toList.length = n :=
   _root_.Vector.length_toList
 
@@ -1983,4 +1989,4 @@ theorem nodup_of_finRange (m : Nat) : (List.finRange m).Nodup := by
     · rw [List.Nodup, List.pairwise_map]
       exact ih.imp (fun {_ _} hne hsucc => hne (Fin.succ_inj.mp hsucc))
 
-end SeLe4n.Vector
+end SeLe4n.PerCoreVector

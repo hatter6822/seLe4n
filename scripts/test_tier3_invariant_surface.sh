@@ -2444,7 +2444,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
 EOF'
 
 # WS-SM SM4.A — per-core Vector bootstrap surface anchors.  Covers the
-# SM4.A.1/A.2 `SeLe4n.Vector` helper surface (the get_eq_getElem bridge
+# SM4.A.1/A.2 `SeLe4n.PerCoreVector` helper surface (the get_eq_getElem bridge
 # plus the six lemmas), the SM4.A.4 RPi5 coreCount pinning, the SM4.A.5
 # single-core simulation binding, and the SM4.A.6/A.7/A.8 CoreId /
 # bootCoreId / allCores recap.  A rename / removal of any SM4.A symbol
@@ -2457,14 +2457,14 @@ import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.Sim.Contract
 
 -- SM4.A.1/A.2/A.3 — Per-core Vector helper surface.
-#check @SeLe4n.Vector.get_eq_getElem
-#check @SeLe4n.Vector.get_eq_toArray_getElem
-#check @SeLe4n.Vector.get_set_eq
-#check @SeLe4n.Vector.get_set_ne
-#check @SeLe4n.Vector.toList_length
-#check @SeLe4n.Vector.replicate_get
-#check @SeLe4n.Vector.ext
-#check @SeLe4n.Vector.nodup_of_finRange
+#check @SeLe4n.PerCoreVector.get_eq_getElem
+#check @SeLe4n.PerCoreVector.get_eq_toArray_getElem
+#check @SeLe4n.PerCoreVector.get_set_eq
+#check @SeLe4n.PerCoreVector.get_set_ne
+#check @SeLe4n.PerCoreVector.toList_length
+#check @SeLe4n.PerCoreVector.replicate_get
+#check @SeLe4n.PerCoreVector.ext
+#check @SeLe4n.PerCoreVector.nodup_of_finRange
 -- SM4.A.4 — RPi5 coreCount pinning.
 #check @SeLe4n.Platform.RPi5.numCores_eq_rpi5_coreCount
 #check @SeLe4n.Platform.RPi5.bootCoreId_val_eq_rpi5

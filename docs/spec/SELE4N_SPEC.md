@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.31.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 140,024 across 200 Lean files |
+| **Production LoC** | 140,030 across 200 Lean files |
 | **Test LoC** | 29,885 across 43 Lean test suites |
 | **Proved declarations** | 4,180 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -2241,7 +2241,7 @@ preserves on a per-core basis.
    are the new Lean-side work, SM4.A.3..SM4.A.8 confirm/recap the SM0
    deliverables the per-core `Vector` machinery rests on.
 
-   - **SM4.A.1 + SM4.A.2 — `SeLe4n.Vector` bootstrap** (`Prelude.lean`):
+   - **SM4.A.1 + SM4.A.2 — `SeLe4n.PerCoreVector` bootstrap** (`Prelude.lean`):
      per plan §4.2 the implementation uses Lean core's `Array`-backed
      `Vector α n` (not `List.Vector`) — the only choice giving
      compile-time length safety (`CoreId = Fin n` indexing in-bounds by
@@ -2251,7 +2251,7 @@ preserves on a per-core basis.
      with a `Fin n` value via `Vector.get`, so the block re-expresses
      them in `Vector.get` form on top of the definitional bridge
      `get_eq_getElem` (`v.get i = v[i.val]`, by `rfl`).  Six helpers
-     (`namespace SeLe4n.Vector`): `get_set_eq` (read-after-write at the
+     (`namespace SeLe4n.PerCoreVector`): `get_set_eq` (read-after-write at the
      same core), `get_set_ne` (a per-core write frames every other
      core's slot), `toList_length` (`v.toList.length = n`), `replicate_get`
      (every slot of a replicate holds the value — the SM4.B.9 default-

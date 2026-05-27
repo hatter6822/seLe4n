@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/magical-turing-ZUaAB",
-      "commit_sha": "3dce8cbb9ffd6a761e913425365aa82587511f84",
-      "tree_sha": "ae3c4d2061cae28a68bdf1ec25cba5cf52ee0abe",
-      "committed_at_utc": "2026-05-26T22:46:52+00:00"
+      "commit_sha": "c1c490e709bea582d6cf7bc08a34728f2650eec7",
+      "tree_sha": "9bfbd33a7ef60398e57baa27a8bfe41f330a3f7d",
+      "committed_at_utc": "2026-05-27T00:44:19+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ddcafef76d82c6f7b830fe364d583fdf962690f0968a425c55f9c38128952789"
+    "source_digest": "9d9b1a6f032bf6b69d244484419cef23f9d68449ac3c30b8f31fcfdee5e92b8b"
   },
   "summary": {
     "module_count": 243,
@@ -27,7 +27,7 @@
     "version": "0.31.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 200,
-    "production_loc": 140024,
+    "production_loc": 140030,
     "test_files": 43,
     "test_loc": 29885,
     "proved_theorem_lemma_decls": 4180,
@@ -84836,26 +84836,26 @@
         },
         {
           "kind": "namespace",
-          "name": "SeLe4n.Vector",
-          "line": 1875,
+          "name": "SeLe4n.PerCoreVector",
+          "line": 1883,
           "called": []
         },
         {
           "kind": "universe",
           "name": "u",
-          "line": 1877,
+          "line": 1885,
           "called": []
         },
         {
           "kind": "variable",
-          "name": "<anonymous:variable:1878>",
-          "line": 1878,
+          "name": "<anonymous:variable:1886>",
+          "line": 1886,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "get_eq_getElem",
-          "line": 1887,
+          "line": 1895,
           "called": [
             "get"
           ]
@@ -84863,7 +84863,7 @@
         {
           "kind": "theorem",
           "name": "get_eq_toArray_getElem",
-          "line": 1899,
+          "line": 1907,
           "called": [
             "get",
             "get_eq_getElem"
@@ -84872,7 +84872,7 @@
         {
           "kind": "theorem",
           "name": "get_set_eq",
-          "line": 1909,
+          "line": 1917,
           "called": [
             "get",
             "get_eq_getElem",
@@ -84882,7 +84882,7 @@
         {
           "kind": "theorem",
           "name": "get_set_ne",
-          "line": 1919,
+          "line": 1927,
           "called": [
             "get",
             "get_eq_getElem",
@@ -84892,7 +84892,7 @@
         {
           "kind": "theorem",
           "name": "toList_length",
-          "line": 1937,
+          "line": 1943,
           "called": [
             "length"
           ]
@@ -84900,7 +84900,7 @@
         {
           "kind": "theorem",
           "name": "replicate_get",
-          "line": 1946,
+          "line": 1952,
           "called": [
             "get",
             "get_eq_getElem"
@@ -84909,7 +84909,7 @@
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 1957,
+          "line": 1963,
           "called": [
             "get",
             "get_eq_getElem"
@@ -84918,7 +84918,7 @@
         {
           "kind": "theorem",
           "name": "nodup_of_finRange",
-          "line": 1973,
+          "line": 1979,
           "called": [
             "zero"
           ]
