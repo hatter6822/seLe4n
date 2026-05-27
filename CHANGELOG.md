@@ -1,3 +1,166 @@
+## v0.31.11 — WS-SM SM4.A: per-core `Vector` bootstrap + PlatformBinding
+
+Lands **WS-SM Phase SM4.A "Vector + PlatformBinding"** (plan
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+§5.1), the foundation for the SM4 path-a replacement of the singular
+`SchedulerState` fields with `Vector α coreCount` indexed by `CoreId`.
+All eight sub-tasks landed in one cut; SM4.A.1 + SM4.A.2 are the new
+Lean-side work, SM4.A.3–SM4.A.8 confirm/recap the SM0 deliverables the
+per-core `Vector` machinery rests on.
+
+- **SM4.A.1 + SM4.A.2 — `SeLe4n.PerCoreVector` bootstrap (`SeLe4n/Prelude.lean`).**
+  Per plan §4.2 the implementation uses **Lean core's `Array`-backed
+  `Vector α n`** (not `List.Vector`): it is the only choice that
+  simultaneously gives compile-time length safety (`CoreId = Fin n`
+  indexing is in-bounds by construction), O(1) random access, and
+  decidable equality, and it compiles to `Array` at runtime. Lean
+  core's vector lemmas are stated in `getElem` (`Nat`-indexed) form,
+  but the SM4 per-core accessors index with a `Fin n` value via
+  `Vector.get`; this block re-expresses exactly the lemmas SM4 needs
+  in `Vector.get` form on top of the definitional bridge
+  `get_eq_getElem` (`v.get i = v[i.val]`, `rfl`). The six helpers
+  (plan SM4.A.2):
+  - `get_set_eq` — read-after-write at the same core returns the
+    written value (`Fin`-form of `Vector.getElem_set_self`).
+  - `get_set_ne` — a per-core write leaves every other core's slot
+    unchanged (the frame property; `i ≠ j` on `CoreId`s lowers to
+    `i.val ≠ j.val` via `Fin.val_ne_of_ne`).
+  - `toList_length` — a `Vector α n` has `n` elements as a list
+    (re-export of `Vector.length_toList`; named `toList_length`, not
+    bare `length`, for semantic precision — it is a `Prop` lemma, not a
+    count, the count being `v.size`).
+  - `replicate_get` — every slot of a replicated vector holds the
+    replicated value (the workhorse for SM4.B.9's
+    `default_state_perCoreInitialized`).
+  - `ext` — per-core (`Vector.get`-form) extensionality, for
+    SM4.B.10's `SchedulerState.ext`. Intentionally **not**
+    `@[ext]`-tagged so the core `_root_.Vector.ext` keeps firing
+    under the `ext` tactic.
+  - `nodup_of_finRange` — `(List.finRange n).Nodup` for an
+    *arbitrary* `n` (Lean core has `nodup_range` but no
+    `nodup_finRange`), proved by induction via `finRange_succ` +
+    `Fin.succ_ne_zero` + `Fin.succ_inj`. Generalises
+    `Concurrency.allCores_nodup` (which `decide`s only the literal
+    `numCores = 4`) to a platform-parameterised `coreCount`, so a
+    per-core fold visits each core exactly once.
+
+  The helpers live under a project-owned `namespace SeLe4n.PerCoreVector` and
+  are deliberately untagged (no global `@[simp]`/`@[ext]` perturbation);
+  consumers opt into the `.get`-form rewrites locally. 0 Lean axioms,
+  0 sorries.
+- **SM4.A.3 — runtime efficiency.** Confirmed that Lean core's
+  `Vector α n` is `Array`-backed (`structure Vector where toArray :
+  Array α`) and its `get`/`set`/`replicate` are `@[inline, expose]`,
+  so they compile to the underlying O(1) `Array` operations. Backed by
+  **two layers of evidence**: (a) the codegen — emitting the C for a
+  `Vector.get`/`set`/`replicate` call site shows `get` lowering to
+  `lean_array_fget` and `set` to `lean_array_fset`, with zero
+  `lean_list_*` ops; (b) the type-level witness
+  `get_eq_toArray_getElem` (`v.get i = v.toArray[i.val]`), a persistent
+  anchor that `.get` indexes `toArray` directly (no list traversal),
+  so a future refactor breaking the array routing fails the build. The
+  suite also observes the `Array` backing (`toArray.size`,
+  `toArray = Array.replicate …`) and a deep index/round-trip
+  (`get`/`set` at slot 255 of a 256-wide vector) computing correctly.
+  (The full `lake exe sele4n` per-core-access trace lands with
+  SM4.B.15, once `SchedulerState` itself becomes `Vector`-shaped.)
+- **SM4.A.4 — RPi5 `coreCount = 4`** confirmed, pinned to
+  `Concurrency.numCores` by the existing `numCores_eq_rpi5_coreCount`
+  (`rfl`).
+- **SM4.A.5 — simulation bindings (`SeLe4n/Platform/Sim/Contract.lean`).**
+  Adds the **single-core** simulation binding `SimSingleCorePlatform`
+  (`coreCount := 1`) alongside the existing 4-core SMP sims
+  (`SimPlatform` / `SimRestrictivePlatform`, `coreCount := 4`),
+  realising the single-core variant the SM0.G code comment anticipated.
+  `coreCount := 1` is the minimal non-degenerate per-core topology: it
+  exercises the `Vector` machinery (every field a one-element vector)
+  while collapsing to the single-core behaviour SM4.B.15 will pin
+  byte-identical against `main_trace_smoke.expected`, and is the
+  cheapest way to surface an implicit "exactly one current thread"
+  assumption (plan §4.1). It reuses every contract from the permissive
+  sim binding; only the topology differs.
+- **SM4.A.6 / SM4.A.7 / SM4.A.8 — recaps** of the SM0.E/SM0.G
+  deliverables `CoreId = Fin numCores`, `bootCoreId`, and `allCores`
+  (`allCores_length`, `allCores_nodup`). `Concurrency.allCores_nodup`
+  is **rewired** to prove via `SeLe4n.PerCoreVector.nodup_of_finRange numCores`
+  (replacing its former literal-`4` `decide`), so the SM4.A.2
+  generalisation is load-bearing in production rather than test-only —
+  and the proof stays valid once a future build parameterises
+  `numCores` by `PlatformBinding.coreCount` (where `decide` on a
+  non-literal would not reduce).
+
+**Test coverage**: new suite `tests/PerCoreVectorSuite.lean`
+(`lake exe per_core_vector_suite`) — 22 surface-anchor `#check`s, 40
+decidable/definitional examples, and 34 runtime `assertBool` assertions
+across seven sections (Vector helpers, ext + nodup, Array backing,
+platform core-count topologies, CoreId/bootCoreId/allCores recap, the
+SM4.A.3 array-witness + SM4.A.5 topology-parametric exercise, and the
+SM4.A.1 instance anchors — `DecidableEq`/`Repr`/`Inhabited`/`BEq` on
+`Vector (Option ThreadId) numCores`, the instances SM4.B's
+`SchedulerState` relies on).
+Wired into Tier 2 (negative) via `scripts/test_tier2_negative.sh` and
+Tier 3 (invariant surface) via `scripts/test_tier3_invariant_surface.sh`.
+Full default build (320 jobs) green; Tier 0+1+2+3 green. Zero Lean
+axioms, zero sorries. Items deferred past v1.0.0 with correctness
+impact: NONE.
+
+**Post-landing audit + completion pass** (same cut): a `#print axioms`
+sweep confirmed all `SeLe4n.PerCoreVector` declarations depend only on
+`propext` / `Quot.sound` (no `sorryAx`, no custom axiom). A
+consumer-usability probe (a struct mimicking `SchedulerState` with a
+`Vector (Option ThreadId) numCores` field) confirmed the helpers match
+downstream call sites under both `rw` and `simp` even when
+`Vector.set`'s bounds proof is synthesized by `get_elem_tactic` rather
+than written as `c.isLt` (proof irrelevance makes the differing proof
+terms defeq during `kabstract` matching) — so SM4.B.9's default-init
+(`replicate_get`), SM4.B.10's `ext`, and SM5's per-core writes
+(`get_set_eq` / `get_set_ne`) can consume them directly. The audit
+corrected the initial landing's `23/26/25` count miscount, and a
+completion pass + three further audit passes closed the remaining
+non-optimal items: (1) **SM4.A.3 rigor** — added the codegen evidence
+(`Vector.get` → `lean_array_fget`, `set` → `lean_array_fset`,
+`replicate` → `lean_mk_array`; no `lean_list_*`) plus the persistent
+type-level witness `get_eq_toArray_getElem`; (2) **`nodup_of_finRange`
+made load-bearing** — rewired `allCores_nodup` through it (removing the
+literal-`4` `decide`); (3) **single-core sim genuinely exercised** — a
+topology-parametric runtime check folds `Vector.get` over
+`List.finRange (coreCount P)` for `SimSingleCore` (`= 1`), `Sim`/`RPi5`
+(`= 4`), driving the binding's `coreCount` through the per-core
+machinery end-to-end, and gives `toList_length` a binding-derived
+consumer; (4) **`length` renamed to `toList_length`** — bare `length`
+made `v.length` / `Vector.length` resolve to this `Prop`-valued lemma
+under the `open SeLe4n` every kernel file uses (a trap — the count is
+`v.size`; core has no `Vector.length`), now an honest "unknown"; (5)
+**instance anchors** — the suite now verifies `Vector (Option ThreadId)
+numCores` carries `DecidableEq` / `Repr` / `Inhabited` / `BEq` (the
+§4.2 rationale SM4.B's `SchedulerState` depends on) and that
+`DecidableEq` genuinely decides per-core-field equality; (6) **the
+`SeLe4n.Vector` namespace was retired to `SeLe4n.PerCoreVector`** — a
+sub-namespace whose final component is `Vector` exposed every helper as
+`Vector.<name>` under the `open SeLe4n` every kernel file uses,
+shadowing/aliasing core's `_root_.Vector` (the `length` trap behind (4),
+plus the benign `ext` alias). A non-`Vector` namespace removes that
+entire collision class *structurally* — so `toList_length` is now kept
+purely for semantic precision, not collision-avoidance — and no helper
+name can shadow a (present or future) core `Vector` member. The suite
+now reports **22 surface anchors / 40 decidable examples / 34 runtime
+assertions**. (The Fin-indexed `set` wrapper was deliberately **not**
+added — YAGNI: the raw-`set` `get_set_eq`/`_ne` lemmas already match
+SM5's `v.set c.val x` call sites by proof irrelevance, so a `setCore`
+alias would presume SM5's API without need.)
+
+**Version bumped 0.31.10 → 0.31.11** across all 26 canonical version
+sites.
+
+Follow-on: SM4.B (the `SchedulerState` path-a field replacement),
+SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E
+(`bootFromPlatform_singleCore_witness` retirement +
+`bootFromPlatform_smp_witness`) per
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+§§5.2–5.5.
+
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.1 (SM4.A)
+
 ## v0.31.10 — version-sync gate hardening + per-PR patch-version-bump policy
 
 Adopts the **every-PR-bumps-the-patch-version** workflow and makes a forgotten

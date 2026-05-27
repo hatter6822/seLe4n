@@ -220,6 +220,43 @@ instance simRestrictivePlatformBinding :
   bootCoreId := ⟨0, by decide⟩
   sharingDomain := .inner
 
+/-- **WS-SM SM4.A.5**: Marker type for the single-core simulation
+    platform. -/
+structure SimSingleCorePlatform where
+  deriving Repr
+
+/-- **WS-SM SM4.A.5**: Single-core simulation platform binding
+    (`coreCount := 1`).
+
+    SM4 replaces the singular `SchedulerState` fields with
+    `Vector α coreCount`.  A `coreCount := 1` binding is the minimal
+    non-degenerate topology: it exercises the per-core `Vector`
+    machinery (every field is a one-element vector, every accessor
+    indexes `Fin 1`) while collapsing to the single-core runtime
+    behaviour the SM4.B.15 regression test pins byte-identical against
+    `main_trace_smoke.expected`.  It is also the cheapest way to surface
+    an implicit "there is exactly one current thread" assumption that the
+    4-core bindings would let slip (plan §4.1).
+
+    Reuses every contract from the permissive 4-core sim binding
+    (machine config, runtime / boot / interrupt contracts, boot
+    VSpaceRoot) — only the core-count topology differs, so the two
+    bindings agree everywhere the per-core dimension is irrelevant. -/
+instance simSingleCorePlatformBinding :
+    SeLe4n.Platform.PlatformBinding SimSingleCorePlatform where
+  name := "Simulation (single-core)"
+  machineConfig := simMachineConfig
+  runtimeContract := simRuntimeContractPermissive
+  bootContract := simBootContract
+  interruptContract := simInterruptContract
+  bootVSpaceRoot := some simBootVSpaceRootEntry
+  -- WS-SM SM4.A.5: single-core topology.  `bootCoreId` is the only
+  -- valid `Fin 1` value; `coreCountPos` discharges `1 > 0`.
+  coreCount := 1
+  coreCountPos := by decide
+  bootCoreId := ⟨0, by decide⟩
+  sharingDomain := .inner
+
 /-- U8-A/U-L16: Compile-time consistency theorem proving that the
     `simSubstantiveMemoryMap` used in `RuntimeContract.lean` is identical to
     `simMachineConfig.memoryMap`. This eliminates the risk of the two memory

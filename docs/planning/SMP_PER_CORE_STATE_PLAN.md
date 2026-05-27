@@ -350,8 +350,8 @@ Cleared at the start of each per-core tick (SM5.D.9).
 
 | Sub | Description | Acceptance | Est |
 |-----|-------------|------------|-----|
-| SM4.A.1 | Vector bootstrap: use Lean Std `List.Vector` (or local def) | `Prelude.lean`; compile-time length proof | M |
-| SM4.A.2 | Vector helper theorems: `get_set_eq`, `get_set_ne`, `length`, `replicate_get`, `ext`, `nodup_of_finRange` (6 lemmas) | All proven by `simp`/`decide`/`induction` | M |
+| SM4.A.1 | Vector bootstrap: use Lean core's `Array`-backed `Vector α n` (per §4.2 — **not** `List.Vector`, whose O(n) access would regress the trace harness) | `Prelude.lean`; compile-time length proof | M |
+| SM4.A.2 | Vector helper theorems: `get_set_eq`, `get_set_ne`, `toList_length`, `replicate_get`, `ext`, `nodup_of_finRange` (6 lemmas, in `namespace SeLe4n.PerCoreVector` — a non-`Vector` namespace, so under the `open SeLe4n` every kernel file uses no member shadows core's `_root_.Vector`; the "length" lemma is named `toList_length`, not bare `length`, for semantic precision — it is a `Prop` lemma, not a count) | All proven by `simp`/`decide`/`induction`/`rw` | M |
 | SM4.A.3 | Runtime efficiency check: Vector compiles to Array | Trace `lake exe sele4n` shows acceptable per-core access cost | T |
 | SM4.A.4 | PlatformBinding `coreCount` field already added in SM0.G; SM4.A.4 confirms RPi5 instance | RPi5 = 4 | T |
 | SM4.A.5 | Sim instance updates (single-core sim + 4-core SMP sim) | Both compile | T |

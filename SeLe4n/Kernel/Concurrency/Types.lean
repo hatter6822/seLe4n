@@ -110,12 +110,17 @@ theorem allCores_length : allCores.length = numCores := by
   simp [allCores, List.length_finRange]
 
 /-- WS-SM SM0.E: `allCores` has no duplicate entries.  Lean 4.28's
-standard library does not export a `List.nodup_finRange` lemma; for
-the concrete `numCores = 4` of v0.31.4 the property is decidable
-directly on the literal four-element list `[0, 1, 2, 3]`. -/
-theorem allCores_nodup : allCores.Nodup := by
-  unfold allCores numCores
-  decide
+standard library does not export a `List.nodup_finRange` lemma, so this
+routes through the WS-SM SM4.A.2 general lemma
+`SeLe4n.PerCoreVector.nodup_of_finRange` (proved by induction for an *arbitrary*
+length).  Since `allCores = List.finRange numCores` definitionally, the
+general lemma at `numCores` discharges this directly.  Using the general
+form rather than a literal-`4` `decide` keeps the proof valid when a
+future multi-platform build parameterises `numCores` by
+`PlatformBinding.coreCount` (where `decide` on a non-literal would not
+reduce). -/
+theorem allCores_nodup : allCores.Nodup :=
+  SeLe4n.PerCoreVector.nodup_of_finRange numCores
 
 /-- WS-SM SM0.E: `bootCoreId.val < numCores`.  Trivial from the `Fin`
 representation; useful as a surface anchor for downstream theorems. -/
