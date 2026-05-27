@@ -806,3 +806,23 @@ CrossSubsystem/API/Platform/Testing/`tests/` layers are not yet built. Per
 the entanglement (§11.4), the working tree is uncompilable until the whole
 read-migration is green; the recipe above makes re-derivation fast if the
 tree is lost.
+
+### 11.7 In-progress migration WIP patch (resumption)
+
+Because the migration is uncommittable-until-fully-green (§11.4) yet the
+working tree must be clean between sessions, the exact in-progress state is
+preserved as a re-appliable patch:
+`docs/dev_history/SM4B_phase1_migration.wip.patch` (56 files; the global
+read-migration + `@[simp]`-off + all lower-layer proof fixes). To resume:
+
+```
+git apply docs/dev_history/SM4B_phase1_migration.wip.patch
+```
+
+State captured in the patch: Model + Scheduler-core green; `Operations/
+Preservation.lean` reduced to ~35 proof-repairs remaining (the hard core —
+`rw [← hCur]` reverse-rewrites, `omega`, `Type mismatch`, the line-1833
+multi-goal cluster); the IPC/Lifecycle/Capability/InformationFlow/Service/
+CrossSubsystem/API/Platform/Testing/`tests/` layers not yet built. Delete
+this patch once the migration lands green. (The §11.6 recipe regenerates the
+mechanical bulk if the patch is ever lost.)
