@@ -163,15 +163,19 @@ def typedIdDisjointness_smpLatent : SmpLatentAssumption :=
 def architecture_singleCoreOnly_smpLatent : SmpLatentAssumption :=
   { identifier        := `SeLe4n.Kernel.Architecture.ArchAssumption
     singleCoreWitness :=
-      "Single-core: SchedulerState has a single `current : Option ThreadId` \
-       slot rather than a per-core array; this is the canonical single-core \
-       kernel model recorded in `Architecture/Assumptions.lean` via the \
-       `ArchAssumption` inductive + `assumptionInventory` aggregator."
+      "Single-core operation: WS-SM SM4.B (v0.31.12) replaced the singular \
+       `SchedulerState` fields with per-core `Vector α Concurrency.numCores` \
+       (path-a), but the *verified kernel still drives only `bootCoreId`* — \
+       every transition reads/writes `…OnCore bootCoreId`. The canonical \
+       single-core kernel model is recorded in `Architecture/Assumptions.lean` \
+       via the `ArchAssumption` inductive (incl. the `singleCoreOperation` \
+       arm) + `assumptionInventory` aggregator."
     smpDischarge      :=
-      "SMP: model extension would replace the slot with `Array (Option ThreadId)`. \
-       AN9-J ships SMP code merged but `SMP_ENABLED = false` at v1.0.0 — the \
-       runtime flag inhibits cross-core transitions until the model extension \
-       is wired."
+      "SMP: SM4.B made the scheduler state per-core-shaped; SM4.C/SM4.D migrate \
+       the theorems and SM5 wires the per-core scheduler so transitions act on \
+       the calling core (`Concurrency.currentCoreId`) rather than `bootCoreId`. \
+       AN9-J/SM1 ship the Rust HAL secondary-core bring-up; cross-core kernel \
+       transitions remain gated until SM5 lands."
     sourceTheorem     := `SeLe4n.Kernel.Architecture.architecture_assumptions_index
     auditReference    := "AG-* baseline / AN12-B" }
 
@@ -180,8 +184,9 @@ def bootFromPlatform_currentCore_is_zero_smpLatent : SmpLatentAssumption :=
   { identifier        := `SeLe4n.Platform.Boot.bootFromPlatform
     singleCoreWitness :=
       "Single-core: bootFromPlatform returns IntermediateState whose scheduler \
-       runs on the boot core with implicit core-id = 0; the AN6-F witness \
-       `bootFromPlatform_singleCore_witness` confirms the slot semantics."
+       runs on the boot core (`bootCoreId`); post-SM4.B the AN6-F witness \
+       `bootFromPlatform_singleCore_witness` is restated over \
+       `currentOnCore bootCoreId` (the per-core field's boot-core slot)."
     smpDischarge      :=
       "SMP: AN9-J's bring_up_secondaries() spins up secondary cores after the \
        boot core has finished bootFromPlatform; the boot bridge predicate \

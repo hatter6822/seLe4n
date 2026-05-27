@@ -2499,6 +2499,25 @@ import SeLe4n.Kernel.Concurrency.Types
 #check @SeLe4n.Model.SchedulerState.domainTimeRemainingOnCore
 #check @SeLe4n.Model.SchedulerState.domainScheduleIndexOnCore
 #check @SeLe4n.Model.SchedulerState.lastTimeoutErrorsOnCore
+-- SM4.B.phase-2 — the seven per-core setters (path-a write API).
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore
+-- SM4.B.phase-2 — store/load algebra: 7 read-after-write `_self` lemmas +
+-- representative cross-field and system-wide frame lemmas.
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_self
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_self
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_currentOnCore
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_domainSchedule
 -- SM4.B.9 — default-state per-core initialisation.
 #check @SeLe4n.Model.default_state_perCoreInitialized
 -- SM4.B.10 — per-core extensionality.

@@ -179,12 +179,12 @@ accessor rather than the bare field projection.  This is the decision-#4
 "path-a" discipline: there is no scalar-field shim in the final state, so
 every callsite names the core it is reasoning about.
 
-These accessors are introduced first as scalar wrappers (SM4.B phase-1,
-single-core semantics: the core argument is ignored while the underlying
-field is still a scalar) and are flipped to genuine `Vector.get c`
-projections once the fields become `Vector α numCores` (SM4.B phase-2).
-The two-step keeps the build green while the ~768 read callsites migrate to
-the accessor form. -/
+Each accessor is `s.field.get c` — a genuine `Vector.get` projection of
+core `c`'s slot (the fields are `Vector α numCores` since SM4.B phase-2).
+The accessors are intentionally **not** `@[simp]`: the per-core
+store/load algebra below reduces post-write reads, and leaving the
+accessors opaque keeps that algebra in control of proof normalisation
+(unfolding to raw `Vector.get`/`Vector.set` would defeat it). -/
 namespace SchedulerState
 
 /-- Per-core current-thread of `s` on core `c`. -/
@@ -216,7 +216,7 @@ Each per-core field has a matching `set…OnCore (c : CoreId)` setter that
 writes only core `c`'s slot (`Vector.set c.val … c.isLt`), leaving every
 other core's slot and the system-wide fields untouched.  Operation bodies
 write per-core fields through these setters rather than the raw `Vector.set`
-so the get-after-set reductions (`…OnCore_set…OnCore_*` below) match
+so the get-after-set reductions (`set…OnCore_…OnCore_*` below) match
 syntactically.  Single-core operations write `bootCoreId`'s slot; SM5
 cross-core operations write the target core's slot. -/
 
@@ -248,10 +248,9 @@ states are equal once their per-core fields agree at *every* `CoreId` and
 their system-wide fields agree.  Named `ext_perCore` to avoid clashing with
 the structure's auto-generated `SchedulerState.ext`.
 
-Phase-1: the per-core accessors are scalar wrappers, so the `∀ c`
-hypotheses are discharged at `bootCoreId` (the accessor ignores its core
-argument).  The statement is the genuine per-core shape that SM4.B phase-2
-discharges via `SeLe4n.PerCoreVector.ext` on each `Vector` field. -/
+Each per-core hypothesis (`∀ c, s₁.…OnCore c = s₂.…OnCore c`) lifts to
+`Vector` equality via `SeLe4n.PerCoreVector.ext`; the structure is then
+destructured and closed by `simp_all`. -/
 theorem ext_perCore {s₁ s₂ : SchedulerState}
     (hCur  : ∀ c : CoreId, s₁.currentOnCore c = s₂.currentOnCore c)
     (hRQ   : ∀ c : CoreId, s₁.runQueueOnCore c = s₂.runQueueOnCore c)
@@ -690,11 +689,10 @@ instance : Inhabited SchedulerState where
   default := {}
 
 /-- WS-SM SM4.B.9: the default scheduler state is per-core initialised to the
-neutral value on *every* core (plan §3.6).  Phase-1: the per-core accessors
-are scalar wrappers over the `default` field values, so each conjunct holds
-by `rfl`; the statement is the genuine per-core shape that SM4.B phase-2
-discharges via `SeLe4n.PerCoreVector.replicate_get` once the fields become
-`Vector.replicate numCores <neutral>`. -/
+neutral value on *every* core (plan §3.6).  Each field defaults to
+`Vector.replicate numCores <neutral>`, so each conjunct discharges via
+`SeLe4n.PerCoreVector.replicate_get` (every slot of a replicate holds the
+replicated value). -/
 theorem default_state_perCoreInitialized (c : CoreId) :
     (default : SchedulerState).currentOnCore c = none ∧
     (default : SchedulerState).runQueueOnCore c = SeLe4n.Kernel.RunQueue.empty ∧

@@ -20,7 +20,13 @@ SM4.B "SchedulerState path-a replacement" foundation:
   (`SchedulerState.currentOnCore` / `runQueueOnCore` /
   `replenishQueueOnCore` / `activeDomainOnCore` /
   `domainTimeRemainingOnCore` / `domainScheduleIndexOnCore` /
-  `lastTimeoutErrorsOnCore`), each taking an explicit `c : CoreId`.
+  `lastTimeoutErrorsOnCore`), each taking an explicit `c : CoreId`, plus
+  the seven matching `set…OnCore` writers (the path-a write API).
+* **SM4.B.phase-2 store/load algebra** — the 63 `@[simp]` lemmas that
+  reduce post-write reads: the 7 read-after-write `set…OnCore_…OnCore_self`
+  lemmas, the 42 cross-field `set…OnCore_…OnCore` frames, and the 14
+  system-wide-field frames. (Anchored + exercised through proven `example`s
+  here; consumed pervasively in the downstream preservation/NI proofs.)
 * **SM4.B.9** — `default_state_perCoreInitialized`: the default scheduler
   state reads the neutral value on every core (plan §3.6).
 * **SM4.B.10** — `SchedulerState.ext_perCore`: per-core extensionality
@@ -29,11 +35,13 @@ SM4.B "SchedulerState path-a replacement" foundation:
 These are checked at elaboration time (`#check` surface anchors +
 `example`s discharged through the proven theorems) and at runtime
 (`assertBool` mirrors via `lake exe per_core_scheduler_state_suite`, so a
-silent regression surfaces in the Tier-2 trace pass).
-
-The accessor statements are the genuine per-core (`∀ c : CoreId`) shape
-required by decision-#4 path-a; the SM4.B field-flip (`Vector α numCores`)
-strengthens the underlying proofs without changing these surfaces.
+silent regression surfaces in the Tier-2 trace pass). The runtime §3.2
+section additionally exercises **per-core independence** — writing one
+core's slot leaves every other core's slot at its neutral value — the key
+property the path-a `Vector` replacement delivers over the former scalar
+fields. (The general same-field-cross-core lemma is deferred to SM5, where
+genuine cross-core writes first occur; at single-core only `bootCoreId` is
+written, so it is unused here.)
 -/
 
 open SeLe4n.Model
@@ -53,6 +61,29 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Model.SchedulerState.lastTimeoutErrorsOnCore
 #check @SeLe4n.Model.default_state_perCoreInitialized
 #check @SeLe4n.Model.SchedulerState.ext_perCore
+
+-- SM4.B.phase-2: the seven per-core setters (the path-a write API).
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore
+
+-- SM4.B.phase-2: the `@[simp]` store/load algebra — the seven read-after-write
+-- (`_self`) lemmas, a representative cross-field frame lemma, and a
+-- system-wide-field frame lemma. These are what reduce post-write reads in
+-- every downstream proof; a rename fails here at elaboration time.
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_self
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_self
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_currentOnCore        -- cross-field frame
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_domainSchedule        -- system-wide frame
 
 -- ============================================================================
 -- §2  Elaboration examples discharged through the proven SM4.B theorems.
@@ -76,12 +107,43 @@ example (c : CoreId) : (default : SchedulerState).domainScheduleIndexOnCore c = 
 example (c : CoreId) : (default : SchedulerState).lastTimeoutErrorsOnCore c = [] :=
   (default_state_perCoreInitialized c).2.2.2.2.2.2
 
--- SM4.B.8: an accessor reads back a value written into the per-core field at
--- the same core (read-after-write at one core).
+-- SM4.B.phase-2: each per-core accessor reads back a value written into its
+-- own field at the same core (read-after-write at one core), via the seven
+-- `_self` store/load lemmas.
 example (c : CoreId) :
     ((default : SchedulerState).setCurrentOnCore c (some (SeLe4n.ThreadId.ofNat 1))).currentOnCore c
       = some (SeLe4n.ThreadId.ofNat 1) :=
   SchedulerState.setCurrentOnCore_currentOnCore_self _ c _
+example (c : CoreId) (rq : SeLe4n.Kernel.RunQueue) :
+    ((default : SchedulerState).setRunQueueOnCore c rq).runQueueOnCore c = rq :=
+  SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ c _
+example (c : CoreId) (q : SeLe4n.Kernel.ReplenishQueue) :
+    ((default : SchedulerState).setReplenishQueueOnCore c q).replenishQueueOnCore c = q :=
+  SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self _ c _
+example (c : CoreId) (d : SeLe4n.DomainId) :
+    ((default : SchedulerState).setActiveDomainOnCore c d).activeDomainOnCore c = d :=
+  SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self _ c _
+example (c : CoreId) (n : Nat) :
+    ((default : SchedulerState).setDomainTimeRemainingOnCore c n).domainTimeRemainingOnCore c = n :=
+  SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self _ c _
+example (c : CoreId) (n : Nat) :
+    ((default : SchedulerState).setDomainScheduleIndexOnCore c n).domainScheduleIndexOnCore c = n :=
+  SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_self _ c _
+example (c : CoreId) (es : List (SeLe4n.ThreadId × SeLe4n.Model.KernelError)) :
+    ((default : SchedulerState).setLastTimeoutErrorsOnCore c es).lastTimeoutErrorsOnCore c = es :=
+  SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self _ c _
+
+-- SM4.B.phase-2: cross-field frame — writing `current` leaves `runQueue`
+-- untouched at every core (the 42 cross-field lemmas; representative).
+example (c c' : CoreId) (s : SchedulerState) (v : Option SeLe4n.ThreadId) :
+    (s.setCurrentOnCore c v).runQueueOnCore c' = s.runQueueOnCore c' :=
+  SchedulerState.setCurrentOnCore_runQueueOnCore _ c c' _
+
+-- SM4.B.phase-2: system-wide frame — per-core writes never touch the shared
+-- `domainSchedule` (the 14 system-wide-field lemmas; representative).
+example (c : CoreId) (s : SchedulerState) (rq : SeLe4n.Kernel.RunQueue) :
+    (s.setRunQueueOnCore c rq).domainSchedule = s.domainSchedule :=
+  SchedulerState.setRunQueueOnCore_domainSchedule _ c _
 
 -- SM4.B.10: per-core extensionality is usable — agreement at every core (and
 -- on the system-wide fields) collapses two states to equal.

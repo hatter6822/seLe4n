@@ -3241,34 +3241,36 @@ theorem collectQueueMembers_head_is_start
 -- CX-M03: Single-core boot witness
 -- ============================================================================
 
-/-- AN6-F (CX-M03): The Lean kernel model is single-core by construction — no
-    per-core state is tracked in `SystemState`. This theorem witnesses the
-    single-core shape by proving a structural property of `SchedulerState`:
-    there is exactly ONE `current` thread slot (not a per-core map), so
-    the kernel's notion of "currently running thread" is a single `Option
-    ThreadId` rather than a partial function from core-ID to thread-ID.
+/-- AN6-F (CX-M03): boot-core current-thread witness — the anchor for the
+    `singleCoreOperation` `ArchAssumption`.
 
-    The Rust HAL enforces the corresponding assumption at hardware entry:
-    - `rust/sele4n-hal/src/cpu.rs::MPIDR_CORE_ID_MASK = 0x00FFFFFF` (AK5-I)
-    - `rust/sele4n-hal/src/boot.S` core-0 wake gate (AK5-I)
+    **Honest post-SM4.B statement of content.** Before WS-SM SM4.B,
+    `SchedulerState.current` was a single `Option ThreadId`, and this
+    theorem's *type* was the structural witness that the field was a
+    single slot, not a per-core map. **SM4.B (v0.31.12) flipped the field
+    to `Vector (Option ThreadId) Concurrency.numCores`** (the path-a
+    per-core replacement), so that original framing no longer holds — the
+    field IS a per-core map now. The theorem is therefore restated over
+    the *boot core's* accessor, `currentOnCore bootCoreId`, where it is
+    trivially true (any `Option` is `none` or `some _`).
 
-    **Substantive content**: this theorem demonstrates — via the type
-    system — that `SchedulerState.current : Option ThreadId` is an
-    inhabitant of `Option ThreadId`, not a `Nat → Option ThreadId` or
-    similar per-core indexed type. Any future SMP extension that
-    introduces per-core scheduler state will either (a) change the
-    `current` field's type (breaking this theorem statement) or (b)
-    add a separate per-core-map field (requiring an explicit SMP
-    invariant). Either path forces the SMP-bring-up workstream
-    (DEF-R-HAL-L20 / AN9-J) to retire this single-core witness
-    explicitly rather than letting the assumption slip silently.
+    What it still anchors at v1.0.0: the verified kernel drives **only**
+    `bootCoreId` (secondary-core bring-up is staged in the SM1 Rust HAL —
+    `boot.S` core-0 wake gate, `cpu.rs::MPIDR_CORE_ID_MASK = 0x00FFFFFF`,
+    PSCI `cpu_on` — but is not yet entered from the verified kernel), so
+    "the single-core operation's current thread is well-defined" is
+    witnessed by the boot core's slot. It is the named `sourceTheorem`
+    of the `Architecture.ArchAssumption.singleCoreOperation` constructor
+    (SM0.A) and of the `smpLatentInventory` entry; the build-time `@`
+    references there fail if it is renamed/removed.
 
-    SMP bring-up is in flight in WS-SM
-    (`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`); AN9-J shipped
-    the Rust HAL scaffolding while WS-SM SM2..SM5 wire the per-core
-    scheduler state and SM0.A registers `singleCoreOperation` as the
-    sixth `Architecture.ArchAssumption` constructor pointing at this
-    very theorem. -/
+    **Not a strong invariant; scheduled for retirement.** This is an
+    interim restatement, deliberately kept *valid* (not deleted) across
+    SM4.B so the SMP assumption is never silently dropped mid-migration.
+    WS-SM **SM4.E** retires it: it is replaced by
+    `bootFromPlatform_smp_witness` and the `singleCoreOperation`
+    `ArchAssumption` / inventory entry are repointed (plan
+    `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.5). -/
 theorem bootFromPlatform_singleCore_witness :
     ∀ (s : SchedulerState),
       s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId = none ∨
