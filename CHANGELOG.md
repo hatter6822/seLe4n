@@ -27,9 +27,8 @@ per-core `Vector` machinery rests on.
     `i.val ≠ j.val` via `Fin.val_ne_of_ne`).
   - `toList_length` — a `Vector α n` has `n` elements as a list
     (re-export of `Vector.length_toList`; named `toList_length`, not
-    bare `length`, so it does not make `v.length` resolve to a `Prop`
-    under the `open SeLe4n` every kernel file uses — the count is
-    `v.size`).
+    bare `length`, for semantic precision — it is a `Prop` lemma, not a
+    count, the count being `v.size`).
   - `replicate_get` — every slot of a replicated vector holds the
     replicated value (the workhorse for SM4.B.9's
     `default_state_perCoreInitialized`).
