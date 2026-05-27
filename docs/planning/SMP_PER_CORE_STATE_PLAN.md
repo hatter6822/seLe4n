@@ -739,3 +739,70 @@ commits), the migration is split:
 `Liveness/*`) → SchedContext → IPC → Lifecycle → Capability → Architecture →
 InformationFlow → Service → CrossSubsystem → API → Platform → Testing →
 `tests/`.
+
+### 11.6 Execution refinements discovered in-flight (SM4.C grind)
+
+The global read-migration (all 56 files in one consistent pass) was applied
+with a UTF-8-safe, always-parenthesising transform:
+
+```
+# read-migration (per file): projected gets parens+.method, terminal gets parens.
+RC="(\([^()]*\)|[A-Za-z_][A-Za-z0-9_.'₀₁₂₃₄₅₆₇₈₉ₐₑₒₓₕₖₗₘₙₚₛₜ′]*)"
+FLD="(current|runQueue|replenishQueue|activeDomain|domainTimeRemaining|domainScheduleIndex|lastTimeoutErrors)"
+perl -CSD -Mutf8 -i -pe \
+  "s/${RC}\\.scheduler\\.${FLD}\\.(?=[A-Za-z])/(\$1.scheduler.\$2OnCore bootCoreId)./g; \
+   s/${RC}\\.scheduler\\.${FLD}\\b(?!\\.)/(\$1.scheduler.\$2OnCore bootCoreId)/g;" FILE
+```
+
+Always-parenthesise (terminal too): argument position cannot be detected
+from following context (e.g. `exact lemma st.scheduler.current` at line end),
+so `(EXPR.fieldOnCore bootCoreId)` is the only universally-correct output.
+The Unicode subscript class is required for `s₁`/`s₂` receivers in
+information-flow proofs (Perl `\w` excludes subscripts). Each file also gets
+`open SeLe4n.Kernel.Concurrency (bootCoreId)`.
+
+**Binding decision — accessors are NOT `@[simp]`.** Empirically, `@[simp]`
+on the seven accessors gives *more* breakage in the reduction-heavy
+operation files (Preservation: 165 errors with `@[simp]` vs 61 without),
+because it unfolds the accessor in goals while leaving explicit
+`…OnCore`-stated hypotheses/`cases`-scrutinees folded, causing type
+mismatches / dependent-elimination / function-expected failures. Plain
+`def` accessors keep goals folded (so hypotheses match natively) and the
+fixes are the simpler "add the accessor to the `simp` set" kind. This also
+matches the phase-2 end state (the accessor is a folded abstraction).
+
+**Proof-repair fix patterns (no-`@[simp]`):**
+1. *Reduction proof* (`simp [pred]` where `pred` reads an accessor and the
+   match must reduce): add `SchedulerState.<field>OnCore` to the `simp`.
+2. *`simp [queueCurrentConsistent, hCur]`* (or any scalar predicate vs an
+   `…OnCore`-stated hypothesis): normalise the hypothesis first —
+   `simp only [SchedulerState.currentOnCore] at hCur` — so it matches the
+   scalar predicate body.
+3. *`cases hPick : <op with …OnCore args>`* then `simp [hPick]`: normalise
+   `hStep` to scalar first (`simp only [SchedulerState.runQueueOnCore,
+   SchedulerState.activeDomainOnCore] at hStep`) and `cases` on the scalar
+   form; the cases scrutinee is proof-internal (phase-2 reproves it).
+4. *Bare-binder reads* (`s.current` inside a `(s : SchedulerState)`
+   predicate such as `queueCurrentConsistent`) and the **freeze path**
+   (`freezeScheduler` reading `sched.current` to populate the scalar
+   `FrozenSchedulerState`): LEAVE scalar in phase-1. Migrating
+   `queueCurrentConsistent`'s body rippled to 165 Preservation proofs — its
+   bare-binder read is a phase-2 item (with `FrozenSchedulerState`'s own
+   per-core treatment, SM4.D.16). Consumers with `…OnCore` hypotheses are
+   fixed by pattern 2, not by migrating the predicate.
+5. *`rw [← hCur] at hStep`* and similar reverse-rewrites / `omega` /
+   dependent-elimination failures: genuinely data-flow-dependent; require
+   per-proof analysis (not a mechanical accessor-add). These are the
+   slow core of the SM4.C grind.
+
+**Status at this checkpoint:** foundation committed (SM4.B.8/9/10 + suite);
+the global read-migration is applied in the working tree; the Model layer
+(`State`, `FrozenState`) and Scheduler core
+(`Invariant`, `Operations/Selection`, `Projection`, `RuntimeContract`,
+`IPC/Operations/SchedulerLemmas`) are green; `Operations/Preservation.lean`
+has ~40 remaining proof-repairs (mix of patterns 1–3 and the hard pattern-5
+cases), and the IPC/Lifecycle/Capability/InformationFlow/Service/
+CrossSubsystem/API/Platform/Testing/`tests/` layers are not yet built. Per
+the entanglement (§11.4), the working tree is uncompilable until the whole
+read-migration is green; the recipe above makes re-derivation fast if the
+tree is lost.
