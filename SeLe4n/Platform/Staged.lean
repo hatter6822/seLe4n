@@ -129,6 +129,13 @@ import SeLe4n.Kernel.Concurrency.LockSet
 -- operations are the first runtime exerciser (which will move it
 -- production-reached).
 import SeLe4n.Kernel.Scheduler.Invariant.PerCore
+-- WS-SM SM4.C audit-pass-4: per-operation per-core preservation theorems
+-- for the 5 boot-core scheduler operations that have a single-core
+-- `schedulerInvariantBundleFull` preservation theorem (`schedule`,
+-- `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`), plus a
+-- base-aggregate bridge for `chooseThread`.  Composes existing single-
+-- core preservation theorems with the SM4.C SMP-preservation skeleton.
+import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.16"
+version = "0.31.17"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -342,3 +342,12 @@ root = "tests.PerCoreSchedulerStateSuite"
 [[lean_exe]]
 name = "scheduler_invariant_per_core_suite"
 root = "tests.SchedulerInvariantPerCoreSuite"
+
+# WS-SM SM4.C audit-pass-4 — per-operation per-core preservation test suite.
+# Surface anchors + elaboration-time witness for the 5 per-op per-core
+# preservation theorems (`schedule`, `handleYield`, `timerTick`,
+# `switchDomain`, `scheduleDomain` each preserve `schedulerInvariant_smp`)
+# + the `chooseThread` base-aggregate bridge.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "scheduler_invariant_per_core_preservation_suite"
+root = "tests.SchedulerInvariantPerCorePreservationSuite"

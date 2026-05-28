@@ -1469,4 +1469,105 @@ theorem default_schedulerInvariant_smp_crossSubsystem :
     schedulerInvariant_smp_crossSubsystem (default : SystemState) :=
   fun c => default_schedulerInvariant_perCore_crossSubsystem c
 
+-- ============================================================================
+-- §11  "Sufficient idle" theorem + per-operation SMP-preservation composition
+-- ============================================================================
+
+/-- WS-SM SM4.C: when core `c` is **idle** on `st` (no current thread, empty
+run queue, positive domain-time), `schedulerInvariant_perCore st c` holds
+unconditionally.  Every current-dependent conjunct is vacuous (matches on
+`none`); every runnable-quantified conjunct is vacuous (universally
+quantifies over `[]`); the only non-vacuous conjunct,
+`domainTimeRemainingPositive`, is supplied as a hypothesis.
+
+This is the **structural** sufficient condition that justifies why, on the
+current single-core kernel, non-boot cores trivially satisfy the per-core
+invariant: they are perma-idle (default state) until SM5 activates them. -/
+theorem schedulerInvariant_perCore_holds_if_idle (st : SystemState) (c : CoreId)
+    (hCurNone : st.scheduler.currentOnCore c = none)
+    (hRQEmpty : (st.scheduler.runQueueOnCore c).toList = [])
+    (hDTRPos : st.scheduler.domainTimeRemainingOnCore c > 0) :
+    schedulerInvariant_perCore st c := by
+  have hNotMemList : ∀ tid : SeLe4n.ThreadId,
+      tid ∉ (st.scheduler.runQueueOnCore c).toList := by
+    intro tid; rw [hRQEmpty]; exact List.not_mem_nil
+  have hNotMem : ∀ tid : SeLe4n.ThreadId,
+      tid ∉ (st.scheduler.runQueueOnCore c) := by
+    intro tid hMem
+    exact hNotMemList tid ((RunQueue.mem_toList_iff_mem _ tid).2 hMem)
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · simp only [queueCurrentConsistentOnCore, hCurNone]
+  · simp only [runQueueUniqueOnCore, hRQEmpty]; exact List.nodup_nil
+  · simp only [currentThreadValidOnCore, hCurNone]
+  · intro tid hMem; exact absurd hMem (hNotMemList tid)
+  · simp only [currentTimeSlicePositiveOnCore, hCurNone]
+  · simp only [edfCurrentHasEarliestDeadlineOnCore, hCurNone]
+  · simp only [contextMatchesCurrentOnCore, hCurNone]
+  · intro tid hMem; exact absurd hMem (hNotMemList tid)
+  · intro tid hMem; exact absurd hMem (hNotMem tid)
+  · exact hDTRPos
+
+/-- Strong-idle variant of §6's `schedulerInvariant_perCore_frame_idle`:
+when core `c`'s scheduler slots are *all* in the idle shape (no current,
+empty run queue, positive DTR) on the post-state, the per-core invariant
+holds at `c` regardless of any state change.  This bypasses the
+`objects` / `regs` frame hypotheses entirely — for an idle core,
+neither matters. -/
+theorem schedulerInvariant_perCore_idle_on_post_state {st' : SystemState} {c : CoreId}
+    (hCurNone : st'.scheduler.currentOnCore c = none)
+    (hRQEmpty : (st'.scheduler.runQueueOnCore c).toList = [])
+    (hDTRPos : st'.scheduler.domainTimeRemainingOnCore c > 0) :
+    schedulerInvariant_perCore st' c :=
+  schedulerInvariant_perCore_holds_if_idle st' c hCurNone hRQEmpty hDTRPos
+
+/-- WS-SM SM4.C: **the per-operation SMP-preservation composition** — the
+SM5 migration bridge for any boot-core scheduler operation.
+
+Given:
+  * `hBoot'` : the boot core's per-core invariant has been re-established
+    post-operation (typically from
+    `schedulerInvariantBundleFull_to_perCore_bootCore` applied to the
+    existing single-core preservation theorem), AND
+  * `hNonBootIdle` : every non-boot core is idle in the
+    `schedulerInvariant_perCore_holds_if_idle` sense on the post-state
+    (holds by construction for any boot-core-only operation under the
+    SM4.B setter discipline, since non-boot cores' slots are unchanged
+    from their default idle initial values).
+
+This composition cleanly avoids the frame-equality hypotheses
+(`hFrameRQ`, `hFrameDTR`, `hFrameObj`) of `_smp_of_bootCore_and_idle_frame`,
+making it applicable to operations that *do* change `objects` or
+`machine.regs` (e.g., `schedule`'s context restore) — for non-boot idle
+cores, those changes are simply invisible. -/
+theorem schedulerInvariant_smp_of_bootCore_preservation
+    {st' : SystemState}
+    (hBoot' : schedulerInvariant_perCore st' bootCoreId)
+    (hNonBootIdle : ∀ c, c ≠ bootCoreId →
+      st'.scheduler.currentOnCore c = none ∧
+      (st'.scheduler.runQueueOnCore c).toList = [] ∧
+      st'.scheduler.domainTimeRemainingOnCore c > 0) :
+    schedulerInvariant_smp st' := by
+  intro c
+  by_cases hc : c = bootCoreId
+  · subst hc; exact hBoot'
+  · obtain ⟨hCN, hRQE, hDTR⟩ := hNonBootIdle c hc
+    exact schedulerInvariant_perCore_holds_if_idle st' c hCN hRQE hDTR
+
+/-- The extended analog of `schedulerInvariant_smp_of_bootCore_preservation`.
+For non-boot cores, the extended invariant holds when the core is fully
+idle in the *base* sense (no current, empty run queue, positive DTR) AND
+the *extended* sense (empty replenish queue).  The caller supplies a
+per-core "fully idle on post-state" witness `hNonBootIdle'` that proves
+the extended per-core invariant at each non-boot core directly. -/
+theorem schedulerInvariant_smp_extended_of_bootCore_preservation
+    {st' : SystemState}
+    (hBoot' : schedulerInvariant_perCore_extended st' bootCoreId)
+    (hNonBootIdle' : ∀ c, c ≠ bootCoreId →
+      schedulerInvariant_perCore_extended st' c) :
+    schedulerInvariant_smp_extended st' := by
+  intro c
+  by_cases hc : c = bootCoreId
+  · subst hc; exact hBoot'
+  · exact hNonBootIdle' c hc
+
 end SeLe4n.Kernel

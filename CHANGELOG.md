@@ -1,3 +1,106 @@
+## v0.31.17 — WS-SM SM4.C audit-pass-4: per-operation per-core preservation
+
+Adds the **per-operation per-core preservation theorems** demonstrating
+the SM5-bridge actually pays off.  Each theorem composes (a) the existing
+single-core preservation of `schedulerInvariantBundleFull` in
+`Scheduler/Operations/Preservation.lean`, (b) the SM4.C bundle bridges
+(PerCore §4), and (c) the SM4.C `_smp_of_bootCore_preservation`
+composition (PerCore §11, added this pass).
+
+**§11 — sufficient-idle + SMP-preservation composition** (added to
+`PerCore.lean`):
+
+  * `schedulerInvariant_perCore_holds_if_idle` — the structural
+    sufficient condition.  When core `c` is idle on `st` (no current,
+    empty run queue, positive DTR), `schedulerInvariant_perCore st c`
+    holds unconditionally (every current-dependent conjunct is vacuous
+    via match on `none`; every runnable-quantified conjunct is vacuous
+    via the empty `[]` quantifier; `domainTimeRemainingPositive` is
+    supplied as a hypothesis).
+  * `schedulerInvariant_perCore_idle_on_post_state` — surface-rename of
+    the above for use on the post-state.
+  * `schedulerInvariant_smp_of_bootCore_preservation` — the per-op
+    SMP-preservation composition.  Given (i) the boot core's per-core
+    invariant is re-established post-operation (from
+    `schedulerInvariantBundleFull_to_perCore_bootCore` applied to the
+    single-core preservation result) and (ii) non-boot cores are idle
+    on the post-state (a structural fact the caller supplies, holding
+    by construction under SM4.B's "only writes `bootCoreId`'s slots"
+    setter discipline), `schedulerInvariant_smp st'` holds.
+
+    This is *cleaner* than `_smp_of_bootCore_and_idle_frame` (which
+    requires frame-equality hypotheses) for operations that *do*
+    change `objects` or `machine.regs` — e.g. `schedule`'s context
+    restore — because for non-boot idle cores those changes are
+    invisible.
+  * `schedulerInvariant_smp_extended_of_bootCore_preservation` —
+    extended-aggregate analog.  Takes per-core extended invariant
+    witnesses directly for non-boot cores.
+
+**NEW FILE `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean`**
+(staged via `Platform/Staged.lean` + `staged_module_allowlist.txt`; ~240
+LoC): per-operation per-core `schedulerInvariant_smp` preservation for
+the 5 boot-core scheduler operations that have `schedulerInvariantBundleFull`
+single-core preservation:
+
+  * **`schedule_preserves_schedulerInvariant_smp`** — composes
+    `schedule_preserves_schedulerInvariantBundleFull` with the §11
+    composition.  Carries the usual single-core preconditions
+    (`hwf`, `hAllTcb`, `hObjInv`) + `hDSE` (to reconstitute
+    `BundleFull` from the per-core slice) + `hOtherIdle` (the
+    structural non-boot-cores-stay-idle witness, true by
+    construction).
+
+  * **`handleYield_preserves_schedulerInvariant_smp`** — same pattern.
+
+  * **`timerTick_preserves_schedulerInvariant_smp`** — same pattern,
+    carries the additional `hConfigTS` hypothesis.
+
+  * **`switchDomain_preserves_schedulerInvariant_smp`** — lighter
+    preconditions (no `hwf`/`hAllTcb` needed by the single-core
+    preservation).
+
+  * **`scheduleDomain_preserves_schedulerInvariant_smp`** — same
+    pattern.
+
+  * **`chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore`**
+    — base-aggregate bridge.  `chooseThread` has no Full-bundle
+    single-core preservation (its preservation is composed inside
+    `schedule`); this theorem provides a 3-conjunct base bridge so
+    SM5 has minimal coverage for the choose step.
+
+Each per-op preservation is a 4-line proof:
+```
+apply schedulerInvariant_smp_of_bootCore_preservation _ hOtherIdle
+have hFull : ... := schedulerInvariant_perCore_bootCore_to_bundleFull (hPre bootCoreId) hDSE
+have hFull' : ... := <existing single-core preservation> hFull ... hStep
+exact schedulerInvariantBundleFull_to_perCore_bootCore hFull'
+```
+
+The structural `hOtherIdle` hypothesis is supplied by SM5 from
+operation-specific knowledge (e.g. "schedule only writes
+`bootCoreId`'s scheduler slots, so non-boot cores stay in their
+default idle state").
+
+**Test coverage**: NEW FILE
+`tests/SchedulerInvariantPerCorePreservationSuite.lean` (~180 LoC) —
+6 surface anchors + 6 elaboration-time examples confirming each per-op
+preservation theorem's typed signature is callable.  The base test
+suite gains 4 new surface anchors for the §11 composition theorems.
+Runtime check is symbolic-only (Prop-valued preservation statements
+can't be `decide`d on arbitrary `(st, st')`).
+
+**Module status**: `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean`
+~240 LoC.  Tier 0+1+2+3 green; partition gate green (35 staged-only
+modules, was 34); axiom-clean (only `propext` / `Quot.sound` /
+`Classical.choice`); trace fixture byte-identical.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: the plan §3.4 Pattern 1 rewrite of existing scheduler
+theorems (the bulk of SM4.C — ~108 theorems across 25 files); SM4.D
+cross-subsystem migrations; SM4.E witness retirement.
+
 ## v0.31.16 — WS-SM SM4.C audit-pass-3: cross-subsystem per-core predicates (plan §5.6)
 
 Adds the three cross-subsystem per-core predicates named in plan §5.6's

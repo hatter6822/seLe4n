@@ -216,4 +216,10 @@ run_check_with_timeout "TRACE" lake exe per_core_scheduler_state_suite
 # decidable foundations + theorem applicability.
 run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_suite
 
+# WS-SM SM4.C audit-pass-4 — per-operation per-core preservation suite.
+# Surface anchors + elaboration-time witness for the 5 per-op per-core
+# preservation theorems composing existing single-core preservation with
+# the SM4.C SMP-preservation skeleton.
+run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_preservation_suite
+
 finalize_report

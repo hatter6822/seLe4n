@@ -2681,6 +2681,30 @@ open SeLe4n.Kernel
 #check @crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore
 #check @default_schedulerInvariant_perCore_crossSubsystem
 #check @default_schedulerInvariant_smp_crossSubsystem
+-- SM4.C §11 "sufficient idle" + SMP-preservation composition.
+#check @schedulerInvariant_perCore_holds_if_idle
+#check @schedulerInvariant_perCore_idle_on_post_state
+#check @schedulerInvariant_smp_of_bootCore_preservation
+#check @schedulerInvariant_smp_extended_of_bootCore_preservation
+EOF'
+
+# WS-SM SM4.C audit-pass-4 — per-operation per-core preservation theorems.
+# The 5 boot-core scheduler operations with single-core Full preservation
+# (`schedule`, `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`)
+# each get a per-core SMP preservation theorem composing the existing
+# single-core surface with the SM4.C SMP-preservation skeleton; plus a
+# base-aggregate bridge for `chooseThread`.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
+open SeLe4n.Kernel
+
+#check @schedule_preserves_schedulerInvariant_smp
+#check @handleYield_preserves_schedulerInvariant_smp
+#check @timerTick_preserves_schedulerInvariant_smp
+#check @switchDomain_preserves_schedulerInvariant_smp
+#check @scheduleDomain_preserves_schedulerInvariant_smp
+#check @chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore
 EOF'
 
 finalize_report

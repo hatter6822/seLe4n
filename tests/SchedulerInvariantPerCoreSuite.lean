@@ -175,6 +175,12 @@ open SeLe4n.Kernel.Concurrency
 #check @priorityInheritance_perCore_frame
 #check @activeDomainOnCore_isInDomainSchedule_frame
 
+-- "Sufficient idle" + SMP-preservation composition (§11):
+#check @schedulerInvariant_perCore_holds_if_idle
+#check @schedulerInvariant_perCore_idle_on_post_state
+#check @schedulerInvariant_smp_of_bootCore_preservation
+#check @schedulerInvariant_smp_extended_of_bootCore_preservation
+
 -- Cross-subsystem per-core aggregate (§10):
 #check @schedulerInvariant_perCore_crossSubsystem
 #check @schedulerInvariant_smp_crossSubsystem
