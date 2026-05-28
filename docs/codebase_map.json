@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/elegant-wozniak-FkOsZ",
-      "commit_sha": "97c4821597d177483afbf585d5b45466b0e063ed",
-      "tree_sha": "b8fd4569ec9d383b96ae9e25ac636e608a72b532",
-      "committed_at_utc": "2026-05-28T07:40:38+00:00"
+      "commit_sha": "1af7353780c8bb7343b0419100a96371a406bfcd",
+      "tree_sha": "350a30aa752259492724ea9c775ad8d8a9125f0d",
+      "committed_at_utc": "2026-05-28T08:09:49+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e70f41d7a1be98b7fb62d55d6985ccc7c04d1887b36f922c1460c5257863285c"
+    "source_digest": "d980d25edcab7684f1ee1c3f48a6dd39daa09a9c47e0892aeb3c01e8a62d716b"
   },
   "summary": {
     "module_count": 248,
-    "declaration_count": 8851
+    "declaration_count": 8852
   },
   "readme_sync": {
-    "version": "0.31.26",
+    "version": "0.31.27",
     "lean_toolchain": "v4.28.0",
     "production_files": 202,
-    "production_loc": 143634,
+    "production_loc": 143663,
     "test_files": 46,
-    "test_loc": 31186,
-    "proved_theorem_lemma_decls": 4428,
+    "test_loc": 31201,
+    "proved_theorem_lemma_decls": 4429,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -57681,7 +57681,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCore",
       "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean",
-      "declaration_count": 141,
+      "declaration_count": 142,
       "declarations": [
         {
           "kind": "namespace",
@@ -59528,8 +59528,26 @@
         },
         {
           "kind": "theorem",
+          "name": "schedulerInvariant_perCore_holds_if_idle_default",
+          "line": 1755,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "domainTimeRemainingOnCore",
+            "empty",
+            "empty_wellFormed",
+            "none",
+            "runQueueOnCore",
+            "schedulerInvariant_perCore",
+            "schedulerInvariant_perCore_holds_if_idle",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "schedulerInvariant_smp_of_bootCore_preservation",
-          "line": 1756,
+          "line": 1785,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -59547,7 +59565,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_smp_extended_of_bootCore_preservation",
-          "line": 1786,
+          "line": 1815,
           "called": [
             "Kernel",
             "SystemState",
@@ -111115,6 +111133,7 @@
             "schedulerInvariantBundle_to_perCoreBase_bootCore",
             "schedulerInvariant_perCore",
             "schedulerInvariant_perCore_holds_if_idle",
+            "schedulerInvariant_perCore_holds_if_idle_default",
             "schedulerInvariant_perCore_to_base",
             "schedulerInvariant_perCore_to_runQueueOnCoreWellFormed",
             "schedulerInvariant_smp_to_base",
@@ -111126,7 +111145,7 @@
         {
           "kind": "def",
           "name": "runSchedulerInvariantPerCoreChecks",
-          "line": 695,
+          "line": 710,
           "called": [
             "runAuditPass9Checks",
             "runBridgeReflexivityChecks",
@@ -111141,7 +111160,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 711,
+          "line": 726,
           "called": [
             "runSchedulerInvariantPerCoreChecks"
           ]

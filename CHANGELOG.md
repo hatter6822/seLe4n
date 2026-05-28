@@ -1,3 +1,60 @@
+## v0.31.27 — WS-SM SM4.C audit-pass-11: convenience wrapper for `_holds_if_idle`
+
+User-asked audit question: "is the `_holds_if_idle` proof actually
+substantive and mathematically sound?"  Honest answer below; one minor
+improvement landed.
+
+**Substantiveness analysis** — 11 conjuncts of the audit-pass-9
+aggregate `schedulerInvariant_perCore` are individually discharged:
+
+  * 9 conjuncts (queueCurrentConsistent, runQueueUnique,
+    currentThreadValid, timeSlicePositive, currentTimeSlicePositive,
+    edfCurrentHasEarliestDeadline, contextMatchesCurrent,
+    runnableThreadsAreTCBs, schedulerPriorityMatch) do real proof work
+    — case analysis on the `currentOnCore = none` hypothesis or
+    contradiction via the empty `toList`.
+  * 2 conjuncts (`domainTimeRemainingPositive`, `runQueueOnCoreWellFormed`)
+    are direct hypothesis pass-throughs (`exact hDTRPos`, `exact hWf`).
+
+The 2 pass-throughs LOOK trivial but are NOT mathematical shortcuts:
+`hDTRPos` is genuinely non-derivable from `hCurNone + hRQEmpty`, and
+`hWf` is genuinely non-derivable from `hRQEmpty` — the `RunQueue`
+structure has no field linking `byPriority` to `flat`, so `flat = []`
+does not entail `byPriority` lookups are also empty (that linkage IS
+what `wellFormed` itself asserts).  The audit-pass-10 cleanup
+deleted an 80-line proof-diary comment explaining this; the 4-line
+replacement preserves the WHY succinctly.
+
+**Verdict**: the proof IS substantive and mathematically sound.  Each
+of the 4 hypotheses is necessary (no redundancy); 9/11 conjuncts
+require non-trivial reasoning; the 2 pass-through conjuncts are
+discharged by hypotheses the caller MUST supply.
+
+**Minor improvement landed**: SM5 callers actually have a STRONGER
+structural fact (`rq = RunQueue.empty`) than the minimal pair
+(`toList = [] ∧ wellFormed`).  Added a convenience wrapper
+`schedulerInvariant_perCore_holds_if_idle_default` taking
+`hRQEqEmpty : runQueueOnCore c = RunQueue.empty` and deriving both
+weaker facts internally via `RunQueue.toList_empty` and
+`RunQueue.empty_wellFormed`.  Net: SM5 callers with `rq = empty`
+collapse 4 idle-shape hypotheses to 3 (`hCurNone`, `hRQEqEmpty`,
+`hDTRPos`).  The underlying `_holds_if_idle` is retained as the
+*minimal* form (takes only the necessary facts; no over-constraint)
+for callers that only have the weaker facts.
+
+**Test coverage**: main suite §3.8 grows by 1 substantive runtime
+assertion exercising the convenience wrapper at a non-boot core (the
+RunQueue field comes from `default_state_perCoreInitialized`).
+Tier-3 invariant surface gains 1 new `#check` anchor.  Axiom-clean
+(verified via `#print axioms` — depends only on `propext`,
+`Classical.choice`, `Quot.sound`).
+
+Tier 0+1+2+3 green; HAL 712 tests pass; production/staged partition
+gate passes (35 modules); AK7 monotonic without re-anchoring; trace
+fixture byte-identical.
+
+Refs: https://github.com/hatter6822/seLe4n/pull/801
+
 ## v0.31.26 — WS-SM SM4.C audit-pass-10: post-audit cleanup of audit-pass-9
 
 Independent deep re-audit of the v0.31.25 audit-pass-9 cut surfaces

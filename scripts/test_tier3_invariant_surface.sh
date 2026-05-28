@@ -2724,6 +2724,9 @@ open SeLe4n.Kernel
 #check @schedulerInvariant_smp_to_base
 #check @default_schedulerInvariantBase_perCore
 #check @default_schedulerInvariantBase_smp
+-- audit-pass-11: convenience wrapper taking `rq = empty` (stronger structural
+-- hypothesis; derives `toList = []` + `wellFormed` internally).
+#check @schedulerInvariant_perCore_holds_if_idle_default
 EOF'
 
 finalize_report

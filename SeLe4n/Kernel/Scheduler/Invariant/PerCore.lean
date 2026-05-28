@@ -1734,6 +1734,35 @@ theorem schedulerInvariant_perCore_idle_on_post_state {st' : SystemState} {c : C
     schedulerInvariant_perCore st' c :=
   schedulerInvariant_perCore_holds_if_idle st' c hCurNone hRQEmpty hDTRPos hWf
 
+/-- audit-pass-11 (post-audit improvement): convenience form of
+`schedulerInvariant_perCore_holds_if_idle` taking the *stronger structural*
+hypothesis `runQueueOnCore c = RunQueue.empty` instead of the pair
+`(toList = []) ∧ wellFormed`.
+
+The trade-off this resolves: pre-audit-11, the SM5-bridge skeleton's
+`hNonBootIdle` had to carry 4 conjuncts including `wellFormed`,
+because `toList = []` alone cannot derive `wellFormed` (the
+`RunQueue.byPriority` index is structurally independent of `flat`).
+Under the SM5 contract, non-boot cores ARE the default-replicate
+`RunQueue.empty` — a strictly stronger fact that DOES entail
+`wellFormed` (via `RunQueue.empty_wellFormed`) and `toList = []`
+(via `RunQueue.toList_empty`).  This wrapper exposes that path so
+SM5 callers with `rq = empty` skip the manual conversion.
+
+The underlying `_holds_if_idle` is retained as the *minimal* form
+(takes only the necessary facts; no over-constraint), and remains
+the public API for callers that only have the weaker facts. -/
+theorem schedulerInvariant_perCore_holds_if_idle_default
+    (st : SystemState) (c : CoreId)
+    (hCurNone : st.scheduler.currentOnCore c = none)
+    (hRQEqEmpty : st.scheduler.runQueueOnCore c = RunQueue.empty)
+    (hDTRPos : st.scheduler.domainTimeRemainingOnCore c > 0) :
+    schedulerInvariant_perCore st c :=
+  schedulerInvariant_perCore_holds_if_idle st c hCurNone
+    (hRQEqEmpty ▸ RunQueue.toList_empty)
+    hDTRPos
+    (hRQEqEmpty ▸ RunQueue.empty_wellFormed)
+
 /-- WS-SM SM4.C: **the per-operation SMP-preservation composition** — the
 SM5 migration bridge for any boot-core scheduler operation.
 

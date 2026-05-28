@@ -691,6 +691,21 @@ private def runAuditPass9Checks : IO Unit := do
      have _h : schedulerInvariant_perCore (default : SystemState) c₂ :=
        schedulerInvariant_perCore_holds_if_idle _ c₂ hCurNone hRQE hDTR hWf
      true)
+  -- audit-pass-11: the convenience wrapper `_holds_if_idle_default` takes
+  -- the stronger structural hypothesis `runQueueOnCore c = RunQueue.empty`
+  -- and derives `toList = []` + `wellFormed` internally.  Exercises the
+  -- "SM5 has `rq = empty`" common case in one call.
+  assertBool "schedulerInvariant_perCore_holds_if_idle_default applies for non-boot core 1"
+    (let c₂ : CoreId := ⟨1, by decide⟩
+     let init := default_state_perCoreInitialized c₂
+     have hCurNone : (default : SystemState).scheduler.currentOnCore c₂ = none := init.1
+     have hRQEqEmpty : (default : SystemState).scheduler.runQueueOnCore c₂ =
+                       RunQueue.empty := init.2.1
+     have hDTR : (default : SystemState).scheduler.domainTimeRemainingOnCore c₂ > 0 :=
+       init.2.2.2.2.1 ▸ (by decide : (5 : Nat) > 0)
+     have _h : schedulerInvariant_perCore (default : SystemState) c₂ :=
+       schedulerInvariant_perCore_holds_if_idle_default _ c₂ hCurNone hRQEqEmpty hDTR
+     true)
 
 def runSchedulerInvariantPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.C — Per-core scheduler invariant migration suite"
