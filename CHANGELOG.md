@@ -1,3 +1,21 @@
+## v0.31.21 — WS-SM SM4.C final closure: WORKSTREAM_HISTORY + CLAIM_EVIDENCE_INDEX
+
+Final cross-document closure for the SM4.C audit-pass-1..6 chain:
+
+  * `docs/WORKSTREAM_HISTORY.md` — extended the SM4.C entry with a
+    new "WS-SM SM4.C audit-passes 1–6 LANDED" block summarising each
+    audit-pass's deliverables and the cumulative state at v0.31.20.
+
+  * `docs/CLAIM_EVIDENCE_INDEX.md` — added a NEW top-of-table row for
+    the audit-pass-1..6 cumulative claim (the original v0.31.13 row
+    is retained as the historical record).  The new row enumerates
+    every audit-pass deliverable and the canonical sources / evidence
+    commands.
+
+  * `docs/codebase_map.json` — regenerated.
+
+No source code changes; documentation sync only.  Tier 0+1+2+3 green.
+
 ## v0.31.20 — WS-SM SM4.C audit-pass-6: complete plan §3.4 Pattern 1 coverage (50 per-conjunct per-op theorems)
 
 Adds the remaining 25 per-conjunct per-op SMP preservation theorems (§8

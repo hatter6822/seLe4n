@@ -1669,6 +1669,92 @@ correctness impact: NONE.  Follow-on: SM4.D (cross-subsystem theorem
 migrations), SM4.E (`bootFromPlatform_smp_witness` + single-core
 witness retirement).
 
+**WS-SM SM4.C audit-passes 1–6 LANDED at v0.31.14 → v0.31.20** (same
+branch as the initial SM4.C cut).  Six audit-passes extend the per-core
+scheduler invariant layer from the initial v0.31.13 deliverable into a
+**substantively complete** implementation of the plan §5.3 + §5.6 +
+§3.4 Pattern 1 scope:
+
+- **Audit-pass-1 (v0.31.14)**: migrated the three SC-using per-core
+  predicates (`currentBudgetPositive*`, `budgetPositive*`,
+  `effectiveParamsMatchRunQueue*`) from raw `match`-on-`objects[…]?`
+  to typed `getTcb?` / `getSchedContext?` accessors.  AK7 baseline
+  restored to the v0.31.2 floor (`RAW_MATCH_TOTAL` 122; `GETTCB`
+  +56 / `GETSCHEDCTX` +27 net).  Added the four missing setter
+  independence corollaries (`setReplenishQueueOnCore`,
+  `setActiveDomainOnCore`, `setDomainScheduleIndexOnCore`,
+  `setLastTimeoutErrorsOnCore`) for full SM5 completeness.
+
+- **Audit-pass-2 (v0.31.15)**: 17 per-conjunct frame lemmas
+  (§5.5 — fine-grained SM5 reasoning), the new `runQueueOnCoreWellFormed`
+  predicate (plan §5.6 missing), and the extended per-core aggregate
+  `schedulerInvariant_perCore_extended` (§3.5) mirroring
+  `schedulerInvariantBundleExtended`.  Extended bundle bridges +
+  defaults + projections.  Extended frame + idle frame + pairwise +
+  SMP-preservation skeleton (§8).
+
+- **Audit-pass-3 (v0.31.16)**: three cross-subsystem per-core
+  predicates per plan §5.6 (`schedContextRunQueueConsistent_perCore`,
+  `priorityInheritance_perCore`,
+  `activeDomainOnCore_isInDomainSchedule`), plus the cross-subsystem
+  aggregate `schedulerInvariant_perCore_crossSubsystem` (§10) composing
+  extended + the three cross-subsystem predicates.  Boot-core bridges
+  + defaults + per-conjunct frame lemmas (3) + aggregate bridges
+  (`crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore`).
+
+- **Audit-pass-4 (v0.31.17)**: per-op aggregate per-core preservation
+  theorems.  §11 adds `schedulerInvariant_perCore_holds_if_idle`
+  (sufficient idle theorem) + `schedulerInvariant_smp_of_bootCore_preservation`
+  (the SM5 composition).  NEW FILE
+  `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` with
+  6 per-op preservation theorems (`schedule` /  `handleYield` /
+  `timerTick` / `switchDomain` / `scheduleDomain` each preserve
+  `schedulerInvariant_smp` + chooseThread base bridge).
+
+- **Audit-pass-5 (v0.31.18)** + **audit-pass-6 (v0.31.20)**: complete
+  plan §3.4 Pattern 1 coverage — **50 named per-conjunct per-op SMP
+  preservation theorems** (all 10 per-core conjuncts × all 5 boot-core
+  scheduler operations).  Each is a one-line projection from the
+  corresponding aggregate per-op preservation:
+
+  ```
+  <op>_preserves_<conjunct>OnCore_smp ... := fun c =>
+    schedulerInvariant_perCore_to_<conjunct>
+      ((<op>_preserves_schedulerInvariant_smp ...) c)
+  ```
+
+- **Doc closure (v0.31.19)**: cross-document sync of `CLAUDE.md` /
+  `AGENTS.md` / `SELE4N_SPEC.md` to reflect the cumulative
+  audit-pass-1..5 state.
+
+**Cumulative SM4.C state at v0.31.20**:
+- 16 per-core predicate forms; 16 boot-core bridges.
+- 3 aggregates (base / extended / cross-subsystem) + SMP forms +
+  per-conjunct projections + bundle bridges + defaults.
+- 20 per-conjunct frame lemmas; 7 setter independence corollaries; 2
+  cross-core pairwise theorems (SM4.C.30).
+- 4 SMP-preservation skeletons; 2 sufficient-idle theorems.
+- 3 cross-subsystem per-core predicates per plan §5.6.
+- 6 per-op aggregate preservation + 50 per-conjunct per-op preservation
+  = 56 per-op theorems (complete §3.4 Pattern 1 coverage).
+- Modules: `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` ~1660 LoC
+  + `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean`
+  ~1170 LoC = ~2830 LoC of new SM4.C infrastructure.
+- Test coverage: 41+1 runtime assertions across 2 suites; 130+ surface
+  anchors.
+- 35 staged-only modules (was 34 at v0.31.13); partition gate green.
+- Axiom-clean throughout (only `propext` / `Quot.sound` /
+  `Classical.choice`).
+- Trace fixture byte-identical from v0.31.12 onward.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+Genuinely out of SM4.C scope (tracked as separate workstreams):
+SM4.D (cross-subsystem migrations), SM4.E (witness retirement);
+post-SM4.C: per-extended-conjunct per-op preservation (4 SC-using ×
+5 ops = 20 additional theorems); tighter
+`priorityInheritance_perCore_frame` once
+`blockingChain_objects_congr` lands.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/elegant-wozniak-FkOsZ",
-      "commit_sha": "df90596987cb38c218a6c45e9075a1ea5348aa21",
-      "tree_sha": "1b7b1dc6ecedfa326f41b085a1896d259ec362f1",
-      "committed_at_utc": "2026-05-28T05:18:18+00:00"
+      "commit_sha": "073ee6eaf726655bb64f8211d9976e1ff5dde83a",
+      "tree_sha": "af7ddbd3a1d26dff263dbffc2f0fa31ad0570da1",
+      "committed_at_utc": "2026-05-28T05:27:01+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "bf868675375d656edd784693403e1633d84ea256483af267c1f842949b448406"
+    "source_digest": "0e94f48db6dc81161b546f3f3c7b911d4c6a2b56b851fd464f3595dcb08fb9db"
   },
   "summary": {
     "module_count": 248,
-    "declaration_count": 8799
+    "declaration_count": 8824
   },
   "readme_sync": {
-    "version": "0.31.20",
+    "version": "0.31.21",
     "lean_toolchain": "v4.28.0",
     "production_files": 202,
-    "production_loc": 142706,
+    "production_loc": 143114,
     "test_files": 46,
-    "test_loc": 30942,
-    "proved_theorem_lemma_decls": 4384,
+    "test_loc": 30970,
+    "proved_theorem_lemma_decls": 4409,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -59368,7 +59368,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation",
       "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean",
-      "declaration_count": 32,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -60071,7 +60071,6 @@
           "name": "scheduleDomain_preserves_runnableThreadsAreTCBsOnCore_smp",
           "line": 632,
           "called": [
-            "Kernel",
             "SystemState",
             "bootCoreId",
             "currentOnCore",
@@ -60085,6 +60084,582 @@
             "scheduleDomain_preserves_schedulerInvariant_smp",
             "schedulerInvariant_perCore_to_runnableThreadsAreTCBs",
             "schedulerInvariant_smp",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_timeSlicePositiveOnCore_smp",
+          "line": 663,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedule",
+            "schedule_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_timeSlicePositive",
+            "schedulerInvariant_smp",
+            "timeSlicePositiveOnCore",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_currentTimeSlicePositiveOnCore_smp",
+          "line": 679,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "currentTimeSlicePositiveOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedule",
+            "schedule_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_currentTimeSlicePositive",
+            "schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
+          "line": 695,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "edfCurrentHasEarliestDeadlineOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedule",
+            "schedule_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline",
+            "schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_contextMatchesCurrentOnCore_smp",
+          "line": 711,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "contextMatchesCurrentOnCore",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedule",
+            "schedule_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_contextMatchesCurrent",
+            "schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_schedulerPriorityMatchOnCore_smp",
+          "line": 727,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedule",
+            "schedule_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_schedulerPriorityMatch",
+            "schedulerInvariant_smp",
+            "schedulerPriorityMatchOnCore",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_timeSlicePositiveOnCore_smp",
+          "line": 747,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "handleYield",
+            "handleYield_preserves_schedulerInvariant_smp",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_timeSlicePositive",
+            "schedulerInvariant_smp",
+            "timeSlicePositiveOnCore",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_currentTimeSlicePositiveOnCore_smp",
+          "line": 763,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "currentTimeSlicePositiveOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "handleYield",
+            "handleYield_preserves_schedulerInvariant_smp",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_currentTimeSlicePositive",
+            "schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
+          "line": 779,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "edfCurrentHasEarliestDeadlineOnCore",
+            "handleYield",
+            "handleYield_preserves_schedulerInvariant_smp",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline",
+            "schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_contextMatchesCurrentOnCore_smp",
+          "line": 795,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "contextMatchesCurrentOnCore",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "handleYield",
+            "handleYield_preserves_schedulerInvariant_smp",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_contextMatchesCurrent",
+            "schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleYield_preserves_schedulerPriorityMatchOnCore_smp",
+          "line": 811,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "handleYield",
+            "handleYield_preserves_schedulerInvariant_smp",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_schedulerPriorityMatch",
+            "schedulerInvariant_smp",
+            "schedulerPriorityMatchOnCore",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_timeSlicePositiveOnCore_smp",
+          "line": 831,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_timeSlicePositive",
+            "schedulerInvariant_smp",
+            "timeSlicePositiveOnCore",
+            "timerTick",
+            "timerTick_preserves_schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_currentTimeSlicePositiveOnCore_smp",
+          "line": 848,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "currentTimeSlicePositiveOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_currentTimeSlicePositive",
+            "schedulerInvariant_smp",
+            "timerTick",
+            "timerTick_preserves_schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
+          "line": 865,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "edfCurrentHasEarliestDeadlineOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline",
+            "schedulerInvariant_smp",
+            "timerTick",
+            "timerTick_preserves_schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_contextMatchesCurrentOnCore_smp",
+          "line": 882,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "contextMatchesCurrentOnCore",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_contextMatchesCurrent",
+            "schedulerInvariant_smp",
+            "timerTick",
+            "timerTick_preserves_schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTick_preserves_schedulerPriorityMatchOnCore_smp",
+          "line": 899,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "runnable",
+            "schedulerInvariant_perCore_to_schedulerPriorityMatch",
+            "schedulerInvariant_smp",
+            "schedulerPriorityMatchOnCore",
+            "timerTick",
+            "timerTick_preserves_schedulerInvariant_smp",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_timeSlicePositiveOnCore_smp",
+          "line": 920,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "schedulerInvariant_perCore_to_timeSlicePositive",
+            "schedulerInvariant_smp",
+            "switchDomain",
+            "switchDomain_preserves_schedulerInvariant_smp",
+            "timeSlicePositiveOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_currentTimeSlicePositiveOnCore_smp",
+          "line": 932,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "currentTimeSlicePositiveOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "schedulerInvariant_perCore_to_currentTimeSlicePositive",
+            "schedulerInvariant_smp",
+            "switchDomain",
+            "switchDomain_preserves_schedulerInvariant_smp",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
+          "line": 944,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "edfCurrentHasEarliestDeadlineOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline",
+            "schedulerInvariant_smp",
+            "switchDomain",
+            "switchDomain_preserves_schedulerInvariant_smp",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_contextMatchesCurrentOnCore_smp",
+          "line": 956,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "contextMatchesCurrentOnCore",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "schedulerInvariant_perCore_to_contextMatchesCurrent",
+            "schedulerInvariant_smp",
+            "switchDomain",
+            "switchDomain_preserves_schedulerInvariant_smp",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomain_preserves_schedulerPriorityMatchOnCore_smp",
+          "line": 968,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "schedulerInvariant_perCore_to_schedulerPriorityMatch",
+            "schedulerInvariant_smp",
+            "schedulerPriorityMatchOnCore",
+            "switchDomain",
+            "switchDomain_preserves_schedulerInvariant_smp",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_timeSlicePositiveOnCore_smp",
+          "line": 984,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "scheduleDomain",
+            "scheduleDomain_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_timeSlicePositive",
+            "schedulerInvariant_smp",
+            "timeSlicePositiveOnCore",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_currentTimeSlicePositiveOnCore_smp",
+          "line": 998,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "currentTimeSlicePositiveOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "scheduleDomain",
+            "scheduleDomain_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_currentTimeSlicePositive",
+            "schedulerInvariant_smp",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
+          "line": 1012,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "edfCurrentHasEarliestDeadlineOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "scheduleDomain",
+            "scheduleDomain_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline",
+            "schedulerInvariant_smp",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_contextMatchesCurrentOnCore_smp",
+          "line": 1026,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "contextMatchesCurrentOnCore",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "scheduleDomain",
+            "scheduleDomain_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_contextMatchesCurrent",
+            "schedulerInvariant_smp",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomain_preserves_schedulerPriorityMatchOnCore_smp",
+          "line": 1040,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "domainScheduleEntriesPositive",
+            "domainTimeRemainingOnCore",
+            "invExt",
+            "none",
+            "runQueueOnCore",
+            "scheduleDomain",
+            "scheduleDomain_preserves_schedulerInvariant_smp",
+            "schedulerInvariant_perCore_to_schedulerPriorityMatch",
+            "schedulerInvariant_smp",
+            "schedulerPriorityMatchOnCore",
             "toList",
             "wellFormed"
           ]
@@ -109300,42 +109875,67 @@
           "line": 28,
           "called": [
             "chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore",
+            "handleYield_preserves_contextMatchesCurrentOnCore_smp",
             "handleYield_preserves_currentThreadValidOnCore_smp",
+            "handleYield_preserves_currentTimeSlicePositiveOnCore_smp",
             "handleYield_preserves_domainTimeRemainingPositiveOnCore_smp",
+            "handleYield_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
             "handleYield_preserves_queueCurrentConsistentOnCore_smp",
             "handleYield_preserves_runQueueUniqueOnCore_smp",
             "handleYield_preserves_runnableThreadsAreTCBsOnCore_smp",
             "handleYield_preserves_schedulerInvariant_smp",
+            "handleYield_preserves_schedulerPriorityMatchOnCore_smp",
+            "handleYield_preserves_timeSlicePositiveOnCore_smp",
+            "scheduleDomain_preserves_contextMatchesCurrentOnCore_smp",
             "scheduleDomain_preserves_currentThreadValidOnCore_smp",
+            "scheduleDomain_preserves_currentTimeSlicePositiveOnCore_smp",
             "scheduleDomain_preserves_domainTimeRemainingPositiveOnCore_smp",
+            "scheduleDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
             "scheduleDomain_preserves_queueCurrentConsistentOnCore_smp",
             "scheduleDomain_preserves_runQueueUniqueOnCore_smp",
             "scheduleDomain_preserves_runnableThreadsAreTCBsOnCore_smp",
             "scheduleDomain_preserves_schedulerInvariant_smp",
+            "scheduleDomain_preserves_schedulerPriorityMatchOnCore_smp",
+            "scheduleDomain_preserves_timeSlicePositiveOnCore_smp",
+            "schedule_preserves_contextMatchesCurrentOnCore_smp",
             "schedule_preserves_currentThreadValidOnCore_smp",
+            "schedule_preserves_currentTimeSlicePositiveOnCore_smp",
             "schedule_preserves_domainTimeRemainingPositiveOnCore_smp",
+            "schedule_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
             "schedule_preserves_queueCurrentConsistentOnCore_smp",
             "schedule_preserves_runQueueUniqueOnCore_smp",
             "schedule_preserves_runnableThreadsAreTCBsOnCore_smp",
             "schedule_preserves_schedulerInvariant_smp",
+            "schedule_preserves_schedulerPriorityMatchOnCore_smp",
+            "schedule_preserves_timeSlicePositiveOnCore_smp",
+            "switchDomain_preserves_contextMatchesCurrentOnCore_smp",
             "switchDomain_preserves_currentThreadValidOnCore_smp",
+            "switchDomain_preserves_currentTimeSlicePositiveOnCore_smp",
             "switchDomain_preserves_domainTimeRemainingPositiveOnCore_smp",
+            "switchDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
             "switchDomain_preserves_queueCurrentConsistentOnCore_smp",
             "switchDomain_preserves_runQueueUniqueOnCore_smp",
             "switchDomain_preserves_runnableThreadsAreTCBsOnCore_smp",
             "switchDomain_preserves_schedulerInvariant_smp",
+            "switchDomain_preserves_schedulerPriorityMatchOnCore_smp",
+            "switchDomain_preserves_timeSlicePositiveOnCore_smp",
+            "timerTick_preserves_contextMatchesCurrentOnCore_smp",
             "timerTick_preserves_currentThreadValidOnCore_smp",
+            "timerTick_preserves_currentTimeSlicePositiveOnCore_smp",
             "timerTick_preserves_domainTimeRemainingPositiveOnCore_smp",
+            "timerTick_preserves_edfCurrentHasEarliestDeadlineOnCore_smp",
             "timerTick_preserves_queueCurrentConsistentOnCore_smp",
             "timerTick_preserves_runQueueUniqueOnCore_smp",
             "timerTick_preserves_runnableThreadsAreTCBsOnCore_smp",
-            "timerTick_preserves_schedulerInvariant_smp"
+            "timerTick_preserves_schedulerInvariant_smp",
+            "timerTick_preserves_schedulerPriorityMatchOnCore_smp",
+            "timerTick_preserves_timeSlicePositiveOnCore_smp"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:83>",
-          "line": 83,
+          "name": "<anonymous:example:111>",
+          "line": 111,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -109356,8 +109956,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:100>",
-          "line": 100,
+          "name": "<anonymous:example:128>",
+          "line": 128,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -109378,8 +109978,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:118>",
-          "line": 118,
+          "name": "<anonymous:example:146>",
+          "line": 146,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -109400,8 +110000,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:137>",
-          "line": 137,
+          "name": "<anonymous:example:165>",
+          "line": 165,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -109419,8 +110019,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:151>",
-          "line": 151,
+          "name": "<anonymous:example:179>",
+          "line": 179,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -109439,8 +110039,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:168>",
-          "line": 168,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
             "SystemState",
             "ThreadId",
@@ -109452,7 +110052,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 186,
+          "line": 214,
           "called": [
             "throw"
           ]
@@ -109460,7 +110060,7 @@
         {
           "kind": "def",
           "name": "runPerCorePreservationChecks",
-          "line": 193,
+          "line": 221,
           "called": [
             "assertBool"
           ]
@@ -109468,7 +110068,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 205,
+          "line": 233,
           "called": [
             "runPerCorePreservationChecks"
           ]
