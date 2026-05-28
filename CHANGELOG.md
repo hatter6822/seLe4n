@@ -1,3 +1,50 @@
+## v0.31.29 — WS-SM SM4.C audit-pass-12: remove dead simp args + unjustified linter suppression
+
+Deep-audit finding (PR #801): `PerCore.lean` carried a file-level
+`set_option linter.unusedSimpArgs false` justified by a comment claiming
+the flagged `simp [h]` arguments in the §2 boot-core bridge proofs were
+"false positives" — "verified empirically — removing `[h]` … breaks the
+proof with 'unsolved goals'".  **The comment was false.**
+
+**Empirical verification** (not trusting the comment): flipping the
+option to `true` surfaced 15 `unusedSimpArgs` warnings (lines 334, 335,
+358, 359, 370, 374, 382, 393, 394, 463, 467, 481, 499, 503, 517 — note
+the comment cited stale line numbers 428/446/474/504 that no longer
+correspond to anything, a tell that the file had been refactored under
+the suppression without re-checking).  Stripping all 15 flagged args
+(`simp [hObj]`/`simp [hObjCur]`/`simp [h]` → `simp`) and rebuilding from
+a clean `.olean` produced a **fully clean build** (106 jobs, zero
+errors, zero unsolved goals).  So the linter was correct: every flagged
+arg was genuinely redundant — the `cases h : X with` substitution
+already rewrites the goal with the matched constructor, leaving nothing
+for the explicit `[h]` to do.
+
+**Fix** (per implement-the-improvement + "no shortcuts"):
+- Removed all 15 redundant simp arguments.
+- Deleted the `set_option linter.unusedSimpArgs false` suppression — the
+  module now compiles cleanly under the **default** linter (verified by
+  a from-scratch rebuild: zero warnings).
+- Removed the 13-line false-claim comment block.
+
+The boot-core bridge theorems are unchanged in statement and remain
+axiom-clean (verified via `#print axioms` — `propext` / `Quot.sound`
+only; the affected proofs don't even pull `Classical.choice`).  No
+proof logic changed beyond deleting no-op simp arguments; the suite
+still reports all checks PASS.
+
+This closes a genuine code-quality shortcut: a broad linter suppression
+masking dead code, kept alive by a comment that asserted the opposite of
+what the code does.  Best practice is to let the linter run and keep the
+proofs minimal, which is now the case.
+
+**Verification**: from-scratch rebuild of `PerCore` (default linter,
+zero warnings); `PerCorePreservation` + both per-core suites rebuild and
+pass; Tier 0+1+2+3 green (incl. shellcheck, AK7 monotonic,
+production/staged partition 35 modules, docs_sync after codebase_map
+regen); trace fixture byte-identical.
+
+Refs: https://github.com/hatter6822/seLe4n/pull/801
+
 ## v0.31.28 — WS-SM SM4.C audit-pass-11 hotfix: shellcheck SC2016 in tier-3 surface
 
 CI hotfix for the v0.31.27 audit-pass-11 cut (PR #801).  Both

@@ -14,20 +14,6 @@ import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.CrossSubsystem
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 
--- The boot-core bridge proofs in §2 use `cases h : X` substitution to
--- substantively case-analyse on `objects[…]?` lookups.  The `simp [h]`
--- calls at the leaves uniformly include the equation hypothesis: in some
--- arms `h` is genuinely required for simp to discharge (verified
--- empirically — removing `[h]` from e.g. line 428 / 446 / 474 / 504
--- breaks the proof with "unsolved goals"); in others the surrounding
--- `cases` substitution makes `[h]` redundant.  The unused-args linter
--- flags the redundant arms but cannot distinguish the two patterns
--- automatically (they have the same surface syntax).  Suppress
--- file-locally so the uniform defensive pattern compiles cleanly;
--- the "unused" warnings are false positives in the `cases h : X`
--- context.
-set_option linter.unusedSimpArgs false
-
 /-!
 # WS-SM SM4.C — Per-core scheduler invariant migration
 
@@ -331,8 +317,8 @@ theorem currentThreadInActiveDomainOnCore_bootCore_iff (st : SystemState) :
     simp only
     unfold SystemState.getTcb?
     cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
-    | none => simp [hObj]
-    | some obj => cases obj <;> simp [hObj]
+    | none => simp
+    | some obj => cases obj <;> simp
 
 theorem timeSlicePositiveOnCore_bootCore_iff (st : SystemState) :
     timeSlicePositiveOnCore st bootCoreId ↔ timeSlicePositive st := by
@@ -355,8 +341,8 @@ theorem currentTimeSlicePositiveOnCore_bootCore_iff (st : SystemState) :
     simp only
     unfold SystemState.getTcb?
     cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
-    | none => simp [hObj]
-    | some obj => cases obj <;> simp [hObj]
+    | none => simp
+    | some obj => cases obj <;> simp
 
 theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
     edfCurrentHasEarliestDeadlineOnCore st bootCoreId ↔ edfCurrentHasEarliestDeadline st := by
@@ -367,11 +353,11 @@ theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
     simp only
     unfold SystemState.getTcb?
     cases hObjCur : (st.objects[curTid.toObjId]? : Option KernelObject) with
-    | none => simp [hObjCur]
+    | none => simp
     | some objCur =>
       cases objCur with
       | tcb curTcb =>
-        simp [hObjCur]
+        simp
         constructor
         all_goals
           intro h tid hMem
@@ -379,7 +365,7 @@ theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
           cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
           | none => rw [hObj] at *; trivial
           | some obj => cases obj <;> (rw [hObj] at hSpec; simp_all)
-      | _ => simp [hObjCur]
+      | _ => simp
 
 theorem contextMatchesCurrentOnCore_bootCore_iff (st : SystemState) :
     contextMatchesCurrentOnCore st bootCoreId ↔ contextMatchesCurrent st := by
@@ -390,8 +376,8 @@ theorem contextMatchesCurrentOnCore_bootCore_iff (st : SystemState) :
     simp only
     unfold SystemState.getTcb?
     cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
-    | none => simp [hObj]
-    | some obj => cases obj <;> simp [hObj]
+    | none => simp
+    | some obj => cases obj <;> simp
 
 theorem runnableThreadsAreTCBsOnCore_bootCore_iff (st : SystemState) :
     runnableThreadsAreTCBsOnCore st bootCoreId ↔ runnableThreadsAreTCBs st := by
@@ -460,11 +446,11 @@ theorem budgetPositiveOnCore_bootCore_iff (st : SystemState) :
   apply imp_congr_right; intro _hMem
   unfold SystemState.getTcb?
   cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
-  | none => simp [h]
+  | none => simp
   | some obj =>
     cases obj with
     | tcb tcb =>
-      simp [h]
+      simp
       cases tcb.schedContextBinding with
       | unbound => rfl
       | bound scId =>
@@ -478,7 +464,7 @@ theorem budgetPositiveOnCore_bootCore_iff (st : SystemState) :
         | none => simp [h2]
         | some objSc => cases objSc <;> simp [h2]
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
-      simp [h]
+      simp
 
 theorem replenishmentPipelineOrderOnCore_bootCore_iff (st : SystemState) :
     replenishmentPipelineOrderOnCore st bootCoreId ↔ replenishmentPipelineOrder st := Iff.rfl
@@ -496,11 +482,11 @@ theorem effectiveParamsMatchRunQueueOnCore_bootCore_iff (st : SystemState) :
   apply imp_congr_right; intro _hMem
   unfold SystemState.getTcb?
   cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
-  | none => simp [h]
+  | none => simp
   | some obj =>
     cases obj with
     | tcb tcb =>
-      simp [h]
+      simp
       cases tcb.schedContextBinding with
       | unbound => rfl
       | bound scId =>
@@ -514,7 +500,7 @@ theorem effectiveParamsMatchRunQueueOnCore_bootCore_iff (st : SystemState) :
         | none => simp [h2]
         | some objSc => cases objSc <;> simp [h2]
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
-      simp [h]
+      simp
 
 -- ============================================================================
 -- §3  Aggregate per-core invariant (SM4.C.29) + the SMP forall form (§5.6)
