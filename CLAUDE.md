@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.29.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.30.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4113,7 +4113,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on:
   SM4.D (cross-subsystem theorem migrations — IPC / Capability /
   Lifecycle / Architecture / InformationFlow / CrossSubsystem theorems
-  that read `SchedulerState`), SM4.E
+  that read `SchedulerState`) — **LANDED below**; SM4.E
   (`bootFromPlatform_singleCore_witness` retirement +
   `bootFromPlatform_smp_witness` per plan §3.8); post-SM4.C
   extensions: per-conjunct preservation for the 5 less-used conjuncts
@@ -4121,6 +4121,91 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `priorityInheritance_perCore_frame` once
   `blockingChain_objects_congr` lands in
   `Scheduler/PriorityInheritance/BlockingGraph.lean`.
+
+  **WS-SM SM4.D LANDED at v0.31.30** (cross-subsystem per-core invariant
+  migration; plan §5.4).  Following the exact SM4.C pattern, every
+  cross-subsystem invariant that reads scheduler state is lifted from its
+  single-core form (pinned to `bootCoreId` after SM4.B) to an **additive,
+  soundness-preserving** per-core form parameterised by an explicit
+  `(c : CoreId)` (plan §3.4 Pattern 1), plus the genuine `∀ c` system-wide
+  SMP aggregate.  The live single-core invariant surface is untouched and
+  stays green; the per-core layer is staged-only until SM5 consumes it.
+  Five new staged modules (all axiom-clean — `propext` / `Quot.sound` /
+  `Classical.choice` only):
+
+  - **SM4.D.1/.2** `SeLe4n/Kernel/IPC/Invariant/PerCore.lean` (~550 LoC):
+    the twelve IPC↔scheduler coherence predicates
+    (`runnableThreadIpcReady`, the five `blockedOn…NotRunnable`,
+    `currentThreadIpcReady`, `currentNotEndpointQueueHead`,
+    `currentNotOnNotificationWaitList`, `passiveServerIdle`, plus the
+    aggregates `ipcSchedulerContractPredicates` /
+    `currentThreadDequeueCoherent`) lifted to `_perCore` forms with
+    boot-core bridges (via `getTcb?_eq_some_iff` for the TCB predicates,
+    `Iff.rfl` for the endpoint/notification ones), frame lemmas (each
+    depends only on core `c`'s `runQueue` / `current` slot + `objects`),
+    default-state witnesses, and the `∀ c` SMP aggregates (`_smp` +
+    `_smp_at` + `_smp_to_singleCore` + defaults + per-conjunct
+    projections).  The per-core bodies route TCB lookups through the typed
+    `getTcb?` accessor (the SM4.C AK7 discipline — zero new `tid`-keyed raw
+    lookups, `RAW_LOOKUP_TID` unchanged).  The `∀ c` form is the correct
+    SMP semantics (e.g. a send-blocked thread is not runnable on *any*
+    core's queue).
+  - **SM4.D.3/.4** `SeLe4n/Kernel/Capability/Invariant/PerCore.lean`:
+    `cleanupNoStaleSchedRef_perCore` (the scheduler conjunct of
+    `cleanupHookDischarged`) + the full `cleanupHookDischarged_perCore` +
+    bridge + frame + default + the SMP form `cleanupNoStaleSchedRef_smp`
+    ("a retyped object's TCB must not be runnable on **any** core" — per
+    the implement-the-improvement rule, the SMP-correct retype
+    precondition, strictly stronger than the boot-core single-core check).
+  - **SM4.D.9** `SeLe4n/Kernel/Architecture/InvariantPerCore.lean`:
+    `registerDecodeConsistent_perCore` + bridge + frame + default + `∀ c`
+    SMP aggregate (a sibling module, not an in-file extension, so it stays
+    staged-only).
+  - **SM4.D.12/.13/.14** `SeLe4n/Kernel/InformationFlow/ProjectionPerCore.lean`:
+    the six scheduler-reading IF-M1 projections (`projectRunnable`,
+    `projectCurrent`, `projectActiveDomain`, `projectDomainTimeRemaining`,
+    `projectDomainScheduleIndex`, `projectMachineRegs`) + the aggregate
+    `projectStateOnCore` lifted to `…OnCore` forms with boot-core bridges
+    (`rfl`) and per-core observability frame lemmas (a write to core
+    `c'`'s slot leaves core `c`'s projection unchanged — the SMP
+    non-interference locality), plus `projectStateOnCore_congr`.
+  - **SM4.D.19** `SeLe4n/Kernel/CrossSubsystemPerCore.lean` (capstone):
+    `crossSubsystemInvariant_perCore` (per-core form of the master
+    12-conjunct invariant; only its ninth conjunct
+    `schedContextRunQueueConsistent` reads scheduler state, already
+    migrated by SM4.C) and `crossSubsystemSchedulerContract_perCore` (the
+    SM4.D bundle of *every* cross-subsystem scheduler-reading invariant in
+    per-core form: IPC contract + dequeue coherence + passive-server
+    idleness + architecture register-decode + SchedContext↔run-queue),
+    with boot-core bridges, `∀ c` SMP forms, per-conjunct projections, and
+    default-state witnesses.
+
+  **N/A sub-tasks (documented, not weakened):** the operation files
+  (SM4.D.1 IPC ops, SM4.D.5 Lifecycle ops, SM4.D.7 Service ops, SM4.D.18
+  Platform/FFI, SM4.D.20 API) read `currentOnCore bootCoreId` as the
+  *running* core — their core-parameterisation is genuinely SM5 (per-core
+  scheduler) work, not invariant migration; SM4.B already routed their
+  reads through the accessor.  Frozen state (SM4.D.16) stays scalar per
+  the SM4.B phase-1 decision.  `Service` (SM4.D.7/.8),
+  `Architecture/ExceptionModel` (SM4.D.10), `Architecture/InterruptDispatch`
+  (SM4.D.11), `Architecture/VSpace` (SM4.D.21),
+  `Architecture/SyscallEntry` (SM4.D.22), and the InformationFlow
+  Invariant files (SM4.D.14) define **no** scheduler-reading predicate
+  (confirmed by an exhaustive codebase scan) — only the IF projection
+  frames (SM4.D.13) the NI proofs consume.
+
+  **Test coverage:** new `tests/CrossSubsystemPerCoreSuite.lean`
+  (`lake exe cross_subsystem_per_core_suite`) — 89 Tier-3 surface anchors,
+  17 elaboration-time examples, and 18 runtime `assertBool` assertions
+  across five sections (IPC, capability, architecture, information-flow
+  with value-level decidable projection checks on the default state, and
+  the cross-subsystem capstone).  Tier-2 + Tier-3 wired.  Production/
+  staged partition gate now verifies **40** staged-only modules (was 35);
+  SM5's per-core scheduler is the first runtime exerciser.  Default
+  production build green (320 jobs); trace fixture byte-identical (SM4.D
+  is purely additive).  Items deferred past v1.0.0 with correctness
+  impact: NONE.  Follow-on: SM4.E (`bootFromPlatform_singleCore_witness`
+  retirement + `bootFromPlatform_smp_witness` per plan §3.8).
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

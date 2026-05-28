@@ -1,3 +1,105 @@
+## v0.31.30 — WS-SM SM4.D: cross-subsystem per-core invariant migration
+
+Lands the **SM4.D "Cross-subsystem migrations"** sub-phase of the WS-SM
+path-a per-core state replacement
+([`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+§5.4).  Following the exact SM4.C pattern, every cross-subsystem invariant
+that reads scheduler state is lifted from its single-core form (pinned to
+`bootCoreId` after SM4.B) to an **additive, soundness-preserving** per-core
+form parameterised by an explicit `(c : CoreId)` (plan §3.4 Pattern 1),
+plus the genuine `∀ c` system-wide SMP aggregate.  The live single-core
+invariant surface is untouched and stays green; the per-core layer is
+staged-only until SM5's per-core scheduler consumes it.
+
+**Five new staged modules** (all axiom-clean — `propext` / `Quot.sound` /
+`Classical.choice` only; verified via `#print axioms`):
+
+- **`SeLe4n/Kernel/IPC/Invariant/PerCore.lean`** (SM4.D.1/.2, ~550 LoC):
+  the twelve IPC↔scheduler coherence predicates
+  (`runnableThreadIpcReady`, the five `blockedOn…NotRunnable`,
+  `currentThreadIpcReady`, `currentNotEndpointQueueHead`,
+  `currentNotOnNotificationWaitList`, `passiveServerIdle`, plus the
+  aggregates `ipcSchedulerContractPredicates` / `currentThreadDequeueCoherent`)
+  lifted to `_perCore` forms with boot-core bridges (via
+  `getTcb?_eq_some_iff` for the TCB predicates, `Iff.rfl` for the
+  endpoint/notification ones), frame lemmas (each predicate depends only
+  on core `c`'s `runQueue` / `current` slot + `objects`), default-state
+  witnesses, and the `∀ c` SMP aggregates (`_smp` + `_smp_at` +
+  `_smp_to_singleCore` + defaults + per-conjunct projections).  Per-core
+  bodies route TCB lookups through the typed `getTcb?` accessor (the SM4.C
+  AK7 discipline — `RAW_LOOKUP_TID` unchanged, `GETTCB_ADOPTION` grows
+  186→233).  The `∀ c` form is the correct SMP semantics (e.g. a
+  send-blocked thread is not runnable on *any* core).
+- **`SeLe4n/Kernel/Capability/Invariant/PerCore.lean`** (SM4.D.3/.4):
+  `cleanupNoStaleSchedRef_perCore` (the scheduler-reading conjunct of
+  `cleanupHookDischarged`) + the full `cleanupHookDischarged_perCore` +
+  bridge + frame + default + the SMP form `cleanupNoStaleSchedRef_smp`
+  ("a retyped object's TCB must not be runnable on **any** core" — per the
+  implement-the-improvement rule, the SMP-correct retype precondition,
+  strictly stronger than the boot-core-only single-core check).
+- **`SeLe4n/Kernel/Architecture/InvariantPerCore.lean`** (SM4.D.9):
+  `registerDecodeConsistent_perCore` + bridge + frame + default + `∀ c`
+  SMP aggregate (a sibling module, not an in-file extension, so it stays
+  staged-only).
+- **`SeLe4n/Kernel/InformationFlow/ProjectionPerCore.lean`**
+  (SM4.D.12/.13/.14): the six scheduler-reading IF-M1 projections
+  (`projectRunnable`, `projectCurrent`, `projectActiveDomain`,
+  `projectDomainTimeRemaining`, `projectDomainScheduleIndex`,
+  `projectMachineRegs`) + the aggregate `projectStateOnCore` lifted to
+  `…OnCore` forms with boot-core bridges (`rfl`) and per-core
+  observability frame lemmas (a write to core `c'`'s slot leaves core
+  `c`'s projection unchanged — the SMP non-interference locality), plus
+  the `projectStateOnCore_congr` aggregate frame.
+- **`SeLe4n/Kernel/CrossSubsystemPerCore.lean`** (SM4.D.19, capstone):
+  `crossSubsystemInvariant_perCore` (the per-core form of the master
+  12-conjunct invariant; only its ninth conjunct
+  `schedContextRunQueueConsistent` reads scheduler state, already migrated
+  by SM4.C) and `crossSubsystemSchedulerContract_perCore` (the SM4.D
+  bundle of *every* cross-subsystem scheduler-reading invariant in
+  per-core form: IPC contract + dequeue coherence + passive-server
+  idleness + architecture register-decode + SchedContext↔run-queue), with
+  boot-core bridges, `∀ c` SMP forms, per-conjunct projections, and
+  default-state witnesses.
+
+**N/A sub-tasks (documented, not weakened):** the operation files
+(SM4.D.1 IPC ops, SM4.D.5 Lifecycle ops, SM4.D.7 Service ops, SM4.D.18
+Platform/FFI, SM4.D.20 API) read `currentOnCore bootCoreId` as the
+*running* core — their core-parameterisation is genuinely SM5 (per-core
+scheduler) work, not invariant migration; SM4.B already routed their
+reads through the accessor.  Frozen state (SM4.D.16
+`Model/FreezeProofs.lean`) stays scalar per the SM4.B phase-1 decision.
+`Service` (SM4.D.7/.8), `Architecture/ExceptionModel` (SM4.D.10),
+`Architecture/InterruptDispatch` (SM4.D.11), `Architecture/VSpace`
+(SM4.D.21), `Architecture/SyscallEntry` (SM4.D.22), and the
+InformationFlow Invariant files (SM4.D.14) define **no** scheduler-reading
+predicate (confirmed by an exhaustive codebase scan), so they require no
+per-core predicate migration — only the IF projection frames (SM4.D.13)
+the NI proofs consume.
+
+**Test coverage:** new `tests/CrossSubsystemPerCoreSuite.lean`
+(`lake exe cross_subsystem_per_core_suite`) — 89 Tier-3 surface anchors
+covering every SM4.D public symbol, 17 elaboration-time theorem-application
+examples, and 18 runtime `assertBool` assertions across five sections
+(IPC, capability, architecture, information-flow with value-level
+decidable projection checks on the default state, and the cross-subsystem
+capstone).  Tier-2 (`scripts/test_tier2_negative.sh`) + Tier-3
+(`scripts/test_tier3_invariant_surface.sh`) wired.
+
+**Module reachability:** all five modules staged via `Platform/Staged.lean`
+(capstone import) + `scripts/staged_module_allowlist.txt` (5 new entries);
+the production/staged partition gate now verifies **40** staged-only
+modules (was 35).  SM5's per-core scheduler is the first runtime
+exerciser (which will move them production-reached).
+
+**Verification:** default production build green (320 jobs); all five new
+modules + `Platform.Staged` (191 jobs) + the new suite build green; the
+suite reports all 18 runtime checks PASS; partition gate green (40
+modules); `#print axioms` confirms every headline theorem axiom-clean;
+trace fixture byte-identical (SM4.D is purely additive — no production
+code changed).  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.4 (SM4.D)
+
 ## v0.31.29 — WS-SM SM4.C audit-pass-12: remove dead simp args + unjustified linter suppression
 
 Deep-audit finding (PR #801): `PerCore.lean` carried a file-level

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/elegant-wozniak-FkOsZ",
-      "commit_sha": "d0de768609c0ff591b816e42e5917fae28376ef0",
-      "tree_sha": "2bc66ed5d9d8d013a2c5db18dcb42620c484bc8b",
-      "committed_at_utc": "2026-05-28T20:03:05+00:00"
+      "branch": "claude/great-dijkstra-BPl3p",
+      "commit_sha": "b8472d6dcdf853f780072a4401f05386fdb6bc74",
+      "tree_sha": "88bc1636f23e8dfa66c64e31af95ccee89b40cf6",
+      "committed_at_utc": "2026-05-28T16:58:33-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4329ef23c3db6b2f0c0b466293b2b1f05216190d73cd0663db8c2d4925eac8b7"
+    "source_digest": "344963b577f8aedd61d2c4ac3edd8a64991279e411919e57f87b153596153fd5"
   },
   "summary": {
-    "module_count": 248,
-    "declaration_count": 8852
+    "module_count": 254,
+    "declaration_count": 9020
   },
   "readme_sync": {
-    "version": "0.31.29",
+    "version": "0.31.30",
     "lean_toolchain": "v4.28.0",
-    "production_files": 202,
-    "production_loc": 143649,
-    "test_files": 46,
-    "test_loc": 31201,
-    "proved_theorem_lemma_decls": 4429,
+    "production_files": 207,
+    "production_loc": 144915,
+    "test_files": 47,
+    "test_loc": 31525,
+    "proved_theorem_lemma_decls": 4537,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -4158,6 +4158,132 @@
             "objectOfKernelType",
             "objectOfKernelType_untyped_hardcodes_zero_regionBase",
             "ofNat"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.InvariantPerCore",
+      "path": "SeLe4n/Kernel/Architecture/InvariantPerCore.lean",
+      "declaration_count": 11,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 41,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "getTcb",
+          "line": 51,
+          "called": [
+            "SystemState",
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "registerDecodeConsistent_perCore",
+          "line": 64,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerDecodeConsistent_perCore_bootCore_iff",
+          "line": 72,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "getTcb",
+            "registerDecodeConsistent",
+            "registerDecodeConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerDecodeConsistent_perCore_frame",
+          "line": 81,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "getTcb",
+            "registerDecodeConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_registerDecodeConsistent_perCore",
+          "line": 94,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "default",
+            "default_state_perCoreInitialized",
+            "none",
+            "registerDecodeConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "registerDecodeConsistent_smp",
+          "line": 107,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "registerDecodeConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerDecodeConsistent_smp_aggregateForall",
+          "line": 110,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "registerDecodeConsistent_perCore",
+            "registerDecodeConsistent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerDecodeConsistent_smp_at",
+          "line": 114,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "registerDecodeConsistent_perCore",
+            "registerDecodeConsistent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerDecodeConsistent_smp_to_singleCore",
+          "line": 117,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "registerDecodeConsistent",
+            "registerDecodeConsistent_perCore_bootCore_iff",
+            "registerDecodeConsistent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_registerDecodeConsistent_smp",
+          "line": 121,
+          "called": [
+            "SystemState",
+            "default",
+            "default_registerDecodeConsistent_perCore",
+            "registerDecodeConsistent_smp"
           ]
         }
       ]
@@ -11076,6 +11202,156 @@
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_cdt_eq",
             "toObjId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Capability.Invariant.PerCore",
+      "path": "SeLe4n/Kernel/Capability/Invariant/PerCore.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 46,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "cleanupNoStaleSchedRef_perCore",
+          "line": 58,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cleanupHookDischarged_perCore",
+          "line": 67,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "ScrubToken",
+            "SystemState",
+            "cleanupNoStaleSchedRef_perCore",
+            "lookupObjectTypeMeta",
+            "objectType"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupNoStaleSchedRef_perCore_bootCore_iff",
+          "line": 78,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "bootCoreId",
+            "cleanupNoStaleSchedRef_perCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupHookDischarged_perCore_bootCore_iff",
+          "line": 84,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "bootCoreId",
+            "cleanupHookDischarged",
+            "cleanupHookDischarged_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupNoStaleSchedRef_perCore_frame",
+          "line": 93,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "cleanupNoStaleSchedRef_perCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_cleanupNoStaleSchedRef_perCore",
+          "line": 110,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "cleanupNoStaleSchedRef_perCore",
+            "default",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cleanupNoStaleSchedRef_smp",
+          "line": 126,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "cleanupNoStaleSchedRef_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupNoStaleSchedRef_smp_aggregateForall",
+          "line": 129,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "cleanupNoStaleSchedRef_perCore",
+            "cleanupNoStaleSchedRef_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupNoStaleSchedRef_smp_at",
+          "line": 134,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "cleanupNoStaleSchedRef_perCore",
+            "cleanupNoStaleSchedRef_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupNoStaleSchedRef_smp_to_singleCore",
+          "line": 140,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "bootCoreId",
+            "cleanupNoStaleSchedRef_perCore_bootCore_iff",
+            "cleanupNoStaleSchedRef_smp",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_cleanupNoStaleSchedRef_smp",
+          "line": 146,
+          "called": [
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "cleanupNoStaleSchedRef_smp",
+            "default",
+            "default_cleanupNoStaleSchedRef_perCore"
           ]
         }
       ]
@@ -30044,6 +30320,281 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.CrossSubsystemPerCore",
+      "path": "SeLe4n/Kernel/CrossSubsystemPerCore.lean",
+      "declaration_count": 22,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 54,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemInvariant_perCore",
+          "line": 66,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockingAcyclic",
+            "lifecycleObjectTypeLockstep",
+            "noStaleEndpointQueueReferences",
+            "noStaleNotificationWaitReferences",
+            "registryDependencyConsistent",
+            "registryEndpointValid",
+            "registryInterfaceValid",
+            "schedContextNotDualBound",
+            "schedContextRunQueueConsistent_perCore",
+            "schedContextStoreConsistent",
+            "serviceGraphInvariant",
+            "untypedRegionsDisjoint"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_perCore_bootCore_iff",
+          "line": 83,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_perCore",
+            "schedContextRunQueueConsistent_perCore_bootCore_iff"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemInvariant_smp",
+          "line": 89,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_smp_aggregateForall",
+          "line": 92,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_perCore",
+            "crossSubsystemInvariant_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_smp_at",
+          "line": 96,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_perCore",
+            "crossSubsystemInvariant_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_smp_to_singleCore",
+          "line": 99,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_perCore_bootCore_iff",
+            "crossSubsystemInvariant_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_perCore_to_schedContextRunQueueConsistent",
+          "line": 105,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_perCore",
+            "schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_crossSubsystemInvariant_perCore",
+          "line": 109,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_perCore",
+            "default",
+            "default_crossSubsystemInvariant",
+            "default_schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_crossSubsystemInvariant_smp",
+          "line": 117,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant_smp",
+            "default",
+            "default_crossSubsystemInvariant_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemSchedulerContract_perCore",
+          "line": 133,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadDequeueCoherent_perCore",
+            "ipcSchedulerContractPredicates_perCore",
+            "passiveServerIdle_perCore",
+            "registerDecodeConsistent_perCore",
+            "schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_perCore_bootCore_iff",
+          "line": 142,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "crossSubsystemSchedulerContract_perCore",
+            "currentThreadDequeueCoherent",
+            "currentThreadDequeueCoherent_perCore_bootCore_iff",
+            "ipcSchedulerContractPredicates",
+            "ipcSchedulerContractPredicates_perCore_bootCore_iff",
+            "passiveServerIdle",
+            "passiveServerIdle_perCore_bootCore_iff",
+            "registerDecodeConsistent",
+            "registerDecodeConsistent_perCore_bootCore_iff",
+            "schedContextRunQueueConsistent",
+            "schedContextRunQueueConsistent_perCore_bootCore_iff"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemSchedulerContract_smp",
+          "line": 155,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_smp_aggregateForall",
+          "line": 158,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "crossSubsystemSchedulerContract_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_smp_at",
+          "line": 162,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "crossSubsystemSchedulerContract_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_perCore_to_ipcSchedulerContractPredicates",
+          "line": 168,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_perCore_to_currentThreadDequeueCoherent",
+          "line": 172,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "currentThreadDequeueCoherent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_perCore_to_passiveServerIdle",
+          "line": 176,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "passiveServerIdle_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_perCore_to_registerDecodeConsistent",
+          "line": 180,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "registerDecodeConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemSchedulerContract_perCore_to_schedContextRunQueueConsistent",
+          "line": 184,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_crossSubsystemSchedulerContract_perCore",
+          "line": 188,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemSchedulerContract_perCore",
+            "default",
+            "default_currentThreadDequeueCoherent_perCore",
+            "default_ipcSchedulerContractPredicates_perCore",
+            "default_passiveServerIdle_perCore",
+            "default_registerDecodeConsistent_perCore",
+            "default_schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_crossSubsystemSchedulerContract_smp",
+          "line": 196,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "crossSubsystemSchedulerContract_smp",
+            "default",
+            "default_crossSubsystemSchedulerContract_perCore"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.FrozenOps.Commutativity",
       "path": "SeLe4n/Kernel/FrozenOps/Commutativity.lean",
       "declaration_count": 20,
@@ -35914,6 +36465,936 @@
       "path": "SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean",
       "declaration_count": 0,
       "declarations": []
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant.PerCore",
+      "path": "SeLe4n/Kernel/IPC/Invariant/PerCore.lean",
+      "declaration_count": 76,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 59,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "getTcb",
+          "line": 66,
+          "called": [
+            "SystemState",
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runnableThreadIpcReady_perCore",
+          "line": 77,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnSendNotRunnable_perCore",
+          "line": 84,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "getTcb",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnReceiveNotRunnable_perCore",
+          "line": 90,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "getTcb",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnCallNotRunnable_perCore",
+          "line": 96,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "getTcb",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnReplyNotRunnable_perCore",
+          "line": 102,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "getTcb",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedOnNotificationNotRunnable_perCore",
+          "line": 109,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "notificationId",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadIpcReady_perCore",
+          "line": 117,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "getTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "currentNotEndpointQueueHead_perCore",
+          "line": 127,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "currentOnCore",
+            "head",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "currentNotOnNotificationWaitList_perCore",
+          "line": 137,
+          "called": [
+            "CoreId",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "currentOnCore",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "passiveServerIdle_perCore",
+          "line": 148,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "currentOnCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerContractPredicates_perCore",
+          "line": 164,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnCallNotRunnable_perCore",
+            "blockedOnNotificationNotRunnable_perCore",
+            "blockedOnReceiveNotRunnable_perCore",
+            "blockedOnReplyNotRunnable_perCore",
+            "blockedOnSendNotRunnable_perCore",
+            "runnableThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadDequeueCoherent_perCore",
+          "line": 171,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentNotEndpointQueueHead_perCore",
+            "currentNotOnNotificationWaitList_perCore",
+            "currentThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runnableThreadIpcReady_perCore_bootCore_iff",
+          "line": 187,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "getTcb",
+            "runnableThreadIpcReady",
+            "runnableThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnSendNotRunnable_perCore_bootCore_iff",
+          "line": 192,
+          "called": [
+            "SystemState",
+            "blockedOnSendNotRunnable",
+            "blockedOnSendNotRunnable_perCore",
+            "bootCoreId",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnReceiveNotRunnable_perCore_bootCore_iff",
+          "line": 197,
+          "called": [
+            "SystemState",
+            "blockedOnReceiveNotRunnable",
+            "blockedOnReceiveNotRunnable_perCore",
+            "bootCoreId",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnCallNotRunnable_perCore_bootCore_iff",
+          "line": 202,
+          "called": [
+            "SystemState",
+            "blockedOnCallNotRunnable",
+            "blockedOnCallNotRunnable_perCore",
+            "bootCoreId",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnReplyNotRunnable_perCore_bootCore_iff",
+          "line": 207,
+          "called": [
+            "SystemState",
+            "blockedOnReplyNotRunnable",
+            "blockedOnReplyNotRunnable_perCore",
+            "bootCoreId",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnNotificationNotRunnable_perCore_bootCore_iff",
+          "line": 212,
+          "called": [
+            "SystemState",
+            "blockedOnNotificationNotRunnable",
+            "blockedOnNotificationNotRunnable_perCore",
+            "bootCoreId",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadIpcReady_perCore_bootCore_iff",
+          "line": 218,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentOnCore",
+            "currentThreadIpcReady",
+            "currentThreadIpcReady_perCore",
+            "getTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentNotEndpointQueueHead_perCore_bootCore_iff",
+          "line": 225,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentNotEndpointQueueHead",
+            "currentNotEndpointQueueHead_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentNotOnNotificationWaitList_perCore_bootCore_iff",
+          "line": 228,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentNotOnNotificationWaitList",
+            "currentNotOnNotificationWaitList_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "passiveServerIdle_perCore_bootCore_iff",
+          "line": 232,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "getTcb",
+            "passiveServerIdle",
+            "passiveServerIdle_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_bootCore_iff",
+          "line": 240,
+          "called": [
+            "SystemState",
+            "blockedOnCallNotRunnable_perCore_bootCore_iff",
+            "blockedOnNotificationNotRunnable_perCore_bootCore_iff",
+            "blockedOnReceiveNotRunnable_perCore_bootCore_iff",
+            "blockedOnReplyNotRunnable_perCore_bootCore_iff",
+            "blockedOnSendNotRunnable_perCore_bootCore_iff",
+            "bootCoreId",
+            "ipcSchedulerContractPredicates",
+            "ipcSchedulerContractPredicates_perCore",
+            "runnableThreadIpcReady_perCore_bootCore_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_perCore_bootCore_iff",
+          "line": 253,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentNotEndpointQueueHead_perCore_bootCore_iff",
+            "currentNotOnNotificationWaitList_perCore_bootCore_iff",
+            "currentThreadDequeueCoherent",
+            "currentThreadDequeueCoherent_perCore",
+            "currentThreadIpcReady_perCore_bootCore_iff"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runnableThreadIpcReady_perCore_frame",
+          "line": 272,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "getTcb",
+            "runQueueOnCore",
+            "runnableThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnSendNotRunnable_perCore_frame",
+          "line": 279,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnSendNotRunnable_perCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnReceiveNotRunnable_perCore_frame",
+          "line": 286,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnReceiveNotRunnable_perCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnCallNotRunnable_perCore_frame",
+          "line": 293,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnCallNotRunnable_perCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnReplyNotRunnable_perCore_frame",
+          "line": 300,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnReplyNotRunnable_perCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnNotificationNotRunnable_perCore_frame",
+          "line": 307,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnNotificationNotRunnable_perCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadIpcReady_perCore_frame",
+          "line": 315,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "currentThreadIpcReady_perCore",
+            "getTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentNotEndpointQueueHead_perCore_frame",
+          "line": 325,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentNotEndpointQueueHead_perCore",
+            "currentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentNotOnNotificationWaitList_perCore_frame",
+          "line": 331,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentNotOnNotificationWaitList_perCore",
+            "currentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "passiveServerIdle_perCore_frame",
+          "line": 338,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "getTcb",
+            "passiveServerIdle_perCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentOnCore_none",
+          "line": 357,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "default",
+            "default_state_perCoreInitialized",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_runQueueOnCore_empty",
+          "line": 362,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_state_perCoreInitialized",
+            "empty",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_objects_getElem_none",
+          "line": 369,
+          "called": [
+            "ObjId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "default",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_getTcb",
+          "line": 376,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "default",
+            "default_objects_getElem_none",
+            "getTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_runnableThreadIpcReady_perCore",
+          "line": 381,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_runQueueOnCore_empty",
+            "runnableThreadIpcReady_perCore",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_blockedOnSendNotRunnable_perCore",
+          "line": 387,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnSendNotRunnable_perCore",
+            "default",
+            "default_runQueueOnCore_empty",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_blockedOnReceiveNotRunnable_perCore",
+          "line": 392,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnReceiveNotRunnable_perCore",
+            "default",
+            "default_runQueueOnCore_empty",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_blockedOnCallNotRunnable_perCore",
+          "line": 397,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnCallNotRunnable_perCore",
+            "default",
+            "default_runQueueOnCore_empty",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_blockedOnReplyNotRunnable_perCore",
+          "line": 402,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnReplyNotRunnable_perCore",
+            "default",
+            "default_runQueueOnCore_empty",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_blockedOnNotificationNotRunnable_perCore",
+          "line": 407,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnNotificationNotRunnable_perCore",
+            "default",
+            "default_runQueueOnCore_empty",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentThreadIpcReady_perCore",
+          "line": 412,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadIpcReady_perCore",
+            "default",
+            "default_currentOnCore_none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentNotEndpointQueueHead_perCore",
+          "line": 416,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentNotEndpointQueueHead_perCore",
+            "default",
+            "default_currentOnCore_none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentNotOnNotificationWaitList_perCore",
+          "line": 420,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentNotOnNotificationWaitList_perCore",
+            "default",
+            "default_currentOnCore_none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_passiveServerIdle_perCore",
+          "line": 424,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_getTcb",
+            "passiveServerIdle_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_ipcSchedulerContractPredicates_perCore",
+          "line": 430,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_blockedOnCallNotRunnable_perCore",
+            "default_blockedOnNotificationNotRunnable_perCore",
+            "default_blockedOnReceiveNotRunnable_perCore",
+            "default_blockedOnReplyNotRunnable_perCore",
+            "default_blockedOnSendNotRunnable_perCore",
+            "default_runnableThreadIpcReady_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentThreadDequeueCoherent_perCore",
+          "line": 436,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadDequeueCoherent_perCore",
+            "default",
+            "default_currentNotEndpointQueueHead_perCore",
+            "default_currentNotOnNotificationWaitList_perCore",
+            "default_currentThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcSchedulerContractPredicates_smp",
+          "line": 453,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "currentThreadDequeueCoherent_smp",
+          "line": 457,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadDequeueCoherent_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "passiveServerIdle_smp",
+          "line": 462,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "passiveServerIdle_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_smp_aggregateForall",
+          "line": 465,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_smp_aggregateForall",
+          "line": 469,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadDequeueCoherent_perCore",
+            "currentThreadDequeueCoherent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "passiveServerIdle_smp_aggregateForall",
+          "line": 473,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "passiveServerIdle_perCore",
+            "passiveServerIdle_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_smp_at",
+          "line": 476,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_smp_at",
+          "line": 480,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadDequeueCoherent_perCore",
+            "currentThreadDequeueCoherent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "passiveServerIdle_smp_at",
+          "line": 484,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "passiveServerIdle_perCore",
+            "passiveServerIdle_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_smp_to_singleCore",
+          "line": 489,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "ipcSchedulerContractPredicates",
+            "ipcSchedulerContractPredicates_perCore_bootCore_iff",
+            "ipcSchedulerContractPredicates_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_smp_to_singleCore",
+          "line": 493,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "currentThreadDequeueCoherent",
+            "currentThreadDequeueCoherent_perCore_bootCore_iff",
+            "currentThreadDequeueCoherent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "passiveServerIdle_smp_to_singleCore",
+          "line": 497,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "passiveServerIdle",
+            "passiveServerIdle_perCore_bootCore_iff",
+            "passiveServerIdle_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_ipcSchedulerContractPredicates_smp",
+          "line": 501,
+          "called": [
+            "SystemState",
+            "default",
+            "default_ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_currentThreadDequeueCoherent_smp",
+          "line": 505,
+          "called": [
+            "SystemState",
+            "currentThreadDequeueCoherent_smp",
+            "default",
+            "default_currentThreadDequeueCoherent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_passiveServerIdle_smp",
+          "line": 509,
+          "called": [
+            "SystemState",
+            "default",
+            "default_passiveServerIdle_perCore",
+            "passiveServerIdle_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_to_runnableThreadIpcReady",
+          "line": 515,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ipcSchedulerContractPredicates_perCore",
+            "runnableThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnSendNotRunnable",
+          "line": 519,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnSendNotRunnable_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnReceiveNotRunnable",
+          "line": 523,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnReceiveNotRunnable_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnCallNotRunnable",
+          "line": 527,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnCallNotRunnable_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnReplyNotRunnable",
+          "line": 531,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnReplyNotRunnable_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnNotificationNotRunnable",
+          "line": 535,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockedOnNotificationNotRunnable_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_perCore_to_currentThreadIpcReady",
+          "line": 539,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadDequeueCoherent_perCore",
+            "currentThreadIpcReady_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_perCore_to_currentNotEndpointQueueHead",
+          "line": 543,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentNotEndpointQueueHead_perCore",
+            "currentThreadDequeueCoherent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentThreadDequeueCoherent_perCore_to_currentNotOnNotificationWaitList",
+          "line": 547,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SystemState",
+            "currentNotOnNotificationWaitList_perCore",
+            "currentThreadDequeueCoherent_perCore"
+          ]
+        }
+      ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.QueueMembership",
@@ -48657,6 +50138,315 @@
             "none",
             "serviceObservable",
             "serviceRegistryAffectsProjection"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.InformationFlow.ProjectionPerCore",
+      "path": "SeLe4n/Kernel/InformationFlow/ProjectionPerCore.lean",
+      "declaration_count": 22,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "projectRunnableOnCore",
+          "line": 62,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "filter",
+            "runQueueOnCore",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectCurrentOnCore",
+          "line": 68,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "none",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectActiveDomainOnCore",
+          "line": 76,
+          "called": [
+            "CoreId",
+            "DomainId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "activeDomainOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectDomainTimeRemainingOnCore",
+          "line": 81,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "domainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectDomainScheduleIndexOnCore",
+          "line": 86,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "domainScheduleIndexOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectMachineRegsOnCore",
+          "line": 94,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "RegisterFile",
+            "SystemState",
+            "currentOnCore",
+            "none",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "projectStateOnCore",
+          "line": 103,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "ObservableState",
+            "SystemState",
+            "projectActiveDomainOnCore",
+            "projectCurrentOnCore",
+            "projectDomainScheduleIndexOnCore",
+            "projectDomainTimeRemainingOnCore",
+            "projectMachineRegsOnCore",
+            "projectRunnableOnCore",
+            "projectState",
+            "runnable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectRunnableOnCore_bootCore",
+          "line": 117,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectRunnable",
+            "projectRunnableOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectCurrentOnCore_bootCore",
+          "line": 121,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectCurrent",
+            "projectCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectActiveDomainOnCore_bootCore",
+          "line": 125,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectActiveDomain",
+            "projectActiveDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectDomainTimeRemainingOnCore_bootCore",
+          "line": 130,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectDomainTimeRemaining",
+            "projectDomainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectDomainScheduleIndexOnCore_bootCore",
+          "line": 135,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectDomainScheduleIndex",
+            "projectDomainScheduleIndexOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectMachineRegsOnCore_bootCore",
+          "line": 140,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectMachineRegs",
+            "projectMachineRegsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectStateOnCore_bootCore",
+          "line": 145,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectState",
+            "projectStateOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectRunnableOnCore_frame",
+          "line": 161,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "projectRunnableOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectCurrentOnCore_frame",
+          "line": 167,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "currentOnCore",
+            "projectCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectActiveDomainOnCore_frame",
+          "line": 173,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "activeDomainOnCore",
+            "projectActiveDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectDomainTimeRemainingOnCore_frame",
+          "line": 179,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "domainTimeRemainingOnCore",
+            "projectDomainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectDomainScheduleIndexOnCore_frame",
+          "line": 186,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "domainScheduleIndexOnCore",
+            "projectDomainScheduleIndexOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectMachineRegsOnCore_frame",
+          "line": 193,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "currentOnCore",
+            "projectMachineRegsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectStateOnCore_congr",
+          "line": 206,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "projectActiveDomainOnCore_frame",
+            "projectCurrentOnCore_frame",
+            "projectDomainScheduleIndexOnCore_frame",
+            "projectDomainTimeRemainingOnCore_frame",
+            "projectMachineRegsOnCore_frame",
+            "projectRunnableOnCore_frame",
+            "projectState",
+            "projectStateOnCore",
+            "runQueueOnCore"
           ]
         }
       ]
@@ -86969,13 +88759,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 188,
+          "line": 203,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 194,
+          "line": 209,
           "called": []
         }
       ]
@@ -94745,6 +96535,412 @@
             "bov028_ofUInt64PairZeroRight",
             "bov029_zeroValidTheorem",
             "bov030_ofNatValid"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.CrossSubsystemPerCoreSuite",
+      "path": "tests/CrossSubsystemPerCoreSuite.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.CrossSubsystemPerCore",
+          "line": 32,
+          "called": [
+            "blockedOnCallNotRunnable_perCore",
+            "blockedOnNotificationNotRunnable_perCore",
+            "blockedOnReceiveNotRunnable_perCore",
+            "blockedOnReplyNotRunnable_perCore",
+            "blockedOnSendNotRunnable_perCore",
+            "cleanupHookDischarged_perCore",
+            "cleanupHookDischarged_perCore_bootCore_iff",
+            "cleanupNoStaleSchedRef_perCore",
+            "cleanupNoStaleSchedRef_perCore_bootCore_iff",
+            "cleanupNoStaleSchedRef_perCore_frame",
+            "cleanupNoStaleSchedRef_smp",
+            "cleanupNoStaleSchedRef_smp_to_singleCore",
+            "crossSubsystemInvariant_perCore",
+            "crossSubsystemInvariant_perCore_bootCore_iff",
+            "crossSubsystemInvariant_perCore_to_schedContextRunQueueConsistent",
+            "crossSubsystemInvariant_smp",
+            "crossSubsystemInvariant_smp_to_singleCore",
+            "crossSubsystemSchedulerContract_perCore",
+            "crossSubsystemSchedulerContract_perCore_bootCore_iff",
+            "crossSubsystemSchedulerContract_perCore_to_passiveServerIdle",
+            "crossSubsystemSchedulerContract_perCore_to_registerDecodeConsistent",
+            "crossSubsystemSchedulerContract_smp",
+            "crossSubsystemSchedulerContract_smp_at",
+            "currentNotEndpointQueueHead_perCore",
+            "currentNotOnNotificationWaitList_perCore",
+            "currentThreadDequeueCoherent_perCore",
+            "currentThreadDequeueCoherent_perCore_bootCore_iff",
+            "currentThreadDequeueCoherent_perCore_to_currentThreadIpcReady",
+            "currentThreadDequeueCoherent_smp",
+            "currentThreadDequeueCoherent_smp_to_singleCore",
+            "currentThreadIpcReady_perCore",
+            "currentThreadIpcReady_perCore_frame",
+            "default_cleanupNoStaleSchedRef_perCore",
+            "default_cleanupNoStaleSchedRef_smp",
+            "default_crossSubsystemInvariant_perCore",
+            "default_crossSubsystemInvariant_smp",
+            "default_crossSubsystemSchedulerContract_perCore",
+            "default_crossSubsystemSchedulerContract_smp",
+            "default_currentThreadDequeueCoherent_perCore",
+            "default_currentThreadDequeueCoherent_smp",
+            "default_ipcSchedulerContractPredicates_perCore",
+            "default_ipcSchedulerContractPredicates_smp",
+            "default_passiveServerIdle_perCore",
+            "default_passiveServerIdle_smp",
+            "default_registerDecodeConsistent_perCore",
+            "default_registerDecodeConsistent_smp",
+            "ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_perCore_bootCore_iff",
+            "ipcSchedulerContractPredicates_perCore_to_runnableThreadIpcReady",
+            "ipcSchedulerContractPredicates_smp",
+            "ipcSchedulerContractPredicates_smp_at",
+            "ipcSchedulerContractPredicates_smp_to_singleCore",
+            "passiveServerIdle_perCore",
+            "passiveServerIdle_perCore_bootCore_iff",
+            "passiveServerIdle_perCore_frame",
+            "passiveServerIdle_smp",
+            "passiveServerIdle_smp_to_singleCore",
+            "projectActiveDomainOnCore",
+            "projectCurrentOnCore",
+            "projectCurrentOnCore_bootCore",
+            "projectDomainScheduleIndexOnCore",
+            "projectDomainTimeRemainingOnCore",
+            "projectMachineRegsOnCore",
+            "projectMachineRegsOnCore_bootCore",
+            "projectMachineRegsOnCore_frame",
+            "projectRunnableOnCore",
+            "projectRunnableOnCore_bootCore",
+            "projectRunnableOnCore_frame",
+            "projectStateOnCore",
+            "projectStateOnCore_bootCore",
+            "projectStateOnCore_congr",
+            "registerDecodeConsistent_perCore",
+            "registerDecodeConsistent_perCore_bootCore_iff",
+            "registerDecodeConsistent_perCore_frame",
+            "registerDecodeConsistent_smp",
+            "registerDecodeConsistent_smp_to_singleCore",
+            "runnableThreadIpcReady_perCore",
+            "runnableThreadIpcReady_perCore_bootCore_iff",
+            "runnableThreadIpcReady_perCore_frame"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:134>",
+          "line": 134,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_perCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:136>",
+          "line": 136,
+          "called": [
+            "SystemState",
+            "default",
+            "default_ipcSchedulerContractPredicates_smp",
+            "ipcSchedulerContractPredicates_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:138>",
+          "line": 138,
+          "called": [
+            "SystemState",
+            "default",
+            "default_passiveServerIdle_smp",
+            "passiveServerIdle_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:139>",
+          "line": 139,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "ipcSchedulerContractPredicates",
+            "ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_perCore_bootCore_iff"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:143>",
+          "line": 143,
+          "called": [
+            "SystemState",
+            "passiveServerIdle",
+            "passiveServerIdle_smp",
+            "passiveServerIdle_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:146>",
+          "line": 146,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "runnableThreadIpcReady_perCore",
+            "runnableThreadIpcReady_perCore_frame"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:151>",
+          "line": 151,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "cleanupNoStaleSchedRef_smp",
+            "default",
+            "default_cleanupNoStaleSchedRef_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:156>",
+          "line": 156,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_registerDecodeConsistent_perCore",
+            "registerDecodeConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:158>",
+          "line": 158,
+          "called": [
+            "SystemState",
+            "registerDecodeConsistent",
+            "registerDecodeConsistent_smp",
+            "registerDecodeConsistent_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:163>",
+          "line": 163,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "projectState",
+            "projectStateOnCore",
+            "projectStateOnCore_bootCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:166>",
+          "line": 166,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "projectRunnableOnCore",
+            "projectRunnableOnCore_frame"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:171>",
+          "line": 171,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_perCore",
+            "default",
+            "default_crossSubsystemInvariant_perCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:173>",
+          "line": 173,
+          "called": [
+            "SystemState",
+            "crossSubsystemSchedulerContract_smp",
+            "default",
+            "default_crossSubsystemSchedulerContract_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:175>",
+          "line": 175,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_smp",
+            "crossSubsystemInvariant_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:177>",
+          "line": 177,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "crossSubsystemSchedulerContract_perCore",
+            "crossSubsystemSchedulerContract_perCore_bootCore_iff",
+            "currentThreadDequeueCoherent",
+            "ipcSchedulerContractPredicates",
+            "passiveServerIdle",
+            "registerDecodeConsistent",
+            "schedContextRunQueueConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 188,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "probeObserver",
+          "line": 200,
+          "called": [
+            "IfObserver",
+            "publicLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runIpcChecks",
+          "line": 204,
+          "called": [
+            "SystemState",
+            "all",
+            "assertBool",
+            "currentThreadDequeueCoherent_perCore",
+            "default",
+            "default_currentThreadDequeueCoherent_perCore",
+            "default_ipcSchedulerContractPredicates_perCore",
+            "default_ipcSchedulerContractPredicates_smp",
+            "default_passiveServerIdle_perCore",
+            "ipcSchedulerContractPredicates",
+            "ipcSchedulerContractPredicates_perCore",
+            "ipcSchedulerContractPredicates_smp_at",
+            "ipcSchedulerContractPredicates_smp_to_singleCore",
+            "passiveServerIdle_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCapabilityChecks",
+          "line": 234,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "all",
+            "assertBool",
+            "cleanupNoStaleSchedRef_perCore",
+            "cleanupNoStaleSchedRef_smp",
+            "default",
+            "default_cleanupNoStaleSchedRef_perCore",
+            "default_cleanupNoStaleSchedRef_smp",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runArchitectureChecks",
+          "line": 248,
+          "called": [
+            "SystemState",
+            "all",
+            "assertBool",
+            "default",
+            "default_registerDecodeConsistent_perCore",
+            "default_registerDecodeConsistent_smp",
+            "registerDecodeConsistent",
+            "registerDecodeConsistent_perCore",
+            "registerDecodeConsistent_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runInformationFlowChecks",
+          "line": 263,
+          "called": [
+            "SystemState",
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "default",
+            "defaultLabelingContext",
+            "none",
+            "probeObserver",
+            "projectCurrentOnCore",
+            "projectMachineRegsOnCore",
+            "projectRunnable",
+            "projectRunnableOnCore",
+            "projectState",
+            "projectStateOnCore",
+            "projectStateOnCore_bootCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCrossSubsystemChecks",
+          "line": 288,
+          "called": [
+            "SystemState",
+            "all",
+            "assertBool",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_perCore",
+            "crossSubsystemInvariant_smp_to_singleCore",
+            "crossSubsystemSchedulerContract_perCore",
+            "crossSubsystemSchedulerContract_smp_at",
+            "default",
+            "default_crossSubsystemInvariant_perCore",
+            "default_crossSubsystemInvariant_smp",
+            "default_crossSubsystemSchedulerContract_perCore",
+            "default_crossSubsystemSchedulerContract_smp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCrossSubsystemPerCoreChecks",
+          "line": 310,
+          "called": [
+            "runArchitectureChecks",
+            "runCapabilityChecks",
+            "runCrossSubsystemChecks",
+            "runInformationFlowChecks",
+            "runIpcChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 323,
+          "called": [
+            "runCrossSubsystemPerCoreChecks"
           ]
         }
       ]

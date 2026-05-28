@@ -136,6 +136,21 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 -- base-aggregate bridge for `chooseThread`.  Composes existing single-
 -- core preservation theorems with the SM4.C SMP-preservation skeleton.
 import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
+-- WS-SM SM4.D: cross-subsystem per-core invariant migration (plan §5.4).
+-- The capstone `CrossSubsystemPerCore` transitively imports the four
+-- per-subsystem per-core slices: `IPC.Invariant.PerCore` (the twelve
+-- IPC↔scheduler coherence predicates lifted to `(c : CoreId)` forms +
+-- the genuine `∀ c` SMP aggregates), `Capability.Invariant.PerCore`
+-- (`cleanupNoStaleSchedRef` SMP "no stale ref on any core"),
+-- `Architecture.InvariantPerCore` (`registerDecodeConsistent` per-core),
+-- and `InformationFlow.ProjectionPerCore` (the six scheduler-reading IF-M1
+-- projections + `projectStateOnCore` + per-core observability frame
+-- lemmas).  It exports `crossSubsystemInvariant_perCore` (the per-core
+-- master invariant) and `crossSubsystemSchedulerContract_perCore` (the
+-- SM4.D capstone bundle), with boot-core bridges to the live single-core
+-- surface.  Reachability: staged at SM4.D; SM5's per-core scheduler is
+-- the first runtime exerciser (which will move them production-reached).
+import SeLe4n.Kernel.CrossSubsystemPerCore
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
