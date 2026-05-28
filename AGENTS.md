@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.18.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.19.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4037,13 +4037,90 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `Classical.choice` (verified via `#print axioms` on the headline
   theorems).  Full `lake build` (default target) + `lake build
   SeLe4n.Platform.Staged` + `bash scripts/check_production_staging_partition.sh`
-  (34 staged-only modules) + Tier 0+1+2+3 all green.  Items deferred
-  past v1.0.0 with correctness impact: NONE.  Follow-on: SM4.D
-  (cross-subsystem theorem migrations — IPC / Capability / Lifecycle
-  / Architecture / InformationFlow / CrossSubsystem theorems that
-  read `SchedulerState`), SM4.E
+  (35 staged-only modules) + Tier 0+1+2+3 all green.
+
+  **WS-SM SM4.C audit-passes 1–5** (v0.31.14 → v0.31.18, same branch):
+
+  - **Audit-pass-1 (v0.31.14)**: typed-accessor migration for the three
+    SC-using per-core predicates + the four missing setter independence
+    corollaries.  AK7 baseline restored to the v0.31.2 floor
+    (`RAW_MATCH_TOTAL` 122; `GETTCB_ADOPTION` +56 net).  All sixteen
+    per-core predicates use typed `getTcb?` / `getSchedContext?`
+    accessors.  Seven setter independence corollaries (one per per-core
+    setter).
+
+  - **Audit-pass-2 (v0.31.15)**: 17 per-conjunct frame lemmas
+    (§5.5 — fine-grained SM5 reasoning), plus the new
+    `runQueueOnCoreWellFormed` predicate (plan §5.6 missing), plus the
+    extended per-core aggregate `schedulerInvariant_perCore_extended`
+    (§3.5) mirroring `schedulerInvariantBundleExtended` (composes the
+    4 SC-using predicates with the base 10-conjunct aggregate).
+    Extended bundle bridges + default + projections.  Extended frame
+    + idle frame + pairwise + SMP-preservation skeleton (§8).
+    27 runtime assertions.
+
+  - **Audit-pass-3 (v0.31.16)**: three cross-subsystem per-core
+    predicates per plan §5.6 (`schedContextRunQueueConsistent_perCore`,
+    `priorityInheritance_perCore`, `activeDomainOnCore_isInDomainSchedule`),
+    plus the cross-subsystem aggregate `schedulerInvariant_perCore_crossSubsystem`
+    (§10) composing extended + the three cross-subsystem predicates.
+    Boot-core bridges + defaults + per-conjunct frame lemmas (3) +
+    aggregate bridges (incl. `crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore`).
+    41 runtime assertions.
+
+  - **Audit-pass-4 (v0.31.17)**: per-operation per-core preservation
+    theorems demonstrating the SM5-bridge payoff.  §11 adds
+    `schedulerInvariant_perCore_holds_if_idle` (sufficient idle
+    theorem) + `schedulerInvariant_smp_of_bootCore_preservation`
+    (clean composition for ops that change `objects` / `regs`).  NEW
+    FILE `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean`
+    with 5 per-op aggregate preservation theorems
+    (`schedule_preserves_schedulerInvariant_smp`,
+    `handleYield_preserves_schedulerInvariant_smp`,
+    `timerTick_preserves_schedulerInvariant_smp`,
+    `switchDomain_preserves_schedulerInvariant_smp`,
+    `scheduleDomain_preserves_schedulerInvariant_smp`) + chooseThread
+    base bridge.  Each composes existing single-core preservation
+    with the §11 composition.
+
+  - **Audit-pass-5 (v0.31.18)**: 25 named per-conjunct per-op SMP
+    preservation theorems (§7 of PerCorePreservation.lean) — plan §3.4
+    Pattern 1 mechanical lifts of existing single-core preservation to
+    per-core SMP form.  5 conjuncts (queueCurrentConsistent /
+    runQueueUnique / currentThreadValid / domainTimeRemainingPositive /
+    runnableThreadsAreTCBs) × 5 ops = 25 one-line projections from the
+    aggregate per-op preservation.
+
+  **Cumulative SM4.C state at v0.31.18**:
+  - 16 per-core predicate forms (all typed-accessor).
+  - 16 boot-core bridges.
+  - 3 aggregates (`schedulerInvariant_perCore`, `…_extended`,
+    `…_crossSubsystem`) + corresponding SMP forms + projections +
+    bundle bridges + defaults.
+  - 17 + 3 = 20 per-conjunct frame lemmas.
+  - 7 setter independence corollaries + pairwise theorem.
+  - 6 per-op aggregate preservation + 25 per-conjunct per-op
+    preservation = 31 per-op theorems.
+  - 2 modules: `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`
+    (~1660 LoC) + `…/PerCorePreservation.lean` (~700 LoC).
+  - 41 runtime assertions in `tests/SchedulerInvariantPerCoreSuite.lean`
+    + 1 in `tests/SchedulerInvariantPerCorePreservationSuite.lean`.
+  - 35 staged-only modules (was 34 at v0.31.13); production/staged
+    partition gate green.
+  - AK7 baseline at the v0.31.2 floor for raw-match counts; GETTCB +56
+    / GETSCHEDCTX +27 net adoption growth.
+
+  Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on:
+  SM4.D (cross-subsystem theorem migrations — IPC / Capability /
+  Lifecycle / Architecture / InformationFlow / CrossSubsystem theorems
+  that read `SchedulerState`), SM4.E
   (`bootFromPlatform_singleCore_witness` retirement +
-  `bootFromPlatform_smp_witness` per plan §3.8).
+  `bootFromPlatform_smp_witness` per plan §3.8); post-SM4.C
+  extensions: per-conjunct preservation for the 5 less-used conjuncts
+  × 5 ops + per-extended-conjunct preservation × 5 ops; tighter
+  `priorityInheritance_perCore_frame` once
+  `blockingChain_objects_congr` lands in
+  `Scheduler/PriorityInheritance/BlockingGraph.lean`.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

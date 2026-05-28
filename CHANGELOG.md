@@ -1,3 +1,91 @@
+## v0.31.19 — WS-SM SM4.C documentation closure across audit-passes 1–5
+
+Cross-document closure documenting the cumulative SM4.C state at
+v0.31.18 (the end of the audit-pass-1..5 chain).  No source code
+changes; this commit is purely a sync of:
+
+  * `CLAUDE.md` and `AGENTS.md` — extended the WS-SM SM4.C entry with
+    a per-audit-pass summary (v0.31.14 typed-accessor migration +
+    setter completeness; v0.31.15 per-conjunct frames + extended
+    aggregate; v0.31.16 cross-subsystem per-core predicates per plan
+    §5.6; v0.31.17 per-op aggregate preservation; v0.31.18 per-conjunct
+    per-op preservation) plus a cumulative state summary listing every
+    deliverable category and the running module-LoC / test-assertion
+    counts.
+
+  * `docs/spec/SELE4N_SPEC.md` (§2 active-workstream row) — replaced
+    the SM4.C-as-just-landed framing with the cumulative SM4.C-with-
+    five-audit-passes framing.  Lists the 16 per-core predicate forms,
+    the 3 aggregates (base + extended + cross-subsystem) + their SMP
+    forms + bundle bridges, the 20 per-conjunct frame lemmas, the 7
+    setter independence + cross-core pairwise theorem (SM4.C.30), the
+    6 per-op aggregate preservation theorems, the 25 named per-conjunct
+    per-op SMP preservation theorems, and the SM5-bridge composition
+    theorems.
+
+  * `docs/codebase_map.json` — regenerated.
+
+**Cumulative SM4.C deliverable summary at v0.31.18** (recapping for
+documentation visibility):
+
+| Category | Count |
+|----------|------:|
+| Per-core predicate forms | 16 |
+| Boot-core bridges (per-core ↔ existing single-core) | 16 |
+| Per-core aggregates | 3 (base / extended / cross-subsystem) |
+| SMP forms (∀ c aggregates) | 3 |
+| Per-conjunct projections | 19 |
+| Bundle bridges to live surface | 4 (base/extended bidirectional + crossSubsystem) |
+| Per-conjunct frame lemmas (§5.5 + §9.3) | 20 |
+| Setter independence corollaries | 7 (one per per-core setter) |
+| Cross-core pairwise theorems (SM4.C.30 base + extended) | 2 |
+| SMP-preservation skeletons | 4 (base/extended × frame-form/idle-form) |
+| Sufficient-idle theorems | 2 |
+| Cross-subsystem per-core predicates (plan §5.6) | 3 |
+| Per-op aggregate per-core preservation (5 ops + 1 base bridge) | 6 |
+| Per-conjunct per-op SMP preservation (§7 — plan §3.4 Pattern 1) | 25 |
+| Default-state proofs (per-core + smp) | 8 |
+
+**Modules**:
+  * `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` ~1660 LoC
+    (started at ~770 in v0.31.13).
+  * `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean`
+    ~700 LoC (NEW at v0.31.17, extended at v0.31.18).
+  * Total: ~2360 LoC of new SM4.C infrastructure.
+
+**Test coverage**:
+  * `tests/SchedulerInvariantPerCoreSuite.lean` — 110+ Tier-3 surface
+    anchors, 20+ elaboration examples, 41 runtime assertions
+    (7 sections).
+  * `tests/SchedulerInvariantPerCorePreservationSuite.lean` — 31
+    surface anchors, 6 elaboration examples, 1 runtime symbolic
+    assertion.
+  * Tier-2 + Tier-3 wired for both suites.
+
+**Quality**:
+  * Axiom-clean across all headline theorems (only `propext` /
+    `Quot.sound` / `Classical.choice`).
+  * AK7 cascade: `RAW_MATCH_TOTAL` 122 (back to original v0.31.2 floor
+    after audit-pass-1 typed-accessor migration); `GETTCB_ADOPTION`
+    net +56; `GETSCHEDCTX_ADOPTION` net +27.
+  * Partition gate green (35 staged-only modules).
+  * Trace fixture byte-identical (single-core scenario unchanged
+    throughout).
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+**Out-of-scope for SM4.C** (tracked as follow-on workstreams):
+  * SM4.D — cross-subsystem theorem migrations (IPC, Capability,
+    Lifecycle, Architecture, InformationFlow, CrossSubsystem
+    theorems that read `SchedulerState`).
+  * SM4.E — `bootFromPlatform_singleCore_witness` retirement +
+    `bootFromPlatform_smp_witness` per plan §3.8.
+  * Post-SM4.C extensions: per-conjunct per-op preservation for the
+    5 less-used base conjuncts × 5 ops (25) + per-extended-conjunct
+    preservation × 5 ops (20); tighter `priorityInheritance_perCore_frame`
+    once `blockingChain_objects_congr` is provided upstream in
+    `Scheduler/PriorityInheritance/BlockingGraph.lean`.
+
 ## v0.31.18 — WS-SM SM4.C audit-pass-5: per-conjunct per-op preservation (plan §3.4 Pattern 1)
 
 Adds 25 named per-conjunct per-op SMP preservation theorems (§7 of
