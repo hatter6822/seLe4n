@@ -1747,13 +1747,84 @@ scheduler invariant layer from the initial v0.31.13 deliverable into a
   `Classical.choice`).
 - Trace fixture byte-identical from v0.31.12 onward.
 
-**Items deferred past v1.0.0 with correctness impact**: NONE.
+**WS-SM SM4.C audit-passes 7–8 LANDED at v0.31.22 → v0.31.23** (same
+branch as audit-passes 1–6).  Two post-cumulative passes close the
+remaining substantive shortcuts surfaced by an independent deep
+re-audit of the v0.31.21 cumulative state — neither was an outright
+correctness defect (the existing theorems were axiom-clean and
+typed correctly) but both fell short of the optimal form the
+`implement-the-improvement` rule demands:
+
+- **Audit-pass-7 (v0.31.22)**: `priorityInheritance_perCore_frame`
+  was previously stated with a degenerate hypothesis `(hEq : st' =
+  st)` — a trivial congruence reducing to `Iff.rfl`, dischargeable
+  by any caller that already has full state-equality but offering
+  no useful machinery on the partial frame the SMP-preservation
+  skeleton actually delivers (`hObj : st'.objects = st.objects`
+  + `hIdx : st'.objectIndex = st.objectIndex`).  Replaced with the
+  substantive partial-frame form via a new private helper
+  `blockingChain_objects_congr` proved by structural induction on
+  the chain fuel parameter
+  (`SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`).  The helper
+  walks the chain step-by-step, using `cases h : (st.objects[..]?
+  : Option KernelObject) with` (the substitutive form — non-
+  substitutive `cases X with | ctor => …` doesn't rewrite the
+  goal for non-variable discriminants) and the recursive
+  hypothesis on the next chain step.  The pre-pass-7 form was
+  axiom-clean but disconnected from the SMP-preservation
+  composition; the post-pass-7 form bridges directly to the frame
+  the SMP composition delivers.
+
+- **Audit-pass-8 (v0.31.23)**: two cleanups —
+  (a) **dead `open ... in`**: removed
+  `open SeLe4n.Kernel.PriorityInheritance (blockingAcyclic) in`
+  from the `schedContextRunQueueConsistent_perCore` definition,
+  where the `in`-scoped `def` body did not actually reference
+  `blockingAcyclic`.  Pre-pass-8 the `open` was vestigial scaffold
+  from an earlier draft; cleaning it up removes a misleading
+  signal to readers that the predicate consumes the cyclic-chain
+  detector.
+  (b) **substantive preservation-suite runtime tests**: the
+  `tests/SchedulerInvariantPerCorePreservationSuite.lean` runtime
+  exercise was previously a single dead-weight
+  `assertBool "..." true` — the `#check` surface anchors gated
+  the theorems at elaboration time, but the runtime exe added no
+  signal beyond "elaboration reached this line".  Per the
+  `implement-the-improvement` rule, replaced with 17 substantive
+  runtime assertions across two sections: §3.1 (6 decidable
+  foundation checks via `decide` on the default
+  `SchedulerState`'s per-core slots, the empty `domainSchedule`,
+  and the positive `configDefaultTimeSlice`), §3.2 (11 symbol-
+  dispatch checks via `@<theorem-name>` resolution — typos or
+  stale renames in the 56 per-op preservation theorems now
+  surface at the runtime exe level, complementing the existing
+  Tier-3 `#check` anchors).
+
+**Cumulative SM4.C state at v0.31.23**:
+- All cumulative deliverables from audit-passes 1–6 (v0.31.20)
+  retained: 16 per-core predicate forms, 3 aggregates (base +
+  extended + cross-subsystem), 4 SMP-preservation skeletons,
+  20 per-conjunct frame lemmas, 7 setter independence
+  corollaries, 2 cross-core pairwise theorems (SM4.C.30), 3
+  cross-subsystem per-core predicates (§5.6), 6 per-op aggregate
+  preservation + 50 per-conjunct per-op preservation = 56 per-op
+  theorems.
+- `priorityInheritance_perCore_frame` strengthened from
+  degenerate `hEq : st' = st` form to substantive partial-frame
+  form `(hObj : st'.objects = st.objects) (hIdx :
+  st'.objectIndex = st.objectIndex)` via the new private helper
+  `blockingChain_objects_congr` (structural induction on fuel).
+- Preservation suite runtime assertions: 1 → 17.
+- 2 modules (~1660 + ~1170 = ~2830 LoC of SM4.C infrastructure;
+  the helper +20 LoC).  Test coverage: 41 + 17 = 58 runtime
+  assertions across 2 suites; 130+ surface anchors.  All gates
+  green.  Axiom-clean throughout.
+
+**Items deferred past v1.0.0 with correctness impact: NONE**.
 Genuinely out of SM4.C scope (tracked as separate workstreams):
 SM4.D (cross-subsystem migrations), SM4.E (witness retirement);
 post-SM4.C: per-extended-conjunct per-op preservation (4 SC-using ×
-5 ops = 20 additional theorems); tighter
-`priorityInheritance_perCore_frame` once
-`blockingChain_objects_congr` lands.
+5 ops = 20 additional theorems).
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

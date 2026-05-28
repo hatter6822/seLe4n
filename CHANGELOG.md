@@ -1,3 +1,55 @@
+## v0.31.24 — WS-SM SM4.C tracking-doc closure + UART parallel-test race fix
+
+Two narrow closures in one cut:
+
+**(1) WS-SM SM4.C tracking-doc closure for audit-passes 7–8.**
+Backfills the post-cumulative audit-pass-7 (v0.31.22) and
+audit-pass-8 (v0.31.23) entries into the two canonical tracking
+documents that previously stopped at audit-pass-6 (v0.31.20):
+
+  * **`docs/WORKSTREAM_HISTORY.md`**: new "WS-SM SM4.C audit-passes
+    7–8 LANDED at v0.31.22 → v0.31.23" subsection covering the
+    substantive `priorityInheritance_perCore_frame` strengthening
+    (degenerate `hEq : st' = st` form replaced with partial-frame
+    `(hObj, hIdx)` form via the new private helper
+    `blockingChain_objects_congr` proved by structural induction
+    on chain fuel), the dead-open cleanup, and the 17 substantive
+    runtime assertions added to the preservation suite.  The
+    cumulative SM4.C state-at-v0.31.23 summary line is included
+    alongside the genuine-out-of-scope items
+    (SM4.D / SM4.E / per-extended-conjunct per-op preservation).
+
+  * **`docs/CLAIM_EVIDENCE_INDEX.md`**: new top-of-table row
+    "WS-SM SM4.C audit-passes 7–8" covering both passes with
+    canonical sources, evidence commands, and a per-symbol
+    summary.  Mirrors the audit-passes-1–6 row's structure.
+
+**(2) `uart_guard_global_lock_released_after_with_boot_uart` race fix
+(SM1.G.4 / SM1.I.4 pattern carry-over).**  The pre-existing test
+observed `UART_LOCK.is_held()` before/after `with_boot_uart`
+without holding the SM1.G.4 observation mutex; under cargo's
+parallel test runner a sibling UART-touching test could acquire
+the lock between the `before` and `after` snapshots, surfacing a
+~rare-but-real flake (caught by this PR's smoke gate).  The
+SM1.I.4 audit-pass-1 hardening already converted the sibling
+`sm1g4_*` and `sm1i4_*` observation tests to use
+`SM1G4_OBSERVATION_MUTEX`, but this pre-existing test (named with
+the older `uart_guard_*` convention) was missed.  Per the
+implement-the-improvement rule, the gap is closed by acquiring
+the same mutex — the structural pattern remains observer-style,
+matching the sibling `cross_thread_kprintln_stress_no_lock_leak`
+test at the same module scope.  The poisoning-defence pattern
+(`unwrap_or_else(|e| e.into_inner())`) is applied per
+audit-pass-4.  Verified: stress-run of `cargo test -p sele4n-hal
+--lib uart_guard_global_lock_released_after_with_boot_uart`
+passes 10/10 with full sibling parallelism.
+
+All gates green: `check_version_sync.sh` PASS, hygiene PASS,
+Tier 0+1+2+3 PASS, Rust 712 tests PASS, zero clippy warnings.
+Trace fixture byte-identical.
+
+Refs: docs/WORKSTREAM_HISTORY.md (SM4.C audit-passes 7–8 entry)
+
 ## v0.31.23 — WS-SM SM4.C audit-pass-8: dead-open cleanup + substantive preservation-suite runtime checks
 
 Deep-audit follow-on of audit-pass-7.  Two cleanups:

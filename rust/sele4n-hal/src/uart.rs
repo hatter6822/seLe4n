@@ -719,6 +719,19 @@ mod tests {
     fn uart_guard_global_lock_released_after_with_boot_uart() {
         // `with_boot_uart` is the only documented consumer of the guard
         // pattern; verify the global lock is not leaked.
+        //
+        // Serialised under `SM1G4_OBSERVATION_MUTEX` (declared below) so
+        // sibling UART-observation tests in the SM1.G.4 / SM1.I.4
+        // families cannot race against the `before`/`after`
+        // `UART_LOCK.is_held()` snapshots.  Pre-SM1.I this test was the
+        // last unguarded observer and surfaced as a ~rare-but-real
+        // parallel-test flake (caught by the v0.31.24 doc-only PR's
+        // smoke gate); guard added per the implement-the-improvement
+        // rule.  Audit-pass-4 poisoning-defence pattern applied
+        // (`unwrap_or_else(|e| e.into_inner())`) so a failed assert in
+        // a holder cannot cascade-fail every subsequent observation
+        // test with `PoisonError`.
+        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = UART_LOCK.is_held();
         let result = with_boot_uart(|_u| 0xABCDu32);
         assert_eq!(result, 0xABCD);
