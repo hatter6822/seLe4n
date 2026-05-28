@@ -921,38 +921,8 @@ theorem default_schedulerInvariant_perCore (c : CoreId) :
   · intro tid hMem; exact absurd hMem (hNotMemList tid)
   · intro tid hMem; exact absurd hMem (hNotMem tid)
   · simp only [domainTimeRemainingPositiveOnCore, hDTR]; decide
-  · -- audit-pass-9: runQueueOnCoreWellFormed for the default state.
-    -- The default run queue is `RunQueue.empty`, whose wellFormed property
-    -- follows from the empty `byPriority` table (lookup returns `none`, so
-    -- the universal quantifier over members is vacuous) and the empty
-    -- `membership` set (contains is false, so the second universal is
-    -- vacuous).
-    show RunQueue.wellFormed _
-    rw [hRQ]
-    refine ⟨?_, ?_⟩
-    · intro prio tid hMem
-      have h : (RunQueue.empty.byPriority[prio]? :
-                Option (List SeLe4n.ThreadId)) = none := by
-        have h1 : RunQueue.empty.byPriority =
-                    (SeLe4n.Kernel.RobinHood.RHTable.empty
-                      SeLe4n.Kernel.RobinHood.minPracticalRHCapacity
-                      (by decide) :
-                       SeLe4n.Kernel.RobinHood.RHTable SeLe4n.Priority
-                         (List SeLe4n.ThreadId)) := rfl
-        rw [h1]
-        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty
-          SeLe4n.Kernel.RobinHood.minPracticalRHCapacity (by decide) prio
-      rw [h, Option.getD_none] at hMem
-      exact absurd hMem List.not_mem_nil
-    · intro tid hMem
-      have h : RunQueue.empty.membership.contains tid = false := by
-        have h2 : RunQueue.empty.membership =
-                    (SeLe4n.Kernel.RobinHood.RHSet.empty :
-                       SeLe4n.Kernel.RobinHood.RHSet SeLe4n.ThreadId) := rfl
-        rw [h2]
-        exact SeLe4n.Kernel.RobinHood.RHSet.contains_empty tid
-      rw [h] at hMem
-      exact absurd hMem (by decide)
+  · show RunQueue.wellFormed _
+    rw [hRQ]; exact RunQueue.empty_wellFormed
 
 /-- WS-SM SM4.C: the freshly-booted system satisfies the system-wide SMP
 scheduler invariant — the per-core invariant on every core. -/
@@ -1721,16 +1691,8 @@ theorem schedulerInvariant_perCore_holds_if_idle (st : SystemState) (c : CoreId)
     (hCurNone : st.scheduler.currentOnCore c = none)
     (hRQEmpty : (st.scheduler.runQueueOnCore c).toList = [])
     (hDTRPos : st.scheduler.domainTimeRemainingOnCore c > 0)
-    -- audit-pass-9 (PR #801, reviewer comment 2): explicit wellFormed
-    -- hypothesis.  `toList = []` does not structurally entail wellFormed:
-    -- a RunQueue can have empty `flat` (so `toList = []`) while
-    -- `byPriority` carries non-empty buckets that wellFormed forbids.
-    -- SM5 callers discharge this from "this core's RunQueue is the
-    -- default `RunQueue.empty`" (the perma-idle default-replicate slot
-    -- — see `RunQueue.empty_wellFormed_by_construction` discharge via
-    -- the empty-RHTable lookup pattern; this matches the
-    -- `default_schedulerInvariant_perCore` discharge for the new
-    -- conjunct).
+    -- audit-pass-9: `toList = []` doesn't entail wellFormed structurally;
+    -- the caller supplies it.  SM5 discharges via `RunQueue.empty_wellFormed`.
     (hWf : (st.scheduler.runQueueOnCore c).wellFormed) :
     schedulerInvariant_perCore st c := by
   have hNotMemList : ∀ tid : SeLe4n.ThreadId,
@@ -1751,84 +1713,10 @@ theorem schedulerInvariant_perCore_holds_if_idle (st : SystemState) (c : CoreId)
   · intro tid hMem; exact absurd hMem (hNotMemList tid)
   · intro tid hMem; exact absurd hMem (hNotMem tid)
   · exact hDTRPos
-  · -- audit-pass-9: runQueueOnCoreWellFormed under the strong-idle
-    -- hypothesis (`toList = []`).  We need to lift the empty-list
-    -- hypothesis to a structural witness `rq.wellFormed`.  The cleanest
-    -- path: any RunQueue with empty `toList` is equivalent to
-    -- `RunQueue.empty` up to structural equality, BUT the structure
-    -- carries the proven `flat_wf` / `flat_wf_rev` invariants that
-    -- guarantee membership consistency with `flat`.  Specifically:
-    -- empty `flat` ⟹ no thread in `flat` ⟹ `flat_wf_rev` contrapositive
-    -- gives no thread `membership.contains = true`; hence the
-    -- second wellFormed conjunct is vacuous, and by the same chain
-    -- the first conjunct is vacuous (nothing in byPriority can be
-    -- in `flat`, so no thread to lookup membership for).  However,
-    -- the wellFormed predicate doesn't reference `flat` directly,
-    -- so we cannot use this chain directly.  Instead, accept the
-    -- additional hypothesis from the framing context: idle cores
-    -- have wellFormed run queues by construction.  This is the
-    -- standard SM5 contract — an idle core's RunQueue is the
-    -- default `RunQueue.empty` whose wellFormed property holds by
-    -- `default_schedulerInvariant_perCore`'s discharge.  Since
-    -- this theorem is the SM5-bridge form, the caller (SM5) supplies
-    -- the empty-toList witness AND, in practice, the run queue at
-    -- the idle core IS the default-equivalent.
-    --
-    -- For an idle-shape state with `toList = []`, the rq is
-    -- observably equivalent to empty.  However, two RunQueues can
-    -- share `toList = []` without sharing all structural fields
-    -- (e.g., one might have `byPriority` populated with empty
-    -- priority buckets that don't show up in `flat`).  Thus,
-    -- proving wellFormed from `toList = []` ALONE is not directly
-    -- possible.  We use the additional structural premise that
-    -- `byPriority` cannot have non-empty buckets if `flat` is empty:
-    -- by `flat_wf` (a structural field of RunQueue), every thread
-    -- in flat is in membership; by the RunQueue invariant
-    -- relating byPriority to flat (the `byPriority` ↔ `membership`
-    -- bidirectional consistency is what wellFormed states), if
-    -- flat is empty and we want to PROVE wellFormed, we need to
-    -- show byPriority lookup is vacuous.
-    --
-    -- The simplest path: this theorem expresses the contract
-    -- "if a core looks empty externally (toList = []), and the
-    -- caller can verify wellFormed structurally, then the
-    -- per-core invariant holds".  In the SM5 use case (every
-    -- non-boot core's run queue is the default `RunQueue.empty`
-    -- through the lifetime of single-core operation), this
-    -- always holds.  The post-state's runQueueOnCore is
-    -- structurally the default RunQueue.empty since SM4.B's
-    -- operations only mutate bootCoreId's slot; other cores'
-    -- slots stay at the default-replicate value.  We can verify
-    -- this by induction on the underlying RHTable structures.
-    --
-    -- The cleanest argument: if `(rq).toList = []` then `rq.flat
-    -- = []` (by `toList` def = `flat`).  Then `flat_wf_rev`
-    -- contrapositive gives `∀ tid, ¬ membership.contains tid =
-    -- true`, so the second wellFormed conjunct is vacuous.
-    -- For the first: `byPriority[prio]?` could be non-none with
-    -- an empty list, OR none.  If `tid ∈ getD []`, then the
-    -- list at `byPriority[prio]?` must be non-empty containing
-    -- tid.  But there's no relation in the RunQueue structure
-    -- forcing byPriority's lists to be subsets of flat —
-    -- *unless* we use wellFormed's own first conjunct as the
-    -- definition.  Circular.
-    --
-    -- Acceptable workaround for SM5: the wellFormed conjunct is
-    -- not vacuously derivable from `toList = []` alone in
-    -- general.  Take it as an additional hypothesis.  This
-    -- matches the spirit of the §7 SMP-preservation skeleton
-    -- (which takes `hOtherIdle` as a structural witness — the
-    -- caller supplies all needed idle-frame facts).
-    -- The cleanest fix: add `hWf : (st'.scheduler.runQueueOnCore c).wellFormed`
-    -- to this theorem's hypotheses.
-    --
-    -- See audit-pass-9 follow-up: the `schedulerInvariant_perCore_idle_on_post_state`
-    -- now takes an explicit `hWf` hypothesis (added below in the
-    -- updated signature), surfaced explicitly so SM5 callers
-    -- provide the structural witness alongside the toList-empty
-    -- witness.  In practice both are easy to discharge from
-    -- "this core's run queue is the default RunQueue.empty"
-    -- (the default-replicate slot).
+  · -- `toList = []` does not entail `wellFormed`: a RunQueue can have
+    -- empty `flat` while `byPriority` carries inconsistent buckets.  SM5
+    -- discharges `hWf` from "this core's RunQueue = `RunQueue.empty`"
+    -- via `RunQueue.empty_wellFormed`.
     exact hWf
 
 /-- Strong-idle variant of §6's `schedulerInvariant_perCore_frame_idle`:

@@ -2704,11 +2704,12 @@ open SeLe4n.Kernel
 #check @timerTick_preserves_schedulerInvariant_smp
 #check @switchDomain_preserves_schedulerInvariant_smp
 #check @scheduleDomain_preserves_schedulerInvariant_smp
--- audit-pass-9: chooseThread genuine per-core forms + back-compat passthrough
+-- audit-pass-9: chooseThread genuine per-core forms (single-core bundle
+-- form lives in Scheduler/Operations/Preservation.lean and is already
+-- surface-anchored).
 #check @chooseThread_preserves_schedulerInvariantBase_perCore_bootCore
 #check @chooseThread_preserves_schedulerInvariantBase_smp
 #check @chooseThread_preserves_schedulerInvariant_smp
-#check @chooseThread_preserves_schedulerInvariantBundle_passthrough
 -- audit-pass-9: schedulerInvariantBase_perCore aggregate + projections + bridges
 #check @schedulerInvariantBase_perCore
 #check @schedulerInvariantBase_smp

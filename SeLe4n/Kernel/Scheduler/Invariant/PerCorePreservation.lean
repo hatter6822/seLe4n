@@ -296,19 +296,13 @@ theorem chooseThread_preserves_schedulerInvariant_smp
   rcases chooseThread_preserves_state st st' next hStep with rfl
   exact hInv
 
-/-- WS-SM SM4.C audit-pass-9 (back-compat alias): legacy
-single-core-bundle form of `chooseThread` preservation.  Pre-pass-9
-this was misnamed `_perCore_bootCore`; under audit-pass-9 the name is
-corrected to drop the misleading suffix (the theorem genuinely
-operates on the single-core bundle, not a per-core slice).  The
-per-core boot-core analog is
-`chooseThread_preserves_schedulerInvariantBase_perCore_bootCore`. -/
-theorem chooseThread_preserves_schedulerInvariantBundle_passthrough
-    (st st' : SystemState) (next : Option SeLe4n.ThreadId)
-    (hInv : schedulerInvariantBundle st)
-    (hStep : chooseThread st = .ok (next, st')) :
-    schedulerInvariantBundle st' :=
-  chooseThread_preserves_schedulerInvariantBundle st st' next hInv hStep
+-- audit-pass-9 (post-audit): the pre-pass-9 misnamed
+-- `chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore` is
+-- gone.  Single-core-bundle callers use the canonical
+-- `chooseThread_preserves_schedulerInvariantBundle` from
+-- `Scheduler/Operations/Preservation.lean` directly; no wrapper needed
+-- (per CLAUDE.md's "no re-exporting types" rule).  Per-core callers use
+-- the three new audit-pass-9 forms above.
 
 -- ============================================================================
 -- §7  Per-conjunct per-operation SMP preservation (plan §3.4 Pattern 1)
@@ -599,13 +593,16 @@ theorem timerTick_preserves_runnableThreadsAreTCBsOnCore_smp
 
 -- ----------------------------------------------------------------------------
 -- §7.4  switchDomain  (lighter hypothesis shape)
+--
+-- audit-pass-9: the 5 switchDomain per-conjunct theorems take `hwf` (pre-state
+-- RunQueue.wellFormed at bootCoreId) — `switchDomain_preserves_schedulerInvariant_smp`
+-- needs it to feed `switchDomain_preserves_runQueueWellFormed` for the
+-- post-state.  Single annotation here covers all 5 below.
 -- ----------------------------------------------------------------------------
 
 theorem switchDomain_preserves_queueCurrentConsistentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -621,8 +618,6 @@ theorem switchDomain_preserves_queueCurrentConsistentOnCore_smp
 theorem switchDomain_preserves_runQueueUniqueOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -638,8 +633,6 @@ theorem switchDomain_preserves_runQueueUniqueOnCore_smp
 theorem switchDomain_preserves_currentThreadValidOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -655,8 +648,6 @@ theorem switchDomain_preserves_currentThreadValidOnCore_smp
 theorem switchDomain_preserves_domainTimeRemainingPositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -672,8 +663,6 @@ theorem switchDomain_preserves_domainTimeRemainingPositiveOnCore_smp
 theorem switchDomain_preserves_runnableThreadsAreTCBsOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -1057,8 +1046,6 @@ theorem timerTick_preserves_schedulerPriorityMatchOnCore_smp
 theorem switchDomain_preserves_timeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -1074,8 +1061,6 @@ theorem switchDomain_preserves_timeSlicePositiveOnCore_smp
 theorem switchDomain_preserves_currentTimeSlicePositiveOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -1091,8 +1076,6 @@ theorem switchDomain_preserves_currentTimeSlicePositiveOnCore_smp
 theorem switchDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -1108,8 +1091,6 @@ theorem switchDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
 theorem switchDomain_preserves_contextMatchesCurrentOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
@@ -1125,8 +1106,6 @@ theorem switchDomain_preserves_contextMatchesCurrentOnCore_smp
 theorem switchDomain_preserves_schedulerPriorityMatchOnCore_smp
     (st st' : SystemState) (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
-    -- audit-pass-9: switchDomain now requires hwf (the post-state wellFormed
-    -- must be discharged via `switchDomain_preserves_runQueueWellFormed`).
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))

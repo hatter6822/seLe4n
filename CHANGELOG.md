@@ -1,3 +1,75 @@
+## v0.31.26 — WS-SM SM4.C audit-pass-10: post-audit cleanup of audit-pass-9
+
+Independent deep re-audit of the v0.31.25 audit-pass-9 cut surfaces
+four substantive findings; all closed per the implement-the-improvement
+rule.
+
+**Finding 1 — `RunQueue.empty_wellFormed` extracted as a top-level
+lemma**.  The audit-pass-9 default-state discharge inlined a ~30-line
+proof of `RunQueue.empty.wellFormed` directly in
+`default_schedulerInvariant_perCore`'s body.  Other consumers (notably
+SM5's per-core idle-frame proofs, and the new main-suite runtime
+assertions added in this cut) need the same fact, so the inline proof
+would have to be re-derived.  Extracted as the top-level lemma
+`SeLe4n.Kernel.RunQueue.empty_wellFormed` in
+`SeLe4n/Kernel/Scheduler/RunQueue.lean`; the
+`default_schedulerInvariant_perCore` conjunct collapses from ~30 lines
+to 2 lines (`rw [hRQ]; exact RunQueue.empty_wellFormed`).
+Axiom-clean.
+
+**Finding 2 — 78-line stream-of-consciousness comment block removed**.
+The audit-pass-9 proof body of `schedulerInvariant_perCore_holds_if_idle`
+included an 80-line comment block that was effectively a research diary
+documenting the proof exploration ("we tried X, that didn't work
+because Y, instead we accept Z...").  Per CLAUDE.md's "default to
+writing no comments" rule, this is a major violation — the WHY is
+non-obvious only in two facts: (a) `toList = []` doesn't entail
+`wellFormed`, (b) the caller supplies `hWf`.  Replaced 80 lines with 4
+lines stating exactly these facts.  Plus a similar cleanup of the long
+hypothesis-attached comment from 11 lines to 2.
+
+**Finding 3 — `chooseThread_preserves_schedulerInvariantBundle_passthrough`
+wrapper removed**.  The audit-pass-9 cut introduced
+`_passthrough` as a 1-line wrapper around the existing
+`chooseThread_preserves_schedulerInvariantBundle` from
+`Scheduler/Operations/Preservation.lean`.  Per CLAUDE.md's "no
+re-exporting types" rule, this is dead-weight back-compat scaffolding.
+Removed entirely; consumers (test suite + tier-3 anchor) updated to
+reference the canonical theorem directly.  The 3 genuine per-core
+chooseThread theorems
+(`chooseThread_preserves_schedulerInvariantBase_perCore_bootCore`,
+`_smp`, `chooseThread_preserves_schedulerInvariant_smp`) remain.
+
+**Finding 4 — Main suite missing runtime assertions for audit-pass-9
+content**.  Audit-pass-8 strengthened the preservation suite from 1
+dead-weight `assertBool ... true` to 17 substantive runtime
+assertions; the main suite `SchedulerInvariantPerCoreSuite.lean` was
+not audited similarly when audit-pass-9 added the base aggregate and
+the new wellFormed conjunct.  Added new section §3.8 with **12
+substantive runtime assertions** exercising: `schedulerInvariantBase_perCore`
+on every core, `_smp_at` extraction, base/full projections,
+per-conjunct projections from base, bundle↔base bridges, the new
+`runQueueOnCoreWellFormed` projection, `RunQueue.empty_wellFormed`
+discharge on every core's default RunQueue, and a non-vacuous
+`_holds_if_idle` application for a non-boot core building the 4
+idle-shape hypotheses (`hCurNone`, `hRQE`, `hDTR`, `hWf`) from the
+`default_state_perCoreInitialized` witness.
+
+**Plus consolidation**: the 10 switchDomain per-conjunct theorems each
+had the same 3-line `audit-pass-9: switchDomain now requires hwf...`
+comment.  Replaced with a single section-level comment in the §7.4
+header.
+
+**Test coverage**: 320/320 Lean modules build; main suite runtime
+assertions 41 → 53 (+12 audit-pass-10); preservation suite runtime
+assertions 17 (audit-pass-8 baseline preserved); Tier 0+1+2+3 all
+green; HAL 712 tests pass; axiom-clean throughout (verified via
+`#print axioms`); AK7 cascade monotonicity all metrics pass without
+re-anchoring (the cleanup didn't add new raw-lookup sites);
+production/staged partition gate passes (35 staged-only modules).
+
+Refs: https://github.com/hatter6822/seLe4n/pull/801
+
 ## v0.31.25 — WS-SM SM4.C audit-pass-9: PR #801 reviewer comment closure
 
 Closes all three substantive P2 reviewer comments on PR #801

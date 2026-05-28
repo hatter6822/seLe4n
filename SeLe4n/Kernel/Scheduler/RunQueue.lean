@@ -556,6 +556,39 @@ def wellFormed (rq : RunQueue) : Prop :=
      ∃ prio, rq.threadPriority[tid]? = some prio ∧
        tid ∈ ((rq.byPriority[prio]?).getD []))
 
+/-- WS-SM SM4.C audit-pass-9 (post-audit): the empty RunQueue is wellFormed.
+Both conjuncts hold vacuously: `byPriority` is the empty RHTable so the
+`prio` lookup returns `none` (and `getD [] = []`), and `membership` is the
+empty RHSet so `contains tid = false` for every `tid`.  Extracted as a
+top-level lemma so consumers (notably `default_schedulerInvariant_perCore`'s
+audit-pass-9 conjunct and SM5's per-core idle-frame proofs) don't re-prove
+it inline. -/
+theorem empty_wellFormed : (empty : RunQueue).wellFormed := by
+  refine ⟨?_, ?_⟩
+  · intro prio tid hMem
+    have h : ((empty : RunQueue).byPriority[prio]? :
+              Option (List SeLe4n.ThreadId)) = none := by
+      have h1 : (empty : RunQueue).byPriority =
+                  (SeLe4n.Kernel.RobinHood.RHTable.empty
+                    SeLe4n.Kernel.RobinHood.minPracticalRHCapacity
+                    (by decide) :
+                     SeLe4n.Kernel.RobinHood.RHTable SeLe4n.Priority
+                       (List SeLe4n.ThreadId)) := rfl
+      rw [h1]
+      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty
+        SeLe4n.Kernel.RobinHood.minPracticalRHCapacity (by decide) prio
+    rw [h, Option.getD_none] at hMem
+    exact absurd hMem List.not_mem_nil
+  · intro tid hMem
+    have h : (empty : RunQueue).membership.contains tid = false := by
+      have h2 : (empty : RunQueue).membership =
+                  (SeLe4n.Kernel.RobinHood.RHSet.empty :
+                     SeLe4n.Kernel.RobinHood.RHSet SeLe4n.ThreadId) := rfl
+      rw [h2]
+      exact SeLe4n.Kernel.RobinHood.RHSet.contains_empty tid
+    rw [h] at hMem
+    exact absurd hMem (by decide)
+
 /-- WS-H6: If a thread is in the max-priority bucket and the RunQueue is
 well-formed, then the thread is a member of the run queue. -/
 theorem maxPriorityBucket_subset (rq : RunQueue) (hwf : rq.wellFormed)

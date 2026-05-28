@@ -45,8 +45,9 @@ open SeLe4n.Kernel.Concurrency
 #check @chooseThread_preserves_schedulerInvariantBase_perCore_bootCore
 #check @chooseThread_preserves_schedulerInvariantBase_smp
 #check @chooseThread_preserves_schedulerInvariant_smp
--- back-compat single-core form (renamed from misleading `_perCore_bootCore` suffix)
-#check @chooseThread_preserves_schedulerInvariantBundle_passthrough
+-- the canonical single-core-bundle preservation lives in Operations.Preservation;
+-- consumers go there directly (no wrapper in this module per audit).
+#check @chooseThread_preserves_schedulerInvariantBundle
 
 -- §7 — per-conjunct per-operation SMP preservation (plan §3.4 Pattern 1).
 -- 5 conjuncts × 5 ops = 25 named theorems (one-line projections from
@@ -206,15 +207,15 @@ example
     schedulerInvariant_smp st' :=
   scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle
 
-/-- `chooseThread_preserves_schedulerInvariantBundle_passthrough` applies
-(legacy single-core bundle form — `chooseThread` does not mutate state so
-all forms are degenerate). -/
+/-- `chooseThread_preserves_schedulerInvariantBundle` applies (canonical
+single-core form from `Scheduler/Operations/Preservation.lean`;
+`chooseThread` is a pure read so all forms are degenerate). -/
 example
     (st st' : SystemState) (next : Option SeLe4n.ThreadId)
     (hInv : schedulerInvariantBundle st)
     (hStep : chooseThread st = .ok (next, st')) :
     schedulerInvariantBundle st' :=
-  chooseThread_preserves_schedulerInvariantBundle_passthrough st st' next hInv hStep
+  chooseThread_preserves_schedulerInvariantBundle st st' next hInv hStep
 
 /-- audit-pass-9: `chooseThread_preserves_schedulerInvariantBase_perCore_bootCore`
 applies — genuine per-core boot-core evidence in and out. -/
@@ -315,8 +316,8 @@ private def runSymbolElaborationChecks : IO Unit := do
     (have _h := @chooseThread_preserves_schedulerInvariantBase_smp; true)
   assertBool "chooseThread_preserves_schedulerInvariant_smp dispatches"
     (have _h := @chooseThread_preserves_schedulerInvariant_smp; true)
-  assertBool "chooseThread_preserves_schedulerInvariantBundle_passthrough dispatches"
-    (have _h := @chooseThread_preserves_schedulerInvariantBundle_passthrough; true)
+  assertBool "chooseThread_preserves_schedulerInvariantBundle (canonical) dispatches"
+    (have _h := @chooseThread_preserves_schedulerInvariantBundle; true)
   -- A sample of the 50 per-conjunct projections (one per op).
   assertBool "schedule_preserves_queueCurrentConsistentOnCore_smp dispatches"
     (have _h := @schedule_preserves_queueCurrentConsistentOnCore_smp; true)
