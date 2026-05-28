@@ -1,3 +1,107 @@
+## v0.31.25 — WS-SM SM4.C audit-pass-9: PR #801 reviewer comment closure
+
+Closes all three substantive P2 reviewer comments on PR #801
+(`chatgpt-codex-connector`).  Per the implement-the-improvement rule,
+every finding is resolved structurally rather than via documentation
+workaround.
+
+**Comment 1 — UART parallel-test race (`uart_guard_global_lock_released_after_with_boot_uart`)**:
+the v0.31.24 fix using `SM1G4_OBSERVATION_MUTEX` only serialized
+against sibling SM1.G.4/SM1.I.4 observation tests; sibling
+*macro-emitting* tests (`sm1g4_kprintln_core_*` etc.) still take
+`UART_LOCK` without the mutex and could race the
+`before`/`after` snapshots, resurfacing the flake.  Closed by
+converting the test from observation-style to the **re-acquire
+pattern** (matches `sm1g4_kprintln_core_balances_lock_state` at the
+same module scope): after the first `with_boot_uart`, immediately
+re-enter `with_boot_uart` — if the first call had failed to release,
+the second would deadlock-spin and cargo's per-test timeout would
+surface the regression.  No global-state read; structurally
+race-free regardless of sibling tests.
+
+**Comment 3 — `chooseThread` per-core evidence**:
+`chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore`
+was misnamed — the `_perCore_bootCore` suffix promised per-core
+evidence but the theorem took/returned the legacy single-core
+`schedulerInvariantBundle`.  Closed by introducing the genuine
+3-conjunct per-core base aggregate
+**`schedulerInvariantBase_perCore`** + SMP form
+**`schedulerInvariantBase_smp`** + boot-core bridge
+`schedulerInvariantBundle_to_perCoreBase_bootCore` + converse +
+per-conjunct projections + default-state lemmas + projections
+from the full aggregate (`schedulerInvariant_perCore_to_base` /
+`_smp_to_base`).  Added 3 new genuine per-core preservation
+theorems for `chooseThread`:
+  * `chooseThread_preserves_schedulerInvariantBase_perCore_bootCore`
+  * `chooseThread_preserves_schedulerInvariantBase_smp`
+  * `chooseThread_preserves_schedulerInvariant_smp`
+Each is a one-line `rfl`-discharge through the existing
+`chooseThread_preserves_state` (`st' = st`).  The misnamed
+theorem was renamed to
+`chooseThread_preserves_schedulerInvariantBundle_passthrough`
+to honestly describe its single-core-bundle shape (kept for
+back-compat).
+
+**Comment 2 — include `runQueueOnCoreWellFormed` in the aggregate**:
+the predicate was defined + framed at audit-pass-2 but excluded
+from `schedulerInvariant_perCore`, so the SMP aggregate could
+hold for a core whose RunQueue had inconsistent membership/priority
+indices.  Closed by **appending the conjunct as the 11th member of
+`schedulerInvariant_perCore`** (appended at end to minimise
+projection index churn — only `domainTimeRemainingPositive`'s
+index shifts), with all downstream consumers updated:
+  * New projection `schedulerInvariant_perCore_to_runQueueOnCoreWellFormed`.
+  * 4 bundle bridges updated: `_to_perCore_bootCore` (both Full
+    + Extended) gain an explicit `hWf : RunQueue.wellFormed`
+    hypothesis; converse extracts and discards.
+  * Cross-subsystem bridge
+    `crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore`
+    gains the same `hWf` forward.
+  * Default state: `default_schedulerInvariant_perCore` discharges
+    the new conjunct via `RunQueue.empty.wellFormed` (proved through
+    `RHTable.getElem?_empty` + `RHSet.contains_empty`).
+  * Frame lemmas (`schedulerInvariant_perCore_frame` /
+    `_frame_idle`) gain `runQueueOnCoreWellFormed` in their simp set.
+  * SMP-preservation skeleton's `hNonBootIdle` hypothesis bundles 4
+    facts (adds the wellFormed conjunct as the 4th).
+  * 3 NEW top-level `_preserves_runQueueWellFormed` theorems for
+    `handleYield`, `timerTick`, `scheduleDomain` (compose
+    `insert_preserves` + `rotateToBack_preserves` + `schedule_preserves`
+    via the existing RunQueue API preservation theorems);
+    `switchDomain_preserves_runQueueWellFormed` de-privated.
+  * All 5 per-op SMP preservation theorems updated: each constructs
+    the post-state wellFormed via its corresponding
+    `<op>_preserves_runQueueWellFormed` theorem and passes it to the
+    new bundle bridge.  `switchDomain` gains explicit `hwf` input.
+  * All 50 per-conjunct per-op SMP preservation theorems updated
+    via signature replace_all to take the 4-conjunct `hOtherIdle`;
+    switchDomain ones gain `hwf`.
+  * Test suites updated (main suite's 4 bridge examples + 5 per-op
+    examples; preservation suite's 5 per-op examples + 3 new
+    chooseThread per-core examples).
+  * Tier-3 surface anchors extended with 13 new symbols
+    (`schedulerInvariantBase_*` family + the chooseThread per-core
+    theorems).
+
+**Test coverage**: 320/320 Lean modules build; both per-core suites
+green (41+1 → 41+17 runtime assertions, including 4 new
+`chooseThread_preserves_*` dispatches); Tier 0+1+2+3 all green;
+trace fixture byte-identical; HAL 712 tests pass.  Zero clippy
+warnings.  Axiom-clean throughout (only `propext` / `Quot.sound` /
+`Classical.choice`).
+
+**AK7 cascade**: `RAW_LOOKUP_TID` increased from 808 → 810 (the 2 new
+top-level preservation theorems for `handleYield`/`timerTick` each
+add a `cases hObj : st.objects[tid.toObjId]?` match, mirroring the
+existing `schedule_preserves_runQueueWellFormed` pattern).  Per the
+script's documented procedure (and the project's AK7 discipline), the
+baseline was re-anchored after the documented audit-pass-9 refactor.
+No other metric regressed.
+
+**Items deferred past v1.0.0 with correctness impact: NONE**.
+
+Refs: https://github.com/hatter6822/seLe4n/pull/801
+
 ## v0.31.24 — WS-SM SM4.C tracking-doc closure + UART parallel-test race fix
 
 Two narrow closures in one cut:

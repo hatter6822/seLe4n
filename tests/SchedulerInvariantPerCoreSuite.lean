@@ -217,14 +217,18 @@ example :
 -- §2.3  Bundle bridge: the existing `schedulerInvariantBundleFull` implies the
 --       per-core invariant at the boot core.  (This is the non-orphan
 --       connection — every existing single-core preservation proof yields a
---       per-core preservation at the boot core for free.)
-example {st : SystemState} (h : schedulerInvariantBundleFull st) :
+--       per-core preservation at the boot core for free.)  audit-pass-9: the
+--       bridge now requires an explicit `hWf` (`RunQueue.wellFormed`) since
+--       the per-core aggregate gained the structural wellFormed conjunct.
+example {st : SystemState} (h : schedulerInvariantBundleFull st)
+    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
     schedulerInvariant_perCore st bootCoreId :=
-  schedulerInvariantBundleFull_to_perCore_bootCore h
+  schedulerInvariantBundleFull_to_perCore_bootCore h hWf
 
-example {st : SystemState} (h : schedulerInvariantBundleExtended st) :
+example {st : SystemState} (h : schedulerInvariantBundleExtended st)
+    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
     schedulerInvariant_perCore st bootCoreId :=
-  schedulerInvariantBundleExtended_to_perCore_bootCore h
+  schedulerInvariantBundleExtended_to_perCore_bootCore h hWf
 
 -- Converse: the per-core slice at the boot core plus the system-wide
 -- `domainScheduleEntriesPositive` rebuilds the full bundle.
@@ -287,10 +291,12 @@ example :
     schedulerInvariant_smp_extended (default : SystemState) :=
   schedulerInvariant_perCore_extended_aggregateForall _
 
--- §2.9  Extended bundle bridges.
-example {st : SystemState} (h : schedulerInvariantBundleExtended st) :
+-- §2.9  Extended bundle bridges.  audit-pass-9: hWf forwarded for the
+--       base aggregate's new wellFormed conjunct.
+example {st : SystemState} (h : schedulerInvariantBundleExtended st)
+    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
     schedulerInvariant_perCore_extended st bootCoreId :=
-  schedulerInvariantBundleExtended_to_perCore_extended_bootCore h
+  schedulerInvariantBundleExtended_to_perCore_extended_bootCore h hWf
 
 example {st : SystemState}
     (h : schedulerInvariant_perCore_extended st bootCoreId)
@@ -340,13 +346,15 @@ example : schedulerInvariant_smp_crossSubsystem (default : SystemState) :=
   default_schedulerInvariant_smp_crossSubsystem
 
 -- Bridge from the live CrossSubsystem + Extended bundle to the per-core
--- cross-subsystem invariant at the boot core.
+-- cross-subsystem invariant at the boot core.  audit-pass-9: hWf forwarded
+-- for the base aggregate's new wellFormed conjunct.
 example {st : SystemState}
     (hExt : schedulerInvariantBundleExtended st)
     (hCSI : crossSubsystemInvariant st)
-    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId) :
+    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId)
+    (hWf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId)) :
     schedulerInvariant_perCore_crossSubsystem st bootCoreId :=
-  crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore hExt hCSI hADS
+  crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore hExt hCSI hADS hWf
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): a silent regression surfaces here.

@@ -176,6 +176,92 @@ theorem schedule_preserves_wellFormed
     schedulerWellFormed st'.scheduler := by
   exact schedule_preserves_queueCurrentConsistent st st' hStep
 
+/-- audit-pass-9 (PR #801, reviewer comment 2): `handleYield` preserves
+`RunQueue.wellFormed` at bootCoreId.  Composition: pre-state rq wellFormed →
+insert preserves → rotateToBack preserves → schedule preserves.  Only the
+tcb-case succeeds with `.ok`; the others either error or are unreachable. -/
+theorem handleYield_preserves_runQueueWellFormed
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
+    (hStep : handleYield st = .ok ((), st')) :
+    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
+  unfold handleYield at hStep
+  cases hCur : st.scheduler.currentOnCore bootCoreId with
+  | none => simp [hCur] at hStep
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        -- handleYield's tcb arm reduces to `schedule stMid` where
+        -- stMid.scheduler.runQueueOnCore bootCoreId = (insert tid prio).rotateToBack tid.
+        -- The composition: insert + rotateToBack + schedule each preserve wellFormed.
+        have hwfMid : RunQueue.wellFormed
+            (((st.scheduler.runQueueOnCore bootCoreId).insert tid
+                  (effectiveRunQueuePriority tcb)).rotateToBack tid) :=
+          RunQueue.rotateToBack_preserves_wellFormed _
+            (RunQueue.insert_preserves_wellFormed _ hwf _ _) _
+        apply schedule_preserves_runQueueWellFormed _ st' ?_ hStep
+        show RunQueue.wellFormed
+          ((st.scheduler.setRunQueueOnCore bootCoreId _).runQueueOnCore bootCoreId)
+        rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact hwfMid
+      | endpoint _ | notification _ | cnode _
+      | vspaceRoot _ | untyped _ | schedContext _ =>
+        simp [hObj] at hStep
+
+/-- audit-pass-9 (PR #801, reviewer comment 2): `timerTick` preserves
+`RunQueue.wellFormed` at bootCoreId.  Three paths:
+  * none-current → only timer ticks, no rq change.
+  * tcb time-slice not expired → tcb timeSlice decrement only, no rq change.
+  * tcb time-slice expired → re-enqueue via insert + schedule. -/
+theorem timerTick_preserves_runQueueWellFormed
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
+    (hStep : timerTick st = .ok ((), st')) :
+    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
+  unfold timerTick at hStep
+  cases hCur : st.scheduler.currentOnCore bootCoreId with
+  | none =>
+    simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, rfl⟩ := hStep
+    -- Just timer tick, no rq change
+    exact hwf
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => simp [hObj] at hStep
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp only [hObj] at hStep
+        split at hStep
+        · -- Time-slice expired: insert + schedule
+          have hwfIns : RunQueue.wellFormed
+              ((st.scheduler.runQueueOnCore bootCoreId).insert tid
+                (effectiveRunQueuePriority tcb)) :=
+            RunQueue.insert_preserves_wellFormed _ hwf _ _
+          apply schedule_preserves_runQueueWellFormed _ st' ?_ hStep
+          show RunQueue.wellFormed
+            ((st.scheduler.setRunQueueOnCore bootCoreId _).runQueueOnCore bootCoreId)
+          rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact hwfIns
+        · -- Time-slice not expired: tcb decrement only, no rq change
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact hwf
+      | endpoint _ | notification _ | cnode _
+      | vspaceRoot _ | untyped _ | schedContext _ =>
+        simp [hObj] at hStep
+
+-- audit-pass-9: `scheduleDomain_preserves_runQueueWellFormed` is defined
+-- later in this file (after `switchDomain_preserves_runQueueWellFormed`)
+-- because it composes the two; see definition near
+-- `scheduleDomain_preserves_schedulerInvariantBundleFull`.
+
 private theorem chooseThread_preserves_queueCurrentConsistent
     (st st' : SystemState)
     (next : Option SeLe4n.ThreadId)
@@ -3364,8 +3450,10 @@ theorem timerTick_preserves_schedulerInvariantBundleFull
 
 /-- S3-E: Helper — `switchDomain` preserves `RunQueue.wellFormed`.
     In the expire path, the current thread (if any) is re-enqueued via `insert`,
-    which preserves well-formedness. In all other paths the runQueue is unchanged. -/
-private theorem switchDomain_preserves_runQueueWellFormed
+    which preserves well-formedness. In all other paths the runQueue is unchanged.
+    audit-pass-9 (PR #801, reviewer comment 2): de-privated to be consumed
+    by the SM4.C audit-pass-9 per-op preservation chain. -/
+theorem switchDomain_preserves_runQueueWellFormed
     (st st' : SystemState)
     (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hStep : switchDomain st = .ok ((), st')) :
@@ -3397,6 +3485,35 @@ private theorem switchDomain_preserves_runQueueWellFormed
           | tcb tcb => exact RunQueue.insert_preserves_wellFormed _ hwf _ _
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
             exact hwf
+
+/-- audit-pass-9 (PR #801, reviewer comment 2): `scheduleDomain` preserves
+`RunQueue.wellFormed` at bootCoreId.  Two paths (split on `domainTimeRemainingOnCore ≤ 1`):
+  * Expire (THEN branch): switchDomain + schedule.  Both preserve via existing theorems.
+  * Non-expire (ELSE branch): domainTimeRemainingOnCore decrement only, no rq change. -/
+theorem scheduleDomain_preserves_runQueueWellFormed
+    (st st' : SystemState)
+    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
+    (hStep : scheduleDomain st = .ok ((), st')) :
+    RunQueue.wellFormed (st'.scheduler.runQueueOnCore bootCoreId) := by
+  unfold scheduleDomain at hStep
+  split at hStep
+  · -- Expire path: switchDomain + schedule
+    cases hSw : switchDomain st with
+    | error e => simp [hSw] at hStep
+    | ok pickSw =>
+      cases pickSw with
+      | mk _ stSw =>
+        simp only [hSw] at hStep
+        have hSwWf : RunQueue.wellFormed (stSw.scheduler.runQueueOnCore bootCoreId) :=
+          switchDomain_preserves_runQueueWellFormed st stSw hwf hSw
+        exact schedule_preserves_runQueueWellFormed stSw st' hSwWf hStep
+  · -- Non-expire path: domain time decrement, no rq change
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, rfl⟩ := hStep
+    show RunQueue.wellFormed
+      ((st.scheduler.setDomainTimeRemainingOnCore bootCoreId _).runQueueOnCore bootCoreId)
+    rw [SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore]
+    exact hwf
 
 /-- S3-E/U-M08/V5-H/X2-A: `scheduleDomain` preserves `schedulerInvariantBundleFull`.
 

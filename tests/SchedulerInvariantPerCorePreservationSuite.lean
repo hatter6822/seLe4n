@@ -41,7 +41,12 @@ open SeLe4n.Kernel.Concurrency
 #check @timerTick_preserves_schedulerInvariant_smp
 #check @switchDomain_preserves_schedulerInvariant_smp
 #check @scheduleDomain_preserves_schedulerInvariant_smp
-#check @chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore
+-- audit-pass-9: chooseThread per-core forms (genuine per-core evidence)
+#check @chooseThread_preserves_schedulerInvariantBase_perCore_bootCore
+#check @chooseThread_preserves_schedulerInvariantBase_smp
+#check @chooseThread_preserves_schedulerInvariant_smp
+-- back-compat single-core form (renamed from misleading `_perCore_bootCore` suffix)
+#check @chooseThread_preserves_schedulerInvariantBundle_passthrough
 
 -- §7 — per-conjunct per-operation SMP preservation (plan §3.4 Pattern 1).
 -- 5 conjuncts × 5 ops = 25 named theorems (one-line projections from
@@ -107,6 +112,10 @@ open SeLe4n.Kernel.Concurrency
 --     operation step).
 -- ============================================================================
 
+-- audit-pass-9: the hOtherIdle hypothesis bundles 4 conjuncts (added the
+-- 4th `wellFormed` conjunct for the audit-pass-9 aggregate change).
+-- switchDomain also gained an explicit `hwf` precondition.
+
 /-- `schedule_preserves_schedulerInvariant_smp` applies. -/
 example
     (st st' : SystemState)
@@ -120,7 +129,8 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
+      (st'.scheduler.runQueueOnCore c).wellFormed) :
     schedulerInvariant_smp st' :=
   schedule_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle
 
@@ -137,7 +147,8 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
+      (st'.scheduler.runQueueOnCore c).wellFormed) :
     schedulerInvariant_smp st' :=
   handleYield_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hStep hOtherIdle
 
@@ -156,24 +167,28 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
+      (st'.scheduler.runQueueOnCore c).wellFormed) :
     schedulerInvariant_smp st' :=
   timerTick_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hAllTcb hObjInv hConfigTS hStep hOtherIdle
 
-/-- `switchDomain_preserves_schedulerInvariant_smp` applies (lighter
-preconditions — no `hwf`/`hAllTcb`). -/
+/-- `switchDomain_preserves_schedulerInvariant_smp` applies — audit-pass-9
+adds explicit `hwf` (the post-state wellFormed must be discharged via
+`switchDomain_preserves_runQueueWellFormed`). -/
 example
     (st st' : SystemState)
     (hPre : schedulerInvariant_smp st)
     (hDSE : domainScheduleEntriesPositive st)
+    (hwf : RunQueue.wellFormed (st.scheduler.runQueueOnCore bootCoreId))
     (hObjInv : st.objects.invExt)
     (hStep : switchDomain st = .ok ((), st'))
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
+      (st'.scheduler.runQueueOnCore c).wellFormed) :
     schedulerInvariant_smp st' :=
-  switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hObjInv hStep hOtherIdle
+  switchDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle
 
 /-- `scheduleDomain_preserves_schedulerInvariant_smp` applies. -/
 example
@@ -186,19 +201,48 @@ example
     (hOtherIdle : ∀ c, c ≠ bootCoreId →
       st'.scheduler.currentOnCore c = none ∧
       (st'.scheduler.runQueueOnCore c).toList = [] ∧
-      st'.scheduler.domainTimeRemainingOnCore c > 0) :
+      st'.scheduler.domainTimeRemainingOnCore c > 0 ∧
+      (st'.scheduler.runQueueOnCore c).wellFormed) :
     schedulerInvariant_smp st' :=
   scheduleDomain_preserves_schedulerInvariant_smp st st' hPre hDSE hwf hObjInv hStep hOtherIdle
 
-/-- `chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore`
-applies (base-aggregate bridge — no Full preservation exists for
-`chooseThread` at the single-core layer). -/
+/-- `chooseThread_preserves_schedulerInvariantBundle_passthrough` applies
+(legacy single-core bundle form — `chooseThread` does not mutate state so
+all forms are degenerate). -/
 example
     (st st' : SystemState) (next : Option SeLe4n.ThreadId)
     (hInv : schedulerInvariantBundle st)
     (hStep : chooseThread st = .ok (next, st')) :
     schedulerInvariantBundle st' :=
-  chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore st st' next hInv hStep
+  chooseThread_preserves_schedulerInvariantBundle_passthrough st st' next hInv hStep
+
+/-- audit-pass-9: `chooseThread_preserves_schedulerInvariantBase_perCore_bootCore`
+applies — genuine per-core boot-core evidence in and out. -/
+example
+    (st st' : SystemState) (next : Option SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBase_perCore st bootCoreId)
+    (hStep : chooseThread st = .ok (next, st')) :
+    schedulerInvariantBase_perCore st' bootCoreId :=
+  chooseThread_preserves_schedulerInvariantBase_perCore_bootCore st st' next hInv hStep
+
+/-- audit-pass-9: `chooseThread_preserves_schedulerInvariantBase_smp`
+applies — genuine per-core SMP evidence in and out. -/
+example
+    (st st' : SystemState) (next : Option SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBase_smp st)
+    (hStep : chooseThread st = .ok (next, st')) :
+    schedulerInvariantBase_smp st' :=
+  chooseThread_preserves_schedulerInvariantBase_smp st st' next hInv hStep
+
+/-- audit-pass-9: `chooseThread_preserves_schedulerInvariant_smp` —
+the full per-core SMP aggregate is preserved because chooseThread is
+a pure read. -/
+example
+    (st st' : SystemState) (next : Option SeLe4n.ThreadId)
+    (hInv : schedulerInvariant_smp st)
+    (hStep : chooseThread st = .ok (next, st')) :
+    schedulerInvariant_smp st' :=
+  chooseThread_preserves_schedulerInvariant_smp st st' next hInv hStep
 
 -- ============================================================================
 -- §3  Runtime checks: substantive decidable verification of the per-op
@@ -264,8 +308,15 @@ private def runSymbolElaborationChecks : IO Unit := do
     (have _h := @switchDomain_preserves_schedulerInvariant_smp; true)
   assertBool "scheduleDomain_preserves_schedulerInvariant_smp dispatches"
     (have _h := @scheduleDomain_preserves_schedulerInvariant_smp; true)
-  assertBool "chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore dispatches"
-    (have _h := @chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore; true)
+  -- audit-pass-9: chooseThread genuine per-core forms.
+  assertBool "chooseThread_preserves_schedulerInvariantBase_perCore_bootCore dispatches"
+    (have _h := @chooseThread_preserves_schedulerInvariantBase_perCore_bootCore; true)
+  assertBool "chooseThread_preserves_schedulerInvariantBase_smp dispatches"
+    (have _h := @chooseThread_preserves_schedulerInvariantBase_smp; true)
+  assertBool "chooseThread_preserves_schedulerInvariant_smp dispatches"
+    (have _h := @chooseThread_preserves_schedulerInvariant_smp; true)
+  assertBool "chooseThread_preserves_schedulerInvariantBundle_passthrough dispatches"
+    (have _h := @chooseThread_preserves_schedulerInvariantBundle_passthrough; true)
   -- A sample of the 50 per-conjunct projections (one per op).
   assertBool "schedule_preserves_queueCurrentConsistentOnCore_smp dispatches"
     (have _h := @schedule_preserves_queueCurrentConsistentOnCore_smp; true)

@@ -2704,7 +2704,25 @@ open SeLe4n.Kernel
 #check @timerTick_preserves_schedulerInvariant_smp
 #check @switchDomain_preserves_schedulerInvariant_smp
 #check @scheduleDomain_preserves_schedulerInvariant_smp
-#check @chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore
+-- audit-pass-9: chooseThread genuine per-core forms + back-compat passthrough
+#check @chooseThread_preserves_schedulerInvariantBase_perCore_bootCore
+#check @chooseThread_preserves_schedulerInvariantBase_smp
+#check @chooseThread_preserves_schedulerInvariant_smp
+#check @chooseThread_preserves_schedulerInvariantBundle_passthrough
+-- audit-pass-9: schedulerInvariantBase_perCore aggregate + projections + bridges
+#check @schedulerInvariantBase_perCore
+#check @schedulerInvariantBase_smp
+#check @schedulerInvariantBase_perCore_aggregateForall
+#check @schedulerInvariantBase_smp_at
+#check @schedulerInvariantBase_perCore_to_queueCurrentConsistent
+#check @schedulerInvariantBase_perCore_to_runQueueUnique
+#check @schedulerInvariantBase_perCore_to_currentThreadValid
+#check @schedulerInvariantBundle_to_perCoreBase_bootCore
+#check @schedulerInvariantBase_perCore_bootCore_to_bundle
+#check @schedulerInvariant_perCore_to_base
+#check @schedulerInvariant_smp_to_base
+#check @default_schedulerInvariantBase_perCore
+#check @default_schedulerInvariantBase_smp
 EOF'
 
 finalize_report

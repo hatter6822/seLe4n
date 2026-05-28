@@ -720,23 +720,36 @@ mod tests {
         // `with_boot_uart` is the only documented consumer of the guard
         // pattern; verify the global lock is not leaked.
         //
-        // Serialised under `SM1G4_OBSERVATION_MUTEX` (declared below) so
-        // sibling UART-observation tests in the SM1.G.4 / SM1.I.4
-        // families cannot race against the `before`/`after`
-        // `UART_LOCK.is_held()` snapshots.  Pre-SM1.I this test was the
-        // last unguarded observer and surfaced as a ~rare-but-real
-        // parallel-test flake (caught by the v0.31.24 doc-only PR's
-        // smoke gate); guard added per the implement-the-improvement
-        // rule.  Audit-pass-4 poisoning-defence pattern applied
-        // (`unwrap_or_else(|e| e.into_inner())`) so a failed assert in
-        // a holder cannot cascade-fail every subsequent observation
-        // test with `PoisonError`.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
-        let before = UART_LOCK.is_held();
+        // **Re-acquire pattern (structurally race-free)**.  The v0.31.24
+        // initial fix used an observation pattern guarded by
+        // `SM1G4_OBSERVATION_MUTEX` — but that mutex only serialises
+        // tests that also take it (the sibling `sm1g4_*` and `sm1i4_*`
+        // observation tests).  Other UART-touching tests in the module —
+        // notably `sm1g4_kprintln_core_macro_expands_and_runs_on_host`,
+        // `sm1g4_kprintln_core_no_arg_form_runs_on_host`, and
+        // `sm1g4_kprint_core_macro_expands_and_runs_on_host` — call the
+        // UART macros without the mutex, so they can still acquire
+        // `UART_LOCK` between the `before`/`after` snapshots and
+        // resurface the flake.  v0.31.25 replaces the observation
+        // pattern with the same re-acquire pattern used by
+        // `sm1g4_kprintln_core_balances_lock_state`: invoke
+        // `with_boot_uart` under test, then immediately re-enter
+        // `with_boot_uart` — if the first call had failed to release
+        // the lock this second acquisition would spin forever and
+        // cargo's per-test timeout would surface the regression.  The
+        // property under test is the successful entry of the second
+        // call; no `UART_LOCK.is_held()` read is performed, so no
+        // global-state race exists regardless of what sibling tests do.
         let result = with_boot_uart(|_u| 0xABCDu32);
         assert_eq!(result, 0xABCD);
-        assert_eq!(UART_LOCK.is_held(), before,
-            "global UART_LOCK state must match before/after with_boot_uart");
+        // Re-acquire: if the first `with_boot_uart` left the lock
+        // held, this call would deadlock-spin (the test thread is the
+        // only acquirer; no other path holds the spin lock long enough
+        // to be relevant here).  Successful entry is the proof.
+        with_boot_uart(|_uart| {
+            // No-op body; the property under test is the successful
+            // acquisition, not anything written through the UART.
+        });
     }
 
     // The `panic = "abort"` profile in production never runs Drop; but the
