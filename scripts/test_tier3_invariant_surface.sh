@@ -2532,4 +2532,86 @@ import SeLe4n.Kernel.Concurrency.Types
 #check @SeLe4n.Model.SchedulerState.ext_perCore
 EOF'
 
+# WS-SM SM4.C — per-core scheduler invariant migration surface anchors.
+# Covers the 16 per-core predicate forms (plan §3.4 Pattern 1), the 16
+# boot-core bridges (defeq grounding the live `schedulerInvariantBundle*`
+# surface), the SM4.C.29 aggregate `schedulerInvariant_perCore` +
+# `schedulerInvariant_smp` + `aggregateForall` + projections, the bundle
+# bridges to `schedulerInvariantBundleFull/Extended`, the default-state
+# theorems on every core in `allCores`, the per-core / idle-core frame
+# lemmas, the three cross-core independence corollaries, the SM4.C.30
+# pairwise theorem, and the single-core-preservation-lifts-to-SMP
+# skeleton.  A rename / removal of any SM4.C symbol fails here at
+# elaboration time, before SM5's per-core scheduler can consume them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCore'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Invariant.PerCore
+open SeLe4n.Kernel
+
+-- SM4.C §1 — 16 per-core predicate forms.
+#check @queueCurrentConsistentOnCore
+#check @runQueueUniqueOnCore
+#check @currentThreadValidOnCore
+#check @currentThreadInActiveDomainOnCore
+#check @timeSlicePositiveOnCore
+#check @currentTimeSlicePositiveOnCore
+#check @edfCurrentHasEarliestDeadlineOnCore
+#check @contextMatchesCurrentOnCore
+#check @runnableThreadsAreTCBsOnCore
+#check @schedulerPriorityMatchOnCore
+#check @domainTimeRemainingPositiveOnCore
+#check @currentBudgetPositiveOnCore
+#check @budgetPositiveOnCore
+#check @replenishmentPipelineOrderOnCore
+#check @replenishQueueValidOnCore
+#check @effectiveParamsMatchRunQueueOnCore
+-- SM4.C §2 — 16 boot-core bridges.
+#check @queueCurrentConsistentOnCore_bootCore_iff
+#check @runQueueUniqueOnCore_bootCore_iff
+#check @currentThreadValidOnCore_bootCore_iff
+#check @currentThreadInActiveDomainOnCore_bootCore_iff
+#check @timeSlicePositiveOnCore_bootCore_iff
+#check @currentTimeSlicePositiveOnCore_bootCore_iff
+#check @edfCurrentHasEarliestDeadlineOnCore_bootCore_iff
+#check @contextMatchesCurrentOnCore_bootCore_iff
+#check @runnableThreadsAreTCBsOnCore_bootCore_iff
+#check @schedulerPriorityMatchOnCore_bootCore_iff
+#check @domainTimeRemainingPositiveOnCore_bootCore_iff
+#check @currentBudgetPositiveOnCore_bootCore_iff
+#check @budgetPositiveOnCore_bootCore_iff
+#check @replenishmentPipelineOrderOnCore_bootCore_iff
+#check @replenishQueueValidOnCore_bootCore_iff
+#check @effectiveParamsMatchRunQueueOnCore_bootCore_iff
+-- SM4.C.29 — aggregate per-core + SMP forall + projections.
+#check @schedulerInvariant_perCore
+#check @schedulerInvariant_smp
+#check @schedulerInvariant_perCore_aggregateForall
+#check @schedulerInvariant_smp_at
+#check @schedulerInvariant_perCore_to_queueCurrentConsistent
+#check @schedulerInvariant_perCore_to_runQueueUnique
+#check @schedulerInvariant_perCore_to_currentThreadValid
+#check @schedulerInvariant_perCore_to_timeSlicePositive
+#check @schedulerInvariant_perCore_to_currentTimeSlicePositive
+#check @schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
+#check @schedulerInvariant_perCore_to_contextMatchesCurrent
+#check @schedulerInvariant_perCore_to_runnableThreadsAreTCBs
+#check @schedulerInvariant_perCore_to_schedulerPriorityMatch
+#check @schedulerInvariant_perCore_to_domainTimeRemainingPositive
+-- SM4.C §4 — bundle bridges to the live cross-subsystem surface.
+#check @schedulerInvariantBundleFull_to_perCore_bootCore
+#check @schedulerInvariant_perCore_bootCore_to_bundleFull
+#check @schedulerInvariantBundleExtended_to_perCore_bootCore
+-- SM4.C §5 — default-state.
+#check @default_schedulerInvariant_perCore
+#check @default_schedulerInvariant_smp
+-- SM4.C.30 — frame + cross-core independence + SMP-preservation skeleton.
+#check @schedulerInvariant_perCore_frame
+#check @schedulerInvariant_perCore_frame_idle
+#check @schedulerInvariant_perCore_independent_of_setCurrentOnCore
+#check @schedulerInvariant_perCore_independent_of_setRunQueueOnCore
+#check @schedulerInvariant_perCore_independent_of_setDomainTimeRemainingOnCore
+#check @schedulerInvariant_perCore_pairwise
+#check @schedulerInvariant_smp_of_bootCore_and_idle_frame
+EOF'
+
 finalize_report

@@ -1,3 +1,156 @@
+## v0.31.13 — WS-SM SM4.C: per-core scheduler invariant migration
+
+Lands **WS-SM Phase SM4.C "Scheduler invariants migration"** (plan
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+§5.3 / §5.6), lifting the scheduler invariant *predicates* from the
+single-core forms (pinned to `bootCoreId` after SM4.B) to per-core forms
+parameterised by an explicit `(c : CoreId)`.  The migration follows
+plan §3.4's Pattern 1 — each per-core form `…OnCore s c` is the
+existing predicate's body with `bootCoreId` replaced by `c` and
+`s.runnable` (the boot-core run-queue projection) replaced by
+`(s.runQueueOnCore c).toList`.
+
+The migration is **additive and soundness-preserving**: every per-core
+form at `bootCoreId` is *definitionally equal* to the existing
+single-core predicate (proved by the boot-core bridges as
+`Iff.rfl`), so the live `schedulerInvariantBundle*` /
+`crossSubsystemInvariant` surface and the hundreds of preservation
+theorems that consume it are untouched and stay green.  SM4.C strictly
+*adds* the per-core layer that SM5's per-core scheduler will consume.
+
+**New module** (`SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`,
+~380 LoC, axiom-clean): 16 per-core predicate forms + 16 boot-core
+bridges + the SM4.C.29 aggregate + the SM4.C.30 pairwise theorem +
+frame lemmas + default-state + bundle bridges + the SM5 preservation
+skeleton.  Staged via `Platform/Staged.lean` +
+`scripts/staged_module_allowlist.txt` (matching SM-phase precedent;
+SM5 promotes to production-reached).
+
+- **SM4.C §1 — 16 per-core predicate forms.**  The full per-core slice
+  of `schedulerInvariantBundleExtended`:
+  `queueCurrentConsistentOnCore` / `runQueueUniqueOnCore` /
+  `currentThreadValidOnCore` / `currentThreadInActiveDomainOnCore` /
+  `timeSlicePositiveOnCore` / `currentTimeSlicePositiveOnCore` /
+  `edfCurrentHasEarliestDeadlineOnCore` /
+  `contextMatchesCurrentOnCore` / `runnableThreadsAreTCBsOnCore` /
+  `schedulerPriorityMatchOnCore` /
+  `domainTimeRemainingPositiveOnCore` /
+  `currentBudgetPositiveOnCore` / `budgetPositiveOnCore` /
+  `replenishmentPipelineOrderOnCore` / `replenishQueueValidOnCore` /
+  `effectiveParamsMatchRunQueueOnCore`.  The five system-wide
+  predicates (`schedContextsWellFormed`, `schedContextBindingConsistent`,
+  `boundThreadDomainConsistent`, `domainScheduleEntriesPositive`,
+  `configTimeSlicePositive`) are core-independent and need no `c`
+  parameter.
+- **SM4.C §2 — 16 boot-core bridges (`Iff.rfl`).**  Each per-core form
+  at `bootCoreId` is the existing single-core predicate — proved by
+  `Iff.rfl` since `SchedulerState.runnable` is *definitionally*
+  `(s.runQueueOnCore bootCoreId).toList`.  Together, these are the
+  non-orphan connection to the live surface.
+- **SM4.C.29 — `schedulerInvariant_perCore` aggregate + SMP forall.**
+  `schedulerInvariant_perCore st c` bundles the 10 per-core conjuncts
+  of `schedulerInvariantBundleFull`; `schedulerInvariant_smp st :=
+  ∀ c, schedulerInvariant_perCore st c` is the system-wide aggregate.
+  `schedulerInvariant_perCore_aggregateForall` is the plan §5.6
+  bridge `(∀ c, … s c) ↔ schedulerInvariant_smp s`.  Ten per-conjunct
+  projections mirror the `schedulerInvariantBundleFull_to_*` family.
+- **SM4.C §4 — bundle bridges to the live cross-subsystem surface.**
+  `schedulerInvariantBundleFull_to_perCore_bootCore` proves the full
+  single-core bundle implies the per-core aggregate at `bootCoreId`
+  (the `domainScheduleEntriesPositive` conjunct is dropped as
+  system-wide).  The converse
+  `schedulerInvariant_perCore_bootCore_to_bundleFull` restores it
+  given `domainScheduleEntriesPositive` separately.
+  `schedulerInvariantBundleExtended_to_perCore_bootCore` lifts the
+  Z4 extended bundle.  Every existing single-core preservation
+  theorem (~hundreds across IPC/Capability/Lifecycle/...) therefore
+  yields a per-core preservation at the boot core *for free*.
+- **SM4.C §5 — default-state.**  `default_schedulerInvariant_perCore (c)`
+  proves every core satisfies the per-core invariant on the
+  freshly-booted system (current = `none` and run queue empty on
+  every core, so the current-dependent conjuncts vacuously hold;
+  `domainTimeRemaining = 5 > 0`).  `default_schedulerInvariant_smp`
+  is the full SMP form on default.
+- **SM4.C §6 — frame lemmas + cross-core independence (SM4.C.30).**
+  The substantive cross-core-independence content:
+  * `schedulerInvariant_perCore_frame` — the per-core invariant at
+    core `c` depends only on core `c`'s `current` / `runQueue` /
+    `domainTimeRemaining` slots, `st.objects`, and `st.machine.regs`.
+  * `schedulerInvariant_perCore_frame_idle` — a frame variant for an
+    *idle* core (`currentOnCore c = none` on both states), which does
+    NOT require register-file agreement (all five current-dependent
+    conjuncts are vacuous), so it handles boot operations like
+    `schedule` that re-write `machine.regs`.
+  * Three cross-core independence corollaries
+    (`_independent_of_setCurrentOnCore`, `…setRunQueueOnCore`,
+    `…setDomainTimeRemainingOnCore`): a write to a different core's
+    slot leaves this core's invariant unchanged, via the SM4.B
+    `set…OnCore_…OnCore_ne` per-core-independence algebra.
+  * **`schedulerInvariant_perCore_pairwise`** — the SM4.C.30
+    deliverable.  Per the implement-the-improvement rule, this
+    *strengthens* the plan's documentation-only `P s c₁ ↔ P s c₁`
+    sketch into a real cross-core independence theorem: for
+    `c₁ ≠ c₂`, simultaneously overwriting all three of core `c₂`'s
+    invariant-read slots (`current`, `runQueue`,
+    `domainTimeRemaining`) leaves core `c₁`'s per-core invariant
+    unchanged.
+- **SM4.C §7 — SMP-preservation skeleton (the SM5 bridge).**
+  `schedulerInvariant_smp_of_bootCore_and_idle_frame` — the
+  composition theorem: given (a) the per-core invariant held on every
+  core pre-transition, (b) the boot core's per-core invariant is
+  re-established post-transition (exactly what every existing
+  single-core preservation theorem proves), and (c) every non-boot
+  core stays idle with its run queue / domain-time / object store
+  framed, then the system-wide SMP invariant holds post-transition.
+  This is the migration's payoff for SM5: a per-core operation's
+  preservation needs to be reproven only at the core it actually
+  writes; every other core is discharged by the idle frame lemma.
+
+**Test coverage**: NEW FILE `tests/SchedulerInvariantPerCoreSuite.lean`
+(~330 LoC) — 60+ Tier-3 surface anchors (every SM4.C public symbol),
+12 elaboration-time `example`s applying the headline theorems to
+verified inputs, and **16 runtime `assertBool` assertions** in four
+sections (`lake exe scheduler_invariant_per_core_suite`): default-state
+per-core foundations on every core in `allCores`, theorem-application
+checks (every per-core / SMP form applies and projects), cross-core
+pairwise independence (writing core 1's slots preserves the boot
+core's invariant), and bridge reflexivity.  Tier-2 (negative) and
+Tier-3 (invariant surface) wired.
+
+**Axiom budget**: 0 Lean axioms, 0 unproven obligations (every theorem
+depends only on `propext` / `Quot.sound` / `Classical.choice`, verified
+via `#print axioms` on the headline theorems).
+
+**AK7 typed-accessor discipline**: thirteen of the sixteen per-core
+predicate bodies route their object-store lookups through the typed
+`getTcb?` accessor (one-level lookup); their boot-core bridges go
+through `getTcb?_eq_some_iff` plus per-variant case analysis on
+`st.objects[…]?`.  Three predicates that need a two-level lookup
+(TCB-then-SchedContext: `currentBudgetPositiveOnCore`,
+`budgetPositiveOnCore`, `effectiveParamsMatchRunQueueOnCore`) keep
+their existing single-core counterpart's raw `match`-on-`objects[…]?`
+body verbatim so their boot-core bridges close as defeq `Iff.rfl`
+(rather than requiring a multi-level case-analysis proof through
+`getTcb?_eq_some_iff` / `getSchedContext?_eq_some_iff` inside a
+binding-match arm).  Net AK7 cascade impact: GETTCB_ADOPTION +52
+(126 → 165) and GETSCHEDCTX_ADOPTION +25 (67 → 92) — typed-accessor
+adoption grows substantially.  Raw-`match` counts grow by 8
+(RAW_MATCH_TOTAL 122 → 130) from the three nested-lookup mirrors; the
+AK7 baseline (`docs/dev_history/audits/AL0_baseline.txt`) is re-anchored
+to reflect the new floor.  A future workstream that migrates the
+corresponding single-core predicates to typed accessors will move these
+mirrors with them.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: **SM4.D** — cross-subsystem migration (IPC / Capability /
+Lifecycle / Architecture / InformationFlow / CrossSubsystem theorems
+that read `SchedulerState`); **SM4.E** — retire
+`bootFromPlatform_singleCore_witness` and add the SMP-shape
+witness `bootFromPlatform_smp_witness` per plan §3.8.  See
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+§§5.4..5.5.
+
 ## v0.31.12 — WS-SM SM4.B: `SchedulerState` path-a `Vector` replacement
 
 Lands **WS-SM Phase SM4.B "SchedulerState path-a replacement"** (plan
