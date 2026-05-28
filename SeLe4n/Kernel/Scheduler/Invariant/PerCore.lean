@@ -15,11 +15,17 @@ import SeLe4n.Kernel.CrossSubsystem
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 
 -- The boot-core bridge proofs in §2 use `cases h : X` substitution to
--- substantively case-analyse on `objects[…]?` lookups; the `simp [hObj]`
--- calls at the leaves are defensive (some cases close without consuming
--- the equation, depending on the variant) and the linter flags them as
--- unused arguments per arm.  The proofs are correct as written; suppress
--- the noise file-locally.
+-- substantively case-analyse on `objects[…]?` lookups.  The `simp [h]`
+-- calls at the leaves uniformly include the equation hypothesis: in some
+-- arms `h` is genuinely required for simp to discharge (verified
+-- empirically — removing `[h]` from e.g. line 428 / 446 / 474 / 504
+-- breaks the proof with "unsolved goals"); in others the surrounding
+-- `cases` substitution makes `[h]` redundant.  The unused-args linter
+-- flags the redundant arms but cannot distinguish the two patterns
+-- automatically (they have the same surface syntax).  Suppress
+-- file-locally so the uniform defensive pattern compiles cleanly;
+-- the "unused" warnings are false positives in the `cases h : X`
+-- context.
 set_option linter.unusedSimpArgs false
 
 /-!
@@ -1258,7 +1264,6 @@ theorem schedulerInvariant_smp_extended_of_bootCore_and_idle_frame {st st' : Sys
 -- including them here matches the plan literally and gives SM5 a single
 -- composed per-core invariant to preserve.
 
-open SeLe4n.Kernel.PriorityInheritance (blockingAcyclic) in
 /-- SM4.C (plan §5.6): per-core form of
 `CrossSubsystem.schedContextRunQueueConsistent`.  For every thread in
 core `c`'s run queue, if the thread is bound to a SchedContext, the SC

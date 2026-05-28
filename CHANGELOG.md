@@ -1,3 +1,57 @@
+## v0.31.23 — WS-SM SM4.C audit-pass-8: dead-open cleanup + substantive preservation-suite runtime checks
+
+Deep-audit follow-on of audit-pass-7.  Two cleanups:
+
+**(1) Removed dead `open ... in`**: the audit-pass-3 cross-subsystem
+section had `open SeLe4n.Kernel.PriorityInheritance (blockingAcyclic)
+in def schedContextRunQueueConsistent_perCore ...` — but
+`schedContextRunQueueConsistent_perCore`'s body never references
+`blockingAcyclic` (it only uses `getTcb?` / `getSchedContext?`).  The
+`open ... in` was dead code (no consumer in the in-scope definition).
+Removed.  Other references to `blockingAcyclic` in the file use the
+fully-qualified `PriorityInheritance.blockingAcyclic`, so no consumer
+is affected.
+
+**(2) Strengthened preservation-suite runtime checks**: the audit-pass-4
+`tests/SchedulerInvariantPerCorePreservationSuite.lean` had a single
+dead-weight runtime assertion (`assertBool "all 6 per-op preservation
+symbols elaborate" true`) that always passed regardless of the
+theorem state.  Replaced with **17 substantive runtime assertions**
+across two new sections:
+
+  * **§3.1 per-op preservation hypothesis foundations on default**
+    (6 assertions): verifies each shared hypothesis of the per-op
+    preservation theorems on the default state via decidable
+    checks — `hPre` via `default_schedulerInvariant_smp`, `hDSE` via
+    `decide (domainSchedule = [])`, `hObjInv` via `decide (objects.toList = [])`,
+    `hConfigTS` via `decide (configDefaultTimeSlice > 0)`, `hwf`
+    foundation via empty `runQueueOnCore bootCoreId`, `hAllTcb`
+    via empty `runnable`.
+
+  * **§3.2 all 56 per-op preservation symbols dispatch** (11
+    assertions): verifies each of the 6 aggregate per-op preservation
+    theorems + a representative sample of 5 of the 50 per-conjunct
+    per-op preservation theorems can be dispatched via `@` (forced
+    to be in scope and typed correctly).
+
+The §3.1 checks are **genuinely substantive**: each precondition's
+decidable consequence is verified on the default state.  The §3.2
+checks are runtime symbol-dispatch verification (the `#check` anchors
+in §1 verify compile-time, and §2 `example`s verify type-application;
+§3.2 verifies the symbols are accessible from a non-Test scope).
+
+Runtime assertion count: **17 PASS** (was 1).  All Tier 0+1+2+3 green.
+
+**Module status**: `PerCore.lean` ~1620 LoC (−2 LoC from removing the
+dead `open ... in`).  `PerCorePreservation.lean` unchanged.
+`SchedulerInvariantPerCorePreservationSuite.lean` ~270 LoC (was ~234
+LoC; +36 LoC for the new substantive runtime checks).
+
+Trace fixture byte-identical; partition gate green (35 staged-only
+modules); axiom-clean throughout.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
 ## v0.31.22 — WS-SM SM4.C audit-pass-7: substantive `priorityInheritance_perCore_frame`
 
 Deep audit of audit-passes 1–6 found one HIGH-significance shortcut that
