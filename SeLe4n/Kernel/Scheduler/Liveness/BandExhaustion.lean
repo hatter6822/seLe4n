@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.Liveness.Yield
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- D5-I: Priority-band exhaustion
@@ -52,8 +53,8 @@ See `WCRT.lean:bounded_scheduling_latency_exists` for integration into the
 WCRT bound theorem, where `hBandProgress` subsumes this hypothesis. -/
 def eventuallyExits (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat) : Prop :=
   ∃ k, k > startIdx ∧ match traceStateAt trace k with
-    | some st => st.scheduler.runQueue.contains tid = false ∧
-                 st.scheduler.current ≠ some tid
+    | some st => (st.scheduler.runQueueOnCore bootCoreId).contains tid = false ∧
+                 (st.scheduler.currentOnCore bootCoreId) ≠ some tid
     | none => False
 
 /-- D5-I: Conditional band exhaustion — if all threads with effective priority
@@ -67,7 +68,7 @@ satisfied when there are no higher-priority threads. -/
 def higherBandExhausted (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) : Prop :=
   ∀ tid,
-    tid ∈ st.scheduler.runQueue.flat →
+    tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
     (match resolveEffectivePriority st tid with
      | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
      | none => False) →
@@ -79,7 +80,7 @@ higher-priority threads). -/
 theorem higherBandExhausted_when_no_higher
     (trace : SchedulerTrace) (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) (startIdx : Nat)
-    (hNoHigher : ∀ tid, tid ∈ st.scheduler.runQueue.flat →
+    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
       match resolveEffectivePriority st tid with
       | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
       | none => True) :

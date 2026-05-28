@@ -22,6 +22,7 @@ TPI-002 (the TPI registry has been absorbed into closed workstreams).
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- Observer descriptor for IF-M1 projections. -/
 structure IfObserver where
@@ -338,14 +339,14 @@ def projectRunnable (ctx : LabelingContext) (observer : IfObserver) (st : System
 /-- Project current thread to observer-visible identity. -/
 def projectCurrent (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     Option SeLe4n.ThreadId :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | some tid => if threadObservable ctx observer tid then some tid else none
   | none => none
 
 /-- WS-F3: Project active scheduling domain (always visible — scheduling transparency). -/
 def projectActiveDomain (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
     SeLe4n.DomainId :=
-  st.scheduler.activeDomain
+  (st.scheduler.activeDomainOnCore bootCoreId)
 
 /-- WS-F3: Project IRQ handler mappings, filtering to only those whose target
 notification object is observable by the observer. -/
@@ -364,7 +365,7 @@ def projectObjectIndex (ctx : LabelingContext) (observer : IfObserver) (st : Sys
 /-- WS-H8/A-36: Project domain time remaining (scheduling transparency — always visible). -/
 def projectDomainTimeRemaining (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
     Nat :=
-  st.scheduler.domainTimeRemaining
+  (st.scheduler.domainTimeRemainingOnCore bootCoreId)
 
 /-- WS-H8/A-36: Project domain schedule (scheduling transparency — always visible). -/
 def projectDomainSchedule (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
@@ -374,7 +375,7 @@ def projectDomainSchedule (_ctx : LabelingContext) (_observer : IfObserver) (st 
 /-- WS-H8/A-36: Project domain schedule index (scheduling transparency — always visible). -/
 def projectDomainScheduleIndex (_ctx : LabelingContext) (_observer : IfObserver) (st : SystemState) :
     Nat :=
-  st.scheduler.domainScheduleIndex
+  (st.scheduler.domainScheduleIndexOnCore bootCoreId)
 
 /-- WS-H10/C-05 + WS-H12c/H-03: Project machine register file, filtered by
 current thread observability. The register file is the architectural context
@@ -388,7 +389,7 @@ synchronized with the current TCB's `registerContext` by the inline
 context switch in `schedule`. -/
 def projectMachineRegs (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     Option RegisterFile :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | some tid => if threadObservable ctx observer tid then some st.machine.regs else none
   | none => none
 
@@ -534,9 +535,9 @@ theorem schedulingCovertChannel_bounded_width
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
     -- The scheduling covert channel consists of exactly 4 scalar projections:
     -- activeDomain, domainTimeRemaining, domainSchedule, domainScheduleIndex
-    projectActiveDomain ctx observer st = st.scheduler.activeDomain ∧
-    projectDomainTimeRemaining ctx observer st = st.scheduler.domainTimeRemaining ∧
-    projectDomainScheduleIndex ctx observer st = st.scheduler.domainScheduleIndex := by
+    projectActiveDomain ctx observer st = (st.scheduler.activeDomainOnCore bootCoreId) ∧
+    projectDomainTimeRemaining ctx observer st = (st.scheduler.domainTimeRemainingOnCore bootCoreId) ∧
+    projectDomainScheduleIndex ctx observer st = (st.scheduler.domainScheduleIndexOnCore bootCoreId) := by
   exact ⟨rfl, rfl, rfl⟩
 
 /-- Canonical IF-M1 state projection helper used by theorem targets.
@@ -588,7 +589,7 @@ are invisible to information-flow analysis. Used by
 theorem projectState_replenishQueue_eq (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (rq : SeLe4n.Kernel.ReplenishQueue) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with replenishQueue := rq } } =
+      { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq } =
     projectState ctx observer st := by rfl
 
 /-- AK6-F.2a: Clearing `scheduler.current` when the previous current was
@@ -603,24 +604,32 @@ they clear `current` before rescheduling. Only `projectCurrent` and
 current is high or absent. -/
 theorem projectState_scheduler_current_cleared_when_high
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
-    (hCurrHigh : ∀ t, st.scheduler.current = some t →
+    (hCurrHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t →
                        threadObservable ctx observer t = false) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with current := none } } =
+      { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
     projectState ctx observer st := by
   -- Only projectCurrent and projectMachineRegs read scheduler.current.
   have hCur : projectCurrent ctx observer
-                { st with scheduler := { st.scheduler with current := none } } =
+                { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
               projectCurrent ctx observer st := by
-    simp only [projectCurrent]
-    cases hSome : st.scheduler.current with
+    have hLHS : projectCurrent ctx observer
+        { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
+      simp only [projectCurrent, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+        PerCoreVector.get_set_eq]
+    rw [hLHS]; unfold projectCurrent
+    cases hSome : (st.scheduler.currentOnCore bootCoreId) with
     | none => rfl
     | some tid => have := hCurrHigh tid hSome; simp [this]
   have hMachine : projectMachineRegs ctx observer
-                    { st with scheduler := { st.scheduler with current := none } } =
+                    { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } =
                   projectMachineRegs ctx observer st := by
-    simp only [projectMachineRegs]
-    cases hSome : st.scheduler.current with
+    have hLHS : projectMachineRegs ctx observer
+        { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId none } = none := by
+      simp only [projectMachineRegs, SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+        PerCoreVector.get_set_eq]
+    rw [hLHS]; unfold projectMachineRegs
+    cases hSome : (st.scheduler.currentOnCore bootCoreId) with
     | none => rfl
     | some tid => have := hCurrHigh tid hSome; simp [this]
   simp only [projectState]

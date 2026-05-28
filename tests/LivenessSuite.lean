@@ -22,6 +22,7 @@ surface against regressions.
 -/
 
 open SeLe4n.Kernel.Liveness
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 
 -- ============================================================================
@@ -280,8 +281,8 @@ example :
 -- trace whose post-state places `tid` neither in the run queue nor as
 -- current discharges `eventuallyExits` via
 -- `eventuallyExits_of_exit_index`. With `default : SystemState`:
---   * `default.scheduler.runQueue.contains _ = false` (empty RQ).
---   * `default.scheduler.current = none ≠ some _`.
+--   * `(default.scheduler.runQueueOnCore bootCoreId).contains _ = false` (empty RQ).
+--   * `(default.scheduler.currentOnCore bootCoreId) = none ≠ some _`.
 example :
     let tid : SeLe4n.ThreadId := SeLe4n.ThreadId.ofNat 42
     let tr : SchedulerTrace :=

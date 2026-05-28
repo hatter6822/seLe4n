@@ -12,6 +12,7 @@ import SeLe4n.Model.FrozenState
 import SeLe4n.Model.FreezeProofs
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RadixTree
 open SeLe4n.Model
 
@@ -267,7 +268,7 @@ private def fp020_fieldParity : IO Unit := do
   expect "asidTable accessible" (fss.asidTable.data.size == 0)
   expect "cdtEdges accessible" (fss.cdtEdges.length == 0)
   expect "objectIndex accessible" (fss.objectIndex.length == 0)
-  expect "scheduler accessible" (fss.scheduler.current == none)
+  expect "scheduler accessible" ((fss.scheduler.current) == none)
 
 /-- FP-021: frozen lookup transfer — source and frozen agree for all keys -/
 private def fp021_lookupTransfer : IO Unit := do

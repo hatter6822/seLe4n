@@ -31,17 +31,18 @@ inductive ArchAssumption where
   | bootObjectTyping
   | irqRoutingTotality
   /-- WS-SM SM0.A (closes SMP-H2): the kernel's runtime model assumes
-      single-core operation — `SchedulerState.current` is a single
-      `Option ThreadId` slot rather than a per-core array, and
+      single-core operation.  WS-SM SM4.B (v0.31.12) flipped the
+      `SchedulerState` fields to per-core `Vector α numCores`, but the
+      *verified kernel still drives only `bootCoreId`* — every
+      transition reads/writes `…OnCore bootCoreId` — and
       `bootFromPlatform` returns an `IntermediateState` that runs on
-      the boot core with implicit `core-id = 0`.  AN9-J's SMP
-      bring-up scaffolding ships the secondary-core entry path but
-      the runtime flag `SMP_ENABLED = false` at v1.0.0 inhibits
-      cross-core transitions, keeping the single-core kernel model
-      live until WS-SM SM2..SM5 wire the per-core scheduler state.
-      The consuming theorem is the boot-bridge witness
-      `bootFromPlatform_singleCore_witness` in
-      `SeLe4n.Kernel.CrossSubsystem`. -/
+      the boot core.  AN9-J / SM1 ship the secondary-core entry path in
+      the Rust HAL, but cross-core kernel transitions remain gated until
+      WS-SM SM5 wires the per-core scheduler (transitions keyed on
+      `Concurrency.currentCoreId`).  The consuming theorem is the
+      boot-core witness `bootFromPlatform_singleCore_witness` in
+      `SeLe4n.Kernel.CrossSubsystem` (restated over `currentOnCore
+      bootCoreId` at SM4.B; retired at SM4.E). -/
   | singleCoreOperation
   deriving Repr, DecidableEq
 
@@ -174,9 +175,9 @@ in `Invariant.lean`; the index is pointers only so this file has no
 
     **WS-SM SM0.B**: extended with the `singleCoreOperation` arm —
     consumer is `bootFromPlatform_singleCore_witness` in
-    `SeLe4n.Kernel.CrossSubsystem`, the bridge theorem that
-    establishes the single-`Option ThreadId` slot semantics of
-    `SchedulerState.current`. -/
+    `SeLe4n.Kernel.CrossSubsystem`, the boot-core witness over
+    `currentOnCore bootCoreId` (post-SM4.B `SchedulerState.current` is a
+    per-core `Vector`; the witness is retired at SM4.E). -/
 def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .deterministicTimerProgress =>
       `SeLe4n.Kernel.Architecture.deterministicTimerProgress_consumed_by_advanceTimer

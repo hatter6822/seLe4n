@@ -2481,4 +2481,55 @@ import SeLe4n.Platform.Sim.Contract
 #check @SeLe4n.Kernel.Concurrency.allCores_nodup
 EOF'
 
+# WS-SM SM4.B — per-core SchedulerState foundation surface anchors.  Covers
+# the SM4.B.8 seven per-core accessors, the SM4.B.9 default-state per-core
+# initialisation theorem, and the SM4.B.10 per-core extensionality theorem.
+# A rename / removal of any SM4.B foundation symbol fails here at
+# elaboration time, before the SM4.C/SM4.D migrations can consume them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Model.State'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Model.State
+import SeLe4n.Kernel.Concurrency.Types
+
+-- SM4.B.8 — the seven per-core accessors.
+#check @SeLe4n.Model.SchedulerState.currentOnCore
+#check @SeLe4n.Model.SchedulerState.runQueueOnCore
+#check @SeLe4n.Model.SchedulerState.replenishQueueOnCore
+#check @SeLe4n.Model.SchedulerState.activeDomainOnCore
+#check @SeLe4n.Model.SchedulerState.domainTimeRemainingOnCore
+#check @SeLe4n.Model.SchedulerState.domainScheduleIndexOnCore
+#check @SeLe4n.Model.SchedulerState.lastTimeoutErrorsOnCore
+-- SM4.B.phase-2 — the seven per-core setters (path-a write API).
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore
+-- SM4.B.phase-2 — store/load algebra: 7 read-after-write _self lemmas +
+-- representative cross-field and system-wide frame lemmas.
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_self
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_self
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_currentOnCore
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_domainSchedule
+-- SM4.B.phase-2 — per-core independence: the seven same-field cross-core (_ne) frames.
+#check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setActiveDomainOnCore_activeDomainOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore_domainScheduleIndexOnCore_ne
+#check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_ne
+-- SM4.B.9 — default-state per-core initialisation.
+#check @SeLe4n.Model.default_state_perCoreInitialized
+-- SM4.B.10 — per-core extensionality.
+#check @SeLe4n.Model.SchedulerState.ext_perCore
+EOF'
+
 finalize_report

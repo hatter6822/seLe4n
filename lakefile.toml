@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.11"
+version = "0.31.12"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -321,3 +321,10 @@ root = "tests.SerializabilitySuite"
 [[lean_exe]]
 name = "per_core_vector_suite"
 root = "tests.PerCoreVectorSuite"
+
+# WS-SM SM4.B foundation suite — the seven per-core SchedulerState accessors
+# (SM4.B.8), the default-state per-core-initialisation theorem (SM4.B.9), and
+# per-core extensionality (SM4.B.10).  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "per_core_scheduler_state_suite"
+root = "tests.PerCoreSchedulerStateSuite"

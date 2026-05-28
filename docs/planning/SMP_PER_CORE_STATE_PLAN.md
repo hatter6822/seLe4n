@@ -379,7 +379,7 @@ are the new Lean-side work.
 | SM4.B.9 | `default_state_perCoreInitialized` theorem | Per §3.6 | M |
 | SM4.B.10 | `SchedulerState.ext` per-core extensionality | Per §3.3 | M |
 | SM4.B.11 | `Repr` instance updated | Compiles | T |
-| SM4.B.12 | `BEq` instance updated | Compiles; LawfulBEq if applicable | S |
+| SM4.B.12 | `BEq` instance updated | Compiles; LawfulBEq if applicable (landed N/A — no `BEq`/`DecidableEq` on `SchedulerState`; nothing compares schedulers via `==`; see §11.9) | S |
 | SM4.B.13 | `Inhabited` instance updated | Default exists | T |
 | SM4.B.14 | Immediate-caller sites in `Model/State.lean` | All compile | M |
 | SM4.B.15 | Regression test: single-core trace fixture preserved | `main_trace_smoke.expected` byte-identical at single-core scenario | M |
@@ -649,3 +649,335 @@ mechanical (textual rewrites following §3.4 pattern) but the
 volume is substantial. Decision #4 (path-a, no compat shim)
 forces explicit CoreId reasoning at every callsite, which is the
 right architectural choice but extends the timeline.*
+
+## 11. Implementation progress + continuation (SM4.B)
+
+### 11.1 Landed: SM4.B foundation (green checkpoint)
+
+The SM4.B foundation has landed as the first green checkpoint of the
+path-a migration (`SeLe4n/Model/State.lean` +
+`tests/PerCoreSchedulerStateSuite.lean`):
+
+- **SM4.B.8** — the seven per-core accessors (`currentOnCore`,
+  `runQueueOnCore`, `replenishQueueOnCore`, `activeDomainOnCore`,
+  `domainTimeRemainingOnCore`, `domainScheduleIndexOnCore`,
+  `lastTimeoutErrorsOnCore`), each `(s : SchedulerState) → (c : CoreId) → …`.
+- **SM4.B.9** — `default_state_perCoreInitialized` (plan §3.6).
+- **SM4.B.10** — `SchedulerState.ext_perCore` (plan §3.3; named `ext_perCore`
+  to avoid the structure's auto-generated `SchedulerState.ext`).
+- Tier-2 runtime suite (`lake exe per_core_scheduler_state_suite`) + Tier-3
+  surface anchors, both wired.
+
+### 11.2 Execution model: two-phase, green-checkpoint, bottom-up
+
+A literal field-type replacement (`Option ThreadId → Vector … numCores`)
+is a single global break: ~700 reads + ~72 record-update writes + the
+entire scheduler/IPC/info-flow/lifecycle/arch proof surface (~58 files)
+go red at once. To keep every commit green (decision: green-checkpoint
+commits), the migration is split:
+
+- **Phase 1 (read migration, green-incremental).** The accessors are first
+  introduced as **scalar wrappers** (the `c : CoreId` argument is ignored
+  while the underlying field is still scalar), tagged `@[simp]`. Every
+  `s.scheduler.<field>` read migrates to `s.scheduler.<field>OnCore bootCoreId`
+  (single-core ⇒ boot core). Because the wrapper is *definitionally equal*
+  to the field, this phase is **soundness-safe**: no proof's meaning can
+  change, only build-greenness — so a regression is always a build failure,
+  never a silent incorrectness.
+- **Phase 2 (field flip, localized).** Flip the seven field *types* to
+  `Vector α numCores`; change only the 14 accessor/setter definitions
+  (`fieldOnCore s c := s.field.get c`); fix the ~72 record-update writes
+  (`{ s with field := s.field.set bootCoreId.val v bootCoreId.isLt }`);
+  re-discharge B.9/B.10 substantively via `PerCoreVector.replicate_get` /
+  `.ext`; retire `bootFromPlatform_singleCore_witness` and add
+  `bootFromPlatform_smp_witness` (SM4.E); restore the byte-identical
+  single-core trace (SM4.B.15).
+
+### 11.3 Validated migration recipe (per file, phase 1)
+
+1. Add `open SeLe4n.Kernel.Concurrency (bootCoreId)` to the file.
+2. Migrate **statement-level** reads: `EXPR.scheduler.<field>` →
+   `EXPR.scheduler.<field>OnCore bootCoreId`. Parenthesise when the result
+   is further projected: `EXPR.scheduler.runQueue.insert …` →
+   `(EXPR.scheduler.runQueueOnCore bootCoreId).insert …`.
+3. Leave `.runnable` (the `runQueue.toList` abbrev) **unchanged** — its
+   definition absorbs the boot-core slice in phase 2 (≈336 callsites need
+   no edit).
+4. Repair proofs: where a migrated hypothesis (`…OnCore bootCoreId`) meets a
+   still-scalar operation body, add `simp only [SchedulerState.<field>OnCore]`
+   to normalise both sides to the scalar field. Leave proof-internal reads
+   that are *coupled to an un-migrated operation body's shape* (e.g. a
+   `show` whose `rw` lemma pins the queue via a generated `hNotMem`) — those
+   align once the operation body migrates.
+5. `lake build <Module>` green before moving on.
+
+### 11.4 Ordering + cascade (empirical)
+
+- Migrate **bottom-up** (providers before consumers): a consumer's migrated
+  goal (`…OnCore`) only matches a provider's lemma once the provider's
+  statement is migrated.
+- The cascade per migrated file is **small**: most consumers use a migrated
+  lemma via `exact`/`apply` (defeq-safe, unaffected); only syntactic
+  `rw`/`simp [lemma]` consumers break. A pilot migration of
+  `IPC/Operations/SchedulerLemmas.lean` broke exactly **one** consumer
+  (`IPC/Invariant/EndpointPreservation.lean`).
+- The first *scheduler-subsystem* checkpoint is necessarily large: the
+  lowest files (`Scheduler/Operations/Core.lean`,
+  `Scheduler/Invariant.lean`) have the widest consumer fan-out
+  (`Scheduler/Operations/Preservation.lean` ≈227 refs, then IPC/lifecycle),
+  so that checkpoint should be planned as a coupled unit, not file-by-file.
+
+### 11.5 Remaining read-migration set (bottom-up, by subsystem)
+
+~58 files, ≈700 reads. Heaviest: `Scheduler/Operations/Preservation.lean`
+(227), `InformationFlow/Invariant/Operations.lean` (58),
+`Scheduler/Operations/Core.lean` (37), `Scheduler/Invariant.lean` (29),
+`Scheduler/PriorityInheritance/Preservation.lean` (24),
+`Testing/MainTraceHarness.lean` (23). Suggested layer order: Model
+(`Builder`, `FrozenState`, `FreezeProofs`, the `allTablesInvExtK` reads in
+`State`) → Scheduler (`Operations/*`, `Invariant`, `PriorityInheritance/*`,
+`Liveness/*`) → SchedContext → IPC → Lifecycle → Capability → Architecture →
+InformationFlow → Service → CrossSubsystem → API → Platform → Testing →
+`tests/`.
+
+### 11.6 Execution refinements discovered in-flight (SM4.C grind)
+
+The global read-migration (all 56 files in one consistent pass) was applied
+with a UTF-8-safe, always-parenthesising transform:
+
+```
+# read-migration (per file): projected gets parens+.method, terminal gets parens.
+RC="(\([^()]*\)|[A-Za-z_][A-Za-z0-9_.'₀₁₂₃₄₅₆₇₈₉ₐₑₒₓₕₖₗₘₙₚₛₜ′]*)"
+FLD="(current|runQueue|replenishQueue|activeDomain|domainTimeRemaining|domainScheduleIndex|lastTimeoutErrors)"
+perl -CSD -Mutf8 -i -pe \
+  "s/${RC}\\.scheduler\\.${FLD}\\.(?=[A-Za-z])/(\$1.scheduler.\$2OnCore bootCoreId)./g; \
+   s/${RC}\\.scheduler\\.${FLD}\\b(?!\\.)/(\$1.scheduler.\$2OnCore bootCoreId)/g;" FILE
+```
+
+Always-parenthesise (terminal too): argument position cannot be detected
+from following context (e.g. `exact lemma st.scheduler.current` at line end),
+so `(EXPR.fieldOnCore bootCoreId)` is the only universally-correct output.
+The Unicode subscript class is required for `s₁`/`s₂` receivers in
+information-flow proofs (Perl `\w` excludes subscripts). Each file also gets
+`open SeLe4n.Kernel.Concurrency (bootCoreId)`.
+
+**Binding decision — accessors are NOT `@[simp]`.** Empirically, `@[simp]`
+on the seven accessors gives *more* breakage in the reduction-heavy
+operation files (Preservation: 165 errors with `@[simp]` vs 61 without),
+because it unfolds the accessor in goals while leaving explicit
+`…OnCore`-stated hypotheses/`cases`-scrutinees folded, causing type
+mismatches / dependent-elimination / function-expected failures. Plain
+`def` accessors keep goals folded (so hypotheses match natively) and the
+fixes are the simpler "add the accessor to the `simp` set" kind. This also
+matches the phase-2 end state (the accessor is a folded abstraction).
+
+**Proof-repair fix patterns (no-`@[simp]`):**
+1. *Reduction proof* (`simp [pred]` where `pred` reads an accessor and the
+   match must reduce): add `SchedulerState.<field>OnCore` to the `simp`.
+2. *`simp [queueCurrentConsistent, hCur]`* (or any scalar predicate vs an
+   `…OnCore`-stated hypothesis): normalise the hypothesis first —
+   `simp only [SchedulerState.currentOnCore] at hCur` — so it matches the
+   scalar predicate body.
+3. *`cases hPick : <op with …OnCore args>`* then `simp [hPick]`: normalise
+   `hStep` to scalar first (`simp only [SchedulerState.runQueueOnCore,
+   SchedulerState.activeDomainOnCore] at hStep`) and `cases` on the scalar
+   form; the cases scrutinee is proof-internal (phase-2 reproves it).
+4. *Bare-binder reads* (`s.current` inside a `(s : SchedulerState)`
+   predicate such as `queueCurrentConsistent`) and the **freeze path**
+   (`freezeScheduler` reading `sched.current` to populate the scalar
+   `FrozenSchedulerState`): LEAVE scalar in phase-1. Migrating
+   `queueCurrentConsistent`'s body rippled to 165 Preservation proofs — its
+   bare-binder read is a phase-2 item (with `FrozenSchedulerState`'s own
+   per-core treatment, SM4.D.16). Consumers with `…OnCore` hypotheses are
+   fixed by pattern 2, not by migrating the predicate.
+5. *`rw [← hCur] at hStep`* and similar reverse-rewrites / `omega` /
+   dependent-elimination failures: genuinely data-flow-dependent; require
+   per-proof analysis (not a mechanical accessor-add). These are the
+   slow core of the SM4.C grind.
+
+**Status at this checkpoint:** foundation committed (SM4.B.8/9/10 + suite);
+the global read-migration is applied in the working tree; the Model layer
+(`State`, `FrozenState`) and Scheduler core
+(`Invariant`, `Operations/Selection`, `Projection`, `RuntimeContract`,
+`IPC/Operations/SchedulerLemmas`) are green; `Operations/Preservation.lean`
+has ~40 remaining proof-repairs (mix of patterns 1–3 and the hard pattern-5
+cases), and the IPC/Lifecycle/Capability/InformationFlow/Service/
+CrossSubsystem/API/Platform/Testing/`tests/` layers are not yet built. Per
+the entanglement (§11.4), the working tree is uncompilable until the whole
+read-migration is green; the recipe above makes re-derivation fast if the
+tree is lost.
+
+### 11.7 In-progress migration WIP patch (resumption)
+
+Because the migration is uncommittable-until-fully-green (§11.4) yet the
+working tree must be clean between sessions, the exact in-progress state is
+preserved as a re-appliable patch:
+`docs/dev_history/SM4B_phase1_migration.wip.patch` (56 files; the global
+read-migration + `@[simp]`-off + all lower-layer proof fixes). To resume:
+
+```
+git apply docs/dev_history/SM4B_phase1_migration.wip.patch
+```
+
+State captured in the patch: Model + Scheduler-core green; `Operations/
+Preservation.lean` reduced to ~35 proof-repairs remaining (the hard core —
+`rw [← hCur]` reverse-rewrites, `omega`, `Type mismatch`, the line-1833
+multi-goal cluster); the IPC/Lifecycle/Capability/InformationFlow/Service/
+CrossSubsystem/API/Platform/Testing/`tests/` layers not yet built. Delete
+this patch once the migration lands green. (The §11.6 recipe regenerates the
+mechanical bulk if the patch is ever lost.)
+
+> **SUPERSEDED (phase 1 LANDED — see §11.8).** The WIP patch above
+> captured a mid-grind red state and is now obsolete: phase 1 is fully
+> green and committed, so the in-tree source is the canonical record.
+> The patch file may be deleted.
+
+### 11.8 Phase 1 LANDED (green checkpoint — accessor read-migration)
+
+Phase 1 (per §11.2 — introduce the per-core accessors as scalar wrappers
+and route every scheduler-field *read* through them; field types stay
+scalar) is **complete and green**.  Committed + pushed to branch
+`claude/sharp-carson-V2Y59`:
+
+- `760ecea` — the read-migration across all 56 affected `.lean` files
+  (Model, Scheduler, IPC, Lifecycle, Capability, Architecture,
+  InformationFlow, SchedContext, Service, Platform, FrozenOps, Testing,
+  and the `tests/` suites).
+- `2c2cc8e` — regenerated `docs/codebase_map.json` (docs-sync gate green).
+
+**Validation at the checkpoint**: whole tree green — 320 default-build
+jobs + every modified module + the staged anchor (`Platform.Staged`) +
+179 test-module jobs, all zero-error.  Tier 0–2 smoke: hygiene + build +
+trace fixture (**227/227 matched** — runtime behaviour byte-identical,
+confirming the accessors are faithful scalar wrappers) + every Tier-2
+suite + Rust conformance, all green.  Pre-commit hook (43 modules built +
+sorry check) passed; version-sync gate passed (26 sites, v0.31.11).
+
+**Two decisions resolved during the phase-1 grind** (both phase-2-correct,
+so they carry forward unchanged):
+
+1. **`queueCurrentConsistent` migrated to accessor form**
+   (`match s.currentOnCore bootCoreId with …`), matching its sibling
+   bundle invariants (`currentThreadValid`, `currentThreadIpcReady`,
+   `currentNotEndpointQueueHead`) and every `*_scheduler_current`
+   rewrite lemma.  Earlier attempts left it scalar (an "island") which
+   forced scalar↔accessor bridging at every IPC boundary; migrating it
+   is both less code and the shape phase-2 requires.  Consumer/builder
+   sites that pattern-match on it now use `simp [queueCurrentConsistent,
+   SchedulerState.currentOnCore, …]` (builders) or drop the prior
+   `simp only [SchedulerState.currentOnCore] at hCur` normalize
+   (consumers — `hCur` stays accessor).
+2. **Frozen-state false positives corrected.** The bulk migration perl
+   matched `.scheduler.current` etc. on `FrozenSystemState` /
+   `FrozenSchedulerState` values too, but the frozen variant has **no**
+   per-core accessors (its fields are `current`, `activeDomain`, …).
+   Reverted to the raw frozen fields in `Model/FreezeProofs.lean`,
+   `Kernel/FrozenOps/{Core,Operations}.lean`, and the frozen-state test
+   suites (`FrozenStateSuite`, `FreezeProofSuite`, `TwoPhaseArchSuite`,
+   `FrozenOpsSuite`).  Rule for phase 2: frozen state is **not** part of
+   the per-core `Vector` flip — `FrozenSchedulerState` stays scalar.
+
+**Phase 2 (remaining for full SM4.B — the field-type flip).** Still to do
+to reach the path-a end state (per §3.1–§3.4):
+
+- Flip the 7 `SchedulerState` fields from scalar to `Vector α numCores`
+  (`current`, `runQueue`, `activeDomain`, `domainTimeRemaining`,
+  `domainScheduleIndex`, `replenishQueue`, `lastTimeoutErrors`); keep
+  `domainSchedule` / `configDefaultTimeSlice` system-wide.
+- Re-point each accessor from the scalar wrapper
+  (`def currentOnCore s _c := s.current`) to the indexed form
+  (`s.current.get c`), and introduce the per-core **setters**
+  (`setCurrentOnCore` etc.) the operation bodies' record-updates flip to.
+- Re-prove the `get_set_eq` / `get_set_ne` reductions at every literal
+  the phase-1 proofs currently discharge by record-update iota (the
+  `SeLe4n.PerCoreVector` lemmas land this: §3.2).
+- Rework the `SchedulerState.runnable` abbrev (currently `s.runQueue.toList`
+  on the raw field) to `(s.runQueueOnCore bootCoreId).toList`.
+- SM4.E witness retire/replace; byte-identical trace fixture
+  (single-core boot must still emit 227/227); full doc sync + the PR
+  version bump.
+
+The phase-1 accessor seam means phase 2 touches the 9 `SchedulerState`
+field sites + the accessor/setter defs + the per-literal `get_set`
+reductions — the ~768 read sites do **not** change again (they already
+route through the accessors).
+
+### 11.9 Phase 2 LANDED — full SM4.B green at v0.31.12
+
+Phase 2 (the field-type flip from scalar to `Vector α numCores`) is
+**fully LANDED and green** at v0.31.12.  All seven fields are
+`Vector`-shaped, the whole production import closure re-proves, every
+test suite builds, and the executable trace is byte-identical to
+`tests/fixtures/main_trace_smoke.expected`.  The mid-grind WIP patch
+(`docs/dev_history/SM4B_phase2_migration.wip.patch`) used during the
+multi-session grind has been removed now that the migration is
+committed in-tree.
+
+**What landed**:
+
+- **`SeLe4n/Model/State.lean`**: the 7 per-core `SchedulerState` fields
+  flipped scalar → `Vector α numCores` with `Vector.replicate numCores
+  <neutral>` defaults (`runQueue`, `current`, `activeDomain`,
+  `domainTimeRemaining`, `domainScheduleIndex`, `replenishQueue`,
+  `lastTimeoutErrors`; `domainSchedule` / `configDefaultTimeSlice` stay
+  system-wide).  Accessors flipped scalar-wrapper → `s.field.get c`.
+  Added 7 per-core **setters** `set<Field>OnCore (c) (v) := { s with
+  field := s.field.set c.val v c.isLt }` (the clean write API).
+  `ext_perCore` re-proved via `PerCoreVector.ext`; `runnable` →
+  `(s.runQueueOnCore bootCoreId).toList`; `Repr` derived (SM4.B.11) +
+  explicit `Inhabited` → `{}` (SM4.B.13); **SM4.B.12 (`BEq`) is N/A**
+  — no `BEq`/`DecidableEq` instance exists or is needed (nothing
+  compares schedulers via `==`);
+  `default_state_perCoreInitialized` via `PerCoreVector.replicate_get`.
+- **The 70-lemma `@[simp]` store/load algebra** (State.lean): for each
+  (setter, accessor) pair, `set<X>OnCore_<x>OnCore_self : (s.set<X>OnCore
+  c v).<x>OnCore c = v` (7) + same-field cross-core independence
+  `set<X>OnCore_<x>OnCore_ne : c ≠ c' → (s.set<X>OnCore c v).<x>OnCore c'
+  = s.<x>OnCore c'` (7, lifted from `PerCoreVector.get_set_ne` — the
+  theorem-level per-core-independence property) + cross-field
+  `set<X>OnCore_<y>OnCore : (s.set<X>OnCore c v).<y>OnCore c' =
+  s.<y>OnCore c'` (42) + system-wide-field preservation (14).  Plus
+  `PerCoreVector.get_set_eq` / `replicate_get` promoted to `@[simp]`.
+  This is the lever that makes post-write reads reduce automatically
+  under `simp` — `Vector.get (Vector.set …)` is not definitional, so raw
+  `simp [accessor]`/`rfl` no longer suffices.
+- **Whole production import closure re-proved**: `Model.State`,
+  `Scheduler.Operations.{Core,Preservation}` (incl. `switchDomain` /
+  `scheduleDomain` and the EDF / priority-match / context /
+  domain-time preservation proofs), `IPC.Operations.SchedulerLemmas`,
+  `IPC.Operations.Endpoint`, `SchedContext.{Operations,PriorityManagement}`,
+  `Lifecycle.{Suspend,Operations.CleanupPreservation,Invariant.SuspendPreservation}`,
+  `Scheduler.PriorityInheritance.{Propagate,Preservation}`,
+  `IPC.Invariant.{QueueNextBlocking,Structural.StoreObjectFrame}`,
+  `InformationFlow.{Projection,Invariant.Operations,Invariant.Helpers}`,
+  `Architecture.{Adapter,Invariant}`, `CrossSubsystem`,
+  `Scheduler.Liveness.TraceModel`, `Platform.Boot`,
+  `Platform.RPi5.{RuntimeContract,ProofHooks}`,
+  `Model.{FrozenState,FreezeProofs}`.
+- **Test suites migrated**: `PerCoreSchedulerStateSuite` (now tests
+  genuine per-core independence), `Testing.StateBuilder`,
+  `Testing.MainTraceHarness` (new `setBootRqCur` helper),
+  `NegativeStateSuite`, `OperationChainSuite`, `InformationFlowSuite`,
+  `ModelIntegritySuite`, `TraceSequenceProbe`, and the
+  syscall/error/cascade/priority suites.
+
+**Recurring proof patterns** (for SM4.C/SM4.D and future per-core work):
+(1) convert any `{ X.scheduler with field := V }` write to
+`X.scheduler.set<Field>OnCore bootCoreId (V)` — single-line, since the
+structure-update parser stops a multi-line value indented below the
+value-start column; (2) for proofs that read a setter-written field,
+add the explicit `set<X>OnCore_<y>OnCore` / `set<X>OnCore_<x>OnCore_self`
+lemma to a `simp only` (preferred — keeps the simp set tight) or use
+`simp` (picks up the `@[simp]` algebra); (3) `setRunQueueOnCore` frames
+every `projectState` component except `projectRunnable`, so NI
+projection-preservation proofs reduce the other scheduler projections
+via the cross lemmas and discharge only the runnable filter; (4)
+`saveOutgoingContext` / `restoreIncomingContext` preserve `scheduler`
+*definitionally* (they touch objects / machine), so their frame lemmas
+are often unused under the per-core algebra — the non-defeq operations
+are exactly the `set…OnCore` writers.
+
+**SM4.E + closure** (the next sub-phase): retire
+`bootFromPlatform_singleCore_witness` (restated over `currentOnCore
+bootCoreId` at SM4.B), add `bootFromPlatform_smp_witness`, and update
+the AN12-B SMP-latent inventory entry.

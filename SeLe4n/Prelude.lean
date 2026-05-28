@@ -1914,7 +1914,7 @@ was just written to returns the written value. The `Fin n`-indexed form
 of `Vector.getElem_set_self`; the SM5 per-core update operations
 (`field.set c.val x c.isLt`) rely on it to compute the post-write value
 at the updated core. -/
-theorem get_set_eq (v : _root_.Vector α n) (i : Fin n) (x : α) :
+@[simp] theorem get_set_eq (v : _root_.Vector α n) (i : Fin n) (x : α) :
     (v.set i.val x i.isLt).get i = x := by
   rw [get_eq_getElem]
   exact _root_.Vector.getElem_set_self i.isLt
@@ -1949,7 +1949,7 @@ the replicated value. The `Fin n`-indexed form of
 `default_state_perCoreInitialized` — each per-core `SchedulerState` field
 defaults to `Vector.replicate coreCount <neutral>`, so `field.get c`
 reduces to the neutral value at every `c`. -/
-theorem replicate_get (m : Nat) (x : α) (i : Fin m) :
+@[simp] theorem replicate_get (m : Nat) (x : α) (i : Fin m) :
     (_root_.Vector.replicate m x).get i = x := by
   rw [get_eq_getElem]
   exact _root_.Vector.getElem_replicate i.isLt

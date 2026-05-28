@@ -22,6 +22,7 @@ Each operation is a pure function `IntermediateState → IntermediateState`.
 namespace SeLe4n.Model.Builder
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 
 -- ============================================================================
@@ -82,15 +83,15 @@ private theorem allTablesInvExtK_cdtParentMap {st : SystemState}
 
 /-- Y1-F: Extract scheduler.runQueue.byPriority invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_byPriority {st : SystemState}
-    (h : st.allTablesInvExtK) : st.scheduler.runQueue.byPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Y1-F: Extract scheduler.runQueue.threadPriority invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_threadPriority {st : SystemState}
-    (h : st.allTablesInvExtK) : st.scheduler.runQueue.threadPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Y1-F: Extract scheduler.runQueue.membership.table invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_membership {st : SystemState}
-    (h : st.allTablesInvExtK) : st.scheduler.runQueue.membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- S-05/PERF-O1: Extract scThreadIndex invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_scThreadIndex {st : SystemState}

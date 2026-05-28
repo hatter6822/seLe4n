@@ -38,6 +38,7 @@ These are the seL4 equivalents of `seL4_TCB_Suspend` and `seL4_TCB_Resume`.
 namespace SeLe4n.Kernel.Lifecycle.Suspend
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 
@@ -182,8 +183,7 @@ def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
       | none => st
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
-    let st2 := { st1 with scheduler := { st1.scheduler with
-        replenishQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scId } }
+    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore bootCoreId (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore bootCoreId) scId) }
     -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
@@ -380,7 +380,7 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
               threadState := .Inactive }) }
         | _ => st
       -- G7: If suspended thread was current, trigger reschedule
-      if st.scheduler.current == some tid then
+      if (st.scheduler.currentOnCore bootCoreId) == some tid then
         match schedule st with
         | .ok ((), st') => .ok st'
         | .error e => .error e
@@ -453,7 +453,7 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let st := ensureRunnable st tid
       -- H5: Conditional preemption check (AE3-D/U-16: use effective priority)
       -- If the resumed thread has higher effective priority than current, reschedule
-      let needsReschedule : Bool := match st.scheduler.current with
+      let needsReschedule : Bool := match (st.scheduler.currentOnCore bootCoreId) with
         | some curTid =>
           match st.objects[curTid.toObjId]? with
           | some (.tcb curTcb) =>

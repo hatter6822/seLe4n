@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.11.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.12.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3866,6 +3866,81 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `bootFromPlatform_smp_witness`) per
   [`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
   §§5.2..5.5.
+
+  **WS-SM SM4.B LANDED at v0.31.12 on branch
+  `claude/sharp-carson-V2Y59`** (`SchedulerState` path-a `Vector`
+  replacement; plan §5.2).  Replaces the seven singular per-core
+  `SchedulerState` fields with `Vector α Concurrency.numCores` indexed
+  by `CoreId`, on top of the SM4.A `PerCoreVector` bootstrap.  All
+  fifteen sub-tasks landed in one green cut (decision #4: full path-a,
+  no scalar shim).  Observably transparent — `lake exe sele4n` is
+  **byte-identical** to `tests/fixtures/main_trace_smoke.expected`
+  (SM4.B.15).
+
+  - **SM4.B.1..7**: the fields `runQueue`, `current`, `replenishQueue`,
+    `activeDomain`, `domainTimeRemaining`, `domainScheduleIndex`,
+    `lastTimeoutErrors` flip scalar → `Vector α numCores` with defaults
+    `Vector.replicate numCores <neutral>`.  `domainSchedule` and
+    `configDefaultTimeSlice` stay system-wide.
+  - **SM4.B.8**: the seven `…OnCore (c : CoreId)` read accessors (phase-1
+    scalar wrappers) are now `Vector.get`-backed; seven matching
+    `set…OnCore (c) (v)` writers added.  Accessors are deliberately
+    **not** `@[simp]`; instead a **70-lemma `@[simp]` store/load
+    algebra** (7 read-after-write `set…OnCore_…OnCore_self` + 7 same-field
+    cross-core independence `set…OnCore_…OnCore_ne` (write core `c` leaves
+    a distinct core `c'`'s same-field slot unchanged) + 42 cross-field
+    frame `set…OnCore_…OnCore` + 14 system-wide-field frame lemmas) drives
+    proof automation.  Because `Vector.get (Vector.set …)`
+    is **not** definitional, these proved lemmas — not `rfl`/iota — are
+    what let setter-state reads reduce under `simp`.
+  - **SM4.B.9**: `default_state_perCoreInitialized` — every per-core
+    read of the default scheduler returns the neutral value on every
+    core (via `PerCoreVector.replicate_get`).
+  - **SM4.B.10**: `SchedulerState.ext_perCore` — per-core
+    extensionality (reproved through `PerCoreVector.ext`).
+  - **SM4.B.11..13**: `Repr` derived and the explicit `Inhabited`
+    instance re-derived for the `Vector`-shaped record; `default` is
+    the all-`replicate` scheduler.  No `BEq`/`DecidableEq` instance
+    exists or is needed (nothing compares schedulers via `==`), so
+    SM4.B.12 is N/A.
+  - **SM4.B.14**: immediate caller sites in `Model/State.lean`
+    (`setCurrentThread`, freeze boundary, `runnable` =
+    `(runQueueOnCore bootCoreId).toList`).
+  - **SM4.B.15**: trace fixture byte-identical — the boot core
+    (`bootCoreId`) behaves exactly as the former scalar, so the
+    single-core scenario is unchanged.
+
+  **Kernel-wide proof migration**: the flip cascades through the
+  production import closure — `Scheduler/Operations/{Core,Preservation}`
+  (incl. `switchDomain` / `scheduleDomain` and the EDF / priority-match /
+  context / domain-time preservation proofs), `SchedContext`,
+  `Lifecycle` (suspend/cleanup), IPC scheduler lemmas, priority
+  inheritance, `InformationFlow` projection + NI proofs,
+  `Architecture/Invariant`, `CrossSubsystem`, `Platform/Boot`,
+  `Model/FreezeProofs`.  Every scalar record-update write becomes a
+  `set…OnCore bootCoreId` call; every proof that previously reduced a
+  record literal by `rfl`/iota now reduces the setter state through the
+  `@[simp]` store/load algebra (read-after-write at the boot core,
+  cross-field frames for untouched fields).  Key recurring NI pattern:
+  `setRunQueueOnCore` frames every `projectState` component except
+  `projectRunnable`, so the projection-preservation proofs reduce the
+  other scheduler projections via the cross lemmas and discharge only
+  the runnable filter.  The `bootFromPlatform_singleCore_witness`
+  keystone is restated over `currentOnCore bootCoreId`; its full SM4.E
+  retirement + `bootFromPlatform_smp_witness` remain a later sub-phase.
+
+  **Test suites migrated**: `PerCoreSchedulerStateSuite` now exercises
+  genuine per-core independence (a boot-core write leaves other cores'
+  slots neutral); `Testing/StateBuilder`, `Testing/MainTraceHarness`
+  (new `setBootRqCur` fixture helper), `NegativeStateSuite`,
+  `OperationChainSuite`, `InformationFlowSuite`, `ModelIntegritySuite`,
+  `TraceSequenceProbe`, and the syscall/error/cascade/priority suites
+  build their scheduler fixtures through the per-core setters.  Full
+  Tier 0+1+2 smoke green; trace fixture byte-identical; 0 `sorry` /
+  0 `axiom`.  Follow-on: SM4.C/SM4.D (scheduler + cross-subsystem
+  theorem migrations), SM4.E (witness retirement) per
+  [`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+  §§5.3..5.5.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

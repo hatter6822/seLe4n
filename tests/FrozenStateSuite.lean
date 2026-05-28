@@ -11,6 +11,7 @@ import SeLe4n
 import SeLe4n.Model.FrozenState
 
 open SeLe4n.Kernel.RadixTree
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Model
 
@@ -157,7 +158,7 @@ private def fs011_freezeEmpty : IO Unit := do
   expect "objectIndex empty" (fss.objectIndex.length == 0)
   expect "CDT edges empty" (fss.cdtEdges.length == 0)
   expect "objectIndexSet empty" (fss.objectIndexSet.data.size == 0)
-  expect "scheduler current is none" (fss.scheduler.current == none)
+  expect "scheduler current is none" ((fss.scheduler.current) == none)
   expect "scheduler byPriority empty" (fss.scheduler.byPriority.data.size == 0)
   expect "scheduler threadPriority empty" (fss.scheduler.threadPriority.data.size == 0)
 

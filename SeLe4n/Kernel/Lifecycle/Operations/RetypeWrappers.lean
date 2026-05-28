@@ -24,6 +24,7 @@ All declarations retain their original names, order, and proofs.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- AN4-A / AN4-G.5 allowlist: proof-chain reference to
 -- `lifecycleRetypeObject` from `SeLe4n.Kernel.Internal`. Enforced by
 -- `scripts/test_tier0_hygiene.sh`.
@@ -87,7 +88,7 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
     (tcb : TCB)
     (hObj : st.objects[target]? = some (.tcb tcb))
     (hStep : lifecycleRetypeWithCleanup authority target newObj st = .ok ((), st')) :
-    ¬(tcb.tid ∈ st'.scheduler.runQueue) := by
+    ¬(tcb.tid ∈ (st'.scheduler.runQueueOnCore bootCoreId)) := by
   unfold lifecycleRetypeWithCleanup at hStep
   -- T5-D: wellFormed guard — since hStep is .ok, the guard must have passed
   simp only [] at hStep

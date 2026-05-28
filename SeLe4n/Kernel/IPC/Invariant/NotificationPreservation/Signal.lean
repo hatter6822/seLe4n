@@ -28,6 +28,7 @@ consumers continue to typecheck without modification.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- WS-F4: Notification preservation helpers and theorems
@@ -144,7 +145,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
             · -- queueCurrentConsistent
               unfold queueCurrentConsistent
               rw [ensureRunnable_scheduler_current, hSchedEq]
-              cases hCurr : st.scheduler.current with
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => trivial
               | some x =>
                 have hNotMem : x ∉ st.scheduler.runnable := by
@@ -164,7 +165,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
             · show currentThreadValid (ensureRunnable st'' waiter)
               unfold currentThreadValid
               simp only [ensureRunnable_scheduler_current, ensureRunnable_preserves_objects, hSchedEq]
-              cases hCurr : st.scheduler.current with
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 simp only []
@@ -186,18 +187,19 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
         -- Merge path: storeObject only (scheduler unchanged)
         simp only [hWaiters] at hStep
         have hSchedEq := storeObject_scheduler_eq st st' notificationId _ hStep
-        have hCurrEq := congrArg SchedulerState.current hSchedEq
+        have hCurrEq : st'.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId :=
+          congrArg (SchedulerState.currentOnCore · bootCoreId) hSchedEq
         have hRunEq := congrArg SchedulerState.runnable hSchedEq
         refine ⟨?_, ?_, ?_⟩
         · unfold queueCurrentConsistent; rw [hCurrEq]
-          cases hCurr : st.scheduler.current with
+          cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
           | none => trivial
           | some x =>
             show x ∉ st'.scheduler.runnable; rw [hRunEq]
             have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
         · show st'.scheduler.runnable.Nodup; rw [hRunEq]; exact hRQU
         · unfold currentThreadValid; rw [hCurrEq]
-          cases hCurr : st.scheduler.current with
+          cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
           | none => simp
           | some x =>
             simp only []
@@ -327,18 +329,19 @@ theorem notificationWait_preserves_schedulerInvariantBundle
             simp only [Except.ok.injEq, Prod.mk.injEq]
             intro ⟨_, hEq⟩; subst hEq
             have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st'' notificationId _ waiter _ hStore hTcb
-            have hCurrEq := congrArg SchedulerState.current hSchedEq
+            have hCurrEq : st''.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId :=
+              congrArg (SchedulerState.currentOnCore · bootCoreId) hSchedEq
             have hRunEq := congrArg SchedulerState.runnable hSchedEq
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent; rw [hCurrEq]
-              cases hCurr : st.scheduler.current with
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => trivial
               | some x =>
                 show x ∉ st''.scheduler.runnable; rw [hRunEq]
                 have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
             · show st''.scheduler.runnable.Nodup; rw [hRunEq]; exact hRQU
             · unfold currentThreadValid; rw [hCurrEq]
-              cases hCurr : st.scheduler.current with
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 simp only []
@@ -387,11 +390,12 @@ theorem notificationWait_preserves_schedulerInvariantBundle
                 simp only [Except.ok.injEq, Prod.mk.injEq]
                 intro ⟨_, hEq⟩; subst hEq
                 have hSchedEq := scheduler_unchanged_through_store_tcb st pair.2 st'' notificationId _ waiter _ hStore hTcb
-                have hCurrEq := congrArg SchedulerState.current hSchedEq
+                have hCurrEq : st''.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId :=
+                  congrArg (SchedulerState.currentOnCore · bootCoreId) hSchedEq
                 refine ⟨?_, ?_, ?_⟩
                 · unfold queueCurrentConsistent
                   rw [removeRunnable_scheduler_current, hCurrEq]
-                  cases hCurr : st.scheduler.current with
+                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                   | none => simp
                   | some x =>
                     by_cases hEq' : x = waiter
@@ -404,7 +408,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
                 · exact removeRunnable_nodup st'' waiter (hSchedEq ▸ hRQU)
                 · unfold currentThreadValid
                   rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current, hCurrEq]
-                  cases hCurr : st.scheduler.current with
+                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                   | none => simp
                   | some x =>
                     by_cases hEq' : x = waiter

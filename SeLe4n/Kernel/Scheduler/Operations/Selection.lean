@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.Invariant
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- M-03/WS-E6: EDF (Earliest Deadline First) tie-breaking
@@ -501,7 +502,7 @@ This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestInBucket st.objects.get? st.scheduler.runQueue st.scheduler.activeDomain with
+    match chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
@@ -515,7 +516,7 @@ extended scheduler operations (`scheduleEffective`, `timerTickWithBudget`,
 backward compatibility with existing preservation proofs. -/
 def chooseThreadEffective : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestInBucketEffective st st.scheduler.runQueue st.scheduler.activeDomain with
+    match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
     | .error e => .error e
     | .ok none => .ok (none, st)
     | .ok (some (tid, _, _)) => .ok (some tid, st)
@@ -527,7 +528,7 @@ theorem chooseThreadEffective_preserves_state
     (hStep : chooseThreadEffective st = .ok (next, st')) :
     st' = st := by
   unfold chooseThreadEffective at hStep
-  cases hPick : chooseBestInBucketEffective st st.scheduler.runQueue st.scheduler.activeDomain with
+  cases hPick : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>
       cases best with
@@ -550,7 +551,7 @@ branch is unreachable: the invariant guarantees the current thread resolves to
 a valid TCB. The `saveOutgoingContextChecked` variant below provides an explicit
 success indicator for callers that need to detect this (unreachable) failure. -/
 def saveOutgoingContext (st : SystemState) : SystemState :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => st
   | some outTid =>
       match st.objects[outTid.toObjId]? with
@@ -567,7 +568,7 @@ def saveOutgoingContext (st : SystemState) : SystemState :=
     exists for defense-in-depth: callers at API boundaries can assert on the
     success flag to surface invariant violations early. -/
 def saveOutgoingContextChecked (st : SystemState) : SystemState × Bool :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => (st, true)
   | some outTid =>
       match st.objects[outTid.toObjId]? with
@@ -596,7 +597,7 @@ theorem saveOutgoingContext_always_succeeds_under_currentThreadValid
     (hCTV : currentThreadValid st) :
     (saveOutgoingContextChecked st).2 = true := by
   unfold saveOutgoingContextChecked currentThreadValid at *
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
     simp only [hCur] at hCTV
@@ -607,7 +608,7 @@ theorem saveOutgoingContext_always_succeeds_under_currentThreadValid
 theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
     (saveOutgoingContextChecked st).1 = saveOutgoingContext st := by
   unfold saveOutgoingContextChecked saveOutgoingContext
-  cases st.scheduler.current with
+  cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases h : st.objects[outTid.toObjId]? with

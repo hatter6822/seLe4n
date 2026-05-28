@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.11` (`lakefile.toml`) |
+| **Package version** | `0.31.12` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 140,030 across 200 Lean files |
 | **Test LoC** | 29,885 across 43 Lean test suites |
 | **Proved declarations** | 4,180 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
+| **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM4.B `SchedulerState` path-a `Vector` replacement LANDED (v0.31.12)** — the seven singular per-core scheduler fields flip scalar → `Vector α Concurrency.numCores` indexed by `CoreId`, governed by a 70-lemma `@[simp]` store/load algebra; `lake exe sele4n` is byte-identical to `tests/fixtures/main_trace_smoke.expected`; 0 sorry / 0 axiom. Landed earlier in WS-SM: SM0 (foundations, v0.31.3), SM1 (Rust HAL, v0.31.8), SM2 (verified lock primitives), SM3 (per-object locks → 2PL → deadlock-freedom → serializability), SM4.A (per-core `Vector` bootstrap, v0.31.11). Follow-on: SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E (`bootFromPlatform_singleCore_witness` retirement + `bootFromPlatform_smp_witness`), SM5..SM9 (per-core scheduler, cross-core IPC, TLB shootdown, info-flow, release closure). Plans: master [`SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md); per-core state [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md) §5.2. Canonical per-phase record: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md). Prior closed portfolios: WS-RC pre-1.0 audit remediation (v0.30.11→v0.31.2), WS-AN (v0.30.11), WS-AK (v0.30.6), WS-AM–WS-B. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -2297,8 +2297,32 @@ preserves on a per-core basis.
    instance anchors verifying `Vector (Option ThreadId) numCores` carries
    `DecidableEq`/`Repr`/`Inhabited`/`BEq`); Tier 2 + Tier 3 wired.
    **Axiom budget for SM4.A**: 0 Lean axioms, 0 sorries.
-   Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
-   (theorem migrations), SM4.E (`bootFromPlatform_smp_witness`).
+
+   **SM4.B — `SchedulerState` path-a `Vector` replacement (v0.31.12).**
+   The seven singular per-core `SchedulerState` fields (`runQueue`,
+   `current`, `replenishQueue`, `activeDomain`, `domainTimeRemaining`,
+   `domainScheduleIndex`, `lastTimeoutErrors`) flip from scalars to
+   `Vector α Concurrency.numCores` indexed by `CoreId`, with
+   `Vector.replicate numCores <neutral>` defaults; `domainSchedule` and
+   `configDefaultTimeSlice` stay system-wide. The seven `…OnCore`
+   accessors are now `Vector.get`-backed and gain seven matching
+   `set…OnCore` writers, governed by a 70-lemma `@[simp]` store/load
+   algebra (7 read-after-write + 7 same-field cross-core independence
+   `_ne` + 42 cross-field frame + 14 system-wide-field frame). Because
+   `Vector.get (Vector.set …)` is not
+   definitional, these proved lemmas — not `rfl`/iota — drive every
+   post-write read reduction, which is how the whole production import
+   closure (scheduler operations + preservation, SchedContext,
+   lifecycle, IPC, priority inheritance, information-flow projection +
+   NI, architecture invariants, cross-subsystem, boot, freeze) re-proves
+   without behavioural change. `default_state_perCoreInitialized`
+   (SM4.B.9) and `SchedulerState.ext_perCore` (SM4.B.10) anchor the
+   per-core defaults and extensionality. The executable trace remains
+   **byte-identical** to `main_trace_smoke.expected` (SM4.B.15) because
+   the boot core behaves exactly as the former scalar. Axiom budget for
+   SM4.B: 0 axioms, 0 sorries. Follow-on: SM4.C/SM4.D (theorem
+   migrations), SM4.E (`bootFromPlatform_smp_witness` + witness
+   retirement).
 
 ---
 
@@ -3568,21 +3592,29 @@ Three complementary guards enforce the index cannot silently drift:
 
 #### 11.2.3 Single-core kernel model witness (AN6-F / CX-M03)
 
-WS-AN Phase AN6-F adds `bootFromPlatform_singleCore_witness` in
-`Kernel/CrossSubsystem.lean` proving that `SchedulerState.current` is a
-single `Option ThreadId`, not a per-core indexed map. The theorem is a
-structural witness of the Lean kernel model's single-core shape; the
-Rust HAL enforces the corresponding hardware-level assumption via
+WS-AN Phase AN6-F added `bootFromPlatform_singleCore_witness` in
+`Kernel/CrossSubsystem.lean`. As anticipated below, the WS-SM SMP
+bring-up workstream took **path (a)**: at **SM4.B** (v0.31.12) the
+`SchedulerState.current` field flipped from a single `Option ThreadId`
+to `Vector (Option ThreadId) Concurrency.numCores` indexed by `CoreId`
+(the path-a per-core `Vector` replacement). The witness is therefore
+restated over the boot core's accessor — `currentOnCore bootCoreId =
+none ∨ ∃ tid, currentOnCore bootCoreId = some tid` — and remains the
+structural anchor for the `singleCoreOperation` `ArchAssumption`. The
+Rust HAL still enforces the hardware-level boot assumption via
 `MPIDR_CORE_ID_MASK = 0x00FFFFFF` and the core-0 wake gate in
-`rust/sele4n-hal/src/boot.S`.
+`rust/sele4n-hal/src/boot.S` (secondary-core wake-up is staged in the
+SM1 HAL but not yet driven from the verified kernel).
 
-Any future SMP extension (tracked as DEF-R-HAL-L20 / AN9-J in the v0.30.6
-workstream plan) that adds per-core scheduler state will either (a)
-change the `current` field's type (breaking this theorem statement) or
-(b) introduce a separate per-core-map field (requiring an explicit SMP
-invariant). Both paths force the SMP-bring-up workstream to retire the
-single-core witness explicitly rather than letting the assumption slip
-silently.
+The original AN6-F note anticipated exactly this: "any future SMP
+extension that adds per-core scheduler state will either (a) change the
+`current` field's type (breaking this theorem statement) or (b)
+introduce a separate per-core-map field." SM4.B is option (a). The
+**full** retirement of the single-core witness — replacing it with
+`bootFromPlatform_smp_witness` and repointing the `singleCoreOperation`
+`ArchAssumption` — is scheduled for **SM4.E**; SM4.B keeps the witness
+valid (restated, not deleted) so the SMP assumption is never silently
+dropped mid-migration.
 
 ## 12. Licensing and Third-Party Attribution
 

@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.Liveness.WCRT
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-! # AN5-E — RPi5 Canonical Deployment: `eventuallyExits` closure
 
@@ -167,8 +168,8 @@ theorem eventuallyExits_of_exit_index
     (k : Nat) (hk : k > startIdx)
     (st : SystemState)
     (hTraceAt : traceStateAt trace k = some st)
-    (hNotInRQ : st.scheduler.runQueue.contains tid = false)
-    (hNotCurrent : st.scheduler.current ≠ some tid) :
+    (hNotInRQ : (st.scheduler.runQueueOnCore bootCoreId).contains tid = false)
+    (hNotCurrent : (st.scheduler.currentOnCore bootCoreId) ≠ some tid) :
     eventuallyExits trace tid startIdx := by
   refine ⟨k, hk, ?_⟩
   simp only [hTraceAt]
@@ -201,9 +202,9 @@ structure CanonicalDeploymentProgress
   exitState : SystemState
   exitStateAtIdx : traceStateAt trace exitIdx = some exitState
   /-- Thread is not in the run queue at the exit index. -/
-  notInRunQueue : exitState.scheduler.runQueue.contains tid = false
+  notInRunQueue : (exitState.scheduler.runQueueOnCore bootCoreId).contains tid = false
   /-- Thread is not the current thread at the exit index. -/
-  notCurrent : exitState.scheduler.current ≠ some tid
+  notCurrent : (exitState.scheduler.currentOnCore bootCoreId) ≠ some tid
 
 /-- AN5-E.3: Main substantive closure. Given a
 `CanonicalDeploymentProgress` witness for the canonical RPi5 deployment,
@@ -261,7 +262,7 @@ theorem rpi5_higherBandExhausted_from_progresses
     (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat)
     (progresses :
-      ∀ tid, tid ∈ st.scheduler.runQueue.flat →
+      ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
         (match resolveEffectivePriority st tid with
          | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
          | none => False) →
@@ -281,7 +282,7 @@ the same module. -/
 theorem rpi5_higherBandExhausted_empty_band
     (trace : SchedulerTrace) (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat)
-    (hNoHigher : ∀ tid, tid ∈ st.scheduler.runQueue.flat →
+    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId).flat →
       match resolveEffectivePriority st tid with
       | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
       | none => True) :
@@ -328,13 +329,13 @@ theorem wcrt_bound_rpi5
         st.scheduler.domainSchedule.length
         (maxDomainLength st.scheduler.domainSchedule) ∧
       match traceStateAt trace k₁ with
-      | some st₁ => st₁.scheduler.activeDomain = hyp.targetDomain ∧
-                     st₁.scheduler.runQueue.contains tid = true
+      | some st₁ => (st₁.scheduler.activeDomainOnCore bootCoreId) = hyp.targetDomain ∧
+                     (st₁.scheduler.runQueueOnCore bootCoreId).contains tid = true
       | none => False)
     (hBandProgress : ∀ k₁ st₁,
       traceStateAt trace k₁ = some st₁ →
-      st₁.scheduler.activeDomain = hyp.targetDomain →
-      st₁.scheduler.runQueue.contains tid = true →
+      (st₁.scheduler.activeDomainOnCore bootCoreId) = hyp.targetDomain →
+      (st₁.scheduler.runQueueOnCore bootCoreId).contains tid = true →
       ∃ k₂, k₂ ≤ bandExhaustionBound hyp.N hyp.B hyp.P ∧
         selectedAt trace (k₁ + k₂) tid) :
     ∃ k, k ≤ wcrtBound

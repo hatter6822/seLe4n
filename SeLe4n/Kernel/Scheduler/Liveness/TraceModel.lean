@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.BoundedInversion
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- D5-A1: SchedulerStep inductive
@@ -52,15 +53,15 @@ def stepPrecondition (step : SchedulerStep) (st : SystemState) : Prop :=
   match step with
   | .timerTick => True
   | .timerTickBudget tid tcb =>
-      st.scheduler.current = some tid ∧
+      (st.scheduler.currentOnCore bootCoreId) = some tid ∧
       st.objects[tid.toObjId]? = some (.tcb tcb)
   | .schedule => True
   | .scheduleEffective => True
-  | .handleYield => st.scheduler.current.isSome
-  | .handleYieldWithBudget => st.scheduler.current.isSome
+  | .handleYield => (st.scheduler.currentOnCore bootCoreId).isSome
+  | .handleYieldWithBudget => (st.scheduler.currentOnCore bootCoreId).isSome
   | .switchDomain => st.scheduler.domainSchedule.length > 0
   | .processReplenishmentsDue currentTime =>
-      st.scheduler.replenishQueue.hasDue currentTime
+      (st.scheduler.replenishQueueOnCore bootCoreId).hasDue currentTime
   | .ipcTimeoutTick scId =>
       ∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
         sc.budgetRemaining.isZero
@@ -102,14 +103,14 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
     | .ok ((), st') => .ok st'
     | .error e => .error e
   | .processReplenishmentsDue currentTime =>
-    let (rq', dueIds) := st.scheduler.replenishQueue.popDue currentTime
+    let (rq', dueIds) := (st.scheduler.replenishQueueOnCore bootCoreId).popDue currentTime
     let st' := dueIds.foldl (fun acc scId =>
       match acc.objects[scId.toObjId]? with
       | some (.schedContext sc) =>
         let sc' := processReplenishments sc currentTime
         { acc with objects := acc.objects.insert scId.toObjId (.schedContext sc') }
       | _ => acc
-    ) { st with scheduler := { st.scheduler with replenishQueue := rq' } }
+    ) { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
     .ok st'
   | .ipcTimeoutTick scId =>
     .ok (timeoutBlockedThreads st scId).1
@@ -143,7 +144,7 @@ def traceStateAt (trace : SchedulerTrace) (k : Nat) : Option SystemState :=
 /-- D5-B1: Thread `tid` is the current (selected) thread at trace index `k`. -/
 def selectedAt (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) : Prop :=
   match traceStateAt trace k with
-  | some st => st.scheduler.current = some tid
+  | some st => (st.scheduler.currentOnCore bootCoreId) = some tid
   | none => False
 
 -- ============================================================================
@@ -153,7 +154,7 @@ def selectedAt (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) : Prop :=
 /-- D5-B2: Thread `tid` is in the run queue at trace index `k`. -/
 def runnableAt (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) : Prop :=
   match traceStateAt trace k with
-  | some st => st.scheduler.runQueue.contains tid = true
+  | some st => (st.scheduler.runQueueOnCore bootCoreId).contains tid = true
   | none => False
 
 -- ============================================================================
@@ -178,7 +179,7 @@ dequeue-on-dispatch: `queueCurrentConsistent` ensures the current thread
 has been removed from the run queue before execution begins. -/
 theorem selectedAt_implies_not_in_runQueue
     (st : SystemState) (tid : ThreadId)
-    (hSel : st.scheduler.current = some tid)
+    (hSel : (st.scheduler.currentOnCore bootCoreId) = some tid)
     (hQCC : queueCurrentConsistent st.scheduler) :
     tid ∉ st.scheduler.runnable := by
   simp [queueCurrentConsistent] at hQCC
@@ -236,7 +237,7 @@ def resolveEffectivePriority (st : SystemState) (tid : ThreadId)
 effective priority in the same domain. -/
 def countHigherOrEqualEffectivePriority (st : SystemState)
     (targetPrio : Priority) (targetDomain : DomainId) : Nat :=
-  st.scheduler.runQueue.flat.foldl (fun count otherTid =>
+  (st.scheduler.runQueueOnCore bootCoreId).flat.foldl (fun count otherTid =>
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then count + 1
@@ -248,7 +249,7 @@ def countHigherOrEqualEffectivePriority (st : SystemState)
 priority in the same domain. Returns 0 if no such threads exist. -/
 def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) : Nat :=
-  st.scheduler.runQueue.flat.foldl (fun maxB otherTid =>
+  (st.scheduler.runQueueOnCore bootCoreId).flat.foldl (fun maxB otherTid =>
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then
@@ -271,7 +272,7 @@ def maxBudgetInBand (st : SystemState) (targetPrio : Priority)
 priority in the same domain. Unbound threads contribute period=0. -/
 def maxPeriodInBand (st : SystemState) (targetPrio : Priority)
     (targetDomain : DomainId) : Nat :=
-  st.scheduler.runQueue.flat.foldl (fun maxP otherTid =>
+  (st.scheduler.runQueueOnCore bootCoreId).flat.foldl (fun maxP otherTid =>
     match resolveEffectivePriority st otherTid with
     | some (p, _, d) =>
       if d.val = targetDomain.val && p.val ≥ targetPrio.val then
@@ -291,10 +292,10 @@ def maxPeriodInBand (st : SystemState) (targetPrio : Priority)
 /-- D5-C: 0-indexed position of thread `tid` in its priority bucket.
 Returns `none` if thread is not in the run queue. -/
 def bucketPosition (st : SystemState) (tid : ThreadId) : Option Nat :=
-  match st.scheduler.runQueue.threadPriority.get? tid with
+  match (st.scheduler.runQueueOnCore bootCoreId).threadPriority.get? tid with
   | none => none
   | some prio =>
-    let bucket := (st.scheduler.runQueue.byPriority[prio]?).getD []
+    let bucket := ((st.scheduler.runQueueOnCore bootCoreId).byPriority[prio]?).getD []
     match bucket.findIdx? (· == tid) with
     | some idx => some idx
     | none => none
@@ -307,7 +308,7 @@ def bucketPosition (st : SystemState) (tid : ThreadId) : Option Nat :=
 This is the base case for WCRT reasoning on systems with no contention. -/
 theorem countHigherOrEqual_empty (st : SystemState)
     (prio : Priority) (dom : DomainId)
-    (hEmpty : st.scheduler.runQueue.flat = []) :
+    (hEmpty : (st.scheduler.runQueueOnCore bootCoreId).flat = []) :
     countHigherOrEqualEffectivePriority st prio dom = 0 := by
   simp [countHigherOrEqualEffectivePriority, hEmpty]
 

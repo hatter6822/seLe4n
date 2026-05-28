@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance
 import SeLe4n.Kernel.IPC.Operations.Donation
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel
 open SeLe4n.Kernel.PriorityInheritance
 open SeLe4n.Kernel.RobinHood
@@ -243,7 +244,7 @@ private def pip017_framePreservesCurrent : IO Unit := do
         (state := .BlockedReply))) ]
     (current := some ⟨1⟩)
   let st' := propagatePriorityInheritance st ⟨1⟩
-  expect "scheduler.current preserved" (st'.scheduler.current == some ⟨1⟩)
+  expect "scheduler.current preserved" ((st'.scheduler.currentOnCore bootCoreId) == some ⟨1⟩)
 
 -- PIP-018: revertPriorityInheritance preserves machine state (frame)
 private def pip018_framePreservesMachine : IO Unit := do
@@ -265,7 +266,7 @@ private def pip019_runQueueBucketMigration : IO Unit := do
     (runnable := [⟨1⟩])
   let st' := updatePipBoost st ⟨1⟩
   -- Thread 1 should still be in run queue (membership preserved)
-  expect "thread 1 still in run queue" (⟨1⟩ ∈ st'.scheduler.runQueue)
+  expect "thread 1 still in run queue" (⟨1⟩ ∈ (st'.scheduler.runQueueOnCore bootCoreId))
   -- Check pipBoost was set
   match st'.objects[(⟨1⟩ : ObjId)]? with
   | some (.tcb tcb) =>

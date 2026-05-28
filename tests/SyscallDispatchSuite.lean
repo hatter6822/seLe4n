@@ -40,6 +40,7 @@ and the Tier-3 invariant-surface anchor checker.
 -/
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Lifecycle.Suspend
@@ -255,13 +256,13 @@ private def sd011_updateKernelState : IO Unit := do
   updateKernelState id
   let st' ← getKernelState
   expect "sd011a_identity_update_preserves_current"
-    (st'.scheduler.current == some tid)
+    ((st'.scheduler.currentOnCore bootCoreId) == some tid)
     "identity updateKernelState must preserve scheduler.current"
   -- Substantive transformation: clear scheduler.current.
-  updateKernelState (fun s => { s with scheduler := { s.scheduler with current := none } })
+  updateKernelState (fun s => { s with scheduler := s.scheduler.setCurrentOnCore bootCoreId none })
   let st'' ← getKernelState
   expect "sd011b_substantive_update_clears_current"
-    (st''.scheduler.current == none)
+    ((st''.scheduler.currentOnCore bootCoreId) == none)
     "substantive updateKernelState must apply the transformation"
   -- Restore the original state to avoid affecting downstream tests.
   initialiseKernelState st
@@ -530,7 +531,7 @@ private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
       -- is `none` (the sentinel TCB is gone).
       let st' ← getKernelState
       expect "sd040_bootInitialise_success_clears_sentinel"
-        (st'.scheduler.current == none)
+        ((st'.scheduler.currentOnCore bootCoreId) == none)
         "post-empty-boot state must have no current thread"
   | Except.error e =>
       failLine "sd040_bootInitialise_unexpected_error"
@@ -579,7 +580,7 @@ private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
       -- Verify the IO.Ref was NOT mutated on the failure path.
       let st' ← getKernelState
       expect "sd042_io_ref_unchanged_on_error"
-        (st'.scheduler.current == some sentinelTid)
+        ((st'.scheduler.currentOnCore bootCoreId) == some sentinelTid)
         "bootAndInitialiseFromPlatform must NOT mutate kernelStateRef on failure"
       -- Restore a clean state for downstream tests.
       let cleanSt := mkState [] none

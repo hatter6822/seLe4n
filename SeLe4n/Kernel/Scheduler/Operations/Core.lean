@@ -71,13 +71,14 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 
 @[simp] theorem saveOutgoingContext_scheduler (st : SystemState) :
     (saveOutgoingContext st).scheduler = st.scheduler := by
   simp only [saveOutgoingContext]
-  cases st.scheduler.current with
+  cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases h : st.objects[outTid.toObjId]? with
@@ -113,7 +114,7 @@ theorem saveOutgoingContext_preserves_tcb
     (hObjInv : st.objects.invExt) :
     ∃ tcb', (saveOutgoingContext st).objects[oid]? = some (.tcb tcb') := by
   unfold saveOutgoingContext
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => exact ⟨tcb, h⟩
   | some outTid =>
       dsimp only
@@ -147,7 +148,7 @@ theorem saveOutgoingContext_tcb_fields
       tcb'.pipBoost = tcb.pipBoost ∧
       tcb'.schedContextBinding = tcb.schedContextBinding := by
   unfold saveOutgoingContext
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
   | some outTid =>
       dsimp only
@@ -182,7 +183,7 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects[oid]? = st.objects[oid]? := by
   simp only [saveOutgoingContext]
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       dsimp only
@@ -217,7 +218,7 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
   have hMemOrig : tid ∈ st.scheduler.runnable := by rwa [← hSched]
   have hOrig := hInv tid hMemOrig
   unfold saveOutgoingContext
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => exact hOrig
   | some outTid =>
       dsimp only
@@ -247,7 +248,7 @@ theorem saveOutgoingContext_preserves_objects_invExt
     (st : SystemState) (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).objects.invExt := by
   unfold saveOutgoingContext
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => exact hObjInv
   | some outTid =>
       dsimp only
@@ -321,7 +322,7 @@ This ensures `contextMatchesCurrent` (machine.regs = currentThread.registerConte
 is established atomically by `schedule` itself.
 
 **Performance note:** Membership validation uses O(1) HashSet-backed
-`tid ∈ st'.scheduler.runQueue`.
+`tid ∈ (st'.scheduler.runQueueOnCore bootCoreId)`.
 
 **U8-D/U-L26: Starvation and fairness:** This is a strict fixed-priority
 preemptive scheduler matching seL4's classic scheduling model. Starvation
@@ -364,12 +365,11 @@ def schedule : Kernel Unit :=
         | some (.tcb tcb) =>
             -- AF1-G: Domain check uses static `tcb.domain`, safe under
             -- `boundThreadDomainConsistent` (AE3-A: sc.domain = tcb.domain).
-            if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
+            if tid ∈ (st'.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (st'.scheduler.activeDomainOnCore bootCoreId) then
               -- WS-H12c: save outgoing thread's register context
               let stSaved := saveOutgoingContext st'
               -- WS-H12b: dequeue before dispatch (seL4 tcbSchedDequeue)
-              let stDequeued := { stSaved with scheduler := { stSaved.scheduler with
-                  runQueue := stSaved.scheduler.runQueue.remove tid } }
+              let stDequeued := { stSaved with scheduler := stSaved.scheduler.setRunQueueOnCore bootCoreId ((stSaved.scheduler.runQueueOnCore bootCoreId).remove tid) }
               -- WS-H12c: restore incoming thread's register context
               let stRestored := restoreIncomingContext stDequeued tid
               setCurrentThread (some tid) stRestored
@@ -425,7 +425,7 @@ AK2-L (S-L13..S-L18) — Scheduler LOW-tier documentation batch.
 -/
 def handleYield : Kernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.currentOnCore bootCoreId) with
     | none =>
         -- V5-F (M-DEF-6) / S-L13: Return `.invalidArgument` when no thread is
         -- current instead of falling through to `schedule`. Yielding requires
@@ -444,8 +444,8 @@ def handleYield : Kernel Unit :=
             -- `schedContextBind` and `schedContextConfigure`) guarantees this
             -- equals `(resolveEffectivePrioDeadline st tcb).1` read by
             -- selection. `schedulerPriorityMatch` therefore holds post-insert.
-            let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
-            let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
+            let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+            let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
             schedule st'
         | _ => .error .schedulerInvariantViolation
 
@@ -478,7 +478,7 @@ the incoming thread's registers are restored, establishing
 `contextMatchesCurrent` atomically. -/
 def timerTick : Kernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.currentOnCore bootCoreId) with
     | none =>
         -- No current thread: just advance the timer
         .ok ((), { st with machine := tick st.machine })
@@ -501,8 +501,7 @@ def timerTick : Kernel Unit :=
               -- across the timeSlice mutation. Under the AK2-B Option B
               -- propagation invariant this value equals the SC-aware priority
               -- used by selection (see Core.lean module docstring).
-              let st'' := { st' with scheduler := { st'.scheduler with
-                  runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
+              let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb))) }
               schedule st''
             else
               -- Time-slice not expired: decrement and continue
@@ -519,7 +518,7 @@ Returns the list of SchedContextIds that are due for replenishment and the
 remaining queue. Wraps `ReplenishQueue.popDue` at the system level. -/
 def popDueReplenishments (st : SystemState) (now : Nat)
     : ReplenishQueue × List SeLe4n.SchedContextId :=
-  st.scheduler.replenishQueue.popDue now
+  (st.scheduler.replenishQueueOnCore bootCoreId).popDue now
 
 /-- Z4-G2: Refill a single SchedContext's budget via CBS replenishment processing.
 Looks up the SchedContext, calls `processReplenishments` and `cbsUpdateDeadline`,
@@ -548,8 +547,7 @@ again. Only `timerTickBudget`'s budget-exhaustion branch (Z4-F3) triggers
 never calls `timeoutBlockedThreads`. -/
 def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
   let (remainingQueue, dueIds) := popDueReplenishments st now
-  let st' := { st with scheduler := { st.scheduler with
-    replenishQueue := remainingQueue } }
+  let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId remainingQueue }
   dueIds.foldl (fun acc scId =>
     let wasExhausted := match acc.objects[scId.toObjId]? with
       | some (.schedContext sc) => sc.budgetRemaining.isZero
@@ -564,10 +562,9 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
         | some tid =>
           -- Only re-enqueue if the thread is not already current or in queue
           -- AG1-A: Use effective priority (base + PIP boost) for RunQueue insertion
-          if tid ∈ refilled.scheduler.runQueue then refilled
-          else if refilled.scheduler.current == some tid then refilled
-          else { refilled with scheduler := { refilled.scheduler with
-            runQueue := refilled.scheduler.runQueue.insert tid (resolveInsertPriority refilled tid sc) } }
+          if tid ∈ (refilled.scheduler.runQueueOnCore bootCoreId) then refilled
+          else if (refilled.scheduler.currentOnCore bootCoreId) == some tid then refilled
+          else { refilled with scheduler := refilled.scheduler.setRunQueueOnCore bootCoreId (((refilled.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority refilled tid sc))) }
         | none => refilled
       else refilled
     | _ => refilled
@@ -664,8 +661,7 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       -- `effectiveRunQueuePriority` is unambiguously correct (no SchedContext
       -- resolution needed). SC-bound branches at lines :696 and :716 use
       -- `resolveInsertPriority` directly.
-      let st'' := { st' with scheduler := { st'.scheduler with
-          runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
+      let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId (((st'.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb))) }
       .ok (st'', true)
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
@@ -690,11 +686,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
           objects := st.objects.insert scId.toObjId (.schedContext sc'''),
           machine := tick st.machine }
         -- Insert into system replenish queue for future refill
-        let rq := st'.scheduler.replenishQueue.insert scId (now + sc.period.val)
+        let rq := (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
         -- AG1-A: Re-enqueue current thread at effective priority (base + PIP boost)
-        let st'' := { st' with scheduler := { st'.scheduler with
-          replenishQueue := rq,
-          runQueue := st'.scheduler.runQueue.insert tid (resolveInsertPriority st' tid sc) } }
+        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore bootCoreId rq).setRunQueueOnCore bootCoreId ((st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc))) }
         -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
         -- by this SchedContext. Budget is now 0, so all such threads must unblock.
         -- AK2-D (S-M02): Errors are surfaced via the diagnostic
@@ -703,7 +697,7 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
         -- `crossSubsystemInvariant`, the list is always empty.
         let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
         let st'''' := { st''' with scheduler :=
-          { st'''.scheduler with lastTimeoutErrors := timeoutErrors } }
+          st'''.scheduler.setLastTimeoutErrorsOnCore bootCoreId timeoutErrors }
         .ok (st'''', true)
       else
         -- Z4-F2: Budget remains — decrement and continue
@@ -752,10 +746,9 @@ def scheduleEffective : Kernel Unit :=
     | .ok (some tid, st') =>
         match st'.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
-            if tid ∈ st'.scheduler.runQueue ∧ tcb.domain = st'.scheduler.activeDomain then
+            if tid ∈ (st'.scheduler.runQueueOnCore bootCoreId) ∧ tcb.domain = (st'.scheduler.activeDomainOnCore bootCoreId) then
               let stSaved := saveOutgoingContext st'
-              let stDequeued := { stSaved with scheduler := { stSaved.scheduler with
-                  runQueue := stSaved.scheduler.runQueue.remove tid } }
+              let stDequeued := { stSaved with scheduler := stSaved.scheduler.setRunQueueOnCore bootCoreId ((stSaved.scheduler.runQueueOnCore bootCoreId).remove tid) }
               let stRestored := restoreIncomingContext stDequeued tid
               setCurrentThread (some tid) stRestored
             else
@@ -785,12 +778,12 @@ def timerTickWithBudget : Kernel Unit :=
     -- AK2-D (S-M02): clear the diagnostic timeout-error record at the start of
     -- each tick so a stale list never survives across rounds.
     let st := { st with scheduler :=
-      { st.scheduler with lastTimeoutErrors := [] } }
+      st.scheduler.setLastTimeoutErrorsOnCore bootCoreId [] }
     -- Step 1: Process due replenishments
     let now := st.machine.timer
     let stReplenished := processReplenishmentsDue st now
     -- Step 2: Handle current thread's budget
-    match stReplenished.scheduler.current with
+    match (stReplenished.scheduler.currentOnCore bootCoreId) with
     | none =>
       -- No current thread: just advance the timer
       .ok ((), { stReplenished with machine := tick stReplenished.machine })
@@ -822,7 +815,7 @@ When a SchedContext-bound thread yields:
 Unbound threads use the existing yield path (insert + rotateToBack). -/
 def handleYieldWithBudget : Kernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.currentOnCore bootCoreId) with
     | none => .error .invalidArgument
     | some tid =>
       match st.objects[tid.toObjId]? with
@@ -830,8 +823,8 @@ def handleYieldWithBudget : Kernel Unit :=
         match tcb.schedContextBinding with
         | .unbound =>
           -- AI3-A (M-04): Legacy yield with effective priority (base + PIP boost)
-          let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
-          let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
+          let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+          let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
           scheduleEffective st'
         | .bound scId | .donated scId _ =>
           match st.objects[scId.toObjId]? with
@@ -842,20 +835,20 @@ def handleYieldWithBudget : Kernel Unit :=
             let sc' := { sc with budgetRemaining := Budget.zero, isActive := false }
             let sc'' := scheduleReplenishment sc' now consumedAmount
             -- Insert into replenish queue
-            let rq := st.scheduler.replenishQueue.insert scId (now + sc.period.val)
+            let rq := (st.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
             -- Write updated SchedContext
             let st' := { st with
               objects := st.objects.insert scId.toObjId (.schedContext sc''),
-              scheduler := { st.scheduler with replenishQueue := rq } }
+              scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq }
             -- AG1-A: Re-enqueue thread at effective priority (base + PIP boost)
-            let rq' := st'.scheduler.runQueue.insert tid (resolveInsertPriority st' tid sc)
-            let st'' := { st' with scheduler := { st'.scheduler with runQueue := rq' } }
+            let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc)
+            let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore bootCoreId rq' }
             scheduleEffective st''
           | _ =>
             -- SchedContext not found — fall back to legacy yield
             -- AI3-A (M-04): Use effective priority (base + PIP boost)
-            let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
-            let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
+            let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+            let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
             scheduleEffective st'
       | _ => .error .schedulerInvariantViolation
 
@@ -902,7 +895,7 @@ def switchDomain : Kernel Unit :=
     match schedule with
     | [] => .ok ((), st)  -- single-domain mode: no-op
     | _ =>
-        let nextIdx := (st.scheduler.domainScheduleIndex + 1) % schedule.length
+        let nextIdx := ((st.scheduler.domainScheduleIndexOnCore bootCoreId) + 1) % schedule.length
         match schedule[nextIdx]? with
         -- AK2-I (S-M07): Surface `.schedulerInvariantViolation` on the unreachable
         -- fallback. `nextIdx = (idx + 1) % schedule.length` is in bounds for any
@@ -923,20 +916,16 @@ def switchDomain : Kernel Unit :=
             -- pipBoost, or schedContextBinding). Under the AK2-B Option B
             -- propagation invariant, this value equals
             -- `(resolveEffectivePrioDeadline st tcb).1` read by selection.
-            let rq' := match st.scheduler.current with
-              | none => st.scheduler.runQueue
+            let rq' := match (st.scheduler.currentOnCore bootCoreId) with
+              | none => (st.scheduler.runQueueOnCore bootCoreId)
               | some tid =>
                   match st.objects[tid.toObjId]? with
                   | some (.tcb tcb) =>
-                      st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)
-                  | _ => st.scheduler.runQueue
-            let sched' := { st.scheduler with
-              runQueue := rq'
-              current := none
-              activeDomain := DomainScheduleEntry.domain entry
-              domainTimeRemaining := DomainScheduleEntry.length entry
-              domainScheduleIndex := nextIdx
-            }
+                      (st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
+                  | _ => (st.scheduler.runQueueOnCore bootCoreId)
+            let sched' := ((((st.scheduler.setRunQueueOnCore bootCoreId rq').setCurrentOnCore
+                  bootCoreId none).setActiveDomainOnCore bootCoreId (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
+                  bootCoreId (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore bootCoreId nextIdx
             .ok ((), { stSaved with scheduler := sched' })
 
 /-- LOW-04: The modular index computation in `switchDomain` always produces a valid
@@ -983,14 +972,13 @@ theorem switchDomain_preserves_objects_invExt
 if expired, switches to the next domain and reschedules. -/
 def scheduleDomain : Kernel Unit :=
   fun st =>
-    if st.scheduler.domainTimeRemaining ≤ 1 then
+    if (st.scheduler.domainTimeRemainingOnCore bootCoreId) ≤ 1 then
       match switchDomain st with
       | .error e => .error e
       | .ok ((), st') => schedule st'
     else
-      let sched' := { st.scheduler with
-        domainTimeRemaining := st.scheduler.domainTimeRemaining - 1
-      }
+      let sched' := st.scheduler.setDomainTimeRemainingOnCore bootCoreId
+        ((st.scheduler.domainTimeRemainingOnCore bootCoreId) - 1)
       .ok ((), { st with scheduler := sched' })
 
 -- ============================================================================
@@ -1004,8 +992,8 @@ This is the canonical definition of what each `ThreadState` value means:
 - `BlockedSend`/`BlockedRecv`/`BlockedCall`/`BlockedReply`/`BlockedNotif`: matches `ipcState`
 - `Inactive`: none of the above (ipcState.ready but not queued/current) -/
 def inferThreadState (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : ThreadState :=
-  if st.scheduler.current == some tid then .Running
-  else if tid ∈ st.scheduler.runQueue then .Ready
+  if (st.scheduler.currentOnCore bootCoreId) == some tid then .Running
+  else if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then .Ready
   else match tcb.ipcState with
   | .blockedOnSend _ => .BlockedSend
   | .blockedOnReceive _ => .BlockedRecv

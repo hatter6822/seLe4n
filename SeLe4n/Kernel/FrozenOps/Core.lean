@@ -70,6 +70,7 @@ resizing is needed.
 namespace SeLe4n.Kernel.FrozenOps
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Kernel.RadixTree
 
@@ -256,7 +257,7 @@ Returns explicit error if the current thread's object is missing or not a TCB.
 Mirrors `saveOutgoingContext` from builder phase. -/
 def frozenSaveOutgoingContext (st : FrozenSystemState)
     : Except KernelError FrozenSystemState :=
-  match st.scheduler.current with
+  match (st.scheduler.current) with
   | none => .ok st
   | some outTid =>
       match st.objects.get? outTid.toObjId with

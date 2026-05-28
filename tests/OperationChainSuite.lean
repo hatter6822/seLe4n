@@ -17,6 +17,7 @@ import SeLe4n.Platform.Boot
 set_option maxRecDepth 1024
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 namespace SeLe4n.Testing
 
@@ -420,7 +421,7 @@ private partial def scheduleNTimes (n : Nat) (assertEvery : Nat) (st : SystemSta
   if n = 0 then
     pure st
   else
-    let step := if st.scheduler.current.isSome then SeLe4n.Kernel.handleYield st else SeLe4n.Kernel.schedule st
+    let step := if (st.scheduler.currentOnCore bootCoreId).isSome then SeLe4n.Kernel.handleYield st else SeLe4n.Kernel.schedule st
     let st' ← runKernelSt s!"scheduler: schedule step {n}" step
     if assertEvery > 0 && n % assertEvery = 0 then
       assertInvariants s!"scheduler periodic invariant {n}" st'
@@ -442,12 +443,12 @@ private def schedulerStressChecks : IO Unit := do
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
   let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
-  let baseline := stFirst.scheduler.current
+  let baseline := (stFirst.scheduler.currentOnCore bootCoreId)
   let mut consistent := true
   for _ in List.range 20 do
     match SeLe4n.Kernel.schedule samePrioState with
     | .ok (_, st') =>
-        if st'.scheduler.current ≠ baseline then
+        if (st'.scheduler.currentOnCore bootCoreId) ≠ baseline then
           consistent := false
     | .error _ =>
         consistent := false
@@ -481,28 +482,24 @@ private def schedulerStressChecks : IO Unit := do
     (domainThreads.foldl (fun b (oid, obj) => b.withObject oid obj) domainStateBaseBuilder).buildChecked
   let domainState :=
     { domainStateBase with
-      scheduler := { domainStateBase.scheduler with
+      scheduler := { ((domainStateBase.scheduler.setActiveDomainOnCore bootCoreId ⟨0⟩).setDomainScheduleIndexOnCore bootCoreId 0).setDomainTimeRemainingOnCore bootCoreId 2 with
         domainSchedule := [
           { domain := ⟨0⟩, length := 2 },
           { domain := ⟨1⟩, length := 2 },
           { domain := ⟨2⟩, length := 2 },
           { domain := ⟨3⟩, length := 2 }
-        ]
-        activeDomain := ⟨0⟩
-        domainScheduleIndex := 0
-        domainTimeRemaining := 2
-      } }
+        ] } }
   let mut st := domainState
   let mut isolated := true
   for _ in List.range 16 do
     let stSwitch ← runKernelSt "scheduler domain switch" (SeLe4n.Kernel.switchDomain st)
     let stSched ← runKernelSt "scheduler domain schedule" (SeLe4n.Kernel.schedule stSwitch)
-    match stSched.scheduler.current with
+    match (stSched.scheduler.currentOnCore bootCoreId) with
     | none => pure ()
     | some tid =>
         match stSched.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
-            if tcb.domain ≠ stSched.scheduler.activeDomain then
+            if tcb.domain ≠ (stSched.scheduler.activeDomainOnCore bootCoreId) then
               isolated := false
         | _ => isolated := false
     st := stSched
@@ -588,9 +585,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
   | _ => throw <| IO.userError "chain10: sender TCB not found after send"
 
   -- Step 2: Dispatch receiver — remove from runQueue before making current
-  let stRecv := { stAfterSend with scheduler := { stAfterSend.scheduler with
-    current := some ⟨301⟩,
-    runQueue := stAfterSend.scheduler.runQueue.remove ⟨301⟩ } }
+  let stRecv := { stAfterSend with scheduler := (stAfterSend.scheduler.setCurrentOnCore bootCoreId (some ⟨301⟩)).setRunQueueOnCore bootCoreId ((stAfterSend.scheduler.runQueueOnCore bootCoreId).remove ⟨301⟩) }
   let stFinal ← match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stRecv with
   | .ok (_, stAfterRecv) =>
       -- After receive, endpoint sendQ should be empty (sender was dequeued)
@@ -1428,7 +1423,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
     | none => throw (IO.userError "chain22: FAIL — waiter pendingMessage is none after signal wake")
   | _ => throw (IO.userError "chain22: FAIL — waiter TCB not found after signal wake")
   -- Step 4: Verify waiter is runnable again
-  expect "chain22: waiter is runnable after wake" (waiter ∈ st2.scheduler.runQueue)
+  expect "chain22: waiter is runnable after wake" (waiter ∈ (st2.scheduler.runQueueOnCore bootCoreId))
   assertInvariants "chain22: signal-wake badge delivery" st2
 
 -- ============================================================================
@@ -1577,10 +1572,10 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
       |>.buildChecked)
   -- Schedule to get the thread as current
   let (_, st1) ← expectOkSt "chain24: initial schedule" (SeLe4n.Kernel.schedule st0)
-  expect "chain24: thread is current" (st1.scheduler.current == some tid)
+  expect "chain24: thread is current" ((st1.scheduler.currentOnCore bootCoreId) == some tid)
   -- Yield — single thread should re-enqueue and re-select itself
   let (_, st2) ← expectOkSt "chain24: handleYield" (SeLe4n.Kernel.handleYield st1)
-  expect "chain24: same thread re-selected after yield" (st2.scheduler.current == some tid)
+  expect "chain24: same thread re-selected after yield" ((st2.scheduler.currentOnCore bootCoreId) == some tid)
   assertInvariants "chain24: yield single thread" st2
   -- Edge case: handleYield with NO current thread and empty run queue
   let stEmpty :=
@@ -1884,8 +1879,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     -- === serviceQuery (syscallId=13): dispatch on registered state
     -- (Uses stAfter from serviceRegister, not a fresh state)
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
-        { stAfter with scheduler := { stAfter.scheduler with
-            current := some ⟨500⟩ } } with
+        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
     | .ok _ =>
       IO.println "operation-chain check passed [chain30: serviceQuery dispatch]"
     | .error _ =>
@@ -1894,8 +1888,7 @@ private def chain30SyscallServiceOps : IO Unit := do
     -- === serviceRevoke (syscallId=12): dispatch on registered state
     -- (Uses stAfter from serviceRegister, not a fresh state)
     match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32
-        { stAfter with scheduler := { stAfter.scheduler with
-            current := some ⟨500⟩ } } with
+        { stAfter with scheduler := stAfter.scheduler.setCurrentOnCore bootCoreId (some ⟨500⟩) } with
     | .ok (_, stFinal) =>
       IO.println "operation-chain check passed [chain30: serviceRevoke dispatch]"
       let _ := stFinal

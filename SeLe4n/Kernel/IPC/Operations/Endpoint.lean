@@ -31,6 +31,7 @@ future relocation that bypasses this banner fails the build immediately.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-! # AK1-J (I-L1..I-L6, IPC INFO): IPC LOW-tier batch documentation
 
@@ -104,11 +105,10 @@ finding ID, the affected site, and the remediation applied.
 /-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   { st with
-      scheduler := {
-        st.scheduler with
-          runQueue := st.scheduler.runQueue.remove tid
-          current := if st.scheduler.current = some tid then none else st.scheduler.current
-      }
+      scheduler := (st.scheduler.setRunQueueOnCore bootCoreId
+          ((st.scheduler.runQueueOnCore bootCoreId).remove tid)).setCurrentOnCore bootCoreId
+          (if (st.scheduler.currentOnCore bootCoreId) = some tid then none
+            else (st.scheduler.currentOnCore bootCoreId))
   }
 
 /-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
@@ -151,7 +151,7 @@ scheduler tick. -/
     rendezvous, reply wake). Matches the yield/timer/switch convention
     established in AI3-A. -/
 def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  if tid ∈ st.scheduler.runQueue then
+  if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
     st
   else
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
@@ -160,10 +160,8 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
     match st.getTcb? tid with
     | some tcb =>
         { st with
-            scheduler := {
-              st.scheduler with
-                runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb)
-            }
+            scheduler := st.scheduler.setRunQueueOnCore bootCoreId
+              ((st.scheduler.runQueueOnCore bootCoreId).insert tid (ipcEffectiveRunQueuePriority tcb))
         }
     | none => st
 

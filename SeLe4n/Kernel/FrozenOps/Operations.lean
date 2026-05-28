@@ -57,6 +57,7 @@ keys, which is incompatible with the frozen map's fixed key set.
 namespace SeLe4n.Kernel.FrozenOps
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Kernel.RadixTree
 
@@ -98,7 +99,7 @@ Mirrors `chooseThread` — scans `byPriority` buckets for an eligible thread
 in the active domain, skipping the current thread (dequeue-on-dispatch). -/
 def frozenChooseThread (st : FrozenSystemState)
     : Except KernelError (Option SeLe4n.ThreadId × FrozenSystemState) :=
-  let currentTid := st.scheduler.current
+  let currentTid := (st.scheduler.current)
   let result := st.scheduler.byPriority.fold (init := none)
     fun acc _prio threads =>
       match acc with
@@ -110,7 +111,7 @@ def frozenChooseThread (st : FrozenSystemState)
             else
               match st.objects.get? tid.toObjId with
               | some (.tcb tcb) =>
-                  tcb.domain == st.scheduler.activeDomain &&
+                  tcb.domain == (st.scheduler.activeDomain) &&
                   tcb.ipcState == .ready
               | _ => false)
   .ok (result, st)
@@ -132,7 +133,7 @@ def frozenSchedule : FrozenKernel Unit :=
     | .ok (some tid, st') =>
         match st'.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
-            if tcb.domain == st'.scheduler.activeDomain &&
+            if tcb.domain == (st'.scheduler.activeDomain) &&
                tcb.ipcState == .ready then
               match frozenSaveOutgoingContext st' with
               | .error e => .error e
@@ -155,7 +156,7 @@ picks the best candidate (which may be the same thread if it has the
 highest priority). -/
 def frozenHandleYield : FrozenKernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.current) with
     | none => frozenSchedule st
     | some _tid =>
         -- Clear current to make the yielding thread eligible again
@@ -176,7 +177,7 @@ re-enqueue the preempted thread), then reschedule.
 On non-expiry: decrement time-slice, advance timer. -/
 def frozenTimerTick : FrozenKernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.current) with
     | none =>
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
@@ -716,7 +717,7 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
         match st.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
           -- AK8-H Phase 2: Both lookups succeeded; apply all writes atomically.
-          let st0 := if st.scheduler.current == some tid then
+          let st0 := if (st.scheduler.current) == some tid then
             { st with scheduler := { st.scheduler with current := none } }
           else st
           let updatedSc := { sc with boundThread := none, isActive := false }
@@ -744,7 +745,7 @@ clears current to force rescheduling (frozen equivalent of preemption).
 Falls back to legacy time-slice behavior for unbound threads. -/
 def frozenTimerTickBudget : FrozenKernel Unit :=
   fun st =>
-    match st.scheduler.current with
+    match (st.scheduler.current) with
     | none =>
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
@@ -826,7 +827,7 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
         | some objs =>
           let st' := { st with objects := objs }
           -- If resumed thread has higher priority than current, force reschedule
-          let st' := match st'.scheduler.current with
+          let st' := match (st'.scheduler.current) with
             | some curTid =>
               match st'.objects.get? curTid.toObjId with
               | some (.tcb curTcb) =>

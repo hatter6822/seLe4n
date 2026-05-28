@@ -58,6 +58,7 @@ runtime execution (frozen phase):
 namespace SeLe4n.Model
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RadixTree
 
 -- ============================================================================
@@ -473,17 +474,19 @@ theorem freezeObject_preserves_type (obj : KernelObject) :
 /-- Q5-C: Freeze the scheduler state.
 AG1-E: Now includes `replenishQueue` for CBS scheduling support. -/
 def freezeScheduler (sched : SchedulerState) : FrozenSchedulerState :=
-  { byPriority := freezeMap sched.runQueue.byPriority
-    threadPriority := freezeMap sched.runQueue.threadPriority
-    membership := freezeMap sched.runQueue.membership.table
-    current := sched.current
-    activeDomain := sched.activeDomain
-    domainTimeRemaining := sched.domainTimeRemaining
+  -- WS-SM SM4.B phase-2: the frozen execution-phase snapshot is single-core;
+  -- it captures `bootCoreId`'s per-core slots.
+  { byPriority := freezeMap (sched.runQueueOnCore bootCoreId).byPriority
+    threadPriority := freezeMap (sched.runQueueOnCore bootCoreId).threadPriority
+    membership := freezeMap (sched.runQueueOnCore bootCoreId).membership.table
+    current := sched.currentOnCore bootCoreId
+    activeDomain := sched.activeDomainOnCore bootCoreId
+    domainTimeRemaining := sched.domainTimeRemainingOnCore bootCoreId
     domainSchedule := sched.domainSchedule
-    domainScheduleIndex := sched.domainScheduleIndex
+    domainScheduleIndex := sched.domainScheduleIndexOnCore bootCoreId
     configDefaultTimeSlice := sched.configDefaultTimeSlice
-    replenishQueue := { entries := sched.replenishQueue.entries
-                        size := sched.replenishQueue.size } }
+    replenishQueue := { entries := (sched.replenishQueueOnCore bootCoreId).entries
+                        size := (sched.replenishQueueOnCore bootCoreId).size } }
 
 /-- Q5-C: Master freeze function — converts an `IntermediateState` (builder
 phase with invariant witnesses) into a `FrozenSystemState` (execution phase
@@ -559,11 +562,11 @@ theorem freeze_preserves_tlb (ist : IntermediateState) :
 
 /-- Q5-C: `freeze` preserves the scheduler current thread. -/
 theorem freeze_preserves_current (ist : IntermediateState) :
-    (freeze ist).scheduler.current = ist.state.scheduler.current := rfl
+    (freeze ist).scheduler.current = (ist.state.scheduler.currentOnCore bootCoreId) := rfl
 
 /-- Q5-C: `freeze` preserves the active domain. -/
 theorem freeze_preserves_activeDomain (ist : IntermediateState) :
-    (freeze ist).scheduler.activeDomain = ist.state.scheduler.activeDomain := rfl
+    (freeze ist).scheduler.activeDomain = (ist.state.scheduler.activeDomainOnCore bootCoreId) := rfl
 
 /-- Q5-C: `freeze` preserves the domain schedule. -/
 theorem freeze_preserves_domainSchedule (ist : IntermediateState) :

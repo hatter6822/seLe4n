@@ -25,6 +25,7 @@ preservation cluster.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- WS-H12a: endpointReplyRecv preserves ipcInvariant.
 Chains storeTcbIpcStateAndMessage + ensureRunnable + endpointReceiveDual preservation. -/
@@ -137,7 +138,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
         refine ⟨?_, ?_, ?_⟩
         · unfold queueCurrentConsistent
           rw [ensureRunnable_scheduler_current, hSchedEq]
-          cases hCurr : st.scheduler.current with
+          cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
           | none => trivial
           | some x =>
             have hNotMem : x ∉ st.scheduler.runnable := by
@@ -154,7 +155,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
         · show currentThreadValid (ensureRunnable st1 replyTarget)
           unfold currentThreadValid
           simp only [ensureRunnable_scheduler_current, ensureRunnable_preserves_objects, hSchedEq]
-          cases hCurr : st.scheduler.current with
+          cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
           | none => simp
           | some x =>
             simp only []
@@ -172,8 +173,8 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
       exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 hInvMid
         (by
           unfold currentNotEndpointQueueHead
-          rw [ensureRunnable_scheduler_current, congrArg SchedulerState.current hSchedEq]
-          cases hCurr' : st.scheduler.current with
+          rw [ensureRunnable_scheduler_current, hSchedEq]
+          cases hCurr' : (st.scheduler.currentOnCore bootCoreId) with
           | none => trivial
           | some tid =>
             intro oid ep' hEp'

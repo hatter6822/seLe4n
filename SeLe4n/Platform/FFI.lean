@@ -108,6 +108,7 @@ rejected:
 namespace SeLe4n.Platform.FFI
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Lifecycle.Suspend
@@ -912,7 +913,7 @@ Pipeline:
      `rust/sele4n-hal/src/svc_dispatch.rs::SyscallArgs::from_trap_frame`).
      A mismatch indicates a malformed FFI call and is rejected with
      `.invalidSyscallArgument`.
-  2. Look up `st.scheduler.current` (must be `some` on a real syscall).
+  2. Look up `(st.scheduler.currentOnCore bootCoreId)` (must be `some` on a real syscall).
   3. Spill the FFI register values into the current thread's TCB
      `registerContext` (matches the ARM64 trap handler's spill).
   4. Invoke `syscallEntryChecked` with the deployment's labeling
@@ -939,7 +940,7 @@ def syscallDispatchFromAbi
     if msgInfo != x1 then
       .ok (encodeError .invalidSyscallArgument, st)
     else
-      match st.scheduler.current with
+      match (st.scheduler.currentOnCore bootCoreId) with
       | none => .ok (encodeError .illegalState, st)
       | some tid =>
         let stRegs := writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
@@ -1102,14 +1103,14 @@ theorem syscallDispatchFromAbi_total
         = Except.ok (encoded, st') := by
   unfold syscallDispatchFromAbi
   -- The function first checks the ABI invariant `msgInfo == x1`,
-  -- then case-splits on `st.scheduler.current`, then on the
+  -- then case-splits on `(st.scheduler.currentOnCore bootCoreId)`, then on the
   -- `syscallEntryChecked` result.  Every branch produces `.ok`.
   by_cases hMsg : msgInfo != x1
   · -- ABI mismatch path: returns `.ok (encodeError .invalidSyscallArgument, st)`.
     exact ⟨encodeError .invalidSyscallArgument, st, by simp [hMsg]⟩
   · -- ABI consistency holds: drive the if-then-else into the else branch
     -- using `hMsg` so the goal exposes the next match.
-    cases st.scheduler.current with
+    cases (st.scheduler.currentOnCore bootCoreId) with
     | none =>
         exact ⟨encodeError .illegalState, st, by simp [hMsg]⟩
     | some tid =>
@@ -1141,7 +1142,7 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hMsg : msgInfo = x1)
-    (hCur : st.scheduler.current = some tid)
+    (hCur : (st.scheduler.currentOnCore bootCoreId) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
@@ -1162,7 +1163,7 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hMsg : msgInfo = x1)
-    (hCur : st.scheduler.current = some tid)
+    (hCur : (st.scheduler.currentOnCore bootCoreId) = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
@@ -1185,7 +1186,7 @@ theorem syscallDispatchFromAbi_illegalState_when_no_current
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState)
     (hMsg : msgInfo = x1)
-    (hCur : st.scheduler.current = none) :
+    (hCur : (st.scheduler.currentOnCore bootCoreId) = none) :
     syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeError .illegalState, st) := by
   unfold syscallDispatchFromAbi

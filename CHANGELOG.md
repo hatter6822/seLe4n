@@ -1,3 +1,82 @@
+## v0.31.12 — WS-SM SM4.B: `SchedulerState` path-a `Vector` replacement
+
+Lands **WS-SM Phase SM4.B "SchedulerState path-a replacement"** (plan
+[`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](docs/planning/SMP_PER_CORE_STATE_PLAN.md)
+§5.2), replacing the seven singular per-core `SchedulerState` fields
+with `Vector α Concurrency.numCores` indexed by `CoreId`, on top of the
+SM4.A `PerCoreVector` bootstrap. All fifteen sub-tasks landed in one
+green cut (decision #4: full path-a `Vector` replacement, no scalar
+shim). The migration is observably transparent — the executable trace
+(`lake exe sele4n`) is **byte-identical** to
+`tests/fixtures/main_trace_smoke.expected` (SM4.B.15).
+
+- **SM4.B.1–7 — field-type flip (`SeLe4n/Model/State.lean`).** The
+  fields `runQueue`, `current`, `replenishQueue`, `activeDomain`,
+  `domainTimeRemaining`, `domainScheduleIndex`, and `lastTimeoutErrors`
+  change from singular scalars to `Vector α numCores`, with field
+  defaults `Vector.replicate numCores <neutral>`. `domainSchedule` and
+  `configDefaultTimeSlice` stay system-wide (single-domain schedule
+  table + boot-config slice are not per-core).
+- **SM4.B.8 — accessors + setters.** The seven `…OnCore (c : CoreId)`
+  read accessors (introduced as scalar wrappers in phase 1) are now
+  backed by `Vector.get`; seven matching `set…OnCore (c) (v)` writers
+  (`{ s with field := s.field.set c.val v c.isLt }`) are added. The
+  accessors are deliberately **not** `@[simp]`; instead a **70-lemma
+  `@[simp]` store/load algebra** drives proof automation: 7
+  read-after-write lemmas (`set…OnCore_…OnCore_self`), 7 same-field
+  cross-core independence lemmas (`set…OnCore_…OnCore_ne` — a write to
+  core `c` leaves a distinct core `c'`'s same-field slot unchanged, the
+  theorem-level path-a per-core-independence property), 42 cross-field
+  frame lemmas (`set…OnCore_…OnCore` for the other six per-core
+  accessors), and 14 system-wide-field frame lemmas
+  (`domainSchedule`/`configDefaultTimeSlice` preserved by every
+  setter). Because `Vector.get (Vector.set …)` is *not* definitional,
+  these proved lemmas are what let setter-state reads reduce under
+  `simp`; raw `simp [accessor]`/`rfl` no longer suffices.
+- **SM4.B.9 — `default_state_perCoreInitialized`.** Proves every
+  per-core read of the default `SchedulerState` returns the neutral
+  value on *every* core, discharged via `PerCoreVector.replicate_get`.
+- **SM4.B.10 — `SchedulerState.ext_perCore`.** Per-core
+  extensionality: agreement of all seven accessors at every core plus
+  the two system-wide fields collapses two schedulers to equal,
+  reproved through `PerCoreVector.ext`.
+- **SM4.B.11–13 — `Repr` / `Inhabited`.** `Repr` derived and the
+  explicit `Inhabited` instance re-derived for the `Vector`-shaped
+  record; `Inhabited.default` is the all-`replicate` scheduler. No
+  `BEq`/`DecidableEq` instance exists or is needed (nothing compares
+  schedulers via `==`), so SM4.B.12 is N/A.
+- **SM4.B.14 — immediate caller sites (`Model/State.lean`).**
+  `setCurrentThread` and the freeze boundary route through the new
+  setters/accessors; `runnable` is the boot-core's
+  `(runQueueOnCore bootCoreId).toList`.
+- **Kernel-wide proof migration.** The field-type flip cascades through
+  the production import closure: scheduler transitions (`Operations/Core`,
+  `switchDomain`, `scheduleDomain`), `Operations/Preservation`
+  (EDF/priority-match/context/domain preservation), `SchedContext`,
+  `Lifecycle` (suspend/cleanup), IPC scheduler lemmas, priority
+  inheritance, `InformationFlow` projection + NI proofs,
+  `Architecture/Invariant`, `CrossSubsystem`, `Platform/Boot`, and the
+  freeze proofs. Every scalar record-update write becomes a
+  `set…OnCore bootCoreId` call; every proof that previously reduced a
+  record literal by `rfl`/iota now reduces the setter state through the
+  `@[simp]` store/load algebra (read-after-write at the boot core,
+  cross-field frames for the untouched fields). The
+  `bootFromPlatform_singleCore_witness` keystone is restated over
+  `currentOnCore bootCoreId` (its full SM4.E retirement +
+  `bootFromPlatform_smp_witness` remain a later sub-phase).
+- **SM4.B.15 — trace fixture preserved.** Even though the field types
+  changed, the boot core (`bootCoreId`) behaves exactly as the former
+  singular scalar, so the single-core trace scenario is byte-identical;
+  the `main_trace_smoke.expected` fixture is unchanged.
+- **Test suites migrated.** `PerCoreSchedulerStateSuite` now exercises
+  genuine per-core independence (a write to the boot core leaves other
+  cores' slots at the neutral value); `StateBuilder`,
+  `MainTraceHarness`, `NegativeStateSuite`, `OperationChainSuite`,
+  `InformationFlowSuite`, `ModelIntegritySuite`, and the
+  syscall/error/cascade/priority suites build their scheduler fixtures
+  through the per-core setters. Full Tier 0+1+2 smoke green; trace
+  fixture byte-identical; zero `sorry`/`axiom`.
+
 ## v0.31.11 — WS-SM SM4.A: per-core `Vector` bootstrap + PlatformBinding
 
 Lands **WS-SM Phase SM4.A "Vector + PlatformBinding"** (plan

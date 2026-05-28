@@ -25,6 +25,7 @@ typecheck without modification.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- WS-F1: endpointCall / endpointReplyRecv invariant preservation (F-11 remediation)
@@ -147,13 +148,12 @@ theorem endpointCall_preserves_schedulerInvariantBundle
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               have hObjInvIpc := storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) st4 caller (.blockedOnReply endpointId (some pair.1)) none hObjInvEns hIpc
               have hSchedIpc := storeTcbIpcStateAndMessage_scheduler_eq (ensureRunnable st2 pair.1) st4 caller (.blockedOnReply endpointId (some pair.1)) none hIpc
-              have hCurrEq : st4.scheduler.current = st.scheduler.current := by
-                rw [congrArg SchedulerState.current hSchedIpc, ensureRunnable_scheduler_current,
-                    congrArg SchedulerState.current hSchedMsg, congrArg SchedulerState.current hSchedPop]
+              have hCurrEq : (st4.scheduler.currentOnCore bootCoreId) = (st.scheduler.currentOnCore bootCoreId) := by
+                rw [hSchedIpc, ensureRunnable_scheduler_current, hSchedMsg, hSchedPop]
               refine ⟨?_, ?_, ?_⟩
               · unfold queueCurrentConsistent
                 rw [removeRunnable_scheduler_current, hCurrEq]
-                cases hCurr : st.scheduler.current with
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => simp
                 | some x =>
                   by_cases hEq' : x = caller
@@ -180,7 +180,7 @@ theorem endpointCall_preserves_schedulerInvariantBundle
                 exact hRQU
               · unfold currentThreadValid
                 rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current, hCurrEq]
-                cases hCurr : st.scheduler.current with
+                cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => simp
                 | some x =>
                   by_cases hEq' : x = caller
@@ -217,8 +217,8 @@ theorem endpointCall_preserves_schedulerInvariantBundle
             have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedEnq
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent
-              rw [removeRunnable_scheduler_current, congrArg SchedulerState.current hSchedEq]
-              cases hCurr : st.scheduler.current with
+              rw [removeRunnable_scheduler_current, hSchedEq]
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 by_cases hEq' : x = caller
@@ -231,8 +231,8 @@ theorem endpointCall_preserves_schedulerInvariantBundle
             · exact removeRunnable_nodup st2 caller (hSchedEq ▸ hRQU)
             · unfold currentThreadValid
               rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
-                  congrArg SchedulerState.current hSchedEq]
-              cases hCurr : st.scheduler.current with
+                  hSchedEq]
+              cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
               | none => simp
               | some x =>
                 by_cases hEq' : x = caller

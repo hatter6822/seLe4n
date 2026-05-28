@@ -13,6 +13,7 @@ import SeLe4n.Kernel.IPC.DualQueue
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- Generic store/lookup transport lemmas
@@ -394,7 +395,7 @@ This is needed because ensureRunnable adds the woken target to the run queue, an
 QCC requires the current thread to NOT be in the run queue. We must therefore show
 current ≠ target, which follows from their differing ipcState. -/
 def currentThreadIpcReady (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid => ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .ready
 
@@ -402,7 +403,7 @@ def currentThreadIpcReady (st : SystemState) : Prop :=
 head of any endpoint queue (send or receive). This ensures that when
 endpointQueuePopHead pops a thread, it differs from the current thread. -/
 def currentNotEndpointQueueHead (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
@@ -413,7 +414,7 @@ def currentNotEndpointQueueHead (st : SystemState) : Prop :=
 notification wait list. This ensures ensureRunnable on a signaled waiter
 does not conflict with the current thread. -/
 def currentNotOnNotificationWaitList (st : SystemState) : Prop :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => True
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
@@ -1023,8 +1024,8 @@ def passiveServerIdle (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.schedContextBinding = .unbound →
-    tid ∉ st.scheduler.runQueue →
-    st.scheduler.current ≠ some tid →
+    tid ∉ (st.scheduler.runQueueOnCore bootCoreId) →
+    (st.scheduler.currentOnCore bootCoreId) ≠ some tid →
     (tcb.ipcState = .ready ∨
      ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
              tcb.ipcState = .blockedOnNotification epId)

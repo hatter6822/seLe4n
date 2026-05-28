@@ -24,6 +24,7 @@ helpers are promoted to file-boundary scope so the sibling
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 -- ============================================================================
 -- R4-A: Cleanup preservation theorems
@@ -135,11 +136,13 @@ theorem removeFromAllNotificationWaitLists_serviceRegistry_eq
 /-- After cleanup, the cleaned thread is not in the run queue. -/
 theorem cleanupTcbReferences_removes_from_runnable
     (st : SystemState) (tid : SeLe4n.ThreadId) :
-    ¬(tid ∈ (cleanupTcbReferences st tid).scheduler.runQueue) := by
+    ¬(tid ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId)) := by
   unfold cleanupTcbReferences
   rw [removeFromAllNotificationWaitLists_scheduler_eq]
   rw [removeFromAllEndpointQueues_scheduler_eq]
   unfold removeRunnable
+  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   exact RunQueue.not_mem_remove_self _ _
 
 /-- Cleanup preserves lifecycle metadata. -/
@@ -262,13 +265,14 @@ wrapper by `unfold`. -/
 /-- Pre-retype cleanup only removes elements from the flat list, never adds. -/
 theorem cleanupTcbReferences_flat_subset
     (st : SystemState) (tid x : SeLe4n.ThreadId)
-    (h : x ∈ (cleanupTcbReferences st tid).scheduler.runQueue.flat) :
-    x ∈ st.scheduler.runQueue.flat := by
+    (h : x ∈ ((cleanupTcbReferences st tid).scheduler.runQueueOnCore bootCoreId).flat) :
+    x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
   unfold cleanupTcbReferences at h
   rw [removeFromAllNotificationWaitLists_scheduler_eq] at h
   rw [removeFromAllEndpointQueues_scheduler_eq] at h
   unfold removeRunnable at h
-  simp only [] at h
+  simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+    SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
   exact (List.mem_filter.mp h).1
 
 /-- CDT cleanup preserves the scheduler. -/
@@ -296,8 +300,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     (st stClean : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) (x : SeLe4n.ThreadId)
     (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean)
-    (h : x ∈ stClean.scheduler.runQueue.flat) :
-    x ∈ st.scheduler.runQueue.flat := by
+    (h : x ∈ (stClean.scheduler.runQueueOnCore bootCoreId).flat) :
+    x ∈ (st.scheduler.runQueueOnCore bootCoreId).flat := by
   cases currentObj with
   | tcb tcb =>
     -- Unfold with known currentObj = .tcb tcb
@@ -318,7 +322,9 @@ theorem lifecyclePreRetypeCleanup_flat_subset
         | _ => stDon).scheduler = stDon.scheduler := by
         cases tcb.schedContextBinding <;> rfl
       rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h; simp only [] at h
+      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h
+      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at h
       exact (List.mem_filter.mp h).1
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup] at hOk
@@ -326,8 +332,8 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       | (injection hOk with hOk; subst hOk; exact h)
       | (injection hOk with hOk; subst hOk;
          have hSched := detachCNodeSlots_scheduler_eq st target cn;
-         rw [show (detachCNodeSlots st target cn).scheduler.runQueue.flat =
-               st.scheduler.runQueue.flat from by rw [hSched]] at h;
+         rw [show ((detachCNodeSlots st target cn).scheduler.runQueueOnCore bootCoreId).flat =
+               (st.scheduler.runQueueOnCore bootCoreId).flat from by rw [hSched]] at h;
          exact h))
   | endpoint _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk

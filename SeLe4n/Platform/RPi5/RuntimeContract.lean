@@ -41,6 +41,7 @@ docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
 namespace SeLe4n.Platform.RPi5
 
 open SeLe4n.Kernel.Architecture
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 
 /-! ## WS-H15b/A-41, U6-C (U-M09): RPi5 runtime contract with substantive predicates.
@@ -106,7 +107,7 @@ private def budgetSufficientCheck (st' : SystemState) (tcb : TCB) : Bool :=
     compatibility with the `RuntimeBoundaryContract.registerContextStable` field
     but is not inspected. All checks examine the post-state only. -/
 def registerContextStableCheck (_st st' : SystemState) : Bool :=
-  match st'.scheduler.current with
+  match (st'.scheduler.currentOnCore bootCoreId) with
   | none => true
   | some tid =>
     match st'.objects[tid.toObjId]? with
@@ -230,8 +231,11 @@ theorem registerContextStableCheck_budget
     (hStable : registerContextStableCheck st (contextSwitchState newTid newRegs st) = true) :
     SeLe4n.Kernel.currentBudgetPositive (contextSwitchState newTid newRegs st) := by
   unfold registerContextStableCheck contextSwitchState at hStable
-  simp only [hObj, Bool.and_eq_true] at hStable
-  unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState; simp only [hObj]
+  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+    PerCoreVector.get_set_eq, hObj, Bool.and_eq_true] at hStable
+  unfold SeLe4n.Kernel.currentBudgetPositive contextSwitchState
+  simp only [SchedulerState.setCurrentOnCore, SchedulerState.currentOnCore,
+    PerCoreVector.get_set_eq, hObj]
   have hBud := hStable.2
   -- budgetSufficientCheck mirrors currentBudgetPositive structure
   match hBind : tcb.schedContextBinding with
@@ -275,7 +279,7 @@ missing).
     no thread whose register file must match. -/
 theorem registerContextStableCheck_none_current
     (st st' : SeLe4n.Model.SystemState)
-    (hNone : st'.scheduler.current = none) :
+    (hNone : (st'.scheduler.currentOnCore bootCoreId) = none) :
     registerContextStableCheck st st' = true := by
   unfold registerContextStableCheck
   rw [hNone]
@@ -286,12 +290,12 @@ theorem registerContextStableCheck_none_current
 theorem registerContextStableCheck_implies_tcb_present
     (st st' : SeLe4n.Model.SystemState)
     (hStable : registerContextStableCheck st st' = true) :
-    st'.scheduler.current = none ∨
+    (st'.scheduler.currentOnCore bootCoreId) = none ∨
     ∃ tid tcb,
-      st'.scheduler.current = some tid ∧
+      (st'.scheduler.currentOnCore bootCoreId) = some tid ∧
       st'.objects[tid.toObjId]? = some (.tcb tcb) := by
   unfold registerContextStableCheck at hStable
-  cases hCur : st'.scheduler.current with
+  cases hCur : (st'.scheduler.currentOnCore bootCoreId) with
   | none => exact Or.inl rfl
   | some tid =>
     simp only [hCur] at hStable
@@ -317,7 +321,7 @@ theorem registerContextStableCheck_implies_tcb_present
 theorem registerContextStableCheck_register_match
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
-    (hCur : st'.scheduler.current = some tid)
+    (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     (st'.machine.regs == tcb.registerContext) = true := by
@@ -331,7 +335,7 @@ theorem registerContextStableCheck_register_match
 theorem registerContextStableCheck_dequeue_on_dispatch
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
-    (hCur : st'.scheduler.current = some tid)
+    (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     st'.scheduler.runnable.contains tid = false := by
@@ -345,7 +349,7 @@ theorem registerContextStableCheck_dequeue_on_dispatch
 theorem registerContextStableCheck_timeSlice_positive
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
-    (hCur : st'.scheduler.current = some tid)
+    (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     tcb.timeSlice > 0 := by
@@ -359,7 +363,7 @@ theorem registerContextStableCheck_timeSlice_positive
 theorem registerContextStableCheck_ipcReady
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
-    (hCur : st'.scheduler.current = some tid)
+    (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     tcb.ipcState = .ready := by
@@ -373,7 +377,7 @@ theorem registerContextStableCheck_ipcReady
 theorem registerContextStableCheck_edfCompatible
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
-    (hCur : st'.scheduler.current = some tid)
+    (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     tcb.deadline.toNat = 0 := by
@@ -388,7 +392,7 @@ theorem registerContextStableCheck_edfCompatible
 theorem registerContextStableCheck_budget_conjunct
     (st st' : SeLe4n.Model.SystemState)
     (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
-    (hCur : st'.scheduler.current = some tid)
+    (hCur : (st'.scheduler.currentOnCore bootCoreId) = some tid)
     (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
     (hStable : registerContextStableCheck st st' = true) :
     budgetSufficientCheck st' tcb = true := by

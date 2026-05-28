@@ -32,6 +32,7 @@ direct record-with updates on the `objects` field.
 namespace SeLe4n.Kernel.Lifecycle.Suspend
 
 open SeLe4n
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Model
 open SeLe4n.Kernel
 
@@ -64,8 +65,8 @@ replenish queue, and patches the TCB binding — none of these touch
 theorem cancelBoundDonation_scheduler_runQueue_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelBoundDonation st tid tcb = .ok st') :
-    st'.scheduler.runQueue = st.scheduler.runQueue ∧
-    st'.scheduler.current = st.scheduler.current := by
+    (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId) ∧
+    (st'.scheduler.currentOnCore bootCoreId) = (st.scheduler.currentOnCore bootCoreId) := by
   simp only [cancelBoundDonation] at h
   split at h
   · -- .bound case
@@ -82,13 +83,13 @@ scheduler. -/
 theorem cancelDonatedDonation_scheduler_runQueue_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonatedDonation st tid tcb = .ok st') :
-    st'.scheduler.runQueue = st.scheduler.runQueue ∧
-    st'.scheduler.current = st.scheduler.current := by
+    (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId) ∧
+    (st'.scheduler.currentOnCore bootCoreId) = (st.scheduler.currentOnCore bootCoreId) := by
   simp only [cancelDonatedDonation] at h
   split at h
   · -- .donated case: delegate to cleanupDonatedSchedContext
     have hSched := cleanupDonatedSchedContext_scheduler_eq st st' tid h
-    exact ⟨congrArg SchedulerState.runQueue hSched, congrArg SchedulerState.current hSched⟩
+    exact ⟨congrArg (·.runQueueOnCore bootCoreId) hSched, congrArg (·.currentOnCore bootCoreId) hSched⟩
   · simp at h
 
 /-- D1-I/AE3-B/AE3-C/R5.A: cancelDonation preserves `runQueue` and `current`
@@ -97,8 +98,8 @@ arms (which each preserve runQueue/current) or no-ops on `.unbound`. -/
 theorem cancelDonation_scheduler_runQueue_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (h : cancelDonation st tid tcb = .ok st') :
-    st'.scheduler.runQueue = st.scheduler.runQueue ∧
-    st'.scheduler.current = st.scheduler.current := by
+    (st'.scheduler.runQueueOnCore bootCoreId) = (st.scheduler.runQueueOnCore bootCoreId) ∧
+    (st'.scheduler.currentOnCore bootCoreId) = (st.scheduler.currentOnCore bootCoreId) := by
   simp only [cancelDonation] at h
   split at h
   · -- .unbound: identity
@@ -568,7 +569,7 @@ theorem saveOutgoingContext_lookup_equiv
   intro objId
   unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv
   unfold saveOutgoingContext
-  cases hCurr : st.scheduler.current with
+  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => left; simp only []
   | some outTid =>
     simp only []
@@ -614,7 +615,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
     (hObjInv : st.objects.invExt) :
     (saveOutgoingContext st).getSchedContext? scId = st.getSchedContext? scId := by
   unfold SystemState.getSchedContext? saveOutgoingContext
-  cases hCurr : st.scheduler.current with
+  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
   | none => simp only []
   | some outTid =>
     simp only []
@@ -668,8 +669,8 @@ theorem chooseThread_state_eq (st : SystemState) (optTid : Option SeLe4n.ThreadI
     (stChoose : SystemState) (hChoose : chooseThread st = .ok (optTid, stChoose)) :
     stChoose = st := by
   unfold chooseThread at hChoose
-  cases hPick : chooseBestInBucket st.objects.get? st.scheduler.runQueue
-                                   st.scheduler.activeDomain with
+  cases hPick : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
+                                   (st.scheduler.activeDomainOnCore bootCoreId) with
   | error _ => simp [hPick] at hChoose
   | ok best =>
     cases best with
@@ -731,8 +732,7 @@ theorem schedule_lookup_equiv
             -- Use restoreIncomingContext_objects_eq to propagate through dequeue+restoreIncomingContext.
             have hObjEq :
                 ((restoreIncomingContext { (saveOutgoingContext st) with
-                      scheduler := { (saveOutgoingContext st).scheduler with
-                        runQueue := (saveOutgoingContext st).scheduler.runQueue.remove tid } }
+                      scheduler := (saveOutgoingContext st).scheduler.setRunQueueOnCore bootCoreId (((saveOutgoingContext st).scheduler.runQueueOnCore bootCoreId).remove tid) }
                       tid)).objects[objId]?
                 = (saveOutgoingContext st).objects[objId]? := by
               rw [show (restoreIncomingContext _ tid).objects =
@@ -781,8 +781,7 @@ theorem schedule_getSchedContext?_eq
             unfold SystemState.getSchedContext?
             have hObjEq :
                 ((restoreIncomingContext { (saveOutgoingContext st) with
-                      scheduler := { (saveOutgoingContext st).scheduler with
-                        runQueue := (saveOutgoingContext st).scheduler.runQueue.remove tid } }
+                      scheduler := (saveOutgoingContext st).scheduler.setRunQueueOnCore bootCoreId (((saveOutgoingContext st).scheduler.runQueueOnCore bootCoreId).remove tid) }
                       tid)).objects[scId.toObjId]?
                 = (saveOutgoingContext st).objects[scId.toObjId]? := by
               rw [show (restoreIncomingContext _ tid).objects =

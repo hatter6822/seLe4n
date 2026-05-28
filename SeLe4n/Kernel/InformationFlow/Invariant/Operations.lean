@@ -23,6 +23,7 @@ import SeLe4n.Kernel.Service.Registry
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-! ### AN6-A.1 (H-07): Shared closure-form proof-sketch recipe
 
@@ -412,17 +413,17 @@ theorem setCurrentThread_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (tid : Option SeLe4n.ThreadId) (st st' : SystemState)
     (hTidHigh : ∀ t, tid = some t → threadObservable ctx observer t = false)
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false)
     (hStep : setCurrentThread tid st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold setCurrentThread at hStep
-  have hEq : st' = { st with scheduler := { st.scheduler with current := tid } } := by
+  have hEq : st' = { st with scheduler := st.scheduler.setCurrentOnCore bootCoreId tid } := by
     simp only [Except.ok.injEq, Prod.mk.injEq] at hStep; exact hStep.2.symm
   subst hEq
   simp only [projectState]; congr 1
   · -- projectCurrent: both return none since non-observable
-    simp only [projectCurrent]
-    cases hCur : st.scheduler.current with
+    simp only [projectCurrent, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    cases hCur : st.scheduler.currentOnCore bootCoreId with
     | none =>
       cases hTid : tid with
       | none => rfl
@@ -433,8 +434,8 @@ theorem setCurrentThread_preserves_projection
       | none => rfl
       | some t' => simp [hTidHigh t' hTid]
   · -- machineRegs: both return none since non-observable
-    simp only [projectMachineRegs]
-    cases hCur : st.scheduler.current with
+    simp only [projectMachineRegs, SchedulerState.setCurrentOnCore_currentOnCore_self]
+    cases hCur : st.scheduler.currentOnCore bootCoreId with
     | none =>
       cases hTid : tid with
       | none => rfl
@@ -453,11 +454,16 @@ private theorem remove_rq_preserves_projection
     (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer
-        { st with scheduler := { st.scheduler with
-            runQueue := st.scheduler.runQueue.remove tid } }
+        { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid) }
       = projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_remove_neg _ _ _ hTidHigh]
+  simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+    projectDomainScheduleIndex, projectMachineRegs,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  exact RunQueue.toList_filter_remove_neg _ tid _ hTidHigh
 
 /-- WS-H12b: Inserting a non-observable thread into the run queue preserves projection,
 provided the thread was not already in the queue. -/
@@ -465,13 +471,18 @@ private theorem insert_rq_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (tid : SeLe4n.ThreadId) (prio : Priority)
     (hTidHigh : threadObservable ctx observer tid = false)
-    (hNotMem : ¬(tid ∈ st.scheduler.runQueue)) :
+    (hNotMem : ¬(tid ∈ (st.scheduler.runQueueOnCore bootCoreId))) :
     projectState ctx observer
-        { st with scheduler := { st.scheduler with
-            runQueue := st.scheduler.runQueue.insert tid prio } }
+        { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid prio) }
       = projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem]
+  simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+    projectDomainScheduleIndex, projectMachineRegs,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  exact RunQueue.toList_filter_insert_neg _ _ _ _ hTidHigh hNotMem
 
 
 /-- WS-H12c: saveOutgoingContext produces a state whose non-objects, non-scheduler
@@ -479,7 +490,7 @@ fields are identical to the original. -/
 private theorem saveOutgoingContext_machine (st : SystemState) :
     (saveOutgoingContext st).machine = st.machine := by
   simp only [saveOutgoingContext]
-  cases st.scheduler.current with
+  cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases h : st.objects[outTid.toObjId]? with
@@ -489,7 +500,7 @@ private theorem saveOutgoingContext_machine (st : SystemState) :
 private theorem saveOutgoingContext_services (st : SystemState) :
     (saveOutgoingContext st).services = st.services := by
   simp only [saveOutgoingContext]
-  cases st.scheduler.current with
+  cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases h : st.objects[outTid.toObjId]? with
@@ -499,7 +510,7 @@ private theorem saveOutgoingContext_services (st : SystemState) :
 private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
     (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
   simp only [saveOutgoingContext]
-  cases st.scheduler.current with
+  cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases h : st.objects[outTid.toObjId]? with
@@ -509,7 +520,7 @@ private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
 private theorem saveOutgoingContext_objectIndex (st : SystemState) :
     (saveOutgoingContext st).objectIndex = st.objectIndex := by
   simp only [saveOutgoingContext]
-  cases st.scheduler.current with
+  cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases h : st.objects[outTid.toObjId]? with
@@ -527,7 +538,7 @@ private theorem saveOutgoingContext_preserves_projectObjects
   split
   · next hObs =>
       simp only [saveOutgoingContext]
-      cases hCur : st.scheduler.current with
+      cases hCur : (st.scheduler.currentOnCore bootCoreId) with
       | none => rfl
       | some outTid =>
           cases hOut : st.objects[outTid.toObjId]? with
@@ -561,7 +572,7 @@ private theorem saveOutgoingContext_preserves_projection
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (saveOutgoingContext st) = projectState ctx observer st := by
   simp only [saveOutgoingContext]
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases hOut : st.objects[outTid.toObjId]? with
@@ -596,7 +607,7 @@ private theorem saveOutgoingContext_preserves_projection
 when the current thread is non-observable. -/
 private theorem restoreIncomingContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false) :
+    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false) :
     projectState ctx observer (restoreIncomingContext st tid) = projectState ctx observer st := by
   simp only [restoreIncomingContext]
   cases hTcb : st.objects[tid.toObjId]? with
@@ -611,7 +622,7 @@ private theorem restoreIncomingContext_preserves_projection
           congr 1
           · -- machineRegs: current is non-observable, so regs projected as none regardless
             simp only [projectMachineRegs]
-            cases hCur : st.scheduler.current with
+            cases hCur : (st.scheduler.currentOnCore bootCoreId) with
             | none => rfl
             | some t => simp [hCurrentHigh t hCur]
       | endpoint _ => simp_all
@@ -638,7 +649,7 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
     projectState ctx observer { (saveOutgoingContext st) with scheduler := sched }
     = projectState ctx observer { st with scheduler := sched } := by
   simp only [saveOutgoingContext]
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
       cases hOut : st.objects[outTid.toObjId]? with
@@ -677,7 +688,7 @@ Context save/restore and dequeue preserve the projection. -/
 theorem schedule_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
     (hObjInv : st.objects.invExt)
     (hStep : schedule st = .ok ((), st')) :
@@ -712,23 +723,23 @@ theorem schedule_preserves_projection
               saveOutgoingContext_scheduler st
             let stSaved := saveOutgoingContext st
             let stDequeued := { stSaved with scheduler :=
-                { stSaved.scheduler with runQueue := stSaved.scheduler.runQueue.remove tid } }
+                stSaved.scheduler.setRunQueueOnCore bootCoreId ((stSaved.scheduler.runQueueOnCore bootCoreId).remove tid) }
             let stRestored := restoreIncomingContext stDequeued tid
             have hSetProj := setCurrentThread_preserves_projection ctx observer (some tid) stRestored st'
               (fun t h => by cases h; exact hTidHigh)
               (fun t hc => by
-                simp only [stRestored, restoreIncomingContext_scheduler, stDequeued] at hc
+                simp only [stRestored, restoreIncomingContext_scheduler, stDequeued,
+                  SchedulerState.setRunQueueOnCore_currentOnCore] at hc
                 rw [hSavedSched] at hc
                 exact hCurrentHigh t hc)
               hStep
             have hRestoreProj := restoreIncomingContext_preserves_projection ctx observer stDequeued tid
               (fun t h => by
-                simp only [stDequeued] at h
+                simp only [stDequeued, SchedulerState.setRunQueueOnCore_currentOnCore] at h
                 rw [hSavedSched] at h
                 exact hCurrentHigh t h)
             have hDeqProj : projectState ctx observer stDequeued = projectState ctx observer st := by
-              have hDeqEq : stDequeued = { saveOutgoingContext st with scheduler :=
-                  { st.scheduler with runQueue := st.scheduler.runQueue.remove tid } } := by
+              have hDeqEq : stDequeued = { saveOutgoingContext st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid) } := by
                 simp only [stDequeued, stSaved, hSavedSched]
               rw [hDeqEq]
               exact (saveOutgoingContext_with_sched_preserves_projection ctx observer st _ hObjInv).trans
@@ -748,8 +759,8 @@ theorem switchDomain_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t → threadObservable ctx observer t = false)
-    (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hCurrentHigh₁ : ∀ t, (s₁.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false)
+    (hCurrentHigh₂ : ∀ t, (s₂.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : switchDomain s₁ = .ok ((), s₁'))
@@ -760,7 +771,7 @@ theorem switchDomain_preserves_lowEquivalent
   have hDomSched : s₁.scheduler.domainSchedule = s₂.scheduler.domainSchedule := by
     have := congrArg ObservableState.domainSchedule hLow
     simp only [projectState, projectDomainSchedule] at this; exact this
-  have hDomIdx : s₁.scheduler.domainScheduleIndex = s₂.scheduler.domainScheduleIndex := by
+  have hDomIdx : (s₁.scheduler.domainScheduleIndexOnCore bootCoreId) = (s₂.scheduler.domainScheduleIndexOnCore bootCoreId) := by
     have := congrArg ObservableState.domainScheduleIndex hLow
     simp only [projectState, projectDomainScheduleIndex] at this; exact this
   -- Both sides compute the same match/lookup because scheduler fields are identical
@@ -775,7 +786,7 @@ theorem switchDomain_preserves_lowEquivalent
     simp only [hSched₁] at hStep₁; simp only [hSched₂] at hStep₂
     rw [← hDomIdx] at hStep₂
     cases hEntry : (entry :: rest)[
-        (s₁.scheduler.domainScheduleIndex + 1) % (entry :: rest).length]? with
+        ((s₁.scheduler.domainScheduleIndexOnCore bootCoreId) + 1) % (entry :: rest).length]? with
     | none =>
       -- AK2-I: fallback now emits `.error`; contradict hStep₁ / hStep₂ directly.
       simp only [hEntry] at hStep₁
@@ -787,13 +798,13 @@ theorem switchDomain_preserves_lowEquivalent
       -- WS-H12b: Helper to reduce the match-based runQueue to the original runQueue
       -- in the filtered (projected) list. Non-observable current thread's insert is invisible.
       have rq_filter_reduce : ∀ (s : SystemState),
-          (∀ t, s.scheduler.current = some t → threadObservable ctx observer t = false) →
-          (match s.scheduler.current with
-            | none => s.scheduler.runQueue
+          (∀ t, (s.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false) →
+          (match (s.scheduler.currentOnCore bootCoreId) with
+            | none => (s.scheduler.runQueueOnCore bootCoreId)
             | some tid => match s.objects[tid.toObjId]? with
-              | some (KernelObject.tcb tcb) => s.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)
-              | _ => s.scheduler.runQueue).toList.filter (threadObservable ctx observer)
-          = s.scheduler.runQueue.toList.filter (threadObservable ctx observer) := by
+              | some (KernelObject.tcb tcb) => (s.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)
+              | _ => (s.scheduler.runQueueOnCore bootCoreId)).toList.filter (threadObservable ctx observer)
+          = (s.scheduler.runQueueOnCore bootCoreId).toList.filter (threadObservable ctx observer) := by
         intro s hCurH
         split
         · -- current = none
@@ -812,7 +823,12 @@ theorem switchDomain_preserves_lowEquivalent
       simp only [projectState]; congr 1
       · exact congrArg ObservableState.objects hLow
       · -- WS-H12b: runnable field uses rq_filter_reduce
-        simp only [projectRunnable, SchedulerState.runnable]
+        simp only [projectRunnable, SchedulerState.runnable,
+          SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
+          SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
+          SchedulerState.setActiveDomainOnCore_runQueueOnCore,
+          SchedulerState.setCurrentOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
         have h₁ := rq_filter_reduce s₁ hCurrentHigh₁
         have h₂ := rq_filter_reduce s₂ hCurrentHigh₂
         have hBase := congrArg ObservableState.runnable hLow
@@ -822,9 +838,11 @@ theorem switchDomain_preserves_lowEquivalent
         | exact congrArg ObservableState.services hLow
         | exact congrArg ObservableState.irqHandlers hLow
         | exact congrArg ObservableState.objectIndex hLow
-        | exact congrArg ObservableState.machineRegs hLow
         | exact congrArg ObservableState.memory hLow
         | exact congrArg ObservableState.serviceRegistry hLow
+        | exact congrArg ObservableState.domainSchedule hLow
+        | simp [projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+            projectDomainScheduleIndex, projectMachineRegs]
         | rfl
 
 -- ============================================================================
@@ -2304,24 +2322,29 @@ private theorem rotateToBack_preserves_projection
     (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer
-        { st with scheduler := { st.scheduler with
-            runQueue := st.scheduler.runQueue.rotateToBack tid } }
+        { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).rotateToBack tid) }
       = projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · simp only [projectRunnable, SchedulerState.runnable, RunQueue.toList_filter_rotateToBack_neg _ _ _ hTidHigh]
+  simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+    projectDomainScheduleIndex, projectMachineRegs,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+    RunQueue.toList_filter_rotateToBack_neg _ _ _ hTidHigh]
 
 /-- WS-H9: handleYield with non-observable current thread preserves projection.
 handleYield = rotateToBack (non-obs thread filtered out of projection) + schedule. -/
 theorem handleYield_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
+    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
     (hObjInv : st.objects.invExt)
     (hStep : handleYield st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold handleYield at hStep
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     -- V5-F: handleYield now returns .error .invalidArgument when current = none
     simp [hCur] at hStep
@@ -2336,18 +2359,23 @@ theorem handleYield_preserves_projection
       | tcb tcb =>
         simp only [hObj] at hStep
         -- hStep : schedule { st with scheduler.runQueue := (rq.insert tid prio).rotateToBack tid } = .ok ((), st')
-        let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
+        let rq' := ((st.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
         let stIR : SystemState :=
-          { st with scheduler := { st.scheduler with runQueue := rq' } }
+          { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
         -- Show insert + rotateToBack preserves projection
         have hInsertRotProj : projectState ctx observer stIR = projectState ctx observer st := by
-          simp only [projectState]; congr 1
-          · simp only [projectRunnable, SchedulerState.runnable]
-            rw [RunQueue.toList_filter_rotateToBack_neg _ _ _ hTidHigh,
-                RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh]
+          simp only [stIR, projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+            projectDomainScheduleIndex, projectMachineRegs,
+            SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+          congr 1
+          simp only [rq', projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self,
+            RunQueue.toList_filter_rotateToBack_neg _ _ _ hTidHigh,
+            RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh]
         have hAllRunnableIR : ∀ t, t ∈ stIR.scheduler.runnable →
             threadObservable ctx observer t = false := by
-          intro t hMem'; simp only [SchedulerState.runnable] at hMem'
+          intro t hMem'; simp only [stIR, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem'
           have hMemRot := (RunQueue.rotateToBack_mem_iff _ _ t).mp
             ((RunQueue.mem_toList_iff_mem _ t).mp hMem')
           rcases (RunQueue.mem_insert _ _ _ t).mp hMemRot with hOrig | hEq
@@ -2366,11 +2394,11 @@ theorem handleYield_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t →
+    (hCurrentHigh₁ : ∀ t, (s₁.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
     (hAllRunnable₁ : ∀ tid, tid ∈ s₁.scheduler.runnable →
         threadObservable ctx observer tid = false)
-    (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t →
+    (hCurrentHigh₂ : ∀ t, (s₂.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
     (hAllRunnable₂ : ∀ tid, tid ∈ s₂.scheduler.runnable →
         threadObservable ctx observer tid = false)
@@ -2409,14 +2437,14 @@ and optionally rotateToBack + schedule (covered by existing helpers). -/
 theorem timerTick_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState)
-    (hCurrentHigh : ∀ t, st.scheduler.current = some t → threadObservable ctx observer t = false)
-    (hCurrentObjHigh : ∀ t, st.scheduler.current = some t → objectObservable ctx observer t.toObjId = false)
+    (hCurrentHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → threadObservable ctx observer t = false)
+    (hCurrentObjHigh : ∀ t, (st.scheduler.currentOnCore bootCoreId) = some t → objectObservable ctx observer t.toObjId = false)
     (hAllRunnable : ∀ tid, tid ∈ st.scheduler.runnable → threadObservable ctx observer tid = false)
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold timerTick at hStep
-  cases hCur : st.scheduler.current with
+  cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; subst hStep
     simp only [projectState]; congr 1
@@ -2439,19 +2467,23 @@ theorem timerTick_preserves_projection
           { st with objects := st.objects.insert tid.toObjId tcbReset, machine := tick st.machine }
         -- stIT has the same runQueue as st
         let stInsert : SystemState :=
-          { stIT with scheduler := { stIT.scheduler with
-              runQueue := stIT.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
+          { stIT with scheduler := stIT.scheduler.setRunQueueOnCore bootCoreId ((stIT.scheduler.runQueueOnCore bootCoreId).insert tid (effectiveRunQueuePriority tcb)) }
         -- Show insert preserves projection (non-observable thread)
         have hInsertRqProj : projectState ctx observer stInsert = projectState ctx observer stIT := by
-          simp only [projectState]; congr 1
-          · simp only [projectRunnable, SchedulerState.runnable]
-            exact RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh
-        have hCurSched : ∀ t, stInsert.scheduler.current = some t →
+          simp only [stInsert, projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+            projectDomainScheduleIndex, projectMachineRegs,
+            SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+            SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+          congr 1
+          simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact RunQueue.toList_filter_insert_neg' _ _ _ _ hTidHigh
+        have hCurSched : ∀ t, (stInsert.scheduler.currentOnCore bootCoreId) = some t →
             threadObservable ctx observer t = false :=
           fun t hc => hCurrentHigh t (by simpa [stInsert, stIT] using hc)
         have hAllRunnableSched : ∀ t, t ∈ stInsert.scheduler.runnable →
             threadObservable ctx observer t = false := by
-          intro t hMem'; simp only [SchedulerState.runnable] at hMem'
+          intro t hMem'; simp only [stInsert, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem'
           rcases (RunQueue.mem_insert _ _ _ t).mp
             ((RunQueue.mem_toList_iff_mem _ t).mp hMem') with hOrig | hEq
           · exact hAllRunnable t ((RunQueue.mem_toList_iff_mem _ t).mpr hOrig)
@@ -2476,15 +2508,15 @@ theorem timerTick_preserves_lowEquivalent
     (ctx : LabelingContext) (observer : IfObserver)
     (s₁ s₂ s₁' s₂' : SystemState)
     (hLow : lowEquivalent ctx observer s₁ s₂)
-    (hCurrentHigh₁ : ∀ t, s₁.scheduler.current = some t →
+    (hCurrentHigh₁ : ∀ t, (s₁.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
-    (hCurrentObjHigh₁ : ∀ t, s₁.scheduler.current = some t →
+    (hCurrentObjHigh₁ : ∀ t, (s₁.scheduler.currentOnCore bootCoreId) = some t →
         objectObservable ctx observer t.toObjId = false)
     (hAllRunnable₁ : ∀ tid, tid ∈ s₁.scheduler.runnable →
         threadObservable ctx observer tid = false)
-    (hCurrentHigh₂ : ∀ t, s₂.scheduler.current = some t →
+    (hCurrentHigh₂ : ∀ t, (s₂.scheduler.currentOnCore bootCoreId) = some t →
         threadObservable ctx observer t = false)
-    (hCurrentObjHigh₂ : ∀ t, s₂.scheduler.current = some t →
+    (hCurrentObjHigh₂ : ∀ t, (s₂.scheduler.currentOnCore bootCoreId) = some t →
         objectObservable ctx observer t.toObjId = false)
     (hAllRunnable₂ : ∀ tid, tid ∈ s₂.scheduler.runnable →
         threadObservable ctx observer tid = false)
@@ -3248,23 +3280,18 @@ theorem runQueue_remove_preserves_projection_at_high
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with
-          runQueue := st.scheduler.runQueue.remove tid } } =
+      { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).remove tid) } =
     projectState ctx observer st := by
-  -- Only projectRunnable reads scheduler.runQueue (via the runnable abbrev).
-  have hRun : projectRunnable ctx observer
-                { st with scheduler := { st.scheduler with
-                    runQueue := st.scheduler.runQueue.remove tid } } =
-              projectRunnable ctx observer st := by
-    simp only [projectRunnable, SchedulerState.runnable]
-    exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
-      st.scheduler.runQueue tid (threadObservable ctx observer) hTidHigh
-  show (ObservableState.mk _ (projectRunnable ctx observer
-          { st with scheduler := { st.scheduler with
-              runQueue := st.scheduler.runQueue.remove tid } })
-          _ _ _ _ _ _ _ _ _ _ _) = _
-  rw [hRun]
-  rfl
+  -- setRunQueueOnCore frames every projection except projectRunnable.
+  simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+    projectDomainScheduleIndex, projectMachineRegs,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
+    (st.scheduler.runQueueOnCore bootCoreId) tid (threadObservable ctx observer) hTidHigh
 
 /-- AK6-F Step 1: Same as `runQueue_remove_preserves_projection_at_high`
     for `insert` — uses `toList_filter_insert_neg'`. -/
@@ -3273,22 +3300,17 @@ theorem runQueue_insert_preserves_projection_at_high
     (st : SystemState) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with
-          runQueue := st.scheduler.runQueue.insert tid prio } } =
+      { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId ((st.scheduler.runQueueOnCore bootCoreId).insert tid prio) } =
     projectState ctx observer st := by
-  have hRun : projectRunnable ctx observer
-                { st with scheduler := { st.scheduler with
-                    runQueue := st.scheduler.runQueue.insert tid prio } } =
-              projectRunnable ctx observer st := by
-    simp only [projectRunnable, SchedulerState.runnable]
-    exact SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
-      st.scheduler.runQueue tid prio (threadObservable ctx observer) hTidHigh
-  show (ObservableState.mk _ (projectRunnable ctx observer
-          { st with scheduler := { st.scheduler with
-              runQueue := st.scheduler.runQueue.insert tid prio } })
-          _ _ _ _ _ _ _ _ _ _ _) = _
-  rw [hRun]
-  rfl
+  simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+    projectDomainScheduleIndex, projectMachineRegs,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  exact SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+    (st.scheduler.runQueueOnCore bootCoreId) tid prio (threadObservable ctx observer) hTidHigh
 
 /-- AK6-F Step 1 composed: modifying runQueue via remove+insert at a high
     thread preserves projection. This chains the two frame lemmas. -/
@@ -3297,26 +3319,20 @@ theorem runQueue_remove_insert_preserves_projection_at_high
     (st : SystemState) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer
-      { st with scheduler := { st.scheduler with
-          runQueue := (st.scheduler.runQueue.remove tid).insert tid prio } } =
+      { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid prio) } =
     projectState ctx observer st := by
-  -- Establish both states' projectRunnable equality via filter chain.
-  have hRun : projectRunnable ctx observer
-                { st with scheduler := { st.scheduler with
-                    runQueue := (st.scheduler.runQueue.remove tid).insert tid prio } } =
-              projectRunnable ctx observer st := by
-    simp only [projectRunnable, SchedulerState.runnable]
-    rw [SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
-         (st.scheduler.runQueue.remove tid) tid prio
-         (threadObservable ctx observer) hTidHigh]
-    exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
-      st.scheduler.runQueue tid (threadObservable ctx observer) hTidHigh
-  show (ObservableState.mk _ (projectRunnable ctx observer
-          { st with scheduler := { st.scheduler with
-              runQueue := (st.scheduler.runQueue.remove tid).insert tid prio } })
-          _ _ _ _ _ _ _ _ _ _ _) = _
-  rw [hRun]
-  rfl
+  simp only [projectState, projectCurrent, projectActiveDomain, projectDomainTimeRemaining,
+    projectDomainScheduleIndex, projectMachineRegs,
+    SchedulerState.setRunQueueOnCore_currentOnCore, SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+    SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+    SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  congr 1
+  simp only [projectRunnable, SchedulerState.runnable, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+  rw [SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+       ((st.scheduler.runQueueOnCore bootCoreId).remove tid) tid prio
+       (threadObservable ctx observer) hTidHigh]
+  exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
+    (st.scheduler.runQueueOnCore bootCoreId) tid (threadObservable ctx observer) hTidHigh
 
 -- ============================================================================
 -- AK6-F Step 2: migrateRunQueueBucket preservation
@@ -3403,7 +3419,7 @@ theorem setPriorityOp_preserves_projection
         by_cases hCond :
             ((SchedContext.PriorityManagement.migrateRunQueueBucket
                 (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority)
-                vTargetTid.val newPriority).scheduler.current == some vTargetTid.val &&
+                vTargetTid.val newPriority).scheduler.currentOnCore bootCoreId == some vTargetTid.val &&
               decide (newPriority.val <
                 (SchedContext.PriorityManagement.getCurrentPriority st targetTcb).val)) = true
         · -- schedule branch
@@ -3648,9 +3664,7 @@ theorem schedContextBind_frame_runQueue_rebucket
     (st : SystemState) (threadId : SeLe4n.ThreadId) (pri : SeLe4n.Priority)
     (hThreadHigh : threadObservable ctx observer threadId = false) :
     projectState ctx observer
-      { st with scheduler :=
-        { st.scheduler with runQueue :=
-            (st.scheduler.runQueue.remove threadId).insert threadId pri } } =
+      { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId (((st.scheduler.runQueueOnCore bootCoreId).remove threadId).insert threadId pri) } =
     projectState ctx observer st :=
   runQueue_remove_insert_preserves_projection_at_high ctx observer st threadId pri
     hThreadHigh

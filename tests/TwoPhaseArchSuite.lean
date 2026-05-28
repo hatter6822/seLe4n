@@ -44,6 +44,7 @@ FrozenStateSuite, FreezeProofSuite, and FrozenOpsSuite.
 -/
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RadixTree
 open SeLe4n.Kernel.FrozenOps
 open SeLe4n.Model
@@ -255,7 +256,7 @@ private def tph006a_timerTickActive : IO Unit := do
       | some tcb =>
           expect "time slice decremented" (tcb.timeSlice == 2)
       | none => throw <| IO.userError "TCB missing after tick"
-      expect "current preserved" (fst'.scheduler.current == some ⟨1⟩)
+      expect "current preserved" ((fst'.scheduler.current) == some ⟨1⟩)
   | .error e => throw <| IO.userError s!"tick should succeed: {toString e}"
 
 /-- TPH-006b: Timer tick with expired time slice — preemption and reschedule. -/
@@ -291,7 +292,7 @@ private def tph006b_timerTickExpiry : IO Unit := do
       | none => throw <| IO.userError "TCB missing after expiry"
       -- frozenSchedule was called after clearing current. Thread 1 is the
       -- only eligible thread (domain 0, .ready), so it should be re-selected.
-      expect "thread re-selected" (fst'.scheduler.current == some ⟨1⟩)
+      expect "thread re-selected" ((fst'.scheduler.current) == some ⟨1⟩)
   | .error e => throw <| IO.userError s!"expiry should succeed: {toString e}"
 
 /-- TPH-006c: Timer tick expiry with non-default configDefaultTimeSlice (MED-01
@@ -433,7 +434,7 @@ private def tph014a_frozenSchedule : IO Unit := do
   match frozenSchedule fst with
   | .ok ((), fst') =>
       -- A thread should have been selected
-      expect "thread selected" (fst'.scheduler.current.isSome)
+      expect "thread selected" ((fst'.scheduler.current).isSome)
   | .error e => throw <| IO.userError s!"schedule should succeed: {toString e}"
 
 /-- TPH-014b: Frozen yield — re-enqueue current and reschedule. -/
@@ -486,7 +487,7 @@ private def tph014c_scheduleNoEligible : IO Unit := do
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>
-      expect "no thread selected" (fst'.scheduler.current == none)
+      expect "no thread selected" ((fst'.scheduler.current) == none)
   | .error e => throw <| IO.userError s!"should succeed: {toString e}"
 
 -- ============================================================================

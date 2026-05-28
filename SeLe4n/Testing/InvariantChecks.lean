@@ -10,6 +10,7 @@
 import SeLe4n
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 namespace SeLe4n.Testing
 
@@ -76,7 +77,7 @@ private def notificationQueueWellFormedB (ntfn : Notification) : Bool :=
   | .active => ntfn.waitingThreads.isEmpty && ntfn.pendingBadge.isSome
 
 private def schedulerQueueCurrentConsistentB (st : SystemState) : Bool :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => true
   | some tid => !(tid ∈ st.scheduler.runnable)
 
@@ -84,7 +85,7 @@ private def schedulerRunQueueUniqueB (st : SystemState) : Bool :=
   st.scheduler.runnable.Nodup
 
 private def currentThreadValidB (st : SystemState) : Bool :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => true
   | some tid =>
       -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
@@ -223,7 +224,7 @@ private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (
     backed by membership. This invariant is maintained structurally by RunQueue.insert
     and RunQueue.remove, but we verify it at runtime as a safety net. -/
 private def runQueueThreadPriorityConsistentB (st : SystemState) : Bool :=
-  let rq := st.scheduler.runQueue
+  let rq := (st.scheduler.runQueueOnCore bootCoreId)
   rq.flat.all fun tid =>
     rq.threadPriority[tid]?.isSome
 
@@ -267,12 +268,12 @@ private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (s
 /-- WS-F7/D1b: If a thread is currently dispatched, its TCB domain must match the
 scheduler's `activeDomain`. Violation would break domain-based temporal isolation. -/
 private def currentThreadInActiveDomainB (st : SystemState) : Bool :=
-  match st.scheduler.current with
+  match (st.scheduler.currentOnCore bootCoreId) with
   | none => true
   | some tid =>
       -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
       match st.getTcb? tid with
-      | some tcb => tcb.domain == st.scheduler.activeDomain
+      | some tcb => tcb.domain == (st.scheduler.activeDomainOnCore bootCoreId)
       | none => true  -- missing TCB caught by currentThreadValidB
 
 /-- WS-F7/D1c: No thread appears in more than one notification `waitingThreads` list.
@@ -507,7 +508,7 @@ private def checkSchedContextNotDualBound (st : SystemState) : Bool :=
 /-- AG1-F-ii: Check schedContextRunQueueConsistent — runnable SC-bound threads
 have a live SchedContext with positive budget. -/
 private def checkSchedContextRunQueueConsistent (st : SystemState) : Bool :=
-  st.scheduler.runQueue.toList.all fun tid =>
+  (st.scheduler.runQueueOnCore bootCoreId).toList.all fun tid =>
     -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     match st.getTcb? tid with
     | some tcb =>

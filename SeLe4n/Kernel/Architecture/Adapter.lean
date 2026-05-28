@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Architecture.Assumptions
 namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 
 /-- Explicit architecture-binding failure branches for WS-M6-B adapter entrypoints. -/
 inductive AdapterErrorKind where
@@ -147,7 +148,7 @@ def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile
     (st : SystemState) : SystemState :=
   { st with
       machine := { st.machine with regs := newRegs }
-      scheduler := { st.scheduler with current := some newTid } }
+      scheduler := st.scheduler.setCurrentOnCore bootCoreId (some newTid) }
 
 /-- X1-F: Context-switch adapter operation. Performs an atomic context switch
     guarded by the runtime contract's `registerContextStable` predicate.

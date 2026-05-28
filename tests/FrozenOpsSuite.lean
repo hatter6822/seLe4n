@@ -12,6 +12,7 @@ import SeLe4n.Kernel.FrozenOps
 import SeLe4n.Model.FrozenState
 
 open SeLe4n.Kernel.RobinHood
+open SeLe4n.Kernel.Concurrency (bootCoreId)
 open SeLe4n.Kernel.RadixTree
 open SeLe4n.Kernel.FrozenOps
 open SeLe4n.Model
@@ -97,7 +98,7 @@ private def fo003_storeObject : IO Unit := do
       match fst'.objects.get? ⟨1⟩ with
       | some (.tcb t) => expect "updated priority" (t.priority == ⟨5⟩)
       | _ => throw <| IO.userError "should find updated TCB"
-      expect "scheduler preserved" (fst'.scheduler.current == fst.scheduler.current)
+      expect "scheduler preserved" ((fst'.scheduler.current) == (fst.scheduler.current))
       expect "machine preserved" (fst'.machine.timer == fst.machine.timer)
   | .error _ => throw <| IO.userError "store should succeed"
 
@@ -138,7 +139,7 @@ private def fo006_timerTickIdle : IO Unit := do
   match frozenTimerTick fst with
   | .ok ((), fst') =>
       expect "timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
-      expect "still idle" (fst'.scheduler.current == none)
+      expect "still idle" ((fst'.scheduler.current) == none)
   | .error _ => throw <| IO.userError "timer tick should succeed"
 
 -- ============================================================================
@@ -363,7 +364,7 @@ private def fo019_frozenSchedule : IO Unit := do
   }
   match frozenSchedule st0 with
   | .ok (_, st1) =>
-    expect "frozenSchedule selects highest priority" (st1.scheduler.current == some tid2)
+    expect "frozenSchedule selects highest priority" ((st1.scheduler.current) == some tid2)
     IO.println "frozen-ops check passed [FO-019: frozenSchedule]"
   | .error e => throw <| IO.userError s!"frozenSchedule failed: {reprStr e}"
 
