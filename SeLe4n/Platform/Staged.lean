@@ -118,6 +118,24 @@ import SeLe4n.Kernel.Concurrency.LockPrimitives
 -- `withLockSet (lockSet_τ args)`, threading the SM3.B canonical sort
 -- through `acquireAll` and the reverse through `releaseAll`.
 import SeLe4n.Kernel.Concurrency.LockSet
+-- WS-SM SM4.C: per-core scheduler invariant migration.  Lifts every
+-- per-core scheduler invariant predicate to an explicit `(c : CoreId)`
+-- parameter (plan §5.3/§5.6), exports the aggregate
+-- `schedulerInvariant_perCore` (SM4.C.29) + `schedulerInvariant_smp`, the
+-- boot-core bridges to the live `schedulerInvariantBundle*` surface, the
+-- per-core / idle-core frame lemmas, the cross-core pairwise-independence
+-- theorem (SM4.C.30), and the single-core-preservation-lifts-to-SMP
+-- skeleton.  Reachability: staged at SM4.C; SM5's per-core scheduler
+-- operations are the first runtime exerciser (which will move it
+-- production-reached).
+import SeLe4n.Kernel.Scheduler.Invariant.PerCore
+-- WS-SM SM4.C audit-pass-4: per-operation per-core preservation theorems
+-- for the 5 boot-core scheduler operations that have a single-core
+-- `schedulerInvariantBundleFull` preservation theorem (`schedule`,
+-- `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`), plus a
+-- base-aggregate bridge for `chooseThread`.  Composes existing single-
+-- core preservation theorems with the SM4.C SMP-preservation skeleton.
+import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

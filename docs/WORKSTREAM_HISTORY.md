@@ -1561,6 +1561,413 @@ Follow-on: SM4.B (`SchedulerState` path-a replacement), SM4.C/SM4.D
 [`docs/planning/SMP_PER_CORE_STATE_PLAN.md`](planning/SMP_PER_CORE_STATE_PLAN.md)
 §§5.2..5.5.
 
+**WS-SM SM4.B LANDED at v0.31.12 on branch
+`claude/sharp-carson-V2Y59`** (`SchedulerState` path-a `Vector`
+replacement; plan §5.2).  Replaces the seven singular per-core
+`SchedulerState` fields with `Vector α Concurrency.numCores` indexed by
+`CoreId`, on top of the SM4.A `PerCoreVector` bootstrap.  All 15 sub-tasks
+landed in one green cut (decision #4: full path-a, no scalar shim).
+Observably transparent: `lake exe sele4n` is byte-identical to
+`tests/fixtures/main_trace_smoke.expected` (SM4.B.15) — the boot core
+behaves exactly as the former scalar.  The seven `…OnCore (c : CoreId)`
+accessors are now `Vector.get`-backed; seven matching `set…OnCore`
+writers added; a **70-lemma `@[simp]` store/load algebra** (7 read-after-
+write + 7 same-field cross-core independence (`_ne`) + 42 cross-field
+frame + 14 system-wide-field frame) drives every post-write read
+reduction (`Vector.get (Vector.set _)` is not definitional, so the
+algebra — not `rfl`/iota — is what closes every preservation proof).
+`default_state_perCoreInitialized` (SM4.B.9) and `SchedulerState.ext_perCore`
+(SM4.B.10) anchor per-core defaults and extensionality.  The whole
+production import closure re-proves: `Model.State`,
+`Scheduler.Operations.{Core,Preservation}`, `SchedContext`, `Lifecycle`
+(suspend/cleanup), IPC scheduler lemmas, priority inheritance,
+`InformationFlow` projection + NI, `Architecture/Invariant`,
+`CrossSubsystem`, `Platform/Boot`, freeze proofs.  Test suites migrated
+(`PerCoreSchedulerStateSuite` exercises genuine per-core independence;
+`Testing/StateBuilder`, `Testing/MainTraceHarness`, etc.).  Axiom budget:
+0 axioms, 0 sorries.  Items deferred past v1.0.0 with correctness
+impact: NONE.
+
+**WS-SM SM4.C LANDED at v0.31.13 on branch
+`claude/elegant-wozniak-FkOsZ`** (per-core scheduler invariant
+migration; plan §5.3 / §5.6).  Lifts every scheduler invariant
+*predicate* from the single-core forms (pinned to `bootCoreId` after
+SM4.B) to per-core forms parameterised by an explicit `(c : CoreId)`,
+following plan §3.4's Pattern 1: each per-core form's body is the
+existing predicate's body with `bootCoreId` → `c` and `s.runnable` →
+`(s.runQueueOnCore c).toList`.  The migration is **additive and
+soundness-preserving**: every per-core form at `bootCoreId` is
+*definitionally equal* to the existing single-core predicate (proved as
+`Iff.rfl` by the boot-core bridge lemmas), so the live
+`schedulerInvariantBundle*` / `crossSubsystemInvariant` surface and the
+hundreds of preservation theorems that consume it stay untouched and
+green; SM4.C strictly adds the per-core layer SM5 consumes.
+
+NEW FILE `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~380 LoC,
+staged via `Platform/Staged.lean` + `scripts/staged_module_allowlist.txt`;
+SM5 promotes to production-reached).  Contents:
+
+- **§1 (16 per-core predicate forms)**:
+  `queueCurrentConsistentOnCore` / `runQueueUniqueOnCore` /
+  `currentThreadValidOnCore` / `currentThreadInActiveDomainOnCore` /
+  `timeSlicePositiveOnCore` / `currentTimeSlicePositiveOnCore` /
+  `edfCurrentHasEarliestDeadlineOnCore` / `contextMatchesCurrentOnCore` /
+  `runnableThreadsAreTCBsOnCore` / `schedulerPriorityMatchOnCore` /
+  `domainTimeRemainingPositiveOnCore` / `currentBudgetPositiveOnCore` /
+  `budgetPositiveOnCore` / `replenishmentPipelineOrderOnCore` /
+  `replenishQueueValidOnCore` / `effectiveParamsMatchRunQueueOnCore`.
+  The five system-wide predicates (`schedContextsWellFormed`,
+  `schedContextBindingConsistent`, `boundThreadDomainConsistent`,
+  `domainScheduleEntriesPositive`, `configTimeSlicePositive`) are
+  core-independent and need no `c`.
+- **§2 (16 boot-core bridges)**: each `…OnCore_bootCore_iff` is
+  `Iff.rfl` — the non-orphan defeq grounding to the live single-core
+  predicates.
+- **§3 (SM4.C.29 aggregate)**: `schedulerInvariant_perCore st c` is the
+  10-conjunct per-core analogue of `schedulerInvariantBundleFull` minus
+  the system-wide `domainScheduleEntriesPositive`;
+  `schedulerInvariant_smp st := ∀ c, schedulerInvariant_perCore st c`;
+  `schedulerInvariant_perCore_aggregateForall` bridges them (plan §5.6);
+  10 per-conjunct projections.
+- **§4 (bundle bridges)**:
+  `schedulerInvariantBundleFull_to_perCore_bootCore` (and the `Extended`
+  lift) — every existing single-core preservation theorem yields a
+  per-core preservation at `bootCoreId` *for free*.  Converse
+  `…_bootCore_to_bundleFull` reassembles the full bundle.
+- **§5 (default-state)**: `default_schedulerInvariant_perCore (c)` /
+  `default_schedulerInvariant_smp` — every core satisfies the per-core
+  invariant on the freshly-booted system (current = `none`, run queue
+  empty, `domainTimeRemaining = 5 > 0`).
+- **§6 (frame + SM4.C.30 pairwise)**:
+  `schedulerInvariant_perCore_frame` (general — depends only on core
+  `c`'s `current`/`runQueue`/`domainTimeRemaining` plus `objects` and
+  `machine.regs`); `…_frame_idle` (idle-core variant, no regs
+  requirement — used for boot operations like `schedule`'s context
+  restore that re-write `machine.regs`); three cross-core independence
+  corollaries (`_independent_of_setCurrentOnCore` / `…setRunQueueOnCore`
+  / `…setDomainTimeRemainingOnCore`); **`schedulerInvariant_perCore_pairwise`**
+  — the SM4.C.30 deliverable, *strengthening* the plan's documentation-
+  only `P ↔ P` sketch per the implement-the-improvement rule into a
+  substantive theorem: for `c₁ ≠ c₂`, overwriting all three of core
+  `c₂`'s invariant-read slots leaves core `c₁`'s invariant unchanged.
+- **§7 (SMP-preservation skeleton)**:
+  `schedulerInvariant_smp_of_bootCore_and_idle_frame` — the SM5
+  migration bridge: a per-core operation's preservation needs reproving
+  only at the core it writes; every other core discharges by the idle
+  frame lemma.
+
+**Test coverage**: NEW FILE `tests/SchedulerInvariantPerCoreSuite.lean`
+(`lake exe scheduler_invariant_per_core_suite`) — 60+ Tier-3 surface
+anchors, 12 elaboration-time `example`s applying every headline theorem
+to verified inputs, 16 runtime `assertBool` assertions across four
+sections (default-state on every core in `allCores`; theorem-application
+checks; cross-core pairwise independence; bridge reflexivity).  Tier-2 +
+Tier-3 wired.  **Axiom budget for SM4.C**: 0 Lean axioms, 0 sorries —
+verified via `#print axioms` on the headline theorems (only `propext` /
+`Quot.sound` / `Classical.choice`).  Items deferred past v1.0.0 with
+correctness impact: NONE.  Follow-on: SM4.D (cross-subsystem theorem
+migrations), SM4.E (`bootFromPlatform_smp_witness` + single-core
+witness retirement).
+
+**WS-SM SM4.C audit-passes 1–6 LANDED at v0.31.14 → v0.31.20** (same
+branch as the initial SM4.C cut).  Six audit-passes extend the per-core
+scheduler invariant layer from the initial v0.31.13 deliverable into a
+**substantively complete** implementation of the plan §5.3 + §5.6 +
+§3.4 Pattern 1 scope:
+
+- **Audit-pass-1 (v0.31.14)**: migrated the three SC-using per-core
+  predicates (`currentBudgetPositive*`, `budgetPositive*`,
+  `effectiveParamsMatchRunQueue*`) from raw `match`-on-`objects[…]?`
+  to typed `getTcb?` / `getSchedContext?` accessors.  AK7 baseline
+  restored to the v0.31.2 floor (`RAW_MATCH_TOTAL` 122; `GETTCB`
+  +56 / `GETSCHEDCTX` +27 net).  Added the four missing setter
+  independence corollaries (`setReplenishQueueOnCore`,
+  `setActiveDomainOnCore`, `setDomainScheduleIndexOnCore`,
+  `setLastTimeoutErrorsOnCore`) for full SM5 completeness.
+
+- **Audit-pass-2 (v0.31.15)**: 17 per-conjunct frame lemmas
+  (§5.5 — fine-grained SM5 reasoning), the new `runQueueOnCoreWellFormed`
+  predicate (plan §5.6 missing), and the extended per-core aggregate
+  `schedulerInvariant_perCore_extended` (§3.5) mirroring
+  `schedulerInvariantBundleExtended`.  Extended bundle bridges +
+  defaults + projections.  Extended frame + idle frame + pairwise +
+  SMP-preservation skeleton (§8).
+
+- **Audit-pass-3 (v0.31.16)**: three cross-subsystem per-core
+  predicates per plan §5.6 (`schedContextRunQueueConsistent_perCore`,
+  `priorityInheritance_perCore`,
+  `activeDomainOnCore_isInDomainSchedule`), plus the cross-subsystem
+  aggregate `schedulerInvariant_perCore_crossSubsystem` (§10) composing
+  extended + the three cross-subsystem predicates.  Boot-core bridges
+  + defaults + per-conjunct frame lemmas (3) + aggregate bridges
+  (`crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore`).
+
+- **Audit-pass-4 (v0.31.17)**: per-op aggregate per-core preservation
+  theorems.  §11 adds `schedulerInvariant_perCore_holds_if_idle`
+  (sufficient idle theorem) + `schedulerInvariant_smp_of_bootCore_preservation`
+  (the SM5 composition).  NEW FILE
+  `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` with
+  6 per-op preservation theorems (`schedule` /  `handleYield` /
+  `timerTick` / `switchDomain` / `scheduleDomain` each preserve
+  `schedulerInvariant_smp` + chooseThread base bridge).
+
+- **Audit-pass-5 (v0.31.18)** + **audit-pass-6 (v0.31.20)**: complete
+  plan §3.4 Pattern 1 coverage — **50 named per-conjunct per-op SMP
+  preservation theorems** (all 10 per-core conjuncts × all 5 boot-core
+  scheduler operations).  Each is a one-line projection from the
+  corresponding aggregate per-op preservation:
+
+  ```
+  <op>_preserves_<conjunct>OnCore_smp ... := fun c =>
+    schedulerInvariant_perCore_to_<conjunct>
+      ((<op>_preserves_schedulerInvariant_smp ...) c)
+  ```
+
+- **Doc closure (v0.31.19)**: cross-document sync of `CLAUDE.md` /
+  `AGENTS.md` / `SELE4N_SPEC.md` to reflect the cumulative
+  audit-pass-1..5 state.
+
+**Cumulative SM4.C state at v0.31.20**:
+- 16 per-core predicate forms; 16 boot-core bridges.
+- 3 aggregates (base / extended / cross-subsystem) + SMP forms +
+  per-conjunct projections + bundle bridges + defaults.
+- 20 per-conjunct frame lemmas; 7 setter independence corollaries; 2
+  cross-core pairwise theorems (SM4.C.30).
+- 4 SMP-preservation skeletons; 2 sufficient-idle theorems.
+- 3 cross-subsystem per-core predicates per plan §5.6.
+- 6 per-op aggregate preservation + 50 per-conjunct per-op preservation
+  = 56 per-op theorems (complete §3.4 Pattern 1 coverage).
+- Modules: `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` ~1660 LoC
+  + `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean`
+  ~1170 LoC = ~2830 LoC of new SM4.C infrastructure.
+- Test coverage: 41+1 runtime assertions across 2 suites; 130+ surface
+  anchors.
+- 35 staged-only modules (was 34 at v0.31.13); partition gate green.
+- Axiom-clean throughout (only `propext` / `Quot.sound` /
+  `Classical.choice`).
+- Trace fixture byte-identical from v0.31.12 onward.
+
+**WS-SM SM4.C audit-passes 7–8 LANDED at v0.31.22 → v0.31.23** (same
+branch as audit-passes 1–6).  Two post-cumulative passes close the
+remaining substantive shortcuts surfaced by an independent deep
+re-audit of the v0.31.21 cumulative state — neither was an outright
+correctness defect (the existing theorems were axiom-clean and
+typed correctly) but both fell short of the optimal form the
+`implement-the-improvement` rule demands:
+
+- **Audit-pass-7 (v0.31.22)**: `priorityInheritance_perCore_frame`
+  was previously stated with a degenerate hypothesis `(hEq : st' =
+  st)` — a trivial congruence reducing to `Iff.rfl`, dischargeable
+  by any caller that already has full state-equality but offering
+  no useful machinery on the partial frame the SMP-preservation
+  skeleton actually delivers (`hObj : st'.objects = st.objects`
+  + `hIdx : st'.objectIndex = st.objectIndex`).  Replaced with the
+  substantive partial-frame form via a new private helper
+  `blockingChain_objects_congr` proved by structural induction on
+  the chain fuel parameter
+  (`SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean`).  The helper
+  walks the chain step-by-step, using `cases h : (st.objects[..]?
+  : Option KernelObject) with` (the substitutive form — non-
+  substitutive `cases X with | ctor => …` doesn't rewrite the
+  goal for non-variable discriminants) and the recursive
+  hypothesis on the next chain step.  The pre-pass-7 form was
+  axiom-clean but disconnected from the SMP-preservation
+  composition; the post-pass-7 form bridges directly to the frame
+  the SMP composition delivers.
+
+- **Audit-pass-8 (v0.31.23)**: two cleanups —
+  (a) **dead `open ... in`**: removed
+  `open SeLe4n.Kernel.PriorityInheritance (blockingAcyclic) in`
+  from the `schedContextRunQueueConsistent_perCore` definition,
+  where the `in`-scoped `def` body did not actually reference
+  `blockingAcyclic`.  Pre-pass-8 the `open` was vestigial scaffold
+  from an earlier draft; cleaning it up removes a misleading
+  signal to readers that the predicate consumes the cyclic-chain
+  detector.
+  (b) **substantive preservation-suite runtime tests**: the
+  `tests/SchedulerInvariantPerCorePreservationSuite.lean` runtime
+  exercise was previously a single dead-weight
+  `assertBool "..." true` — the `#check` surface anchors gated
+  the theorems at elaboration time, but the runtime exe added no
+  signal beyond "elaboration reached this line".  Per the
+  `implement-the-improvement` rule, replaced with 17 substantive
+  runtime assertions across two sections: §3.1 (6 decidable
+  foundation checks via `decide` on the default
+  `SchedulerState`'s per-core slots, the empty `domainSchedule`,
+  and the positive `configDefaultTimeSlice`), §3.2 (11 symbol-
+  dispatch checks via `@<theorem-name>` resolution — typos or
+  stale renames in the 56 per-op preservation theorems now
+  surface at the runtime exe level, complementing the existing
+  Tier-3 `#check` anchors).
+
+**WS-SM SM4.C audit-pass-9 LANDED at v0.31.25** (PR #801, closes 3
+substantive P2 reviewer comments from `chatgpt-codex-connector` per the
+`implement-the-improvement` rule):
+
+- **Reviewer comment 1 — UART parallel-test race**: v0.31.24 fix
+  (`SM1G4_OBSERVATION_MUTEX` guard on
+  `uart_guard_global_lock_released_after_with_boot_uart`) only
+  serialized against sibling SM1.G.4/SM1.I.4 observation tests; the
+  sibling macro-emitting tests (`sm1g4_kprintln_core_*` etc.) still
+  acquired `UART_LOCK` without the mutex, so the flake could resurface.
+  Closed by converting the test from observation-style to the
+  **re-acquire pattern** — after the first `with_boot_uart`, immediately
+  re-enter it; if the first call had failed to release, the second
+  would deadlock-spin and cargo's per-test timeout would surface the
+  regression.  Structurally race-free regardless of sibling tests.
+  10/10 + 5/5 stress runs confirmed.
+
+- **Reviewer comment 3 — `chooseThread` per-core evidence**: the
+  pre-pass-9 theorem `chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore`
+  was misnamed — the `_perCore_bootCore` suffix promised per-core
+  evidence but the theorem took/returned the legacy single-core
+  `schedulerInvariantBundle`.  Closed by introducing the genuine
+  3-conjunct **base per-core aggregate**
+  `schedulerInvariantBase_perCore` (mirrors
+  `schedulerInvariantBundle`: qcc + runQueueUnique + currentThreadValid)
+  + SMP form `schedulerInvariantBase_smp` + boot-core bridge
+  `schedulerInvariantBundle_to_perCoreBase_bootCore` + converse +
+  3 per-conjunct projections + 2 default-state lemmas + 2 projections
+  from the full aggregate (`schedulerInvariant_perCore_to_base` /
+  `_smp_to_base`).  Added 3 new genuine per-core preservation
+  theorems for `chooseThread`:
+  `_preserves_schedulerInvariantBase_perCore_bootCore`,
+  `_preserves_schedulerInvariantBase_smp`,
+  `_preserves_schedulerInvariant_smp`.  Each is a one-line
+  `rfl`-discharge through `chooseThread_preserves_state`
+  (`st' = st`, chooseThread is a pure read).
+
+- **Reviewer comment 2 — `runQueueOnCoreWellFormed` in aggregate**: the
+  predicate was defined and framed at audit-pass-2 but excluded from
+  `schedulerInvariant_perCore`, so the SMP aggregate could hold for a
+  core whose RunQueue had inconsistent membership/priority indices.
+  Closed by **appending the conjunct as the 11th member** of
+  `schedulerInvariant_perCore` (appended at end to minimise projection
+  index churn — only `domainTimeRemainingPositiveOnCore`'s index
+  shifts), with all downstream consumers updated:
+  * New projection `schedulerInvariant_perCore_to_runQueueOnCoreWellFormed`.
+  * 4 bundle bridges updated: `_to_perCore_bootCore` (Full + Extended)
+    take explicit `hWf : RunQueue.wellFormed` hypothesis; converse
+    extracts and discards.
+  * Cross-subsystem bridge
+    `crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore`
+    gains the same `hWf` forward.
+  * Default-state proof discharges via the new top-level
+    `RunQueue.empty_wellFormed` lemma (audit-pass-10 extraction).
+  * Frame lemmas (`_frame` / `_frame_idle`) extend simp set with
+    `runQueueOnCoreWellFormed`.
+  * SMP-preservation skeleton's `hNonBootIdle` bundles 4 facts (adds
+    `wellFormed` as the 4th).
+  * 3 NEW top-level `_preserves_runQueueWellFormed` theorems for
+    `handleYield`, `timerTick`, `scheduleDomain` (compose
+    `insert_preserves` + `rotateToBack_preserves` + `schedule_preserves`
+    via the existing RunQueue API theorems);
+    `switchDomain_preserves_runQueueWellFormed` de-privated.
+  * All 5 per-op SMP preservation theorems updated: each constructs
+    the post-state wellFormed via its corresponding
+    `<op>_preserves_runQueueWellFormed` and passes it to the new
+    bundle bridge.  `switchDomain` gains explicit `hwf` input.
+  * All 50 per-conjunct per-op SMP preservation theorems updated to
+    take the 4-conjunct `hOtherIdle`; switchDomain ones gain `hwf`.
+
+**WS-SM SM4.C audit-pass-10 LANDED at v0.31.26** (post-audit cleanup
+of audit-pass-9, same branch).  4 findings closed:
+
+- **Finding 1**: `RunQueue.empty.wellFormed` proof was inlined as
+  ~30 lines inside `default_schedulerInvariant_perCore`.  Extracted as
+  top-level `SeLe4n.Kernel.RunQueue.empty_wellFormed` lemma in
+  `Scheduler/RunQueue.lean`; the conjunct collapses to 2 lines.  Other
+  consumers reuse the lemma.
+
+- **Finding 2**: 78-line stream-of-consciousness comment block in the
+  `_holds_if_idle` proof body (a research diary, not load-bearing
+  documentation) replaced with 4-line statement of the WHY.  Plus
+  similar cleanup of the long hypothesis-attached comment.
+
+- **Finding 3**: `chooseThread_preserves_schedulerInvariantBundle_passthrough`
+  was a 1-line wrapper around the canonical
+  `chooseThread_preserves_schedulerInvariantBundle` from
+  `Scheduler/Operations/Preservation.lean`.  Per CLAUDE.md's "no
+  re-exporting types" rule, deleted entirely.  Consumers updated to
+  reference the canonical theorem directly.
+
+- **Finding 4**: Main suite `SchedulerInvariantPerCoreSuite.lean`
+  missing runtime assertions for audit-pass-9 content (Tier-3
+  `#check` anchors covered it but no `assertBool` runtime exercise).
+  Added §3.8 with **12 substantive runtime assertions**: every base
+  aggregate symbol on every core; projections; bridges; the new
+  `runQueueOnCoreWellFormed` projection; `RunQueue.empty_wellFormed`
+  discharge for every core's default RunQueue; and a non-vacuous
+  `_holds_if_idle` application for a non-boot core building all 4
+  idle-shape hypotheses from `default_state_perCoreInitialized`.
+
+- **Plus consolidation**: 10 repeated `audit-pass-9: switchDomain now
+  requires hwf...` per-theorem comments replaced with a single
+  section-level annotation in the §7.4 header.
+
+**WS-SM SM4.C audit-passes 11–12 LANDED at v0.31.27 → v0.31.29**
+(PR #801, same branch):
+- **audit-pass-11 (v0.31.27)**: convenience wrapper
+  `schedulerInvariant_perCore_holds_if_idle_default` taking the
+  stronger structural hypothesis `runQueueOnCore c = RunQueue.empty`
+  (deriving `toList = []` + `wellFormed` internally via
+  `RunQueue.toList_empty` / `RunQueue.empty_wellFormed`).  Answers the
+  audit question "is `_holds_if_idle` substantive?": yes — 9/11
+  conjuncts do real proof work, the 2 pass-throughs (`hDTRPos`,
+  `hWf`) are genuinely non-derivable from the other hypotheses.  The
+  minimal `_holds_if_idle` is retained (no over-constraint).
+- **audit-pass-11 hotfix (v0.31.28)**: CI hotfix — a backtick-quoted
+  Lean comment in the audit-pass-11 `#check` block of
+  `test_tier3_invariant_surface.sh` tripped shellcheck SC2016 inside
+  the `bash -lc '…'` single-quoted heredoc, failing the Tier 0+1 and
+  ARM64 fast gates (shellcheck runs in CI but not the dev container).
+  Rewrote the comment in plain text matching the sibling heredoc
+  blocks' convention.
+- **audit-pass-12 (v0.31.29)**: deep-audit finding — removed a
+  file-level `set_option linter.unusedSimpArgs false` in `PerCore.lean`
+  whose justifying comment falsely claimed the 15 flagged `simp [h]`
+  args were "false positives" needed by the proofs.  Empirical test
+  (strip all 15 + rebuild from clean `.olean`) produced a fully clean
+  build, proving the linter correct (the `cases h : X with`
+  substitution already rewrites the goal).  Removed all 15 redundant
+  args + the suppression + the false-claim comment; module now compiles
+  clean under the default linter.
+
+**Cumulative SM4.C state at v0.31.29**:
+- All cumulative deliverables from audit-passes 1–6 (v0.31.20)
+  retained: 16 per-core predicate forms, 3 aggregates (base +
+  extended + cross-subsystem), 4 SMP-preservation skeletons,
+  20 per-conjunct frame lemmas, 7 setter independence
+  corollaries, 2 cross-core pairwise theorems (SM4.C.30), 3
+  cross-subsystem per-core predicates (§5.6), 6 per-op aggregate
+  preservation + 50 per-conjunct per-op preservation = 56 per-op
+  theorems.
+- audit-pass-7: `priorityInheritance_perCore_frame` strengthened from
+  degenerate to substantive partial-frame via the new private helper
+  `blockingChain_objects_congr`.
+- audit-pass-9: 3 reviewer-comment closures (UART race re-acquire
+  pattern; 3 genuine per-core `chooseThread` theorems + base aggregate
+  family; `runQueueOnCoreWellFormed` as 11th conjunct + 3 new
+  top-level `_preserves_runQueueWellFormed` theorems).
+- audit-pass-10: 4 post-audit cleanups (top-level `empty_wellFormed`
+  lemma; 80-line comment block removed; `_passthrough` wrapper
+  removed; main suite +12 substantive runtime assertions).
+- audit-pass-11: `_holds_if_idle_default` convenience wrapper (+1
+  runtime assertion, +1 tier-3 anchor).
+- audit-pass-12: 15 dead simp args + unjustified linter suppression
+  removed; `PerCore.lean` compiles clean under the default linter (no
+  file-level suppressions remain).
+- Test coverage: main suite 54 runtime assertions; preservation suite
+  17; total 71 runtime assertions across 2 suites; 130+ surface
+  anchors.  All gates green; axiom-clean throughout; no `set_option
+  linter.*` suppressions in the SM4.C modules.
+
+**Items deferred past v1.0.0 with correctness impact: NONE**.
+Genuinely out of SM4.C scope (tracked as separate workstreams):
+SM4.D (cross-subsystem migrations), SM4.E (witness retirement);
+post-SM4.C: per-extended-conjunct per-op preservation (4 SC-using ×
+5 ops = 20 additional theorems).
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

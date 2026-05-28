@@ -2532,4 +2532,201 @@ import SeLe4n.Kernel.Concurrency.Types
 #check @SeLe4n.Model.SchedulerState.ext_perCore
 EOF'
 
+# WS-SM SM4.C — per-core scheduler invariant migration surface anchors.
+# Covers the 16 per-core predicate forms (plan §3.4 Pattern 1), the 16
+# boot-core bridges (defeq grounding the live `schedulerInvariantBundle*`
+# surface), the SM4.C.29 aggregate `schedulerInvariant_perCore` +
+# `schedulerInvariant_smp` + `aggregateForall` + projections, the bundle
+# bridges to `schedulerInvariantBundleFull/Extended`, the default-state
+# theorems on every core in `allCores`, the per-core / idle-core frame
+# lemmas, the three cross-core independence corollaries, the SM4.C.30
+# pairwise theorem, and the single-core-preservation-lifts-to-SMP
+# skeleton.  A rename / removal of any SM4.C symbol fails here at
+# elaboration time, before SM5's per-core scheduler can consume them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCore'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Invariant.PerCore
+open SeLe4n.Kernel
+
+-- SM4.C §1 — 16 per-core predicate forms.
+#check @queueCurrentConsistentOnCore
+#check @runQueueUniqueOnCore
+#check @currentThreadValidOnCore
+#check @currentThreadInActiveDomainOnCore
+#check @timeSlicePositiveOnCore
+#check @currentTimeSlicePositiveOnCore
+#check @edfCurrentHasEarliestDeadlineOnCore
+#check @contextMatchesCurrentOnCore
+#check @runnableThreadsAreTCBsOnCore
+#check @schedulerPriorityMatchOnCore
+#check @domainTimeRemainingPositiveOnCore
+#check @currentBudgetPositiveOnCore
+#check @budgetPositiveOnCore
+#check @replenishmentPipelineOrderOnCore
+#check @replenishQueueValidOnCore
+#check @effectiveParamsMatchRunQueueOnCore
+-- SM4.C §2 — 16 boot-core bridges.
+#check @queueCurrentConsistentOnCore_bootCore_iff
+#check @runQueueUniqueOnCore_bootCore_iff
+#check @currentThreadValidOnCore_bootCore_iff
+#check @currentThreadInActiveDomainOnCore_bootCore_iff
+#check @timeSlicePositiveOnCore_bootCore_iff
+#check @currentTimeSlicePositiveOnCore_bootCore_iff
+#check @edfCurrentHasEarliestDeadlineOnCore_bootCore_iff
+#check @contextMatchesCurrentOnCore_bootCore_iff
+#check @runnableThreadsAreTCBsOnCore_bootCore_iff
+#check @schedulerPriorityMatchOnCore_bootCore_iff
+#check @domainTimeRemainingPositiveOnCore_bootCore_iff
+#check @currentBudgetPositiveOnCore_bootCore_iff
+#check @budgetPositiveOnCore_bootCore_iff
+#check @replenishmentPipelineOrderOnCore_bootCore_iff
+#check @replenishQueueValidOnCore_bootCore_iff
+#check @effectiveParamsMatchRunQueueOnCore_bootCore_iff
+-- SM4.C.29 — aggregate per-core + SMP forall + projections.
+#check @schedulerInvariant_perCore
+#check @schedulerInvariant_smp
+#check @schedulerInvariant_perCore_aggregateForall
+#check @schedulerInvariant_smp_at
+#check @schedulerInvariant_perCore_to_queueCurrentConsistent
+#check @schedulerInvariant_perCore_to_runQueueUnique
+#check @schedulerInvariant_perCore_to_currentThreadValid
+#check @schedulerInvariant_perCore_to_timeSlicePositive
+#check @schedulerInvariant_perCore_to_currentTimeSlicePositive
+#check @schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline
+#check @schedulerInvariant_perCore_to_contextMatchesCurrent
+#check @schedulerInvariant_perCore_to_runnableThreadsAreTCBs
+#check @schedulerInvariant_perCore_to_schedulerPriorityMatch
+#check @schedulerInvariant_perCore_to_domainTimeRemainingPositive
+-- SM4.C §4 — bundle bridges to the live cross-subsystem surface.
+#check @schedulerInvariantBundleFull_to_perCore_bootCore
+#check @schedulerInvariant_perCore_bootCore_to_bundleFull
+#check @schedulerInvariantBundleExtended_to_perCore_bootCore
+-- SM4.C §5 — default-state.
+#check @default_schedulerInvariant_perCore
+#check @default_schedulerInvariant_smp
+-- SM4.C.30 — frame + cross-core independence + SMP-preservation skeleton.
+#check @schedulerInvariant_perCore_frame
+#check @schedulerInvariant_perCore_frame_idle
+#check @schedulerInvariant_perCore_independent_of_setCurrentOnCore
+#check @schedulerInvariant_perCore_independent_of_setRunQueueOnCore
+#check @schedulerInvariant_perCore_independent_of_setDomainTimeRemainingOnCore
+#check @schedulerInvariant_perCore_independent_of_setReplenishQueueOnCore
+#check @schedulerInvariant_perCore_independent_of_setActiveDomainOnCore
+#check @schedulerInvariant_perCore_independent_of_setDomainScheduleIndexOnCore
+#check @schedulerInvariant_perCore_independent_of_setLastTimeoutErrorsOnCore
+#check @schedulerInvariant_perCore_pairwise
+#check @schedulerInvariant_smp_of_bootCore_and_idle_frame
+-- SM4.C plan §5.6 missing predicate.
+#check @runQueueOnCoreWellFormed
+-- SM4.C §5.5 per-conjunct frame lemmas (17 total).
+#check @queueCurrentConsistentOnCore_frame
+#check @runQueueUniqueOnCore_frame
+#check @runQueueOnCoreWellFormed_frame
+#check @currentThreadValidOnCore_frame
+#check @currentThreadInActiveDomainOnCore_frame
+#check @timeSlicePositiveOnCore_frame
+#check @currentTimeSlicePositiveOnCore_frame
+#check @edfCurrentHasEarliestDeadlineOnCore_frame
+#check @contextMatchesCurrentOnCore_frame
+#check @runnableThreadsAreTCBsOnCore_frame
+#check @schedulerPriorityMatchOnCore_frame
+#check @domainTimeRemainingPositiveOnCore_frame
+#check @currentBudgetPositiveOnCore_frame
+#check @budgetPositiveOnCore_frame
+#check @replenishmentPipelineOrderOnCore_frame
+#check @replenishQueueValidOnCore_frame
+#check @effectiveParamsMatchRunQueueOnCore_frame
+-- SM4.C §3.5 extended per-core aggregate (mirrors schedulerInvariantBundleExtended).
+#check @schedulerInvariant_perCore_extended
+#check @schedulerInvariant_smp_extended
+#check @schedulerInvariant_perCore_extended_aggregateForall
+#check @schedulerInvariant_smp_extended_at
+#check @schedulerInvariant_perCore_extended_to_base
+#check @schedulerInvariant_perCore_extended_to_currentBudgetPositive
+#check @schedulerInvariant_perCore_extended_to_budgetPositive
+#check @schedulerInvariant_perCore_extended_to_replenishQueueValid
+#check @schedulerInvariant_perCore_extended_to_effectiveParamsMatchRunQueue
+-- SM4.C extended bundle bridges.
+#check @schedulerInvariantBundleExtended_to_perCore_extended_bootCore
+#check @schedulerInvariant_perCore_extended_bootCore_to_bundleExtended
+-- SM4.C extended default-state.
+#check @default_schedulerInvariant_perCore_extended
+#check @default_schedulerInvariant_smp_extended
+-- SM4.C §8 extended-aggregate frame + pairwise + SMP-preservation skeleton.
+#check @schedulerInvariant_perCore_extended_frame
+#check @schedulerInvariant_perCore_extended_frame_idle
+#check @schedulerInvariant_perCore_extended_pairwise
+#check @schedulerInvariant_smp_extended_of_bootCore_and_idle_frame
+-- SM4.C §9 cross-subsystem per-core predicates (plan §5.6).
+#check @schedContextRunQueueConsistent_perCore
+#check @priorityInheritance_perCore
+#check @activeDomainOnCore_isInDomainSchedule
+#check @schedContextRunQueueConsistent_perCore_bootCore_iff
+#check @priorityInheritance_perCore_iff
+#check @default_schedContextRunQueueConsistent_perCore
+#check @default_priorityInheritance_perCore
+#check @default_activeDomainOnCore_isInDomainSchedule
+#check @schedContextRunQueueConsistent_perCore_frame
+#check @priorityInheritance_perCore_frame
+#check @activeDomainOnCore_isInDomainSchedule_frame
+-- SM4.C §10 cross-subsystem per-core aggregate + projections + bridge.
+#check @schedulerInvariant_perCore_crossSubsystem
+#check @schedulerInvariant_smp_crossSubsystem
+#check @schedulerInvariant_perCore_crossSubsystem_aggregateForall
+#check @schedulerInvariant_smp_crossSubsystem_at
+#check @schedulerInvariant_perCore_crossSubsystem_to_extended
+#check @schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent
+#check @schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance
+#check @schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule
+#check @crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore
+#check @default_schedulerInvariant_perCore_crossSubsystem
+#check @default_schedulerInvariant_smp_crossSubsystem
+-- SM4.C §11 "sufficient idle" + SMP-preservation composition.
+#check @schedulerInvariant_perCore_holds_if_idle
+#check @schedulerInvariant_perCore_idle_on_post_state
+#check @schedulerInvariant_smp_of_bootCore_preservation
+#check @schedulerInvariant_smp_extended_of_bootCore_preservation
+EOF'
+
+# WS-SM SM4.C audit-pass-4 — per-operation per-core preservation theorems.
+# The 5 boot-core scheduler operations with single-core Full preservation
+# (`schedule`, `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`)
+# each get a per-core SMP preservation theorem composing the existing
+# single-core surface with the SM4.C SMP-preservation skeleton; plus a
+# base-aggregate bridge for `chooseThread`.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
+open SeLe4n.Kernel
+
+#check @schedule_preserves_schedulerInvariant_smp
+#check @handleYield_preserves_schedulerInvariant_smp
+#check @timerTick_preserves_schedulerInvariant_smp
+#check @switchDomain_preserves_schedulerInvariant_smp
+#check @scheduleDomain_preserves_schedulerInvariant_smp
+-- audit-pass-9: chooseThread genuine per-core forms (single-core bundle
+-- form lives in Scheduler/Operations/Preservation.lean and is already
+-- surface-anchored).
+#check @chooseThread_preserves_schedulerInvariantBase_perCore_bootCore
+#check @chooseThread_preserves_schedulerInvariantBase_smp
+#check @chooseThread_preserves_schedulerInvariant_smp
+-- audit-pass-9: schedulerInvariantBase_perCore aggregate + projections + bridges
+#check @schedulerInvariantBase_perCore
+#check @schedulerInvariantBase_smp
+#check @schedulerInvariantBase_perCore_aggregateForall
+#check @schedulerInvariantBase_smp_at
+#check @schedulerInvariantBase_perCore_to_queueCurrentConsistent
+#check @schedulerInvariantBase_perCore_to_runQueueUnique
+#check @schedulerInvariantBase_perCore_to_currentThreadValid
+#check @schedulerInvariantBundle_to_perCoreBase_bootCore
+#check @schedulerInvariantBase_perCore_bootCore_to_bundle
+#check @schedulerInvariant_perCore_to_base
+#check @schedulerInvariant_smp_to_base
+#check @default_schedulerInvariantBase_perCore
+#check @default_schedulerInvariantBase_smp
+-- audit-pass-11: convenience wrapper taking runQueueOnCore = empty (stronger
+-- structural hypothesis; derives toList-empty and wellFormed internally).
+#check @schedulerInvariant_perCore_holds_if_idle_default
+EOF'
+
 finalize_report

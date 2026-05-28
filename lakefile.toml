@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.12"
+version = "0.31.29"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -328,3 +328,26 @@ root = "tests.PerCoreVectorSuite"
 [[lean_exe]]
 name = "per_core_scheduler_state_suite"
 root = "tests.PerCoreSchedulerStateSuite"
+
+# WS-SM SM4.C — per-core scheduler invariant migration test suite.  Exercises
+# every public symbol of `SeLe4n.Kernel.Scheduler.Invariant.PerCore`: the 16
+# per-core predicate forms, the 16 boot-core bridges, the
+# `schedulerInvariant_perCore` aggregate (SM4.C.29) + `schedulerInvariant_smp`
+# + `aggregateForall`, the per-conjunct projections, the bundle bridges to the
+# live `schedulerInvariantBundleFull/Extended` surface, the default-state
+# theorem on every core in `allCores`, the per-core frame + idle-core frame +
+# the three cross-core independence corollaries, the SM4.C.30 pairwise
+# theorem, and the single-core-preservation-lifts-to-SMP skeleton.  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "scheduler_invariant_per_core_suite"
+root = "tests.SchedulerInvariantPerCoreSuite"
+
+# WS-SM SM4.C audit-pass-4 — per-operation per-core preservation test suite.
+# Surface anchors + elaboration-time witness for the 5 per-op per-core
+# preservation theorems (`schedule`, `handleYield`, `timerTick`,
+# `switchDomain`, `scheduleDomain` each preserve `schedulerInvariant_smp`)
+# + the `chooseThread` base-aggregate bridge.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "scheduler_invariant_per_core_preservation_suite"
+root = "tests.SchedulerInvariantPerCorePreservationSuite"

@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.12` (`lakefile.toml`) |
+| **Package version** | `0.31.29` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 140,030 across 200 Lean files |
-| **Test LoC** | 29,885 across 43 Lean test suites |
-| **Proved declarations** | 4,180 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 143,171 across 202 Lean files |
+| **Test LoC** | 31,028 across 46 Lean test suites |
+| **Proved declarations** | 4,410 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM4.B `SchedulerState` path-a `Vector` replacement LANDED (v0.31.12)** — the seven singular per-core scheduler fields flip scalar → `Vector α Concurrency.numCores` indexed by `CoreId`, governed by a 70-lemma `@[simp]` store/load algebra; `lake exe sele4n` is byte-identical to `tests/fixtures/main_trace_smoke.expected`; 0 sorry / 0 axiom. Landed earlier in WS-SM: SM0 (foundations, v0.31.3), SM1 (Rust HAL, v0.31.8), SM2 (verified lock primitives), SM3 (per-object locks → 2PL → deadlock-freedom → serializability), SM4.A (per-core `Vector` bootstrap, v0.31.11). Follow-on: SM4.C/SM4.D (scheduler + cross-subsystem theorem migrations), SM4.E (`bootFromPlatform_singleCore_witness` retirement + `bootFromPlatform_smp_witness`), SM5..SM9 (per-core scheduler, cross-core IPC, TLB shootdown, info-flow, release closure). Plans: master [`SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md); per-core state [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md) §5.2. Canonical per-phase record: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md). Prior closed portfolios: WS-RC pre-1.0 audit remediation (v0.30.11→v0.31.2), WS-AN (v0.30.11), WS-AK (v0.30.6), WS-AM–WS-B. |
+| **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM4.C per-core scheduler invariant migration LANDED + 5 audit-passes (v0.31.13 → v0.31.18)** — the per-core scheduler invariant layer is now substantially complete: 16 per-core predicate forms (all typed-accessor); 16 boot-core bridges; 3 aggregates (base `schedulerInvariant_perCore` mirroring `…BundleFull`'s per-core slice + extended mirroring `…BundleExtended` + cross-subsystem mirroring plan §5.6 with `schedContextRunQueueConsistent_perCore` / `priorityInheritance_perCore` / `activeDomainOnCore_isInDomainSchedule`) with SMP forms and bundle bridges; 20 per-conjunct frame lemmas; 7 setter independence corollaries + cross-core pairwise theorem (SM4.C.30); 6 per-op aggregate per-core preservation theorems (for `schedule` / `handleYield` / `timerTick` / `switchDomain` / `scheduleDomain` + `chooseThread` base bridge) + 25 named per-conjunct per-op SMP preservation theorems (plan §3.4 Pattern 1 lifts: 5 conjuncts × 5 ops); `_smp_of_bootCore_preservation` composition skeleton; `_holds_if_idle` sufficient theorem.  Across 2 modules (`SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` ~1660 LoC + `…/PerCorePreservation.lean` ~700 LoC); axiom-clean (only `propext` / `Quot.sound` / `Classical.choice`); AK7 baseline restored to the v0.31.2 floor (`RAW_MATCH_TOTAL` 122) with `GETTCB_ADOPTION` net +56 / `GETSCHEDCTX_ADOPTION` net +27; trace fixture byte-identical; partition gate green (35 staged-only modules). Landed earlier in WS-SM: SM0 (foundations, v0.31.3), SM1 (Rust HAL, v0.31.8), SM2 (verified lock primitives), SM3 (per-object locks → 2PL → deadlock-freedom → serializability), SM4.A (per-core `Vector` bootstrap, v0.31.11), SM4.B (`SchedulerState` path-a `Vector` replacement, v0.31.12). Follow-on: SM4.D (cross-subsystem theorem migrations — IPC / Capability / Lifecycle / Architecture / InformationFlow / CrossSubsystem theorems that read `SchedulerState`), SM4.E (`bootFromPlatform_singleCore_witness` retirement + `bootFromPlatform_smp_witness`), SM5..SM9 (per-core scheduler, cross-core IPC, TLB shootdown, info-flow, release closure). Plans: master [`SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md); per-core state [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md) §5.3. Canonical per-phase record: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md). Prior closed portfolios: WS-RC pre-1.0 audit remediation (v0.30.11→v0.31.2), WS-AN (v0.30.11), WS-AK (v0.30.6), WS-AM–WS-B. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -2323,6 +2323,82 @@ preserves on a per-core basis.
    SM4.B: 0 axioms, 0 sorries. Follow-on: SM4.C/SM4.D (theorem
    migrations), SM4.E (`bootFromPlatform_smp_witness` + witness
    retirement).
+
+   **SM4.C — per-core scheduler invariant migration (v0.31.13).**  Lifts
+   the scheduler invariant *predicates* from the single-core forms (pinned
+   to `bootCoreId` after SM4.B) to per-core forms parameterised by an
+   explicit `(c : CoreId)` (plan §5.3 / §5.6, migration pattern §3.4).
+   The migration is **additive and soundness-preserving**: every per-core
+   form at `bootCoreId` is *definitionally* the existing single-core
+   predicate (proved as `Iff.rfl`), so the live `schedulerInvariantBundle*`
+   / `crossSubsystemInvariant` surface stays green and SM4.C strictly
+   adds the per-core layer SM5 consumes.  New module
+   `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~380 LoC, staged
+   via `Platform/Staged.lean`):
+   - **§1 (16 per-core predicate forms)** — the full per-core slice of
+     `schedulerInvariantBundleExtended`'s genuinely-per-core conjuncts:
+     `queueCurrentConsistentOnCore` / `runQueueUniqueOnCore` /
+     `currentThreadValidOnCore` / `currentThreadInActiveDomainOnCore` /
+     `timeSlicePositiveOnCore` / `currentTimeSlicePositiveOnCore` /
+     `edfCurrentHasEarliestDeadlineOnCore` / `contextMatchesCurrentOnCore`
+     / `runnableThreadsAreTCBsOnCore` / `schedulerPriorityMatchOnCore` /
+     `domainTimeRemainingPositiveOnCore` / `currentBudgetPositiveOnCore`
+     / `budgetPositiveOnCore` / `replenishmentPipelineOrderOnCore` /
+     `replenishQueueValidOnCore` / `effectiveParamsMatchRunQueueOnCore`.
+   - **§2 (16 boot-core bridges)** — each `…OnCore_bootCore_iff` is
+     `Iff.rfl`, the non-orphan defeq grounding to the live single-core
+     predicates.
+   - **§3 (SM4.C.29 aggregate)** — `schedulerInvariant_perCore st c` is
+     the 10-conjunct per-core analogue of `schedulerInvariantBundleFull`
+     (minus the system-wide `domainScheduleEntriesPositive`);
+     `schedulerInvariant_smp st := ∀ c, schedulerInvariant_perCore st c`;
+     `schedulerInvariant_perCore_aggregateForall` bridges the two
+     (plan §5.6); 10 per-conjunct projections mirror the
+     `schedulerInvariantBundleFull_to_*` family.
+   - **§4 (bundle bridges)** —
+     `schedulerInvariantBundleFull_to_perCore_bootCore` (and the
+     `Extended` lift) proves the existing single-core preservation work
+     yields a per-core preservation at the boot core *for free*; the
+     converse `…_bootCore_to_bundleFull` reassembles the full bundle
+     from the per-core slice plus the system-wide
+     `domainScheduleEntriesPositive`.
+   - **§5 (default-state)** — `default_schedulerInvariant_perCore (c)`
+     proves every core satisfies the per-core invariant on the freshly-
+     booted system; `default_schedulerInvariant_smp` is the full SMP form.
+   - **§6 (frame + SM4.C.30 pairwise independence)** — the substantive
+     cross-core-independence content.  `schedulerInvariant_perCore_frame`
+     is the general frame lemma (core `c`'s invariant depends only on
+     core `c`'s `current`/`runQueue`/`domainTimeRemaining` plus `objects`
+     and `machine.regs`); `…_frame_idle` is the regs-independent variant
+     for idle cores (used when a boot operation re-writes `machine.regs`,
+     e.g. `schedule`'s context restore — the idle cores' invariants stay
+     preserved because their current-dependent conjuncts are vacuous);
+     three cross-core independence corollaries
+     (`_independent_of_setCurrentOnCore`, `…setRunQueueOnCore`,
+     `…setDomainTimeRemainingOnCore`) instantiate the frame via the SM4.B
+     `set…OnCore_…OnCore_ne` algebra; **`schedulerInvariant_perCore_pairwise`**
+     (the SM4.C.30 deliverable) *strengthens* the plan's documentation-
+     only `P ↔ P` form per the implement-the-improvement rule into a
+     substantive theorem: for `c₁ ≠ c₂`, overwriting all three of core
+     `c₂`'s invariant-read slots leaves core `c₁`'s invariant unchanged.
+   - **§7 (SMP-preservation skeleton)** —
+     `schedulerInvariant_smp_of_bootCore_and_idle_frame` is the SM5
+     migration bridge: a per-core operation's preservation needs to be
+     reproven only at the core it writes; every other core discharges
+     by the idle frame lemma.
+
+   **Test coverage**: `tests/SchedulerInvariantPerCoreSuite.lean`
+   (`lake exe scheduler_invariant_per_core_suite`) — 60+ Tier-3 surface
+   anchors, 12 elaboration-time `example`s applying every headline
+   theorem to verified inputs, and 16 runtime `assertBool` assertions
+   across four sections (default-state per-core foundations on every
+   core in `allCores`; theorem-application checks; cross-core pairwise
+   independence; boot-core bridge reflexivity).  Tier-2 + Tier-3 wired.
+   **Axiom budget for SM4.C**: 0 Lean axioms, 0 sorries — every theorem
+   depends only on `propext` / `Quot.sound` / `Classical.choice`
+   (verified via `#print axioms` on the headline theorems).  Follow-on:
+   SM4.D (cross-subsystem theorem migrations), SM4.E
+   (`bootFromPlatform_smp_witness` + single-core witness retirement).
 
 ---
 

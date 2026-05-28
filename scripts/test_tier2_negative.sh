@@ -204,4 +204,22 @@ run_check_with_timeout "TRACE" lake exe per_core_vector_suite
 # initialisation theorem (SM4.B.9), and per-core extensionality (SM4.B.10).
 run_check_with_timeout "TRACE" lake exe per_core_scheduler_state_suite
 
+# WS-SM SM4.C — per-core scheduler invariant migration regression suite.
+# Exercises the SM4.C per-core predicate forms, the 16 boot-core bridges
+# (each `Iff.rfl`), the `schedulerInvariant_perCore` aggregate (SM4.C.29) +
+# `schedulerInvariant_smp` + `aggregateForall`, the per-conjunct
+# projections, the live-surface bundle bridges
+# (`schedulerInvariantBundleFull/Extended_to_perCore_bootCore`), the
+# default-state theorem on every core, the frame / idle-frame / three
+# cross-core independence corollaries, the SM4.C.30 pairwise theorem, and
+# the single-core-preservation-lifts-to-SMP skeleton.  Runtime asserts the
+# decidable foundations + theorem applicability.
+run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_suite
+
+# WS-SM SM4.C audit-pass-4 — per-operation per-core preservation suite.
+# Surface anchors + elaboration-time witness for the 5 per-op per-core
+# preservation theorems composing existing single-core preservation with
+# the SM4.C SMP-preservation skeleton.
+run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_preservation_suite
+
 finalize_report
