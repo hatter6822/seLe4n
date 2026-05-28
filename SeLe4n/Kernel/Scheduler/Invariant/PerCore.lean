@@ -1369,19 +1369,71 @@ theorem schedContextRunQueueConsistent_perCore_frame {st st' : SystemState} {c :
   unfold schedContextRunQueueConsistent_perCore
   simp only [hRQ, hTcb, hSc]
 
+/-- Private helper: `blockingChain` is congruent under `objects` equality
+for any fuel.  Proved by induction on fuel — the recursion only reads
+`st.objects[…]?`, so `objects` equality propagates structurally through
+the chain walk.  Used by `priorityInheritance_perCore_frame`. -/
+private theorem blockingChain_objects_congr
+    {st st' : SystemState} (hObj : st'.objects = st.objects)
+    (tid : SeLe4n.ThreadId) (fuel : Nat) :
+    PriorityInheritance.blockingChain st' tid fuel =
+    PriorityInheritance.blockingChain st tid fuel := by
+  induction fuel generalizing tid with
+  | zero => rfl
+  | succ fuel' ih =>
+    unfold PriorityInheritance.blockingChain
+    have hLookup : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]? := by rw [hObj]
+    cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
+    | none => simp [hLookup, h]
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        cases hIpc : tcb.ipcState with
+        | ready => simp [hLookup, h, hIpc]
+        | blockedOnSend _ => simp [hLookup, h, hIpc]
+        | blockedOnReceive _ => simp [hLookup, h, hIpc]
+        | blockedOnNotification _ => simp [hLookup, h, hIpc]
+        | blockedOnReply _ srv =>
+          cases srv with
+          | none => simp [hLookup, h, hIpc]
+          | some server =>
+            simp only [hLookup, h, hIpc]
+            exact congrArg (server :: ·) (ih server)
+        | blockedOnCall _ => simp [hLookup, h, hIpc]
+      | endpoint _ => simp [hLookup, h]
+      | notification _ => simp [hLookup, h]
+      | cnode _ => simp [hLookup, h]
+      | vspaceRoot _ => simp [hLookup, h]
+      | untyped _ => simp [hLookup, h]
+      | schedContext _ => simp [hLookup, h]
+
 /-- Frame lemma for `priorityInheritance_perCore`: depends on the entire
 object store *and* `objectIndex` (the latter feeds `blockingChain`'s
-default fuel).  Stated with the stronger `st' = st` precondition to
-sidestep the lack of a `blockingChain_objects_congr` lemma in
-`Scheduler/PriorityInheritance/BlockingGraph.lean`; downstream consumers
-who only have field-wise agreement should prove `blockingChain`
-congruence at their call site or upstream a stronger congruence helper.
-This is the honest baseline; a tighter frame lemma is a post-SM4.C
-hardening candidate. -/
+default fuel).  Proved substantively via `blockingChain_objects_congr`
+(structural induction on fuel — the chain walk only reads
+`st.objects[…]?`) plus the `objectIndex.length` equality derived from
+`hIdx`.  Both hypotheses are genuinely required: the chain walk
+recurses on `st.objects` (handled by `hObj`) AND its default fuel
+`st.objectIndex.length` comes from `st.objectIndex` (handled by
+`hIdx`).  SM5 operations that preserve both — which includes every
+scheduler operation that doesn't insert/remove objects — discharge
+both directly. -/
 theorem priorityInheritance_perCore_frame {st st' : SystemState} {c : CoreId}
-    (hEq : st' = st) :
+    (hObj : st'.objects = st.objects)
+    (hIdx : st'.objectIndex = st.objectIndex) :
     priorityInheritance_perCore st' c ↔ priorityInheritance_perCore st c := by
-  subst hEq; rfl
+  unfold priorityInheritance_perCore PriorityInheritance.blockingAcyclic
+  have h_len : st'.objectIndex.length = st.objectIndex.length := by rw [hIdx]
+  have hChain : ∀ tid : SeLe4n.ThreadId,
+      PriorityInheritance.blockingChain st' tid st'.objectIndex.length =
+      PriorityInheritance.blockingChain st tid st.objectIndex.length := by
+    intro tid
+    rw [blockingChain_objects_congr hObj tid st'.objectIndex.length, h_len]
+  constructor
+  · intro hAcy tid hMem
+    exact hAcy tid (hChain tid ▸ hMem)
+  · intro hAcy tid hMem
+    exact hAcy tid ((hChain tid).symm ▸ hMem)
 
 /-- Frame lemma for `activeDomainOnCore_isInDomainSchedule`: depends on core
 `c`'s active-domain slot and the system-wide `domainSchedule`. -/

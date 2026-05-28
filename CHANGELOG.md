@@ -1,3 +1,74 @@
+## v0.31.22 — WS-SM SM4.C audit-pass-7: substantive `priorityInheritance_perCore_frame`
+
+Deep audit of audit-passes 1–6 found one HIGH-significance shortcut that
+was honestly documented but suboptimal: **the `priorityInheritance_perCore_frame`
+theorem was stated with the degenerate precondition `st' = st`**
+(introduced in audit-pass-3 with the documented justification that
+upstream `Scheduler/PriorityInheritance/BlockingGraph.lean` lacks a
+`blockingChain_objects_congr` lemma).  Per the implement-the-improvement
+rule, the right fix is to *prove* the missing congruence locally rather
+than ship a useless degenerate frame lemma.
+
+**The audit-pass-7 fix**:
+
+  * **NEW private helper `blockingChain_objects_congr`**: proves
+    `st'.objects = st.objects → blockingChain st' tid fuel = blockingChain st tid fuel`
+    by structural induction on `fuel`.  The chain walk only reads
+    `st.objects[…]?`, so `objects` equality propagates through the
+    recursion via `simp [hLookup, h, hIpc]` at each leaf (the
+    `ThreadIpcState` constructors are case-split exhaustively, with
+    `congrArg (server :: ·) (ih server)` discharging the only
+    non-leaf recursive call — the `.blockedOnReply _ (some server)`
+    arm).  Axiom-clean.
+
+  * **Substantively-proved `priorityInheritance_perCore_frame`**: the
+    degenerate `(hEq : st' = st)` hypothesis is replaced by the
+    genuinely required `(hObj : st'.objects = st.objects) (hIdx :
+    st'.objectIndex = st.objectIndex)`.  Both are needed: `hObj`
+    handles the chain-walk body (via the new helper), `hIdx` handles
+    the default-fuel `st.objectIndex.length` argument.  Proof:
+    `unfold` + derive `hChain : ∀ tid, blockingChain st' tid
+    st'.objectIndex.length = blockingChain st tid st.objectIndex.length`
+    (one-line via the helper + `h_len` rewrite); rewrite the
+    quantified `tid ∈ blockingChain ...` via `hChain tid ▸` in both
+    iff directions.
+
+  * **AK7 baseline**: the substantive frame introduces 2 additional
+    `tid.toObjId` occurrences in the proof code
+    (the `cases h : (st.objects[tid.toObjId]? ...)` pattern in the
+    private helper).  AK7 baseline re-anchored: `RAW_LOOKUP_TID`
+    806 → 808.  This is the cost of providing a proper frame
+    lemma; the alternative (no frame) was strictly worse.
+
+**Audit conclusions** (other items audited and verified):
+
+  * Axiom-cleanness: 56 per-op preservation theorems + all bridges +
+    aggregates + projections verified to depend only on `propext` /
+    `Quot.sound` / `Classical.choice` (sampled via `#print axioms`).
+  * No `sorry` / `axiom` / `TODO` markers in the SM4.C modules.
+  * 3 private helpers (`getTcb?_congr_objects`,
+    `getSchedContext?_congr_objects`, `blockingChain_objects_congr`)
+    all used (6, 6, and 1 call site respectively).
+  * `set_option linter.unusedSimpArgs false` retained: the 15 flagged
+    `simp [h]` patterns in §2 are defensive after `cases h : X with` —
+    the linter flags them as redundant but removing them breaks ~5
+    proofs where the `simp` genuinely needs the discriminant
+    substitution (verified by experimental removal: 3 SC-using bridge
+    proofs failed without `[h]`).
+  * Runtime test pattern (`have _h := X; true`) acknowledged as a
+    compile-time elaboration check repackaged as a runtime "always
+    passes" assertion.  Acceptable per project convention; substantive
+    runtime checks (§3.1 default-state foundations) cover the
+    decidable foundations.
+
+**Module status**: `PerCore.lean` ~1620 LoC (was ~1660 at v0.31.20; -40
+LoC net from replacing the degenerate frame proof + adding the
+substantive helper).  Tier 0+1+2+3 green; partition gate green (35
+staged-only modules); axiom-clean throughout; trace fixture
+byte-identical.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
 ## v0.31.21 — WS-SM SM4.C final closure: WORKSTREAM_HISTORY + CLAIM_EVIDENCE_INDEX
 
 Final cross-document closure for the SM4.C audit-pass-1..6 chain:
