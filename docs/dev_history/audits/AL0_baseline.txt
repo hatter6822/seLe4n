@@ -8,20 +8,20 @@
 
 ## Reader-side raw patterns (should-drop)
 
-raw_match_tcb            = 51
-raw_match_schedcontext   = 25
+raw_match_tcb            = 48
+raw_match_schedcontext   = 22
 raw_match_endpoint       = 9
 raw_match_notification   = 2
 raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
-raw_match_total          = 128
-raw_lookup_tid           = 770
+raw_match_total          = 122
+raw_lookup_tid           = 773
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 161
-getschedctx_adoption     = 82
+gettcb_adoption          = 169
+getschedctx_adoption     = 94
 getendpoint_adoption     = 33
 getnotification_adoption = 19
 getuntyped_adoption      = 14
@@ -48,17 +48,17 @@ axiom_count              = 0
 
 ## Machine-diffable block
 
-RAW_MATCH_TCB=51
-RAW_MATCH_SCHEDCONTEXT=25
+RAW_MATCH_TCB=48
+RAW_MATCH_SCHEDCONTEXT=22
 RAW_MATCH_ENDPOINT=9
 RAW_MATCH_NOTIFICATION=2
 RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
-RAW_MATCH_TOTAL=128
-RAW_LOOKUP_TID=770
-GETTCB_ADOPTION=161
-GETSCHEDCTX_ADOPTION=82
+RAW_MATCH_TOTAL=122
+RAW_LOOKUP_TID=773
+GETTCB_ADOPTION=169
+GETSCHEDCTX_ADOPTION=94
 GETENDPOINT_ADOPTION=33
 GETNOTIFICATION_ADOPTION=19
 GETUNTYPED_ADOPTION=14

@@ -40,17 +40,15 @@ cross-subsystem invariant surface (`schedulerInvariantBundle*`,
 that consume them) is therefore untouched and stays green; SM4.C
 strictly *adds* the per-core layer.
 
-**AK7 typed-accessor discipline**: thirteen of the sixteen per-core
-predicate bodies route their object-store lookups through the typed
-`getTcb?` accessor (only one-level lookup); their boot-core bridges go
-through `getTcb?_eq_some_iff` plus a per-variant case analysis on
-`st.objects[…]?`.  Three predicates that need a two-level lookup
-(TCB-then-SchedContext: `currentBudgetPositiveOnCore`,
-`budgetPositiveOnCore`, `effectiveParamsMatchRunQueueOnCore`) keep the
-existing raw `match`-on-`objects[…]?` body verbatim so their boot-core
-bridges close as defeq `Iff.rfl`; a future workstream that migrates the
-corresponding single-core predicates to typed accessors will move these
-mirrors with them.
+**AK7 typed-accessor discipline**: all sixteen per-core predicate bodies
+route their object-store lookups through the typed `getTcb?` /
+`getSchedContext?` accessors.  Single-level-lookup bridges go through
+`getTcb?_eq_some_iff` plus per-variant case analysis on `objects[…]?`;
+two-level-lookup bridges (TCB-then-SchedContext: `currentBudgetPositive*`,
+`budgetPositive*`, `effectiveParamsMatchRunQueue*`) `unfold` each typed
+accessor's underlying `match` and discharge via nested `cases h :
+objects[…]?` (binding-arm-shared SchedContext lookup case-analysed under
+each `bound`/`donated` arm).
 
 ## What this module proves (plan §5.6 + §8 acceptance gate)
 
@@ -199,45 +197,37 @@ def domainTimeRemainingPositiveOnCore (st : SystemState) (c : CoreId) : Prop :=
   (st.scheduler.domainTimeRemainingOnCore c) > 0
 
 /-- SM4.C: per-core current-budget positivity.  Per-core form of
-`currentBudgetPositive`.
-
-This predicate uses raw `match`-on-`objects[…]?` rather than the typed
-`getTcb?` / `getSchedContext?` accessors.  Reason: the predicate has two
-nested object-store lookups (TCB-then-SchedContext), and matching the
-existing single-core predicate's raw-`match` body verbatim keeps the
-boot-core bridge as a defeq `Iff.rfl` (rather than requiring a multi-
-level case-analysis proof through `getTcb?_eq_some_iff` /
-`getSchedContext?_eq_some_iff`).  The typed-accessor migration of this
-predicate's underlying single-core form is tracked as an AK7-cascade
-candidate; when it lands, this per-core mirror moves with it. -/
+`currentBudgetPositive`.  Uses the typed `getTcb?` / `getSchedContext?`
+accessors (AK7 discipline); the boot-core bridge converts via nested
+`cases` on `objects[…]?` (the typed accessors' underlying lookups). -/
 def currentBudgetPositiveOnCore (st : SystemState) (c : CoreId) : Prop :=
   match st.scheduler.currentOnCore c with
   | none => True
   | some tid =>
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.schedContextBinding with
       | .unbound => True
       | .bound scId | .donated scId _ =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) => sc.budgetRemaining.val > 0
-        | _ => True
-    | _ => True
+        match st.getSchedContext? scId with
+        | some sc => sc.budgetRemaining.val > 0
+        | none => True
+    | none => True
 
 /-- SM4.C: per-core budget positivity for runnable threads.  Per-core form
-of `budgetPositive`.  (See `currentBudgetPositiveOnCore`'s note on the
-raw-`match` choice for two-level object lookups.) -/
+of `budgetPositive`.  Uses the typed `getTcb?` / `getSchedContext?`
+accessors. -/
 def budgetPositiveOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).toList →
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.schedContextBinding with
       | .unbound => True
       | .bound scId | .donated scId _ =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) => sc.budgetRemaining.val > 0
-        | _ => True
-    | _ => True
+        match st.getSchedContext? scId with
+        | some sc => sc.budgetRemaining.val > 0
+        | none => True
+    | none => True
 
 /-- SM4.C: per-core replenishment-pipeline ordering.  Per-core form of
 `replenishmentPipelineOrder`: every entry of core `c`'s replenish queue is
@@ -253,21 +243,21 @@ def replenishQueueValidOnCore (st : SystemState) (c : CoreId) : Prop :=
   replenishQueueSizeConsistent (st.scheduler.replenishQueueOnCore c)
 
 /-- SM4.C: per-core effective-params-match.  Per-core form of
-`effectiveParamsMatchRunQueue`.  (See `currentBudgetPositiveOnCore`'s note
-on the raw-`match` choice for two-level object lookups.) -/
+`effectiveParamsMatchRunQueue`.  Uses the typed `getTcb?` /
+`getSchedContext?` accessors. -/
 def effectiveParamsMatchRunQueueOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.schedContextBinding with
       | .unbound =>
         (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
       | .bound scId | .donated scId _ =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) =>
+        match st.getSchedContext? scId with
+        | some sc =>
           (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some sc.priority
-        | _ => True
-    | _ => True
+        | none => True
+    | none => True
 
 -- ============================================================================
 -- §1.5  Object-accessor congruence helpers (frame-lemma plumbing)
@@ -409,11 +399,66 @@ theorem schedulerPriorityMatchOnCore_bootCore_iff (st : SystemState) :
 theorem domainTimeRemainingPositiveOnCore_bootCore_iff (st : SystemState) :
     domainTimeRemainingPositiveOnCore st bootCoreId ↔ domainTimeRemainingPositive st := Iff.rfl
 
+/-- Boot-core bridge for `currentBudgetPositiveOnCore`.  The per-core form
+uses the typed `getTcb?` / `getSchedContext?` accessors; unfolding each
+accessor exposes its underlying `match`-on-`objects[…]?`, and per-variant
+case analysis on each lookup makes both sides reduce to the same body. -/
 theorem currentBudgetPositiveOnCore_bootCore_iff (st : SystemState) :
-    currentBudgetPositiveOnCore st bootCoreId ↔ currentBudgetPositive st := Iff.rfl
+    currentBudgetPositiveOnCore st bootCoreId ↔ currentBudgetPositive st := by
+  unfold currentBudgetPositiveOnCore currentBudgetPositive
+  cases st.scheduler.currentOnCore bootCoreId with
+  | none => rfl
+  | some tid =>
+    unfold SystemState.getTcb?
+    cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
+    | none => simp [h]
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        simp [h]
+        cases tcb.schedContextBinding with
+        | unbound => rfl
+        | bound scId =>
+          unfold SystemState.getSchedContext?
+          cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
+          | none => simp [h2]
+          | some objSc => cases objSc <;> simp [h2]
+        | donated scId _owner =>
+          unfold SystemState.getSchedContext?
+          cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
+          | none => simp [h2]
+          | some objSc => cases objSc <;> simp [h2]
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+        simp [h]
 
+/-- Boot-core bridge for `budgetPositiveOnCore`.  Same pattern as
+`currentBudgetPositiveOnCore_bootCore_iff` but under an outer ∀-tid binder. -/
 theorem budgetPositiveOnCore_bootCore_iff (st : SystemState) :
-    budgetPositiveOnCore st bootCoreId ↔ budgetPositive st := Iff.rfl
+    budgetPositiveOnCore st bootCoreId ↔ budgetPositive st := by
+  unfold budgetPositiveOnCore budgetPositive
+  apply forall_congr'; intro tid
+  apply imp_congr_right; intro _hMem
+  unfold SystemState.getTcb?
+  cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
+  | none => simp [h]
+  | some obj =>
+    cases obj with
+    | tcb tcb =>
+      simp [h]
+      cases tcb.schedContextBinding with
+      | unbound => rfl
+      | bound scId =>
+        unfold SystemState.getSchedContext?
+        cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
+        | none => simp [h2]
+        | some objSc => cases objSc <;> simp [h2]
+      | donated scId _owner =>
+        unfold SystemState.getSchedContext?
+        cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
+        | none => simp [h2]
+        | some objSc => cases objSc <;> simp [h2]
+    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [h]
 
 theorem replenishmentPipelineOrderOnCore_bootCore_iff (st : SystemState) :
     replenishmentPipelineOrderOnCore st bootCoreId ↔ replenishmentPipelineOrder st := Iff.rfl
@@ -421,8 +466,35 @@ theorem replenishmentPipelineOrderOnCore_bootCore_iff (st : SystemState) :
 theorem replenishQueueValidOnCore_bootCore_iff (st : SystemState) :
     replenishQueueValidOnCore st bootCoreId ↔ replenishQueueValid st := Iff.rfl
 
+/-- Boot-core bridge for `effectiveParamsMatchRunQueueOnCore`.  Same pattern
+as `budgetPositiveOnCore_bootCore_iff` but the `.unbound` arm has a
+non-`True` body (a `threadPriority[tid]?` equality). -/
 theorem effectiveParamsMatchRunQueueOnCore_bootCore_iff (st : SystemState) :
-    effectiveParamsMatchRunQueueOnCore st bootCoreId ↔ effectiveParamsMatchRunQueue st := Iff.rfl
+    effectiveParamsMatchRunQueueOnCore st bootCoreId ↔ effectiveParamsMatchRunQueue st := by
+  unfold effectiveParamsMatchRunQueueOnCore effectiveParamsMatchRunQueue
+  apply forall_congr'; intro tid
+  apply imp_congr_right; intro _hMem
+  unfold SystemState.getTcb?
+  cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
+  | none => simp [h]
+  | some obj =>
+    cases obj with
+    | tcb tcb =>
+      simp [h]
+      cases tcb.schedContextBinding with
+      | unbound => rfl
+      | bound scId =>
+        unfold SystemState.getSchedContext?
+        cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
+        | none => simp [h2]
+        | some objSc => cases objSc <;> simp [h2]
+      | donated scId _owner =>
+        unfold SystemState.getSchedContext?
+        cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
+        | none => simp [h2]
+        | some objSc => cases objSc <;> simp [h2]
+    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [h]
 
 -- ============================================================================
 -- §3  Aggregate per-core invariant (SM4.C.29) + the SMP forall form (§5.6)
@@ -665,6 +737,52 @@ theorem schedulerInvariant_perCore_independent_of_setDomainTimeRemainingOnCore
       { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c' v } c ↔
     schedulerInvariant_perCore st c := by
   apply schedulerInvariant_perCore_frame <;> simp [Ne.symm hne]
+
+/-- WS-SM SM4.C.30: writing any other core's replenish-queue slot leaves this
+core's per-core invariant unchanged.  `schedulerInvariant_perCore` (mirroring
+`schedulerInvariantBundleFull`) does not read `replenishQueueOnCore`, so the
+independence holds for *any* target core (the `hne` hypothesis is retained for
+API uniformity with the other independence corollaries). -/
+theorem schedulerInvariant_perCore_independent_of_setReplenishQueueOnCore
+    {st : SystemState} {c c' : CoreId} (_hne : c ≠ c') (v : ReplenishQueue) :
+    schedulerInvariant_perCore
+      { st with scheduler := st.scheduler.setReplenishQueueOnCore c' v } c ↔
+    schedulerInvariant_perCore st c := by
+  apply schedulerInvariant_perCore_frame <;> simp
+
+/-- WS-SM SM4.C.30: writing any other core's active-domain slot leaves this
+core's per-core invariant unchanged.  The aggregate does not read
+`activeDomainOnCore` (only `currentThreadInActiveDomainOnCore` does, and that
+is not in the `…Full`-mirroring aggregate), so the corollary holds for any
+target core (`hne` retained for API uniformity). -/
+theorem schedulerInvariant_perCore_independent_of_setActiveDomainOnCore
+    {st : SystemState} {c c' : CoreId} (_hne : c ≠ c') (v : SeLe4n.DomainId) :
+    schedulerInvariant_perCore
+      { st with scheduler := st.scheduler.setActiveDomainOnCore c' v } c ↔
+    schedulerInvariant_perCore st c := by
+  apply schedulerInvariant_perCore_frame <;> simp
+
+/-- WS-SM SM4.C.30: writing any other core's domain-schedule-index slot leaves
+this core's per-core invariant unchanged.  The aggregate does not read
+`domainScheduleIndexOnCore`, so the corollary holds for any target core. -/
+theorem schedulerInvariant_perCore_independent_of_setDomainScheduleIndexOnCore
+    {st : SystemState} {c c' : CoreId} (_hne : c ≠ c') (v : Nat) :
+    schedulerInvariant_perCore
+      { st with scheduler := st.scheduler.setDomainScheduleIndexOnCore c' v } c ↔
+    schedulerInvariant_perCore st c := by
+  apply schedulerInvariant_perCore_frame <;> simp
+
+/-- WS-SM SM4.C.30: writing any other core's last-timeout-errors slot leaves
+this core's per-core invariant unchanged.  The aggregate does not read
+`lastTimeoutErrorsOnCore` (only used diagnostically), so the corollary holds
+for any target core. -/
+theorem schedulerInvariant_perCore_independent_of_setLastTimeoutErrorsOnCore
+    {st : SystemState} {c c' : CoreId} (_hne : c ≠ c')
+    (v : List (SeLe4n.ThreadId × KernelError)) :
+    schedulerInvariant_perCore
+      { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c' v } c ↔
+    schedulerInvariant_perCore st c := by
+  apply schedulerInvariant_perCore_frame <;> simp
 
 /-- WS-SM SM4.C.30 (plan §5.6): **per-core pairwise independence**.  For two
 distinct cores `c₁ ≠ c₂`, simultaneously overwriting *all three* of core

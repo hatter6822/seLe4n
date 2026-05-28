@@ -1,3 +1,82 @@
+## v0.31.14 — WS-SM SM4.C audit-pass-1: typed-accessor migration + setter independence completeness
+
+Closes two of the gaps the post-landing audit of v0.31.13 (the WS-SM SM4.C
+initial landing) identified:
+
+**(1) Typed-accessor migration for the three SC-using per-core predicates.**
+The initial SM4.C cut left `currentBudgetPositiveOnCore`,
+`budgetPositiveOnCore`, and `effectiveParamsMatchRunQueueOnCore` using
+raw `match`-on-`st.objects[…]?` bodies (mirroring their single-core
+counterparts verbatim so the boot-core bridges could close as defeq
+`Iff.rfl`).  The audit flagged this as an honest AK7-discipline retreat;
+the bumped AK7 baseline (`docs/dev_history/audits/AL0_baseline.txt`,
+`RAW_MATCH_TOTAL` 122 → 128 / 130) was a documented workaround rather
+than a fix.
+
+This audit-pass migrates all three to the typed `getTcb?` /
+`getSchedContext?` accessors and writes bridges that close *substantively*
+via `unfold SystemState.getTcb? SystemState.getSchedContext?` plus nested
+`cases h : (st.objects[…]? : Option KernelObject) with` (the `h :` form
+that substitutes the discriminant) — with per-variant case analysis on
+the TCB binding and the SchedContext lookup under each `.bound` /
+`.donated` arm.  The AK7 baseline is restored to the pre-SM4.C floor:
+**`RAW_MATCH_TOTAL` is back to 122** (the v0.31.2 historical floor),
+**`RAW_MATCH_TCB` back to 48**, with `GETTCB_ADOPTION` up to 169
+(net +56 since the SM4.C cut) and `GETSCHEDCTX_ADOPTION` up to 94
+(net +27).  All sixteen per-core predicates now use typed accessors;
+there is no longer any raw `match`-on-`objects[…]?` in the SM4.C
+module.  Net regression on the baseline: zero.
+
+**(2) Setter independence completeness — the four missing corollaries.**
+The initial cut shipped three setter independence corollaries
+(`_independent_of_setCurrentOnCore`, `…setRunQueueOnCore`,
+`…setDomainTimeRemainingOnCore`) covering the three fields the
+aggregate actually reads.  The audit observed that for full
+SM5-completeness the other four per-core setters
+(`setReplenishQueueOnCore`, `setActiveDomainOnCore`,
+`setDomainScheduleIndexOnCore`, `setLastTimeoutErrorsOnCore`) also
+preserve the per-core invariant at *any* target core — vacuously,
+because the aggregate doesn't read those slots — and SM5 wants those
+corollaries on hand when it migrates per-core operations that write
+them.
+
+This audit-pass adds the four missing corollaries:
+`schedulerInvariant_perCore_independent_of_setReplenishQueueOnCore`,
+`…setActiveDomainOnCore`, `…setDomainScheduleIndexOnCore`,
+`…setLastTimeoutErrorsOnCore`.  Each is one line — `apply
+schedulerInvariant_perCore_frame <;> simp` — since the SM4.B per-core
+store/load algebra already proves each setter frames every field the
+aggregate reads.  The `hne : c ≠ c'` hypothesis is retained as
+`_hne` for API uniformity with the other three corollaries (and to
+keep SM5 callers' usage symmetric), but the corollaries actually hold
+for any target core including `c' = c`.
+
+**Module status**: `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` now
+~840 LoC (was ~770 at v0.31.13).  Surface anchors in
+`tests/SchedulerInvariantPerCoreSuite.lean` and
+`scripts/test_tier3_invariant_surface.sh` extended with the four new
+corollaries (4 new `#check` lines each).  Axiom-clean (only `propext` /
+`Quot.sound` / `Classical.choice`); full Tier 0+1+2+3 green; trace
+fixture byte-identical; partition gate (34 staged-only modules) green.
+
+**AK7 cascade**: `RAW_MATCH_TOTAL` 128 → 122 (back to the original
+v0.31.2 floor); `RAW_MATCH_TCB` 51 → 48 (same); `RAW_MATCH_SCHEDCONTEXT`
+25 → 22 (same); `GETTCB_ADOPTION` 165 → 169 (+4 from typed-accessor
+expansion); `GETSCHEDCTX_ADOPTION` 90 → 94 (+4).  AK7 baseline
+re-anchored to capture the improvement.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: further SM4.C audit passes will (a) add per-conjunct frame
+lemmas, (b) extend the per-core layer to mirror
+`schedulerInvariantBundleExtended`, (c) add per-core forms of the
+cross-subsystem predicates listed in plan §5.6
+(`schedContextRunQueueConsistent_perCore`, `priorityInheritance_perCore`,
+`activeDomainOnCore_isInDomainSchedule`), (d) prove per-operation per-core
+preservation for the six boot-core scheduler operations, and (e) the
+plan §3.4 Pattern 1 rewrite of existing scheduler theorems to take
+`(c : CoreId)`.
+
 ## v0.31.13 — WS-SM SM4.C: per-core scheduler invariant migration
 
 Lands **WS-SM Phase SM4.C "Scheduler invariants migration"** (plan
