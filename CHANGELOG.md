@@ -1,3 +1,47 @@
+## v0.31.28 — WS-SM SM4.C audit-pass-11 hotfix: shellcheck SC2016 in tier-3 surface
+
+CI hotfix for the v0.31.27 audit-pass-11 cut (PR #801).  Both
+Lean-toolchain CI gates — "Tiered Tests / Fast (Tier 0 + Tier 1)" and
+"Platform Signal / ARM64 Fast Gate" — failed; the Rust-only and
+security gates passed.
+
+**Root cause**: the audit-pass-11 `#check` block added to
+`scripts/test_tier3_invariant_surface.sh` carried a Lean `--` comment
+with backtick-quoted identifiers (``` `rq = empty` ```,
+``` `toList = []` ```, ``` `wellFormed` ```).  That comment lives
+inside a `bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+… EOF'` **single-quoted** string, so shellcheck reads the backticks as
+command substitution that will not expand (SC2016) and exits non-zero;
+`run_check` propagates the failure.  Tier 0 hygiene runs this lint only
+when shellcheck is installed — CI installs it (both gates have an
+explicit "Install shellcheck" step), but the dev container does not, so
+the local `test_fast.sh` run skipped the lint and the regression slipped
+through.
+
+**Fix**: rewrote the comment in plain text (no backticks, no `$`),
+matching the established convention of the ~20 sibling
+`lake env lean --stdin` heredoc blocks in the same file — none of which
+use backticks or `$` in their Lean comments precisely because the whole
+heredoc is wrapped in a bash single-quoted string.  No proof, theorem,
+or test logic changed; the `#check` anchor for
+`schedulerInvariant_perCore_holds_if_idle_default` is unchanged.
+
+**Verification**: installed shellcheck in the dev container and
+reproduced the exact CI lint
+(`shellcheck --exclude=SC1090,SC1091 scripts/*.sh`) — failed before the
+fix at line 2698, passes (exit 0) after.  Full `./scripts/test_fast.sh`
+now green WITH shellcheck present (the configuration both CI gates use):
+Tier 0 hygiene shellcheck PASS + Tier 1 build (320 + 186 jobs) PASS.
+No other script trips shellcheck.
+
+**Process improvement note**: the gap was a local/CI environment
+divergence (shellcheck absent locally).  Future shell-script edits in
+this repo must be lint-checked with shellcheck installed, or run
+`./scripts/setup_lean_env.sh` (without `--skip-test-deps`) which
+installs it.
+
+Refs: https://github.com/hatter6822/seLe4n/pull/801
+
 ## v0.31.27 — WS-SM SM4.C audit-pass-11: convenience wrapper for `_holds_if_idle`
 
 User-asked audit question: "is the `_holds_if_idle` proof actually
