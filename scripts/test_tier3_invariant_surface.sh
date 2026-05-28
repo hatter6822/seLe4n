@@ -2657,6 +2657,30 @@ open SeLe4n.Kernel
 #check @schedulerInvariant_perCore_extended_frame_idle
 #check @schedulerInvariant_perCore_extended_pairwise
 #check @schedulerInvariant_smp_extended_of_bootCore_and_idle_frame
+-- SM4.C §9 cross-subsystem per-core predicates (plan §5.6).
+#check @schedContextRunQueueConsistent_perCore
+#check @priorityInheritance_perCore
+#check @activeDomainOnCore_isInDomainSchedule
+#check @schedContextRunQueueConsistent_perCore_bootCore_iff
+#check @priorityInheritance_perCore_iff
+#check @default_schedContextRunQueueConsistent_perCore
+#check @default_priorityInheritance_perCore
+#check @default_activeDomainOnCore_isInDomainSchedule
+#check @schedContextRunQueueConsistent_perCore_frame
+#check @priorityInheritance_perCore_frame
+#check @activeDomainOnCore_isInDomainSchedule_frame
+-- SM4.C §10 cross-subsystem per-core aggregate + projections + bridge.
+#check @schedulerInvariant_perCore_crossSubsystem
+#check @schedulerInvariant_smp_crossSubsystem
+#check @schedulerInvariant_perCore_crossSubsystem_aggregateForall
+#check @schedulerInvariant_smp_crossSubsystem_at
+#check @schedulerInvariant_perCore_crossSubsystem_to_extended
+#check @schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent
+#check @schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance
+#check @schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule
+#check @crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore
+#check @default_schedulerInvariant_perCore_crossSubsystem
+#check @default_schedulerInvariant_smp_crossSubsystem
 EOF'
 
 finalize_report

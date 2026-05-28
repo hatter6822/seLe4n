@@ -8,6 +8,11 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Invariant
+-- WS-SM SM4.C audit-pass-3: cross-subsystem per-core predicates per plan §5.6
+-- require `schedContextRunQueueConsistent` (CrossSubsystem) and
+-- `PriorityInheritance.blockingAcyclic` (PriorityInheritance/BlockingGraph).
+import SeLe4n.Kernel.CrossSubsystem
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph
 
 -- The boot-core bridge proofs in §2 use `cases h : X` substitution to
 -- substantively case-analyse on `objects[…]?` lookups; the `simp [hObj]`
@@ -1237,5 +1242,231 @@ theorem schedulerInvariant_smp_extended_of_bootCore_and_idle_frame {st st' : Sys
   · subst hc; exact hBoot
   · exact (schedulerInvariant_perCore_extended_frame_idle (hIdle' c hc) (hIdle c hc)
       (hFrameRQ c hc) (hFrameDTR c hc) (hFrameRepl c hc) hFrameObj).mpr (hPre c)
+
+-- ============================================================================
+-- §9  Cross-subsystem per-core predicates (plan §5.6)
+-- ============================================================================
+--
+-- Per plan §5.6, the per-core scheduler invariant aggregate ALSO names
+-- three cross-subsystem predicates: `schedContextRunQueueConsistent_perCore`
+-- (the per-core analog of `CrossSubsystem.schedContextRunQueueConsistent`),
+-- `priorityInheritance_perCore` (the per-core analog of
+-- `PriorityInheritance.blockingAcyclic`), and a new
+-- `activeDomainOnCore_isInDomainSchedule` (no single-core counterpart).
+-- These cross the SM4.C / SM4.D boundary slightly (since
+-- `schedContextRunQueueConsistent` lives in `CrossSubsystem.lean`), but
+-- including them here matches the plan literally and gives SM5 a single
+-- composed per-core invariant to preserve.
+
+open SeLe4n.Kernel.PriorityInheritance (blockingAcyclic) in
+/-- SM4.C (plan §5.6): per-core form of
+`CrossSubsystem.schedContextRunQueueConsistent`.  For every thread in
+core `c`'s run queue, if the thread is bound to a SchedContext, the SC
+exists in the object store with positive `budgetRemaining`. -/
+def schedContextRunQueueConsistent_perCore (st : SystemState) (c : CoreId) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId),
+    tid ∈ (st.scheduler.runQueueOnCore c).toList →
+    ∀ (tcb : TCB),
+      st.getTcb? tid = some tcb →
+      ∀ scId, tcb.schedContextBinding.scId? = some scId →
+        ∃ sc, st.getSchedContext? scId = some sc ∧
+          sc.budgetRemaining.val > 0
+
+/-- SM4.C (plan §5.6): per-core form of
+`PriorityInheritance.blockingAcyclic`.  The blocking graph is built from
+the entire object store (cross-core IPC means any thread can block on
+any endpoint), so this predicate is **genuinely system-wide**: the per-
+core form is the same global blocking-acyclic property, exposed under a
+`(c : CoreId)`-parameterised signature for compositional convenience.
+
+This is honest about the predicate's *zero* core dependence (the body
+deliberately ignores `_c`); when SM5+ introduces genuinely per-core
+blocking sub-graphs, this signature is the migration seam. -/
+def priorityInheritance_perCore (st : SystemState) (_c : CoreId) : Prop :=
+  PriorityInheritance.blockingAcyclic st
+
+/-- SM4.C (plan §5.6): the active domain on core `c` is one of the domains
+listed in the (system-wide) domain schedule.  Plan-named new predicate;
+no single-core counterpart in `Scheduler/Invariant.lean`.
+
+When `domainSchedule = []`, the kernel runs in single-domain mode and
+any active domain value is admissible (the left disjunct).  Otherwise,
+the active domain must appear as the `.domain` field of some schedule
+entry. -/
+def activeDomainOnCore_isInDomainSchedule (st : SystemState) (c : CoreId) : Prop :=
+  st.scheduler.domainSchedule = [] ∨
+  ∃ e ∈ st.scheduler.domainSchedule, e.domain = st.scheduler.activeDomainOnCore c
+
+-- ============================================================================
+-- §9.1  Boot-core bridges for the cross-subsystem per-core predicates
+-- ============================================================================
+
+/-- WS-SM SM4.C: at the boot core, `schedContextRunQueueConsistent_perCore` is
+provably equivalent to the existing single-core
+`CrossSubsystem.schedContextRunQueueConsistent`.  Closes via `simp only`
+with the typed-accessor `_eq_some_iff` lemmas, which rewrite each
+`getTcb? = some` / `getSchedContext? = some` into the raw-`objects[…]?`
+form that the single-core predicate uses. -/
+theorem schedContextRunQueueConsistent_perCore_bootCore_iff (st : SystemState) :
+    schedContextRunQueueConsistent_perCore st bootCoreId ↔
+    schedContextRunQueueConsistent st := by
+  unfold schedContextRunQueueConsistent_perCore schedContextRunQueueConsistent
+  simp only [SystemState.getTcb?_eq_some_iff, SystemState.getSchedContext?_eq_some_iff]
+
+/-- WS-SM SM4.C: at any core, `priorityInheritance_perCore` is the global
+`PriorityInheritance.blockingAcyclic`.  This holds by definition (the
+per-core form ignores its `c` parameter), surfaced as a named bridge for
+consumers reasoning at the global vs per-core abstraction. -/
+theorem priorityInheritance_perCore_iff (st : SystemState) (c : CoreId) :
+    priorityInheritance_perCore st c ↔ PriorityInheritance.blockingAcyclic st := Iff.rfl
+
+-- ============================================================================
+-- §9.2  Default-state for the cross-subsystem per-core predicates
+-- ============================================================================
+
+/-- The freshly-booted system satisfies `schedContextRunQueueConsistent_perCore`
+on every core (vacuous via empty run queue). -/
+theorem default_schedContextRunQueueConsistent_perCore (c : CoreId) :
+    schedContextRunQueueConsistent_perCore (default : SystemState) c := by
+  intro tid hMem
+  have hRQ : (default : SystemState).scheduler.runQueueOnCore c = RunQueue.empty :=
+    (default_state_perCoreInitialized c).2.1
+  rw [hRQ, RunQueue.toList_empty] at hMem
+  exact absurd hMem List.not_mem_nil
+
+/-- The freshly-booted system satisfies `priorityInheritance_perCore` on every
+core (the empty object store has no blocking edges, so `blockingAcyclic`
+holds vacuously — same proof as `CrossSubsystem.default_blockingAcyclic`
+which is established by `default_crossSubsystemInvariant`). -/
+theorem default_priorityInheritance_perCore (c : CoreId) :
+    priorityInheritance_perCore (default : SystemState) c :=
+  (crossSubsystemInvariant_to_blockingAcyclic _ default_crossSubsystemInvariant)
+
+/-- The freshly-booted system satisfies `activeDomainOnCore_isInDomainSchedule`
+on every core: the default state's `domainSchedule = []` discharges the
+left disjunct. -/
+theorem default_activeDomainOnCore_isInDomainSchedule (c : CoreId) :
+    activeDomainOnCore_isInDomainSchedule (default : SystemState) c := by
+  left
+  -- `(default : SystemState).scheduler.domainSchedule` reduces to `[]` by
+  -- the SchedulerState default-field discipline.
+  rfl
+
+-- ============================================================================
+-- §9.3  Per-conjunct frame lemmas for the cross-subsystem per-core predicates
+-- ============================================================================
+
+/-- Frame lemma for `schedContextRunQueueConsistent_perCore`: depends on core
+`c`'s run queue plus the object store. -/
+theorem schedContextRunQueueConsistent_perCore_frame {st st' : SystemState} {c : CoreId}
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    schedContextRunQueueConsistent_perCore st' c ↔
+    schedContextRunQueueConsistent_perCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId :=
+    getSchedContext?_congr_objects hObj
+  unfold schedContextRunQueueConsistent_perCore
+  simp only [hRQ, hTcb, hSc]
+
+/-- Frame lemma for `priorityInheritance_perCore`: depends on the entire
+object store *and* `objectIndex` (the latter feeds `blockingChain`'s
+default fuel).  Stated with the stronger `st' = st` precondition to
+sidestep the lack of a `blockingChain_objects_congr` lemma in
+`Scheduler/PriorityInheritance/BlockingGraph.lean`; downstream consumers
+who only have field-wise agreement should prove `blockingChain`
+congruence at their call site or upstream a stronger congruence helper.
+This is the honest baseline; a tighter frame lemma is a post-SM4.C
+hardening candidate. -/
+theorem priorityInheritance_perCore_frame {st st' : SystemState} {c : CoreId}
+    (hEq : st' = st) :
+    priorityInheritance_perCore st' c ↔ priorityInheritance_perCore st c := by
+  subst hEq; rfl
+
+/-- Frame lemma for `activeDomainOnCore_isInDomainSchedule`: depends on core
+`c`'s active-domain slot and the system-wide `domainSchedule`. -/
+theorem activeDomainOnCore_isInDomainSchedule_frame {st st' : SystemState} {c : CoreId}
+    (hAD : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c)
+    (hDS : st'.scheduler.domainSchedule = st.scheduler.domainSchedule) :
+    activeDomainOnCore_isInDomainSchedule st' c ↔
+    activeDomainOnCore_isInDomainSchedule st c := by
+  unfold activeDomainOnCore_isInDomainSchedule; rw [hAD, hDS]
+
+-- ============================================================================
+-- §10  Cross-subsystem per-core aggregate + bridges
+-- ============================================================================
+
+/-- WS-SM SM4.C (plan §5.6, comprehensive): the **cross-subsystem** per-core
+scheduler invariant.  Composes the extended per-core aggregate (§3.5) with
+the three plan §5.6 cross-subsystem conjuncts.  This is the most complete
+per-core scheduler invariant in SM4.C; SM5 will preserve this in its
+per-core scheduler operations. -/
+def schedulerInvariant_perCore_crossSubsystem (st : SystemState) (c : CoreId) : Prop :=
+  schedulerInvariant_perCore_extended st c ∧
+  schedContextRunQueueConsistent_perCore st c ∧
+  priorityInheritance_perCore st c ∧
+  activeDomainOnCore_isInDomainSchedule st c
+
+/-- System-wide SMP form of the cross-subsystem per-core invariant. -/
+def schedulerInvariant_smp_crossSubsystem (st : SystemState) : Prop :=
+  ∀ c : CoreId, schedulerInvariant_perCore_crossSubsystem st c
+
+/-- The cross-subsystem per-core slices aggregate to the system-wide form. -/
+theorem schedulerInvariant_perCore_crossSubsystem_aggregateForall (st : SystemState) :
+    (∀ c : CoreId, schedulerInvariant_perCore_crossSubsystem st c) ↔
+    schedulerInvariant_smp_crossSubsystem st := Iff.rfl
+
+theorem schedulerInvariant_smp_crossSubsystem_at (st : SystemState) (c : CoreId)
+    (h : schedulerInvariant_smp_crossSubsystem st) :
+    schedulerInvariant_perCore_crossSubsystem st c := h c
+
+-- Per-conjunct projections from the cross-subsystem aggregate.
+
+theorem schedulerInvariant_perCore_crossSubsystem_to_extended {st : SystemState} {c : CoreId}
+    (h : schedulerInvariant_perCore_crossSubsystem st c) :
+    schedulerInvariant_perCore_extended st c := h.1
+
+theorem schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_crossSubsystem st c) :
+    schedContextRunQueueConsistent_perCore st c := h.2.1
+
+theorem schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_crossSubsystem st c) :
+    priorityInheritance_perCore st c := h.2.2.1
+
+theorem schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_crossSubsystem st c) :
+    activeDomainOnCore_isInDomainSchedule st c := h.2.2.2
+
+/-- WS-SM SM4.C: the cross-subsystem per-core invariant at the boot core
+follows from `schedulerInvariantBundleExtended` + `crossSubsystemInvariant`
++ the new `activeDomainOnCore_isInDomainSchedule` (which has no single-core
+counterpart; it is fresh content per plan §5.6 and must be supplied
+separately). -/
+theorem crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore {st : SystemState}
+    (hExt : schedulerInvariantBundleExtended st)
+    (hCSI : crossSubsystemInvariant st)
+    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId) :
+    schedulerInvariant_perCore_crossSubsystem st bootCoreId := by
+  refine ⟨schedulerInvariantBundleExtended_to_perCore_extended_bootCore hExt, ?_, ?_, hADS⟩
+  · exact (schedContextRunQueueConsistent_perCore_bootCore_iff st).mpr
+      (crossSubsystemInvariant_to_schedContextRunQueueConsistent _ hCSI)
+  · exact (priorityInheritance_perCore_iff st bootCoreId).mpr
+      (crossSubsystemInvariant_to_blockingAcyclic _ hCSI)
+
+/-- The freshly-booted system satisfies the cross-subsystem per-core invariant
+on every core (composes the extended and the 3 cross-subsystem defaults). -/
+theorem default_schedulerInvariant_perCore_crossSubsystem (c : CoreId) :
+    schedulerInvariant_perCore_crossSubsystem (default : SystemState) c :=
+  ⟨default_schedulerInvariant_perCore_extended c,
+   default_schedContextRunQueueConsistent_perCore c,
+   default_priorityInheritance_perCore c,
+   default_activeDomainOnCore_isInDomainSchedule c⟩
+
+/-- The freshly-booted system satisfies the system-wide SMP cross-subsystem
+invariant. -/
+theorem default_schedulerInvariant_smp_crossSubsystem :
+    schedulerInvariant_smp_crossSubsystem (default : SystemState) :=
+  fun c => default_schedulerInvariant_perCore_crossSubsystem c
 
 end SeLe4n.Kernel

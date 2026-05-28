@@ -1,3 +1,104 @@
+## v0.31.16 — WS-SM SM4.C audit-pass-3: cross-subsystem per-core predicates (plan §5.6)
+
+Adds the three cross-subsystem per-core predicates named in plan §5.6's
+aggregate, plus a new cross-subsystem per-core invariant composing them
+with the extended aggregate.  This closes the plan-§5.6-deviation
+identified in the post-v0.31.15 self-audit.
+
+**§9 — three cross-subsystem per-core predicates**:
+
+  * `schedContextRunQueueConsistent_perCore` — per-core form of
+    `CrossSubsystem.schedContextRunQueueConsistent`.  Asserts every
+    thread in core `c`'s run queue that is bound to a SchedContext has
+    that SC present with positive `budgetRemaining`.  Uses typed
+    accessors throughout.
+
+  * `priorityInheritance_perCore` — per-core form of
+    `PriorityInheritance.blockingAcyclic`.  The blocking graph is
+    genuinely system-wide (cross-core IPC), so this predicate is
+    HONESTLY core-independent: the body ignores its `_c` parameter and
+    reads the global `blockingAcyclic`.  Surfaced under a `(c : CoreId)`
+    signature for compositional convenience; the docstring is explicit
+    about zero core dependence, and the lemma
+    `priorityInheritance_perCore_iff` confirms the equivalence with
+    the global form at any core.
+
+  * `activeDomainOnCore_isInDomainSchedule` — NEW predicate (no
+    single-core counterpart in `Scheduler/Invariant.lean`).  Asserts
+    core `c`'s active domain is either the default (when
+    `domainSchedule = []` — single-domain mode) or appears as the
+    `.domain` field of some schedule entry.
+
+**§9.1 — boot-core bridges**: `schedContextRunQueueConsistent_perCore_bootCore_iff`
+closes via `simp only` with `getTcb?_eq_some_iff` /
+`getSchedContext?_eq_some_iff` (the typed-accessor → raw-`objects[…]?`
+rewrites).  `priorityInheritance_perCore_iff` is `Iff.rfl` (the per-core
+body literally calls the global `blockingAcyclic`).  No bridge for
+`activeDomainOnCore_isInDomainSchedule` — it's a fresh predicate.
+
+**§9.2 — defaults**: each holds on the freshly-booted system —
+`schedContextRunQueueConsistent_perCore` via empty run queue;
+`priorityInheritance_perCore` via the existing
+`default_crossSubsystemInvariant` (projects via
+`crossSubsystemInvariant_to_blockingAcyclic`);
+`activeDomainOnCore_isInDomainSchedule` via `domainSchedule = []` (the
+left disjunct).
+
+**§9.3 — per-conjunct frame lemmas**:
+  * `schedContextRunQueueConsistent_perCore_frame` — depends on core
+    `c`'s run queue + `objects`.
+  * `priorityInheritance_perCore_frame` — currently stated with the
+    degenerate `st' = st` precondition since the codebase lacks a
+    `blockingChain_objects_congr` lemma; a tighter frame lemma is a
+    post-SM4.C hardening candidate (`blockingChain` reads
+    `st.objects` AND `st.objectIndex.length` so a non-degenerate
+    frame needs both equalities plus structural congruence on
+    `blockingChain` itself).
+  * `activeDomainOnCore_isInDomainSchedule_frame` — depends on core
+    `c`'s `activeDomain` slot + the system-wide `domainSchedule`.
+
+**§10 — `schedulerInvariant_perCore_crossSubsystem`**: the most complete
+per-core invariant in SM4.C, composing `schedulerInvariant_perCore_extended`
+(§3.5) with the three §9 cross-subsystem predicates.  This is the
+aggregate that plan §5.6 envisions, now substantially provided.
+
+`schedulerInvariant_smp_crossSubsystem` is the system-wide form;
+`schedulerInvariant_perCore_crossSubsystem_aggregateForall` is the
+bridge.  Four per-conjunct projections.
+
+`crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore` is the
+bridge from the live cross-subsystem + extended bundle surface: given
+`schedulerInvariantBundleExtended` + `crossSubsystemInvariant` +
+`activeDomainOnCore_isInDomainSchedule st bootCoreId` (which has no
+single-core counterpart and must be supplied separately), the per-core
+cross-subsystem invariant at the boot core holds.
+
+`default_schedulerInvariant_perCore_crossSubsystem (c)` composes the
+four sub-defaults; `default_schedulerInvariant_smp_crossSubsystem` is
+the SMP form.
+
+**New imports**: `SeLe4n.Kernel.CrossSubsystem` and
+`SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph` (verified
+to introduce no import cycle since `PerCore.lean` is staged-only).
+Module dependency closure expanded from 31 to 106 jobs.
+
+**Test coverage**: `tests/SchedulerInvariantPerCoreSuite.lean` extended
+with 21 new surface anchors and 7 new runtime assertions (`§3.7
+cross-subsystem per-core aggregate (plan §5.6)`).  41 total runtime
+assertions (was 27 at v0.31.15); all 41 PASS.
+
+**Module status**: `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` is
+now ~1430 LoC (was ~1160 at v0.31.15).  Tier 0+1+2+3 green; partition
+gate green (34 staged-only modules); axiom-clean (only `propext` /
+`Quot.sound` / `Classical.choice`); trace fixture byte-identical.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: per-operation per-core preservation theorems for the six
+boot-core scheduler operations (`schedule`, `chooseThread`,
+`handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`); the
+plan §3.4 Pattern 1 rewrite of existing scheduler theorems.
+
 ## v0.31.15 — WS-SM SM4.C audit-pass-2: per-conjunct frames + extended per-core aggregate
 
 Extends the per-core invariant layer with fine-grained frame lemmas, the

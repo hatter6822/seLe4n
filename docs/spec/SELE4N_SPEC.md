@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.15` (`lakefile.toml`) |
+| **Package version** | `0.31.16` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 141,721 across 201 Lean files |
-| **Test LoC** | 30,639 across 45 Lean test suites |
-| **Proved declarations** | 4,332 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 141,952 across 201 Lean files |
+| **Test LoC** | 30,730 across 45 Lean test suites |
+| **Proved declarations** | 4,349 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM4.C per-core scheduler invariant migration LANDED (v0.31.13)** — lifts every scheduler invariant predicate from the single-core (`bootCoreId`-pinned) forms to per-core `(c : CoreId)`-parameterised forms, exports the SM4.C.29 aggregate `schedulerInvariant_perCore` + `schedulerInvariant_smp`, the SM4.C.30 cross-core pairwise independence theorem, the per-core / idle-core frame lemmas, the bundle bridges grounding the new layer in the live `schedulerInvariantBundleFull/Extended` surface, and the single-core-preservation-lifts-to-SMP skeleton; additive and soundness-preserving (every per-core form at `bootCoreId` is `Iff.rfl` to the existing predicate); 0 sorry / 0 axiom. Landed earlier in WS-SM: SM0 (foundations, v0.31.3), SM1 (Rust HAL, v0.31.8), SM2 (verified lock primitives), SM3 (per-object locks → 2PL → deadlock-freedom → serializability), SM4.A (per-core `Vector` bootstrap, v0.31.11), SM4.B (`SchedulerState` path-a `Vector` replacement, v0.31.12). Follow-on: SM4.D (cross-subsystem theorem migrations), SM4.E (`bootFromPlatform_singleCore_witness` retirement + `bootFromPlatform_smp_witness`), SM5..SM9 (per-core scheduler, cross-core IPC, TLB shootdown, info-flow, release closure). Plans: master [`SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md); per-core state [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md) §5.3. Canonical per-phase record: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md). Prior closed portfolios: WS-RC pre-1.0 audit remediation (v0.30.11→v0.31.2), WS-AN (v0.30.11), WS-AK (v0.30.6), WS-AM–WS-B. |

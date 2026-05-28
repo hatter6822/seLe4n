@@ -162,6 +162,32 @@ open SeLe4n.Kernel.Concurrency
 #check @schedulerInvariant_perCore_extended_pairwise
 #check @schedulerInvariant_smp_extended_of_bootCore_and_idle_frame
 
+-- Cross-subsystem per-core predicates (§9 — plan §5.6):
+#check @schedContextRunQueueConsistent_perCore
+#check @priorityInheritance_perCore
+#check @activeDomainOnCore_isInDomainSchedule
+#check @schedContextRunQueueConsistent_perCore_bootCore_iff
+#check @priorityInheritance_perCore_iff
+#check @default_schedContextRunQueueConsistent_perCore
+#check @default_priorityInheritance_perCore
+#check @default_activeDomainOnCore_isInDomainSchedule
+#check @schedContextRunQueueConsistent_perCore_frame
+#check @priorityInheritance_perCore_frame
+#check @activeDomainOnCore_isInDomainSchedule_frame
+
+-- Cross-subsystem per-core aggregate (§10):
+#check @schedulerInvariant_perCore_crossSubsystem
+#check @schedulerInvariant_smp_crossSubsystem
+#check @schedulerInvariant_perCore_crossSubsystem_aggregateForall
+#check @schedulerInvariant_smp_crossSubsystem_at
+#check @schedulerInvariant_perCore_crossSubsystem_to_extended
+#check @schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent
+#check @schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance
+#check @schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule
+#check @crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore
+#check @default_schedulerInvariant_perCore_crossSubsystem
+#check @default_schedulerInvariant_smp_crossSubsystem
+
 -- ============================================================================
 -- §2  Elaboration-time examples: theorems applied to verified inputs
 -- ============================================================================
@@ -295,6 +321,26 @@ example (st st' : SystemState) (c : CoreId)
     (hObj : st'.objects = st.objects) :
     contextMatchesCurrentOnCore st' c ↔ contextMatchesCurrentOnCore st c :=
   contextMatchesCurrentOnCore_frame hCur hRegs hObj
+
+-- §2.12  Cross-subsystem per-core aggregate: default state + bridges.
+example : schedulerInvariant_perCore_crossSubsystem (default : SystemState) bootCoreId :=
+  default_schedulerInvariant_perCore_crossSubsystem bootCoreId
+
+example (c : CoreId) :
+    schedulerInvariant_perCore_crossSubsystem (default : SystemState) c :=
+  default_schedulerInvariant_perCore_crossSubsystem c
+
+example : schedulerInvariant_smp_crossSubsystem (default : SystemState) :=
+  default_schedulerInvariant_smp_crossSubsystem
+
+-- Bridge from the live CrossSubsystem + Extended bundle to the per-core
+-- cross-subsystem invariant at the boot core.
+example {st : SystemState}
+    (hExt : schedulerInvariantBundleExtended st)
+    (hCSI : crossSubsystemInvariant st)
+    (hADS : activeDomainOnCore_isInDomainSchedule st bootCoreId) :
+    schedulerInvariant_perCore_crossSubsystem st bootCoreId :=
+  crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore hExt hCSI hADS
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): a silent regression surfaces here.
@@ -491,6 +537,50 @@ private def runPerConjunctFrameChecks : IO Unit := do
         (st' := (default : SystemState)) (c := bootCoreId) rfl
      true)
 
+/-- §3.7  Cross-subsystem per-core aggregate: default-state applies on every
+core, SMP form, projections, and bridge from `crossSubsystemInvariant`. -/
+private def runCrossSubsystemAggregateChecks : IO Unit := do
+  IO.println "--- §3.7 cross-subsystem per-core aggregate (plan §5.6) ---"
+  assertBool "default_schedulerInvariant_perCore_crossSubsystem applies on every core"
+    (allCores.all (fun c =>
+      have _h : schedulerInvariant_perCore_crossSubsystem (default : SystemState) c :=
+        default_schedulerInvariant_perCore_crossSubsystem c
+      true))
+  assertBool "default_schedulerInvariant_smp_crossSubsystem applies"
+    (have _h : schedulerInvariant_smp_crossSubsystem (default : SystemState) :=
+      default_schedulerInvariant_smp_crossSubsystem
+     true)
+  assertBool "schedulerInvariant_smp_crossSubsystem_at extracts every core"
+    (allCores.all (fun c =>
+      have _h : schedulerInvariant_perCore_crossSubsystem (default : SystemState) c :=
+        schedulerInvariant_smp_crossSubsystem_at _ c default_schedulerInvariant_smp_crossSubsystem
+      true))
+  -- Project each of the 4 cross-subsystem-aggregate conjuncts.
+  assertBool "perCore_crossSubsystem_to_extended projects on default"
+    (allCores.all (fun c =>
+      have _h : schedulerInvariant_perCore_extended (default : SystemState) c :=
+        schedulerInvariant_perCore_crossSubsystem_to_extended
+          (default_schedulerInvariant_perCore_crossSubsystem c)
+      true))
+  assertBool "perCore_crossSubsystem_to_schedContextRunQueueConsistent projects"
+    (allCores.all (fun c =>
+      have _h : schedContextRunQueueConsistent_perCore (default : SystemState) c :=
+        schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent
+          (default_schedulerInvariant_perCore_crossSubsystem c)
+      true))
+  assertBool "perCore_crossSubsystem_to_priorityInheritance projects"
+    (allCores.all (fun c =>
+      have _h : priorityInheritance_perCore (default : SystemState) c :=
+        schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance
+          (default_schedulerInvariant_perCore_crossSubsystem c)
+      true))
+  assertBool "perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule projects"
+    (allCores.all (fun c =>
+      have _h : activeDomainOnCore_isInDomainSchedule (default : SystemState) c :=
+        schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule
+          (default_schedulerInvariant_perCore_crossSubsystem c)
+      true))
+
 def runSchedulerInvariantPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.C — Per-core scheduler invariant migration suite"
   IO.println "===================================="
@@ -500,6 +590,7 @@ def runSchedulerInvariantPerCoreChecks : IO Unit := do
   runBridgeReflexivityChecks
   runExtendedAggregateChecks
   runPerConjunctFrameChecks
+  runCrossSubsystemAggregateChecks
   IO.println "===================================="
   IO.println "All SM4.C per-core scheduler invariant migration checks PASS."
 

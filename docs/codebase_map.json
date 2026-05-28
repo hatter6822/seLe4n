@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/elegant-wozniak-FkOsZ",
-      "commit_sha": "0bd1b7e4536216b4dd6d3516d7110ea1ea044253",
-      "tree_sha": "7c3843c7ff4e92c0c2701fa6df9f75495947ecb9",
-      "committed_at_utc": "2026-05-28T04:33:36+00:00"
+      "commit_sha": "35143f76296eaa2d3202f4c330de4a66e54fd012",
+      "tree_sha": "33205fd7d6c438b8ba76c4e37223256f8565f077",
+      "committed_at_utc": "2026-05-28T04:50:56+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9b91ba69929842b36daf00e8c6120ae7be8e6711c2ef2ed69cb4658d5c623fd9"
+    "source_digest": "6fec73d7916acd31cdffb1980cd24327665dc3062c3aa41a63875637b9b1f717"
   },
   "summary": {
     "module_count": 246,
-    "declaration_count": 8726
+    "declaration_count": 8753
   },
   "readme_sync": {
-    "version": "0.31.15",
+    "version": "0.31.16",
     "lean_toolchain": "v4.28.0",
     "production_files": 201,
-    "production_loc": 141721,
+    "production_loc": 141952,
     "test_files": 45,
-    "test_loc": 30639,
-    "proved_theorem_lemma_decls": 4332,
+    "test_loc": 30730,
+    "proved_theorem_lemma_decls": 4349,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -57681,18 +57681,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCore",
       "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean",
-      "declaration_count": 100,
+      "declaration_count": 122,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 85,
+          "line": 90,
           "called": []
         },
         {
           "kind": "def",
           "name": "queueCurrentConsistentOnCore",
-          "line": 97,
+          "line": 102,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -57705,7 +57705,7 @@
         {
           "kind": "def",
           "name": "runQueueUniqueOnCore",
-          "line": 104,
+          "line": 109,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -57715,7 +57715,7 @@
         {
           "kind": "def",
           "name": "runQueueOnCoreWellFormed",
-          "line": 113,
+          "line": 118,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -57726,7 +57726,7 @@
         {
           "kind": "def",
           "name": "currentThreadValidOnCore",
-          "line": 120,
+          "line": 125,
           "called": [
             "CoreId",
             "SystemState",
@@ -57739,7 +57739,7 @@
         {
           "kind": "def",
           "name": "currentThreadInActiveDomainOnCore",
-          "line": 128,
+          "line": 133,
           "called": [
             "CoreId",
             "SystemState",
@@ -57752,7 +57752,7 @@
         {
           "kind": "def",
           "name": "timeSlicePositiveOnCore",
-          "line": 138,
+          "line": 143,
           "called": [
             "CoreId",
             "SystemState",
@@ -57765,7 +57765,7 @@
         {
           "kind": "def",
           "name": "currentTimeSlicePositiveOnCore",
-          "line": 146,
+          "line": 151,
           "called": [
             "CoreId",
             "SystemState",
@@ -57777,7 +57777,7 @@
         {
           "kind": "def",
           "name": "edfCurrentHasEarliestDeadlineOnCore",
-          "line": 157,
+          "line": 162,
           "called": [
             "CoreId",
             "SystemState",
@@ -57793,7 +57793,7 @@
         {
           "kind": "def",
           "name": "contextMatchesCurrentOnCore",
-          "line": 179,
+          "line": 184,
           "called": [
             "CoreId",
             "SystemState",
@@ -57805,7 +57805,7 @@
         {
           "kind": "def",
           "name": "runnableThreadsAreTCBsOnCore",
-          "line": 189,
+          "line": 194,
           "called": [
             "CoreId",
             "SystemState",
@@ -57818,7 +57818,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatchOnCore",
-          "line": 196,
+          "line": 201,
           "called": [
             "CoreId",
             "SystemState",
@@ -57831,7 +57831,7 @@
         {
           "kind": "def",
           "name": "domainTimeRemainingPositiveOnCore",
-          "line": 205,
+          "line": 210,
           "called": [
             "CoreId",
             "SystemState",
@@ -57841,7 +57841,7 @@
         {
           "kind": "def",
           "name": "currentBudgetPositiveOnCore",
-          "line": 212,
+          "line": 217,
           "called": [
             "CoreId",
             "SystemState",
@@ -57855,7 +57855,7 @@
         {
           "kind": "def",
           "name": "budgetPositiveOnCore",
-          "line": 229,
+          "line": 234,
           "called": [
             "CoreId",
             "SystemState",
@@ -57870,7 +57870,7 @@
         {
           "kind": "def",
           "name": "replenishmentPipelineOrderOnCore",
-          "line": 244,
+          "line": 249,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -57881,7 +57881,7 @@
         {
           "kind": "def",
           "name": "replenishQueueValidOnCore",
-          "line": 250,
+          "line": 255,
           "called": [
             "CoreId",
             "SystemState",
@@ -57893,7 +57893,7 @@
         {
           "kind": "def",
           "name": "effectiveParamsMatchRunQueueOnCore",
-          "line": 257,
+          "line": 262,
           "called": [
             "CoreId",
             "SystemState",
@@ -57907,7 +57907,7 @@
         {
           "kind": "theorem",
           "name": "getTcb",
-          "line": 277,
+          "line": 282,
           "called": [
             "SystemState",
             "ThreadId"
@@ -57916,7 +57916,7 @@
         {
           "kind": "theorem",
           "name": "queueCurrentConsistentOnCore_bootCore_iff",
-          "line": 297,
+          "line": 302,
           "called": [
             "SchedulerState",
             "bootCoreId",
@@ -57927,7 +57927,7 @@
         {
           "kind": "theorem",
           "name": "runQueueUniqueOnCore_bootCore_iff",
-          "line": 300,
+          "line": 305,
           "called": [
             "SchedulerState",
             "bootCoreId",
@@ -57938,7 +57938,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadValidOnCore_bootCore_iff",
-          "line": 303,
+          "line": 308,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -57952,7 +57952,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadInActiveDomainOnCore_bootCore_iff",
-          "line": 314,
+          "line": 319,
           "called": [
             "KernelObject",
             "SystemState",
@@ -57968,7 +57968,7 @@
         {
           "kind": "theorem",
           "name": "timeSlicePositiveOnCore_bootCore_iff",
-          "line": 326,
+          "line": 331,
           "called": [
             "KernelObject",
             "SystemState",
@@ -57983,7 +57983,7 @@
         {
           "kind": "theorem",
           "name": "currentTimeSlicePositiveOnCore_bootCore_iff",
-          "line": 338,
+          "line": 343,
           "called": [
             "KernelObject",
             "SystemState",
@@ -57999,7 +57999,7 @@
         {
           "kind": "theorem",
           "name": "edfCurrentHasEarliestDeadlineOnCore_bootCore_iff",
-          "line": 350,
+          "line": 355,
           "called": [
             "KernelObject",
             "SystemState",
@@ -58015,7 +58015,7 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrentOnCore_bootCore_iff",
-          "line": 373,
+          "line": 378,
           "called": [
             "KernelObject",
             "SystemState",
@@ -58031,7 +58031,7 @@
         {
           "kind": "theorem",
           "name": "runnableThreadsAreTCBsOnCore_bootCore_iff",
-          "line": 385,
+          "line": 390,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58043,7 +58043,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatchOnCore_bootCore_iff",
-          "line": 396,
+          "line": 401,
           "called": [
             "KernelObject",
             "SystemState",
@@ -58058,7 +58058,7 @@
         {
           "kind": "theorem",
           "name": "domainTimeRemainingPositiveOnCore_bootCore_iff",
-          "line": 408,
+          "line": 413,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58069,7 +58069,7 @@
         {
           "kind": "theorem",
           "name": "currentBudgetPositiveOnCore_bootCore_iff",
-          "line": 415,
+          "line": 420,
           "called": [
             "KernelObject",
             "SystemState",
@@ -58087,7 +58087,7 @@
         {
           "kind": "theorem",
           "name": "budgetPositiveOnCore_bootCore_iff",
-          "line": 445,
+          "line": 450,
           "called": [
             "KernelObject",
             "SystemState",
@@ -58104,7 +58104,7 @@
         {
           "kind": "theorem",
           "name": "replenishmentPipelineOrderOnCore_bootCore_iff",
-          "line": 472,
+          "line": 477,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58115,7 +58115,7 @@
         {
           "kind": "theorem",
           "name": "replenishQueueValidOnCore_bootCore_iff",
-          "line": 475,
+          "line": 480,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58126,7 +58126,7 @@
         {
           "kind": "theorem",
           "name": "effectiveParamsMatchRunQueueOnCore_bootCore_iff",
-          "line": 481,
+          "line": 486,
           "called": [
             "KernelObject",
             "SystemState",
@@ -58143,7 +58143,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariant_perCore",
-          "line": 527,
+          "line": 532,
           "called": [
             "CoreId",
             "SystemState",
@@ -58162,7 +58162,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariant_smp",
-          "line": 544,
+          "line": 549,
           "called": [
             "CoreId",
             "SystemState",
@@ -58172,7 +58172,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_aggregateForall",
-          "line": 551,
+          "line": 556,
           "called": [
             "CoreId",
             "SystemState",
@@ -58183,7 +58183,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_smp_at",
-          "line": 555,
+          "line": 560,
           "called": [
             "CoreId",
             "SystemState",
@@ -58194,7 +58194,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_queueCurrentConsistent",
-          "line": 561,
+          "line": 566,
           "called": [
             "CoreId",
             "SystemState",
@@ -58205,7 +58205,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_runQueueUnique",
-          "line": 564,
+          "line": 569,
           "called": [
             "CoreId",
             "SystemState",
@@ -58216,7 +58216,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_currentThreadValid",
-          "line": 567,
+          "line": 572,
           "called": [
             "CoreId",
             "SystemState",
@@ -58227,7 +58227,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_timeSlicePositive",
-          "line": 570,
+          "line": 575,
           "called": [
             "CoreId",
             "SystemState",
@@ -58238,7 +58238,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_currentTimeSlicePositive",
-          "line": 573,
+          "line": 578,
           "called": [
             "CoreId",
             "SystemState",
@@ -58249,7 +58249,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_edfCurrentHasEarliestDeadline",
-          "line": 576,
+          "line": 581,
           "called": [
             "CoreId",
             "SystemState",
@@ -58260,7 +58260,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_contextMatchesCurrent",
-          "line": 580,
+          "line": 585,
           "called": [
             "CoreId",
             "SystemState",
@@ -58271,7 +58271,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_runnableThreadsAreTCBs",
-          "line": 583,
+          "line": 588,
           "called": [
             "CoreId",
             "SystemState",
@@ -58282,7 +58282,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_schedulerPriorityMatch",
-          "line": 587,
+          "line": 592,
           "called": [
             "CoreId",
             "SystemState",
@@ -58293,7 +58293,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_to_domainTimeRemainingPositive",
-          "line": 591,
+          "line": 596,
           "called": [
             "CoreId",
             "SystemState",
@@ -58304,7 +58304,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariant_perCore_extended",
-          "line": 615,
+          "line": 620,
           "called": [
             "CoreId",
             "SystemState",
@@ -58318,7 +58318,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariant_smp_extended",
-          "line": 623,
+          "line": 628,
           "called": [
             "CoreId",
             "SystemState",
@@ -58328,17 +58328,6 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_aggregateForall",
-          "line": 628,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "schedulerInvariant_perCore_extended",
-            "schedulerInvariant_smp_extended"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "schedulerInvariant_smp_extended_at",
           "line": 633,
           "called": [
             "CoreId",
@@ -58349,8 +58338,19 @@
         },
         {
           "kind": "theorem",
+          "name": "schedulerInvariant_smp_extended_at",
+          "line": 638,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariant_perCore_extended",
+            "schedulerInvariant_smp_extended"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_to_base",
-          "line": 637,
+          "line": 642,
           "called": [
             "CoreId",
             "SystemState",
@@ -58361,7 +58361,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_to_currentBudgetPositive",
-          "line": 640,
+          "line": 645,
           "called": [
             "CoreId",
             "SystemState",
@@ -58372,7 +58372,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_to_budgetPositive",
-          "line": 644,
+          "line": 649,
           "called": [
             "CoreId",
             "SystemState",
@@ -58383,7 +58383,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_to_replenishQueueValid",
-          "line": 648,
+          "line": 653,
           "called": [
             "CoreId",
             "SystemState",
@@ -58394,7 +58394,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_to_effectiveParamsMatchRunQueue",
-          "line": 652,
+          "line": 657,
           "called": [
             "CoreId",
             "SystemState",
@@ -58405,7 +58405,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_perCore_bootCore",
-          "line": 672,
+          "line": 677,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58423,7 +58423,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_bootCore_to_bundleFull",
-          "line": 688,
+          "line": 693,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58442,7 +58442,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_perCore_bootCore",
-          "line": 705,
+          "line": 710,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58454,7 +58454,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_perCore_extended_bootCore",
-          "line": 717,
+          "line": 722,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58474,7 +58474,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_bootCore_to_bundleExtended",
-          "line": 736,
+          "line": 741,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58494,7 +58494,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariant_perCore",
-          "line": 763,
+          "line": 768,
           "called": [
             "CoreId",
             "SystemState",
@@ -58522,7 +58522,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariant_smp",
-          "line": 792,
+          "line": 797,
           "called": [
             "SystemState",
             "default",
@@ -58533,7 +58533,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariant_perCore_extended",
-          "line": 803,
+          "line": 808,
           "called": [
             "CoreId",
             "SystemState",
@@ -58558,7 +58558,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariant_smp_extended",
-          "line": 829,
+          "line": 834,
           "called": [
             "SystemState",
             "default",
@@ -58569,7 +58569,7 @@
         {
           "kind": "theorem",
           "name": "getSchedContext",
-          "line": 847,
+          "line": 852,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -58579,7 +58579,7 @@
         {
           "kind": "theorem",
           "name": "queueCurrentConsistentOnCore_frame",
-          "line": 853,
+          "line": 858,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -58591,7 +58591,7 @@
         {
           "kind": "theorem",
           "name": "runQueueUniqueOnCore_frame",
-          "line": 859,
+          "line": 864,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -58602,7 +58602,7 @@
         {
           "kind": "theorem",
           "name": "runQueueOnCoreWellFormed_frame",
-          "line": 864,
+          "line": 869,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -58613,7 +58613,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadValidOnCore_frame",
-          "line": 869,
+          "line": 874,
           "called": [
             "CoreId",
             "SystemState",
@@ -58625,7 +58625,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadInActiveDomainOnCore_frame",
-          "line": 876,
+          "line": 881,
           "called": [
             "CoreId",
             "SystemState",
@@ -58638,7 +58638,7 @@
         {
           "kind": "theorem",
           "name": "timeSlicePositiveOnCore_frame",
-          "line": 884,
+          "line": 889,
           "called": [
             "CoreId",
             "SystemState",
@@ -58650,7 +58650,7 @@
         {
           "kind": "theorem",
           "name": "currentTimeSlicePositiveOnCore_frame",
-          "line": 891,
+          "line": 896,
           "called": [
             "CoreId",
             "SystemState",
@@ -58662,7 +58662,7 @@
         {
           "kind": "theorem",
           "name": "edfCurrentHasEarliestDeadlineOnCore_frame",
-          "line": 898,
+          "line": 903,
           "called": [
             "CoreId",
             "SystemState",
@@ -58675,7 +58675,7 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrentOnCore_frame",
-          "line": 906,
+          "line": 911,
           "called": [
             "CoreId",
             "SystemState",
@@ -58687,7 +58687,7 @@
         {
           "kind": "theorem",
           "name": "runnableThreadsAreTCBsOnCore_frame",
-          "line": 914,
+          "line": 919,
           "called": [
             "CoreId",
             "SystemState",
@@ -58699,7 +58699,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatchOnCore_frame",
-          "line": 921,
+          "line": 926,
           "called": [
             "CoreId",
             "SystemState",
@@ -58711,7 +58711,7 @@
         {
           "kind": "theorem",
           "name": "domainTimeRemainingPositiveOnCore_frame",
-          "line": 928,
+          "line": 933,
           "called": [
             "CoreId",
             "SystemState",
@@ -58722,7 +58722,7 @@
         {
           "kind": "theorem",
           "name": "currentBudgetPositiveOnCore_frame",
-          "line": 933,
+          "line": 938,
           "called": [
             "CoreId",
             "SystemState",
@@ -58736,7 +58736,7 @@
         {
           "kind": "theorem",
           "name": "budgetPositiveOnCore_frame",
-          "line": 942,
+          "line": 947,
           "called": [
             "CoreId",
             "SystemState",
@@ -58750,7 +58750,7 @@
         {
           "kind": "theorem",
           "name": "replenishmentPipelineOrderOnCore_frame",
-          "line": 951,
+          "line": 956,
           "called": [
             "CoreId",
             "SystemState",
@@ -58761,7 +58761,7 @@
         {
           "kind": "theorem",
           "name": "replenishQueueValidOnCore_frame",
-          "line": 957,
+          "line": 962,
           "called": [
             "CoreId",
             "SystemState",
@@ -58772,7 +58772,7 @@
         {
           "kind": "theorem",
           "name": "effectiveParamsMatchRunQueueOnCore_frame",
-          "line": 962,
+          "line": 967,
           "called": [
             "CoreId",
             "SystemState",
@@ -58786,7 +58786,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_frame",
-          "line": 986,
+          "line": 991,
           "called": [
             "CoreId",
             "SystemState",
@@ -58810,7 +58810,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setCurrentOnCore",
-          "line": 1008,
+          "line": 1013,
           "called": [
             "CoreId",
             "SystemState",
@@ -58823,7 +58823,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setRunQueueOnCore",
-          "line": 1016,
+          "line": 1021,
           "called": [
             "CoreId",
             "RunQueue",
@@ -58836,7 +58836,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setDomainTimeRemainingOnCore",
-          "line": 1024,
+          "line": 1029,
           "called": [
             "CoreId",
             "SystemState",
@@ -58848,7 +58848,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setReplenishQueueOnCore",
-          "line": 1036,
+          "line": 1041,
           "called": [
             "CoreId",
             "ReplenishQueue",
@@ -58861,7 +58861,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setActiveDomainOnCore",
-          "line": 1048,
+          "line": 1053,
           "called": [
             "CoreId",
             "DomainId",
@@ -58874,7 +58874,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setDomainScheduleIndexOnCore",
-          "line": 1058,
+          "line": 1063,
           "called": [
             "CoreId",
             "SystemState",
@@ -58886,7 +58886,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_independent_of_setLastTimeoutErrorsOnCore",
-          "line": 1069,
+          "line": 1074,
           "called": [
             "CoreId",
             "KernelError",
@@ -58900,7 +58900,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_pairwise",
-          "line": 1087,
+          "line": 1092,
           "called": [
             "CoreId",
             "RunQueue",
@@ -58916,7 +58916,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_frame_idle",
-          "line": 1112,
+          "line": 1117,
           "called": [
             "CoreId",
             "SystemState",
@@ -58941,7 +58941,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_smp_of_bootCore_and_idle_frame",
-          "line": 1142,
+          "line": 1147,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -58957,7 +58957,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_frame",
-          "line": 1166,
+          "line": 1171,
           "called": [
             "CoreId",
             "SystemState",
@@ -58976,7 +58976,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_frame_idle",
-          "line": 1186,
+          "line": 1191,
           "called": [
             "CoreId",
             "SystemState",
@@ -58996,7 +58996,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_perCore_extended_pairwise",
-          "line": 1206,
+          "line": 1211,
           "called": [
             "CoreId",
             "ReplenishQueue",
@@ -59014,9 +59014,8 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariant_smp_extended_of_bootCore_and_idle_frame",
-          "line": 1222,
+          "line": 1227,
           "called": [
-            "Kernel",
             "SystemState",
             "bootCoreId",
             "currentOnCore",
@@ -59027,6 +59026,274 @@
             "schedulerInvariant_perCore_extended",
             "schedulerInvariant_perCore_extended_frame_idle",
             "schedulerInvariant_smp_extended"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedContextRunQueueConsistent_perCore",
+          "line": 1266,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getSchedContext",
+            "getTcb",
+            "runQueueOnCore",
+            "scId",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "priorityInheritance_perCore",
+          "line": 1285,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockingAcyclic"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "activeDomainOnCore_isInDomainSchedule",
+          "line": 1296,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextRunQueueConsistent_perCore_bootCore_iff",
+          "line": 1310,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "getSchedContext",
+            "getTcb",
+            "schedContextRunQueueConsistent",
+            "schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "priorityInheritance_perCore_iff",
+          "line": 1320,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockingAcyclic",
+            "priorityInheritance_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedContextRunQueueConsistent_perCore",
+          "line": 1329,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_state_perCoreInitialized",
+            "empty",
+            "runQueueOnCore",
+            "schedContextRunQueueConsistent_perCore",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_priorityInheritance_perCore",
+          "line": 1341,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_to_blockingAcyclic",
+            "default",
+            "default_crossSubsystemInvariant",
+            "priorityInheritance_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_activeDomainOnCore_isInDomainSchedule",
+          "line": 1348,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore_isInDomainSchedule",
+            "default"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextRunQueueConsistent_perCore_frame",
+          "line": 1361,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "getSchedContext",
+            "getTcb",
+            "runQueueOnCore",
+            "scId",
+            "schedContextRunQueueConsistent_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "priorityInheritance_perCore_frame",
+          "line": 1381,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "priorityInheritance_perCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "activeDomainOnCore_isInDomainSchedule_frame",
+          "line": 1388,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore",
+            "activeDomainOnCore_isInDomainSchedule"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedulerInvariant_perCore_crossSubsystem",
+          "line": 1404,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore_isInDomainSchedule",
+            "priorityInheritance_perCore",
+            "schedContextRunQueueConsistent_perCore",
+            "schedulerInvariant_perCore_extended"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedulerInvariant_smp_crossSubsystem",
+          "line": 1411,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_perCore_crossSubsystem_aggregateForall",
+          "line": 1415,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_smp_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_smp_crossSubsystem_at",
+          "line": 1419,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_smp_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_perCore_crossSubsystem_to_extended",
+          "line": 1425,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_perCore_extended"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent",
+          "line": 1429,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedContextRunQueueConsistent_perCore",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance",
+          "line": 1433,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "priorityInheritance_perCore",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule",
+          "line": 1437,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore_isInDomainSchedule",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore",
+          "line": 1446,
+          "called": [
+            "SystemState",
+            "activeDomainOnCore_isInDomainSchedule",
+            "bootCoreId",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_to_blockingAcyclic",
+            "crossSubsystemInvariant_to_schedContextRunQueueConsistent",
+            "priorityInheritance_perCore_iff",
+            "schedContextRunQueueConsistent_perCore_bootCore_iff",
+            "schedulerInvariantBundleExtended",
+            "schedulerInvariantBundleExtended_to_perCore_extended_bootCore",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedulerInvariant_perCore_crossSubsystem",
+          "line": 1459,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_activeDomainOnCore_isInDomainSchedule",
+            "default_priorityInheritance_perCore",
+            "default_schedContextRunQueueConsistent_perCore",
+            "default_schedulerInvariant_perCore_extended",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedulerInvariant_smp_crossSubsystem",
+          "line": 1468,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "default",
+            "default_schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_smp_crossSubsystem"
           ]
         }
       ]
@@ -108232,19 +108499,22 @@
     {
       "module": "tests.SchedulerInvariantPerCoreSuite",
       "path": "tests/SchedulerInvariantPerCoreSuite.lean",
-      "declaration_count": 31,
+      "declaration_count": 36,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SchedulerInvariantPerCore",
           "line": 32,
           "called": [
+            "activeDomainOnCore_isInDomainSchedule",
+            "activeDomainOnCore_isInDomainSchedule_frame",
             "budgetPositiveOnCore",
             "budgetPositiveOnCore_bootCore_iff",
             "budgetPositiveOnCore_frame",
             "contextMatchesCurrentOnCore",
             "contextMatchesCurrentOnCore_bootCore_iff",
             "contextMatchesCurrentOnCore_frame",
+            "crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore",
             "currentBudgetPositiveOnCore",
             "currentBudgetPositiveOnCore_bootCore_iff",
             "currentBudgetPositiveOnCore_frame",
@@ -108257,9 +108527,14 @@
             "currentTimeSlicePositiveOnCore",
             "currentTimeSlicePositiveOnCore_bootCore_iff",
             "currentTimeSlicePositiveOnCore_frame",
+            "default_activeDomainOnCore_isInDomainSchedule",
+            "default_priorityInheritance_perCore",
+            "default_schedContextRunQueueConsistent_perCore",
             "default_schedulerInvariant_perCore",
+            "default_schedulerInvariant_perCore_crossSubsystem",
             "default_schedulerInvariant_perCore_extended",
             "default_schedulerInvariant_smp",
+            "default_schedulerInvariant_smp_crossSubsystem",
             "default_schedulerInvariant_smp_extended",
             "domainTimeRemainingPositiveOnCore",
             "domainTimeRemainingPositiveOnCore_bootCore_iff",
@@ -108270,6 +108545,9 @@
             "effectiveParamsMatchRunQueueOnCore",
             "effectiveParamsMatchRunQueueOnCore_bootCore_iff",
             "effectiveParamsMatchRunQueueOnCore_frame",
+            "priorityInheritance_perCore",
+            "priorityInheritance_perCore_frame",
+            "priorityInheritance_perCore_iff",
             "queueCurrentConsistentOnCore",
             "queueCurrentConsistentOnCore_bootCore_iff",
             "queueCurrentConsistentOnCore_frame",
@@ -108287,12 +108565,21 @@
             "runnableThreadsAreTCBsOnCore",
             "runnableThreadsAreTCBsOnCore_bootCore_iff",
             "runnableThreadsAreTCBsOnCore_frame",
+            "schedContextRunQueueConsistent_perCore",
+            "schedContextRunQueueConsistent_perCore_bootCore_iff",
+            "schedContextRunQueueConsistent_perCore_frame",
             "schedulerInvariantBundleExtended_to_perCore_bootCore",
             "schedulerInvariantBundleExtended_to_perCore_extended_bootCore",
             "schedulerInvariantBundleFull_to_perCore_bootCore",
             "schedulerInvariant_perCore",
             "schedulerInvariant_perCore_aggregateForall",
             "schedulerInvariant_perCore_bootCore_to_bundleFull",
+            "schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_perCore_crossSubsystem_aggregateForall",
+            "schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule",
+            "schedulerInvariant_perCore_crossSubsystem_to_extended",
+            "schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance",
+            "schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent",
             "schedulerInvariant_perCore_extended",
             "schedulerInvariant_perCore_extended_aggregateForall",
             "schedulerInvariant_perCore_extended_bootCore_to_bundleExtended",
@@ -108326,6 +108613,8 @@
             "schedulerInvariant_perCore_to_timeSlicePositive",
             "schedulerInvariant_smp",
             "schedulerInvariant_smp_at",
+            "schedulerInvariant_smp_crossSubsystem",
+            "schedulerInvariant_smp_crossSubsystem_at",
             "schedulerInvariant_smp_extended",
             "schedulerInvariant_smp_extended_at",
             "schedulerInvariant_smp_extended_of_bootCore_and_idle_frame",
@@ -108340,8 +108629,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:170>",
-          "line": 170,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108352,8 +108641,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:173>",
-          "line": 173,
+          "name": "<anonymous:example:199>",
+          "line": 199,
           "called": [
             "CoreId",
             "SystemState",
@@ -108364,8 +108653,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:176>",
-          "line": 176,
+          "name": "<anonymous:example:202>",
+          "line": 202,
           "called": [
             "SystemState",
             "default",
@@ -108375,8 +108664,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:180>",
-          "line": 180,
+          "name": "<anonymous:example:206>",
+          "line": 206,
           "called": [
             "CoreId",
             "SystemState",
@@ -108388,8 +108677,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:189>",
-          "line": 189,
+          "name": "<anonymous:example:215>",
+          "line": 215,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108400,8 +108689,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
+          "name": "<anonymous:example:219>",
+          "line": 219,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108412,8 +108701,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:199>",
-          "line": 199,
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108425,8 +108714,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:207>",
-          "line": 207,
+          "name": "<anonymous:example:233>",
+          "line": 233,
           "called": [
             "SchedulerState",
             "bootCoreId",
@@ -108437,8 +108726,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:211>",
-          "line": 211,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108449,8 +108738,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:218>",
-          "line": 218,
+          "name": "<anonymous:example:244>",
+          "line": 244,
           "called": [
             "SystemState",
             "ThreadId",
@@ -108462,8 +108751,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:228>",
-          "line": 228,
+          "name": "<anonymous:example:254>",
+          "line": 254,
           "called": [
             "RunQueue",
             "SystemState",
@@ -108478,8 +108767,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:239>",
-          "line": 239,
+          "name": "<anonymous:example:265>",
+          "line": 265,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108491,8 +108780,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108503,8 +108792,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:247>",
-          "line": 247,
+          "name": "<anonymous:example:273>",
+          "line": 273,
           "called": [
             "CoreId",
             "SystemState",
@@ -108515,8 +108804,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:250>",
-          "line": 250,
+          "name": "<anonymous:example:276>",
+          "line": 276,
           "called": [
             "SystemState",
             "default",
@@ -108526,8 +108815,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:253>",
-          "line": 253,
+          "name": "<anonymous:example:279>",
+          "line": 279,
           "called": [
             "CoreId",
             "SystemState",
@@ -108539,8 +108828,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:259>",
-          "line": 259,
+          "name": "<anonymous:example:285>",
+          "line": 285,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108551,8 +108840,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:263>",
-          "line": 263,
+          "name": "<anonymous:example:289>",
+          "line": 289,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -108567,8 +108856,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:273>",
-          "line": 273,
+          "name": "<anonymous:example:299>",
+          "line": 299,
           "called": [
             "ReplenishQueue",
             "RunQueue",
@@ -108585,8 +108874,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:286>",
-          "line": 286,
+          "name": "<anonymous:example:312>",
+          "line": 312,
           "called": [
             "CoreId",
             "SchedulerState",
@@ -108598,8 +108887,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:292>",
-          "line": 292,
+          "name": "<anonymous:example:318>",
+          "line": 318,
           "called": [
             "CoreId",
             "SystemState",
@@ -108609,9 +108898,58 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:326>",
+          "line": 326,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "default",
+            "default_schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:329>",
+          "line": 329,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:333>",
+          "line": 333,
+          "called": [
+            "SystemState",
+            "default",
+            "default_schedulerInvariant_smp_crossSubsystem",
+            "schedulerInvariant_smp_crossSubsystem"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:338>",
+          "line": 338,
+          "called": [
+            "SystemState",
+            "activeDomainOnCore_isInDomainSchedule",
+            "bootCoreId",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_to_perCore_crossSubsystem_bootCore",
+            "schedulerInvariantBundleExtended",
+            "schedulerInvariant_perCore_crossSubsystem"
+          ]
+        },
+        {
           "kind": "def",
           "name": "assertBool",
-          "line": 303,
+          "line": 349,
           "called": [
             "throw"
           ]
@@ -108619,7 +108957,7 @@
         {
           "kind": "def",
           "name": "runDefaultFoundationChecks",
-          "line": 313,
+          "line": 359,
           "called": [
             "SystemState",
             "activeDomainOnCore",
@@ -108637,7 +108975,7 @@
         {
           "kind": "def",
           "name": "runTheoremApplicationChecks",
-          "line": 335,
+          "line": 381,
           "called": [
             "SystemState",
             "all",
@@ -108653,7 +108991,7 @@
         {
           "kind": "def",
           "name": "runIndependenceChecks",
-          "line": 360,
+          "line": 406,
           "called": [
             "CoreId",
             "SystemState",
@@ -108676,7 +109014,7 @@
         {
           "kind": "def",
           "name": "runBridgeReflexivityChecks",
-          "line": 408,
+          "line": 454,
           "called": [
             "SystemState",
             "assertBool",
@@ -108690,7 +109028,7 @@
         {
           "kind": "def",
           "name": "runExtendedAggregateChecks",
-          "line": 425,
+          "line": 471,
           "called": [
             "CoreId",
             "SystemState",
@@ -108715,7 +109053,7 @@
         {
           "kind": "def",
           "name": "runPerConjunctFrameChecks",
-          "line": 461,
+          "line": 507,
           "called": [
             "SystemState",
             "assertBool",
@@ -108732,10 +109070,35 @@
         },
         {
           "kind": "def",
+          "name": "runCrossSubsystemAggregateChecks",
+          "line": 542,
+          "called": [
+            "SystemState",
+            "activeDomainOnCore_isInDomainSchedule",
+            "all",
+            "assertBool",
+            "default",
+            "default_schedulerInvariant_perCore_crossSubsystem",
+            "default_schedulerInvariant_smp_crossSubsystem",
+            "priorityInheritance_perCore",
+            "schedContextRunQueueConsistent_perCore",
+            "schedulerInvariant_perCore_crossSubsystem",
+            "schedulerInvariant_perCore_crossSubsystem_to_activeDomainOnCore_isInDomainSchedule",
+            "schedulerInvariant_perCore_crossSubsystem_to_extended",
+            "schedulerInvariant_perCore_crossSubsystem_to_priorityInheritance",
+            "schedulerInvariant_perCore_crossSubsystem_to_schedContextRunQueueConsistent",
+            "schedulerInvariant_perCore_extended",
+            "schedulerInvariant_smp_crossSubsystem",
+            "schedulerInvariant_smp_crossSubsystem_at"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSchedulerInvariantPerCoreChecks",
-          "line": 494,
+          "line": 584,
           "called": [
             "runBridgeReflexivityChecks",
+            "runCrossSubsystemAggregateChecks",
             "runDefaultFoundationChecks",
             "runExtendedAggregateChecks",
             "runIndependenceChecks",
@@ -108746,7 +109109,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 508,
+          "line": 599,
           "called": [
             "runSchedulerInvariantPerCoreChecks"
           ]
