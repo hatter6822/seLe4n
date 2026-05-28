@@ -72,6 +72,34 @@ open SeLe4n.Kernel.Concurrency
 #check @scheduleDomain_preserves_domainTimeRemainingPositiveOnCore_smp
 #check @scheduleDomain_preserves_runnableThreadsAreTCBsOnCore_smp
 
+-- §8 — the 5 less-used conjuncts × 5 ops = 25 additional named theorems
+-- (full plan §3.4 Pattern 1 coverage: every per-core conjunct × every op).
+#check @schedule_preserves_timeSlicePositiveOnCore_smp
+#check @schedule_preserves_currentTimeSlicePositiveOnCore_smp
+#check @schedule_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
+#check @schedule_preserves_contextMatchesCurrentOnCore_smp
+#check @schedule_preserves_schedulerPriorityMatchOnCore_smp
+#check @handleYield_preserves_timeSlicePositiveOnCore_smp
+#check @handleYield_preserves_currentTimeSlicePositiveOnCore_smp
+#check @handleYield_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
+#check @handleYield_preserves_contextMatchesCurrentOnCore_smp
+#check @handleYield_preserves_schedulerPriorityMatchOnCore_smp
+#check @timerTick_preserves_timeSlicePositiveOnCore_smp
+#check @timerTick_preserves_currentTimeSlicePositiveOnCore_smp
+#check @timerTick_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
+#check @timerTick_preserves_contextMatchesCurrentOnCore_smp
+#check @timerTick_preserves_schedulerPriorityMatchOnCore_smp
+#check @switchDomain_preserves_timeSlicePositiveOnCore_smp
+#check @switchDomain_preserves_currentTimeSlicePositiveOnCore_smp
+#check @switchDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
+#check @switchDomain_preserves_contextMatchesCurrentOnCore_smp
+#check @switchDomain_preserves_schedulerPriorityMatchOnCore_smp
+#check @scheduleDomain_preserves_timeSlicePositiveOnCore_smp
+#check @scheduleDomain_preserves_currentTimeSlicePositiveOnCore_smp
+#check @scheduleDomain_preserves_edfCurrentHasEarliestDeadlineOnCore_smp
+#check @scheduleDomain_preserves_contextMatchesCurrentOnCore_smp
+#check @scheduleDomain_preserves_schedulerPriorityMatchOnCore_smp
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each preservation theorem applies to a
 --     concrete (variable) input shape, confirming the typed signature is

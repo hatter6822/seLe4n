@@ -1,3 +1,58 @@
+## v0.31.20 — WS-SM SM4.C audit-pass-6: complete plan §3.4 Pattern 1 coverage (50 per-conjunct per-op theorems)
+
+Adds the remaining 25 per-conjunct per-op SMP preservation theorems (§8
+of `PerCorePreservation.lean`) — the 5 less-used conjuncts
+(`timeSlicePositive`, `currentTimeSlicePositive`,
+`edfCurrentHasEarliestDeadline`, `contextMatchesCurrent`,
+`schedulerPriorityMatch`) × 5 ops (`schedule` / `handleYield` /
+`timerTick` / `switchDomain` / `scheduleDomain`).
+
+Combined with the 25 theorems from §7 (v0.31.18), this gives
+**complete plan §3.4 Pattern 1 coverage**: every per-core conjunct in
+`schedulerInvariant_perCore` (all 10) has a named per-op SMP
+preservation theorem for each of the 5 boot-core scheduler operations.
+Total: **10 conjuncts × 5 ops = 50 named per-conjunct per-op theorems**
+across §7 + §8.
+
+Each is the same one-line projection pattern from the aggregate per-op
+preservation:
+
+```
+theorem <op>_preserves_<conjunct>OnCore_smp ... := fun c =>
+  schedulerInvariant_perCore_to_<conjunct>
+    ((<op>_preserves_schedulerInvariant_smp ...) c)
+```
+
+**Test coverage**: 25 new surface anchors in
+`tests/SchedulerInvariantPerCorePreservationSuite.lean` for the §8
+theorems.
+
+**Module status**: `PerCorePreservation.lean` ~1170 LoC (was ~700 at
+v0.31.18; +470 LoC for the §8 additions).  Tier 0+1+2+3 green;
+partition gate green (35 staged-only modules); axiom-clean (only
+`propext` / `Quot.sound` / `Classical.choice`); trace fixture
+byte-identical.
+
+**Updated cumulative SM4.C state at v0.31.20**:
+  * 16 per-core predicate forms; 16 boot-core bridges.
+  * 3 aggregates (base / extended / cross-subsystem) + SMP forms.
+  * 20 per-conjunct frame lemmas; 7 setter independence corollaries;
+    2 cross-core pairwise theorems.
+  * 4 SMP-preservation skeletons; 2 sufficient-idle theorems.
+  * 3 cross-subsystem per-core predicates per plan §5.6.
+  * **6 per-op aggregate preservation + 50 per-conjunct per-op
+    preservation = 56 per-op theorems** (was 31 at v0.31.18).
+  * Modules: `PerCore.lean` ~1660 LoC + `PerCorePreservation.lean`
+    ~1170 LoC = ~2830 LoC of new SM4.C infrastructure.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM4.D cross-subsystem theorem migrations; SM4.E witness
+retirement; per-extended-conjunct per-op preservation (4 SC-using
+conjuncts × 5 ops = 20 additional theorems, post-SM4.C); tighter
+`priorityInheritance_perCore_frame` once `blockingChain_objects_congr`
+lands.
+
 ## v0.31.19 — WS-SM SM4.C documentation closure across audit-passes 1–5
 
 Cross-document closure documenting the cumulative SM4.C state at
