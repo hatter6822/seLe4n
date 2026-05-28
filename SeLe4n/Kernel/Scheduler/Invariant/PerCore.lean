@@ -104,6 +104,15 @@ def queueCurrentConsistentOnCore (s : SchedulerState) (c : CoreId) : Prop :=
 def runQueueUniqueOnCore (s : SchedulerState) (c : CoreId) : Prop :=
   (s.runQueueOnCore c).toList.Nodup
 
+/-- SM4.C (plan §5.6): per-core run-queue well-formedness.  Asserts that
+core `c`'s `RunQueue` satisfies its internal `RunQueue.wellFormed` invariant
+(`byPriority` ↔ `membership` / `threadPriority` consistency).  This is the
+per-core analog of "the queue's priority index is in sync with its
+membership index" — the property the WS-G4 bucketed-RunQueue structure
+provides intrinsically and that SM5's per-core scheduler will preserve. -/
+def runQueueOnCoreWellFormed (s : SchedulerState) (c : CoreId) : Prop :=
+  (s.runQueueOnCore c).wellFormed
+
 /-- SM4.C: per-core current-thread validity.  Per-core form of
 `currentThreadValid`: core `c`'s current thread (if any) resolves to a
 TCB in the object store.  Uses the typed `getTcb?` accessor (AK7
@@ -584,6 +593,67 @@ theorem schedulerInvariant_perCore_to_domainTimeRemainingPositive {st : SystemSt
   h.2.2.2.2.2.2.2.2.2
 
 -- ============================================================================
+-- §3.5  Extended per-core invariant (mirroring `schedulerInvariantBundleExtended`)
+-- ============================================================================
+
+/-- WS-SM SM4.C: the **extended** per-core scheduler invariant at core `c`,
+mirroring `schedulerInvariantBundleExtended`'s per-core slice.
+
+Composes the base `schedulerInvariant_perCore` (the ten conjuncts of
+`schedulerInvariantBundleFull`'s per-core slice) with the four
+per-core conjuncts that Z4 / AE3-A added: `currentBudgetPositiveOnCore`,
+`budgetPositiveOnCore`, `replenishQueueValidOnCore`,
+`effectiveParamsMatchRunQueueOnCore`.  The remaining three Z4 conjuncts
+(`schedContextsWellFormed`, `schedContextBindingConsistent`,
+`boundThreadDomainConsistent`) are core-independent (they quantify
+universally over the object store) and need no per-core form; they
+participate in the `…_to_bundleExtended_bootCore` bridge as
+separate arguments.
+
+This is the aggregate SM5+ per-core scheduler will preserve once the
+full Z4 invariant surface is migrated. -/
+def schedulerInvariant_perCore_extended (st : SystemState) (c : CoreId) : Prop :=
+  schedulerInvariant_perCore st c ∧
+  currentBudgetPositiveOnCore st c ∧
+  budgetPositiveOnCore st c ∧
+  replenishQueueValidOnCore st c ∧
+  effectiveParamsMatchRunQueueOnCore st c
+
+/-- WS-SM SM4.C: the system-wide SMP extended scheduler invariant. -/
+def schedulerInvariant_smp_extended (st : SystemState) : Prop :=
+  ∀ c : CoreId, schedulerInvariant_perCore_extended st c
+
+/-- WS-SM SM4.C: the extended per-core slice collects to the extended SMP
+aggregate by definition. -/
+theorem schedulerInvariant_perCore_extended_aggregateForall (st : SystemState) :
+    (∀ c : CoreId, schedulerInvariant_perCore_extended st c) ↔
+    schedulerInvariant_smp_extended st := Iff.rfl
+
+/-- Project a single core's extended slice. -/
+theorem schedulerInvariant_smp_extended_at (st : SystemState) (c : CoreId)
+    (h : schedulerInvariant_smp_extended st) : schedulerInvariant_perCore_extended st c := h c
+
+/-- Project the base (10-conjunct) per-core slice out of the extended form. -/
+theorem schedulerInvariant_perCore_extended_to_base {st : SystemState} {c : CoreId}
+    (h : schedulerInvariant_perCore_extended st c) : schedulerInvariant_perCore st c := h.1
+
+theorem schedulerInvariant_perCore_extended_to_currentBudgetPositive
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_extended st c) :
+    currentBudgetPositiveOnCore st c := h.2.1
+
+theorem schedulerInvariant_perCore_extended_to_budgetPositive
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_extended st c) :
+    budgetPositiveOnCore st c := h.2.2.1
+
+theorem schedulerInvariant_perCore_extended_to_replenishQueueValid
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_extended st c) :
+    replenishQueueValidOnCore st c := h.2.2.2.1
+
+theorem schedulerInvariant_perCore_extended_to_effectiveParamsMatchRunQueue
+    {st : SystemState} {c : CoreId} (h : schedulerInvariant_perCore_extended st c) :
+    effectiveParamsMatchRunQueueOnCore st c := h.2.2.2.2
+
+-- ============================================================================
 -- §4  Bridges to the live cross-subsystem bundle surface
 -- ============================================================================
 --
@@ -629,10 +699,55 @@ theorem schedulerInvariant_perCore_bootCore_to_bundleFull {st : SystemState}
   · exact (schedulerPriorityMatchOnCore_bootCore_iff st).mp hSPM
 
 /-- WS-SM SM4.C: the extended single-core bundle (a superset of the full
-bundle) likewise implies the per-core invariant at the boot core. -/
+bundle) likewise implies the **base** per-core invariant at the boot
+core (projects through `.1` to the `Full` subset, which the previous
+bridge handles). -/
 theorem schedulerInvariantBundleExtended_to_perCore_bootCore {st : SystemState}
     (h : schedulerInvariantBundleExtended st) : schedulerInvariant_perCore st bootCoreId :=
   schedulerInvariantBundleFull_to_perCore_bootCore h.1
+
+/-- WS-SM SM4.C: the extended single-core bundle implies the **extended**
+per-core invariant at the boot core.  This is the tight bridge: each of
+`schedulerInvariantBundleExtended`'s seven extra Z4 conjuncts maps to its
+per-core form via the §2 boot-core bridges (for the four genuinely
+per-core conjuncts) or is dropped (for the three system-wide ones:
+`schedContextsWellFormed`, `schedContextBindingConsistent`,
+`boundThreadDomainConsistent`).  The dropped conjuncts are restored in
+the converse bridge below. -/
+theorem schedulerInvariantBundleExtended_to_perCore_extended_bootCore {st : SystemState}
+    (h : schedulerInvariantBundleExtended st) :
+    schedulerInvariant_perCore_extended st bootCoreId := by
+  refine ⟨schedulerInvariantBundleFull_to_perCore_bootCore h.1, ?_, ?_, ?_, ?_⟩
+  · exact (currentBudgetPositiveOnCore_bootCore_iff st).mpr
+      (schedulerInvariantBundleExtended_to_currentBudgetPositive h)
+  · exact (budgetPositiveOnCore_bootCore_iff st).mpr
+      (schedulerInvariantBundleExtended_to_budgetPositive h)
+  · exact (replenishQueueValidOnCore_bootCore_iff st).mpr
+      (schedulerInvariantBundleExtended_to_replenishQueueValid h)
+  · exact (effectiveParamsMatchRunQueueOnCore_bootCore_iff st).mpr
+      (schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue h)
+
+/-- WS-SM SM4.C: the converse — the extended per-core invariant at the boot
+core plus the three system-wide Z4 conjuncts (`schedContextsWellFormed`,
+`schedContextBindingConsistent`, `boundThreadDomainConsistent`) plus
+`domainScheduleEntriesPositive` rebuilds the full
+`schedulerInvariantBundleExtended`.  Confirms the extended per-core slice
+loses no boot-core content. -/
+theorem schedulerInvariant_perCore_extended_bootCore_to_bundleExtended
+    {st : SystemState}
+    (h : schedulerInvariant_perCore_extended st bootCoreId)
+    (hDSE : domainScheduleEntriesPositive st)
+    (hSCWF : schedContextsWellFormed st)
+    (hSCBC : schedContextBindingConsistent st)
+    (hBTDC : boundThreadDomainConsistent st) :
+    schedulerInvariantBundleExtended st := by
+  obtain ⟨hBase, hCBP, hBP, hRQV, hEPM⟩ := h
+  refine ⟨?_, ?_, ?_, hSCWF, ?_, hSCBC, ?_, hBTDC⟩
+  · exact schedulerInvariant_perCore_bootCore_to_bundleFull hBase hDSE
+  · exact (budgetPositiveOnCore_bootCore_iff st).mp hBP
+  · exact (currentBudgetPositiveOnCore_bootCore_iff st).mp hCBP
+  · exact (replenishQueueValidOnCore_bootCore_iff st).mp hRQV
+  · exact (effectiveParamsMatchRunQueueOnCore_bootCore_iff st).mp hEPM
 
 -- ============================================================================
 -- §5  Default-state: every core satisfies the per-core invariant at boot
@@ -677,6 +792,181 @@ scheduler invariant — the per-core invariant on every core. -/
 theorem default_schedulerInvariant_smp :
     schedulerInvariant_smp (default : SystemState) :=
   fun c => default_schedulerInvariant_perCore c
+
+/-- WS-SM SM4.C: the freshly-booted system satisfies the **extended** per-core
+scheduler invariant on every core.  Each Z4 conjunct holds vacuously on the
+empty default state:
+  * `currentBudgetPositiveOnCore` — vacuous via `currentOnCore c = none`;
+  * `budgetPositiveOnCore` — vacuous via empty run queue;
+  * `replenishQueueValidOnCore` — empty queue is sorted + size-consistent;
+  * `effectiveParamsMatchRunQueueOnCore` — vacuous via empty run queue. -/
+theorem default_schedulerInvariant_perCore_extended (c : CoreId) :
+    schedulerInvariant_perCore_extended (default : SystemState) c := by
+  have hCur : (default : SystemState).scheduler.currentOnCore c = none :=
+    (default_state_perCoreInitialized c).1
+  have hRQ : (default : SystemState).scheduler.runQueueOnCore c = RunQueue.empty :=
+    (default_state_perCoreInitialized c).2.1
+  have hRepl : (default : SystemState).scheduler.replenishQueueOnCore c =
+        SeLe4n.Kernel.ReplenishQueue.empty :=
+    (default_state_perCoreInitialized c).2.2.1
+  have hNotMemList : ∀ tid : SeLe4n.ThreadId,
+      tid ∉ ((default : SystemState).scheduler.runQueueOnCore c).toList := by
+    intro tid; rw [hRQ, RunQueue.toList_empty]; exact List.not_mem_nil
+  have hNotMem : ∀ tid : SeLe4n.ThreadId,
+      tid ∉ ((default : SystemState).scheduler.runQueueOnCore c) := by
+    intro tid hMem
+    exact hNotMemList tid ((RunQueue.mem_toList_iff_mem _ tid).2 hMem)
+  refine ⟨default_schedulerInvariant_perCore c, ?_, ?_, ?_, ?_⟩
+  · simp only [currentBudgetPositiveOnCore, hCur]
+  · intro tid hMem; exact absurd hMem (hNotMemList tid)
+  · refine ⟨?_, ?_⟩
+    · rw [hRepl]; exact empty_sorted
+    · rw [hRepl]; exact empty_sizeConsistent
+  · intro tid hMem; exact absurd hMem (hNotMem tid)
+
+/-- WS-SM SM4.C: the freshly-booted system satisfies the system-wide
+SMP extended invariant on every core. -/
+theorem default_schedulerInvariant_smp_extended :
+    schedulerInvariant_smp_extended (default : SystemState) :=
+  fun c => default_schedulerInvariant_perCore_extended c
+
+-- ============================================================================
+-- §5.5  Per-conjunct frame lemmas (fine-grained SM5 reasoning)
+-- ============================================================================
+--
+-- One frame lemma per per-core predicate, surfacing the minimal set of
+-- reads each conjunct depends on.  These are the SM5-fine-grained
+-- foundations on top of which the aggregate `_frame` in §6 is built.
+-- Each closes via `unfold` + targeted rewrites under the hypotheses,
+-- with `getTcb?_congr_objects` / `getSchedContext?_congr_objects`
+-- bridging the typed-accessor reads through the `objects` hypothesis.
+
+/-- Local helper: SchedContext congruence under object equality, mirroring
+`getTcb?_congr_objects`.  Used by the SC-dependent per-conjunct frame
+lemmas below. -/
+private theorem getSchedContext?_congr_objects
+    {st st' : SystemState} (h : st'.objects = st.objects)
+    (scId : SeLe4n.SchedContextId) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?; rw [h]
+
+theorem queueCurrentConsistentOnCore_frame {s s' : SchedulerState} {c : CoreId}
+    (hCur : s'.currentOnCore c = s.currentOnCore c)
+    (hRQ : s'.runQueueOnCore c = s.runQueueOnCore c) :
+    queueCurrentConsistentOnCore s' c ↔ queueCurrentConsistentOnCore s c := by
+  unfold queueCurrentConsistentOnCore; rw [hCur, hRQ]
+
+theorem runQueueUniqueOnCore_frame {s s' : SchedulerState} {c : CoreId}
+    (hRQ : s'.runQueueOnCore c = s.runQueueOnCore c) :
+    runQueueUniqueOnCore s' c ↔ runQueueUniqueOnCore s c := by
+  unfold runQueueUniqueOnCore; rw [hRQ]
+
+theorem runQueueOnCoreWellFormed_frame {s s' : SchedulerState} {c : CoreId}
+    (hRQ : s'.runQueueOnCore c = s.runQueueOnCore c) :
+    runQueueOnCoreWellFormed s' c ↔ runQueueOnCoreWellFormed s c := by
+  unfold runQueueOnCoreWellFormed; rw [hRQ]
+
+theorem currentThreadValidOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hObj : st'.objects = st.objects) :
+    currentThreadValidOnCore st' c ↔ currentThreadValidOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold currentThreadValidOnCore; simp only [hCur, hTcb]
+
+theorem currentThreadInActiveDomainOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hAD : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c)
+    (hObj : st'.objects = st.objects) :
+    currentThreadInActiveDomainOnCore st' c ↔ currentThreadInActiveDomainOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold currentThreadInActiveDomainOnCore; simp only [hCur, hAD, hTcb]
+
+theorem timeSlicePositiveOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    timeSlicePositiveOnCore st' c ↔ timeSlicePositiveOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold timeSlicePositiveOnCore; simp only [hRQ, hTcb]
+
+theorem currentTimeSlicePositiveOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hObj : st'.objects = st.objects) :
+    currentTimeSlicePositiveOnCore st' c ↔ currentTimeSlicePositiveOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold currentTimeSlicePositiveOnCore; simp only [hCur, hTcb]
+
+theorem edfCurrentHasEarliestDeadlineOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    edfCurrentHasEarliestDeadlineOnCore st' c ↔ edfCurrentHasEarliestDeadlineOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold edfCurrentHasEarliestDeadlineOnCore; simp only [hCur, hRQ, hTcb]
+
+theorem contextMatchesCurrentOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRegs : st'.machine.regs = st.machine.regs)
+    (hObj : st'.objects = st.objects) :
+    contextMatchesCurrentOnCore st' c ↔ contextMatchesCurrentOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold contextMatchesCurrentOnCore; simp only [hCur, hRegs, hTcb]
+
+theorem runnableThreadsAreTCBsOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    runnableThreadsAreTCBsOnCore st' c ↔ runnableThreadsAreTCBsOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold runnableThreadsAreTCBsOnCore; simp only [hRQ, hTcb]
+
+theorem schedulerPriorityMatchOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    schedulerPriorityMatchOnCore st' c ↔ schedulerPriorityMatchOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  unfold schedulerPriorityMatchOnCore; simp only [hRQ, hTcb]
+
+theorem domainTimeRemainingPositiveOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hDTR : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c) :
+    domainTimeRemainingPositiveOnCore st' c ↔ domainTimeRemainingPositiveOnCore st c := by
+  unfold domainTimeRemainingPositiveOnCore; rw [hDTR]
+
+theorem currentBudgetPositiveOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hObj : st'.objects = st.objects) :
+    currentBudgetPositiveOnCore st' c ↔ currentBudgetPositiveOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId :=
+    getSchedContext?_congr_objects hObj
+  unfold currentBudgetPositiveOnCore; simp only [hCur, hTcb, hSc]
+
+theorem budgetPositiveOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    budgetPositiveOnCore st' c ↔ budgetPositiveOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId :=
+    getSchedContext?_congr_objects hObj
+  unfold budgetPositiveOnCore; simp only [hRQ, hTcb, hSc]
+
+theorem replenishmentPipelineOrderOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (hTimer : st'.machine.timer = st.machine.timer) :
+    replenishmentPipelineOrderOnCore st' c ↔ replenishmentPipelineOrderOnCore st c := by
+  unfold replenishmentPipelineOrderOnCore; rw [hRepl, hTimer]
+
+theorem replenishQueueValidOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c) :
+    replenishQueueValidOnCore st' c ↔ replenishQueueValidOnCore st c := by
+  unfold replenishQueueValidOnCore; rw [hRepl]
+
+theorem effectiveParamsMatchRunQueueOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    effectiveParamsMatchRunQueueOnCore st' c ↔ effectiveParamsMatchRunQueueOnCore st c := by
+  have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
+  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId :=
+    getSchedContext?_congr_objects hObj
+  unfold effectiveParamsMatchRunQueueOnCore; simp only [hRQ, hTcb, hSc]
 
 -- ============================================================================
 -- §6  Per-core frame lemma + cross-core independence (SM4.C.30)
@@ -865,5 +1155,87 @@ theorem schedulerInvariant_smp_of_bootCore_and_idle_frame {st st' : SystemState}
   · subst hc; exact hBoot
   · exact (schedulerInvariant_perCore_frame_idle (hIdle' c hc) (hIdle c hc)
       (hFrameRQ c hc) (hFrameDTR c hc) hFrameObj).mpr (hPre c)
+
+-- ============================================================================
+-- §8  Extended-aggregate frame, independence, and SMP-preservation skeleton
+-- ============================================================================
+
+/-- WS-SM SM4.C: aggregate frame lemma for `schedulerInvariant_perCore_extended`.
+The extended aggregate reads everything the base does (current, runQueue,
+domainTimeRemaining, objects, machine.regs) plus core `c`'s replenish queue. -/
+theorem schedulerInvariant_perCore_extended_frame {st st' : SystemState} {c : CoreId}
+    (hCur  : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRQ   : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hDTR  : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
+    (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (hRegs : st'.machine.regs = st.machine.regs)
+    (hObj  : st'.objects = st.objects) :
+    schedulerInvariant_perCore_extended st' c ↔ schedulerInvariant_perCore_extended st c := by
+  unfold schedulerInvariant_perCore_extended
+  rw [schedulerInvariant_perCore_frame hCur hRQ hDTR hRegs hObj]
+  rw [currentBudgetPositiveOnCore_frame hCur hObj]
+  rw [budgetPositiveOnCore_frame hRQ hObj]
+  rw [replenishQueueValidOnCore_frame hRepl]
+  rw [effectiveParamsMatchRunQueueOnCore_frame hRQ hObj]
+
+/-- WS-SM SM4.C: idle-core variant of the extended frame.  When core `c` is
+idle on both states, the five current-dependent base conjuncts are vacuous
+(so register-file agreement is unnecessary) AND `currentBudgetPositive` is
+likewise vacuous; we still need the run-queue/domain-time/replenish-queue/
+object-store agreement for the runnable-quantified conjuncts. -/
+theorem schedulerInvariant_perCore_extended_frame_idle {st st' : SystemState} {c : CoreId}
+    (hCurNone' : st'.scheduler.currentOnCore c = none)
+    (hCurNone  : st.scheduler.currentOnCore c = none)
+    (hRQ   : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hDTR  : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
+    (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (hObj  : st'.objects = st.objects) :
+    schedulerInvariant_perCore_extended st' c ↔ schedulerInvariant_perCore_extended st c := by
+  unfold schedulerInvariant_perCore_extended
+  rw [schedulerInvariant_perCore_frame_idle hCurNone' hCurNone hRQ hDTR hObj]
+  rw [currentBudgetPositiveOnCore_frame (hCurNone'.trans hCurNone.symm) hObj]
+  rw [budgetPositiveOnCore_frame hRQ hObj]
+  rw [replenishQueueValidOnCore_frame hRepl]
+  rw [effectiveParamsMatchRunQueueOnCore_frame hRQ hObj]
+
+/-- WS-SM SM4.C.30: extended-aggregate independence — writing core c'`s
+slots leaves core c's extended per-core invariant unchanged (c ≠ c').
+The composed-write form: all four fields that distinguish extended from
+base are c-indexed, so writing any of c'`s setters is invariant-preserving
+at c. -/
+theorem schedulerInvariant_perCore_extended_pairwise
+    {st : SystemState} {c₁ c₂ : CoreId} (hne : c₁ ≠ c₂)
+    (vc : Option SeLe4n.ThreadId) (vrq : RunQueue) (vdtr : Nat)
+    (vrepl : ReplenishQueue) :
+    schedulerInvariant_perCore_extended
+      { st with scheduler :=
+        (((st.scheduler.setCurrentOnCore c₂ vc).setRunQueueOnCore c₂ vrq).setDomainTimeRemainingOnCore
+          c₂ vdtr).setReplenishQueueOnCore c₂ vrepl }
+      c₁ ↔
+    schedulerInvariant_perCore_extended st c₁ := by
+  apply schedulerInvariant_perCore_extended_frame <;> simp [Ne.symm hne]
+
+/-- WS-SM SM4.C: SMP-preservation skeleton for the extended invariant — the
+single-core-extended-preservation-lifts-to-extended-SMP composition.
+Mirror of `schedulerInvariant_smp_of_bootCore_and_idle_frame` for the
+extended aggregate, adding a `hFrameRepl` hypothesis. -/
+theorem schedulerInvariant_smp_extended_of_bootCore_and_idle_frame {st st' : SystemState}
+    (hPre : schedulerInvariant_smp_extended st)
+    (hBoot : schedulerInvariant_perCore_extended st' bootCoreId)
+    (hIdle' : ∀ c, c ≠ bootCoreId → st'.scheduler.currentOnCore c = none)
+    (hIdle  : ∀ c, c ≠ bootCoreId → st.scheduler.currentOnCore c = none)
+    (hFrameRQ  : ∀ c, c ≠ bootCoreId →
+      st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hFrameDTR : ∀ c, c ≠ bootCoreId →
+      st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
+    (hFrameRepl : ∀ c, c ≠ bootCoreId →
+      st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (hFrameObj : st'.objects = st.objects) :
+    schedulerInvariant_smp_extended st' := by
+  intro c
+  by_cases hc : c = bootCoreId
+  · subst hc; exact hBoot
+  · exact (schedulerInvariant_perCore_extended_frame_idle (hIdle' c hc) (hIdle c hc)
+      (hFrameRQ c hc) (hFrameDTR c hc) (hFrameRepl c hc) hFrameObj).mpr (hPre c)
 
 end SeLe4n.Kernel

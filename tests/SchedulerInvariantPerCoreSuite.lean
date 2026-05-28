@@ -115,6 +115,53 @@ open SeLe4n.Kernel.Concurrency
 #check @schedulerInvariant_perCore_pairwise
 #check @schedulerInvariant_smp_of_bootCore_and_idle_frame
 
+-- Plan §5.6 missing predicate:
+#check @runQueueOnCoreWellFormed
+
+-- Per-conjunct frame lemmas (§5.5 — fine-grained SM5 reasoning):
+#check @queueCurrentConsistentOnCore_frame
+#check @runQueueUniqueOnCore_frame
+#check @runQueueOnCoreWellFormed_frame
+#check @currentThreadValidOnCore_frame
+#check @currentThreadInActiveDomainOnCore_frame
+#check @timeSlicePositiveOnCore_frame
+#check @currentTimeSlicePositiveOnCore_frame
+#check @edfCurrentHasEarliestDeadlineOnCore_frame
+#check @contextMatchesCurrentOnCore_frame
+#check @runnableThreadsAreTCBsOnCore_frame
+#check @schedulerPriorityMatchOnCore_frame
+#check @domainTimeRemainingPositiveOnCore_frame
+#check @currentBudgetPositiveOnCore_frame
+#check @budgetPositiveOnCore_frame
+#check @replenishmentPipelineOrderOnCore_frame
+#check @replenishQueueValidOnCore_frame
+#check @effectiveParamsMatchRunQueueOnCore_frame
+
+-- Extended per-core aggregate (§3.5 — mirroring schedulerInvariantBundleExtended):
+#check @schedulerInvariant_perCore_extended
+#check @schedulerInvariant_smp_extended
+#check @schedulerInvariant_perCore_extended_aggregateForall
+#check @schedulerInvariant_smp_extended_at
+#check @schedulerInvariant_perCore_extended_to_base
+#check @schedulerInvariant_perCore_extended_to_currentBudgetPositive
+#check @schedulerInvariant_perCore_extended_to_budgetPositive
+#check @schedulerInvariant_perCore_extended_to_replenishQueueValid
+#check @schedulerInvariant_perCore_extended_to_effectiveParamsMatchRunQueue
+
+-- Extended bundle bridges:
+#check @schedulerInvariantBundleExtended_to_perCore_extended_bootCore
+#check @schedulerInvariant_perCore_extended_bootCore_to_bundleExtended
+
+-- Extended default-state:
+#check @default_schedulerInvariant_perCore_extended
+#check @default_schedulerInvariant_smp_extended
+
+-- Extended frame, pairwise, SMP-preservation skeleton (§8):
+#check @schedulerInvariant_perCore_extended_frame
+#check @schedulerInvariant_perCore_extended_frame_idle
+#check @schedulerInvariant_perCore_extended_pairwise
+#check @schedulerInvariant_smp_extended_of_bootCore_and_idle_frame
+
 -- ============================================================================
 -- §2  Elaboration-time examples: theorems applied to verified inputs
 -- ============================================================================
@@ -192,6 +239,62 @@ example {st : SystemState} (vc : Option SeLe4n.ThreadId) (vrq : SeLe4n.Kernel.Ru
 example (h : schedulerInvariant_smp (default : SystemState)) :
     schedulerInvariant_perCore (default : SystemState) bootCoreId :=
   schedulerInvariant_smp_at _ bootCoreId h
+
+-- §2.8  Extended per-core aggregate: default state on every core.
+example : schedulerInvariant_perCore_extended (default : SystemState) bootCoreId :=
+  default_schedulerInvariant_perCore_extended bootCoreId
+
+example (c : CoreId) : schedulerInvariant_perCore_extended (default : SystemState) c :=
+  default_schedulerInvariant_perCore_extended c
+
+example : schedulerInvariant_smp_extended (default : SystemState) :=
+  default_schedulerInvariant_smp_extended
+
+example :
+    (∀ c : CoreId, schedulerInvariant_perCore_extended (default : SystemState) c) ↔
+    schedulerInvariant_smp_extended (default : SystemState) :=
+  schedulerInvariant_perCore_extended_aggregateForall _
+
+-- §2.9  Extended bundle bridges.
+example {st : SystemState} (h : schedulerInvariantBundleExtended st) :
+    schedulerInvariant_perCore_extended st bootCoreId :=
+  schedulerInvariantBundleExtended_to_perCore_extended_bootCore h
+
+example {st : SystemState}
+    (h : schedulerInvariant_perCore_extended st bootCoreId)
+    (hDSE : domainScheduleEntriesPositive st)
+    (hSCWF : schedContextsWellFormed st)
+    (hSCBC : schedContextBindingConsistent st)
+    (hBTDC : boundThreadDomainConsistent st) :
+    schedulerInvariantBundleExtended st :=
+  schedulerInvariant_perCore_extended_bootCore_to_bundleExtended h hDSE hSCWF hSCBC hBTDC
+
+-- §2.10  Extended-aggregate pairwise independence.
+example {st : SystemState} (vc : Option SeLe4n.ThreadId) (vrq : SeLe4n.Kernel.RunQueue)
+    (vdtr : Nat) (vrepl : SeLe4n.Kernel.ReplenishQueue) :
+    schedulerInvariant_perCore_extended
+      { st with scheduler :=
+        (((st.scheduler.setCurrentOnCore ⟨1, by decide⟩ vc).setRunQueueOnCore
+            ⟨1, by decide⟩ vrq).setDomainTimeRemainingOnCore ⟨1, by decide⟩
+            vdtr).setReplenishQueueOnCore ⟨1, by decide⟩ vrepl }
+      bootCoreId ↔
+    schedulerInvariant_perCore_extended st bootCoreId :=
+  schedulerInvariant_perCore_extended_pairwise
+    (c₁ := bootCoreId) (c₂ := ⟨1, by decide⟩) (by decide) vc vrq vdtr vrepl
+
+-- §2.11  Per-conjunct frame lemma application (sample — one per category).
+example (s s' : SchedulerState) (c : CoreId)
+    (hCur : s'.currentOnCore c = s.currentOnCore c)
+    (hRQ : s'.runQueueOnCore c = s.runQueueOnCore c) :
+    queueCurrentConsistentOnCore s' c ↔ queueCurrentConsistentOnCore s c :=
+  queueCurrentConsistentOnCore_frame hCur hRQ
+
+example (st st' : SystemState) (c : CoreId)
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRegs : st'.machine.regs = st.machine.regs)
+    (hObj : st'.objects = st.objects) :
+    contextMatchesCurrentOnCore st' c ↔ contextMatchesCurrentOnCore st c :=
+  contextMatchesCurrentOnCore_frame hCur hRegs hObj
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): a silent regression surfaces here.
@@ -317,6 +420,77 @@ private def runBridgeReflexivityChecks : IO Unit := do
     (have _h := replenishmentPipelineOrderOnCore_bootCore_iff (default : SystemState)
      true)
 
+/-- §3.5  Extended per-core aggregate: default-state applies on every core,
+plus SMP form, plus pairwise. -/
+private def runExtendedAggregateChecks : IO Unit := do
+  IO.println "--- §3.5 extended per-core aggregate (mirroring BundleExtended) ---"
+  assertBool "default_schedulerInvariant_perCore_extended applies on every core"
+    (allCores.all (fun c =>
+      have _h : schedulerInvariant_perCore_extended (default : SystemState) c :=
+        default_schedulerInvariant_perCore_extended c
+      true))
+  assertBool "default_schedulerInvariant_smp_extended applies"
+    (have _h : schedulerInvariant_smp_extended (default : SystemState) :=
+      default_schedulerInvariant_smp_extended
+     true)
+  assertBool "schedulerInvariant_smp_extended_at extracts every core"
+    (allCores.all (fun c =>
+      have _h : schedulerInvariant_perCore_extended (default : SystemState) c :=
+        schedulerInvariant_smp_extended_at _ c default_schedulerInvariant_smp_extended
+      true))
+  -- Extended-aggregate pairwise independence: writing all 4 distinguishing
+  -- slots of core 1 leaves boot core's extended invariant unchanged.
+  let c₂ : CoreId := ⟨1, by decide⟩
+  assertBool "extended pairwise composed write preserves boot-core invariant"
+    (have _h : schedulerInvariant_perCore_extended
+        { (default : SystemState) with
+          scheduler :=
+            ((((default : SystemState).scheduler.setCurrentOnCore c₂
+                (some (SeLe4n.ThreadId.ofNat 7))).setRunQueueOnCore c₂
+                SeLe4n.Kernel.RunQueue.empty).setDomainTimeRemainingOnCore c₂
+                42).setReplenishQueueOnCore c₂ SeLe4n.Kernel.ReplenishQueue.empty }
+        bootCoreId :=
+      (schedulerInvariant_perCore_extended_pairwise
+        (c₁ := bootCoreId) (c₂ := c₂) (by decide)
+        (some (SeLe4n.ThreadId.ofNat 7)) SeLe4n.Kernel.RunQueue.empty 42
+        SeLe4n.Kernel.ReplenishQueue.empty).mpr
+        (default_schedulerInvariant_perCore_extended bootCoreId)
+     true)
+
+/-- §3.6  Per-conjunct frame lemmas (sample: one per category). -/
+private def runPerConjunctFrameChecks : IO Unit := do
+  IO.println "--- §3.6 per-conjunct frame lemmas (fine-grained SM5 reasoning) ---"
+  -- All 17 per-conjunct frame lemmas resolve via reflexive hypotheses applied
+  -- to the default state.
+  assertBool "queueCurrentConsistentOnCore_frame applies on default"
+    (have _h := queueCurrentConsistentOnCore_frame (s := (default : SystemState).scheduler)
+        (s' := (default : SystemState).scheduler) (c := bootCoreId) rfl rfl
+     true)
+  assertBool "currentThreadValidOnCore_frame applies on default"
+    (have _h := currentThreadValidOnCore_frame (st := (default : SystemState))
+        (st' := (default : SystemState)) (c := bootCoreId) rfl rfl
+     true)
+  assertBool "contextMatchesCurrentOnCore_frame applies on default"
+    (have _h := contextMatchesCurrentOnCore_frame (st := (default : SystemState))
+        (st' := (default : SystemState)) (c := bootCoreId) rfl rfl rfl
+     true)
+  assertBool "currentBudgetPositiveOnCore_frame applies on default"
+    (have _h := currentBudgetPositiveOnCore_frame (st := (default : SystemState))
+        (st' := (default : SystemState)) (c := bootCoreId) rfl rfl
+     true)
+  assertBool "budgetPositiveOnCore_frame applies on default"
+    (have _h := budgetPositiveOnCore_frame (st := (default : SystemState))
+        (st' := (default : SystemState)) (c := bootCoreId) rfl rfl
+     true)
+  assertBool "replenishmentPipelineOrderOnCore_frame applies on default"
+    (have _h := replenishmentPipelineOrderOnCore_frame (st := (default : SystemState))
+        (st' := (default : SystemState)) (c := bootCoreId) rfl rfl
+     true)
+  assertBool "domainTimeRemainingPositiveOnCore_frame applies on default"
+    (have _h := domainTimeRemainingPositiveOnCore_frame (st := (default : SystemState))
+        (st' := (default : SystemState)) (c := bootCoreId) rfl
+     true)
+
 def runSchedulerInvariantPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.C — Per-core scheduler invariant migration suite"
   IO.println "===================================="
@@ -324,6 +498,8 @@ def runSchedulerInvariantPerCoreChecks : IO Unit := do
   runTheoremApplicationChecks
   runIndependenceChecks
   runBridgeReflexivityChecks
+  runExtendedAggregateChecks
+  runPerConjunctFrameChecks
   IO.println "===================================="
   IO.println "All SM4.C per-core scheduler invariant migration checks PASS."
 

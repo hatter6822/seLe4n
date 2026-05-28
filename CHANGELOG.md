@@ -1,3 +1,120 @@
+## v0.31.15 — WS-SM SM4.C audit-pass-2: per-conjunct frames + extended per-core aggregate
+
+Extends the per-core invariant layer with fine-grained frame lemmas, the
+plan §5.6 missing `runQueueOnCoreWellFormed` predicate, and the extended
+per-core aggregate mirroring `schedulerInvariantBundleExtended`.
+
+**`runQueueOnCoreWellFormed`** (plan §5.6 missing predicate).  Per-core
+form of `RunQueue.wellFormed`: asserts that core `c`'s run-queue
+internal `byPriority` ↔ `membership` / `threadPriority` indexes are in
+sync.  Defined directly (no single-core counterpart exists at the
+SchedulerState level, so no boot-core bridge); participates in the
+per-conjunct frame lemmas and is available for SM5 + downstream
+consumers.
+
+**§5.5 per-conjunct frame lemmas (17 total)** — one frame lemma per
+per-core predicate, surfacing the minimal set of reads each conjunct
+depends on:
+  * Pure-scheduler reads (no objects): `queueCurrentConsistentOnCore_frame`,
+    `runQueueUniqueOnCore_frame`, `runQueueOnCoreWellFormed_frame`,
+    `domainTimeRemainingPositiveOnCore_frame`,
+    `replenishQueueValidOnCore_frame`.
+  * Scheduler + objects: `currentThreadValidOnCore_frame`,
+    `currentThreadInActiveDomainOnCore_frame`,
+    `timeSlicePositiveOnCore_frame`, `currentTimeSlicePositiveOnCore_frame`,
+    `edfCurrentHasEarliestDeadlineOnCore_frame`,
+    `runnableThreadsAreTCBsOnCore_frame`,
+    `schedulerPriorityMatchOnCore_frame`,
+    `currentBudgetPositiveOnCore_frame`, `budgetPositiveOnCore_frame`,
+    `effectiveParamsMatchRunQueueOnCore_frame`.
+  * + machine.regs: `contextMatchesCurrentOnCore_frame`.
+  * + machine.timer: `replenishmentPipelineOrderOnCore_frame`.
+
+Each closes via `unfold` + targeted rewrites under the hypotheses; the
+SC-dependent forms additionally invoke the local
+`getSchedContext?_congr_objects` helper (mirror of
+`getTcb?_congr_objects`) to bridge typed-accessor reads through the
+`objects` hypothesis.  SM5's per-core scheduler will use these to do
+fine-grained per-conjunct preservation reasoning where the aggregate
+`_frame` is too coarse.
+
+**§3.5 `schedulerInvariant_perCore_extended`** — the per-core analog of
+`schedulerInvariantBundleExtended`'s per-core slice.  Composes the base
+`schedulerInvariant_perCore` (10 conjuncts mirroring `…BundleFull`'s
+per-core slice) with the four per-core conjuncts that Z4 / AE3-A added:
+`currentBudgetPositiveOnCore`, `budgetPositiveOnCore`,
+`replenishQueueValidOnCore`, `effectiveParamsMatchRunQueueOnCore`.  The
+three Z4 system-wide conjuncts (`schedContextsWellFormed`,
+`schedContextBindingConsistent`, `boundThreadDomainConsistent`) remain
+core-independent (they universally quantify over the object store) and
+participate in the bundle bridges as separate arguments.
+
+The 14 SC-using and base predicates are no longer orphans — they all
+either compose into the extended aggregate or are usable through it.
+
+`schedulerInvariant_smp_extended := ∀ c, schedulerInvariant_perCore_extended s c`
+is the system-wide form; `schedulerInvariant_perCore_extended_aggregateForall`
+bridges them.  5 per-conjunct projections mirror the
+`schedulerInvariantBundleExtended_to_*` family.
+
+**Extended bundle bridges**:
+  * `schedulerInvariantBundleExtended_to_perCore_extended_bootCore` —
+    the tight bridge: each of the four extra Z4 per-core conjuncts maps
+    via its §2 boot-core bridge.  Existing single-core preservation
+    theorems that establish `…BundleExtended` therefore yield the
+    extended per-core invariant at `bootCoreId` for free.
+  * `schedulerInvariant_perCore_extended_bootCore_to_bundleExtended` —
+    the converse: extended per-core at boot + the three Z4 system-wide
+    conjuncts + `domainScheduleEntriesPositive` rebuilds the full Z4
+    bundle.  Confirms zero content loss in the extended per-core slice.
+
+**Extended default-state**:
+  * `default_schedulerInvariant_perCore_extended (c)` — proved on every
+    core (each Z4 conjunct holds vacuously: `currentBudgetPositive` via
+    `currentOnCore c = none`; `budgetPositive` and
+    `effectiveParamsMatchRunQueue` via empty run queue;
+    `replenishQueueValid` via `empty_sorted` + `empty_sizeConsistent`).
+  * `default_schedulerInvariant_smp_extended` — the SMP form on default.
+
+**§8 extended-aggregate frame + pairwise + SMP-preservation skeleton**:
+  * `schedulerInvariant_perCore_extended_frame` — general frame
+    (extends the base with `hRepl` for the replenish-queue slot).
+  * `schedulerInvariant_perCore_extended_frame_idle` — idle-core variant
+    (no `hRegs` needed; reps + objects + runQueue + dtr suffice when
+    `currentOnCore c = none`).  Used by SM5 when reasoning about a
+    boot-core operation that changes `machine.regs` — idle cores'
+    extended invariant stays preserved.
+  * `schedulerInvariant_perCore_extended_pairwise` — the four-field
+    composed-write pairwise theorem (writing c₂'s `current`/`runQueue`/
+    `domainTimeRemaining`/`replenishQueue` leaves c₁'s extended
+    invariant unchanged for c₁ ≠ c₂).
+  * `schedulerInvariant_smp_extended_of_bootCore_and_idle_frame` — the
+    SM5-bridge for the extended invariant (mirror of the base
+    skeleton).
+
+**Test coverage**: `tests/SchedulerInvariantPerCoreSuite.lean` extended
+with 30+ new surface anchors, 8 new elaboration-time examples
+(extended-aggregate defaults / bundle bridges / pairwise / per-conjunct
+frame applications), and 11 new runtime assertions (`§3.5 extended
+per-core aggregate` and `§3.6 per-conjunct frame lemmas` sections).
+27 total runtime assertions (was 16); `lake exe
+scheduler_invariant_per_core_suite` reports 27/27 PASS.
+
+**Module status**: `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` is
+now ~1160 LoC (was ~840 at v0.31.14).  Tier 0+1+2+3 green; partition
+gate green (34 staged-only modules); axiom-clean (only `propext` /
+`Quot.sound` / `Classical.choice`); trace fixture byte-identical.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: cross-subsystem per-core predicates per plan §5.6
+(`schedContextRunQueueConsistent_perCore`, `priorityInheritance_perCore`,
+`activeDomainOnCore_isInDomainSchedule`); per-operation per-core
+preservation theorems for the six boot-core scheduler operations
+(`schedule`, `chooseThread`, `handleYield`, `timerTick`, `switchDomain`,
+`scheduleDomain`); and the plan §3.4 Pattern 1 rewrite of existing
+scheduler theorems.
+
 ## v0.31.14 — WS-SM SM4.C audit-pass-1: typed-accessor migration + setter independence completeness
 
 Closes two of the gaps the post-landing audit of v0.31.13 (the WS-SM SM4.C

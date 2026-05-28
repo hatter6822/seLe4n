@@ -2616,6 +2616,47 @@ open SeLe4n.Kernel
 #check @schedulerInvariant_perCore_independent_of_setLastTimeoutErrorsOnCore
 #check @schedulerInvariant_perCore_pairwise
 #check @schedulerInvariant_smp_of_bootCore_and_idle_frame
+-- SM4.C plan §5.6 missing predicate.
+#check @runQueueOnCoreWellFormed
+-- SM4.C §5.5 per-conjunct frame lemmas (17 total).
+#check @queueCurrentConsistentOnCore_frame
+#check @runQueueUniqueOnCore_frame
+#check @runQueueOnCoreWellFormed_frame
+#check @currentThreadValidOnCore_frame
+#check @currentThreadInActiveDomainOnCore_frame
+#check @timeSlicePositiveOnCore_frame
+#check @currentTimeSlicePositiveOnCore_frame
+#check @edfCurrentHasEarliestDeadlineOnCore_frame
+#check @contextMatchesCurrentOnCore_frame
+#check @runnableThreadsAreTCBsOnCore_frame
+#check @schedulerPriorityMatchOnCore_frame
+#check @domainTimeRemainingPositiveOnCore_frame
+#check @currentBudgetPositiveOnCore_frame
+#check @budgetPositiveOnCore_frame
+#check @replenishmentPipelineOrderOnCore_frame
+#check @replenishQueueValidOnCore_frame
+#check @effectiveParamsMatchRunQueueOnCore_frame
+-- SM4.C §3.5 extended per-core aggregate (mirrors schedulerInvariantBundleExtended).
+#check @schedulerInvariant_perCore_extended
+#check @schedulerInvariant_smp_extended
+#check @schedulerInvariant_perCore_extended_aggregateForall
+#check @schedulerInvariant_smp_extended_at
+#check @schedulerInvariant_perCore_extended_to_base
+#check @schedulerInvariant_perCore_extended_to_currentBudgetPositive
+#check @schedulerInvariant_perCore_extended_to_budgetPositive
+#check @schedulerInvariant_perCore_extended_to_replenishQueueValid
+#check @schedulerInvariant_perCore_extended_to_effectiveParamsMatchRunQueue
+-- SM4.C extended bundle bridges.
+#check @schedulerInvariantBundleExtended_to_perCore_extended_bootCore
+#check @schedulerInvariant_perCore_extended_bootCore_to_bundleExtended
+-- SM4.C extended default-state.
+#check @default_schedulerInvariant_perCore_extended
+#check @default_schedulerInvariant_smp_extended
+-- SM4.C §8 extended-aggregate frame + pairwise + SMP-preservation skeleton.
+#check @schedulerInvariant_perCore_extended_frame
+#check @schedulerInvariant_perCore_extended_frame_idle
+#check @schedulerInvariant_perCore_extended_pairwise
+#check @schedulerInvariant_smp_extended_of_bootCore_and_idle_frame
 EOF'
 
 finalize_report
