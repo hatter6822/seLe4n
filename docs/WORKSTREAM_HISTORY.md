@@ -1905,7 +1905,35 @@ of audit-pass-9, same branch).  4 findings closed:
   requires hwf...` per-theorem comments replaced with a single
   section-level annotation in the §7.4 header.
 
-**Cumulative SM4.C state at v0.31.26**:
+**WS-SM SM4.C audit-passes 11–12 LANDED at v0.31.27 → v0.31.29**
+(PR #801, same branch):
+- **audit-pass-11 (v0.31.27)**: convenience wrapper
+  `schedulerInvariant_perCore_holds_if_idle_default` taking the
+  stronger structural hypothesis `runQueueOnCore c = RunQueue.empty`
+  (deriving `toList = []` + `wellFormed` internally via
+  `RunQueue.toList_empty` / `RunQueue.empty_wellFormed`).  Answers the
+  audit question "is `_holds_if_idle` substantive?": yes — 9/11
+  conjuncts do real proof work, the 2 pass-throughs (`hDTRPos`,
+  `hWf`) are genuinely non-derivable from the other hypotheses.  The
+  minimal `_holds_if_idle` is retained (no over-constraint).
+- **audit-pass-11 hotfix (v0.31.28)**: CI hotfix — a backtick-quoted
+  Lean comment in the audit-pass-11 `#check` block of
+  `test_tier3_invariant_surface.sh` tripped shellcheck SC2016 inside
+  the `bash -lc '…'` single-quoted heredoc, failing the Tier 0+1 and
+  ARM64 fast gates (shellcheck runs in CI but not the dev container).
+  Rewrote the comment in plain text matching the sibling heredoc
+  blocks' convention.
+- **audit-pass-12 (v0.31.29)**: deep-audit finding — removed a
+  file-level `set_option linter.unusedSimpArgs false` in `PerCore.lean`
+  whose justifying comment falsely claimed the 15 flagged `simp [h]`
+  args were "false positives" needed by the proofs.  Empirical test
+  (strip all 15 + rebuild from clean `.olean`) produced a fully clean
+  build, proving the linter correct (the `cases h : X with`
+  substitution already rewrites the goal).  Removed all 15 redundant
+  args + the suppression + the false-claim comment; module now compiles
+  clean under the default linter.
+
+**Cumulative SM4.C state at v0.31.29**:
 - All cumulative deliverables from audit-passes 1–6 (v0.31.20)
   retained: 16 per-core predicate forms, 3 aggregates (base +
   extended + cross-subsystem), 4 SMP-preservation skeletons,
@@ -1924,10 +1952,15 @@ of audit-pass-9, same branch).  4 findings closed:
 - audit-pass-10: 4 post-audit cleanups (top-level `empty_wellFormed`
   lemma; 80-line comment block removed; `_passthrough` wrapper
   removed; main suite +12 substantive runtime assertions).
-- Test coverage: main suite 41 → 53 runtime assertions
-  (+12 audit-pass-10); preservation suite 17 (audit-pass-8 baseline);
-  total 70 runtime assertions across 2 suites; 130+ surface anchors.
-  All gates green; axiom-clean throughout.
+- audit-pass-11: `_holds_if_idle_default` convenience wrapper (+1
+  runtime assertion, +1 tier-3 anchor).
+- audit-pass-12: 15 dead simp args + unjustified linter suppression
+  removed; `PerCore.lean` compiles clean under the default linter (no
+  file-level suppressions remain).
+- Test coverage: main suite 54 runtime assertions; preservation suite
+  17; total 71 runtime assertions across 2 suites; 130+ surface
+  anchors.  All gates green; axiom-clean throughout; no `set_option
+  linter.*` suppressions in the SM4.C modules.
 
 **Items deferred past v1.0.0 with correctness impact: NONE**.
 Genuinely out of SM4.C scope (tracked as separate workstreams):
