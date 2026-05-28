@@ -2507,7 +2507,7 @@ import SeLe4n.Kernel.Concurrency.Types
 #check @SeLe4n.Model.SchedulerState.setDomainTimeRemainingOnCore
 #check @SeLe4n.Model.SchedulerState.setDomainScheduleIndexOnCore
 #check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore
--- SM4.B.phase-2 — store/load algebra: 7 read-after-write `_self` lemmas +
+-- SM4.B.phase-2 — store/load algebra: 7 read-after-write _self lemmas +
 -- representative cross-field and system-wide frame lemmas.
 #check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_self
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self
@@ -2518,7 +2518,7 @@ import SeLe4n.Kernel.Concurrency.Types
 #check @SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_currentOnCore
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_domainSchedule
--- SM4.B.phase-2 — per-core independence: the seven same-field cross-core (`_ne`) frames.
+-- SM4.B.phase-2 — per-core independence: the seven same-field cross-core (_ne) frames.
 #check @SeLe4n.Model.SchedulerState.setCurrentOnCore_currentOnCore_ne
 #check @SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne
 #check @SeLe4n.Model.SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne
