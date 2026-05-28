@@ -1,3 +1,65 @@
+## v0.31.18 — WS-SM SM4.C audit-pass-5: per-conjunct per-op preservation (plan §3.4 Pattern 1)
+
+Adds 25 named per-conjunct per-op SMP preservation theorems (§7 of
+`PerCorePreservation.lean`) — the most-used 5 conjuncts after each of
+the 5 boot-core scheduler operations.  Each is a one-line projection
+from the corresponding aggregate per-op preservation theorem
+(audit-pass-4), demonstrating the plan §3.4 Pattern 1 mechanical
+lifting of existing single-core preservation to per-core SMP form.
+
+**25 named theorems** (5 conjuncts × 5 ops):
+
+  * Conjuncts: `queueCurrentConsistentOnCore`, `runQueueUniqueOnCore`,
+    `currentThreadValidOnCore`, `domainTimeRemainingPositiveOnCore`,
+    `runnableThreadsAreTCBsOnCore`.
+  * Operations: `schedule`, `handleYield`, `timerTick`,
+    `switchDomain`, `scheduleDomain`.
+
+For each (op, conjunct) pair, the theorem is:
+
+```
+theorem <op>_preserves_<conjunct>OnCore_smp
+    (st st' : SystemState) (hPre : schedulerInvariant_smp st)
+    (hDSE : domainScheduleEntriesPositive st)
+    ... operation-specific hypotheses ...
+    (hStep : op st = .ok ((), st'))
+    (hOtherIdle : ∀ c, c ≠ bootCoreId → ...) :
+    ∀ c, <conjunct>OnCore st' c := fun c =>
+  schedulerInvariant_perCore_to_<conjunct>
+    ((<op>_preserves_schedulerInvariant_smp ... ) c)
+```
+
+The remaining 5 conjuncts (`timeSlicePositive`,
+`currentTimeSlicePositive`, `edfCurrentHasEarliestDeadline`,
+`contextMatchesCurrent`, `schedulerPriorityMatch`) derive via the same
+projection pattern from the same aggregate preservation — their explicit
+named forms are recorded as post-SM4.C extensions if SM5 finds need.
+
+**Plan §3.4 Pattern 1 coverage**: each existing single-core
+`<op>_preserves_<conjunct>` theorem (in
+`Scheduler/Operations/Preservation.lean`) now has a per-core SMP
+companion `<op>_preserves_<conjunct>OnCore_smp` (in this module).  The
+existing single-core preservation is the special case at `bootCoreId`;
+the new SMP form lifts to all cores via the §11 SMP-preservation
+composition and the §11 sufficient-idle theorem (for non-boot idle
+cores).
+
+**Test coverage**: `tests/SchedulerInvariantPerCorePreservationSuite.lean`
+extended with 25 new surface anchors for the per-conjunct preservation
+theorems.
+
+**Module status**: `PerCorePreservation.lean` ~700 LoC (was ~240 at
+v0.31.17).  Tier 0+1+2+3 green; partition gate green (35 staged-only
+modules); axiom-clean (only `propext` / `Quot.sound` /
+`Classical.choice`); trace fixture byte-identical.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM4.D cross-subsystem migrations; SM4.E witness retirement;
+post-SM4.C extension: per-conjunct preservation for the 5 less-used
+conjuncts × 5 ops (25 additional theorems) and for the SC-using extended
+conjuncts × 5 ops (additional 20).  All derive trivially via projection.
+
 ## v0.31.17 — WS-SM SM4.C audit-pass-4: per-operation per-core preservation
 
 Adds the **per-operation per-core preservation theorems** demonstrating

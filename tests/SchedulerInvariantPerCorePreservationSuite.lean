@@ -43,6 +43,35 @@ open SeLe4n.Kernel.Concurrency
 #check @scheduleDomain_preserves_schedulerInvariant_smp
 #check @chooseThread_preserves_schedulerInvariantBundle_perCore_bootCore
 
+-- §7 — per-conjunct per-operation SMP preservation (plan §3.4 Pattern 1).
+-- 5 conjuncts × 5 ops = 25 named theorems (one-line projections from
+-- the aggregate preservation).
+#check @schedule_preserves_queueCurrentConsistentOnCore_smp
+#check @schedule_preserves_runQueueUniqueOnCore_smp
+#check @schedule_preserves_currentThreadValidOnCore_smp
+#check @schedule_preserves_domainTimeRemainingPositiveOnCore_smp
+#check @schedule_preserves_runnableThreadsAreTCBsOnCore_smp
+#check @handleYield_preserves_queueCurrentConsistentOnCore_smp
+#check @handleYield_preserves_runQueueUniqueOnCore_smp
+#check @handleYield_preserves_currentThreadValidOnCore_smp
+#check @handleYield_preserves_domainTimeRemainingPositiveOnCore_smp
+#check @handleYield_preserves_runnableThreadsAreTCBsOnCore_smp
+#check @timerTick_preserves_queueCurrentConsistentOnCore_smp
+#check @timerTick_preserves_runQueueUniqueOnCore_smp
+#check @timerTick_preserves_currentThreadValidOnCore_smp
+#check @timerTick_preserves_domainTimeRemainingPositiveOnCore_smp
+#check @timerTick_preserves_runnableThreadsAreTCBsOnCore_smp
+#check @switchDomain_preserves_queueCurrentConsistentOnCore_smp
+#check @switchDomain_preserves_runQueueUniqueOnCore_smp
+#check @switchDomain_preserves_currentThreadValidOnCore_smp
+#check @switchDomain_preserves_domainTimeRemainingPositiveOnCore_smp
+#check @switchDomain_preserves_runnableThreadsAreTCBsOnCore_smp
+#check @scheduleDomain_preserves_queueCurrentConsistentOnCore_smp
+#check @scheduleDomain_preserves_runQueueUniqueOnCore_smp
+#check @scheduleDomain_preserves_currentThreadValidOnCore_smp
+#check @scheduleDomain_preserves_domainTimeRemainingPositiveOnCore_smp
+#check @scheduleDomain_preserves_runnableThreadsAreTCBsOnCore_smp
+
 -- ============================================================================
 -- §2  Elaboration-time examples: each preservation theorem applies to a
 --     concrete (variable) input shape, confirming the typed signature is
