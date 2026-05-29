@@ -244,6 +244,28 @@ theorem default_state_perCoreInitialized :
 > purely additive — no config object clobbered — under freshness), and
 > `idleSlotsFreshAt_of_initialObjects_below_base` (freshness for any below-base
 > config, the canonical case).
+>
+> **SM5 integration scope (tracked debt, per PR #803 Codex review).**  The idle
+> bootstrap is staged forward-looking infra; SM5 (per-core scheduler) owns
+> production integration.  Three items are intentionally deferred to SM5 — none
+> is a current defect (the wrapper leaves production boot, the trace, and all
+> proofs untouched), they are gaps that surface only on full wiring:
+> 1. **Not on the checked boot path** — `bootFromPlatformChecked` still builds
+>    `bootFromPlatform config`, so checked/RPi5 boots return `currentOnCore c =
+>    none`.  SM5 wires the idle install into the checked path (or a checked idle
+>    variant).
+> 2. **Boot-core-only thread-state inference** — `inferThreadState` /
+>    `syncThreadStates` read only `currentOnCore bootCoreId`, so a secondary
+>    core's idle TCB would be re-inferred `.Inactive`.  SM5 lifts
+>    `inferThreadState` to the per-core shape (mirroring SM4.C); no production
+>    path runs `syncThreadStates` on the idle boot state today.
+> 3. **Idle TCBs are not `KernelObject.wellFormed`** — sentinel cspace/vspace
+>    roots (seL4 idle-thread semantics) fail the root-resolution check.  That
+>    predicate is a *retype-time precondition* (`RetypeWrappers.lean`), **not** a
+>    global invariant, and idle TCBs are builder-installed (never retyped), so
+>    there is **no current contract violation**.  SM5, when wiring idle through a
+>    `wellFormed`-checked path, installs valid idle roots or formalises an
+>    explicit idle exemption in `KernelObject.wellFormed`.
 
 Per decision #8 (per-core idle threads), `bootFromPlatform`
 installs an idle TCB on each core:

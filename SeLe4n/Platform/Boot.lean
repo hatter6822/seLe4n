@@ -1938,7 +1938,40 @@ theorem installIdleThread_objects_ne (ist : IntermediateState)
 
     Defined as a wrapper (analogous to `bootFromPlatformWithInterrupts`) so the
     base `bootFromPlatform` — and its entire verified invariant surface — is
-    left unchanged. -/
+    left unchanged.
+
+    **SM5 integration scope (tracked debt).**  This idle-thread bootstrap is
+    forward-looking infrastructure; it is **not** yet wired into the production
+    boot path, and SM5 (per-core scheduler) owns that integration.  Three
+    consequences are intentionally deferred to SM5 (none is a defect in the
+    current staged surface — they are gaps that surface only on full production
+    wiring):
+
+    1. **Not on the checked boot path.**  `bootFromPlatformChecked` (the
+       production entry point) still builds `bootFromPlatform config`, so
+       checked/RPi5 boots return `currentOnCore c = none` with no idle TCBs.
+       The SM4.G idle guarantees apply only to callers that opt into this
+       wrapper.  SM5 wires the idle install into the checked boot path (or
+       adds a checked idle variant) so the bootstrap state is production-reachable.
+    2. **Boot-core-only thread-state inference.**
+       `Scheduler.Operations.Core.inferThreadState` / `syncThreadStates` read
+       only `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId`, so a
+       *secondary* core's idle TCB (created `.Running`) would be re-inferred as
+       `.Inactive` by a sync, even though that core's `currentOnCore` points at
+       it.  SM5 lifts `inferThreadState` to the per-core shape (mirroring the
+       SM4.C per-core invariant migration); until then no production path runs
+       `syncThreadStates` on the idle boot state.
+    3. **Idle TCBs are not `KernelObject.wellFormed`.**  `createIdleThread`
+       uses `ObjId.sentinel` for `cspaceRoot` / `vspaceRoot` (idle runs in
+       kernel context with no user caps — seL4 idle-thread semantics), so the
+       idle TCB fails `KernelObject.wellFormed` (which requires both roots to
+       resolve).  That predicate is a **retype-time precondition**
+       (`Lifecycle/Operations/RetypeWrappers.lean`), **not** a global
+       invariant, and idle TCBs are builder-installed — never retyped — so
+       there is **no current contract violation** and no system invariant is
+       broken.  SM5, when wiring idle through any `wellFormed`-checked path,
+       either installs valid idle roots or formalises an explicit idle-thread
+       exemption in `KernelObject.wellFormed`. -/
 def bootFromPlatformWithIdleThreads (config : PlatformConfig) : IntermediateState :=
   SeLe4n.Kernel.Concurrency.allCores.foldl installIdleThread (bootFromPlatform config)
 
