@@ -1549,32 +1549,54 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
   -- `none` shape holds for *every* core, not just the boot core.
   expect "SM4.E: boot scheduler current = none on EVERY core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c => (booted.currentOnCore c).isNone))
-  -- The forward-compatible disjunctive witness (SM4.E.2 / inventory entry 7
-  -- sourceTheorem) type-checks for an arbitrary core.
+  -- The substantive witness (SM4.E.2 / SM4.G): it names the per-core idle
+  -- thread, so it *excludes* `current = some <non-idle>` (not the
+  -- `Option`-inhabitation tautology).  Type-checks for every core.
   let _smpWitness :
       ∀ c : SeLe4n.Kernel.Concurrency.CoreId,
-        booted.currentOnCore c = none ∨ ∃ tid, booted.currentOnCore c = some tid :=
+        booted.currentOnCore c = none ∨
+        booted.currentOnCore c = some (SeLe4n.Platform.Boot.idleThreadId c) :=
     fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_witness config c
-  -- The witness/companion hold for *every* config, not just the empty boot:
-  -- boot a NON-empty config and confirm the per-core current is still `none`
-  -- on every core.  This exercises `foldIrqs` scheduler-preservation at
-  -- runtime and the `∀ config` generality the empty-config checks above miss.
+  -- ∀ config generality: boot a config with BOTH a non-empty IRQ table
+  -- (exercising `foldIrqs`) AND a non-empty object list (exercising
+  -- `foldObjects`), confirming the per-core current stays `none` through both
+  -- boot folds.
+  let idleObj : SeLe4n.Platform.Boot.ObjectEntry :=
+    { id := SeLe4n.ObjId.ofNat 5
+      obj := KernelObject.tcb (SeLe4n.Platform.Boot.createIdleThread bootCoreId)
+      hSlots := (fun _ h => by cases h)
+      hMappings := (fun _ h => by cases h) }
   let cfgNonEmpty : SeLe4n.Platform.Boot.PlatformConfig :=
-    { irqTable := [{ irq := ⟨1⟩, handler := SeLe4n.ObjId.ofNat 42 }], initialObjects := [] }
+    { irqTable := [{ irq := ⟨1⟩, handler := SeLe4n.ObjId.ofNat 42 }]
+      initialObjects := [idleObj] }
   let bootedNonEmpty := (SeLe4n.Platform.Boot.bootFromPlatform cfgNonEmpty).state.scheduler
   let _allNoneNonEmpty :
       ∀ c : SeLe4n.Kernel.Concurrency.CoreId, bootedNonEmpty.currentOnCore c = none :=
     fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone cfgNonEmpty c
-  expect "SM4.E: smp witness + currentAllNone hold on a non-empty config"
+  expect "SM4.E: currentAllNone holds through foldIrqs + foldObjects"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c => (bootedNonEmpty.currentOnCore c).isNone))
-  -- The disjunction's `some` branch is genuinely inhabitable: a scheduler
-  -- with a current thread set on the boot core reads back `some tid` (so the
-  -- witness is not vacuously always-`none`; the forward path to SM4.G's
-  -- per-core idle threads is real).
-  let sWithTid : SeLe4n.Model.SchedulerState :=
-    (default : SeLe4n.Model.SchedulerState).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 7))
-  expect "SM4.E: setCurrentOnCore yields some-branch current"
-    ((sWithTid.currentOnCore bootCoreId) == some (SeLe4n.ThreadId.ofNat 7))
+  -- SM4.G: the idle-thread boot path RUNS the install fold (createObject +
+  -- setCurrentOnCore on every core) and installs each core's idle thread as
+  -- `current` with the idle TCB present in the object store.
+  let bootedIdle := (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads config).state
+  expect "SM4.G: idle boot path sets boot-core current to its idle thread"
+    (bootedIdle.scheduler.currentOnCore bootCoreId ==
+      some (SeLe4n.Platform.Boot.idleThreadId bootCoreId))
+  expect "SM4.G: idle TCB present in the object store on EVERY core"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      (bootedIdle.objects[(SeLe4n.Platform.Boot.idleThreadId c).toObjId]?).isSome))
+  expect "SM4.G: idle boot path leaves the run queue empty (dequeue-on-dispatch)"
+    (bootedIdle.scheduler.runnable.isEmpty)
+  -- SM4.G soundness (elaboration-level): the installed idle-thread state
+  -- satisfies the scheduler invariant bundle (the three runtime checks above
+  -- are exactly its decidable content — valid current TCB, dequeued, unique).
+  let _bundle : SeLe4n.Kernel.schedulerInvariantBundle
+      (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads config).state :=
+    SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle config
+  -- The idle threads are per-core-distinct (no aliasing across cores).
+  expect "SM4.G: idle thread ids are distinct across cores"
+    (decide (SeLe4n.Platform.Boot.idleThreadId bootCoreId ≠
+      SeLe4n.Platform.Boot.idleThreadId ⟨1, by decide⟩))
 
 /-- AN6-F (CX-M04): The `InterruptsEnabledPreservationBundle` structure
     packages the eight individual `_preserves_interruptsEnabled`

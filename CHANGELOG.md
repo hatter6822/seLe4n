@@ -1,3 +1,65 @@
+## v0.31.36 — WS-SM SM4.G: per-core idle-thread bootstrap (substantive SMP boot witness)
+
+Follow-on to SM4.E (per maintainer directive): implements the per-core
+idle-thread machinery sketched in `docs/planning/SMP_PER_CORE_STATE_PLAN.md`
+§3.7 / §3.8 / §4.3, **upgrading the named SMP boot witness from a tautology
+to a substantive claim** and closing the three remaining SM4.E
+optimality/honesty gaps surfaced by the post-landing audit.  All in
+`SeLe4n/Platform/Boot.lean`; every new theorem axiom-clean (`propext` /
+`Classical.choice` / `Quot.sound` only); trace fixture byte-identical
+(227/227 — the trace harness does not exercise `bootFromPlatform`, and the
+base `bootFromPlatform` is left **unchanged**).
+
+- **Substantive witness (the headline fix).** `bootFromPlatform_smp_witness`
+  was `currentOnCore c = none ∨ ∃ tid, = some tid` — a tautology over
+  `Option` (true for *any* current value).  It is now
+  `currentOnCore c = none ∨ currentOnCore c = some (idleThreadId c)`, which
+  **excludes** `current = some <non-idle thread>` — a genuine, non-vacuous
+  constraint, and exactly the plan §4.3 form.  Requires only that
+  `idleThreadId` be *defined* (proved via the `none` branch on
+  `bootFromPlatform`), so it remains forward-compatible.
+- **Idle-thread machinery (plan §3.7).** `idleThreadId : CoreId → ThreadId`
+  (reserved ObjId range `idleThreadIdBase = 0x1_0000`, `idleThreadId_injective`
+  / `_ne` / `_toObjId_ne`); `createIdleThread c` (priority 0, domain 0,
+  `threadState = .Running`, sentinel CSpace/VSpace — idle runs in kernel
+  context, and the scheduler invariants never read those roots; the core
+  binding is the `tid = idleThreadId c` identity, since seLe4n's `TCB` has no
+  `cpuAffinity` field); `installIdleThread` (builder `createObject` for the
+  idle TCB + `setCurrentOnCore`, with the `IntermediateState` invariants
+  forwarded by defeq — the `applyMachineConfig` pattern);
+  `bootFromPlatformWithIdleThreads` (a wrapper over `bootFromPlatform`,
+  analogous to `bootFromPlatformWithInterrupts`, so the base boot path's
+  entire verified invariant surface is untouched).
+- **Theorem 3.7.1.** `bootFromPlatformWithIdleThreads_all_cores_have_idle`:
+  `∀ c`, the boot path sets `currentOnCore c = some (idleThreadId c)` and the
+  idle TCB is present in the object store.  Proved via a `Nodup` fold-install
+  lemma + two frame lemmas (each install targets a distinct core); holds
+  unconditionally.
+- **Soundness.** `bootFromPlatformWithIdleThreads_schedulerInvariantBundle`
+  proves the installed state satisfies `schedulerInvariantBundle` (idle
+  thread is a valid current TCB, dequeued — not in the empty run queue —, and
+  the run queue is duplicate-free), and `…_valid` exposes the four structural
+  boot invariants (`allTablesInvExtK` etc., preserved because the idle TCBs go
+  through the same builder as platform objects).  Installing an idle thread as
+  `current` yields a fully scheduler-valid, structurally-valid state — no
+  dangling current reference, no double-scheduling.
+- **SM4.E audit-gap closures (per the implement-the-improvement rule).**
+  (1) The `SmpRetiredAssumption.retiredBy` field is renamed **`anchor`**: it
+  was honest for the 2 `.pathARetired` entries but overstated for the 6
+  `.perCoreBracketGated` ones (which point to their *current* per-core
+  anchor, not a retirement witness).  `smpRetiredInventory_retiredBy_nodup` →
+  `_anchor_nodup`.  (2) The `ModelIntegritySuite` boot test now exercises
+  `foldObjects` (a non-empty `initialObjects`), not just `foldIrqs`, and adds
+  runtime checks that run the install fold.  (3) `SMP_FOUNDATIONS_PLAN.md`'s
+  SM0-era code sketches gain a post-SM4.E/SM4.G note (they reference the
+  now-retired witness; the live anchor/consumer reference the replacement).
+
+Surface: 7 `#check` anchors in `SmpFoundationsSuite` + 4 tier-3 anchors;
+`model_integrity_suite` SM4.G runtime checks (idle current, per-core idle
+TCB present, empty run queue, distinct idle ids) all green.  Items deferred
+past v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §3.7 / §3.8 / §4.3 (SM4.G)
+
 ## v0.31.35 — WS-SM SM4.E: single-core witness retirement + per-core SMP boot witness + retirement ledger
 
 Closes §5.5 of `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (SM4.E, 2 PRs, 5

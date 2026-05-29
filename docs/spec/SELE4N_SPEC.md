@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.35` (`lakefile.toml`) |
+| **Package version** | `0.31.36` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 145,962 across 209 Lean files |
-| **Test LoC** | 31,791 across 47 Lean test suites |
-| **Proved declarations** | 4,597 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 146,286 across 209 Lean files |
+| **Test LoC** | 31,822 across 47 Lean test suites |
+| **Proved declarations** | 4,615 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM4.D cross-subsystem per-core invariant migration LANDED (v0.31.30) + audit-passes 1–2 (v0.31.31→v0.31.32: lowEquivalentOnCore NI substrate, passiveServerIdle natural-SMP form, full per-operation SMP-preservation layer in CrossSubsystemPerCorePreservation.lean, typed-accessor migration, RetypeTargetSmp consumer)** — every cross-subsystem invariant reading scheduler state lifted to additive, soundness-preserving per-core `(c : CoreId)` forms + `∀ c` SMP aggregates across 5 new staged modules: IPC↔scheduler coherence (12 predicates, `IPC/Invariant/PerCore.lean`), capability no-stale-scheduler-ref retype precondition (`Capability/Invariant/PerCore.lean`), architecture register-decode consistency (`Architecture/InvariantPerCore.lean`), the 6 IF-M1 projections + `projectStateOnCore` (`InformationFlow/ProjectionPerCore.lean`), and the `crossSubsystemInvariant_perCore` / `crossSubsystemSchedulerContract_perCore` capstones (`CrossSubsystemPerCore.lean`); axiom-clean; partition gate 40 staged-only modules; trace fixture byte-identical (purely additive).  Built on **SM4.C per-core scheduler invariant migration (v0.31.13 → v0.31.29)** — the per-core scheduler invariant layer: 16 per-core predicate forms (all typed-accessor); 16 boot-core bridges; 3 aggregates (base `schedulerInvariant_perCore` mirroring `…BundleFull`'s per-core slice + extended mirroring `…BundleExtended` + cross-subsystem mirroring plan §5.6 with `schedContextRunQueueConsistent_perCore` / `priorityInheritance_perCore` / `activeDomainOnCore_isInDomainSchedule`) with SMP forms and bundle bridges; 20 per-conjunct frame lemmas; 7 setter independence corollaries + cross-core pairwise theorem (SM4.C.30); 6 per-op aggregate per-core preservation theorems (for `schedule` / `handleYield` / `timerTick` / `switchDomain` / `scheduleDomain` + `chooseThread` base bridge) + 25 named per-conjunct per-op SMP preservation theorems (plan §3.4 Pattern 1 lifts: 5 conjuncts × 5 ops); `_smp_of_bootCore_preservation` composition skeleton; `_holds_if_idle` sufficient theorem.  Across 2 modules (`SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` ~1660 LoC + `…/PerCorePreservation.lean` ~700 LoC); axiom-clean (only `propext` / `Quot.sound` / `Classical.choice`); AK7 baseline restored to the v0.31.2 floor (`RAW_MATCH_TOTAL` 122) with `GETTCB_ADOPTION` net +56 / `GETSCHEDCTX_ADOPTION` net +27; trace fixture byte-identical; partition gate green (35 staged-only modules). Landed earlier in WS-SM: SM0 (foundations, v0.31.3), SM1 (Rust HAL, v0.31.8), SM2 (verified lock primitives), SM3 (per-object locks → 2PL → deadlock-freedom → serializability), SM4.A (per-core `Vector` bootstrap, v0.31.11), SM4.B (`SchedulerState` path-a `Vector` replacement, v0.31.12), SM4.C (per-core scheduler invariant migration, v0.31.13 → v0.31.29). Follow-on: SM4.E (`bootFromPlatform_singleCore_witness` retirement + `bootFromPlatform_smp_witness`), SM5..SM9 (per-core scheduler, cross-core IPC, TLB shootdown, info-flow, release closure). Plans: master [`SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md); per-core state [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md) §5.3. Canonical per-phase record: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md). Prior closed portfolios: WS-RC pre-1.0 audit remediation (v0.30.11→v0.31.2), WS-AN (v0.30.11), WS-AK (v0.30.6), WS-AM–WS-B. |
@@ -2065,14 +2065,22 @@ lands. SM4.B replaced the singular `SchedulerState` fields with per-core
 became structurally too weak to characterise the per-core shape and was
 **retired** (SM4.E.1). Its replacement is the per-core SMP-shape witness
 `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness` — `∀ c : CoreId`, the
-booted scheduler's `currentOnCore c` is `none ∨ ∃ tid, = some tid` — with
-the substantive companion `bootFromPlatform_smp_currentAllNone`
-(`currentOnCore c = none` on **every** core at boot). The disjunctive
-witness is forward-compatible: the `some tid` disjunct will be witnessed by
-`idleThreadId c` once SM4.G installs per-core idle threads, so it needs no
-second retirement. Inventory entries 7 and 8 are repointed to these two
-theorems (SM4.E.3 / SM4.E.4) and their `smpDischarge` reads "implemented in
-SM4 path-a".
+booted scheduler's `currentOnCore c` is `none ∨ = some (idleThreadId c)` —
+with the substantive companion `bootFromPlatform_smp_currentAllNone`
+(`currentOnCore c = none` on **every** core at boot). Naming the per-core
+idle thread makes the witness non-vacuous (it excludes `current = some t`
+for non-idle `t`) yet forward-compatible. Inventory entries 7 and 8 are
+repointed to these two theorems (SM4.E.3 / SM4.E.4) and their `smpDischarge`
+reads "implemented in SM4 path-a".
+
+**WS-SM SM4.G (v0.31.36)** then installed the per-core idle threads (plan
+§3.7): `idleThreadId` / `createIdleThread` /
+`bootFromPlatformWithIdleThreads` (a wrapper leaving the base
+`bootFromPlatform` unchanged), with `bootFromPlatformWithIdleThreads_all_cores_have_idle`
+(`∀ c`, `currentOnCore c = some (idleThreadId c)` + idle TCB present — the
+live `some` branch of the witness),
+`…_schedulerInvariantBundle` (the installed state is scheduler-valid), and
+`…_valid` (the four structural boot invariants).  All axiom-clean.
 
 `SeLe4n/Kernel/Concurrency/Assumptions.lean` also adds the **retirement
 ledger** `def smpRetiredInventory : List SmpRetiredAssumption` (SM4.E.5):
@@ -3709,11 +3717,18 @@ WS-AN Phase AN6-F added `bootFromPlatform_singleCore_witness` in
 bring-up workstream took **path (a)**: at **SM4.B** (v0.31.12) the
 `SchedulerState.current` field flipped from a single `Option ThreadId`
 to `Vector (Option ThreadId) Concurrency.numCores` indexed by `CoreId`
-(the path-a per-core `Vector` replacement). The witness is therefore
-restated over the boot core's accessor — `currentOnCore bootCoreId =
-none ∨ ∃ tid, currentOnCore bootCoreId = some tid` — and remains the
-structural anchor for the `singleCoreOperation` `ArchAssumption`. The
-Rust HAL still enforces the hardware-level boot assumption via
+(the path-a per-core `Vector` replacement). **WS-SM SM4.E (v0.31.35)**
+then **retired** the boot-core-only witness — once `current` was a
+per-core `Vector`, the boot-core-only form was structurally too weak to
+characterise the per-core map — and replaced it with the per-core
+SMP-shape witness `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness`
+(`∀ c : CoreId, currentOnCore c = none ∨ = some (idleThreadId c)`), the
+new structural anchor for the `singleCoreOperation` `ArchAssumption`
+(see §6.8). **WS-SM SM4.G (v0.31.36)** then installed the per-core idle
+threads, so the witness's `some` branch is live on the
+`bootFromPlatformWithIdleThreads` boot path
+(`bootFromPlatformWithIdleThreads_all_cores_have_idle`). The Rust HAL
+still enforces the hardware-level boot assumption via
 `MPIDR_CORE_ID_MASK = 0x00FFFFFF` and the core-0 wake gate in
 `rust/sele4n-hal/src/boot.S` (secondary-core wake-up is staged in the
 SM1 HAL but not yet driven from the verified kernel).
@@ -3721,12 +3736,11 @@ SM1 HAL but not yet driven from the verified kernel).
 The original AN6-F note anticipated exactly this: "any future SMP
 extension that adds per-core scheduler state will either (a) change the
 `current` field's type (breaking this theorem statement) or (b)
-introduce a separate per-core-map field." SM4.B is option (a). The
-**full** retirement of the single-core witness — replacing it with
-`bootFromPlatform_smp_witness` and repointing the `singleCoreOperation`
-`ArchAssumption` — is scheduled for **SM4.E**; SM4.B keeps the witness
-valid (restated, not deleted) so the SMP assumption is never silently
-dropped mid-migration.
+introduce a separate per-core-map field." SM4.B took option (a); SM4.E
+retired the now-too-weak witness and SM4.G replaced it with the
+substantive per-core form — so the SMP assumption was carried
+continuously across the migration (restated, not deleted, at SM4.B; then
+retired-with-replacement at SM4.E/SM4.G), never silently dropped.
 
 ## 12. Licensing and Third-Party Attribution
 

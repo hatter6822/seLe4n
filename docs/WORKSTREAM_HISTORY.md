@@ -2185,7 +2185,8 @@ trace fixture byte-identical (227/227), zero new axioms.
   `SmpRetiredAssumption` list mirroring `smpLatentInventory` one-to-one by
   identifier (`smpRetiredInventory_covers_latent`), with a
   `SmpRetirementStatus` enum.  Witnesses: `_count = 8`, `_identifiers_nodup`,
-  `_retiredBy_nodup`, `_covers_latent`, and — per the honesty corollary —
+  `_anchor_nodup` (the `anchor` field was named `retiredBy` at SM4.E; renamed
+  at SM4.G), `_covers_latent`, and — per the honesty corollary —
   the disposition partition `_pathARetired_count = 2` /
   `_perCoreBracketGated_count = 6` (only the scheduler-state shape + boot-core
   current are genuinely path-a-retired; the other six are
@@ -2194,6 +2195,35 @@ trace fixture byte-identical (227/227), zero new axioms.
 Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
 `SmpFoundationsSuite` / `ModelIntegritySuite` (both green, 0 fails).  Items
 deferred past v1.0.0 with correctness impact: NONE.
+
+**WS-SM SM4.G LANDED at v0.31.36** (per-core idle-thread bootstrap; follow-on
+to SM4.E).  Upgrades the named SMP boot witness from a tautology to a
+substantive claim and closes the three SM4.E audit-gaps.  All in
+`SeLe4n/Platform/Boot.lean`; axiom-clean; trace byte-identical (227/227;
+`bootFromPlatform` unchanged — the wrapper design leaves the base boot path's
+verified invariant surface intact).
+
+- **Substantive witness**: `bootFromPlatform_smp_witness` becomes
+  `currentOnCore c = none ∨ = some (idleThreadId c)` (was the `Option`
+  tautology `∨ ∃ tid, = some tid`).  Naming the per-core idle thread excludes
+  `current = some <non-idle>` — the plan §4.3 form, non-vacuous, still
+  forward-compatible (proved via the `none` branch on `bootFromPlatform`).
+- **Idle machinery (§3.7)**: `idleThreadId` (reserved range `0x1_0000`,
+  injective), `createIdleThread` (priority 0, domain 0, `.Running`, sentinel
+  CSpace/VSpace; core bound by the `tid` identity since `TCB` has no
+  `cpuAffinity`), `installIdleThread` (builder `createObject` +
+  `setCurrentOnCore`, invariants forwarded by defeq),
+  `bootFromPlatformWithIdleThreads` (a wrapper, like
+  `bootFromPlatformWithInterrupts`).
+- **Theorem 3.7.1**: `bootFromPlatformWithIdleThreads_all_cores_have_idle`
+  (`∀ c`, current = `some (idleThreadId c)` + idle TCB present; `Nodup`
+  fold-install + frame lemmas).  **Soundness**: `…_schedulerInvariantBundle`
+  (scheduler-valid) + `…_valid` (4 structural boot invariants).
+- **SM4.E audit-gap closures**: `SmpRetiredAssumption.retiredBy` → `anchor`
+  (honest for the 6 gated entries; `_retiredBy_nodup` → `_anchor_nodup`); the
+  boot test exercises `foldObjects`; `SMP_FOUNDATIONS_PLAN.md` SM0 sketches
+  get a post-retirement note.  Items deferred past v1.0.0 with correctness
+  impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

@@ -219,6 +219,20 @@ theorem default_state_perCoreInitialized :
 
 ### 3.7 Idle thread bootstrap
 
+> **LANDED at v0.31.36 (SM4.G)**, with two faithfulness adaptations to the
+> sketch below: (a) seLe4n's `TCB` has **no `cpuAffinity` field**, so the
+> per-core binding is carried by the `tid = idleThreadId c` identity rather
+> than `cpuAffinity := some c`; (b) the install is a **wrapper**
+> `bootFromPlatformWithIdleThreads` (over an unchanged `bootFromPlatform`),
+> not a mutation of `bootFromPlatform` itself — this keeps the base boot
+> path's entire verified invariant surface intact, the established
+> `bootFromPlatformWithInterrupts` pattern.  Theorem 3.7.1 landed as
+> `bootFromPlatformWithIdleThreads_all_cores_have_idle` (the
+> `cpuAffinity = some c` clause replaced by the exact-TCB form
+> `objects[(idleThreadId c).toObjId]? = some (.tcb (createIdleThread c))`),
+> plus the soundness theorems `…_schedulerInvariantBundle` and `…_valid`.
+> `Priority` needs no bound proof, so `⟨0⟩` (not `⟨0, by decide⟩`).
+
 Per decision #8 (per-core idle threads), `bootFromPlatform`
 installs an idle TCB on each core:
 
@@ -257,6 +271,15 @@ sequence. The proof unfolds the boot pipeline and applies
 `Vector.get_replicate` for the per-core initialization. □
 
 ### 3.8 SMP-shape witness theorem
+
+> **LANDED at v0.31.35 (SM4.E.2) + v0.31.36 (SM4.G).**  The witness lives in
+> `SeLe4n.Platform.Boot` (not `CrossSubsystem` — import-cycle, see §5.5), over
+> `(bootFromPlatform config).state.scheduler.currentOnCore c`.  At SM4.E the
+> `some` branch was `∃ tid, = some tid` (`idleThreadId` did not yet exist); at
+> SM4.G it became the substantive `= some (idleThreadId c)` shown below.  The
+> live `some` branch is realised on the `bootFromPlatformWithIdleThreads` boot
+> path (`bootFromPlatformWithIdleThreads_all_cores_have_idle`); the
+> `bootFromPlatform` path takes the `none` branch (`…_smp_currentAllNone`).
 
 **Theorem 3.8.1** (`bootFromPlatform_smp_witness`). Replaces the
 retired `bootFromPlatform_singleCore_witness`:
@@ -580,14 +603,16 @@ migrations.
 >   (NOT `CrossSubsystem.lean`: the replacement references `bootFromPlatform`,
 >   and `Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem`,
 >   so siting it in `CrossSubsystem` would cycle — same reason as the CX-M04
->   bundle note).  Adapted from §3.8: the disjunct's `some` branch is
->   `∃ tid, … = some tid` (forward-compatible — `idleThreadId c` does not exist
->   until SM4.G), and `bootFromPlatform config : IntermediateState` so the path
->   is `(bootFromPlatform config).state.scheduler.currentOnCore c`.  Substantive
->   companion `bootFromPlatform_smp_currentAllNone` proves `= none` on every
->   core (via `bootFromPlatform_scheduler_eq` + SM4.B.9
->   `default_state_perCoreInitialized`) — the non-vacuous content the
->   disjunctive witness rests on.
+>   bundle note).  Per §3.8 / §4.3, the `some` branch is `= some (idleThreadId c)`
+>   (`bootFromPlatform config : IntermediateState`, so the path is
+>   `(bootFromPlatform config).state.scheduler.currentOnCore c`).  At the SM4.E
+>   cut the disjunct's `some` branch was stated as `∃ tid, = some tid` because
+>   `idleThreadId` did not yet exist; **SM4.G (v0.31.36, below) defined
+>   `idleThreadId` and restated the witness to the substantive
+>   `none ∨ = some (idleThreadId c)`** (non-vacuous — excludes non-idle
+>   currents).  Substantive companion `bootFromPlatform_smp_currentAllNone`
+>   proves `= none` on every core (via `bootFromPlatform_scheduler_eq` + SM4.B.9
+>   `default_state_perCoreInitialized`).
 > - **SM4.E.3 / SM4.E.4** — inventory entries 7 + 8 `smpDischarge` →
 >   "implemented in SM4 path-a"; `sourceTheorem`s repointed to
 >   `bootFromPlatform_smp_witness` (entry 7) and `bootFromPlatform_smp_currentAllNone`

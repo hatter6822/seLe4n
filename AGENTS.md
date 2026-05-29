@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.35.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.36.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,15 +182,15 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~22144 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7402 lines)
+- `CHANGELOG.md` (~22206 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~7432 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4016 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3922 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3906 lines)
-- `docs/spec/SELE4N_SPEC.md` (~3774 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3788 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3392 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3153 lines)
@@ -199,9 +199,9 @@ To find files that need pagination today, run:
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3057 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3006 lines)
+- `SeLe4n/Platform/Boot.lean` (~2980 lines)
 - `SeLe4n/Model/State.lean` (~2938 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2673 lines)
-- `SeLe4n/Platform/Boot.lean` (~2656 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
@@ -215,9 +215,9 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
+- `tests/ModelIntegritySuite.lean` (~1996 lines)
 - `SeLe4n/Prelude.lean` (~1992 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1985 lines)
-- `tests/ModelIntegritySuite.lean` (~1974 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -238,7 +238,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
-- `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1648 lines)
+- `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
 - `tests/InformationFlowSuite.lean` (~1622 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1619 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
@@ -267,7 +267,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
-- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1113 lines)
+- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1138 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
@@ -287,8 +287,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
+- `tests/SmpFoundationsSuite.lean` (~920 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
-- `tests/SmpFoundationsSuite.lean` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
@@ -4419,6 +4419,53 @@ documentation lives under `docs/` and `docs/gitbook/`.
   surface anchors.  Items deferred past v1.0.0 with correctness impact: NONE.
   Follow-on: SM4.C remaining sub-tasks (incl. the SM4.C.11 Liveness tracked
   debt) + SM4.G (per-core idle-thread bootstrap) + SM5 (per-core scheduler).
+
+  **WS-SM SM4.G LANDED at v0.31.36 on branch
+  `claude/gallant-darwin-zWsYi`** (per-core idle-thread bootstrap; follow-on
+  to SM4.E per maintainer directive).  Upgrades the named SMP boot witness
+  from a tautology to a substantive claim and closes the three SM4.E
+  audit-gaps.  All in `SeLe4n/Platform/Boot.lean`; every new theorem
+  axiom-clean; trace byte-identical (227/227 — `bootFromPlatform` is left
+  unchanged; the trace harness never calls it anyway).
+
+  - **Substantive witness**: `bootFromPlatform_smp_witness` is now
+    `currentOnCore c = none ∨ currentOnCore c = some (idleThreadId c)` (was
+    `∨ ∃ tid, = some tid`, a tautology over `Option`).  Naming the per-core
+    idle thread *excludes* `current = some <non-idle>` — the plan §4.3 form,
+    genuinely non-vacuous, still forward-compatible (proved via the `none`
+    branch on `bootFromPlatform`).
+  - **Idle machinery (§3.7)**: `idleThreadId` (reserved range
+    `idleThreadIdBase = 0x1_0000`, `idleThreadId_injective`),
+    `createIdleThread` (priority 0, domain 0, `.Running`, sentinel
+    CSpace/VSpace — idle runs in kernel context, core bound by the
+    `tid = idleThreadId c` identity since `TCB` has no `cpuAffinity`),
+    `installIdleThread` (builder `createObject` + `setCurrentOnCore`, the
+    `IntermediateState` invariants forwarded by defeq — the
+    `applyMachineConfig` pattern), and `bootFromPlatformWithIdleThreads` (a
+    wrapper over `bootFromPlatform`, like `bootFromPlatformWithInterrupts`, so
+    the base boot path's entire verified invariant surface is untouched).
+  - **Theorem 3.7.1**: `bootFromPlatformWithIdleThreads_all_cores_have_idle`
+    (`∀ c`, current = `some (idleThreadId c)` + the idle TCB is present in the
+    object store) — proved via a `Nodup` fold-install lemma + two frame
+    lemmas (each install targets a distinct core); holds unconditionally.
+  - **Soundness**: `bootFromPlatformWithIdleThreads_schedulerInvariantBundle`
+    (the installed state is scheduler-valid — idle is a valid current TCB,
+    dequeued, run queue duplicate-free) + `…_valid` (the four structural boot
+    invariants, preserved because idle TCBs go through the same builder as
+    platform objects).  No dangling current ref, no double-scheduling.
+  - **SM4.E audit-gap closures** (per the implement-the-improvement rule):
+    `SmpRetiredAssumption.retiredBy` renamed **`anchor`** (it overstated for
+    the 6 `.perCoreBracketGated` entries, which point to their *current*
+    per-core anchor, not a retirement witness; `…_retiredBy_nodup` →
+    `…_anchor_nodup`); the `ModelIntegritySuite` boot test now exercises
+    `foldObjects` (non-empty `initialObjects`) and runs the install fold;
+    `SMP_FOUNDATIONS_PLAN.md` SM0 sketches get a post-retirement note.
+
+  Surface: 7 `SmpFoundationsSuite` `#check` anchors + 4 tier-3 anchors +
+  `model_integrity_suite` SM4.G runtime checks (idle current, per-core idle
+  TCB present, empty run queue, distinct idle ids — all green).  Items
+  deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM4.C.11
+  Liveness tracked debt + SM5 (per-core scheduler).
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

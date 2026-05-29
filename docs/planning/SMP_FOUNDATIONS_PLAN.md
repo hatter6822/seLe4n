@@ -968,6 +968,23 @@ example : True := by
 end SeLe4n.Kernel.Concurrency
 ```
 
+> **Post-SM4.E/SM4.G note (historical accuracy).** The two SM0 code
+> sketches above (the `archAssumptionConsumer .singleCoreOperation` arm and
+> the SM0.C build-anchor `example`) reference
+> `SeLe4n.Kernel.bootFromPlatform_singleCore_witness` and
+> `architecture_assumptions_index` as they stood at SM0.  **WS-SM SM4.E
+> (v0.31.35) retired `bootFromPlatform_singleCore_witness`** (the
+> boot-core-only witness became structurally too weak once SM4.B made
+> `SchedulerState.current` a per-core `Vector`).  In the *live* tree the
+> `.singleCoreOperation` consumer mapping and the `Concurrency.Anchors`
+> build-anchor now reference `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness`
+> (and `…bootFromPlatform_smp_currentAllNone` for inventory entry 8);
+> **WS-SM SM4.G (v0.31.36)** then installed per-core idle threads, making
+> the witness substantive (`none ∨ = some (idleThreadId c)`).  The sketches
+> are retained verbatim as the SM0-era record; see
+> `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.5 (SM4.E) / §3.7 (SM4.G) for
+> the current surface.
+
 Then wire into `Platform.Staged`:
 
 ```lean

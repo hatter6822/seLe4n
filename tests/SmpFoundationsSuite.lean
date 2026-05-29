@@ -127,9 +127,18 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_count
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_covers_latent
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_identifiers_nodup
-#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_retiredBy_nodup
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_anchor_nodup
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
+
+/-! ## SM4.G — per-core idle-thread bootstrap -/
+#check @SeLe4n.Platform.Boot.idleThreadId
+#check @SeLe4n.Platform.Boot.idleThreadId_injective
+#check @SeLe4n.Platform.Boot.createIdleThread
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_valid
 
 /-! ## SM0.G — PlatformBinding extension fields (RPi5 + Sim) -/
 #check @SeLe4n.Platform.PlatformBinding.coreCount

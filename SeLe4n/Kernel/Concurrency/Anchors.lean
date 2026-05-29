@@ -58,7 +58,7 @@ The build-anchor `example` below carries, in total, **24
 * **7** for the **WS-SM SM4.E.5** retirement ledger
   (`smpRetiredInventory` + its six witnesses
   `_count` / `_covers_latent` / `_identifiers_nodup` /
-  `_retiredBy_nodup` / `_pathARetired_count` /
+  `_anchor_nodup` / `_pathARetired_count` /
   `_perCoreBracketGated_count`).  The ledger's per-entry
   `identifier` / `retiredBy` names mirror the latent inventory, so
   they are already covered by the 12 above.
@@ -129,7 +129,7 @@ example : True := by
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_count
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_covers_latent
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_identifiers_nodup
-  let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_retiredBy_nodup
+  let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_anchor_nodup
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
   trivial
