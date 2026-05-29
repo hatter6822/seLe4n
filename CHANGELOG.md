@@ -54,7 +54,8 @@ byte-identical (227/227)**, zero new axioms.
   `SmpRetirementStatus` enum (`.pathARetired` / `.perCoreBracketGated`) and
   `SmpRetiredAssumption` schema.  Witnesses: `_count = 8` (the size pin),
   `_identifiers_nodup`, `_retiredBy_nodup`, `_covers_latent`, and — per the
-  implement-the-improvement honesty corollary — `_pathARetired_count = 2`
+  implement-the-improvement honesty corollary — the full disposition
+  partition `_pathARetired_count = 2` / `_perCoreBracketGated_count = 6`
   (the **honest** disposition: only the scheduler-state shape and boot-core
   current are genuinely retired by SM4 path-a; the other six remain
   `perCoreBracketGated`, single-core property preserved per-core by the FFI
@@ -63,11 +64,11 @@ byte-identical (227/227)**, zero new axioms.
   `smpRetiredInventory_complete` once SM5..SM8 land.
 
 - **Build-anchor + surface coverage**: `Concurrency/Anchors.lean` (the SMP-H3
-  gate) repoints the two inventory `@`-references and adds six for the ledger;
+  gate) repoints the two inventory `@`-references and adds seven for the ledger;
   `tests/SmpFoundationsSuite.lean` and `tests/ModelIntegritySuite.lean`
   migrate their CX-M03 / consumer-mapping checks to the replacement and add
   ledger checks (`smp_foundations_suite` + `model_integrity_suite` green, 0
-  fails); `scripts/test_tier3_invariant_surface.sh` adds seven surface
+  fails); `scripts/test_tier3_invariant_surface.sh` adds eight surface
   anchors.
 
 Items deferred past v1.0.0 with correctness impact: NONE.

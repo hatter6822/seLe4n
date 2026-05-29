@@ -3050,7 +3050,8 @@ ledger** `smpRetiredInventory` (an 8-entry `SmpRetiredAssumption` list
 mirroring `smpLatentInventory` one-to-one by `identifier`, status
 `.pathARetired` for the 2 path-a-retired entries and
 `.perCoreBracketGated` for the 6 gated on SM5+; `_count = 8`,
-`_pathARetired_count = 2`). SM9 (release closure) adds
-`smpRetiredInventory_complete` once all 8 are discharged.
+`_pathARetired_count = 2`, `_perCoreBracketGated_count = 6`). SM9
+(release closure) adds `smpRetiredInventory_complete` once all 8 are
+discharged.
 
 Zero sorry/axiom/native_decide in production surface throughout.

@@ -35,7 +35,7 @@ would silently leave a dangling inventory entry.
 
 This module closes the gap audit-finding **SMP-H3** raised by
 forcing every named symbol to be `@`-referenced at elaboration.
-The build-anchor `example` below carries, in total, **23
+The build-anchor `example` below carries, in total, **24
 `@`-references plus 1 `ArchAssumption` constructor witness**:
 
 * **12** for the `smpLatentInventory` entries — the `identifier`
@@ -55,12 +55,13 @@ The build-anchor `example` below carries, in total, **23
   `architecture_assumptions_index_total_6`, `assumptionInventory_count`,
   `smpLatentInventory_identifiers_nodup`,
   `smpLatentInventory_sourceTheorems_nodup`).
-* **6** for the **WS-SM SM4.E.5** retirement ledger
-  (`smpRetiredInventory` + its five witnesses
+* **7** for the **WS-SM SM4.E.5** retirement ledger
+  (`smpRetiredInventory` + its six witnesses
   `_count` / `_covers_latent` / `_identifiers_nodup` /
-  `_retiredBy_nodup` / `_pathARetired_count`).  The ledger's
-  per-entry `identifier` / `retiredBy` names mirror the latent
-  inventory, so they are already covered by the 12 above.
+  `_retiredBy_nodup` / `_pathARetired_count` /
+  `_perCoreBracketGated_count`).  The ledger's per-entry
+  `identifier` / `retiredBy` names mirror the latent inventory, so
+  they are already covered by the 12 above.
 
 If any anchored symbol is renamed without updating the inventory,
 the corresponding `@`-reference fails to elaborate and the build
@@ -130,6 +131,7 @@ example : True := by
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_identifiers_nodup
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_retiredBy_nodup
   let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
+  let _ := @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
   trivial
 
 /-- **WS-SM SM0.C**: aggregator marker — `@`-references the build

@@ -129,6 +129,7 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_retiredBy_nodup
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
 
 /-! ## SM0.G — PlatformBinding extension fields (RPi5 + Sim) -/
 #check @SeLe4n.Platform.PlatformBinding.coreCount
@@ -482,6 +483,9 @@ private def runSmpInventoryChecks : IO Unit := do
   assertBool "smpRetiredInventory path-a-retired count = 2"
     (decide ((SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
                (fun e => decide (e.status = .pathARetired))).length = 2))
+  assertBool "smpRetiredInventory per-core-bracket-gated count = 6"
+    (decide ((SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
+               (fun e => decide (e.status = .perCoreBracketGated))).length = 6))
   -- The ledger mirrors the latent inventory one-to-one by identifier.
   assertBool "smpRetiredInventory covers smpLatentInventory (by identifier)"
     (decide (SeLe4n.Kernel.Concurrency.smpRetiredInventory.map (·.identifier) =

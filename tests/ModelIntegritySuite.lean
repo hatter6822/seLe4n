@@ -1555,7 +1555,18 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
       ∀ c : SeLe4n.Kernel.Concurrency.CoreId,
         booted.currentOnCore c = none ∨ ∃ tid, booted.currentOnCore c = some tid :=
     fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_witness config c
-  expect "SM4.E: bootFromPlatform_smp_witness reachable for all cores" (True == True)
+  -- The witness/companion hold for *every* config, not just the empty boot:
+  -- boot a NON-empty config and confirm the per-core current is still `none`
+  -- on every core.  This exercises `foldIrqs` scheduler-preservation at
+  -- runtime and the `∀ config` generality the empty-config checks above miss.
+  let cfgNonEmpty : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [{ irq := ⟨1⟩, handler := SeLe4n.ObjId.ofNat 42 }], initialObjects := [] }
+  let bootedNonEmpty := (SeLe4n.Platform.Boot.bootFromPlatform cfgNonEmpty).state.scheduler
+  let _allNoneNonEmpty :
+      ∀ c : SeLe4n.Kernel.Concurrency.CoreId, bootedNonEmpty.currentOnCore c = none :=
+    fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone cfgNonEmpty c
+  expect "SM4.E: smp witness + currentAllNone hold on a non-empty config"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c => (bootedNonEmpty.currentOnCore c).isNone))
   -- The disjunction's `some` branch is genuinely inhabitable: a scheduler
   -- with a current thread set on the boot core reads back `some tid` (so the
   -- witness is not vacuously always-`none`; the forward path to SM4.G's

@@ -2186,7 +2186,8 @@ trace fixture byte-identical (227/227), zero new axioms.
   identifier (`smpRetiredInventory_covers_latent`), with a
   `SmpRetirementStatus` enum.  Witnesses: `_count = 8`, `_identifiers_nodup`,
   `_retiredBy_nodup`, `_covers_latent`, and — per the honesty corollary —
-  `_pathARetired_count = 2` (only the scheduler-state shape + boot-core
+  the disposition partition `_pathARetired_count = 2` /
+  `_perCoreBracketGated_count = 6` (only the scheduler-state shape + boot-core
   current are genuinely path-a-retired; the other six are
   `perCoreBracketGated` pending SM5+).  SM9 adds `smpRetiredInventory_complete`.
 

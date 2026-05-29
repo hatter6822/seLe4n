@@ -597,7 +597,8 @@ migrations.
 > - **SM4.E.5** — `smpRetiredInventory` (8-entry `SmpRetiredAssumption` ledger
 >   mirroring `smpLatentInventory` one-to-one).  Witnesses: `_count = 8`,
 >   `_covers_latent`, `_identifiers_nodup`, `_retiredBy_nodup`, and (honest
->   disposition) `_pathARetired_count = 2`.  "All retired" is the ledger's
+>   disposition) the partition `_pathARetired_count = 2` /
+>   `_perCoreBracketGated_count = 6`.  "All retired" is the ledger's
 >   *purpose* (tracking the retirement of all 8 latent assumptions); per the
 >   honesty corollary only the 2 path-a-genuine entries are
 >   `.pathARetired`, the other 6 are `.perCoreBracketGated` pending SM5+.  SM9
@@ -712,7 +713,8 @@ No new Lean axioms.
 - [x] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".
       (SM4.E.3 / SM4.E.4, v0.31.35.)
 - [x] `smpRetiredInventory` aggregator added. (SM4.E.5, v0.31.35; 8 entries,
-      `_count = 8`, `_covers_latent`, `_pathARetired_count = 2`.)
+      `_count = 8`, `_covers_latent`, disposition partition
+      `_pathARetired_count = 2` / `_perCoreBracketGated_count = 6`.)
 - [ ] Tier 1..3 green.
 - [ ] Tier 2 trace byte-identical at single-core scenario.
 - [ ] Aggregate SM4 closure CHANGELOG entry.

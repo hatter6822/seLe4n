@@ -182,21 +182,21 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~22143 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7401 lines)
+- `CHANGELOG.md` (~22144 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~7402 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4016 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3922 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3906 lines)
-- `docs/spec/SELE4N_SPEC.md` (~3773 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3774 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3392 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3153 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~3056 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~3057 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3006 lines)
 - `SeLe4n/Model/State.lean` (~2938 lines)
@@ -217,8 +217,8 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Prelude.lean` (~1992 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1985 lines)
+- `tests/ModelIntegritySuite.lean` (~1974 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `tests/ModelIntegritySuite.lean` (~1963 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
@@ -267,8 +267,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
+- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1113 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
-- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1111 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
@@ -288,8 +288,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
+- `tests/SmpFoundationsSuite.lean` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `tests/SmpFoundationsSuite.lean` (~907 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
@@ -4403,18 +4403,19 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `SmpRetirementStatus` enum (`.pathARetired` / `.perCoreBracketGated`).
     Witnesses: `_count = 8` (size pin), `_identifiers_nodup`,
     `_retiredBy_nodup`, `_covers_latent`, and — per the honesty corollary —
-    `_pathARetired_count = 2` (only the scheduler-state shape + boot-core
-    current are genuinely path-a-retired; the other six are
+    the disposition counts `_pathARetired_count = 2` /
+    `_perCoreBracketGated_count = 6` (only the scheduler-state shape +
+    boot-core current are genuinely path-a-retired; the other six are
     `perCoreBracketGated`, single-core property preserved per-core by the FFI
     bracket, full retirement gated on SM5+).  "All retired" is the ledger's
     *purpose* (tracking all 8 toward retirement); SM9 (release closure) flips
     the gated entries and proves `smpRetiredInventory_complete`.
 
   **Build-anchor + surface coverage**: `Concurrency.Anchors` (SMP-H3 gate)
-  repoints the two inventory `@`-references and adds six for the ledger;
+  repoints the two inventory `@`-references and adds seven for the ledger;
   `tests/SmpFoundationsSuite.lean` + `tests/ModelIntegritySuite.lean` migrate
   their CX-M03 / consumer-mapping checks and add ledger checks (both suites
-  green, 0 fails); `scripts/test_tier3_invariant_surface.sh` adds seven
+  green, 0 fails); `scripts/test_tier3_invariant_surface.sh` adds eight
   surface anchors.  Items deferred past v1.0.0 with correctness impact: NONE.
   Follow-on: SM4.C remaining sub-tasks (incl. the SM4.C.11 Liveness tracked
   debt) + SM4.G (per-core idle-thread bootstrap) + SM5 (per-core scheduler).

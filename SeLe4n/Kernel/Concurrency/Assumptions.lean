@@ -499,4 +499,16 @@ theorem smpRetiredInventory_pathARetired_count :
     (smpRetiredInventory.filter (fun e => decide (e.status = .pathARetired))).length = 2 := by
   decide
 
+/-- WS-SM SM4.E.5: the complementary half of the disposition partition — the
+remaining **six** entries are `perCoreBracketGated` (single-core property
+preserved per-core by the FFI bracket; full cross-core retirement gated on
+SM5+).  Pinned explicitly (rather than left implied by
+`smpRetiredInventory_pathARetired_count` + `smpRetiredInventory_count`) so the
+partition stays robust if a future `SmpRetirementStatus` constructor is added,
+and so a mis-statused entry is caught at this file's build step.  Together
+with the path-a count this exhausts the 8 entries (2 + 6 = 8). -/
+theorem smpRetiredInventory_perCoreBracketGated_count :
+    (smpRetiredInventory.filter (fun e => decide (e.status = .perCoreBracketGated))).length = 6 := by
+  decide
+
 end SeLe4n.Kernel.Concurrency
