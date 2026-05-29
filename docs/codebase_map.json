@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/great-dijkstra-BPl3p",
-      "commit_sha": "4907b9f3d76968279e94dc12abf3343376a8eb7d",
-      "tree_sha": "2a8d88d571641afe9c0900de1d4dda1b03291ebb",
-      "committed_at_utc": "2026-05-29T01:51:20+00:00"
+      "commit_sha": "d9566c9bcd638e7efff66b14b819472db5984ab9",
+      "tree_sha": "91753e475f909842c2749eb6fcbae141d420bd6c",
+      "committed_at_utc": "2026-05-29T02:55:33+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c683e8191ac78fe3134ce9a814a6b7bb54ab1b0e9a04bc9c701b4d9f07ca6312"
+    "source_digest": "4ec11f1b2c378c26381f2b5f71300cc0bcc485747838eca9833565832d5658c1"
   },
   "summary": {
-    "module_count": 255,
-    "declaration_count": 9083
+    "module_count": 256,
+    "declaration_count": 9091
   },
   "readme_sync": {
-    "version": "0.31.32",
+    "version": "0.31.33",
     "lean_toolchain": "v4.28.0",
-    "production_files": 208,
-    "production_loc": 145518,
+    "production_files": 209,
+    "production_loc": 145617,
     "test_files": 47,
-    "test_loc": 31701,
-    "proved_theorem_lemma_decls": 4586,
+    "test_loc": 31730,
+    "proved_theorem_lemma_decls": 4590,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -88543,7 +88543,7 @@
         {
           "kind": "def",
           "name": "budgetSufficientCheck",
-          "line": 89,
+          "line": 94,
           "called": [
             "SystemState",
             "TCB",
@@ -88554,7 +88554,7 @@
         {
           "kind": "def",
           "name": "registerContextStableCheck",
-          "line": 109,
+          "line": 114,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -88569,7 +88569,7 @@
         {
           "kind": "def",
           "name": "registerContextStablePred",
-          "line": 132,
+          "line": 137,
           "called": [
             "SystemState",
             "registerContextStableCheck"
@@ -88578,7 +88578,7 @@
         {
           "kind": "instance",
           "name": "registerContextStablePred_decidable",
-          "line": 136,
+          "line": 141,
           "called": [
             "SystemState",
             "registerContextStablePred"
@@ -88587,7 +88587,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContract",
-          "line": 140,
+          "line": 145,
           "called": [
             "RuntimeBoundaryContract",
             "any",
@@ -88601,7 +88601,7 @@
         {
           "kind": "def",
           "name": "rpi5RuntimeContractRestrictive",
-          "line": 174,
+          "line": 179,
           "called": [
             "RuntimeBoundaryContract",
             "any",
@@ -88613,7 +88613,7 @@
         {
           "kind": "def",
           "name": "mmioAccessAllowed",
-          "line": 200,
+          "line": 205,
           "called": [
             "PAddr",
             "SystemState",
@@ -88624,7 +88624,7 @@
         {
           "kind": "instance",
           "name": "mmioAccessAllowed_decidable",
-          "line": 205,
+          "line": 210,
           "called": [
             "PAddr",
             "SystemState",
@@ -88636,7 +88636,7 @@
         {
           "kind": "theorem",
           "name": "mmioAccess_ram_kind_disjoint",
-          "line": 214,
+          "line": 219,
           "called": [
             "MemoryRegion"
           ]
@@ -88644,7 +88644,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_budget",
-          "line": 227,
+          "line": 232,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -88665,7 +88665,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_none_current",
-          "line": 280,
+          "line": 285,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -88677,7 +88677,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_implies_tcb_present",
-          "line": 290,
+          "line": 295,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -88690,7 +88690,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_register_match",
-          "line": 321,
+          "line": 326,
           "called": [
             "SystemState",
             "TCB",
@@ -88704,7 +88704,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_dequeue_on_dispatch",
-          "line": 335,
+          "line": 340,
           "called": [
             "SystemState",
             "TCB",
@@ -88719,7 +88719,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_timeSlice_positive",
-          "line": 349,
+          "line": 354,
           "called": [
             "SystemState",
             "TCB",
@@ -88733,7 +88733,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_ipcReady",
-          "line": 363,
+          "line": 368,
           "called": [
             "SystemState",
             "TCB",
@@ -88747,7 +88747,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_edfCompatible",
-          "line": 377,
+          "line": 382,
           "called": [
             "SystemState",
             "TCB",
@@ -88762,7 +88762,7 @@
         {
           "kind": "theorem",
           "name": "registerContextStableCheck_budget_conjunct",
-          "line": 392,
+          "line": 397,
           "called": [
             "SystemState",
             "TCB",
@@ -88772,6 +88772,93 @@
             "currentOnCore",
             "registerContextStableCheck",
             "toObjId"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Platform.RPi5.RuntimeContractPerCore",
+      "path": "SeLe4n/Platform/RPi5/RuntimeContractPerCore.lean",
+      "declaration_count": 7,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Platform.RPi5",
+          "line": 36,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "registerContextStableCheckOnCore",
+          "line": 44,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "budgetSufficientCheck",
+            "contains",
+            "currentOnCore",
+            "none",
+            "runQueueOnCore",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "registerContextStablePredOnCore",
+          "line": 59,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "registerContextStableCheckOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerContextStableCheckOnCore_bootCore",
+          "line": 65,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "registerContextStableCheck",
+            "registerContextStableCheckOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerContextStablePredOnCore_bootCore_iff",
+          "line": 68,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "registerContextStableCheckOnCore_bootCore",
+            "registerContextStablePred",
+            "registerContextStablePredOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "registerContextStableCheckOnCore_true_of_currentNone",
+          "line": 75,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "none",
+            "registerContextStableCheckOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_registerContextStableCheckOnCore",
+          "line": 82,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_state_perCoreInitialized",
+            "registerContextStableCheckOnCore",
+            "registerContextStableCheckOnCore_true_of_currentNone"
           ]
         }
       ]
@@ -89558,13 +89645,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 213,
+          "line": 220,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 219,
+          "line": 226,
           "called": []
         }
       ]
@@ -97341,12 +97428,12 @@
     {
       "module": "tests.CrossSubsystemPerCoreSuite",
       "path": "tests/CrossSubsystemPerCoreSuite.lean",
-      "declaration_count": 32,
+      "declaration_count": 33,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.CrossSubsystemPerCore",
-          "line": 32,
+          "line": 33,
           "called": [
             "RetypeTargetSmp",
             "RetypeTargetSmp.toRetypeTarget",
@@ -97403,6 +97490,7 @@
             "default_passiveServerIdle_perCore",
             "default_passiveServerIdle_scheduledNowhere",
             "default_passiveServerIdle_smp",
+            "default_registerContextStableCheckOnCore",
             "default_registerDecodeConsistent_perCore",
             "default_registerDecodeConsistent_smp",
             "endpointCall_preserves_ipcSchedulerContractPredicates_smp",
@@ -97455,6 +97543,11 @@
             "projectStateOnCore",
             "projectStateOnCore_bootCore",
             "projectStateOnCore_congr",
+            "registerContextStableCheckOnCore",
+            "registerContextStableCheckOnCore_bootCore",
+            "registerContextStableCheckOnCore_true_of_currentNone",
+            "registerContextStablePredOnCore",
+            "registerContextStablePredOnCore_bootCore_iff",
             "registerDecodeConsistent_perCore",
             "registerDecodeConsistent_perCore_bootCore_iff",
             "registerDecodeConsistent_perCore_frame",
@@ -97473,8 +97566,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:179>",
-          "line": 179,
+          "name": "<anonymous:example:190>",
+          "line": 190,
           "called": [
             "CoreId",
             "SystemState",
@@ -97485,8 +97578,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:181>",
-          "line": 181,
+          "name": "<anonymous:example:192>",
+          "line": 192,
           "called": [
             "SystemState",
             "default",
@@ -97496,8 +97589,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:183>",
-          "line": 183,
+          "name": "<anonymous:example:194>",
+          "line": 194,
           "called": [
             "SystemState",
             "default",
@@ -97507,8 +97600,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:184>",
-          "line": 184,
+          "name": "<anonymous:example:195>",
+          "line": 195,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -97519,8 +97612,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:188>",
-          "line": 188,
+          "name": "<anonymous:example:199>",
+          "line": 199,
           "called": [
             "SystemState",
             "passiveServerIdle",
@@ -97530,8 +97623,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:191>",
-          "line": 191,
+          "name": "<anonymous:example:202>",
+          "line": 202,
           "called": [
             "CoreId",
             "SystemState",
@@ -97541,8 +97634,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:196>",
-          "line": 196,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
             "ObjId",
             "SystemState",
@@ -97553,8 +97646,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:201>",
-          "line": 201,
+          "name": "<anonymous:example:212>",
+          "line": 212,
           "called": [
             "CoreId",
             "SystemState",
@@ -97565,8 +97658,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
+          "name": "<anonymous:example:214>",
+          "line": 214,
           "called": [
             "SystemState",
             "registerDecodeConsistent",
@@ -97576,8 +97669,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:208>",
-          "line": 208,
+          "name": "<anonymous:example:219>",
+          "line": 219,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -97590,8 +97683,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:211>",
-          "line": 211,
+          "name": "<anonymous:example:222>",
+          "line": 222,
           "called": [
             "CoreId",
             "IfObserver",
@@ -97603,8 +97696,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:215>",
-          "line": 215,
+          "name": "<anonymous:example:226>",
+          "line": 226,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -97617,8 +97710,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:218>",
-          "line": 218,
+          "name": "<anonymous:example:229>",
+          "line": 229,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -97630,8 +97723,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:222>",
-          "line": 222,
+          "name": "<anonymous:example:233>",
+          "line": 233,
           "called": [
             "ObjId",
             "SystemState",
@@ -97642,8 +97735,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:226>",
-          "line": 226,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "CoreId",
             "SystemState",
@@ -97658,8 +97751,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:247>",
+          "line": 247,
           "called": [
             "CoreId",
             "SystemState",
@@ -97670,8 +97763,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:238>",
-          "line": 238,
+          "name": "<anonymous:example:249>",
+          "line": 249,
           "called": [
             "SystemState",
             "crossSubsystemSchedulerContract_smp",
@@ -97681,8 +97774,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:240>",
-          "line": 240,
+          "name": "<anonymous:example:251>",
+          "line": 251,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -97692,8 +97785,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:242>",
-          "line": 242,
+          "name": "<anonymous:example:253>",
+          "line": 253,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -97709,7 +97802,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 253,
+          "line": 264,
           "called": [
             "throw"
           ]
@@ -97717,7 +97810,7 @@
         {
           "kind": "def",
           "name": "probeObserver",
-          "line": 265,
+          "line": 276,
           "called": [
             "IfObserver",
             "publicLabel"
@@ -97726,7 +97819,7 @@
         {
           "kind": "def",
           "name": "runIpcChecks",
-          "line": 269,
+          "line": 280,
           "called": [
             "SystemState",
             "all",
@@ -97747,7 +97840,7 @@
         {
           "kind": "def",
           "name": "runCapabilityChecks",
-          "line": 299,
+          "line": 310,
           "called": [
             "ObjId",
             "SystemState",
@@ -97764,7 +97857,7 @@
         {
           "kind": "def",
           "name": "runArchitectureChecks",
-          "line": 313,
+          "line": 324,
           "called": [
             "SystemState",
             "all",
@@ -97780,7 +97873,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 328,
+          "line": 339,
           "called": [
             "SystemState",
             "all",
@@ -97802,7 +97895,7 @@
         {
           "kind": "def",
           "name": "runCrossSubsystemChecks",
-          "line": 353,
+          "line": 364,
           "called": [
             "SystemState",
             "all",
@@ -97822,7 +97915,7 @@
         {
           "kind": "def",
           "name": "runCrossCoreIndependenceChecks",
-          "line": 381,
+          "line": 392,
           "called": [
             "CoreId",
             "SystemState",
@@ -97845,7 +97938,7 @@
         {
           "kind": "def",
           "name": "runPreservationChecks",
-          "line": 423,
+          "line": 434,
           "called": [
             "SystemState",
             "all",
@@ -97870,7 +97963,7 @@
         {
           "kind": "def",
           "name": "runNonVacuousChecks",
-          "line": 460,
+          "line": 471,
           "called": [
             "CoreId",
             "SystemState",
@@ -97893,8 +97986,22 @@
         },
         {
           "kind": "def",
+          "name": "runRuntimeContractChecks",
+          "line": 497,
+          "called": [
+            "SystemState",
+            "all",
+            "assertBool",
+            "default",
+            "default_state_perCoreInitialized",
+            "registerContextStableCheckOnCore",
+            "registerContextStableCheckOnCore_true_of_currentNone"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runCrossSubsystemPerCoreChecks",
-          "line": 483,
+          "line": 511,
           "called": [
             "runArchitectureChecks",
             "runCapabilityChecks",
@@ -97903,13 +98010,14 @@
             "runInformationFlowChecks",
             "runIpcChecks",
             "runNonVacuousChecks",
-            "runPreservationChecks"
+            "runPreservationChecks",
+            "runRuntimeContractChecks"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 499,
+          "line": 528,
           "called": [
             "runCrossSubsystemPerCoreChecks"
           ]

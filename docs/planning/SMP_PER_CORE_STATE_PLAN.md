@@ -514,10 +514,20 @@ migrations.
 >   codebase scan (every `def … : Prop`/projection reading a scheduler
 >   accessor, direct or transitive).
 >
-> All staged-only (41-module partition gate); axiom-clean; AK7
-> typed-accessor discipline (`getTcb?`/`getEndpoint?`/`getNotification?`);
-> trace fixture byte-identical (purely additive).  Tests:
+> All staged-only; axiom-clean; AK7 typed-accessor discipline
+> (`getTcb?`/`getEndpoint?`/`getNotification?`); trace fixture
+> byte-identical (purely additive).  Tests:
 > `tests/CrossSubsystemPerCoreSuite.lean` (Tier-2 + Tier-3 wired).
+>
+> **audit-pass-3 (v0.31.33)**: an exhaustive whole-tree re-scan found one
+> further scheduler-reading definition outside the six subsystems —
+> `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`, a
+> `Bool` runtime contract reading `currentOnCore` + `.runnable`).  Migrated
+> to `registerContextStableCheckOnCore` in the new staged module
+> `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle /
+> default witnesses), so **every** `SchedulerState`-reading definition in
+> the tree now has a per-core form or an explicit documented disposition.
+> Partition gate: 42 staged-only modules.
 
 ### 5.5 Witness retirement + replacement (SM4.E, 2 PRs, 5 sub-tasks)
 

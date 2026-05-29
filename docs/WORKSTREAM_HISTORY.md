@@ -2070,8 +2070,7 @@ slot, `decide`-verify core 0's projection unchanged / core 1's updated
 (genuinely exercising the SM4.B per-core `Vector` indexing through the
 SM4.D projection layer); runtime assertions 18 → 24, surface anchors
 89 → 102.  Audit confirmations (no change): zero compiler/linter warnings
-on a forced clean rebuild; no `set_option`/`sorry`/`admit`/`native_decide`/
-`@[simp]` in the SM4.D modules; AK7 `getTcb?` discipline holds
+on a forced clean rebuild; no `set_option`/`sorry`/`admit`/`native_decide` in the SM4.D modules; AK7 `getTcb?` discipline holds
 (`RAW_LOOKUP_TID` baseline 810); endpoint/notification raw `objects[oid]?`
 correctly outside `RAW_MATCH`.  All new theorems axiom-clean; suite 24/24
 PASS; Tier 0–3 + Rust green; trace fixture byte-identical.  Items deferred
@@ -2102,12 +2101,31 @@ discipline (`currentNotEndpointQueueHead_perCore` /
 unchanged at 810); `RetypeTargetSmp` + `mkRetypeTargetSmp` consuming
 `cleanupHookDischarged_smp`; plan §5.4 per-sub-task disposition + §8
 acceptance box checked; suite 24→32 runtime assertions (§3.7 preservation
-lifters + §3.8 non-vacuous populated-state projections), anchors 102→132.
+lifters + §3.8 non-vacuous populated-state projections), anchors 102→121.
 The inventory-aggregator pattern (SM3) is intentionally realised via the
 comprehensive Tier-3 + suite anchors (SM4.C's choice), not a duplicate macro
 module.  41 staged-only modules; axiom-clean throughout; Tier 0–3 + Rust
 green; trace fixture byte-identical.  Items deferred past v1.0.0 with
 correctness impact: NONE.
+
+**WS-SM SM4.D audit-pass-3 LANDED at v0.31.33** (third deep audit; one
+completeness gap + two doc-code mismatches, no correctness defect).  An
+exhaustive whole-tree re-scan (handling line-end `.runnable` and indirect
+readers) found the one remaining scheduler-reading definition without a
+per-core form: `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`,
+a `Bool` runtime contract reading `currentOnCore` + `.runnable`), which is
+Platform-layer (outside SM4.D.s six subsystems) and so had fallen outside
+the §5.4 file list.  Migrated to `registerContextStableCheckOnCore` (+
+`registerContextStablePredOnCore`) in the new staged module
+`Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle/default
+witnesses); `budgetSufficientCheck` widened `private`→public (pure proof-side
+`Bool`).  Every `SchedulerState`-reading definition now has a per-core form
+or an explicit disposition.  Also fixed two documentation defects: the stale
+"no `@[simp]`" claim (audit-pass-2 added 2 `RetypeTargetSmp` id-projection
+lemmas) and the "132"-anchor count (actually 121).  Final suite: 127 `#check`
+anchors, 19 examples, 34 runtime assertions.  42 staged-only modules;
+axiom-clean (full `#print axioms` sweep); Tier 0–3 + Rust green; trace fixture
+byte-identical.  Items deferred past v1.0.0 with correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

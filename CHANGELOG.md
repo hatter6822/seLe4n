@@ -1,3 +1,59 @@
+## v0.31.33 — WS-SM SM4.D audit-pass-3: last missed scheduler-reader + doc-code mismatch fixes
+
+Third deep audit (verifying code, not docs).  No correctness defect in the
+v0.31.32 proofs; this pass closes one genuine **completeness** gap and two
+**documentation-accuracy** defects the audit surfaced.
+
+- **Last missed scheduler-reader (completeness)**: an exhaustive whole-tree
+  re-scan (every `def`/`abbrev` whose body reads a scheduler accessor,
+  including line-end `.runnable` and indirect readers) found **one**
+  scheduler-reading definition with no per-core form and no documented
+  disposition: `registerContextStableCheck` in
+  `Platform/RPi5/RuntimeContract.lean` — a `Bool` runtime-contract check
+  reading `currentOnCore bootCoreId` + `.runnable`.  It is Platform-layer
+  (adjacent to SM4.D's six subsystems), so it had fallen outside the §5.4
+  file list.  Closed with a new staged module
+  `Platform/RPi5/RuntimeContractPerCore.lean`: `registerContextStableCheckOnCore`
+  (+ the `Prop` wrapper `registerContextStablePredOnCore`) parameterised by
+  `(c : CoreId)`, boot-core bridge (`rfl`), idle witness
+  (`…_true_of_currentNone`), and default-state witness.  The helper
+  `budgetSufficientCheck` (a pure proof-side `Bool`, no runtime/TCB impact)
+  was widened from `private` to module-public so the per-core body can
+  re-express the contract; documented inline.  This achieves complete
+  coverage: **every** `SchedulerState`-reading definition in the tree now
+  has a per-core form (within the six subsystems) or an explicit
+  documented disposition (operations → SM5; frozen state → scalar; this
+  Platform contract → migrated here).
+
+- **Doc-code mismatch #1 (`@[simp]`)**: the audit-pass-1 "Audit confirmations"
+  claimed "no `@[simp]` in the SM4.D modules," but audit-pass-2 added two
+  `@[simp]` id-projection lemmas (`RetypeTargetSmp.toRetypeTarget_id`,
+  `mkRetypeTargetSmp_id`, mirroring the single-core `@[simp] mkRetypeTarget_id`).
+  The code is correct (those projections *should* be `@[simp]`); the stale
+  "absent" claim was corrected (dropped `@[simp]` from the absent-constructs
+  list — `set_option`/`sorry`/`admit`/`native_decide` remain genuinely
+  absent).
+
+- **Doc-code mismatch #2 (anchor count)**: the audit-pass-2 docs claimed the
+  suite grew to "132" surface anchors; the actual count was **121**
+  (verified by `grep -c '^#check '`).  Corrected to 121.
+
+- **Tests**: suite gains §3.9 (the per-core RPi5 runtime-contract checks).
+  Final suite totals (verified by direct count): **127** `#check` surface
+  anchors, **19** elaboration examples, **34** runtime `assertBool`
+  assertions (34/34 PASS).  Tier-3 gains a dedicated RuntimeContractPerCore
+  anchor block.
+
+**Verification**: all new theorems axiom-clean (`#print axioms`); a
+comprehensive `#print axioms` sweep over all theorems in the seven SM4.D
+modules confirms zero `sorryAx`/`native`/`unsafe`; zero compiler/linter
+warnings on forced clean rebuild; partition gate **42** staged-only
+modules; AK7 all pass (`RAW_LOOKUP_TID` 810, GETENDPOINT 42, GETNOTIFICATION
+27); Tier 0–3 + Rust green; trace fixture byte-identical.  Items deferred
+past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.4 (SM4.D)
+
 ## v0.31.32 — WS-SM SM4.D audit-pass-2: preservation layer + full typed-accessor + plan closure
 
 Closes the substantive gaps the deep audit identified as "avoided work,"
@@ -53,7 +109,7 @@ layer, not just predicates).
   core 0's run queue / current slot, `decide`-verified to appear in core
   0's projection while core 1 stays empty (genuine per-core `Vector`
   computation on populated data, not the vacuous empty default).  Runtime
-  assertions 24 → 32; surface anchors 102 → 132.
+  assertions 24 → 32; surface anchors 102 → 121.
 
 **Inventory-aggregator note (audit item #8)**: deliberately *not* added as a
 separate macro-inventory module — the full SM4.D theorem surface is already

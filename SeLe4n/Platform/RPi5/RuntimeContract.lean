@@ -85,8 +85,13 @@ Device and reserved regions require explicit MMIO adapter calls.
     the TCB claims a binding to a non-existent or wrong-kind object. Such
     states used to return `true` (silently permissive), letting an inconsistent
     post-state pass the `registerContextStableCheck`. It now returns `false`
-    so the check fails loudly. -/
-private def budgetSufficientCheck (st' : SystemState) (tcb : TCB) : Bool :=
+    so the check fails loudly.
+
+    WS-SM SM4.D audit-pass-3: visibility widened from `private` to module-public
+    so the per-core form `registerContextStableCheckOnCore`
+    (`RuntimeContractPerCore.lean`) can re-express the contract body against an
+    arbitrary `CoreId`.  Pure proof-side `Bool` helper — no runtime/TCB impact. -/
+def budgetSufficientCheck (st' : SystemState) (tcb : TCB) : Bool :=
   match tcb.schedContextBinding with
   | .unbound => true
   | .bound scId | .donated scId _ =>

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.32.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.33.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4234,7 +4234,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     anchors 89 → 102.
   - **Audit confirmations** (no change needed): zero compiler/linter
     warnings on a forced clean rebuild; no `set_option`/`sorry`/`admit`/
-    `native_decide`/`@[simp]` in the SM4.D modules; AK7 `getTcb?`
+    `native_decide` in the SM4.D modules; AK7 `getTcb?`
     discipline holds (`RAW_LOOKUP_TID` baseline 810); endpoint/notification
     raw `objects[oid]?` correctly outside `RAW_MATCH` (equality, not
     `match`-style) and parallel to single-core.  All new theorems
@@ -4265,12 +4265,38 @@ documentation lives under `docs/` and `docs/gitbook/`.
   - **Tests**: §3.7 (preservation lifters) + §3.8 (non-vacuous
     populated-state projections — a real thread in core 0's queue/current,
     `decide`-verified present on core 0, absent on core 1).  Runtime
-    assertions 24→32; anchors 102→132.
+    assertions 24→32; anchors 102→121.
   - **Inventory-aggregator (item #8)**: intentionally not a separate macro
     module — the Tier-3 anchors + suite `#check`s already provide
     comprehensive rename-protection (SM4.C's pattern); a parallel inventory
     would duplicate it.  Partition gate 41 staged-only modules; axiom-clean;
     suite 32/32 PASS; Tier 0–3 + Rust green; trace fixture byte-identical.
+
+  **WS-SM SM4.D audit-pass-3 LANDED at v0.31.33** (third deep audit; no
+  correctness defect — closes one completeness gap + two doc-code mismatches):
+  - **Last missed scheduler-reader**: an exhaustive whole-tree re-scan
+    (handling line-end `.runnable` + indirect readers) found one
+    scheduler-reading def with no per-core form / no documented disposition:
+    `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`, a
+    `Bool` runtime contract reading `currentOnCore` + `.runnable`).
+    Platform-layer (adjacent to SM4.D's six subsystems), so it fell outside
+    §5.4's file list.  Migrated to `registerContextStableCheckOnCore` (+
+    `registerContextStablePredOnCore`) in the new staged module
+    `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle /
+    default witnesses); `budgetSufficientCheck` widened `private`→public
+    (pure proof-side `Bool`, no runtime/TCB impact).  Now **every**
+    `SchedulerState`-reading def in the tree has a per-core form or an
+    explicit disposition.  Partition gate: 42 staged-only modules.
+  - **Doc-code fix #1**: audit-pass-1's "no `@[simp]` in the SM4.D modules"
+    was stale — audit-pass-2 added two `@[simp]` `RetypeTargetSmp`
+    id-projection lemmas (correct, mirroring single-core `mkRetypeTarget_id`);
+    corrected the absent-constructs list.
+  - **Doc-code fix #2**: the audit-pass-2 "132" suite-anchor count was
+    actually 121; corrected.  Final suite: 127 `#check` anchors, 19
+    examples, 34 runtime assertions (34/34 PASS).
+  - Comprehensive `#print axioms` sweep over all SM4.D-module theorems:
+    zero `sorryAx`/`native`/`unsafe`; zero warnings on clean rebuild; AK7
+    all pass; Tier 0–3 + Rust green; trace fixture byte-identical.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

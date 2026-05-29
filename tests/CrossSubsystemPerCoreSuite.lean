@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
+import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 
 /-!
 # WS-SM SM4.D — Cross-subsystem per-core invariant migration test suite
@@ -34,6 +35,9 @@ namespace SeLe4n.Testing.CrossSubsystemPerCore
 open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Architecture
+open SeLe4n.Platform.RPi5 (registerContextStableCheckOnCore registerContextStablePredOnCore
+  registerContextStableCheckOnCore_bootCore registerContextStablePredOnCore_bootCore_iff
+  registerContextStableCheckOnCore_true_of_currentNone default_registerContextStableCheckOnCore)
 open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
@@ -170,6 +174,13 @@ open SeLe4n.Kernel.Concurrency
 #check @RetypeTargetSmp
 #check @mkRetypeTargetSmp
 #check @RetypeTargetSmp.toRetypeTarget
+-- §1.9  Audit-pass-3: the Platform/RPi5 register-context runtime-contract reader.
+#check @registerContextStableCheckOnCore
+#check @registerContextStablePredOnCore
+#check @registerContextStableCheckOnCore_bootCore
+#check @registerContextStablePredOnCore_bootCore_iff
+#check @registerContextStableCheckOnCore_true_of_currentNone
+#check @default_registerContextStableCheckOnCore
 
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
@@ -480,6 +491,23 @@ private def runNonVacuousChecks : IO Unit := do
   assertBool "core 1's projectCurrentOnCore stays none under populated core 0 (cross-core)"
     (decide (projectCurrentOnCore defaultLabelingContext probeObserver stCur c1 = none))
 
+/-- §3.9  Platform/RPi5 register-context runtime contract (audit-pass-3): the
+    per-core form holds (returns `true`) on every core of the freshly-booted
+    system (idle), and the boot-core bridge applies. -/
+private def runRuntimeContractChecks : IO Unit := do
+  IO.println "--- §3.9 RPi5 register-context runtime contract (per-core) ---"
+  assertBool "default_registerContextStableCheckOnCore = true on every core"
+    (allCores.all (fun c =>
+      decide (registerContextStableCheckOnCore (default : SystemState) (default : SystemState) c
+        = true)))
+  assertBool "registerContextStableCheckOnCore_true_of_currentNone applies on every core"
+    (allCores.all (fun c =>
+      have _h : registerContextStableCheckOnCore (default : SystemState) (default : SystemState) c
+          = true :=
+        registerContextStableCheckOnCore_true_of_currentNone _ _ c
+          (default_state_perCoreInitialized c).1
+      true))
+
 def runCrossSubsystemPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.D — Cross-subsystem per-core invariant migration suite"
   IO.println "===================================="
@@ -491,6 +519,7 @@ def runCrossSubsystemPerCoreChecks : IO Unit := do
   runCrossCoreIndependenceChecks
   runPreservationChecks
   runNonVacuousChecks
+  runRuntimeContractChecks
   IO.println "===================================="
   IO.println "All SM4.D cross-subsystem per-core invariant migration checks PASS."
 

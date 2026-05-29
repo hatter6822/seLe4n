@@ -161,6 +161,13 @@ import SeLe4n.Kernel.CrossSubsystemPerCore
 -- each reusing the existing single-core preservation verbatim.  SM5's
 -- per-core scheduler is the first runtime exerciser.
 import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
+-- WS-SM SM4.D audit-pass-3: the one Platform-layer scheduler-reader found by
+-- the exhaustive audit — `registerContextStableCheck` (RPi5 runtime contract)
+-- — lifted to the per-core `registerContextStableCheckOnCore` + boot-core
+-- bridge + idle/default witnesses.  Platform/RPi5 is adjacent to SM4.D's six
+-- subsystems; this completes the "every SchedulerState-reading def has a
+-- per-core form" coverage.  SM5's per-core platform bring-up consumes it.
+import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

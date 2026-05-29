@@ -2901,4 +2901,18 @@ open SeLe4n.Kernel.Architecture
 #check @RetypeTargetSmp.toRetypeTarget
 EOF'
 
+# WS-SM SM4.D audit-pass-3: per-core RPi5 register-context runtime contract
+# (the one Platform-layer scheduler-reader found by the exhaustive audit).
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Platform.RPi5.RuntimeContractPerCore'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Platform.RPi5.RuntimeContractPerCore
+open SeLe4n.Platform.RPi5
+#check @registerContextStableCheckOnCore
+#check @registerContextStablePredOnCore
+#check @registerContextStableCheckOnCore_bootCore
+#check @registerContextStablePredOnCore_bootCore_iff
+#check @registerContextStableCheckOnCore_true_of_currentNone
+#check @default_registerContextStableCheckOnCore
+EOF'
+
 finalize_report
