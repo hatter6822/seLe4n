@@ -68,6 +68,18 @@ private theorem getTcb?_congr_objects
     (tid : SeLe4n.ThreadId) : st'.getTcb? tid = st.getTcb? tid := by
   unfold SystemState.getTcb?; rw [h]
 
+/-- Local helper: object-store agreement lifts to `getEndpoint?` agreement. -/
+private theorem getEndpoint?_congr_objects
+    {st st' : SystemState} (h : st'.objects = st.objects)
+    (oid : SeLe4n.ObjId) : st'.getEndpoint? oid = st.getEndpoint? oid := by
+  unfold SystemState.getEndpoint?; rw [h]
+
+/-- Local helper: object-store agreement lifts to `getNotification?` agreement. -/
+private theorem getNotification?_congr_objects
+    {st st' : SystemState} (h : st'.objects = st.objects)
+    (oid : SeLe4n.ObjId) : st'.getNotification? oid = st.getNotification? oid := by
+  unfold SystemState.getNotification?; rw [h]
+
 -- ============================================================================
 -- §1  Per-core predicate forms (plan §3.4 migration pattern)
 -- ============================================================================
@@ -120,26 +132,27 @@ def currentThreadIpcReady_perCore (st : SystemState) (c : CoreId) : Prop :=
   | some tid => ∀ tcb, st.getTcb? tid = some tcb → tcb.ipcState = .ready
 
 /-- SM4.D: per-core form of `currentNotEndpointQueueHead`.  Core `c`'s
-current thread is not the head of any endpoint queue.  (Endpoints are
-looked up by `ObjId`, not `tid.toObjId`, so the raw `objects[oid]?` form
-is kept — it is outside `RAW_LOOKUP_TID` and parallels the single-core
-predicate so the bridge closes by `Iff.rfl`.) -/
+current thread is not the head of any endpoint queue.  Object-store
+lookups route through the typed `getEndpoint?` accessor (the AK7
+typed-accessor discipline for new code); the boot-core bridge therefore
+goes through `getEndpoint?_eq_some_iff`. -/
 def currentNotEndpointQueueHead_perCore (st : SystemState) (c : CoreId) : Prop :=
   match (st.scheduler.currentOnCore c) with
   | none => True
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ep : Endpoint),
-      st.objects[oid]? = some (.endpoint ep) →
+      st.getEndpoint? oid = some ep →
       ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid
 
 /-- SM4.D: per-core form of `currentNotOnNotificationWaitList`.  Core `c`'s
-current thread is not on any notification wait list. -/
+current thread is not on any notification wait list.  Lookups route
+through the typed `getNotification?` accessor. -/
 def currentNotOnNotificationWaitList_perCore (st : SystemState) (c : CoreId) : Prop :=
   match (st.scheduler.currentOnCore c) with
   | none => True
   | some tid =>
     ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
-      st.objects[oid]? = some (.notification ntfn) →
+      st.getNotification? oid = some ntfn →
       tid ∉ ntfn.waitingThreads
 
 /-- SM4.D: per-core form of `passiveServerIdle`.  An unbound thread that is
@@ -223,11 +236,19 @@ theorem currentThreadIpcReady_perCore_bootCore_iff (st : SystemState) :
   | some tid => simp only [SystemState.getTcb?_eq_some_iff]
 
 theorem currentNotEndpointQueueHead_perCore_bootCore_iff (st : SystemState) :
-    currentNotEndpointQueueHead_perCore st bootCoreId ↔ currentNotEndpointQueueHead st := Iff.rfl
+    currentNotEndpointQueueHead_perCore st bootCoreId ↔ currentNotEndpointQueueHead st := by
+  unfold currentNotEndpointQueueHead_perCore currentNotEndpointQueueHead
+  cases st.scheduler.currentOnCore bootCoreId with
+  | none => exact Iff.rfl
+  | some tid => simp only [SystemState.getEndpoint?_eq_some_iff]
 
 theorem currentNotOnNotificationWaitList_perCore_bootCore_iff (st : SystemState) :
     currentNotOnNotificationWaitList_perCore st bootCoreId ↔
-      currentNotOnNotificationWaitList st := Iff.rfl
+      currentNotOnNotificationWaitList st := by
+  unfold currentNotOnNotificationWaitList_perCore currentNotOnNotificationWaitList
+  cases st.scheduler.currentOnCore bootCoreId with
+  | none => exact Iff.rfl
+  | some tid => simp only [SystemState.getNotification?_eq_some_iff]
 
 theorem passiveServerIdle_perCore_bootCore_iff (st : SystemState) :
     passiveServerIdle_perCore st bootCoreId ↔ passiveServerIdle st := by
@@ -326,14 +347,22 @@ theorem currentNotEndpointQueueHead_perCore_frame {st st' : SystemState} {c : Co
     (hObj : st'.objects = st.objects)
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
     currentNotEndpointQueueHead_perCore st' c ↔ currentNotEndpointQueueHead_perCore st c := by
-  unfold currentNotEndpointQueueHead_perCore; rw [hObj, hCur]
+  unfold currentNotEndpointQueueHead_perCore
+  rw [hCur]
+  cases st.scheduler.currentOnCore c with
+  | none => exact Iff.rfl
+  | some tid => simp only [getEndpoint?_congr_objects hObj]
 
 theorem currentNotOnNotificationWaitList_perCore_frame {st st' : SystemState} {c : CoreId}
     (hObj : st'.objects = st.objects)
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
     currentNotOnNotificationWaitList_perCore st' c ↔
       currentNotOnNotificationWaitList_perCore st c := by
-  unfold currentNotOnNotificationWaitList_perCore; rw [hObj, hCur]
+  unfold currentNotOnNotificationWaitList_perCore
+  rw [hCur]
+  cases st.scheduler.currentOnCore c with
+  | none => exact Iff.rfl
+  | some tid => simp only [getNotification?_congr_objects hObj]
 
 theorem passiveServerIdle_perCore_frame {st st' : SystemState} {c : CoreId}
     (hObj : st'.objects = st.objects)

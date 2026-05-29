@@ -177,4 +177,52 @@ theorem cleanupHookDischarged_smp_to_noStaleSchedRef (st : SystemState)
     (target : SeLe4n.ObjId) (h : cleanupHookDischarged_smp st target) :
     cleanupNoStaleSchedRef_smp st target := h.2.1
 
+-- ============================================================================
+-- §7  SMP retype-target consumer (wires `cleanupHookDischarged_smp` in)
+-- ============================================================================
+--
+-- The single-core `RetypeTarget` carries a `cleanupHookDischarged` witness
+-- and is consumed by the cleanup-aware retype entry points.  Its SMP
+-- analogue carries the stronger `cleanupHookDischarged_smp` (no stale
+-- scheduler reference on *any* core), so a retype target cannot be
+-- constructed unless the discharged-on-every-core obligation is met.  The
+-- `toRetypeTarget` downgrade re-derives the single-core target for the
+-- existing (boot-core) retype path, so the SMP precondition is strictly
+-- stronger and back-compatible.
+
+/-- SM4.D: SMP precondition subtype for cleanup-aware retype entry points —
+bundles a target `ObjId` with a `cleanupHookDischarged_smp` witness. -/
+structure RetypeTargetSmp (st : SystemState) where
+  id : SeLe4n.ObjId
+  cleanupHookDischarged : cleanupHookDischarged_smp st id
+
+/-- SM4.D: smart constructor for `RetypeTargetSmp`, mirroring
+`mkRetypeTarget` but taking the SMP no-stale-reference obligation
+(`cleanupNoStaleSchedRef_smp`, "not runnable on any core"). -/
+def mkRetypeTargetSmp (st : SystemState) (target : SeLe4n.ObjId)
+    (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
+      SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+    (hNoStaleRefsSmp : cleanupNoStaleSchedRef_smp st target)
+    (token : SeLe4n.Kernel.ScrubToken st target) :
+    RetypeTargetSmp st :=
+  { id := target, cleanupHookDischarged := ⟨hTypeMeta, hNoStaleRefsSmp, token⟩ }
+
+/-- SM4.D: downgrade an SMP retype target to the single-core `RetypeTarget`
+the existing (boot-core) retype path consumes, via
+`cleanupHookDischarged_smp_to_singleCore`. -/
+def RetypeTargetSmp.toRetypeTarget {st : SystemState} (rt : RetypeTargetSmp st) :
+    RetypeTarget st :=
+  { id := rt.id,
+    cleanupHookDischarged := cleanupHookDischarged_smp_to_singleCore st rt.id rt.cleanupHookDischarged }
+
+@[simp] theorem RetypeTargetSmp.toRetypeTarget_id {st : SystemState} (rt : RetypeTargetSmp st) :
+    rt.toRetypeTarget.id = rt.id := rfl
+
+@[simp] theorem mkRetypeTargetSmp_id (st : SystemState) (target : SeLe4n.ObjId)
+    (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
+      SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+    (hNoStaleRefsSmp : cleanupNoStaleSchedRef_smp st target)
+    (token : SeLe4n.Kernel.ScrubToken st target) :
+    (mkRetypeTargetSmp st target hTypeMeta hNoStaleRefsSmp token).id = target := rfl
+
 end SeLe4n.Kernel

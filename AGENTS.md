@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.31.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.32.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4240,6 +4240,37 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `match`-style) and parallel to single-core.  All new theorems
     axiom-clean; suite 24/24 PASS; Tier 0–3 + Rust green; trace fixture
     byte-identical.
+
+  **WS-SM SM4.D audit-pass-2 LANDED at v0.31.32** (closes the substantive
+  "avoided work" the audit identified, completing SM4.D to SM4.C's bar):
+  - **Per-operation cross-subsystem SMP-preservation** (the main gap): new
+    staged module `SeLe4n/Kernel/CrossSubsystemPerCorePreservation.lean`
+    (SM4.C-analogue) — `…_holds_if_idle` idle-discharge lemmas + generic
+    `…_smp_of_singleCore_and_idle` lifters + the `passiveServerIdle_scheduledNowhere`
+    natural-SMP form (the one predicate not vacuous-on-idle; its
+    "scheduled-nowhere ⟹ passive" reading is implied directly by the
+    single-core `passiveServerIdle`) + **11 concrete per-op preservation
+    theorems** reusing the existing single-core preservation verbatim (8
+    IPC ops → `ipcSchedulerContractPredicates_smp`; 2 architecture ops →
+    `registerDecodeConsistent_smp`; `timerTick` → SchedContext↔run-queue),
+    with the SM4.B `hNonBootIdle` structural hypothesis.
+  - **Full typed-accessor discipline**: `currentNotEndpointQueueHead_perCore`
+    / `currentNotOnNotificationWaitList_perCore` migrated to `getEndpoint?`
+    / `getNotification?` (GETENDPOINT 33→42, GETNOTIFICATION 19→27;
+    RAW_LOOKUP_TID still 810).
+  - **`cleanupHookDischarged_smp` wired into a consumer**: `RetypeTargetSmp`
+    + `mkRetypeTargetSmp` + `toRetypeTarget` (SMP retype precondition).
+  - **Plan-document closure**: `SMP_PER_CORE_STATE_PLAN.md` §5.4 carries the
+    per-sub-task disposition for all 22; §8 acceptance box checked.
+  - **Tests**: §3.7 (preservation lifters) + §3.8 (non-vacuous
+    populated-state projections — a real thread in core 0's queue/current,
+    `decide`-verified present on core 0, absent on core 1).  Runtime
+    assertions 24→32; anchors 102→132.
+  - **Inventory-aggregator (item #8)**: intentionally not a separate macro
+    module — the Tier-3 anchors + suite `#check`s already provide
+    comprehensive rename-protection (SM4.C's pattern); a parallel inventory
+    would duplicate it.  Partition gate 41 staged-only modules; axiom-clean;
+    suite 32/32 PASS; Tier 0–3 + Rust green; trace fixture byte-identical.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

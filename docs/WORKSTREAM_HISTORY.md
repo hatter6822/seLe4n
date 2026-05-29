@@ -2077,6 +2077,38 @@ correctly outside `RAW_MATCH`.  All new theorems axiom-clean; suite 24/24
 PASS; Tier 0–3 + Rust green; trace fixture byte-identical.  Items deferred
 past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM4.D audit-pass-2 LANDED at v0.31.32** (completes the preservation
+layer to SM4.C's bar + full typed-accessor discipline + plan closure — the
+substantive "avoided work" from the deep audit).  New staged module
+`SeLe4n/Kernel/CrossSubsystemPerCorePreservation.lean` (the SM4.C analogue
+of `Scheduler/Invariant/PerCorePreservation.lean`) connects the per-core
+invariant *predicates* to the kernel's *transitions*: (a) `…_holds_if_idle`
+idle-discharge lemmas (every cross-subsystem per-core predicate except
+`passiveServerIdle` is vacuous on an idle core); (b) generic
+`…_smp_of_singleCore_and_idle` lifters; (c) the `passiveServerIdle_scheduledNowhere`
+natural-SMP form — `passiveServerIdle_perCore` is the one predicate NOT
+vacuous on an idle core (its idle slice reduces to "every unbound thread is
+passive"), so the `∀ c` form cannot be lifted by idle discharge; the natural
+"scheduled-nowhere ⟹ passive" form IS implied directly by the single-core
+`passiveServerIdle` (`_of_singleCore`) and by the `∀ c` form
+(`_smp_to_scheduledNowhere`); (d) 11 concrete per-op preservation theorems
+reusing the existing single-core preservation verbatim (8 IPC ops →
+`ipcSchedulerContractPredicates_smp`; `advanceTimerState`/`writeRegisterState`
+→ `registerDecodeConsistent_smp`; `timerTick` → SchedContext↔run-queue), with
+the SM4.B `hNonBootIdle` structural hypothesis.  Plus: full typed-accessor
+discipline (`currentNotEndpointQueueHead_perCore` /
+`currentNotOnNotificationWaitList_perCore` → `getEndpoint?` /
+`getNotification?`; GETENDPOINT 33→42, GETNOTIFICATION 19→27, RAW_LOOKUP_TID
+unchanged at 810); `RetypeTargetSmp` + `mkRetypeTargetSmp` consuming
+`cleanupHookDischarged_smp`; plan §5.4 per-sub-task disposition + §8
+acceptance box checked; suite 24→32 runtime assertions (§3.7 preservation
+lifters + §3.8 non-vacuous populated-state projections), anchors 102→132.
+The inventory-aggregator pattern (SM3) is intentionally realised via the
+comprehensive Tier-3 + suite anchors (SM4.C's choice), not a duplicate macro
+module.  41 staged-only modules; axiom-clean throughout; Tier 0–3 + Rust
+green; trace fixture byte-identical.  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

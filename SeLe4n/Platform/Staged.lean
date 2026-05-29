@@ -151,6 +151,16 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
 -- surface.  Reachability: staged at SM4.D; SM5's per-core scheduler is
 -- the first runtime exerciser (which will move them production-reached).
 import SeLe4n.Kernel.CrossSubsystemPerCore
+-- WS-SM SM4.D audit-pass-2: per-operation cross-subsystem SMP-preservation.
+-- Connects the per-core / ∀c SMP invariant predicates to the kernel's
+-- transitions: `…_holds_if_idle` idle-discharge lemmas, the generic
+-- single-core→SMP lifters, the `passiveServerIdle_scheduledNowhere`
+-- natural-SMP form, and 11 concrete per-operation preservation theorems
+-- (8 IPC ops → `ipcSchedulerContractPredicates_smp`, 2 architecture ops →
+-- `registerDecodeConsistent_smp`, `timerTick` → schedContext↔run-queue),
+-- each reusing the existing single-core preservation verbatim.  SM5's
+-- per-core scheduler is the first runtime exerciser.
+import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

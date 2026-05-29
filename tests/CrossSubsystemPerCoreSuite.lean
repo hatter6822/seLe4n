@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
-import SeLe4n.Kernel.CrossSubsystemPerCore
+import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
 
 /-!
 # WS-SM SM4.D — Cross-subsystem per-core invariant migration test suite
@@ -140,6 +140,36 @@ open SeLe4n.Kernel.Concurrency
 #check @cleanupHookDischarged_smp
 #check @cleanupHookDischarged_smp_to_singleCore
 #check @cleanupHookDischarged_smp_to_noStaleSchedRef
+-- §1.8  Audit-pass-2: preservation layer + SMP retype-target consumer.
+#check @ipcSchedulerContractPredicates_perCore_holds_if_idle
+#check @currentThreadDequeueCoherent_perCore_holds_if_idle
+#check @registerDecodeConsistent_perCore_holds_if_idle
+#check @cleanupNoStaleSchedRef_perCore_holds_if_idle
+#check @schedContextRunQueueConsistent_perCore_holds_if_idle
+#check @ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
+#check @currentThreadDequeueCoherent_smp_of_singleCore_and_idle
+#check @registerDecodeConsistent_smp_of_singleCore_and_idle
+#check @schedContextRunQueueConsistent_smp_of_singleCore_and_idle
+#check @cleanupNoStaleSchedRef_smp_of_singleCore_and_idle
+#check @passiveServerIdle_scheduledNowhere
+#check @passiveServerIdle_scheduledNowhere_of_singleCore
+#check @passiveServerIdle_smp_to_scheduledNowhere
+#check @passiveServerIdle_scheduledNowhere_of_ipcInvariantFull
+#check @default_passiveServerIdle_scheduledNowhere
+#check @endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointCall_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReply_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReplyRecv_preserves_ipcSchedulerContractPredicates_smp
+#check @notificationSignal_preserves_ipcSchedulerContractPredicates_smp
+#check @notificationWait_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates_smp
+#check @advanceTimerState_preserves_registerDecodeConsistent_smp
+#check @writeRegisterState_preserves_registerDecodeConsistent_smp
+#check @timerTick_preserves_schedContextRunQueueConsistent_smp
+#check @RetypeTargetSmp
+#check @mkRetypeTargetSmp
+#check @RetypeTargetSmp.toRetypeTarget
 
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
@@ -387,6 +417,69 @@ private def runCrossCoreIndependenceChecks : IO Unit := do
         lowEquivalentOnCore_refl defaultLabelingContext probeObserver (default : SystemState) c
       true))
 
+/-- §3.7  Preservation layer: the idle-discharge lemmas and the generic
+    single-core → SMP lifters apply (the SM5-bridge composition that
+    connects the per-core invariants to operation preservation). -/
+private def runPreservationChecks : IO Unit := do
+  IO.println "--- §3.7 preservation layer (idle-discharge + lifters) ---"
+  -- Idle-discharge lemmas hold on every (default-idle) core.
+  assertBool "ipcSchedulerContractPredicates_perCore_holds_if_idle on every core"
+    (allCores.all (fun c =>
+      have _h : ipcSchedulerContractPredicates_perCore (default : SystemState) c :=
+        ipcSchedulerContractPredicates_perCore_holds_if_idle
+          (by have h : (default : SystemState).scheduler.runQueueOnCore c = RunQueue.empty :=
+                (default_state_perCoreInitialized c).2.1
+              rw [h, RunQueue.toList_empty])
+      true))
+  assertBool "currentThreadDequeueCoherent_perCore_holds_if_idle on every core"
+    (allCores.all (fun c =>
+      have _h : currentThreadDequeueCoherent_perCore (default : SystemState) c :=
+        currentThreadDequeueCoherent_perCore_holds_if_idle (default_state_perCoreInitialized c).1
+      true))
+  -- The generic single-core → SMP lifter rebuilds the SMP form from the
+  -- boot-core single-core predicate + non-boot idleness (the SM5 bridge).
+  assertBool "ipcSchedulerContractPredicates_smp_of_singleCore_and_idle reconstructs SMP"
+    (have _h : ipcSchedulerContractPredicates_smp (default : SystemState) :=
+      ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
+        (ipcSchedulerContractPredicates_smp_to_singleCore _ default_ipcSchedulerContractPredicates_smp)
+        (fun c _ => by
+          have h : (default : SystemState).scheduler.runQueueOnCore c = RunQueue.empty :=
+            (default_state_perCoreInitialized c).2.1
+          rw [h, RunQueue.toList_empty])
+     true)
+  -- passiveServerIdle natural-SMP form: both lift routes apply on default.
+  assertBool "passiveServerIdle_scheduledNowhere holds on default (both routes)"
+    (have _h : passiveServerIdle_scheduledNowhere (default : SystemState) :=
+      default_passiveServerIdle_scheduledNowhere
+     true)
+
+/-- §3.8  Non-vacuous, value-level projection checks on a *populated*
+    scheduler state — exercises the per-core projection computation on a
+    real run-queue / current slot (not the empty default), and confirms
+    cross-core independence under a populated core 0. -/
+private def runNonVacuousChecks : IO Unit := do
+  IO.println "--- §3.8 non-vacuous populated-state projections ---"
+  let c0 : CoreId := ⟨0, by decide⟩
+  let c1 : CoreId := ⟨1, by decide⟩
+  let tid : SeLe4n.ThreadId := SeLe4n.ThreadId.ofNat 5
+  -- Populate core 0's run queue with one observable thread.
+  let stRQ : SystemState :=
+    { (default : SystemState) with
+      scheduler := (default : SystemState).scheduler.setRunQueueOnCore c0
+        (((default : SystemState).scheduler.runQueueOnCore c0).insert tid ⟨50⟩) }
+  assertBool "queued observable thread appears in core 0's projectRunnableOnCore (non-vacuous)"
+    (decide (tid ∈ projectRunnableOnCore defaultLabelingContext probeObserver stRQ c0))
+  assertBool "core 1's projectRunnableOnCore stays [] under populated core 0 (cross-core)"
+    (decide (projectRunnableOnCore defaultLabelingContext probeObserver stRQ c1 = []))
+  -- Populate core 0's current slot with an observable thread.
+  let stCur : SystemState :=
+    { (default : SystemState) with
+      scheduler := (default : SystemState).scheduler.setCurrentOnCore c0 (some tid) }
+  assertBool "projectCurrentOnCore returns the observable current thread (non-vacuous)"
+    (decide (projectCurrentOnCore defaultLabelingContext probeObserver stCur c0 = some tid))
+  assertBool "core 1's projectCurrentOnCore stays none under populated core 0 (cross-core)"
+    (decide (projectCurrentOnCore defaultLabelingContext probeObserver stCur c1 = none))
+
 def runCrossSubsystemPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.D — Cross-subsystem per-core invariant migration suite"
   IO.println "===================================="
@@ -396,6 +489,8 @@ def runCrossSubsystemPerCoreChecks : IO Unit := do
   runInformationFlowChecks
   runCrossSubsystemChecks
   runCrossCoreIndependenceChecks
+  runPreservationChecks
+  runNonVacuousChecks
   IO.println "===================================="
   IO.println "All SM4.D cross-subsystem per-core invariant migration checks PASS."
 

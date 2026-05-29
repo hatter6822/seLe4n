@@ -476,6 +476,49 @@ SchedulerState.
 **Total LoC for SM4.D**: ~1500-2500 LoC of cross-subsystem
 migrations.
 
+> **SM4.D LANDED (v0.31.30 → v0.31.31 + audit-passes, branch
+> `claude/great-dijkstra-BPl3p`).**  Realised — following the SM4.C
+> additive pattern — as per-core invariant forms + `∀ c` SMP aggregates
+> + boot-core bridges + frame lemmas + defaults + per-operation
+> SMP-preservation, in six staged modules:
+> `IPC/Invariant/PerCore.lean`, `Capability/Invariant/PerCore.lean`,
+> `Architecture/InvariantPerCore.lean`,
+> `InformationFlow/ProjectionPerCore.lean`, `CrossSubsystemPerCore.lean`,
+> `CrossSubsystemPerCorePreservation.lean`.
+>
+> Per-sub-task disposition (against the table above):
+> - **Migrated (per-core invariant + bridges + frames + defaults + SMP):**
+>   SM4.D.2 (IPC invariants — 12 predicates), SM4.D.4 (Capability
+>   `cleanupHookDischarged` / `cleanupNoStaleSchedRef` + SMP retype
+>   precondition + `RetypeTargetSmp` consumer), SM4.D.9 (Architecture
+>   `registerDecodeConsistent`), SM4.D.13 (InformationFlow projections —
+>   6 + `projectStateOnCore` + `lowEquivalent`), SM4.D.19 (CrossSubsystem
+>   `crossSubsystemInvariant_perCore` + the `crossSubsystemSchedulerContract`
+>   capstone; `schedContextRunQueueConsistent` was migrated by SM4.C).
+> - **Per-operation preservation (the operation sub-tasks' SMP payoff):**
+>   SM4.D.1 / SM4.D.10 / SM4.D.11 — 11 concrete per-op preservation
+>   theorems (8 IPC ops → `ipcSchedulerContractPredicates_smp`; 2
+>   architecture ops → `registerDecodeConsistent_smp`; `timerTick` →
+>   SchedContext↔run-queue) + the generic single-core→SMP lifters + the
+>   `passiveServerIdle_scheduledNowhere` natural-SMP form.
+> - **N/A (no scheduler-reading predicate; reads are operations that stay
+>   boot-core until SM5, or frozen state that stays scalar per SM4.B):**
+>   SM4.D.3 / SM4.D.5 / SM4.D.6 / SM4.D.7 / SM4.D.8 / SM4.D.12 (NI
+>   *operations*; the NI *predicates* — projections + `lowEquivalent` —
+>   are migrated under SM4.D.13) / SM4.D.14 (IF Invariant files define no
+>   scheduler-reading predicate; their substrate is the migrated
+>   projections) / SM4.D.15 (Model/State.lean — SM4.B accessor machinery)
+>   / SM4.D.16 (frozen state stays scalar) / SM4.D.17 / SM4.D.18 / SM4.D.20
+>   (Boot/FFI/API operations) / SM4.D.21 / SM4.D.22 (VSpace/SyscallEntry
+>   define no scheduler-reading predicate).  Verified by an exhaustive
+>   codebase scan (every `def … : Prop`/projection reading a scheduler
+>   accessor, direct or transitive).
+>
+> All staged-only (41-module partition gate); axiom-clean; AK7
+> typed-accessor discipline (`getTcb?`/`getEndpoint?`/`getNotification?`);
+> trace fixture byte-identical (purely additive).  Tests:
+> `tests/CrossSubsystemPerCoreSuite.lean` (Tier-2 + Tier-3 wired).
+
 ### 5.5 Witness retirement + replacement (SM4.E, 2 PRs, 5 sub-tasks)
 
 | Sub | Description | Acceptance | Est |
@@ -580,7 +623,11 @@ No new Lean axioms.
 - [ ] `default_state_perCoreInitialized` proven.
 - [ ] `SchedulerState.ext` per-core proven.
 - [ ] All 30 SM4.C sub-tasks complete: ~110 scheduler theorems migrated.
-- [ ] All 22 SM4.D sub-tasks complete: cross-subsystem migrations.
+- [x] All 22 SM4.D sub-tasks complete: cross-subsystem migrations.
+      (LANDED v0.31.30 → v0.31.31; see the §5.4 disposition note — the
+      predicate-bearing sub-tasks are migrated with per-op SMP-preservation,
+      the operation-only / frozen-state / no-predicate sub-tasks are
+      documented N/A.)
 - [ ] `bootFromPlatform_singleCore_witness` retired.
 - [ ] `bootFromPlatform_smp_witness` proven.
 - [ ] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".

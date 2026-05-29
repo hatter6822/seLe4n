@@ -1,3 +1,76 @@
+## v0.31.32 — WS-SM SM4.D audit-pass-2: preservation layer + full typed-accessor + plan closure
+
+Closes the substantive gaps the deep audit identified as "avoided work,"
+completing SM4.D to the bar SM4.C set (which delivered a preservation
+layer, not just predicates).
+
+- **Per-operation cross-subsystem SMP-preservation (the main gap)**: new
+  staged module `SeLe4n/Kernel/CrossSubsystemPerCorePreservation.lean`
+  connects the per-core invariant *predicates* to the kernel's
+  *transitions*, mirroring SM4.C's `Scheduler/Invariant/PerCorePreservation.lean`.
+  It provides: (a) `…_holds_if_idle` idle-discharge lemmas (every
+  cross-subsystem per-core predicate except `passiveServerIdle` is vacuous
+  on an idle core); (b) generic single-core→SMP lifters
+  (`…_smp_of_singleCore_and_idle`); (c) the **`passiveServerIdle_scheduledNowhere`**
+  natural-SMP form — `passiveServerIdle_perCore` is the one predicate NOT
+  vacuous on an idle core (its idle slice reduces to "every unbound thread
+  is passive"), so the uniform `∀ c` form cannot be lifted by idle
+  discharge; the natural "scheduled-nowhere ⟹ passive" form IS implied
+  directly by the single-core `passiveServerIdle`
+  (`passiveServerIdle_scheduledNowhere_of_singleCore`) and by the `∀ c`
+  form (`passiveServerIdle_smp_to_scheduledNowhere`), giving clean per-op
+  preservation; and (d) **11 concrete per-operation preservation theorems**
+  reusing the existing single-core preservation verbatim — 8 IPC ops
+  (`endpointSendDual`/`ReceiveDual`/`Call`/`Reply`/`ReplyRecv`,
+  `notificationSignal`/`Wait`, `endpointQueueRemoveDual`) →
+  `ipcSchedulerContractPredicates_smp`; 2 architecture ops
+  (`advanceTimerState`, `writeRegisterState`) → `registerDecodeConsistent_smp`;
+  `timerTick` → SchedContext↔run-queue — plus the op-independent
+  `passiveServerIdle_scheduledNowhere_of_ipcInvariantFull` route.  The
+  `hNonBootIdle` hypothesis is the SM4.B structural fact (operations write
+  only `bootCoreId`'s scheduler slots), exactly as in SM4.C.
+
+- **Full typed-accessor discipline (best-practice for new code)**:
+  `currentNotEndpointQueueHead_perCore` / `currentNotOnNotificationWaitList_perCore`
+  migrated from raw `objects[oid]?` to the typed `getEndpoint?` /
+  `getNotification?` accessors (bridges via `getEndpoint?_eq_some_iff` /
+  `getNotification?_eq_some_iff`).  `GETENDPOINT_ADOPTION` 33→42,
+  `GETNOTIFICATION_ADOPTION` 19→27; `RAW_LOOKUP_TID` unchanged at 810.
+
+- **`cleanupHookDischarged_smp` wired into a consumer**: new
+  `RetypeTargetSmp` structure + `mkRetypeTargetSmp` smart constructor +
+  `RetypeTargetSmp.toRetypeTarget` downgrade — the SMP-aware retype
+  precondition (no stale scheduler ref on *any* core), no longer orphaned.
+
+- **Plan-document closure**: `docs/planning/SMP_PER_CORE_STATE_PLAN.md`
+  §5.4 now carries the per-sub-task disposition (migrated / per-op-preservation
+  / N-A-with-rationale for all 22), and the §8 acceptance-gate box "All 22
+  SM4.D sub-tasks complete" is checked.
+
+- **Tests strengthened**: `tests/CrossSubsystemPerCoreSuite.lean` gains §3.7
+  (preservation idle-discharge + lifters applied on the default state) and
+  §3.8 **non-vacuous populated-state** projection checks — a real thread in
+  core 0's run queue / current slot, `decide`-verified to appear in core
+  0's projection while core 1 stays empty (genuine per-core `Vector`
+  computation on populated data, not the vacuous empty default).  Runtime
+  assertions 24 → 32; surface anchors 102 → 132.
+
+**Inventory-aggregator note (audit item #8)**: deliberately *not* added as a
+separate macro-inventory module — the full SM4.D theorem surface is already
+comprehensively rename-/removal-protected by the Tier-3 invariant-surface
+anchors (run in CI) and the suite's §1 `#check` anchors (run in the build),
+matching SM4.C's deliberate anchor-over-inventory choice; a parallel macro
+inventory would duplicate that protection.  The anchors were extended to
+cover every audit-pass-2 symbol.
+
+**Verification**: all new theorems axiom-clean (`#print axioms` —
+`propext`/`Quot.sound`/`Classical.choice`); zero compiler/linter warnings
+on a forced clean rebuild; partition gate 41 staged-only modules; AK7 all
+pass; suite 32/32 PASS; Tier 0–3 + Rust green; trace fixture byte-identical.
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.4 (SM4.D)
+
 ## v0.31.31 — WS-SM SM4.D audit-pass-1: completeness + soundness closures
 
 Deep comprehensive audit of the v0.31.30 SM4.D landing (verifying the

@@ -2739,9 +2739,9 @@ EOF'
 # `crossSubsystemSchedulerContract_perCore` + SMP forms).  A rename /
 # removal of any SM4.D symbol fails here at elaboration time, before SM5's
 # per-core scheduler can consume them.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.CrossSubsystemPerCore'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.CrossSubsystemPerCorePreservation'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
-import SeLe4n.Kernel.CrossSubsystemPerCore
+import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Architecture
 
@@ -2869,6 +2869,36 @@ open SeLe4n.Kernel.Architecture
 #check @cleanupHookDischarged_smp
 #check @cleanupHookDischarged_smp_to_singleCore
 #check @cleanupHookDischarged_smp_to_noStaleSchedRef
+-- SM4.D audit-pass-2: preservation layer + SMP retype-target consumer.
+#check @ipcSchedulerContractPredicates_perCore_holds_if_idle
+#check @currentThreadDequeueCoherent_perCore_holds_if_idle
+#check @registerDecodeConsistent_perCore_holds_if_idle
+#check @cleanupNoStaleSchedRef_perCore_holds_if_idle
+#check @schedContextRunQueueConsistent_perCore_holds_if_idle
+#check @ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
+#check @currentThreadDequeueCoherent_smp_of_singleCore_and_idle
+#check @registerDecodeConsistent_smp_of_singleCore_and_idle
+#check @schedContextRunQueueConsistent_smp_of_singleCore_and_idle
+#check @cleanupNoStaleSchedRef_smp_of_singleCore_and_idle
+#check @passiveServerIdle_scheduledNowhere
+#check @passiveServerIdle_scheduledNowhere_of_singleCore
+#check @passiveServerIdle_smp_to_scheduledNowhere
+#check @passiveServerIdle_scheduledNowhere_of_ipcInvariantFull
+#check @default_passiveServerIdle_scheduledNowhere
+#check @endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointCall_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReply_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReplyRecv_preserves_ipcSchedulerContractPredicates_smp
+#check @notificationSignal_preserves_ipcSchedulerContractPredicates_smp
+#check @notificationWait_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates_smp
+#check @advanceTimerState_preserves_registerDecodeConsistent_smp
+#check @writeRegisterState_preserves_registerDecodeConsistent_smp
+#check @timerTick_preserves_schedContextRunQueueConsistent_smp
+#check @RetypeTargetSmp
+#check @mkRetypeTargetSmp
+#check @RetypeTargetSmp.toRetypeTarget
 EOF'
 
 finalize_report
