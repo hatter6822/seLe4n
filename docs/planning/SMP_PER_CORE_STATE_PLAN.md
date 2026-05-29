@@ -232,6 +232,18 @@ theorem default_state_perCoreInitialized :
 > `objects[(idleThreadId c).toObjId]? = some (.tcb (createIdleThread c))`),
 > plus the soundness theorems `…_schedulerInvariantBundle` and `…_valid`.
 > `Priority` needs no bound proof, so `⟨0⟩` (not `⟨0, by decide⟩`).
+>
+> **Audit-pass-1 (v0.31.37)** strengthened the soundness from the base triad
+> to the **full** 9-conjunct bundle
+> (`bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull`, discharging
+> `currentTimeSlicePositive` / `contextMatchesCurrent` *substantively* against
+> the live idle TCB — where plain `bootFromPlatform` is vacuous), added
+> `…_currentThreadInActiveDomain`, and implemented the freshness machinery the
+> `idleThreadIdBase` rationale relies on: `idleSlotsFreshAt`,
+> `bootFromPlatformWithIdleThreads_preserves_platform_objects` (the install is
+> purely additive — no config object clobbered — under freshness), and
+> `idleSlotsFreshAt_of_initialObjects_below_base` (freshness for any below-base
+> config, the canonical case).
 
 Per decision #8 (per-core idle threads), `bootFromPlatform`
 installs an idle TCB on each core:

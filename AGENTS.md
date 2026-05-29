@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.36.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.37.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,24 +182,24 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~22206 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7432 lines)
+- `CHANGELOG.md` (~22257 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~7460 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `tests/NegativeStateSuite.lean` (~4016 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3922 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3906 lines)
-- `docs/spec/SELE4N_SPEC.md` (~3788 lines)
+- `docs/spec/SELE4N_SPEC.md` (~3806 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3392 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
+- `SeLe4n/Platform/Boot.lean` (~3230 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3153 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3057 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3006 lines)
-- `SeLe4n/Platform/Boot.lean` (~2980 lines)
 - `SeLe4n/Model/State.lean` (~2938 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2673 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
@@ -214,8 +214,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
+- `tests/ModelIntegritySuite.lean` (~2052 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
-- `tests/ModelIntegritySuite.lean` (~1996 lines)
 - `SeLe4n/Prelude.lean` (~1992 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1985 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
@@ -266,8 +266,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
+- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1150 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
-- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1138 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
 - `tests/PerObjectLockSuite.lean` (~1097 lines)
@@ -286,8 +286,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~943 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `tests/SmpFoundationsSuite.lean` (~928 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
-- `tests/SmpFoundationsSuite.lean` (~920 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
@@ -4466,6 +4466,45 @@ documentation lives under `docs/` and `docs/gitbook/`.
   TCB present, empty run queue, distinct idle ids — all green).  Items
   deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM4.C.11
   Liveness tracked debt + SM5 (per-core scheduler).
+
+  **WS-SM SM4.G audit-pass-1 LANDED at v0.31.37 on branch
+  `claude/gallant-darwin-zWsYi`** (deeper-audit pass; the v0.31.36 landing was
+  sound + axiom-clean — closes two optimality/honesty gaps per the
+  implement-the-improvement rule, both in `SeLe4n/Platform/Boot.lean`; every
+  new theorem axiom-clean; trace byte-identical 227/227; default build green
+  320 jobs):
+  - **Under-claim closed (base triad → FULL 9-conjunct bundle)**:
+    `bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull` proves the
+    idle-thread state satisfies all 9 conjuncts (SM4.G proved only the base 3).
+    Unlike the plain `bootFromPlatform` Full bundle (current-thread conjuncts
+    vacuous via `current = none`), the idle path discharges
+    `currentTimeSlicePositive` (idle `timeSlice = 5 > 0`) and
+    `contextMatchesCurrent` (boot regs = idle `registerContext` = default
+    `RegisterFile`, via `bootFromPlatform_machine_non_config_fields`)
+    **substantively** against the live idle TCB.  Bonus
+    `…_currentThreadInActiveDomain` (the idle thread resides in the boot active
+    domain — the *extended* bundle's conjunct, again substantive where plain
+    boot is vacuous).
+  - **Phantom `idleSlotsFreshAt` implemented**: the `idleThreadIdBase`
+    docstring referenced a nonexistent freshness hypothesis "that the canonical
+    platforms discharge".  Per implement-the-improvement the symbol is now
+    built, closing the latent silent-overwrite concern (`ObjId` wraps an
+    unbounded `Nat`, so the 16-bit disjointness was convention not structure,
+    and `createObject`'s `RHTable.insert` overwrites on collision):
+    `idleSlotsFreshAt` predicate;
+    `foldl_installIdleThread_objects_frame_of_not_idle` (general object frame);
+    `bootFromPlatformWithIdleThreads_preserves_platform_objects` (under
+    freshness the install is purely **additive** — no platform object
+    clobbered); `idleSlotsFreshAt_of_initialObjects_below_base` (discharges
+    freshness for any below-base config — the canonical RPi5/Sim case), making
+    the disjointness a *proven* property.  The `idleThreadIdBase` docstring is
+    rewritten to cite the real symbols.
+  Surface: +5 tier-3 anchors + 5 `SmpFoundationsSuite` `#check`s (full bundle,
+  active-domain, freshness predicate + preservation + discharge); 2 top-level
+  elaboration `example`s + 3 substantive runtime checks in
+  `model_integrity_suite` (idle `timeSlice > 0`, idle in active domain,
+  below-base platform object survives the install + idle threads additively
+  present).  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

@@ -1528,6 +1528,43 @@ def an6f_cxm01_collectQueueMembers_structural_signatures : IO Unit := do
   let _ := @SeLe4n.Kernel.collectQueueMembers_head_is_start
   expect "CX-M01 structural bridges reachable" (True == True)
 
+/-- WS-SM SM4.G (elaboration witness): the idle-thread boot state satisfies the
+    **full** 9-conjunct scheduler invariant bundle.  Kept as a top-level
+    `example` (not a `let` inside the runtime `do` block) so the term elaborates
+    against an explicit expected type without the `do`-elaborator whnf-ing the
+    heavy boot-fold state to classify the binding as pure-vs-monadic. -/
+example (config : SeLe4n.Platform.Boot.PlatformConfig) :
+    SeLe4n.Kernel.schedulerInvariantBundleFull
+      (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads config).state :=
+  SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull config
+
+/-- WS-SM SM4.G (elaboration witness): the idle-thread boot state satisfies
+    `currentThreadInActiveDomain` (the idle thread resides in the boot active
+    domain).  Top-level `example` for the same `do`-block-whnf reason as the
+    full-bundle witness above (`currentThreadInActiveDomain` unfolds to a
+    top-level `match` on the boot-fold state). -/
+example (config : SeLe4n.Platform.Boot.PlatformConfig) :
+    SeLe4n.Kernel.currentThreadInActiveDomain
+      (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads config).state :=
+  SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_currentThreadInActiveDomain config
+
+/-- WS-SM SM4.G (elaboration witness): the freshness-discharge for a config whose
+    objects live below `idleThreadIdBase`.  Applied to a below-base config (object
+    at ObjId 5), it shows the idle slots are fresh — so the idle install preserves
+    every platform object (`bootFromPlatformWithIdleThreads_preserves_platform_objects`),
+    closing the silent-overwrite concern for the canonical platforms. -/
+example :
+    SeLe4n.Platform.Boot.idleSlotsFreshAt
+      (SeLe4n.Platform.Boot.bootFromPlatform
+        { irqTable := []
+          initialObjects :=
+            [{ id := SeLe4n.ObjId.ofNat 5
+               obj := KernelObject.tcb (SeLe4n.Platform.Boot.createIdleThread bootCoreId)
+               hSlots := (fun _ h => by cases h)
+               hMappings := (fun _ h => by cases h) }] }) :=
+  SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base _
+    (by intro e he; rcases List.mem_singleton.mp he with rfl; decide)
+
 /-- WS-SM SM4.E (CX-M03 successor): the per-core SMP boot witness is
     reachable and substantive.  Replaces the retired
     `bootFromPlatform_singleCore_witness` reachability test (SM4.E.1): the
@@ -1587,16 +1624,35 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
       (bootedIdle.objects[(SeLe4n.Platform.Boot.idleThreadId c).toObjId]?).isSome))
   expect "SM4.G: idle boot path leaves the run queue empty (dequeue-on-dispatch)"
     (bootedIdle.scheduler.runnable.isEmpty)
-  -- SM4.G soundness (elaboration-level): the installed idle-thread state
-  -- satisfies the scheduler invariant bundle (the three runtime checks above
-  -- are exactly its decidable content — valid current TCB, dequeued, unique).
-  let _bundle : SeLe4n.Kernel.schedulerInvariantBundle
-      (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads config).state :=
-    SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle config
+  -- SM4.G soundness: the installed idle-thread state satisfies the FULL
+  -- 9-conjunct scheduler invariant bundle (not merely the base triad) and
+  -- `currentThreadInActiveDomain` — witnessed at elaboration time by the two
+  -- top-level `example`s above this def.  The runtime checks below mirror the
+  -- SUBSTANTIVE (non-vacuous) content of those bundles: the live boot-core idle
+  -- TCB has a positive time-slice (currentTimeSlicePositive) and resides in the
+  -- boot active domain (currentThreadInActiveDomain) — exactly the conjuncts the
+  -- plain `bootFromPlatform` bundle discharges vacuously (`current = none`) but
+  -- the idle path discharges against a real TCB.
+  expect "SM4.G: boot-core idle TCB has positive time-slice (currentTimeSlicePositive)"
+    (decide ((SeLe4n.Platform.Boot.createIdleThread bootCoreId).timeSlice > 0))
+  expect "SM4.G: boot-core idle TCB resides in the boot active domain"
+    ((SeLe4n.Platform.Boot.createIdleThread bootCoreId).domain ==
+      bootedIdle.scheduler.activeDomainOnCore bootCoreId)
   -- The idle threads are per-core-distinct (no aliasing across cores).
   expect "SM4.G: idle thread ids are distinct across cores"
     (decide (SeLe4n.Platform.Boot.idleThreadId bootCoreId ≠
       SeLe4n.Platform.Boot.idleThreadId ⟨1, by decide⟩))
+  -- SM4.G freshness/preservation: `cfgNonEmpty`'s platform object (ObjId 5,
+  -- below `idleThreadIdBase`) SURVIVES the idle-thread install fold — the
+  -- install is purely additive, not clobbering.  Runtime mirror of
+  -- `bootFromPlatformWithIdleThreads_preserves_platform_objects` (freshness
+  -- discharged by `idleSlotsFreshAt_of_initialObjects_below_base`).
+  let bootedNonEmptyIdle := (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads cfgNonEmpty).state
+  expect "SM4.G: below-base platform object (ObjId 5) survives the idle install"
+    ((bootedNonEmptyIdle.objects[SeLe4n.ObjId.ofNat 5]?).isSome)
+  expect "SM4.G: idle threads are additively installed alongside the platform object"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      (bootedNonEmptyIdle.objects[(SeLe4n.Platform.Boot.idleThreadId c).toObjId]?).isSome))
 
 /-- AN6-F (CX-M04): The `InterruptsEnabledPreservationBundle` structure
     packages the eight individual `_preserves_interruptsEnabled`

@@ -1710,10 +1710,18 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
     (`0x1_0000 = 65536`) that platform configs assign their objects from, so
     on the canonical platforms the per-core idle range
     `[idleThreadIdBase, idleThreadIdBase + numCores)` is disjoint from the
-    config objects.  Generality is preserved by stating the boot-install
-    theorems with an explicit freshness hypothesis (`idleSlotsFreshAt`) that
-    the canonical platforms discharge; the bound is **not** assumed for
-    arbitrary configs. -/
+    config objects.
+
+    The boot-install theorems (`bootFromPlatformWithIdleThreads_all_cores_have_idle`
+    and the scheduler-bundle theorems) hold **unconditionally** — the idle TCB
+    is installed regardless of the base config, because `createObject`'s insert
+    is overwriting.  The disjointness is what guarantees the install does not
+    *clobber* a config object: `idleSlotsFreshAt` is the freshness precondition,
+    `bootFromPlatformWithIdleThreads_preserves_platform_objects` proves the
+    install is purely additive under it, and
+    `idleSlotsFreshAt_of_initialObjects_below_base` discharges freshness for any
+    config whose objects live below `idleThreadIdBase` (the canonical case).
+    The bound is **not** assumed for arbitrary configs. -/
 def idleThreadIdBase : Nat := 0x1_0000
 
 /-- **WS-SM SM4.G** (plan §3.7): the per-core idle thread's `ThreadId`.  Idle
@@ -2010,6 +2018,60 @@ theorem bootFromPlatformWithIdleThreads_all_cores_have_idle (config : PlatformCo
   exact foldl_installIdleThread_installs c SeLe4n.Kernel.Concurrency.allCores
     (bootFromPlatform config) SeLe4n.Kernel.Concurrency.allCores_nodup (List.mem_finRange c)
 
+/-- **WS-SM SM4.G** (plan §3.7): the per-core idle `ObjId` slots are *fresh*
+    (unoccupied) in intermediate state `ist` — no object already lives at any
+    idle thread's `ObjId`.  This is the precondition under which the idle-thread
+    install is purely additive (overwrites nothing): `createObject` uses
+    `RHTable.insert`, which overwrites on key collision, so installing an idle
+    thread at an already-occupied slot would silently clobber the prior object.
+    The canonical platforms discharge `idleSlotsFreshAt` because their config
+    objects live below `idleThreadIdBase` (witnessed generally by
+    `idleSlotsFreshAt_of_initialObjects_below_base`). -/
+def idleSlotsFreshAt (ist : IntermediateState) : Prop :=
+  ∀ c : SeLe4n.Kernel.Concurrency.CoreId,
+    ist.state.objects[(idleThreadId c).toObjId]? = none
+
+/-- **WS-SM SM4.G**: folding `installIdleThread` over a list of cores frames any
+    `ObjId` `oid` distinct from *every* idle slot the fold touches.  Generalises
+    `foldl_installIdleThread_objects_frame` (which fixed `oid` to a particular
+    core's idle slot) to an arbitrary non-idle `oid`. -/
+theorem foldl_installIdleThread_objects_frame_of_not_idle
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (oid : SeLe4n.ObjId)
+    (h : ∀ c' ∈ L, (idleThreadId c').toObjId ≠ oid) :
+    (L.foldl installIdleThread ist).state.objects[oid]? = ist.state.objects[oid]? := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x) (fun c' hc' => h c' (List.mem_cons.mpr (Or.inr hc')))]
+    exact installIdleThread_objects_ne ist x oid (h x (List.mem_cons.mpr (Or.inl rfl)))
+
+/-- **WS-SM SM4.G** (plan §3.7): under `idleSlotsFreshAt`, the idle-thread
+    install fold preserves *every* platform object — no platform object is
+    silently overwritten by an idle TCB.  This substantiates the
+    `idleThreadIdBase` disjointness rationale: when the platform config's objects
+    do not occupy any idle slot (the canonical case, since config objects live
+    below the 16-bit `idleThreadIdBase`), the idle install is purely additive.
+    Without freshness the install theorems still hold (`…_all_cores_have_idle`
+    is unconditional), but a config object placed in the idle range would be
+    clobbered — which this theorem's hypothesis rules out. -/
+theorem bootFromPlatformWithIdleThreads_preserves_platform_objects
+    (config : PlatformConfig)
+    (hFresh : idleSlotsFreshAt (bootFromPlatform config))
+    (oid : SeLe4n.ObjId) (o : KernelObject)
+    (hPlat : (bootFromPlatform config).state.objects[oid]? = some o) :
+    (bootFromPlatformWithIdleThreads config).state.objects[oid]? = some o := by
+  unfold bootFromPlatformWithIdleThreads
+  rw [foldl_installIdleThread_objects_frame_of_not_idle SeLe4n.Kernel.Concurrency.allCores
+    (bootFromPlatform config) oid (fun c' _ hEq => ?_)]
+  · exact hPlat
+  · -- If `oid` were an idle slot, freshness (`= none`) would contradict `hPlat`.
+    have hAt : (bootFromPlatform config).state.objects[(idleThreadId c').toObjId]? = some o := by
+      rw [hEq]; exact hPlat
+    rw [hFresh c'] at hAt
+    simp at hAt
+
 /-- **WS-SM SM4.G**: `installIdleThread` (via `setCurrentOnCore`) frames every
     core's run queue — idle install only writes current slots. -/
 theorem installIdleThread_runQueueOnCore (ist : IntermediateState)
@@ -2087,6 +2149,64 @@ theorem bootFromPlatformWithIdleThreads_valid (config : PlatformConfig) :
    (bootFromPlatformWithIdleThreads config).hPerObjectSlots,
    (bootFromPlatformWithIdleThreads config).hPerObjectMappings,
    (bootFromPlatformWithIdleThreads config).hLifecycleConsistent⟩
+
+/-- **WS-SM SM4.G**: `installIdleThread` frames the machine state (it touches
+    only `objects` and the scheduler's current slot — `applyMachineConfig`
+    pattern). -/
+theorem installIdleThread_machine (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.machine = ist.state.machine := rfl
+
+/-- **WS-SM SM4.G**: the install fold frames the machine state. -/
+theorem foldl_installIdleThread_machine
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState) :
+    (L.foldl installIdleThread ist).state.machine = ist.state.machine := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x)]
+    exact installIdleThread_machine ist x
+
+/-- **WS-SM SM4.G**: the install fold frames every core's domain-time-remaining
+    slot (idle install writes only the current slot). -/
+theorem foldl_installIdleThread_domainTimeRemainingOnCore
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (L.foldl installIdleThread ist).state.scheduler.domainTimeRemainingOnCore c =
+      ist.state.scheduler.domainTimeRemainingOnCore c := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x), installIdleThread_scheduler]
+    exact SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore _ _ _ _
+
+/-- **WS-SM SM4.G**: the install fold frames every core's active-domain slot. -/
+theorem foldl_installIdleThread_activeDomainOnCore
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (L.foldl installIdleThread ist).state.scheduler.activeDomainOnCore c =
+      ist.state.scheduler.activeDomainOnCore c := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x), installIdleThread_scheduler]
+    exact SchedulerState.setCurrentOnCore_activeDomainOnCore _ _ _ _
+
+/-- **WS-SM SM4.G**: the install fold frames the (system-wide) domain
+    schedule. -/
+theorem foldl_installIdleThread_domainSchedule
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState) :
+    (L.foldl installIdleThread ist).state.scheduler.domainSchedule =
+      ist.state.scheduler.domainSchedule := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x), installIdleThread_scheduler]
+    exact SchedulerState.setCurrentOnCore_domainSchedule _ _ _
 
 /-- V4-A2/A4: The post-boot state preserves CDT from default. -/
 theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
@@ -2170,6 +2290,95 @@ theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.systemRegisters = (default : SystemState).machine.systemRegisters ∧
     (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default])
+
+/-- **WS-SM SM4.G**: the idle-thread boot state's boot-core current thread is in
+    the active domain — the idle thread's domain `⟨0⟩` equals the boot active
+    domain `⟨0⟩` (so the idle thread is legitimately schedulable, not stranded
+    in a foreign domain).  This is the `currentThreadInActiveDomain` conjunct of
+    the *extended* scheduler bundle, established for the idle-thread state (the
+    plain `bootFromPlatform` discharges it vacuously via `current = none`; the
+    idle path discharges it substantively via the idle TCB's domain). -/
+theorem bootFromPlatformWithIdleThreads_currentThreadInActiveDomain (config : PlatformConfig) :
+    SeLe4n.Kernel.currentThreadInActiveDomain (bootFromPlatformWithIdleThreads config).state := by
+  have hCur := bootFromPlatformWithIdleThreads_all_cores_have_idle config
+    SeLe4n.Kernel.Concurrency.bootCoreId
+  have hAD : (bootFromPlatformWithIdleThreads config).state.scheduler.activeDomainOnCore
+      SeLe4n.Kernel.Concurrency.bootCoreId = ⟨0⟩ := by
+    unfold bootFromPlatformWithIdleThreads
+    rw [foldl_installIdleThread_activeDomainOnCore, bootFromPlatform_scheduler_eq]
+    exact (default_state_perCoreInitialized SeLe4n.Kernel.Concurrency.bootCoreId).2.2.2.1
+  simp only [SeLe4n.Kernel.currentThreadInActiveDomain, hCur.1, hCur.2, hAD]
+  rfl
+
+/-- **WS-SM SM4.G**: the idle-thread boot state satisfies the **full** scheduler
+    invariant bundle (all 9 conjuncts), not merely the base triad — the stronger
+    soundness claim that the installed idle-thread state is a fully scheduler-valid
+    boot state.  The `∀ tid ∈ runnable` conjuncts (`timeSlicePositive`,
+    `edfCurrentHasEarliestDeadline`'s inner quantifier, `runnableThreadsAreTCBs`,
+    `schedulerPriorityMatch`) hold vacuously (empty run queue);
+    `currentTimeSlicePositive` via the idle TCB's `timeSlice = 5`;
+    `contextMatchesCurrent` because the boot machine registers and the idle TCB's
+    `registerContext` are both the default `RegisterFile`
+    (`bootFromPlatform_machine_non_config_fields`); `domainTimeRemainingPositive`
+    via the default `5`; `domainScheduleEntriesPositive` vacuously (empty domain
+    schedule).  Unlike the plain `bootFromPlatform` Full bundle (which discharges
+    every current-thread conjunct vacuously via `current = none`), the idle path
+    discharges `currentTimeSlicePositive` / `contextMatchesCurrent` substantively
+    against the live idle TCB. -/
+theorem bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull (config : PlatformConfig) :
+    SeLe4n.Kernel.schedulerInvariantBundleFull (bootFromPlatformWithIdleThreads config).state := by
+  have hCur := bootFromPlatformWithIdleThreads_all_cores_have_idle config
+    SeLe4n.Kernel.Concurrency.bootCoreId
+  have hNil := bootFromPlatformWithIdleThreads_runnable_nil config
+  have hRegs : (bootFromPlatformWithIdleThreads config).state.machine.regs =
+      (default : SystemState).machine.regs := by
+    have hm : (bootFromPlatformWithIdleThreads config).state.machine =
+        (bootFromPlatform config).state.machine := by
+      unfold bootFromPlatformWithIdleThreads; exact foldl_installIdleThread_machine _ _
+    rw [hm]; exact (bootFromPlatform_machine_non_config_fields config).1
+  have hDTR : (bootFromPlatformWithIdleThreads config).state.scheduler.domainTimeRemainingOnCore
+      SeLe4n.Kernel.Concurrency.bootCoreId = 5 := by
+    unfold bootFromPlatformWithIdleThreads
+    rw [foldl_installIdleThread_domainTimeRemainingOnCore, bootFromPlatform_scheduler_eq]
+    exact (default_state_perCoreInitialized SeLe4n.Kernel.Concurrency.bootCoreId).2.2.2.2.1
+  have hDS : (bootFromPlatformWithIdleThreads config).state.scheduler.domainSchedule = [] := by
+    unfold bootFromPlatformWithIdleThreads
+    rw [foldl_installIdleThread_domainSchedule, bootFromPlatform_scheduler_eq]
+    decide
+  refine ⟨bootFromPlatformWithIdleThreads_schedulerInvariantBundle config,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- timeSlicePositive (vacuous: empty run queue)
+    intro tid hMem
+    rw [hNil] at hMem
+    exact (List.not_mem_nil hMem).elim
+  · -- currentTimeSlicePositive (idle TCB timeSlice = 5 > 0)
+    simp only [SeLe4n.Kernel.currentTimeSlicePositive, hCur.1, hCur.2]
+    decide
+  · -- edfCurrentHasEarliestDeadline (vacuous inner: empty run queue)
+    simp only [SeLe4n.Kernel.edfCurrentHasEarliestDeadline, hCur.1, hCur.2]
+    intro tid hMem
+    rw [hNil] at hMem
+    exact (List.not_mem_nil hMem).elim
+  · -- contextMatchesCurrent (machine.regs = default = idle.registerContext)
+    exact SeLe4n.Kernel.contextMatchesCurrent_of_regs_eq hCur.1 hCur.2 (hRegs.trans rfl)
+  · -- runnableThreadsAreTCBs (vacuous: empty run queue)
+    intro tid hMem
+    rw [hNil] at hMem
+    exact (List.not_mem_nil hMem).elim
+  · -- schedulerPriorityMatch (vacuous: empty run queue / empty bucket index)
+    intro tid hMem
+    have hFlat : tid ∈ (bootFromPlatformWithIdleThreads config).state.scheduler.runnable :=
+      (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+    rw [hNil] at hFlat
+    exact (List.not_mem_nil hFlat).elim
+  · -- domainTimeRemainingPositive (= 5 > 0)
+    unfold SeLe4n.Kernel.domainTimeRemainingPositive
+    rw [hDTR]
+    decide
+  · -- domainScheduleEntriesPositive (vacuous: empty domain schedule)
+    intro e he
+    rw [hDS] at he
+    exact (List.not_mem_nil he).elim
 
 /-- Fold-level: foldIrqs preserves capabilityRefs. -/
 private theorem foldIrqs_capabilityRefs (irqs : List IrqEntry) (ist : IntermediateState) :
@@ -2402,6 +2611,47 @@ private theorem foldObjects_objects_reachable
           intro heq; exact hEq (eq_of_beq heq)
         rw [RHTable.getElem?_insert_ne ist.state.objects e.id oid e.obj hNe hInvExt] at hBase
         exact Or.inr (by simp only [RHTable_getElem?_eq_get?]; exact hBase)
+
+/-- **WS-SM SM4.G** (plan §3.7): canonical-platform discharge of
+    `idleSlotsFreshAt`.  When every config object's `ObjId` lies below
+    `idleThreadIdBase` (the 16-bit ObjId space the canonical platforms — RPi5,
+    Sim — assign their objects from), no config object occupies an idle slot
+    (every idle slot's value is `idleThreadIdBase + c.val ≥ idleThreadIdBase`),
+    so the boot state's idle slots are all empty.  This makes the
+    `idleThreadIdBase` disjointness rationale a *proven* property and is the
+    hypothesis-discharge for
+    `bootFromPlatformWithIdleThreads_preserves_platform_objects`. -/
+theorem idleSlotsFreshAt_of_initialObjects_below_base
+    (config : PlatformConfig)
+    (hBelow : ∀ e ∈ config.initialObjects, e.id.val < idleThreadIdBase) :
+    idleSlotsFreshAt (bootFromPlatform config) := by
+  intro c
+  -- Every idle slot's ObjId value is ≥ idleThreadIdBase.
+  have hGe : idleThreadIdBase ≤ (idleThreadId c).toObjId.val := by
+    show idleThreadIdBase ≤ idleThreadIdBase + c.val
+    exact Nat.le_add_right _ _
+  cases hLook : (bootFromPlatform config).state.objects[(idleThreadId c).toObjId]? with
+  | none => rfl
+  | some o =>
+    exfalso
+    -- `applyMachineConfig` preserves objects; trace the lookup into `foldObjects`.
+    have hLook' : (foldObjects config.initialObjects
+        (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[(idleThreadId c).toObjId]? =
+          some o := by
+      have hb := hLook
+      unfold bootFromPlatform at hb
+      rwa [applyMachineConfig_objects_eq] at hb
+    rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
+      ⟨e, hMem, hId, _hObj⟩ | hBase
+    · -- A config object lives at the idle slot ⟹ its id ≥ base, contradicting hBelow.
+      have hlt : (idleThreadId c).toObjId.val < idleThreadIdBase := hId ▸ hBelow e hMem
+      omega
+    · -- The base (foldIrqs over the empty intermediate state) has no objects.
+      rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
+      have hEmpty : (default : SystemState).objects[(idleThreadId c).toObjId]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [hEmpty] at hBase
+      simp at hBase
 
 /-- AK8-A: If the base-state has no untyped objects and the config satisfies
 `untypedRegionsDisjoint`, the post-boot object store satisfies the runtime

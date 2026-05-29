@@ -2225,6 +2225,34 @@ verified invariant surface intact).
   get a post-retirement note.  Items deferred past v1.0.0 with correctness
   impact: NONE.
 
+**WS-SM SM4.G audit-pass-1 LANDED at v0.31.37** (deeper-audit pass; the
+v0.31.36 landing was sound + axiom-clean — closes two optimality/honesty gaps
+per the implement-the-improvement rule, both in `SeLe4n/Platform/Boot.lean`;
+axiom-clean; trace byte-identical 227/227; default build green 320 jobs).
+
+- **Under-claim closed (base triad → FULL 9-conjunct bundle)**:
+  `bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull` proves the
+  idle-thread state satisfies all 9 conjuncts (SM4.G proved only the base 3).
+  Unlike the plain `bootFromPlatform` Full bundle (current-thread conjuncts
+  vacuous via `current = none`), the idle path discharges
+  `currentTimeSlicePositive` (idle `timeSlice = 5 > 0`) and
+  `contextMatchesCurrent` (boot regs = idle `registerContext` = default, via
+  `bootFromPlatform_machine_non_config_fields`) **substantively**.  Bonus
+  `…_currentThreadInActiveDomain` (idle thread in the boot active domain — the
+  extended bundle's conjunct).
+- **Phantom `idleSlotsFreshAt` implemented**: the `idleThreadIdBase` docstring
+  referenced a nonexistent freshness hypothesis.  Now built (`ObjId` is an
+  unbounded `Nat`, so the 16-bit disjointness was convention not structure, and
+  `createObject`'s `RHTable.insert` overwrites on collision): `idleSlotsFreshAt`
+  predicate; `foldl_installIdleThread_objects_frame_of_not_idle`;
+  `bootFromPlatformWithIdleThreads_preserves_platform_objects` (additive install
+  under freshness — no config object clobbered);
+  `idleSlotsFreshAt_of_initialObjects_below_base` (freshness for below-base
+  configs, the canonical case).  Docstring rewritten to cite the real symbols.
+- Surface: +5 tier-3 anchors + 5 `SmpFoundationsSuite` `#check`s + 2 top-level
+  elaboration `example`s + 3 substantive `model_integrity_suite` runtime checks.
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

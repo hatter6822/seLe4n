@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.36` (`lakefile.toml`) |
+| **Package version** | `0.31.37` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 146,286 across 209 Lean files |
-| **Test LoC** | 31,822 across 47 Lean test suites |
-| **Proved declarations** | 4,615 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 146,536 across 209 Lean files |
+| **Test LoC** | 31,886 across 47 Lean test suites |
+| **Proved declarations** | 4,625 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-SM (SMP multi-core completion) IN FLIGHT** — closes at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5. Current sub-phase: **SM4.D cross-subsystem per-core invariant migration LANDED (v0.31.30) + audit-passes 1–2 (v0.31.31→v0.31.32: lowEquivalentOnCore NI substrate, passiveServerIdle natural-SMP form, full per-operation SMP-preservation layer in CrossSubsystemPerCorePreservation.lean, typed-accessor migration, RetypeTargetSmp consumer)** — every cross-subsystem invariant reading scheduler state lifted to additive, soundness-preserving per-core `(c : CoreId)` forms + `∀ c` SMP aggregates across 5 new staged modules: IPC↔scheduler coherence (12 predicates, `IPC/Invariant/PerCore.lean`), capability no-stale-scheduler-ref retype precondition (`Capability/Invariant/PerCore.lean`), architecture register-decode consistency (`Architecture/InvariantPerCore.lean`), the 6 IF-M1 projections + `projectStateOnCore` (`InformationFlow/ProjectionPerCore.lean`), and the `crossSubsystemInvariant_perCore` / `crossSubsystemSchedulerContract_perCore` capstones (`CrossSubsystemPerCore.lean`); axiom-clean; partition gate 40 staged-only modules; trace fixture byte-identical (purely additive).  Built on **SM4.C per-core scheduler invariant migration (v0.31.13 → v0.31.29)** — the per-core scheduler invariant layer: 16 per-core predicate forms (all typed-accessor); 16 boot-core bridges; 3 aggregates (base `schedulerInvariant_perCore` mirroring `…BundleFull`'s per-core slice + extended mirroring `…BundleExtended` + cross-subsystem mirroring plan §5.6 with `schedContextRunQueueConsistent_perCore` / `priorityInheritance_perCore` / `activeDomainOnCore_isInDomainSchedule`) with SMP forms and bundle bridges; 20 per-conjunct frame lemmas; 7 setter independence corollaries + cross-core pairwise theorem (SM4.C.30); 6 per-op aggregate per-core preservation theorems (for `schedule` / `handleYield` / `timerTick` / `switchDomain` / `scheduleDomain` + `chooseThread` base bridge) + 25 named per-conjunct per-op SMP preservation theorems (plan §3.4 Pattern 1 lifts: 5 conjuncts × 5 ops); `_smp_of_bootCore_preservation` composition skeleton; `_holds_if_idle` sufficient theorem.  Across 2 modules (`SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` ~1660 LoC + `…/PerCorePreservation.lean` ~700 LoC); axiom-clean (only `propext` / `Quot.sound` / `Classical.choice`); AK7 baseline restored to the v0.31.2 floor (`RAW_MATCH_TOTAL` 122) with `GETTCB_ADOPTION` net +56 / `GETSCHEDCTX_ADOPTION` net +27; trace fixture byte-identical; partition gate green (35 staged-only modules). Landed earlier in WS-SM: SM0 (foundations, v0.31.3), SM1 (Rust HAL, v0.31.8), SM2 (verified lock primitives), SM3 (per-object locks → 2PL → deadlock-freedom → serializability), SM4.A (per-core `Vector` bootstrap, v0.31.11), SM4.B (`SchedulerState` path-a `Vector` replacement, v0.31.12), SM4.C (per-core scheduler invariant migration, v0.31.13 → v0.31.29). Follow-on: SM4.E (`bootFromPlatform_singleCore_witness` retirement + `bootFromPlatform_smp_witness`), SM5..SM9 (per-core scheduler, cross-core IPC, TLB shootdown, info-flow, release closure). Plans: master [`SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md); per-core state [`SMP_PER_CORE_STATE_PLAN.md`](../planning/SMP_PER_CORE_STATE_PLAN.md) §5.3. Canonical per-phase record: [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md). Prior closed portfolios: WS-RC pre-1.0 audit remediation (v0.30.11→v0.31.2), WS-AN (v0.30.11), WS-AK (v0.30.6), WS-AM–WS-B. |
@@ -2081,6 +2081,24 @@ reads "implemented in SM4 path-a".
 live `some` branch of the witness),
 `…_schedulerInvariantBundle` (the installed state is scheduler-valid), and
 `…_valid` (the four structural boot invariants).  All axiom-clean.
+
+**WS-SM SM4.G audit-pass-1 (v0.31.37)** strengthened the idle-state soundness
+to the **full** 9-conjunct bundle and closed a phantom-symbol gap:
+`bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull` proves the
+installed state satisfies `schedulerInvariantBundleFull` (not merely the base
+triad) — and, unlike the plain `bootFromPlatform` Full bundle (which discharges
+the current-thread conjuncts vacuously via `current = none`), the idle path
+discharges `currentTimeSlicePositive` and `contextMatchesCurrent`
+*substantively* against the live idle TCB; bonus
+`…_currentThreadInActiveDomain` places the idle thread in the boot active
+domain.  The `idleThreadIdBase` docstring's `idleSlotsFreshAt` freshness
+hypothesis — previously a phantom reference — is now a real predicate, with
+`bootFromPlatformWithIdleThreads_preserves_platform_objects` (under freshness
+the install is purely additive — no config object clobbered) and
+`idleSlotsFreshAt_of_initialObjects_below_base` (freshness discharged for any
+config whose objects live below `idleThreadIdBase` — the canonical RPi5/Sim
+case), making the 16-bit disjointness rationale a *proven* property rather than
+a convention.  All axiom-clean.
 
 `SeLe4n/Kernel/Concurrency/Assumptions.lean` also adds the **retirement
 ledger** `def smpRetiredInventory : List SmpRetiredAssumption` (SM4.E.5):

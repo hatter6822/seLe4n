@@ -138,7 +138,15 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_currentThreadInActiveDomain
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_valid
+-- SM4.G idle-slot freshness: the install is purely additive (no platform
+-- object clobbered) under `idleSlotsFreshAt`, discharged for configs whose
+-- objects live below `idleThreadIdBase`.
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
 
 /-! ## SM0.G — PlatformBinding extension fields (RPi5 + Sim) -/
 #check @SeLe4n.Platform.PlatformBinding.coreCount

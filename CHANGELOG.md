@@ -1,3 +1,54 @@
+## v0.31.37 — WS-SM SM4.G audit-pass-1: full-bundle idle soundness + idle-slot freshness
+
+Deeper-audit pass on the SM4.E/SM4.G cut (the v0.31.36 landing was sound and
+axiom-clean — no correctness defect).  Closes two optimality/honesty gaps per
+the implement-the-improvement rule, both in `SeLe4n/Platform/Boot.lean`; every
+new theorem axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only);
+trace fixture byte-identical (227/227); full default build green (320 jobs).
+
+- **Under-claim closed: base triad → FULL 9-conjunct bundle.** SM4.G proved
+  only `bootFromPlatformWithIdleThreads_schedulerInvariantBundle` (the base
+  3-conjunct triad).  The idle-thread state in fact satisfies the full
+  `schedulerInvariantBundleFull`, now proved by
+  `bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull` — and, unlike
+  the plain `bootFromPlatform` Full bundle (which discharges every
+  current-thread conjunct vacuously via `current = none`), the idle path
+  discharges `currentTimeSlicePositive` (idle TCB `timeSlice = 5 > 0`) and
+  `contextMatchesCurrent` (boot regs = idle `registerContext` = default
+  `RegisterFile`, via `bootFromPlatform_machine_non_config_fields`)
+  **substantively** against the live idle TCB.  The `∀ tid ∈ runnable`
+  conjuncts hold vacuously (empty run queue); `domainTimeRemainingPositive`
+  via the default `5`; `domainScheduleEntriesPositive` vacuously.  Bonus
+  `bootFromPlatformWithIdleThreads_currentThreadInActiveDomain` proves the idle
+  thread resides in the boot active domain (the *extended* bundle's conjunct,
+  again discharged substantively where plain boot is vacuous).
+- **Phantom reference implemented: `idleSlotsFreshAt`.** The `idleThreadIdBase`
+  docstring referenced an `idleSlotsFreshAt` freshness hypothesis "that the
+  canonical platforms discharge" — but no such symbol existed and the
+  boot-install theorems were stated unconditionally.  Per the
+  implement-the-improvement rule the symbol is now built, closing the latent
+  silent-overwrite concern (`createObject`'s `RHTable.insert` overwrites on key
+  collision, and `ObjId` wraps an unbounded `Nat`, so the 16-bit disjointness
+  was convention, not structure):
+  - `idleSlotsFreshAt (ist) : Prop` — no object occupies any idle slot.
+  - `foldl_installIdleThread_objects_frame_of_not_idle` — the install fold
+    frames any `ObjId` distinct from every idle slot it touches.
+  - `bootFromPlatformWithIdleThreads_preserves_platform_objects` — under
+    `idleSlotsFreshAt`, the idle install is purely **additive**: every platform
+    object survives (none clobbered).
+  - `idleSlotsFreshAt_of_initialObjects_below_base` — discharges freshness for
+    any config whose objects live below `idleThreadIdBase` (the canonical
+    RPi5/Sim case), making the disjointness a *proven* property.  The
+    `idleThreadIdBase` docstring is rewritten to reference these real symbols.
+
+Surface: +5 tier-3 anchors + 5 `SmpFoundationsSuite` `#check`s (full bundle,
+active-domain, freshness predicate + preservation + discharge); 2 top-level
+elaboration `example`s + 3 substantive runtime checks in `model_integrity_suite`
+(idle `timeSlice > 0`, idle in active domain, below-base platform object
+survives the install + idle threads additively present).  Items deferred past
+v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §3.7 / §3.8 / §5.5 (SM4.G)
+
 ## v0.31.36 — WS-SM SM4.G: per-core idle-thread bootstrap (substantive SMP boot witness)
 
 Follow-on to SM4.E (per maintainer directive): implements the per-core

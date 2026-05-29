@@ -1260,7 +1260,12 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.Boot.idleThreadId_injective
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_currentThreadInActiveDomain
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_valid
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
 -- SM0.G — PlatformBinding extension
 #check @SeLe4n.Platform.PlatformBinding.coreCount
 #check @SeLe4n.Platform.PlatformBinding.bootCoreId
