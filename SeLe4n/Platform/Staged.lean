@@ -168,6 +168,20 @@ import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
 -- subsystems; this completes the "every SchedulerState-reading def has a
 -- per-core form" coverage.  SM5's per-core platform bring-up consumes it.
 import SeLe4n.Platform.RPi5.RuntimeContractPerCore
+-- WS-SM SM5.A: per-core `chooseThread` (plan
+-- `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1, §5).  The selection function
+-- `chooseThreadOnCore` itself is production-reached (the legacy
+-- `chooseThread` delegates to it, SM5.A.5); this module collects the
+-- forward-looking SM5.A theorems: the `RunQueueLockId` + read-only
+-- `chooseThreadOnCoreLockSet` (SM5.A.2), the per-core-independence frame +
+-- corollaries (SM5.A.3), idle-fallback completeness
+-- (`chooseThreadOnCore_ok_of_runnableTCBs` / `_none_no_eligible` /
+-- `_some_of_eligible`, SM5.A.4), selection soundness
+-- (`chooseThreadOnCore_some_mem_runQueueOnCore`, SM5.A.6), and the
+-- decidability witnesses (SM5.A.7).  Reachability: staged at SM5.A; SM5.B's
+-- per-core `switchToThread` (which dispatches the chosen thread) is the
+-- first runtime exerciser (which will move it production-reached).
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

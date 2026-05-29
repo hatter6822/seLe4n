@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.37.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.38.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -277,7 +277,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1027 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
-- `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1002 lines)
+- `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1023 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1000 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~983 lines)
@@ -4505,6 +4505,83 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `model_integrity_suite` (idle `timeSlice > 0`, idle in active domain,
   below-base platform object survives the install + idle threads additively
   present).  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.A LANDED at v0.31.38 on branch
+  `claude/sharp-mayer-tAap4`** (per-core `chooseThread`; opens SM5, the
+  per-core scheduler phase).  All eight sub-tasks landed in one cut per
+  [`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`](docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md)
+  §3.1 / §5.  Every new theorem is axiom-clean (`propext` / `Quot.sound`
+  only); the legacy single-core `chooseThread` migrates to delegate to the
+  per-core form with **zero behavioural change** (default build green, 320
+  jobs; trace fixture byte-identical).
+
+  - **SM5.A.1 + SM5.A.5** (production, `Scheduler/Operations/Selection.lean`):
+    `chooseThreadOnCore (st) (c : CoreId) : Except KernelError (Option
+    ThreadId)` — the per-core analogue of `chooseThread`, selecting the
+    highest-priority runnable thread in core `c`'s active domain by reading
+    **only** core `c`'s run-queue + active-domain slots.  Plan §3.1's bare
+    `Option ThreadId` is adapted to `Except KernelError (Option ThreadId)` so
+    the underlying `chooseBestInBucket`'s `schedulerInvariantViolation`
+    (corrupted run queue) is preserved, not silently collapsed to `none` (a
+    richer, strictly-safer contract; `chooseThreadOnCore_ok_of_runnableTCBs`
+    proves the error branch unreachable on valid states).  The legacy
+    `chooseThread` is now *defined* as `chooseThreadOnCore` at `bootCoreId`
+    lifted into the `Kernel` monad (`chooseThread_eq_chooseThreadOnCore_bootCore`,
+    `rfl`); the five production proof sites that `unfold chooseThread` updated
+    to also unfold `chooseThreadOnCore`.
+  - **SM5.A.2** (staged, `Scheduler/Operations/PerCoreChooseThread.lean`):
+    `RunQueueLockId` (a `CoreId`-keyed per-core run-queue lock — distinct from
+    the SM0.I object-lock `LockId` hierarchy, since run queues are
+    `SchedulerState` fields not kernel objects, so the 10-level `LockKind`
+    pinning is untouched) + `chooseThreadOnCoreLockSet c = [(⟨c⟩, .read)]`
+    reusing SM3.B's `AccessMode`, with four structural witnesses (singleton,
+    read-only, guards-core-`c`, keys-`Nodup`).
+  - **SM5.A.3**: per-core independence (Theorem 3.1.2).
+    `chooseThreadOnCore_frame` (the selection on core `c` depends only on
+    `(objects, runQueueOnCore c, activeDomainOnCore c)`) + four corollaries —
+    independence under sibling-core run-queue / active-domain writes, under
+    **any** core's `current` write (the selection never reads `current`), and
+    the lock-set bridge `_independent_of_write_off_lockSet` tying the SM5.A.2
+    lock-set to the actual read footprint.
+  - **SM5.A.4**: idle-fallback completeness.  Three induction lemmas on
+    `chooseBestRunnableBy` (`_some_ne_ok_none`, `_none_no_eligible`,
+    `_ok_of_allTcb`) lift through `chooseBestInBucket` to:
+    `chooseThreadOnCore_ok_of_runnableTCBs` (never errors on a well-formed
+    all-TCB run queue — total on valid states),
+    `chooseThreadOnCore_none_no_eligible` (returns `.ok none` only when no
+    in-domain runnable thread exists — the idle fallback drops nothing), and
+    `chooseThreadOnCore_some_of_eligible` (an in-domain runnable thread
+    guarantees a `some` selection — the conditional SM5.E discharges with the
+    per-core idle thread for the unconditional
+    `chooseThreadOnCore_always_succeeds`).  Plus the
+    `schedulerInvariant_perCore` corollary
+    `chooseThreadOnCore_ok_of_schedulerInvariant`.
+  - **SM5.A.6**: selection soundness.
+    `chooseThreadOnCore_some_mem_runQueueOnCore` (a chosen thread is a genuine
+    run-queue member — the substantive "respects well-formedness" content for
+    a read-only selector) + the literal preservation form
+    `chooseThread_preserves_runQueueOnCore_wellFormed` (`chooseThread` is a
+    pure read) + the `schedulerInvariant_perCore` corollary.
+  - **SM5.A.7**: `chooseThreadOnCoreSelects` / `chooseThreadOnCoreIdleFallback`
+    decidable predicates (Lean core does not derive `DecidableEq (Except _ _)`,
+    so decidability is by structural case analysis on the evaluated result) —
+    what lets the unit tests `decide` concrete selection scenarios.
+  - **SM5.A.8** (`tests/SmpSchedulerSelectionSuite.lean`): 25 surface anchors,
+    8 elaboration-time theorem-application examples, 16 runtime assertions
+    across the six selection scenarios (empty ⇒ idle fallback; single
+    in-domain selected; highest-priority wins; out-of-domain skipped; per-core
+    independence; selection soundness) + the SM5.A.2 lock-set witnesses.
+    Tier-2 + Tier-3 wired.
+
+  **Production support**: `RunQueue.ofList_wellFormed` added to
+  `Scheduler/RunQueue.lean` (`ofList` folds `insert` over `empty`, both
+  well-formedness-preserving) to discharge `RunQueue.wellFormed` on concrete
+  fixtures.  **Module reachability**: `Scheduler.Operations.PerCoreChooseThread`
+  staged via `Platform.Staged` (`staged_module_allowlist.txt`, 43 staged-only
+  modules); `chooseThreadOnCore` itself is production-reached (legacy
+  `chooseThread` delegates to it).  SM5.B's per-core `switchToThread` is the
+  first runtime exerciser of the SM5.A theorems.  Items deferred past v1.0.0
+  with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

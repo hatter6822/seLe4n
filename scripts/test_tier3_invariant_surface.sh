@@ -2934,4 +2934,56 @@ open SeLe4n.Platform.RPi5
 #check @default_registerContextStableCheckOnCore
 EOF'
 
+# WS-SM SM5.A — per-core chooseThread surface anchors.  Covers the SM5.A.2
+# run-queue lock-set (`RunQueueLockId` + `chooseThreadOnCoreLockSet` + 4
+# witnesses), the SM5.A.3 per-core-independence frame + corollaries, the
+# SM5.A.4 idle-fallback completeness theorems + `schedulerInvariant_perCore`
+# corollaries, the SM5.A.6 selection-soundness results, and the SM5.A.7
+# decidable predicates.  `chooseThreadOnCore` (SM5.A.1) and the legacy
+# `chooseThread` migration bridge (SM5.A.5) are checked against the
+# production module.  A rename / removal of any SM5.A symbol fails here at
+# elaboration time, before SM5.B's per-core `switchToThread` consumes them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
+open SeLe4n.Kernel
+
+-- SM5.A.1 + SM5.A.5 — per-core selection + legacy-chooseThread migration bridge.
+#check @chooseThreadOnCore
+#check @chooseThread_eq_chooseThreadOnCore_bootCore
+
+-- SM5.A.2 — run-queue lock identifier + read-only chooseThread lock-set.
+#check @RunQueueLockId
+#check @chooseThreadOnCoreLockSet
+#check @chooseThreadOnCoreLockSet_length
+#check @chooseThreadOnCoreLockSet_read_only
+#check @chooseThreadOnCoreLockSet_core
+#check @chooseThreadOnCoreLockSet_keys_nodup
+
+-- SM5.A.3 — per-core-independence frame + corollaries.
+#check @chooseThreadOnCore_frame
+#check @chooseThreadOnCore_independent_of_setRunQueueOnCore
+#check @chooseThreadOnCore_independent_of_setActiveDomainOnCore
+#check @chooseThreadOnCore_independent_of_setCurrentOnCore
+#check @chooseThreadOnCore_independent_of_write_off_lockSet
+
+-- SM5.A.4 — idle-fallback completeness + schedulerInvariant_perCore corollary.
+#check @chooseThreadOnCore_ok_of_runnableTCBs
+#check @chooseThreadOnCore_none_no_eligible
+#check @chooseThreadOnCore_some_of_eligible
+#check @chooseThreadOnCore_ok_of_schedulerInvariant
+
+-- SM5.A.6 — selection soundness + preservation form + invariant corollary.
+#check @chooseThreadOnCore_some_mem_runQueueOnCore
+#check @chooseThread_preserves_runQueueOnCore_wellFormed
+#check @chooseThreadOnCore_some_mem_of_schedulerInvariant
+
+-- SM5.A.7 — decidable selection predicates.
+#check @chooseThreadOnCoreSelects
+#check @chooseThreadOnCoreIdleFallback
+
+-- SM5.A support: RunQueue.ofList well-formedness (production helper).
+#check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
+EOF'
+
 finalize_report
