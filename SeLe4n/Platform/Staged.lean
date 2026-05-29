@@ -136,6 +136,38 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 -- base-aggregate bridge for `chooseThread`.  Composes existing single-
 -- core preservation theorems with the SM4.C SMP-preservation skeleton.
 import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
+-- WS-SM SM4.D: cross-subsystem per-core invariant migration (plan §5.4).
+-- The capstone `CrossSubsystemPerCore` transitively imports the four
+-- per-subsystem per-core slices: `IPC.Invariant.PerCore` (the twelve
+-- IPC↔scheduler coherence predicates lifted to `(c : CoreId)` forms +
+-- the genuine `∀ c` SMP aggregates), `Capability.Invariant.PerCore`
+-- (`cleanupNoStaleSchedRef` SMP "no stale ref on any core"),
+-- `Architecture.InvariantPerCore` (`registerDecodeConsistent` per-core),
+-- and `InformationFlow.ProjectionPerCore` (the six scheduler-reading IF-M1
+-- projections + `projectStateOnCore` + per-core observability frame
+-- lemmas).  It exports `crossSubsystemInvariant_perCore` (the per-core
+-- master invariant) and `crossSubsystemSchedulerContract_perCore` (the
+-- SM4.D capstone bundle), with boot-core bridges to the live single-core
+-- surface.  Reachability: staged at SM4.D; SM5's per-core scheduler is
+-- the first runtime exerciser (which will move them production-reached).
+import SeLe4n.Kernel.CrossSubsystemPerCore
+-- WS-SM SM4.D audit-pass-2: per-operation cross-subsystem SMP-preservation.
+-- Connects the per-core / ∀c SMP invariant predicates to the kernel's
+-- transitions: `…_holds_if_idle` idle-discharge lemmas, the generic
+-- single-core→SMP lifters, the `passiveServerIdle_scheduledNowhere`
+-- natural-SMP form, and 11 concrete per-operation preservation theorems
+-- (8 IPC ops → `ipcSchedulerContractPredicates_smp`, 2 architecture ops →
+-- `registerDecodeConsistent_smp`, `timerTick` → schedContext↔run-queue),
+-- each reusing the existing single-core preservation verbatim.  SM5's
+-- per-core scheduler is the first runtime exerciser.
+import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
+-- WS-SM SM4.D audit-pass-3: the one Platform-layer scheduler-reader found by
+-- the exhaustive audit — `registerContextStableCheck` (RPi5 runtime contract)
+-- — lifted to the per-core `registerContextStableCheckOnCore` + boot-core
+-- bridge + idle/default witnesses.  Platform/RPi5 is adjacent to SM4.D's six
+-- subsystems; this completes the "every SchedulerState-reading def has a
+-- per-core form" coverage.  SM5's per-core platform bring-up consumes it.
+import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

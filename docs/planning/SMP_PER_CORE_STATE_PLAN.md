@@ -427,6 +427,16 @@ invariant file. Pattern (from §3.4):
 | SM4.C.29 | Aggregate invariant `schedulerInvariant_perCore` | New aggregate | L |
 | SM4.C.30 | Cross-core `schedulerInvariant_perCore_pairwise` | Theorem | M |
 
+> **OPEN (tracked debt) — SM4.C.11**: the `Scheduler/Liveness/*.lean`
+> per-core forms (`eventuallyExits`, `higherBandExhausted`,
+> `rpi5CanonicalConfig`, `WCRTHypotheses`, `wcrtBound`, the `TraceModel`
+> step/selection predicates, … ~15 scheduler-reading decls) were **not**
+> delivered in SM4.C's landing — they remain `bootCoreId`-pinned (correct
+> single-core surface; SMP liveness needs `∀ c` forms).  Surfaced by the
+> SM4.D audit-pass-4 whole-tree re-scan (see §5.4); closure target stays
+> **SM4.C.11**.  This is a Scheduler-subsystem item, deliberately *not*
+> pulled into the SM4.D cross-subsystem cut.
+
 **Migration discipline**: each PR (covering 1-3 sub-tasks)
 follows the same pattern:
 
@@ -475,6 +485,77 @@ SchedulerState.
 
 **Total LoC for SM4.D**: ~1500-2500 LoC of cross-subsystem
 migrations.
+
+> **SM4.D LANDED (v0.31.30 → v0.31.31 + audit-passes, branch
+> `claude/great-dijkstra-BPl3p`).**  Realised — following the SM4.C
+> additive pattern — as per-core invariant forms + `∀ c` SMP aggregates
+> + boot-core bridges + frame lemmas + defaults + per-operation
+> SMP-preservation, in six staged modules:
+> `IPC/Invariant/PerCore.lean`, `Capability/Invariant/PerCore.lean`,
+> `Architecture/InvariantPerCore.lean`,
+> `InformationFlow/ProjectionPerCore.lean`, `CrossSubsystemPerCore.lean`,
+> `CrossSubsystemPerCorePreservation.lean`.
+>
+> Per-sub-task disposition (against the table above):
+> - **Migrated (per-core invariant + bridges + frames + defaults + SMP):**
+>   SM4.D.2 (IPC invariants — 12 predicates), SM4.D.4 (Capability
+>   `cleanupHookDischarged` / `cleanupNoStaleSchedRef` + SMP retype
+>   precondition + `RetypeTargetSmp` consumer), SM4.D.9 (Architecture
+>   `registerDecodeConsistent`), SM4.D.13 (InformationFlow projections —
+>   6 + `projectStateOnCore` + `lowEquivalent`), SM4.D.19 (CrossSubsystem
+>   `crossSubsystemInvariant_perCore` + the `crossSubsystemSchedulerContract`
+>   capstone; `schedContextRunQueueConsistent` was migrated by SM4.C).
+> - **Per-operation preservation (the operation sub-tasks' SMP payoff):**
+>   SM4.D.1 / SM4.D.10 / SM4.D.11 — 11 concrete per-op preservation
+>   theorems (8 IPC ops → `ipcSchedulerContractPredicates_smp`; 2
+>   architecture ops → `registerDecodeConsistent_smp`; `timerTick` →
+>   SchedContext↔run-queue) + the generic single-core→SMP lifters + the
+>   `passiveServerIdle_scheduledNowhere` natural-SMP form.
+> - **N/A (no scheduler-reading predicate; reads are operations that stay
+>   boot-core until SM5, or frozen state that stays scalar per SM4.B):**
+>   SM4.D.3 / SM4.D.5 / SM4.D.6 / SM4.D.7 / SM4.D.8 / SM4.D.12 (NI
+>   *operations*; the NI *predicates* — projections + `lowEquivalent` —
+>   are migrated under SM4.D.13) / SM4.D.14 (IF Invariant files define no
+>   scheduler-reading predicate; their substrate is the migrated
+>   projections) / SM4.D.15 (Model/State.lean — SM4.B accessor machinery)
+>   / SM4.D.16 (frozen state stays scalar) / SM4.D.17 / SM4.D.18 / SM4.D.20
+>   (Boot/FFI/API operations) / SM4.D.21 / SM4.D.22 (VSpace/SyscallEntry
+>   define no scheduler-reading predicate).  Verified by an exhaustive
+>   codebase scan (every `def … : Prop`/projection reading a scheduler
+>   accessor, direct or transitive).
+>
+> All staged-only; axiom-clean; AK7 typed-accessor discipline
+> (`getTcb?`/`getEndpoint?`/`getNotification?`); trace fixture
+> byte-identical (purely additive).  Tests:
+> `tests/CrossSubsystemPerCoreSuite.lean` (Tier-2 + Tier-3 wired).
+>
+> **audit-pass-3 (v0.31.33)**: an exhaustive whole-tree re-scan found one
+> further scheduler-reading definition adjacent to the six subsystems —
+> `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`, a
+> `Bool` runtime contract reading `currentOnCore` + `.runnable`).  Migrated
+> to `registerContextStableCheckOnCore` in the new staged module
+> `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle /
+> default witnesses), so every `SchedulerState`-reading definition **within
+> SM4.D's six subsystems plus the adjacent Platform/RPi5 runtime contract**
+> now has a per-core form or an explicit documented disposition.
+> Partition gate: 42 staged-only modules.
+>
+> **audit-pass-4 (v0.31.34)**: scope-correction.  audit-pass-3's phrasing
+> ("every definition *in the tree*") was an overclaim.  The
+> Scheduler-subsystem **Liveness** predicates
+> (`Scheduler/Liveness/*.lean`: `eventuallyExits`, `higherBandExhausted`,
+> `rpi5CanonicalConfig`, `CanonicalDeploymentProgress`, `stepPrecondition`,
+> `stepPost`, `selectedAt`, `runnableAt`, `budgetAvailableAt`,
+> `WCRTHypotheses`, `wcrtBound`, … ~15 decls) also read scheduler state
+> (pinned to `bootCoreId`) and have no per-core form — but they are
+> **SM4.C.11** scope (the §5.3 row `Scheduler/Liveness/*.lean (incl.
+> WCRT)`), the Scheduler-subsystem migration, NOT the SM4.D cross-subsystem
+> boundary.  Their per-core SMP forms remain **open tracked debt against
+> SM4.C.11** (SMP liveness needs `∀ c` reasoning; the bootCoreId-pinned
+> predicates are correct single-core surface).  No SM4.D code change —
+> migrating Liveness inside this cut would misattribute SM4.C work and
+> break one-coherent-slice.  SM4.D's per-core cross-subsystem surface is
+> complete and axiom-clean.
 
 ### 5.5 Witness retirement + replacement (SM4.E, 2 PRs, 5 sub-tasks)
 
@@ -580,7 +661,11 @@ No new Lean axioms.
 - [ ] `default_state_perCoreInitialized` proven.
 - [ ] `SchedulerState.ext` per-core proven.
 - [ ] All 30 SM4.C sub-tasks complete: ~110 scheduler theorems migrated.
-- [ ] All 22 SM4.D sub-tasks complete: cross-subsystem migrations.
+- [x] All 22 SM4.D sub-tasks complete: cross-subsystem migrations.
+      (LANDED v0.31.30 → v0.31.31; see the §5.4 disposition note — the
+      predicate-bearing sub-tasks are migrated with per-op SMP-preservation,
+      the operation-only / frozen-state / no-predicate sub-tasks are
+      documented N/A.)
 - [ ] `bootFromPlatform_singleCore_witness` retired.
 - [ ] `bootFromPlatform_smp_witness` proven.
 - [ ] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".

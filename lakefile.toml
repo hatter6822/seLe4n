@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.29"
+version = "0.31.34"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -351,3 +351,14 @@ root = "tests.SchedulerInvariantPerCoreSuite"
 [[lean_exe]]
 name = "scheduler_invariant_per_core_preservation_suite"
 root = "tests.SchedulerInvariantPerCorePreservationSuite"
+
+# WS-SM SM4.D — Cross-subsystem per-core invariant migration test suite.
+# Surface anchors + elaboration-time witnesses + runtime assertions for the
+# per-core IPC↔scheduler coherence predicates, the capability no-stale-ref
+# precondition, the architecture register-decode consistency, the IF-M1
+# per-core projections, and the cross-subsystem capstone aggregates
+# (`crossSubsystemInvariant_perCore`, `crossSubsystemSchedulerContract_perCore`).
+# Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "cross_subsystem_per_core_suite"
+root = "tests.CrossSubsystemPerCoreSuite"

@@ -2729,4 +2729,190 @@ open SeLe4n.Kernel
 #check @schedulerInvariant_perCore_holds_if_idle_default
 EOF'
 
+# WS-SM SM4.D — cross-subsystem per-core invariant migration surface anchors.
+# Covers the IPC↔scheduler coherence predicates (12 per-core forms + the
+# `∀ c` SMP aggregates + boot-core bridges + frame lemmas + defaults), the
+# capability no-stale-scheduler-ref retype precondition, the architecture
+# register-decode consistency, the IF-M1 per-core projections + the
+# `projectStateOnCore` aggregate + observability frame lemmas, and the
+# CrossSubsystem capstone (`crossSubsystemInvariant_perCore` +
+# `crossSubsystemSchedulerContract_perCore` + SMP forms).  A rename /
+# removal of any SM4.D symbol fails here at elaboration time, before SM5's
+# per-core scheduler can consume them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.CrossSubsystemPerCorePreservation'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.CrossSubsystemPerCorePreservation
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Architecture
+
+-- SM4.D.1/.2 — IPC per-core predicate forms (12) + aggregates.
+#check @runnableThreadIpcReady_perCore
+#check @blockedOnSendNotRunnable_perCore
+#check @blockedOnReceiveNotRunnable_perCore
+#check @blockedOnCallNotRunnable_perCore
+#check @blockedOnReplyNotRunnable_perCore
+#check @blockedOnNotificationNotRunnable_perCore
+#check @currentThreadIpcReady_perCore
+#check @currentNotEndpointQueueHead_perCore
+#check @currentNotOnNotificationWaitList_perCore
+#check @passiveServerIdle_perCore
+#check @ipcSchedulerContractPredicates_perCore
+#check @currentThreadDequeueCoherent_perCore
+-- SM4.D.1/.2 — IPC boot-core bridges.
+#check @runnableThreadIpcReady_perCore_bootCore_iff
+#check @blockedOnSendNotRunnable_perCore_bootCore_iff
+#check @currentThreadIpcReady_perCore_bootCore_iff
+#check @passiveServerIdle_perCore_bootCore_iff
+#check @ipcSchedulerContractPredicates_perCore_bootCore_iff
+#check @currentThreadDequeueCoherent_perCore_bootCore_iff
+-- SM4.D.1/.2 — IPC frame lemmas.
+#check @runnableThreadIpcReady_perCore_frame
+#check @currentThreadIpcReady_perCore_frame
+#check @passiveServerIdle_perCore_frame
+-- SM4.D.1/.2 — IPC defaults + SMP aggregates + extractors + projections.
+#check @default_ipcSchedulerContractPredicates_perCore
+#check @default_currentThreadDequeueCoherent_perCore
+#check @default_passiveServerIdle_perCore
+#check @ipcSchedulerContractPredicates_smp
+#check @currentThreadDequeueCoherent_smp
+#check @passiveServerIdle_smp
+#check @ipcSchedulerContractPredicates_smp_aggregateForall
+#check @ipcSchedulerContractPredicates_smp_at
+#check @ipcSchedulerContractPredicates_smp_to_singleCore
+#check @currentThreadDequeueCoherent_smp_to_singleCore
+#check @passiveServerIdle_smp_to_singleCore
+#check @default_ipcSchedulerContractPredicates_smp
+#check @default_currentThreadDequeueCoherent_smp
+#check @default_passiveServerIdle_smp
+#check @ipcSchedulerContractPredicates_perCore_to_runnableThreadIpcReady
+#check @ipcSchedulerContractPredicates_perCore_to_blockedOnNotificationNotRunnable
+#check @currentThreadDequeueCoherent_perCore_to_currentThreadIpcReady
+#check @currentThreadDequeueCoherent_perCore_to_currentNotOnNotificationWaitList
+-- SM4.D.3/.4 — Capability per-core no-stale-scheduler-ref.
+#check @cleanupNoStaleSchedRef_perCore
+#check @cleanupHookDischarged_perCore
+#check @cleanupNoStaleSchedRef_perCore_bootCore_iff
+#check @cleanupHookDischarged_perCore_bootCore_iff
+#check @cleanupNoStaleSchedRef_perCore_frame
+#check @default_cleanupNoStaleSchedRef_perCore
+#check @cleanupNoStaleSchedRef_smp
+#check @cleanupNoStaleSchedRef_smp_aggregateForall
+#check @cleanupNoStaleSchedRef_smp_at
+#check @cleanupNoStaleSchedRef_smp_to_singleCore
+#check @default_cleanupNoStaleSchedRef_smp
+-- SM4.D.9 — Architecture per-core register-decode consistency.
+#check @registerDecodeConsistent_perCore
+#check @registerDecodeConsistent_perCore_bootCore_iff
+#check @registerDecodeConsistent_perCore_frame
+#check @default_registerDecodeConsistent_perCore
+#check @registerDecodeConsistent_smp
+#check @registerDecodeConsistent_smp_aggregateForall
+#check @registerDecodeConsistent_smp_at
+#check @registerDecodeConsistent_smp_to_singleCore
+#check @default_registerDecodeConsistent_smp
+-- SM4.D.12/.13/.14 — InformationFlow per-core projections.
+#check @projectRunnableOnCore
+#check @projectCurrentOnCore
+#check @projectActiveDomainOnCore
+#check @projectDomainTimeRemainingOnCore
+#check @projectDomainScheduleIndexOnCore
+#check @projectMachineRegsOnCore
+#check @projectStateOnCore
+#check @projectRunnableOnCore_bootCore
+#check @projectCurrentOnCore_bootCore
+#check @projectActiveDomainOnCore_bootCore
+#check @projectDomainTimeRemainingOnCore_bootCore
+#check @projectDomainScheduleIndexOnCore_bootCore
+#check @projectMachineRegsOnCore_bootCore
+#check @projectStateOnCore_bootCore
+#check @projectRunnableOnCore_frame
+#check @projectCurrentOnCore_frame
+#check @projectActiveDomainOnCore_frame
+#check @projectDomainTimeRemainingOnCore_frame
+#check @projectDomainScheduleIndexOnCore_frame
+#check @projectMachineRegsOnCore_frame
+#check @projectStateOnCore_congr
+-- SM4.D.19 — CrossSubsystem capstone aggregates.
+#check @crossSubsystemInvariant_perCore
+#check @crossSubsystemInvariant_perCore_bootCore_iff
+#check @crossSubsystemInvariant_smp
+#check @crossSubsystemInvariant_smp_aggregateForall
+#check @crossSubsystemInvariant_smp_at
+#check @crossSubsystemInvariant_smp_to_singleCore
+#check @crossSubsystemInvariant_perCore_to_schedContextRunQueueConsistent
+#check @default_crossSubsystemInvariant_perCore
+#check @default_crossSubsystemInvariant_smp
+#check @crossSubsystemSchedulerContract_perCore
+#check @crossSubsystemSchedulerContract_perCore_bootCore_iff
+#check @crossSubsystemSchedulerContract_smp
+#check @crossSubsystemSchedulerContract_smp_aggregateForall
+#check @crossSubsystemSchedulerContract_smp_at
+#check @crossSubsystemSchedulerContract_perCore_to_ipcSchedulerContractPredicates
+#check @crossSubsystemSchedulerContract_perCore_to_currentThreadDequeueCoherent
+#check @crossSubsystemSchedulerContract_perCore_to_passiveServerIdle
+#check @crossSubsystemSchedulerContract_perCore_to_registerDecodeConsistent
+#check @crossSubsystemSchedulerContract_perCore_to_schedContextRunQueueConsistent
+#check @default_crossSubsystemSchedulerContract_perCore
+#check @default_crossSubsystemSchedulerContract_smp
+-- SM4.D audit-pass-1 additions: passiveServerIdle natural-SMP theorem,
+-- per-core low-equivalence (SM4.D.13 NI substrate), full SMP cleanup-hook.
+#check @passiveServerIdle_smp_not_scheduled_anywhere
+#check @lowEquivalentOnCore
+#check @lowEquivalentOnCore_bootCore
+#check @lowEquivalentOnCore_refl
+#check @lowEquivalentOnCore_symm
+#check @lowEquivalentOnCore_trans
+#check @lowEquivalent_smp
+#check @lowEquivalent_smp_aggregateForall
+#check @lowEquivalent_smp_at
+#check @lowEquivalent_smp_to_singleCore
+#check @cleanupHookDischarged_smp
+#check @cleanupHookDischarged_smp_to_singleCore
+#check @cleanupHookDischarged_smp_to_noStaleSchedRef
+-- SM4.D audit-pass-2: preservation layer + SMP retype-target consumer.
+#check @ipcSchedulerContractPredicates_perCore_holds_if_idle
+#check @currentThreadDequeueCoherent_perCore_holds_if_idle
+#check @registerDecodeConsistent_perCore_holds_if_idle
+#check @cleanupNoStaleSchedRef_perCore_holds_if_idle
+#check @schedContextRunQueueConsistent_perCore_holds_if_idle
+#check @ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
+#check @currentThreadDequeueCoherent_smp_of_singleCore_and_idle
+#check @registerDecodeConsistent_smp_of_singleCore_and_idle
+#check @schedContextRunQueueConsistent_smp_of_singleCore_and_idle
+#check @cleanupNoStaleSchedRef_smp_of_singleCore_and_idle
+#check @passiveServerIdle_scheduledNowhere
+#check @passiveServerIdle_scheduledNowhere_of_singleCore
+#check @passiveServerIdle_smp_to_scheduledNowhere
+#check @passiveServerIdle_scheduledNowhere_of_ipcInvariantFull
+#check @default_passiveServerIdle_scheduledNowhere
+#check @endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointCall_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReply_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointReplyRecv_preserves_ipcSchedulerContractPredicates_smp
+#check @notificationSignal_preserves_ipcSchedulerContractPredicates_smp
+#check @notificationWait_preserves_ipcSchedulerContractPredicates_smp
+#check @endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates_smp
+#check @advanceTimerState_preserves_registerDecodeConsistent_smp
+#check @writeRegisterState_preserves_registerDecodeConsistent_smp
+#check @timerTick_preserves_schedContextRunQueueConsistent_smp
+#check @RetypeTargetSmp
+#check @mkRetypeTargetSmp
+#check @RetypeTargetSmp.toRetypeTarget
+EOF'
+
+# WS-SM SM4.D audit-pass-3: per-core RPi5 register-context runtime contract
+# (the one Platform-layer scheduler-reader found by the exhaustive audit).
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Platform.RPi5.RuntimeContractPerCore'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Platform.RPi5.RuntimeContractPerCore
+open SeLe4n.Platform.RPi5
+#check @registerContextStableCheckOnCore
+#check @registerContextStablePredOnCore
+#check @registerContextStableCheckOnCore_bootCore
+#check @registerContextStablePredOnCore_bootCore_iff
+#check @registerContextStableCheckOnCore_true_of_currentNone
+#check @default_registerContextStableCheckOnCore
+EOF'
+
 finalize_report

@@ -222,4 +222,12 @@ run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_suite
 # the SM4.C SMP-preservation skeleton.
 run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_preservation_suite
 
+# WS-SM SM4.D — cross-subsystem per-core invariant migration suite.
+# Surface anchors + elaboration-time witnesses + runtime assertions for the
+# per-core IPC↔scheduler coherence predicates, the capability no-stale-ref
+# retype precondition, the architecture register-decode consistency, the
+# IF-M1 per-core projections (incl. value-level decidable checks on the
+# default state), and the cross-subsystem capstone aggregates.
+run_check_with_timeout "TRACE" lake exe cross_subsystem_per_core_suite
+
 finalize_report
