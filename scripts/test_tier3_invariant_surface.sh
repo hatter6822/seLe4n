@@ -2854,6 +2854,21 @@ open SeLe4n.Kernel.Architecture
 #check @crossSubsystemSchedulerContract_perCore_to_schedContextRunQueueConsistent
 #check @default_crossSubsystemSchedulerContract_perCore
 #check @default_crossSubsystemSchedulerContract_smp
+-- SM4.D audit-pass-1 additions: passiveServerIdle natural-SMP theorem,
+-- per-core low-equivalence (SM4.D.13 NI substrate), full SMP cleanup-hook.
+#check @passiveServerIdle_smp_not_scheduled_anywhere
+#check @lowEquivalentOnCore
+#check @lowEquivalentOnCore_bootCore
+#check @lowEquivalentOnCore_refl
+#check @lowEquivalentOnCore_symm
+#check @lowEquivalentOnCore_trans
+#check @lowEquivalent_smp
+#check @lowEquivalent_smp_aggregateForall
+#check @lowEquivalent_smp_at
+#check @lowEquivalent_smp_to_singleCore
+#check @cleanupHookDischarged_smp
+#check @cleanupHookDischarged_smp_to_singleCore
+#check @cleanupHookDischarged_smp_to_noStaleSchedRef
 EOF'
 
 finalize_report

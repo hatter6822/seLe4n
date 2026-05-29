@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.30.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.31.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4206,6 +4206,40 @@ documentation lives under `docs/` and `docs/gitbook/`.
   is purely additive).  Items deferred past v1.0.0 with correctness
   impact: NONE.  Follow-on: SM4.E (`bootFromPlatform_singleCore_witness`
   retirement + `bootFromPlatform_smp_witness` per plan §3.8).
+
+  **WS-SM SM4.D audit-pass-1 LANDED at v0.31.31** (deep comprehensive
+  audit; the v0.31.30 landing was sound + axiom-clean with no correctness
+  defect — this closes one completeness gap, proves one documented
+  intuition, and strengthens the suite per implement-the-improvement):
+  - **Completeness gap (`lowEquivalent`)**: the initial direct-text scan
+    missed `lowEquivalent` (in `Projection.lean`, SM4.D.13 scope), which
+    reads scheduler state *transitively* via `projectState`.  Added
+    `lowEquivalentOnCore` (per-core observable-state equivalence — the
+    SM4.D.13 NI substrate SM6 consumes) + boot-core bridge + refl/symm/trans
+    + `∀ c` `lowEquivalent_smp` + extractors, in `ProjectionPerCore.lean`.
+    A re-scan for *all* indirect scheduler readers confirmed this was the
+    only miss.
+  - **`passiveServerIdle_smp` proved precise**: the `∀ c` per-core
+    conjunction is *stronger* than the "not scheduled on any core ⟹
+    passive" prose; added `passiveServerIdle_smp_not_scheduled_anywhere`
+    proving that natural-SMP reading as a consequence, and corrected the
+    docstrings.
+  - **Capability SMP cleanup-hook**: added `cleanupHookDischarged_smp`
+    (full SMP retype precondition) + `_smp_to_singleCore` +
+    `_smp_to_noStaleSchedRef`, symmetric with `cleanupNoStaleSchedRef_smp`.
+  - **Suite strengthened**: §3.6 value-level cross-core independence
+    (write core 1's slot, `decide`-verify core 0's projection unchanged /
+    core 1's updated — genuinely exercising the per-core `Vector` indexing
+    through the projection layer); runtime assertions 18 → 24, surface
+    anchors 89 → 102.
+  - **Audit confirmations** (no change needed): zero compiler/linter
+    warnings on a forced clean rebuild; no `set_option`/`sorry`/`admit`/
+    `native_decide`/`@[simp]` in the SM4.D modules; AK7 `getTcb?`
+    discipline holds (`RAW_LOOKUP_TID` baseline 810); endpoint/notification
+    raw `objects[oid]?` correctly outside `RAW_MATCH` (equality, not
+    `match`-style) and parallel to single-core.  All new theorems
+    axiom-clean; suite 24/24 PASS; Tier 0–3 + Rust green; trace fixture
+    byte-identical.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

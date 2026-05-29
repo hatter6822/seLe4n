@@ -147,4 +147,34 @@ theorem default_cleanupNoStaleSchedRef_smp (target : SeLe4n.ObjId) :
     cleanupNoStaleSchedRef_smp (default : SystemState) target :=
   fun c => default_cleanupNoStaleSchedRef_perCore target c
 
+-- ============================================================================
+-- §6  Full cleanup-hook SMP form (the SMP retype precondition)
+-- ============================================================================
+
+/-- SM4.D: the SMP form of `cleanupHookDischarged` — the lifecycle
+object-type-metadata match (core-independent), the SMP no-stale-scheduler-
+reference conjunct (`∀ c`, the implement-the-improvement strengthening),
+and the opaque `ScrubToken` cleanup-ran witness (core-independent).  This
+is the precondition an SMP-aware retype entry point requires: a retyped
+object's TCB must not be runnable on **any** core. -/
+def cleanupHookDischarged_smp (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
+  (∀ obj, st.objects[target]? = some obj →
+    SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+  ∧ cleanupNoStaleSchedRef_smp st target
+  ∧ SeLe4n.Kernel.ScrubToken st target
+
+/-- SM4.D: the SMP cleanup-hook form implies the live single-core
+`cleanupHookDischarged` (the no-stale-ref conjunct narrows from all cores
+to the boot core via the bridge; the other two conjuncts are shared). -/
+theorem cleanupHookDischarged_smp_to_singleCore (st : SystemState)
+    (target : SeLe4n.ObjId) (h : cleanupHookDischarged_smp st target) :
+    cleanupHookDischarged st target :=
+  ⟨h.1, cleanupNoStaleSchedRef_smp_to_singleCore st target h.2.1, h.2.2⟩
+
+/-- SM4.D: extract the SMP no-stale-reference conjunct from the full SMP
+cleanup-hook form. -/
+theorem cleanupHookDischarged_smp_to_noStaleSchedRef (st : SystemState)
+    (target : SeLe4n.ObjId) (h : cleanupHookDischarged_smp st target) :
+    cleanupNoStaleSchedRef_smp st target := h.2.1
+
 end SeLe4n.Kernel

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/great-dijkstra-BPl3p",
-      "commit_sha": "b8472d6dcdf853f780072a4401f05386fdb6bc74",
-      "tree_sha": "88bc1636f23e8dfa66c64e31af95ccee89b40cf6",
-      "committed_at_utc": "2026-05-28T16:58:33-04:00"
+      "commit_sha": "2bcd1772a9b9d403740ab390ffd7bc0217be348c",
+      "tree_sha": "6c9ea866a59769c7a4eb6124beab3237fdc0283b",
+      "committed_at_utc": "2026-05-28T23:13:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "344963b577f8aedd61d2c4ac3edd8a64991279e411919e57f87b153596153fd5"
+    "source_digest": "0ce08b8b9c4321b17a0fec94981652a3e6d3bafa5b2c0cab746f0b17af635f55"
   },
   "summary": {
     "module_count": 254,
-    "declaration_count": 9020
+    "declaration_count": 9038
   },
   "readme_sync": {
-    "version": "0.31.30",
+    "version": "0.31.31",
     "lean_toolchain": "v4.28.0",
     "production_files": 207,
-    "production_loc": 144915,
+    "production_loc": 145028,
     "test_files": 47,
-    "test_loc": 31525,
-    "proved_theorem_lemma_decls": 4537,
+    "test_loc": 31606,
+    "proved_theorem_lemma_decls": 4547,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -11209,7 +11209,7 @@
     {
       "module": "SeLe4n.Kernel.Capability.Invariant.PerCore",
       "path": "SeLe4n/Kernel/Capability/Invariant/PerCore.lean",
-      "declaration_count": 12,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -11346,12 +11346,48 @@
           "name": "default_cleanupNoStaleSchedRef_smp",
           "line": 146,
           "called": [
-            "Kernel",
             "ObjId",
             "SystemState",
             "cleanupNoStaleSchedRef_smp",
             "default",
             "default_cleanupNoStaleSchedRef_perCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cleanupHookDischarged_smp",
+          "line": 160,
+          "called": [
+            "ObjId",
+            "ScrubToken",
+            "SystemState",
+            "cleanupNoStaleSchedRef_smp",
+            "lookupObjectTypeMeta",
+            "objectType"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupHookDischarged_smp_to_singleCore",
+          "line": 169,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "cleanupHookDischarged",
+            "cleanupHookDischarged_smp",
+            "cleanupNoStaleSchedRef_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cleanupHookDischarged_smp_to_noStaleSchedRef",
+          "line": 176,
+          "called": [
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "cleanupHookDischarged_smp",
+            "cleanupNoStaleSchedRef_smp"
           ]
         }
       ]
@@ -36469,7 +36505,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.PerCore",
       "path": "SeLe4n/Kernel/IPC/Invariant/PerCore.lean",
-      "declaration_count": 76,
+      "declaration_count": 77,
       "declarations": [
         {
           "kind": "namespace",
@@ -37263,8 +37299,24 @@
         },
         {
           "kind": "theorem",
+          "name": "passiveServerIdle_smp_not_scheduled_anywhere",
+          "line": 512,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "bootCoreId",
+            "currentOnCore",
+            "getTcb",
+            "passiveServerIdle_smp",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "default_ipcSchedulerContractPredicates_smp",
-          "line": 501,
+          "line": 524,
           "called": [
             "SystemState",
             "default",
@@ -37275,7 +37327,7 @@
         {
           "kind": "theorem",
           "name": "default_currentThreadDequeueCoherent_smp",
-          "line": 505,
+          "line": 528,
           "called": [
             "SystemState",
             "currentThreadDequeueCoherent_smp",
@@ -37286,7 +37338,7 @@
         {
           "kind": "theorem",
           "name": "default_passiveServerIdle_smp",
-          "line": 509,
+          "line": 532,
           "called": [
             "SystemState",
             "default",
@@ -37297,7 +37349,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerContractPredicates_perCore_to_runnableThreadIpcReady",
-          "line": 515,
+          "line": 538,
           "called": [
             "CoreId",
             "SystemState",
@@ -37308,7 +37360,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnSendNotRunnable",
-          "line": 519,
+          "line": 542,
           "called": [
             "CoreId",
             "SystemState",
@@ -37319,7 +37371,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnReceiveNotRunnable",
-          "line": 523,
+          "line": 546,
           "called": [
             "CoreId",
             "SystemState",
@@ -37330,7 +37382,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnCallNotRunnable",
-          "line": 527,
+          "line": 550,
           "called": [
             "CoreId",
             "SystemState",
@@ -37341,7 +37393,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnReplyNotRunnable",
-          "line": 531,
+          "line": 554,
           "called": [
             "CoreId",
             "SystemState",
@@ -37352,7 +37404,7 @@
         {
           "kind": "theorem",
           "name": "ipcSchedulerContractPredicates_perCore_to_blockedOnNotificationNotRunnable",
-          "line": 535,
+          "line": 558,
           "called": [
             "CoreId",
             "SystemState",
@@ -37363,7 +37415,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadDequeueCoherent_perCore_to_currentThreadIpcReady",
-          "line": 539,
+          "line": 562,
           "called": [
             "CoreId",
             "SystemState",
@@ -37374,7 +37426,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadDequeueCoherent_perCore_to_currentNotEndpointQueueHead",
-          "line": 543,
+          "line": 566,
           "called": [
             "CoreId",
             "SystemState",
@@ -37385,7 +37437,7 @@
         {
           "kind": "theorem",
           "name": "currentThreadDequeueCoherent_perCore_to_currentNotOnNotificationWaitList",
-          "line": 547,
+          "line": 570,
           "called": [
             "CoreId",
             "Kernel",
@@ -50145,7 +50197,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.ProjectionPerCore",
       "path": "SeLe4n/Kernel/InformationFlow/ProjectionPerCore.lean",
-      "declaration_count": 22,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -50431,7 +50483,6 @@
           "called": [
             "CoreId",
             "IfObserver",
-            "Kernel",
             "LabelingContext",
             "SystemState",
             "activeDomainOnCore",
@@ -50447,6 +50498,120 @@
             "projectState",
             "projectStateOnCore",
             "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowEquivalentOnCore",
+          "line": 238,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "projectStateOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentOnCore_bootCore",
+          "line": 242,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "lowEquivalent",
+            "lowEquivalentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentOnCore_refl",
+          "line": 247,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentOnCore_symm",
+          "line": 251,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalentOnCore_trans",
+          "line": 256,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalentOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lowEquivalent_smp",
+          "line": 264,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_smp_aggregateForall",
+          "line": 268,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalentOnCore",
+            "lowEquivalent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_smp_at",
+          "line": 273,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalentOnCore",
+            "lowEquivalent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lowEquivalent_smp_to_singleCore",
+          "line": 280,
+          "called": [
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "lowEquivalent",
+            "lowEquivalentOnCore_bootCore",
+            "lowEquivalent_smp"
           ]
         }
       ]
@@ -96542,7 +96707,7 @@
     {
       "module": "tests.CrossSubsystemPerCoreSuite",
       "path": "tests/CrossSubsystemPerCoreSuite.lean",
-      "declaration_count": 25,
+      "declaration_count": 30,
       "declarations": [
         {
           "kind": "namespace",
@@ -96556,6 +96721,9 @@
             "blockedOnSendNotRunnable_perCore",
             "cleanupHookDischarged_perCore",
             "cleanupHookDischarged_perCore_bootCore_iff",
+            "cleanupHookDischarged_smp",
+            "cleanupHookDischarged_smp_to_noStaleSchedRef",
+            "cleanupHookDischarged_smp_to_singleCore",
             "cleanupNoStaleSchedRef_perCore",
             "cleanupNoStaleSchedRef_perCore_bootCore_iff",
             "cleanupNoStaleSchedRef_perCore_frame",
@@ -96601,10 +96769,20 @@
             "ipcSchedulerContractPredicates_smp",
             "ipcSchedulerContractPredicates_smp_at",
             "ipcSchedulerContractPredicates_smp_to_singleCore",
+            "lowEquivalentOnCore",
+            "lowEquivalentOnCore_bootCore",
+            "lowEquivalentOnCore_refl",
+            "lowEquivalentOnCore_symm",
+            "lowEquivalentOnCore_trans",
+            "lowEquivalent_smp",
+            "lowEquivalent_smp_aggregateForall",
+            "lowEquivalent_smp_at",
+            "lowEquivalent_smp_to_singleCore",
             "passiveServerIdle_perCore",
             "passiveServerIdle_perCore_bootCore_iff",
             "passiveServerIdle_perCore_frame",
             "passiveServerIdle_smp",
+            "passiveServerIdle_smp_not_scheduled_anywhere",
             "passiveServerIdle_smp_to_singleCore",
             "projectActiveDomainOnCore",
             "projectCurrentOnCore",
@@ -96632,8 +96810,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:134>",
-          "line": 134,
+          "name": "<anonymous:example:149>",
+          "line": 149,
           "called": [
             "CoreId",
             "SystemState",
@@ -96644,8 +96822,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:136>",
-          "line": 136,
+          "name": "<anonymous:example:151>",
+          "line": 151,
           "called": [
             "SystemState",
             "default",
@@ -96655,8 +96833,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:138>",
-          "line": 138,
+          "name": "<anonymous:example:153>",
+          "line": 153,
           "called": [
             "SystemState",
             "default",
@@ -96666,8 +96844,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:139>",
-          "line": 139,
+          "name": "<anonymous:example:154>",
+          "line": 154,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -96678,8 +96856,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:143>",
-          "line": 143,
+          "name": "<anonymous:example:158>",
+          "line": 158,
           "called": [
             "SystemState",
             "passiveServerIdle",
@@ -96689,8 +96867,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:146>",
-          "line": 146,
+          "name": "<anonymous:example:161>",
+          "line": 161,
           "called": [
             "CoreId",
             "SystemState",
@@ -96700,8 +96878,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:151>",
-          "line": 151,
+          "name": "<anonymous:example:166>",
+          "line": 166,
           "called": [
             "ObjId",
             "SystemState",
@@ -96712,8 +96890,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:156>",
-          "line": 156,
+          "name": "<anonymous:example:171>",
+          "line": 171,
           "called": [
             "CoreId",
             "SystemState",
@@ -96724,8 +96902,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:158>",
-          "line": 158,
+          "name": "<anonymous:example:173>",
+          "line": 173,
           "called": [
             "SystemState",
             "registerDecodeConsistent",
@@ -96735,8 +96913,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:163>",
-          "line": 163,
+          "name": "<anonymous:example:178>",
+          "line": 178,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -96749,8 +96927,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:166>",
-          "line": 166,
+          "name": "<anonymous:example:181>",
+          "line": 181,
           "called": [
             "CoreId",
             "IfObserver",
@@ -96762,8 +96940,63 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:171>",
-          "line": 171,
+          "name": "<anonymous:example:185>",
+          "line": 185,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "lowEquivalent",
+            "lowEquivalentOnCore",
+            "lowEquivalentOnCore_bootCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:188>",
+          "line": 188,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "lowEquivalent",
+            "lowEquivalent_smp",
+            "lowEquivalent_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:192>",
+          "line": 192,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "cleanupHookDischarged",
+            "cleanupHookDischarged_smp",
+            "cleanupHookDischarged_smp_to_singleCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:196>",
+          "line": 196,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "currentOnCore",
+            "getTcb",
+            "passiveServerIdle_smp",
+            "passiveServerIdle_smp_not_scheduled_anywhere",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:206>",
+          "line": 206,
           "called": [
             "CoreId",
             "SystemState",
@@ -96774,8 +97007,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:173>",
-          "line": 173,
+          "name": "<anonymous:example:208>",
+          "line": 208,
           "called": [
             "SystemState",
             "crossSubsystemSchedulerContract_smp",
@@ -96785,8 +97018,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:175>",
-          "line": 175,
+          "name": "<anonymous:example:210>",
+          "line": 210,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -96796,8 +97029,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:177>",
-          "line": 177,
+          "name": "<anonymous:example:212>",
+          "line": 212,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -96813,7 +97046,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 188,
+          "line": 223,
           "called": [
             "throw"
           ]
@@ -96821,7 +97054,7 @@
         {
           "kind": "def",
           "name": "probeObserver",
-          "line": 200,
+          "line": 235,
           "called": [
             "IfObserver",
             "publicLabel"
@@ -96830,7 +97063,7 @@
         {
           "kind": "def",
           "name": "runIpcChecks",
-          "line": 204,
+          "line": 239,
           "called": [
             "SystemState",
             "all",
@@ -96851,7 +97084,7 @@
         {
           "kind": "def",
           "name": "runCapabilityChecks",
-          "line": 234,
+          "line": 269,
           "called": [
             "ObjId",
             "SystemState",
@@ -96868,7 +97101,7 @@
         {
           "kind": "def",
           "name": "runArchitectureChecks",
-          "line": 248,
+          "line": 283,
           "called": [
             "SystemState",
             "all",
@@ -96884,7 +97117,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 263,
+          "line": 298,
           "called": [
             "SystemState",
             "all",
@@ -96906,7 +97139,7 @@
         {
           "kind": "def",
           "name": "runCrossSubsystemChecks",
-          "line": 288,
+          "line": 323,
           "called": [
             "SystemState",
             "all",
@@ -96925,11 +97158,35 @@
         },
         {
           "kind": "def",
+          "name": "runCrossCoreIndependenceChecks",
+          "line": 351,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "all",
+            "assertBool",
+            "c0",
+            "c1",
+            "default",
+            "defaultLabelingContext",
+            "lowEquivalentOnCore",
+            "lowEquivalentOnCore_refl",
+            "probeObserver",
+            "projectActiveDomainOnCore",
+            "projectDomainTimeRemainingOnCore",
+            "projectDomainTimeRemainingOnCore_frame",
+            "setActiveDomainOnCore",
+            "setDomainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runCrossSubsystemPerCoreChecks",
-          "line": 310,
+          "line": 390,
           "called": [
             "runArchitectureChecks",
             "runCapabilityChecks",
+            "runCrossCoreIndependenceChecks",
             "runCrossSubsystemChecks",
             "runInformationFlowChecks",
             "runIpcChecks"
@@ -96938,7 +97195,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 323,
+          "line": 404,
           "called": [
             "runCrossSubsystemPerCoreChecks"
           ]

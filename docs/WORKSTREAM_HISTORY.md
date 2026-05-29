@@ -2044,6 +2044,39 @@ modules (was 35); default build green (320 jobs); trace fixture
 byte-identical (purely additive).  Items deferred past v1.0.0 with
 correctness impact: NONE.  Follow-on: SM4.E (witness retirement).
 
+**WS-SM SM4.D audit-pass-1 LANDED at v0.31.31** (deep comprehensive audit
+of the v0.31.30 landing — verifying the code, not the docs).  The landing
+was sound and axiom-clean with **no correctness defect**; the audit closed
+one completeness gap, proved one documented intuition, and strengthened the
+test suite, per the implement-the-improvement rule.  (1) **Completeness
+gap**: the initial direct-text scan missed `lowEquivalent` (in
+`Projection.lean`, SM4.D.13 scope), which reads scheduler state
+*transitively* through `projectState`.  Added `lowEquivalentOnCore` (the
+per-core observable-state equivalence — the SM4.D.13 NI substrate SM6
+consumes) + boot-core bridge (`Iff.rfl`) + refl/symm/trans + `∀ c`
+`lowEquivalent_smp` + `_aggregateForall`/`_at`/`_smp_to_singleCore`.  An
+exhaustive re-scan for *all* indirect scheduler readers (defs calling the
+projections) confirmed `lowEquivalent` was the only miss (`projectMemory`
+reads `machine.memory`; `serviceRegistryAffectsProjection` reads services;
+the API.lean uses are NI preservation theorems, not predicate defs).
+(2) **`passiveServerIdle_smp` precision**: the `∀ c` per-core conjunction
+is *stronger* than the "unbound + not-scheduled-anywhere ⟹ passive" prose;
+added `passiveServerIdle_smp_not_scheduled_anywhere` proving that natural-
+SMP reading as a consequence (instantiate the conjunction at `bootCoreId`),
+turning prose into a theorem.  (3) **Capability symmetry**: added the full
+`cleanupHookDischarged_smp` + `_smp_to_singleCore` + `_smp_to_noStaleSchedRef`.
+(4) **Suite**: §3.6 value-level cross-core independence — write core 1's
+slot, `decide`-verify core 0's projection unchanged / core 1's updated
+(genuinely exercising the SM4.B per-core `Vector` indexing through the
+SM4.D projection layer); runtime assertions 18 → 24, surface anchors
+89 → 102.  Audit confirmations (no change): zero compiler/linter warnings
+on a forced clean rebuild; no `set_option`/`sorry`/`admit`/`native_decide`/
+`@[simp]` in the SM4.D modules; AK7 `getTcb?` discipline holds
+(`RAW_LOOKUP_TID` baseline 810); endpoint/notification raw `objects[oid]?`
+correctly outside `RAW_MATCH`.  All new theorems axiom-clean; suite 24/24
+PASS; Tier 0–3 + Rust green; trace fixture byte-identical.  Items deferred
+past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

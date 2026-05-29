@@ -498,6 +498,29 @@ theorem passiveServerIdle_smp_to_singleCore (st : SystemState)
     (h : passiveServerIdle_smp st) : passiveServerIdle st :=
   (passiveServerIdle_perCore_bootCore_iff st).mp (h bootCoreId)
 
+/-- SM4.D: the natural SMP reading of `passiveServerIdle_smp` proved as a
+theorem.  An unbound thread that is scheduled on **no** core — not in any
+core's run queue, not current on any core — is in a passive state
+(`ready` / `blockedOnReceive` / `blockedOnNotification`).
+
+`passiveServerIdle_smp` (the per-core conjunction `∀ c, passiveServerIdle_perCore`)
+is *stronger* than this statement — each core's slice independently
+constrains threads under weaker per-core hypotheses — so the natural
+"not scheduled anywhere" reading is a genuine consequence, derived here by
+instantiating the conjunction at `bootCoreId`.  This makes the documented
+intuition a machine-checked theorem rather than prose. -/
+theorem passiveServerIdle_smp_not_scheduled_anywhere {st : SystemState}
+    (h : passiveServerIdle_smp st)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hUnbound : tcb.schedContextBinding = .unbound)
+    (hNoQueue : ∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c))
+    (hNoCurrent : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
+    tcb.ipcState = .ready ∨
+      ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+              tcb.ipcState = .blockedOnNotification epId :=
+  h bootCoreId tid tcb hTcb hUnbound (hNoQueue bootCoreId) (hNoCurrent bootCoreId)
+
 theorem default_ipcSchedulerContractPredicates_smp :
     ipcSchedulerContractPredicates_smp (default : SystemState) :=
   fun c => default_ipcSchedulerContractPredicates_perCore c

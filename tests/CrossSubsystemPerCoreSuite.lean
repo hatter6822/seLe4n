@@ -125,6 +125,21 @@ open SeLe4n.Kernel.Concurrency
 #check @default_crossSubsystemSchedulerContract_smp
 #check @crossSubsystemSchedulerContract_perCore_to_passiveServerIdle
 #check @crossSubsystemSchedulerContract_perCore_to_registerDecodeConsistent
+-- §1.7  Audit-pass-1 additions: passiveServerIdle natural-SMP theorem,
+-- per-core low-equivalence (SM4.D.13 NI substrate), full SMP cleanup-hook.
+#check @passiveServerIdle_smp_not_scheduled_anywhere
+#check @lowEquivalentOnCore
+#check @lowEquivalentOnCore_bootCore
+#check @lowEquivalentOnCore_refl
+#check @lowEquivalentOnCore_symm
+#check @lowEquivalentOnCore_trans
+#check @lowEquivalent_smp
+#check @lowEquivalent_smp_aggregateForall
+#check @lowEquivalent_smp_at
+#check @lowEquivalent_smp_to_singleCore
+#check @cleanupHookDischarged_smp
+#check @cleanupHookDischarged_smp_to_singleCore
+#check @cleanupHookDischarged_smp_to_noStaleSchedRef
 
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
@@ -166,6 +181,26 @@ example (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) :
 example (ctx : LabelingContext) (observer : IfObserver) (st : SystemState) (c : CoreId) :
     projectRunnableOnCore ctx observer st c = projectRunnableOnCore ctx observer st c :=
   projectRunnableOnCore_frame ctx observer rfl
+-- InformationFlow: per-core low-equivalence bridge + SMP→single-core.
+example (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) :
+    lowEquivalentOnCore ctx observer s₁ s₂ bootCoreId ↔ lowEquivalent ctx observer s₁ s₂ :=
+  lowEquivalentOnCore_bootCore ctx observer s₁ s₂
+example (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState)
+    (h : lowEquivalent_smp ctx observer s₁ s₂) : lowEquivalent ctx observer s₁ s₂ :=
+  lowEquivalent_smp_to_singleCore ctx observer s₁ s₂ h
+-- Capability: full SMP cleanup-hook → single-core.
+example (st : SystemState) (target : SeLe4n.ObjId) (h : cleanupHookDischarged_smp st target) :
+    cleanupHookDischarged st target :=
+  cleanupHookDischarged_smp_to_singleCore st target h
+-- IPC: passiveServerIdle natural-SMP "not scheduled anywhere ⟹ passive".
+example (st : SystemState) (h : passiveServerIdle_smp st) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hUnbound : tcb.schedContextBinding = .unbound)
+    (hNoQueue : ∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c))
+    (hNoCurrent : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
+    tcb.ipcState = .ready ∨
+      ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+              tcb.ipcState = .blockedOnNotification epId :=
+  passiveServerIdle_smp_not_scheduled_anywhere h tid tcb hTcb hUnbound hNoQueue hNoCurrent
 
 -- CrossSubsystem capstone: per-core master invariant + contract bundle.
 example (c : CoreId) : crossSubsystemInvariant_perCore (default : SystemState) c :=
@@ -307,6 +342,51 @@ private def runCrossSubsystemChecks : IO Unit := do
         crossSubsystemSchedulerContract_smp_at _ c default_crossSubsystemSchedulerContract_smp
       true))
 
+/-- §3.6  Cross-core independence (value-level): writing core 1's scheduler
+    slot leaves core 0's per-core projection unchanged and core 1's updated.
+    This genuinely exercises the SM4.B per-core `Vector` indexing through
+    the SM4.D projection layer (a `decide`-evaluated runtime computation,
+    not a mere elaboration witness), confirming the per-core forms observe
+    only their own core's slot. -/
+private def runCrossCoreIndependenceChecks : IO Unit := do
+  IO.println "--- §3.6 cross-core independence (value-level through projections) ---"
+  let c0 : CoreId := ⟨0, by decide⟩
+  let c1 : CoreId := ⟨1, by decide⟩
+  -- Write only core 1's domainTimeRemaining (default is 5 on every core).
+  let st1 : SystemState :=
+    { (default : SystemState) with
+      scheduler := (default : SystemState).scheduler.setDomainTimeRemainingOnCore c1 99 }
+  assertBool "writing core 1's domainTimeRemaining leaves core 0's projection = 5"
+    (decide (projectDomainTimeRemainingOnCore defaultLabelingContext probeObserver st1 c0 = 5))
+  assertBool "writing core 1's domainTimeRemaining sets core 1's projection = 99"
+    (decide (projectDomainTimeRemainingOnCore defaultLabelingContext probeObserver st1 c1 = 99))
+  -- Write only core 1's activeDomain; core 0's projectActiveDomain stays ⟨0⟩.
+  let st2 : SystemState :=
+    { (default : SystemState) with
+      scheduler := (default : SystemState).scheduler.setActiveDomainOnCore c1 ⟨3⟩ }
+  assertBool "writing core 1's activeDomain leaves core 0's projection = ⟨0⟩"
+    (decide (projectActiveDomainOnCore defaultLabelingContext probeObserver st2 c0 = ⟨0⟩))
+  assertBool "writing core 1's activeDomain sets core 1's projection = ⟨3⟩"
+    (decide (projectActiveDomainOnCore defaultLabelingContext probeObserver st2 c1 = ⟨3⟩))
+  -- The frame lemma confirms (theorem-level) core 0's projection is framed
+  -- by a write that only touches core 1's domainTimeRemaining slot; the
+  -- per-core-slot-equality hypothesis is discharged by `decide` (both
+  -- sides evaluate to 5 through the `Vector` get/set).
+  assertBool "projectDomainTimeRemainingOnCore_frame applies under cross-core write"
+    (have _h : projectDomainTimeRemainingOnCore defaultLabelingContext probeObserver st1 c0 =
+        projectDomainTimeRemainingOnCore defaultLabelingContext probeObserver
+          (default : SystemState) c0 :=
+      projectDomainTimeRemainingOnCore_frame defaultLabelingContext probeObserver (by decide)
+     true)
+  -- lowEquivalentOnCore is reflexive (the per-core NI substrate is an
+  -- equivalence); exercised at every core.
+  assertBool "lowEquivalentOnCore reflexive on every core"
+    (allCores.all (fun c =>
+      have _h : lowEquivalentOnCore defaultLabelingContext probeObserver
+          (default : SystemState) (default : SystemState) c :=
+        lowEquivalentOnCore_refl defaultLabelingContext probeObserver (default : SystemState) c
+      true))
+
 def runCrossSubsystemPerCoreChecks : IO Unit := do
   IO.println "WS-SM SM4.D — Cross-subsystem per-core invariant migration suite"
   IO.println "===================================="
@@ -315,6 +395,7 @@ def runCrossSubsystemPerCoreChecks : IO Unit := do
   runArchitectureChecks
   runInformationFlowChecks
   runCrossSubsystemChecks
+  runCrossCoreIndependenceChecks
   IO.println "===================================="
   IO.println "All SM4.D cross-subsystem per-core invariant migration checks PASS."
 

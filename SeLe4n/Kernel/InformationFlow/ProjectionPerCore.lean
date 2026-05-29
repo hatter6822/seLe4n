@@ -222,4 +222,64 @@ theorem projectStateOnCore_congr (ctx : LabelingContext) (observer : IfObserver)
       projectDomainScheduleIndexOnCore_frame ctx observer hDSI,
       projectMachineRegsOnCore_frame ctx observer hCur hRegs]
 
+-- ============================================================================
+-- §4  Per-core low-equivalence (the SM4.D.13 NI substrate)
+-- ============================================================================
+--
+-- `lowEquivalent` (also in `Projection.lean`) reads scheduler state
+-- *transitively* through `projectState`, so it is part of the SM4.D.13
+-- migration surface.  Its per-core form compares the per-core observable
+-- projections; the boot-core bridge connects it to the live single-core
+-- `lowEquivalent`, and the `∀ c` SMP form is the per-core observable-state
+-- equivalence the SM6 info-flow phase consumes.
+
+/-- SM4.D: per-core form of `lowEquivalent` — two states are low-equivalent
+on core `c` when their per-core observer projections agree. -/
+def lowEquivalentOnCore (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ : SystemState) (c : CoreId) : Prop :=
+  projectStateOnCore ctx observer s₁ c = projectStateOnCore ctx observer s₂ c
+
+theorem lowEquivalentOnCore_bootCore (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ : SystemState) :
+    lowEquivalentOnCore ctx observer s₁ s₂ bootCoreId ↔ lowEquivalent ctx observer s₁ s₂ :=
+  Iff.rfl
+
+theorem lowEquivalentOnCore_refl (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (c : CoreId) :
+    lowEquivalentOnCore ctx observer st st c := rfl
+
+theorem lowEquivalentOnCore_symm {ctx : LabelingContext} {observer : IfObserver}
+    {s₁ s₂ : SystemState} {c : CoreId}
+    (h : lowEquivalentOnCore ctx observer s₁ s₂ c) :
+    lowEquivalentOnCore ctx observer s₂ s₁ c := h.symm
+
+theorem lowEquivalentOnCore_trans {ctx : LabelingContext} {observer : IfObserver}
+    {s₁ s₂ s₃ : SystemState} {c : CoreId}
+    (h₁ : lowEquivalentOnCore ctx observer s₁ s₂ c)
+    (h₂ : lowEquivalentOnCore ctx observer s₂ s₃ c) :
+    lowEquivalentOnCore ctx observer s₁ s₃ c := h₁.trans h₂
+
+/-- SM4.D: system-wide SMP form of low-equivalence — the observable states
+agree on every core. -/
+def lowEquivalent_smp (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ : SystemState) : Prop :=
+  ∀ c : CoreId, lowEquivalentOnCore ctx observer s₁ s₂ c
+
+theorem lowEquivalent_smp_aggregateForall (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ : SystemState) :
+    (∀ c : CoreId, lowEquivalentOnCore ctx observer s₁ s₂ c) ↔
+      lowEquivalent_smp ctx observer s₁ s₂ := Iff.rfl
+
+theorem lowEquivalent_smp_at (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ : SystemState) (c : CoreId)
+    (h : lowEquivalent_smp ctx observer s₁ s₂) :
+    lowEquivalentOnCore ctx observer s₁ s₂ c := h c
+
+/-- SM4.D: the SMP low-equivalence implies the live single-core
+`lowEquivalent` (instantiate at `bootCoreId` + bridge). -/
+theorem lowEquivalent_smp_to_singleCore (ctx : LabelingContext) (observer : IfObserver)
+    (s₁ s₂ : SystemState) (h : lowEquivalent_smp ctx observer s₁ s₂) :
+    lowEquivalent ctx observer s₁ s₂ :=
+  (lowEquivalentOnCore_bootCore ctx observer s₁ s₂).mp (h bootCoreId)
+
 end SeLe4n.Kernel
