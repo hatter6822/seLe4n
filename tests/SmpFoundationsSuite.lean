@@ -20,6 +20,9 @@ import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.Sim.Contract
+-- WS-SM SM4.E: the SMP-shape boot witnesses (`bootFromPlatform_smp_witness`,
+-- `…_smp_currentAllNone`) that the retirement ledger points at live here.
+import SeLe4n.Platform.Boot
 
 /-!
 # WS-SM SM0.S — Foundations test suite
@@ -116,6 +119,34 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_count
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_sourceTheorems_nodup
+
+/-! ## SM4.E — witness retirement + retirement ledger -/
+#check @SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
+#check @SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_count
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_covers_latent
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_anchor_nodup
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
+
+/-! ## SM4.G — per-core idle-thread bootstrap -/
+#check @SeLe4n.Platform.Boot.idleThreadId
+#check @SeLe4n.Platform.Boot.idleThreadId_injective
+#check @SeLe4n.Platform.Boot.createIdleThread
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_currentThreadInActiveDomain
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_valid
+-- SM4.G idle-slot freshness: the install is purely additive (no platform
+-- object clobbered) under `idleSlotsFreshAt`, discharged for configs whose
+-- objects live below `idleThreadIdBase`.
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt
+#check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_preserves_platform_objects
+#check @SeLe4n.Platform.Boot.idleSlotsFreshAt_of_initialObjects_below_base
 
 /-! ## SM0.G — PlatformBinding extension fields (RPi5 + Sim) -/
 #check @SeLe4n.Platform.PlatformBinding.coreCount
@@ -255,6 +286,14 @@ example : SeLe4n.Kernel.Architecture.ArchAssumption.singleCoreOperation
 
 -- §2.8 — SMP-latent inventory size + NoDup
 example : SeLe4n.Kernel.Concurrency.smpLatentInventory.length = 8 := by decide
+
+-- §2.8b — SM4.E retirement ledger: size + path-a disposition + latent mirror
+example : SeLe4n.Kernel.Concurrency.smpRetiredInventory.length = 8 := by decide
+example : (SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
+            (fun e => decide (e.status = .pathARetired))).length = 2 := by decide
+example : SeLe4n.Kernel.Concurrency.smpRetiredInventory.map (·.identifier) =
+          SeLe4n.Kernel.Concurrency.smpLatentInventory.map (·.identifier) :=
+  SeLe4n.Kernel.Concurrency.smpRetiredInventory_covers_latent
 
 -- §2.9 — RPi5 PlatformBinding pinning (SM0.G + SM0.E)
 example : SeLe4n.Platform.PlatformBinding.coreCount
@@ -453,6 +492,21 @@ private def runSmpInventoryChecks : IO Unit := do
   IO.println "--- §2.8 SMP-latent inventory ---"
   assertBool "smpLatentInventory.length = 8"
     (decide (SeLe4n.Kernel.Concurrency.smpLatentInventory.length = 8))
+  IO.println "--- §2.8b SM4.E retirement ledger ---"
+  assertBool "smpRetiredInventory.length = 8"
+    (decide (SeLe4n.Kernel.Concurrency.smpRetiredInventory.length = 8))
+  -- Honest disposition: exactly 2 entries (scheduler-state shape + boot-core
+  -- current) are genuinely retired by SM4 path-a; the other 6 stay gated.
+  assertBool "smpRetiredInventory path-a-retired count = 2"
+    (decide ((SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
+               (fun e => decide (e.status = .pathARetired))).length = 2))
+  assertBool "smpRetiredInventory per-core-bracket-gated count = 6"
+    (decide ((SeLe4n.Kernel.Concurrency.smpRetiredInventory.filter
+               (fun e => decide (e.status = .perCoreBracketGated))).length = 6))
+  -- The ledger mirrors the latent inventory one-to-one by identifier.
+  assertBool "smpRetiredInventory covers smpLatentInventory (by identifier)"
+    (decide (SeLe4n.Kernel.Concurrency.smpRetiredInventory.map (·.identifier) =
+             SeLe4n.Kernel.Concurrency.smpLatentInventory.map (·.identifier)))
 
 private def runPlatformBindingChecks : IO Unit := do
   IO.println "--- §2.9/§2.10 PlatformBinding RPi5 + Sim ---"
@@ -578,11 +632,12 @@ private def runArchAssumptionAdditionalChecks : IO Unit := do
        SeLe4n.Kernel.Architecture.ArchAssumption.singleCoreOperation].all
        (fun a => decide (SeLe4n.Kernel.Architecture.archAssumptionConsumer a
                   ≠ Lean.Name.anonymous)))
-  -- singleCoreOperation specifically maps to bootFromPlatform_singleCore_witness.
-  assertBool "singleCoreOperation → bootFromPlatform_singleCore_witness"
+  -- SM4.E.3: singleCoreOperation now maps to the per-core SMP witness
+  -- (was the retired boot-core-only `bootFromPlatform_singleCore_witness`).
+  assertBool "singleCoreOperation → bootFromPlatform_smp_witness"
     (decide (SeLe4n.Kernel.Architecture.archAssumptionConsumer
               .singleCoreOperation =
-              `SeLe4n.Kernel.bootFromPlatform_singleCore_witness))
+              `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness))
 
 private def runBklStateAdditionalChecks : IO Unit := do
   IO.println "--- §2.15 BklState additional scenarios ---"

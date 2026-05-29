@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/great-dijkstra-BPl3p",
-      "commit_sha": "d9566c9bcd638e7efff66b14b819472db5984ab9",
-      "tree_sha": "91753e475f909842c2749eb6fcbae141d420bd6c",
-      "committed_at_utc": "2026-05-29T02:55:33+00:00"
+      "branch": "claude/gallant-darwin-zWsYi",
+      "commit_sha": "68f82b4a595d20c68a73552e53efa91c5fd42e5d",
+      "tree_sha": "6d86c4ef609b925bcd29e016dda2a1fe2267593a",
+      "committed_at_utc": "2026-05-29T18:23:53+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4ec11f1b2c378c26381f2b5f71300cc0bcc485747838eca9833565832d5658c1"
+    "source_digest": "d771c72a42666ddfd2a8e6759722e39c08dafcc1000d7261c9de50ad6c15ea8f"
   },
   "summary": {
     "module_count": 256,
-    "declaration_count": 9091
+    "declaration_count": 9149
   },
   "readme_sync": {
-    "version": "0.31.34",
+    "version": "0.31.37",
     "lean_toolchain": "v4.28.0",
     "production_files": 209,
-    "production_loc": 145617,
+    "production_loc": 146569,
     "test_files": 47,
-    "test_loc": 31730,
-    "proved_theorem_lemma_decls": 4590,
+    "test_loc": 31886,
+    "proved_theorem_lemma_decls": 4625,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1804,7 +1804,7 @@
         {
           "kind": "structure",
           "name": "BootBoundaryContract",
-          "line": 63,
+          "line": 64,
           "called": [
             "capabilityRefMetadataConsistent",
             "objectTypeMetadataConsistent"
@@ -1813,7 +1813,7 @@
         {
           "kind": "structure",
           "name": "RuntimeBoundaryContract",
-          "line": 75,
+          "line": 76,
           "called": [
             "PAddr",
             "SystemState"
@@ -1822,7 +1822,7 @@
         {
           "kind": "structure",
           "name": "InterruptBoundaryContract",
-          "line": 88,
+          "line": 89,
           "called": [
             "Irq",
             "SystemState"
@@ -1831,7 +1831,7 @@
         {
           "kind": "theorem",
           "name": "irqLineSupported_decidable_consistent",
-          "line": 96,
+          "line": 97,
           "called": [
             "InterruptBoundaryContract",
             "Irq"
@@ -1840,7 +1840,7 @@
         {
           "kind": "theorem",
           "name": "irqHandlerMapped_decidable_consistent",
-          "line": 107,
+          "line": 108,
           "called": [
             "InterruptBoundaryContract",
             "Irq",
@@ -1850,7 +1850,7 @@
         {
           "kind": "def",
           "name": "assumptionInventory",
-          "line": 123,
+          "line": 124,
           "called": [
             "ArchAssumption"
           ]
@@ -1858,7 +1858,7 @@
         {
           "kind": "theorem",
           "name": "assumptionInventory_count",
-          "line": 136,
+          "line": 137,
           "called": [
             "length"
           ]
@@ -1866,7 +1866,7 @@
         {
           "kind": "def",
           "name": "assumptionInventoryComplete",
-          "line": 139,
+          "line": 140,
           "called": [
             "assumptionInventory"
           ]
@@ -1874,7 +1874,7 @@
         {
           "kind": "theorem",
           "name": "assumptionInventoryComplete_holds",
-          "line": 142,
+          "line": 143,
           "called": [
             "assumptionInventory",
             "assumptionInventoryComplete"
@@ -1883,11 +1883,11 @@
         {
           "kind": "def",
           "name": "archAssumptionConsumer",
-          "line": 181,
+          "line": 184,
           "called": [
             "ArchAssumption",
             "bootFromPlatformChecked_ok_implies_irqHandlersValid",
-            "bootFromPlatform_singleCore_witness",
+            "bootFromPlatform_smp_witness",
             "default_system_state_proofLayerInvariantBundle",
             "deterministicRegisterContext_consumed_by_writeRegister",
             "deterministicTimerProgress_consumed_by_advanceTimer",
@@ -1897,7 +1897,7 @@
         {
           "kind": "theorem",
           "name": "architecture_assumptions_index",
-          "line": 199,
+          "line": 202,
           "called": [
             "ArchAssumption",
             "archAssumptionConsumer"
@@ -1906,7 +1906,7 @@
         {
           "kind": "theorem",
           "name": "archAssumptionConsumer_covers_inventory",
-          "line": 209,
+          "line": 212,
           "called": [
             "archAssumptionConsumer",
             "architecture_assumptions_index",
@@ -1916,7 +1916,7 @@
         {
           "kind": "theorem",
           "name": "archAssumptionConsumer_distinct",
-          "line": 219,
+          "line": 222,
           "called": [
             "archAssumptionConsumer"
           ]
@@ -1924,7 +1924,7 @@
         {
           "kind": "theorem",
           "name": "archAssumptionConsumer_distinct_6",
-          "line": 258,
+          "line": 261,
           "called": [
             "archAssumptionConsumer"
           ]
@@ -1932,7 +1932,7 @@
         {
           "kind": "theorem",
           "name": "architecture_assumptions_index_total_6",
-          "line": 306,
+          "line": 309,
           "called": [
             "ArchAssumption",
             "archAssumptionConsumer"
@@ -14096,21 +14096,21 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 56,
+          "line": 74,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:67>",
-          "line": 67,
+          "name": "<anonymous:example:85>",
+          "line": 85,
           "called": [
             "ArchAssumption",
             "archAssumptionConsumer_distinct_6",
-            "architecture_assumptions_index",
             "architecture_assumptions_index_total_6",
             "assumptionInventory_count",
             "bootFromPlatform",
-            "bootFromPlatform_singleCore_witness",
+            "bootFromPlatform_smp_currentAllNone",
+            "bootFromPlatform_smp_witness",
             "cspaceCopy",
             "cspaceCopy_preserves_capabilityInvariantBundle",
             "cspaceLookupMultiLevel",
@@ -14120,6 +14120,13 @@
             "serviceHasPathTo",
             "smpLatentInventory_identifiers_nodup",
             "smpLatentInventory_sourceTheorems_nodup",
+            "smpRetiredInventory",
+            "smpRetiredInventory_anchor_nodup",
+            "smpRetiredInventory_count",
+            "smpRetiredInventory_covers_latent",
+            "smpRetiredInventory_identifiers_nodup",
+            "smpRetiredInventory_pathARetired_count",
+            "smpRetiredInventory_perCoreBracketGated_count",
             "timerTickWithBudget",
             "typedIdDisjointness"
           ]
@@ -14127,7 +14134,7 @@
         {
           "kind": "def",
           "name": "smpAnchorVerified",
-          "line": 107,
+          "line": 141,
           "called": []
         }
       ]
@@ -14135,7 +14142,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Assumptions",
       "path": "SeLe4n/Kernel/Concurrency/Assumptions.lean",
-      "declaration_count": 15,
+      "declaration_count": 32,
       "declarations": [
         {
           "kind": "namespace",
@@ -14223,11 +14230,13 @@
           "line": 163,
           "called": [
             "ArchAssumption",
+            "CoreId",
             "SchedulerState",
             "SmpLatentAssumption",
-            "architecture_assumptions_index",
             "assumptionInventory",
+            "boot",
             "bootCoreId",
+            "bootFromPlatform_smp_witness",
             "canonical",
             "currentCoreId",
             "numCores"
@@ -14236,21 +14245,25 @@
         {
           "kind": "def",
           "name": "bootFromPlatform_currentCore_is_zero_smpLatent",
-          "line": 183,
+          "line": 188,
           "called": [
+            "CoreId",
             "SmpLatentAssumption",
+            "ThreadId",
             "boot",
             "bootCoreId",
             "bootFromPlatform",
-            "bootFromPlatform_singleCore_witness",
+            "bootFromPlatform_smp_currentAllNone",
+            "bootFromPlatform_smp_witness",
             "cores",
-            "currentOnCore"
+            "idleThreadId",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "smpLatentInventory",
-          "line": 201,
+          "line": 210,
           "called": [
             "SmpLatentAssumption",
             "architecture_singleCoreOnly_smpLatent",
@@ -14266,7 +14279,7 @@
         {
           "kind": "theorem",
           "name": "smpLatentInventory_count",
-          "line": 215,
+          "line": 224,
           "called": [
             "length"
           ]
@@ -14274,7 +14287,7 @@
         {
           "kind": "theorem",
           "name": "smpLatentInventory_identifiers_nonAnonymous",
-          "line": 221,
+          "line": 230,
           "called": [
             "architecture_singleCoreOnly_smpLatent",
             "bootFromPlatform_currentCore_is_zero_smpLatent",
@@ -14290,7 +14303,7 @@
         {
           "kind": "theorem",
           "name": "smpLatentInventory_identifiers_nodup",
-          "line": 242,
+          "line": 251,
           "called": [
             "architecture_singleCoreOnly_smpLatent",
             "bootFromPlatform_currentCore_is_zero_smpLatent",
@@ -14306,7 +14319,7 @@
         {
           "kind": "theorem",
           "name": "smpLatentInventory_sourceTheorems_nodup",
-          "line": 259,
+          "line": 268,
           "called": [
             "architecture_singleCoreOnly_smpLatent",
             "bootFromPlatform_currentCore_is_zero_smpLatent",
@@ -14317,6 +14330,206 @@
             "smpLatentInventory",
             "timerTickReplenishmentPipeline_smpLatent",
             "typedIdDisjointness_smpLatent"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "SmpRetirementStatus",
+          "line": 302,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "SmpRetiredAssumption",
+          "line": 322,
+          "called": [
+            "SmpRetirementStatus"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceLookupMultiLevel_smpRetired",
+          "line": 331,
+          "called": [
+            "SmpRetiredAssumption",
+            "cspaceLookupMultiLevel",
+            "interrupt",
+            "resolveCapAddress_result_valid_cnode"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceCopyMoveMutate_smpRetired",
+          "line": 342,
+          "called": [
+            "SmpRetiredAssumption",
+            "cspaceCopy",
+            "cspaceCopy_preserves_capabilityInvariantBundle",
+            "storeObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lifecyclePreRetypeCleanup_smpRetired",
+          "line": 353,
+          "called": [
+            "SmpRetiredAssumption",
+            "lifecyclePreRetypeCleanup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "serviceHasPathTo_smpRetired",
+          "line": 364,
+          "called": [
+            "SmpRetiredAssumption",
+            "serviceHasPathTo"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "timerTickReplenishmentPipeline_smpRetired",
+          "line": 375,
+          "called": [
+            "SmpRetiredAssumption",
+            "replenishmentPipelineOrder",
+            "timerTickWithBudget"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "typedIdDisjointness_smpRetired",
+          "line": 386,
+          "called": [
+            "SmpRetiredAssumption",
+            "runtime",
+            "storeObject",
+            "typedIdDisjointness"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "architecture_singleCoreOnly_smpRetired",
+          "line": 398,
+          "called": [
+            "ArchAssumption",
+            "CoreId",
+            "SmpRetiredAssumption",
+            "boot",
+            "bootFromPlatform_smp_witness",
+            "numCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootFromPlatform_currentCore_is_zero_smpRetired",
+          "line": 411,
+          "called": [
+            "CoreId",
+            "SmpRetiredAssumption",
+            "boot",
+            "bootFromPlatform",
+            "bootFromPlatform_smp_currentAllNone",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "smpRetiredInventory",
+          "line": 425,
+          "called": [
+            "SmpRetiredAssumption",
+            "architecture_singleCoreOnly_smpRetired",
+            "bootFromPlatform_currentCore_is_zero_smpRetired",
+            "cspaceCopyMoveMutate_smpRetired",
+            "cspaceLookupMultiLevel_smpRetired",
+            "lifecyclePreRetypeCleanup_smpRetired",
+            "serviceHasPathTo_smpRetired",
+            "timerTickReplenishmentPipeline_smpRetired",
+            "typedIdDisjointness_smpRetired"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smpRetiredInventory_count",
+          "line": 439,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smpRetiredInventory_covers_latent",
+          "line": 446,
+          "called": [
+            "architecture_singleCoreOnly_smpLatent",
+            "architecture_singleCoreOnly_smpRetired",
+            "bootFromPlatform_currentCore_is_zero_smpLatent",
+            "bootFromPlatform_currentCore_is_zero_smpRetired",
+            "cspaceCopyMoveMutate_smpLatent",
+            "cspaceCopyMoveMutate_smpRetired",
+            "cspaceLookupMultiLevel_smpLatent",
+            "cspaceLookupMultiLevel_smpRetired",
+            "lifecyclePreRetypeCleanup_smpLatent",
+            "lifecyclePreRetypeCleanup_smpRetired",
+            "serviceHasPathTo_smpLatent",
+            "serviceHasPathTo_smpRetired",
+            "smpLatentInventory",
+            "smpRetiredInventory",
+            "timerTickReplenishmentPipeline_smpLatent",
+            "timerTickReplenishmentPipeline_smpRetired",
+            "typedIdDisjointness_smpLatent",
+            "typedIdDisjointness_smpRetired"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smpRetiredInventory_identifiers_nodup",
+          "line": 465,
+          "called": [
+            "architecture_singleCoreOnly_smpRetired",
+            "bootFromPlatform_currentCore_is_zero_smpRetired",
+            "cspaceCopyMoveMutate_smpRetired",
+            "cspaceLookupMultiLevel_smpRetired",
+            "lifecyclePreRetypeCleanup_smpRetired",
+            "serviceHasPathTo_smpRetired",
+            "smpRetiredInventory",
+            "timerTickReplenishmentPipeline_smpRetired",
+            "typedIdDisjointness_smpRetired"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smpRetiredInventory_anchor_nodup",
+          "line": 479,
+          "called": [
+            "architecture_singleCoreOnly_smpRetired",
+            "bootFromPlatform_currentCore_is_zero_smpRetired",
+            "cspaceCopyMoveMutate_smpRetired",
+            "cspaceLookupMultiLevel_smpRetired",
+            "lifecyclePreRetypeCleanup_smpRetired",
+            "serviceHasPathTo_smpRetired",
+            "smpRetiredInventory",
+            "timerTickReplenishmentPipeline_smpRetired",
+            "typedIdDisjointness_smpRetired"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smpRetiredInventory_pathARetired_count",
+          "line": 498,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "smpRetiredInventory_perCoreBracketGated_count",
+          "line": 510,
+          "called": [
+            "filter",
+            "length"
           ]
         }
       ]
@@ -28152,13 +28365,13 @@
         {
           "kind": "theorem",
           "name": "bootCoreId_val_zero",
-          "line": 134,
+          "line": 135,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "allCores_nonempty",
-          "line": 139,
+          "line": 140,
           "called": [
             "allCores",
             "allCores_length",
@@ -28170,13 +28383,13 @@
         {
           "kind": "inductive",
           "name": "SharingDomain",
-          "line": 162,
+          "line": 163,
           "called": []
         },
         {
           "kind": "def",
           "name": "dsbForSharing",
-          "line": 170,
+          "line": 171,
           "called": [
             "BarrierKind",
             "SharingDomain"
@@ -28185,7 +28398,7 @@
         {
           "kind": "def",
           "name": "dsbStForSharing",
-          "line": 178,
+          "line": 179,
           "called": [
             "BarrierKind",
             "SharingDomain"
@@ -28194,7 +28407,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_inner",
-          "line": 185,
+          "line": 186,
           "called": [
             "dsbForSharing"
           ]
@@ -28202,7 +28415,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_outer",
-          "line": 189,
+          "line": 190,
           "called": [
             "dsbForSharing"
           ]
@@ -28210,7 +28423,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_inner",
-          "line": 192,
+          "line": 193,
           "called": [
             "dsbStForSharing"
           ]
@@ -28218,7 +28431,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_outer",
-          "line": 195,
+          "line": 196,
           "called": [
             "dsbStForSharing"
           ]
@@ -28226,7 +28439,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_injective",
-          "line": 199,
+          "line": 200,
           "called": [
             "SharingDomain",
             "dsbForSharing"
@@ -28235,7 +28448,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_injective",
-          "line": 205,
+          "line": 206,
           "called": [
             "SharingDomain",
             "dsbStForSharing"
@@ -28246,7 +28459,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 169,
+      "declaration_count": 168,
       "declarations": [
         {
           "kind": "namespace",
@@ -30285,7 +30498,7 @@
         {
           "kind": "def",
           "name": "untypedAncestorChain",
-          "line": 3044,
+          "line": 3046,
           "called": [
             "ObjId",
             "SystemState",
@@ -30295,13 +30508,13 @@
         {
           "kind": "def",
           "name": "maxRetypeDepth",
-          "line": 3065,
+          "line": 3067,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "untypedAncestorChain_bounded",
-          "line": 3068,
+          "line": 3070,
           "called": [
             "ObjId",
             "SystemState",
@@ -30313,7 +30526,7 @@
         {
           "kind": "def",
           "name": "untypedAncestorRegionsDisjoint",
-          "line": 3105,
+          "line": 3107,
           "called": [
             "ObjId",
             "SystemState",
@@ -30325,7 +30538,7 @@
         {
           "kind": "theorem",
           "name": "default_untypedAncestorRegionsDisjoint",
-          "line": 3118,
+          "line": 3120,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -30339,7 +30552,7 @@
         {
           "kind": "theorem",
           "name": "untypedAncestorChain_collapses_when_all_parents_none",
-          "line": 3139,
+          "line": 3141,
           "called": [
             "ObjId",
             "SystemState",
@@ -30352,7 +30565,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_some_start_nonEmpty_result",
-          "line": 3167,
+          "line": 3169,
           "called": [
             "KernelObject",
             "ObjId",
@@ -30368,7 +30581,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_head_is_start",
-          "line": 3204,
+          "line": 3206,
           "called": [
             "KernelObject",
             "ObjId",
@@ -30384,32 +30597,20 @@
         },
         {
           "kind": "theorem",
-          "name": "bootFromPlatform_singleCore_witness",
-          "line": 3274,
-          "called": [
-            "SchedulerState",
-            "ThreadId",
-            "bootCoreId",
-            "currentOnCore",
-            "none"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "r4_structural_fix_discharge_index_documented",
-          "line": 3369,
+          "line": 3368,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_promoted_to_structural",
-          "line": 3380,
+          "line": 3379,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "uniqueWaiters_promoted_to_structural",
-          "line": 3391,
+          "line": 3390,
           "called": [
             "Kernel"
           ]
@@ -83761,7 +83962,7 @@
     {
       "module": "SeLe4n.Platform.Boot",
       "path": "SeLe4n/Platform/Boot.lean",
-      "declaration_count": 170,
+      "declaration_count": 206,
       "declarations": [
         {
           "kind": "namespace",
@@ -85351,9 +85552,468 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "idleThreadIdBase",
+          "line": 1725,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "idleThreadId",
+          "line": 1730,
+          "called": [
+            "CoreId",
+            "ThreadId",
+            "idleThreadIdBase",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleThreadId_injective",
+          "line": 1734,
+          "called": [
+            "CoreId",
+            "ThreadId.ofNat_injective",
+            "ext",
+            "idleThreadId",
+            "idleThreadIdBase"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleThreadId_ne",
+          "line": 1742,
+          "called": [
+            "CoreId",
+            "idleThreadId",
+            "idleThreadId_injective"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleThreadId_toObjId_ne",
+          "line": 1748,
+          "called": [
+            "CoreId",
+            "ThreadId.ofNat_toNat",
+            "idleThreadId",
+            "idleThreadId_ne",
+            "ofNat",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_smp_currentAllNone",
+          "line": 1789,
+          "called": [
+            "CoreId",
+            "PlatformConfig",
+            "bootFromPlatform",
+            "bootFromPlatform_scheduler_eq",
+            "config",
+            "currentOnCore",
+            "default_state_perCoreInitialized",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatform_smp_witness",
+          "line": 1822,
+          "called": [
+            "CoreId",
+            "PlatformConfig",
+            "bootFromPlatform",
+            "bootFromPlatform_smp_currentAllNone",
+            "config",
+            "currentOnCore",
+            "idleThreadId",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "createIdleThread",
+          "line": 1845,
+          "called": [
+            "CoreId",
+            "TCB",
+            "default",
+            "idleThreadId",
+            "sentinel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "installIdleThread",
+          "line": 1865,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "createIdleThread",
+            "createObject",
+            "idleThreadId",
+            "setCurrentOnCore",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_objects",
+          "line": 1881,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "createIdleThread",
+            "idleThreadId",
+            "insert",
+            "installIdleThread",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_scheduler",
+          "line": 1889,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "idleThreadId",
+            "installIdleThread",
+            "setCurrentOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_currentOnCore_self",
+          "line": 1896,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "currentOnCore",
+            "idleThreadId",
+            "installIdleThread",
+            "installIdleThread_scheduler",
+            "setCurrentOnCore_currentOnCore_self"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_currentOnCore_ne",
+          "line": 1904,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "currentOnCore",
+            "installIdleThread",
+            "installIdleThread_scheduler",
+            "setCurrentOnCore_currentOnCore_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_objects_self",
+          "line": 1913,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "RHTable.getElem",
+            "createIdleThread",
+            "idleThreadId",
+            "installIdleThread",
+            "installIdleThread_objects",
+            "invExtK",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_objects_ne",
+          "line": 1923,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "ObjId",
+            "RHTable.getElem",
+            "idleThreadId",
+            "installIdleThread",
+            "installIdleThread_objects",
+            "invExtK",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootFromPlatformWithIdleThreads",
+          "line": 1975,
+          "called": [
+            "IntermediateState",
+            "PlatformConfig",
+            "bootFromPlatform",
+            "config",
+            "installIdleThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_currentOnCore_frame",
+          "line": 1980,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "currentOnCore",
+            "installIdleThread",
+            "installIdleThread_currentOnCore_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_objects_frame",
+          "line": 1994,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "idleThreadId",
+            "idleThreadId_toObjId_ne",
+            "installIdleThread",
+            "installIdleThread_objects_ne",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_installs",
+          "line": 2012,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "createIdleThread",
+            "currentOnCore",
+            "foldl_installIdleThread_currentOnCore_frame",
+            "foldl_installIdleThread_objects_frame",
+            "idleThreadId",
+            "installIdleThread",
+            "installIdleThread_currentOnCore_self",
+            "installIdleThread_objects_self",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_all_cores_have_idle",
+          "line": 2044,
+          "called": [
+            "CoreId",
+            "PlatformConfig",
+            "allCores",
+            "allCores_nodup",
+            "bootFromPlatform",
+            "bootFromPlatformWithIdleThreads",
+            "config",
+            "createIdleThread",
+            "currentOnCore",
+            "foldl_installIdleThread_installs",
+            "idleThreadId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "idleSlotsFreshAt",
+          "line": 2063,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "idleThreadId",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_objects_frame_of_not_idle",
+          "line": 2071,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "ObjId",
+            "cons",
+            "idleThreadId",
+            "installIdleThread",
+            "installIdleThread_objects_ne",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_preserves_platform_objects",
+          "line": 2092,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "PlatformConfig",
+            "allCores",
+            "bootFromPlatform",
+            "bootFromPlatformWithIdleThreads",
+            "config",
+            "foldl_installIdleThread_objects_frame_of_not_idle",
+            "idleSlotsFreshAt",
+            "idleThreadId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_runQueueOnCore",
+          "line": 2110,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "installIdleThread",
+            "installIdleThread_scheduler",
+            "runQueueOnCore",
+            "setCurrentOnCore_runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_runQueueOnCore",
+          "line": 2119,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "installIdleThread",
+            "installIdleThread_runQueueOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_runnable_nil",
+          "line": 2134,
+          "called": [
+            "PlatformConfig",
+            "SystemState",
+            "bootCoreId",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatform_scheduler_eq",
+            "config",
+            "default",
+            "default_state_perCoreInitialized",
+            "empty",
+            "foldl_installIdleThread_runQueueOnCore",
+            "runQueueOnCore",
+            "runnable",
+            "toList",
+            "toList_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundle",
+          "line": 2154,
+          "called": [
+            "PlatformConfig",
+            "bootCoreId",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatformWithIdleThreads_all_cores_have_idle",
+            "bootFromPlatformWithIdleThreads_runnable_nil",
+            "config",
+            "createIdleThread",
+            "currentThreadValid",
+            "queueCurrentConsistent",
+            "runQueueUnique",
+            "schedulerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_valid",
+          "line": 2175,
+          "called": [
+            "PlatformConfig",
+            "allTablesInvExtK",
+            "bootFromPlatformWithIdleThreads",
+            "config",
+            "lifecycleMetadataConsistent",
+            "perObjectMappingsInvariant",
+            "perObjectSlotsInvariant"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "installIdleThread_machine",
+          "line": 2189,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "installIdleThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_machine",
+          "line": 2194,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "installIdleThread",
+            "installIdleThread_machine"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_domainTimeRemainingOnCore",
+          "line": 2206,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "domainTimeRemainingOnCore",
+            "installIdleThread",
+            "installIdleThread_scheduler",
+            "setCurrentOnCore_domainTimeRemainingOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_activeDomainOnCore",
+          "line": 2219,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "activeDomainOnCore",
+            "cons",
+            "installIdleThread",
+            "installIdleThread_scheduler",
+            "setCurrentOnCore_activeDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_installIdleThread_domainSchedule",
+          "line": 2233,
+          "called": [
+            "CoreId",
+            "IntermediateState",
+            "cons",
+            "installIdleThread",
+            "installIdleThread_scheduler",
+            "setCurrentOnCore_domainSchedule"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "bootFromPlatform_cdt_eq",
-          "line": 1704,
+          "line": 2245,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85369,7 +86029,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_services_eq",
-          "line": 1711,
+          "line": 2252,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85385,7 +86045,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_serviceRegistry_eq",
-          "line": 1718,
+          "line": 2259,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85401,7 +86061,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_interfaceRegistry_eq",
-          "line": 1725,
+          "line": 2266,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85417,7 +86077,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_asidTable_eq",
-          "line": 1732,
+          "line": 2273,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85433,7 +86093,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlb_eq",
-          "line": 1739,
+          "line": 2280,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85449,7 +86109,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_physicalAddressWidth",
-          "line": 1749,
+          "line": 2290,
           "called": [
             "PlatformConfig",
             "applyMachineConfig_physicalAddressWidth",
@@ -85460,7 +86120,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_non_config_fields",
-          "line": 1778,
+          "line": 2319,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85475,8 +86135,56 @@
         },
         {
           "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_currentThreadInActiveDomain",
+          "line": 2334,
+          "called": [
+            "PlatformConfig",
+            "activeDomainOnCore",
+            "bootCoreId",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatformWithIdleThreads_all_cores_have_idle",
+            "bootFromPlatform_scheduler_eq",
+            "config",
+            "currentThreadInActiveDomain",
+            "default_state_perCoreInitialized",
+            "foldl_installIdleThread_activeDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull",
+          "line": 2361,
+          "called": [
+            "PlatformConfig",
+            "SystemState",
+            "bootCoreId",
+            "bootFromPlatform",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatformWithIdleThreads_all_cores_have_idle",
+            "bootFromPlatformWithIdleThreads_runnable_nil",
+            "bootFromPlatformWithIdleThreads_schedulerInvariantBundle",
+            "bootFromPlatform_machine_non_config_fields",
+            "bootFromPlatform_scheduler_eq",
+            "config",
+            "contextMatchesCurrent_of_regs_eq",
+            "currentTimeSlicePositive",
+            "default",
+            "default_state_perCoreInitialized",
+            "domainTimeRemainingOnCore",
+            "domainTimeRemainingPositive",
+            "edfCurrentHasEarliestDeadline",
+            "foldl_installIdleThread_domainSchedule",
+            "foldl_installIdleThread_domainTimeRemainingOnCore",
+            "foldl_installIdleThread_machine",
+            "mem_toList_iff_mem",
+            "runnable",
+            "schedulerInvariantBundleFull"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "foldIrqs_capabilityRefs",
-          "line": 1787,
+          "line": 2417,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -85487,7 +86195,7 @@
         {
           "kind": "theorem",
           "name": "applyMachineConfig_capabilityRefs_eq",
-          "line": 1794,
+          "line": 2424,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -85498,7 +86206,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_capabilityRefs_eq",
-          "line": 1798,
+          "line": 2428,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85513,7 +86221,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdtNodeSlot_eq",
-          "line": 1807,
+          "line": 2437,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85529,7 +86237,7 @@
         {
           "kind": "def",
           "name": "bootSafeObject",
-          "line": 1848,
+          "line": 2478,
           "called": [
             "KernelObject",
             "bitsConsumed",
@@ -85548,7 +86256,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 1880,
+          "line": 2510,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -85558,7 +86266,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObject_admits_rpi5BootVSpaceRoot",
-          "line": 1888,
+          "line": 2518,
           "called": [
             "bootSafeObject",
             "rpi5BootVSpaceRoot",
@@ -85568,7 +86276,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 1919,
+          "line": 2549,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -85579,7 +86287,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 1932,
+          "line": 2562,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -85587,7 +86295,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 1943,
+          "line": 2573,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -85606,7 +86314,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 1971,
+          "line": 2601,
           "called": [
             "KernelObject",
             "ObjId",
@@ -85625,7 +86333,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 1992,
+          "line": 2622,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -85642,8 +86350,34 @@
         },
         {
           "kind": "theorem",
+          "name": "idleSlotsFreshAt_of_initialObjects_below_base",
+          "line": 2657,
+          "called": [
+            "PlatformConfig",
+            "RHTable_get",
+            "RHTable_getElem",
+            "SystemState",
+            "applyMachineConfig_objects_eq",
+            "bootFromPlatform",
+            "config",
+            "default",
+            "foldIrqs",
+            "foldIrqs_objects",
+            "foldObjects",
+            "foldObjects_objects_reachable",
+            "idleSlotsFreshAt",
+            "idleThreadId",
+            "idleThreadIdBase",
+            "mkEmptyIntermediateState",
+            "mkEmpty_state_eq_default",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 2023,
+          "line": 2694,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -85661,7 +86395,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 2092,
+          "line": 2763,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -85755,7 +86489,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 2578,
+          "line": 3249,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -104780,7 +105514,7 @@
     {
       "module": "tests.ModelIntegritySuite",
       "path": "tests/ModelIntegritySuite.lean",
-      "declaration_count": 118,
+      "declaration_count": 121,
       "declarations": [
         {
           "kind": "namespace",
@@ -106215,25 +106949,72 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "an6f_cxm03_singleCore_witness_reachable",
-          "line": 1539,
+          "kind": "example",
+          "name": "<anonymous:example:1536>",
+          "line": 1536,
           "called": [
-            "SchedulerState",
+            "PlatformConfig",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull",
+            "config",
+            "schedulerInvariantBundleFull"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:1546>",
+          "line": 1546,
+          "called": [
+            "PlatformConfig",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatformWithIdleThreads_currentThreadInActiveDomain",
+            "config",
+            "currentThreadInActiveDomain"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:1556>",
+          "line": 1556,
+          "called": [
             "bootCoreId",
-            "bootFromPlatform_singleCore_witness",
+            "bootFromPlatform",
+            "createIdleThread",
+            "idleSlotsFreshAt",
+            "idleSlotsFreshAt_of_initialObjects_below_base",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootFromPlatform_smp_witness_reachable",
+          "line": 1576,
+          "called": [
+            "CoreId",
+            "ObjectEntry",
+            "PlatformConfig",
+            "activeDomainOnCore",
+            "all",
+            "bootCoreId",
+            "bootFromPlatform",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatform_smp_currentAllNone",
+            "bootFromPlatform_smp_witness",
+            "config",
+            "createIdleThread",
             "currentOnCore",
-            "default",
             "expect",
+            "idleThreadId",
+            "isEmpty",
             "none",
             "ofNat",
-            "setCurrentOnCore"
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "an6f_cxm04_interruptsEnabled_bundle_inhabited",
-          "line": 1566,
+          "line": 1667,
           "called": [
             "SystemState",
             "archInvariant_interruptsEnabled_all_eight_bundle",
@@ -106245,7 +107026,7 @@
         {
           "kind": "def",
           "name": "an6f_cxm05_crossSubsystemInvariant_positive",
-          "line": 1607,
+          "line": 1708,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -106265,7 +107046,7 @@
         {
           "kind": "def",
           "name": "an6c1_untypedObject_parent_field_default",
-          "line": 1631,
+          "line": 1732,
           "called": [
             "UntypedObject",
             "expect",
@@ -106276,7 +107057,7 @@
         {
           "kind": "def",
           "name": "an6c3_untypedAncestorChain_bounded",
-          "line": 1647,
+          "line": 1748,
           "called": [
             "SystemState",
             "default",
@@ -106291,7 +107072,7 @@
         {
           "kind": "def",
           "name": "an6c3_untypedAncestorChain_walks_synthetic_chain",
-          "line": 1671,
+          "line": 1772,
           "called": [
             "SystemState",
             "UntypedObject",
@@ -106310,7 +107091,7 @@
         {
           "kind": "def",
           "name": "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase",
-          "line": 1723,
+          "line": 1824,
           "called": [
             "expect",
             "objectOfKernelType",
@@ -106323,7 +107104,7 @@
         {
           "kind": "def",
           "name": "an6c4_untypedAncestorRegionsDisjoint_default",
-          "line": 1748,
+          "line": 1849,
           "called": [
             "SystemState",
             "default",
@@ -106339,7 +107120,7 @@
         {
           "kind": "def",
           "name": "an6b_architecture_assumptions_index_total",
-          "line": 1775,
+          "line": 1876,
           "called": [
             "archAssumptionConsumer",
             "archAssumptionConsumer_distinct",
@@ -106351,7 +107132,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1804,
+          "line": 1905,
           "called": [
             "addrInRange_device_region_rejected",
             "addrInRange_empty_map_rejects",
@@ -106372,11 +107153,11 @@
             "an6c3_untypedAncestorChain_walks_synthetic_chain",
             "an6c4_untypedAncestorRegionsDisjoint_default",
             "an6f_cxm01_collectQueueMembers_structural_signatures",
-            "an6f_cxm03_singleCore_witness_reachable",
             "an6f_cxm04_interruptsEnabled_bundle_inhabited",
             "an6f_cxm05_crossSubsystemInvariant_positive",
             "apiInvariantBundle_full_implies_objectsOnly",
             "blockingAcyclic_projection_reindex_ok",
+            "bootFromPlatform_smp_witness_reachable",
             "capability_canonical_null",
             "capability_cnodeSlot_not_null",
             "capability_nonnull_cap",
@@ -115166,219 +115947,114 @@
     {
       "module": "tests.SmpFoundationsSuite",
       "path": "tests/SmpFoundationsSuite.lean",
-      "declaration_count": 85,
+      "declaration_count": 88,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpFoundations",
-          "line": 188,
+          "line": 219,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:191>",
-          "line": 191,
+          "name": "<anonymous:example:222>",
+          "line": 222,
           "called": [
             "numCores"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:192>",
-          "line": 192,
+          "name": "<anonymous:example:223>",
+          "line": 223,
           "called": [
             "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:194>",
-          "line": 194,
-          "called": [
-            "numCores"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:197>",
-          "line": 197,
-          "called": [
-            "dsbForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:199>",
-          "line": 199,
-          "called": [
-            "dsbForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:201>",
-          "line": 201,
-          "called": [
-            "dsbStForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
-          "called": [
-            "dsbStForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:207>",
-          "line": 207,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:208>",
-          "line": 208,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:209>",
-          "line": 209,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:210>",
-          "line": 210,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:211>",
-          "line": 211,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:212>",
-          "line": 212,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:213>",
-          "line": 213,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:215>",
-          "line": 215,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:219>",
-          "line": 219,
-          "called": [
-            "LockId.mk'",
-            "ofNat"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:224>",
           "line": 224,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
-            "LockId.mk'",
-            "ofNat"
+            "numCores"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:229>",
-          "line": 229,
+          "name": "<anonymous:example:228>",
+          "line": 228,
           "called": [
-            "LockId.mk'",
-            "ofNat"
+            "dsbForSharing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:235>",
-          "line": 235,
-          "called": []
+          "name": "<anonymous:example:230>",
+          "line": 230,
+          "called": [
+            "dsbForSharing"
+          ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
-          "called": []
+          "name": "<anonymous:example:232>",
+          "line": 232,
+          "called": [
+            "dsbStForSharing"
+          ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:237>",
-          "line": 237,
-          "called": []
+          "name": "<anonymous:example:234>",
+          "line": 234,
+          "called": [
+            "dsbStForSharing"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:238>",
           "line": 238,
-          "called": []
+          "called": [
+            "level"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:239>",
           "line": 239,
-          "called": []
+          "called": [
+            "level"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:240>",
           "line": 240,
           "called": [
-            "length"
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:241>",
+          "line": 241,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:242>",
+          "line": 242,
+          "called": [
+            "level"
           ]
         },
         {
@@ -115386,8 +116062,31 @@
           "name": "<anonymous:example:243>",
           "line": 243,
           "called": [
-            "bklHeldBy",
-            "bootCoreId"
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:244>",
+          "line": 244,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:245>",
+          "line": 245,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:246>",
+          "line": 246,
+          "called": [
+            "level"
           ]
         },
         {
@@ -115395,33 +116094,25 @@
           "name": "<anonymous:example:247>",
           "line": 247,
           "called": [
-            "bklHeldBy",
-            "bootCoreId",
-            "unheld"
+            "level"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:252>",
-          "line": 252,
+          "name": "<anonymous:example:250>",
+          "line": 250,
           "called": [
-            "length"
+            "LockId.mk'",
+            "ofNat"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:253>",
-          "line": 253,
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
-            "assumptionInventory"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:257>",
-          "line": 257,
-          "called": [
-            "length"
+            "LockId.mk'",
+            "ofNat"
           ]
         },
         {
@@ -115429,40 +116120,54 @@
           "name": "<anonymous:example:260>",
           "line": 260,
           "called": [
-            "RPi5Platform"
+            "LockId.mk'",
+            "ofNat"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:262>",
-          "line": 262,
-          "called": [
-            "RPi5Platform",
-            "bootCoreId"
-          ]
+          "name": "<anonymous:example:266>",
+          "line": 266,
+          "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:264>",
-          "line": 264,
-          "called": [
-            "RPi5Platform"
-          ]
+          "name": "<anonymous:example:267>",
+          "line": 267,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:268>",
+          "line": 268,
+          "called": []
         },
         {
           "kind": "example",
           "name": "<anonymous:example:269>",
           "line": 269,
-          "called": [
-            "SimPlatform"
-          ]
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:270>",
+          "line": 270,
+          "called": []
         },
         {
           "kind": "example",
           "name": "<anonymous:example:271>",
           "line": 271,
           "called": [
-            "SimPlatform",
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:274>",
+          "line": 274,
+          "called": [
+            "bklHeldBy",
             "bootCoreId"
           ]
         },
@@ -115471,14 +116176,115 @@
           "name": "<anonymous:example:278>",
           "line": 278,
           "called": [
+            "bklHeldBy",
+            "bootCoreId",
+            "unheld"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:283>",
+          "line": 283,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:284>",
+          "line": 284,
+          "called": [
+            "assumptionInventory"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:288>",
+          "line": 288,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:291>",
+          "line": 291,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:292>",
+          "line": 292,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:294>",
+          "line": 294,
+          "called": [
+            "smpRetiredInventory_covers_latent"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:299>",
+          "line": 299,
+          "called": [
+            "RPi5Platform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:301>",
+          "line": 301,
+          "called": [
+            "RPi5Platform",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:303>",
+          "line": 303,
+          "called": [
+            "RPi5Platform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:308>",
+          "line": 308,
+          "called": [
+            "SimPlatform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:310>",
+          "line": 310,
+          "called": [
+            "SimPlatform",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:317>",
+          "line": 317,
+          "called": [
             "CoreId",
             "default"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:279>",
-          "line": 279,
+          "name": "<anonymous:example:318>",
+          "line": 318,
           "called": [
             "CoreId",
             "bootCoreId",
@@ -115487,8 +116293,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:282>",
-          "line": 282,
+          "name": "<anonymous:example:321>",
+          "line": 321,
           "called": [
             "CoreId",
             "numCores"
@@ -115496,8 +116302,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:285>",
-          "line": 285,
+          "name": "<anonymous:example:324>",
+          "line": 324,
           "called": [
             "bootCoreId",
             "currentCoreId_in_range_marker",
@@ -115506,168 +116312,168 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:299>",
-          "line": 299,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:303>",
-          "line": 303,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:306>",
-          "line": 306,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:308>",
-          "line": 308,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:310>",
-          "line": 310,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:318>",
-          "line": 318,
-          "called": [
-            "toTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:319>",
-          "line": 319,
-          "called": [
-            "toTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:320>",
-          "line": 320,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:321>",
-          "line": 321,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:322>",
-          "line": 322,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:323>",
-          "line": 323,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:326>",
-          "line": 326,
-          "called": [
-            "toAsid"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:327>",
-          "line": 327,
-          "called": [
-            "toVaddr"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:328>",
-          "line": 328,
-          "called": [
-            "toAsid"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:329>",
-          "line": 329,
-          "called": [
-            "toVaddr"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:336>",
-          "line": 336,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:337>",
-          "line": 337,
-          "called": []
-        },
-        {
-          "kind": "example",
           "name": "<anonymous:example:338>",
           "line": 338,
+          "called": [
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:342>",
+          "line": 342,
+          "called": [
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:345>",
+          "line": 345,
+          "called": [
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:347>",
+          "line": 347,
+          "called": [
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:349>",
+          "line": 349,
+          "called": [
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:357>",
+          "line": 357,
+          "called": [
+            "toTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:358>",
+          "line": 358,
+          "called": [
+            "toTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:359>",
+          "line": 359,
+          "called": [
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:360>",
+          "line": 360,
+          "called": [
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:361>",
+          "line": 361,
+          "called": [
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:362>",
+          "line": 362,
+          "called": [
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:365>",
+          "line": 365,
+          "called": [
+            "toAsid"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:366>",
+          "line": 366,
+          "called": [
+            "toVaddr"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:367>",
+          "line": 367,
+          "called": [
+            "toAsid"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:368>",
+          "line": 368,
+          "called": [
+            "toVaddr"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:375>",
+          "line": 375,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:339>",
-          "line": 339,
+          "name": "<anonymous:example:376>",
+          "line": 376,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:340>",
-          "line": 340,
+          "name": "<anonymous:example:377>",
+          "line": 377,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:378>",
+          "line": 378,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:379>",
+          "line": 379,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 346,
+          "line": 385,
           "called": [
             "throw"
           ]
@@ -115675,7 +116481,7 @@
         {
           "kind": "def",
           "name": "runCoreIdChecks",
-          "line": 353,
+          "line": 392,
           "called": [
             "assertBool",
             "length",
@@ -115685,7 +116491,7 @@
         {
           "kind": "def",
           "name": "runSharingDomainChecks",
-          "line": 363,
+          "line": 402,
           "called": [
             "assertBool",
             "dsbForSharing",
@@ -115695,7 +116501,7 @@
         {
           "kind": "def",
           "name": "runLockKindChecks",
-          "line": 378,
+          "line": 417,
           "called": [
             "all",
             "assertBool",
@@ -115705,7 +116511,7 @@
         {
           "kind": "def",
           "name": "runLockIdChecks",
-          "line": 405,
+          "line": 444,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -115715,7 +116521,7 @@
         {
           "kind": "def",
           "name": "runSgiKindChecks",
-          "line": 417,
+          "line": 456,
           "called": [
             "assertBool",
             "length"
@@ -115724,7 +116530,7 @@
         {
           "kind": "def",
           "name": "runBklStateChecks",
-          "line": 432,
+          "line": 471,
           "called": [
             "assertBool",
             "bklHeldBy",
@@ -115735,7 +116541,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionChecks",
-          "line": 444,
+          "line": 483,
           "called": [
             "assertBool",
             "assumptionInventory",
@@ -115745,16 +116551,17 @@
         {
           "kind": "def",
           "name": "runSmpInventoryChecks",
-          "line": 452,
+          "line": 491,
           "called": [
             "assertBool",
+            "filter",
             "length"
           ]
         },
         {
           "kind": "def",
           "name": "runPlatformBindingChecks",
-          "line": 457,
+          "line": 511,
           "called": [
             "RPi5Platform",
             "SimPlatform",
@@ -115766,7 +116573,7 @@
         {
           "kind": "def",
           "name": "runLockKindUniquenessChecks",
-          "line": 497,
+          "line": 551,
           "called": [
             "assertBool",
             "level"
@@ -115775,7 +116582,7 @@
         {
           "kind": "def",
           "name": "runLockIdAdditionalChecks",
-          "line": 530,
+          "line": 584,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -115785,7 +116592,7 @@
         {
           "kind": "def",
           "name": "runSgiKindAdditionalChecks",
-          "line": 549,
+          "line": 603,
           "called": [
             "all",
             "assertBool"
@@ -115794,18 +116601,18 @@
         {
           "kind": "def",
           "name": "runArchAssumptionAdditionalChecks",
-          "line": 568,
+          "line": 622,
           "called": [
             "all",
             "archAssumptionConsumer",
             "assertBool",
-            "bootFromPlatform_singleCore_witness"
+            "bootFromPlatform_smp_witness"
           ]
         },
         {
           "kind": "def",
           "name": "runBklStateAdditionalChecks",
-          "line": 587,
+          "line": 642,
           "called": [
             "CoreId",
             "assertBool",
@@ -115821,7 +116628,7 @@
         {
           "kind": "def",
           "name": "runCurrentCoreIdChecks",
-          "line": 610,
+          "line": 665,
           "called": [
             "CoreId",
             "all",
@@ -115834,7 +116641,7 @@
         {
           "kind": "def",
           "name": "runSecondaryKernelMainChecks",
-          "line": 646,
+          "line": 701,
           "called": [
             "assertBool",
             "ofNat",
@@ -115845,7 +116652,7 @@
         {
           "kind": "def",
           "name": "runTlbiForSharingChecks",
-          "line": 697,
+          "line": 752,
           "called": [
             "assertBool",
             "toAsid",
@@ -115858,7 +116665,7 @@
         {
           "kind": "def",
           "name": "runIdleWaitChecks",
-          "line": 746,
+          "line": 801,
           "called": [
             "assertBool",
             "ffiIdleWait",
@@ -115870,7 +116677,7 @@
         {
           "kind": "def",
           "name": "runPerCoreStatsChecks",
-          "line": 769,
+          "line": 824,
           "called": [
             "all",
             "assertBool",
@@ -115886,7 +116693,7 @@
         {
           "kind": "def",
           "name": "runSgiFfiBindingChecks",
-          "line": 815,
+          "line": 870,
           "called": [
             "all",
             "assertBool"
@@ -115895,7 +116702,7 @@
         {
           "kind": "def",
           "name": "runFoundationsChecks",
-          "line": 844,
+          "line": 899,
           "called": [
             "runArchAssumptionAdditionalChecks",
             "runArchAssumptionChecks",
@@ -115922,7 +116729,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 872,
+          "line": 927,
           "called": [
             "runFoundationsChecks"
           ]

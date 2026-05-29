@@ -1,3 +1,192 @@
+## v0.31.37 — WS-SM SM4.G audit-pass-1: full-bundle idle soundness + idle-slot freshness
+
+Deeper-audit pass on the SM4.E/SM4.G cut (the v0.31.36 landing was sound and
+axiom-clean — no correctness defect).  Closes two optimality/honesty gaps per
+the implement-the-improvement rule, both in `SeLe4n/Platform/Boot.lean`; every
+new theorem axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only);
+trace fixture byte-identical (227/227); full default build green (320 jobs).
+
+- **Under-claim closed: base triad → FULL 9-conjunct bundle.** SM4.G proved
+  only `bootFromPlatformWithIdleThreads_schedulerInvariantBundle` (the base
+  3-conjunct triad).  The idle-thread state in fact satisfies the full
+  `schedulerInvariantBundleFull`, now proved by
+  `bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull` — and, unlike
+  the plain `bootFromPlatform` Full bundle (which discharges every
+  current-thread conjunct vacuously via `current = none`), the idle path
+  discharges `currentTimeSlicePositive` (idle TCB `timeSlice = 5 > 0`) and
+  `contextMatchesCurrent` (boot regs = idle `registerContext` = default
+  `RegisterFile`, via `bootFromPlatform_machine_non_config_fields`)
+  **substantively** against the live idle TCB.  The `∀ tid ∈ runnable`
+  conjuncts hold vacuously (empty run queue); `domainTimeRemainingPositive`
+  via the default `5`; `domainScheduleEntriesPositive` vacuously.  Bonus
+  `bootFromPlatformWithIdleThreads_currentThreadInActiveDomain` proves the idle
+  thread resides in the boot active domain (the *extended* bundle's conjunct,
+  again discharged substantively where plain boot is vacuous).
+- **Phantom reference implemented: `idleSlotsFreshAt`.** The `idleThreadIdBase`
+  docstring referenced an `idleSlotsFreshAt` freshness hypothesis "that the
+  canonical platforms discharge" — but no such symbol existed and the
+  boot-install theorems were stated unconditionally.  Per the
+  implement-the-improvement rule the symbol is now built, closing the latent
+  silent-overwrite concern (`createObject`'s `RHTable.insert` overwrites on key
+  collision, and `ObjId` wraps an unbounded `Nat`, so the 16-bit disjointness
+  was convention, not structure):
+  - `idleSlotsFreshAt (ist) : Prop` — no object occupies any idle slot.
+  - `foldl_installIdleThread_objects_frame_of_not_idle` — the install fold
+    frames any `ObjId` distinct from every idle slot it touches.
+  - `bootFromPlatformWithIdleThreads_preserves_platform_objects` — under
+    `idleSlotsFreshAt`, the idle install is purely **additive**: every platform
+    object survives (none clobbered).
+  - `idleSlotsFreshAt_of_initialObjects_below_base` — discharges freshness for
+    any config whose objects live below `idleThreadIdBase` (the canonical
+    RPi5/Sim case), making the disjointness a *proven* property.  The
+    `idleThreadIdBase` docstring is rewritten to reference these real symbols.
+
+Surface: +5 tier-3 anchors + 5 `SmpFoundationsSuite` `#check`s (full bundle,
+active-domain, freshness predicate + preservation + discharge); 2 top-level
+elaboration `example`s + 3 substantive runtime checks in `model_integrity_suite`
+(idle `timeSlice > 0`, idle in active domain, below-base platform object
+survives the install + idle threads additively present).  Items deferred past
+v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §3.7 / §3.8 / §5.5 (SM4.G)
+
+## v0.31.36 — WS-SM SM4.G: per-core idle-thread bootstrap (substantive SMP boot witness)
+
+Follow-on to SM4.E (per maintainer directive): implements the per-core
+idle-thread machinery sketched in `docs/planning/SMP_PER_CORE_STATE_PLAN.md`
+§3.7 / §3.8 / §4.3, **upgrading the named SMP boot witness from a tautology
+to a substantive claim** and closing the three remaining SM4.E
+optimality/honesty gaps surfaced by the post-landing audit.  All in
+`SeLe4n/Platform/Boot.lean`; every new theorem axiom-clean (`propext` /
+`Classical.choice` / `Quot.sound` only); trace fixture byte-identical
+(227/227 — the trace harness does not exercise `bootFromPlatform`, and the
+base `bootFromPlatform` is left **unchanged**).
+
+- **Substantive witness (the headline fix).** `bootFromPlatform_smp_witness`
+  was `currentOnCore c = none ∨ ∃ tid, = some tid` — a tautology over
+  `Option` (true for *any* current value).  It is now
+  `currentOnCore c = none ∨ currentOnCore c = some (idleThreadId c)`, which
+  **excludes** `current = some <non-idle thread>` — a genuine, non-vacuous
+  constraint, and exactly the plan §4.3 form.  Requires only that
+  `idleThreadId` be *defined* (proved via the `none` branch on
+  `bootFromPlatform`), so it remains forward-compatible.
+- **Idle-thread machinery (plan §3.7).** `idleThreadId : CoreId → ThreadId`
+  (reserved ObjId range `idleThreadIdBase = 0x1_0000`, `idleThreadId_injective`
+  / `_ne` / `_toObjId_ne`); `createIdleThread c` (priority 0, domain 0,
+  `threadState = .Running`, sentinel CSpace/VSpace — idle runs in kernel
+  context, and the scheduler invariants never read those roots; the core
+  binding is the `tid = idleThreadId c` identity, since seLe4n's `TCB` has no
+  `cpuAffinity` field); `installIdleThread` (builder `createObject` for the
+  idle TCB + `setCurrentOnCore`, with the `IntermediateState` invariants
+  forwarded by defeq — the `applyMachineConfig` pattern);
+  `bootFromPlatformWithIdleThreads` (a wrapper over `bootFromPlatform`,
+  analogous to `bootFromPlatformWithInterrupts`, so the base boot path's
+  entire verified invariant surface is untouched).
+- **Theorem 3.7.1.** `bootFromPlatformWithIdleThreads_all_cores_have_idle`:
+  `∀ c`, the boot path sets `currentOnCore c = some (idleThreadId c)` and the
+  idle TCB is present in the object store.  Proved via a `Nodup` fold-install
+  lemma + two frame lemmas (each install targets a distinct core); holds
+  unconditionally.
+- **Soundness.** `bootFromPlatformWithIdleThreads_schedulerInvariantBundle`
+  proves the installed state satisfies `schedulerInvariantBundle` (idle
+  thread is a valid current TCB, dequeued — not in the empty run queue —, and
+  the run queue is duplicate-free), and `…_valid` exposes the four structural
+  boot invariants (`allTablesInvExtK` etc., preserved because the idle TCBs go
+  through the same builder as platform objects).  Installing an idle thread as
+  `current` yields a fully scheduler-valid, structurally-valid state — no
+  dangling current reference, no double-scheduling.
+- **SM4.E audit-gap closures (per the implement-the-improvement rule).**
+  (1) The `SmpRetiredAssumption.retiredBy` field is renamed **`anchor`**: it
+  was honest for the 2 `.pathARetired` entries but overstated for the 6
+  `.perCoreBracketGated` ones (which point to their *current* per-core
+  anchor, not a retirement witness).  `smpRetiredInventory_retiredBy_nodup` →
+  `_anchor_nodup`.  (2) The `ModelIntegritySuite` boot test now exercises
+  `foldObjects` (a non-empty `initialObjects`), not just `foldIrqs`, and adds
+  runtime checks that run the install fold.  (3) `SMP_FOUNDATIONS_PLAN.md`'s
+  SM0-era code sketches gain a post-SM4.E/SM4.G note (they reference the
+  now-retired witness; the live anchor/consumer reference the replacement).
+
+Surface: 7 `#check` anchors in `SmpFoundationsSuite` + 4 tier-3 anchors;
+`model_integrity_suite` SM4.G runtime checks (idle current, per-core idle
+TCB present, empty run queue, distinct idle ids) all green.  Items deferred
+past v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §3.7 / §3.8 / §4.3 (SM4.G)
+
+## v0.31.35 — WS-SM SM4.E: single-core witness retirement + per-core SMP boot witness + retirement ledger
+
+Closes §5.5 of `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (SM4.E, 2 PRs, 5
+sub-tasks, all LANDED) within the SM4 path-a per-core-state migration.
+Retires the boot-core-only single-core witness now that SM4.B made
+`SchedulerState.current` a per-core `Vector`, replaces it with the per-core
+SMP-shape witness, and adds the SM4.E.5 retirement ledger.  Closes the
+SMP-H2 audit finding (no longer applicable — per-core fields replace the
+singular ones).  Purely additive at the proof surface; **trace fixture
+byte-identical (227/227)**, zero new axioms.
+
+- **SM4.E.1 — `bootFromPlatform_singleCore_witness` RETIRED.** Deleted from
+  `SeLe4n/Kernel/CrossSubsystem.lean`.  The boot-core-only witness
+  (`currentOnCore bootCoreId = none ∨ ∃ tid, … = some tid`) is structurally
+  too weak to characterise the per-core SMP shape after SM4.B flipped
+  `SchedulerState.current` to `Vector (Option ThreadId) numCores`.  A
+  discoverability retirement note remains at the CX-M03 site pointing at the
+  boot-side replacement (the replacement cannot live in `CrossSubsystem`
+  because it references `bootFromPlatform`, and
+  `Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem` —
+  same import-cycle reason as the CX-M04 bundle note).
+
+- **SM4.E.2 — `bootFromPlatform_smp_witness` ADDED** (in `Platform/Boot.lean`,
+  plan §3.8).  The per-core SMP-shape witness: `∀ c : CoreId`, the booted
+  scheduler's `currentOnCore c` is `none ∨ ∃ tid, = some tid`.  The
+  `∀ c : CoreId` quantification is the genuine improvement over the
+  boot-core-only form — it proves `SchedulerState.current` is a per-core map.
+  The disjunctive shape is **forward-compatible**: today the `none` disjunct
+  holds on every core (witnessed substantively by the companion
+  `bootFromPlatform_smp_currentAllNone`, which proves `currentOnCore c = none`
+  for every core via `bootFromPlatform_scheduler_eq` + the SM4.B.9 per-core
+  default-init theorem); once SM4.G installs per-core idle threads the
+  `some tid` disjunct holds with `tid = idleThreadId c`, so the witness never
+  needs a second retirement.  Both theorems are axiom-clean.
+
+- **SM4.E.3 — AN12-B inventory entry 7** (`architecture_singleCoreOnly_smpLatent`):
+  `smpDischarge` rewritten to "implemented in SM4 path-a" (the singular
+  scheduler fields are now per-core `Vector`s, so the single-core *state shape*
+  is structurally retired); `sourceTheorem` repointed to
+  `Platform.Boot.bootFromPlatform_smp_witness`.  The
+  `Architecture.ArchAssumption.singleCoreOperation` consumer mapping is
+  repointed to the same witness (a `Lean.Name` literal, no import needed).
+
+- **SM4.E.4 — AN12-B inventory entry 8** (`bootFromPlatform_currentCore_is_zero_smpLatent`):
+  same treatment — `smpDischarge` → "implemented in SM4 path-a";
+  `sourceTheorem` repointed to `bootFromPlatform_smp_currentAllNone` (distinct
+  from entry 7's witness, so `smpLatentInventory_sourceTheorems_nodup` still
+  holds).  Stale `singleCoreWitness` prose (which cited the retired witness)
+  updated.
+
+- **SM4.E.5 — `smpRetiredInventory` ledger ADDED** (in `Concurrency/Assumptions.lean`).
+  An 8-entry retirement ledger mirroring `smpLatentInventory` one-to-one by
+  `identifier` (`smpRetiredInventory_covers_latent`), with a new
+  `SmpRetirementStatus` enum (`.pathARetired` / `.perCoreBracketGated`) and
+  `SmpRetiredAssumption` schema.  Witnesses: `_count = 8` (the size pin),
+  `_identifiers_nodup`, `_retiredBy_nodup`, `_covers_latent`, and — per the
+  implement-the-improvement honesty corollary — the full disposition
+  partition `_pathARetired_count = 2` / `_perCoreBracketGated_count = 6`
+  (the **honest** disposition: only the scheduler-state shape and boot-core
+  current are genuinely retired by SM4 path-a; the other six remain
+  `perCoreBracketGated`, single-core property preserved per-core by the FFI
+  interrupt-disabled dispatch bracket, full retirement gated on SM5+).  WS-SM
+  SM9 (release closure) flips the gated entries and proves
+  `smpRetiredInventory_complete` once SM5..SM8 land.
+
+- **Build-anchor + surface coverage**: `Concurrency/Anchors.lean` (the SMP-H3
+  gate) repoints the two inventory `@`-references and adds seven for the ledger;
+  `tests/SmpFoundationsSuite.lean` and `tests/ModelIntegritySuite.lean`
+  migrate their CX-M03 / consumer-mapping checks to the replacement and add
+  ledger checks (`smp_foundations_suite` + `model_integrity_suite` green, 0
+  fails); `scripts/test_tier3_invariant_surface.sh` adds eight surface
+  anchors.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.5 (SM4.E)
+
 ## v0.31.34 — WS-SM SM4.D audit-pass-4: scope-correction of the audit-pass-3 completeness claim
 
 Fourth deep audit (verifying code, not docs).  **No code-soundness defect** —

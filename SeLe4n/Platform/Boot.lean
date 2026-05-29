@@ -1700,6 +1700,547 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_scheduler_eq, foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
 
+-- ============================================================================
+-- WS-SM SM4.G: per-core idle-thread identities (plan §3.7)
+-- ============================================================================
+
+/-- **WS-SM SM4.G** (plan §3.7): reserved base ObjId for per-core idle
+    threads.  The idle thread for core `c` lives at the `ObjId`
+    `idleThreadIdBase + c.val`.  The value sits above the 16-bit ObjId space
+    (`0x1_0000 = 65536`) that platform configs assign their objects from, so
+    on the canonical platforms the per-core idle range
+    `[idleThreadIdBase, idleThreadIdBase + numCores)` is disjoint from the
+    config objects.
+
+    The boot-install theorems (`bootFromPlatformWithIdleThreads_all_cores_have_idle`
+    and the scheduler-bundle theorems) hold **unconditionally** — the idle TCB
+    is installed regardless of the base config, because `createObject`'s insert
+    is overwriting.  The disjointness is what guarantees the install does not
+    *clobber* a config object: `idleSlotsFreshAt` is the freshness precondition,
+    `bootFromPlatformWithIdleThreads_preserves_platform_objects` proves the
+    install is purely additive under it, and
+    `idleSlotsFreshAt_of_initialObjects_below_base` discharges freshness for any
+    config whose objects live below `idleThreadIdBase` (the canonical case).
+    The bound is **not** assumed for arbitrary configs. -/
+def idleThreadIdBase : Nat := 0x1_0000
+
+/-- **WS-SM SM4.G** (plan §3.7): the per-core idle thread's `ThreadId`.  Idle
+    threads are injective in the core (`idleThreadId_injective`), so the
+    per-core idle objects never alias one another. -/
+def idleThreadId (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.ThreadId :=
+  SeLe4n.ThreadId.ofNat (idleThreadIdBase + c.val)
+
+/-- **WS-SM SM4.G**: `idleThreadId` is injective in the core. -/
+theorem idleThreadId_injective {c₁ c₂ : SeLe4n.Kernel.Concurrency.CoreId}
+    (h : idleThreadId c₁ = idleThreadId c₂) : c₁ = c₂ := by
+  unfold idleThreadId at h
+  have hv : idleThreadIdBase + c₁.val = idleThreadIdBase + c₂.val :=
+    SeLe4n.ThreadId.ofNat_injective h
+  exact Fin.ext (Nat.add_left_cancel hv)
+
+/-- **WS-SM SM4.G**: distinct cores get distinct idle-thread ids. -/
+theorem idleThreadId_ne {c₁ c₂ : SeLe4n.Kernel.Concurrency.CoreId}
+    (h : c₁ ≠ c₂) : idleThreadId c₁ ≠ idleThreadId c₂ :=
+  fun hEq => h (idleThreadId_injective hEq)
+
+/-- **WS-SM SM4.G**: distinct cores get distinct idle-thread `ObjId`s
+    (the object-store key form of `idleThreadId_ne`). -/
+theorem idleThreadId_toObjId_ne {c₁ c₂ : SeLe4n.Kernel.Concurrency.CoreId}
+    (h : c₁ ≠ c₂) : (idleThreadId c₁).toObjId ≠ (idleThreadId c₂).toObjId := by
+  intro hEq
+  apply idleThreadId_ne h
+  -- toObjId is `ObjId.ofNat ∘ toNat`; recover the ThreadId equality.
+  have : (idleThreadId c₁).toNat = (idleThreadId c₂).toNat := by
+    have h1 : (idleThreadId c₁).toObjId.val = (idleThreadId c₁).toNat := rfl
+    have h2 : (idleThreadId c₂).toObjId.val = (idleThreadId c₂).toNat := rfl
+    rw [← h1, ← h2, hEq]
+  calc idleThreadId c₁ = SeLe4n.ThreadId.ofNat (idleThreadId c₁).toNat :=
+          (SeLe4n.ThreadId.ofNat_toNat _).symm
+    _ = SeLe4n.ThreadId.ofNat (idleThreadId c₂).toNat := by rw [this]
+    _ = idleThreadId c₂ := SeLe4n.ThreadId.ofNat_toNat _
+
+-- ============================================================================
+-- WS-SM SM4.E.2: SMP-shape boot witness (replaces the retired
+-- CrossSubsystem.bootFromPlatform_singleCore_witness)
+-- ============================================================================
+
+/-- **WS-SM SM4.E.2** (plan §3.8): substantive per-core boot witness — at
+    boot, **every** core's current-thread slot is `none`, not just the boot
+    core's.  This is the genuine SMP shape of `bootFromPlatform`'s scheduler
+    after the SM4.B path-a `Vector` replacement: the freshly-booted scheduler
+    holds no running thread on any of the `Concurrency.numCores` cores.
+
+    Proved by transporting `bootFromPlatform`'s scheduler to the default
+    scheduler (`bootFromPlatform_scheduler_eq`) and reading the per-core
+    initialisation witness (`Model.default_state_perCoreInitialized`, the
+    SM4.B.9 theorem).  Non-vacuous: it pins the actual boot value, not merely
+    the `Option`-inhabitation tautology.
+
+    This is the non-vacuous content behind the forward-compatible
+    `bootFromPlatform_smp_witness` below, and it is the `sourceTheorem` that
+    the AN12-B inventory entry `bootFromPlatform_currentCore_is_zero_smpLatent`
+    points at after SM4.E.
+
+    When WS-SM SM4.G (per-core idle-thread bootstrap, plan §3.7) lands, the
+    *current-state* fact this theorem records evolves into
+    `bootFromPlatform_all_cores_have_idle`
+    (`currentOnCore c = some (idleThreadId c)`); the disjunctive
+    `bootFromPlatform_smp_witness` below survives that change unchanged. -/
+theorem bootFromPlatform_smp_currentAllNone
+    (config : PlatformConfig) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (bootFromPlatform config).state.scheduler.currentOnCore c = none := by
+  rw [bootFromPlatform_scheduler_eq]
+  exact (default_state_perCoreInitialized c).1
+
+/-- **WS-SM SM4.E.2 / SM4.G** (plan §3.8 / §4.3): the SMP-shape boot witness
+    that replaces the retired `SeLe4n.Kernel.bootFromPlatform_singleCore_witness`
+    (SM4.E.1).
+
+    The single-core witness only characterised the boot core's slot
+    (`currentOnCore bootCoreId`).  SM4.B (v0.31.12) flipped
+    `SchedulerState.current` to a per-core `Vector (Option ThreadId)
+    Concurrency.numCores`, so the structural property worth witnessing is now
+    the **per-core** one: for *every* core `c`, the boot scheduler's
+    current-thread slot is either `none` (no thread bootstrapped yet) or
+    `some (idleThreadId c)` — the core's **own idle thread**, never an
+    arbitrary thread.  The `∀ c : CoreId` quantification proves
+    `SchedulerState.current` is a per-core map (which the single slot could
+    not express).
+
+    **Non-vacuous shape (SM4.G).**  Naming `idleThreadId c` in the `some`
+    disjunct makes this a genuine constraint, not the `Option`-inhabitation
+    tautology `none ∨ ∃ tid, = some tid`: it *excludes* `current = some t` for
+    any non-idle `t`.  Today the `none` disjunct holds on `bootFromPlatform`
+    (witnessed substantively by `bootFromPlatform_smp_currentAllNone`); the
+    `bootFromPlatformWithIdleThreads` boot path installs the idle threads and
+    takes the `some (idleThreadId c)` disjunct (witnessed by
+    `bootFromPlatformWithIdleThreads_all_cores_have_idle`).  The statement is
+    identical on both paths, so this witness is **forward-compatible** and
+    never needs a second retirement.  It is the `sourceTheorem` of the AN12-B
+    inventory entry `architecture_singleCoreOnly_smpLatent` and the `anchor`
+    of the `smpRetiredInventory` entry for `Architecture.ArchAssumption`. -/
+theorem bootFromPlatform_smp_witness
+    (config : PlatformConfig) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (bootFromPlatform config).state.scheduler.currentOnCore c = none ∨
+      (bootFromPlatform config).state.scheduler.currentOnCore c = some (idleThreadId c) :=
+  Or.inl (bootFromPlatform_smp_currentAllNone config c)
+
+-- ============================================================================
+-- WS-SM SM4.G: per-core idle-thread bootstrap (plan §3.7)
+-- ============================================================================
+
+/-- **WS-SM SM4.G** (plan §3.7): the per-core idle thread control block.
+
+    Idle threads are the lowest-priority threads each core runs when nothing
+    else is runnable.  Fields: `priority := ⟨0⟩` (lowest), `domain := ⟨0⟩`
+    (the boot active domain, so `currentThreadInActiveDomain` holds when the
+    idle thread is current), `threadState := .Running` (it is the running
+    thread when scheduled), `tid := idleThreadId c` (the per-core identity —
+    seLe4n's `TCB` has no `cpuAffinity` field, so the core binding is carried
+    by the identity, not a separate affinity field).  `cspaceRoot` /
+    `vspaceRoot` are `ObjId.sentinel`: an idle thread runs in kernel context
+    and holds no capabilities, so it has no CSpace/VSpace root (this is
+    semantically faithful, and the scheduler invariants never read these
+    fields).  All other fields take their structure defaults. -/
+def createIdleThread (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
+  { tid          := idleThreadId c
+    priority     := ⟨0⟩
+    domain       := ⟨0⟩
+    cspaceRoot   := SeLe4n.ObjId.sentinel
+    vspaceRoot   := SeLe4n.ObjId.sentinel
+    ipcBuffer    := default
+    threadState  := .Running }
+
+/-- **WS-SM SM4.G** (plan §3.7): install core `c`'s idle thread into a boot
+    `IntermediateState` — create the idle TCB in the object store (via the
+    builder, so every structural invariant carries forward exactly as for
+    `installBootVSpaceRoot`) and set the scheduler's per-core current slot to
+    the idle thread.
+
+    The `.tcb` object discharges both `createObject` obligations vacuously
+    (`.tcb _` is neither a `.cnode` nor a `.vspaceRoot`).  The scheduler
+    `setCurrentOnCore` update does not touch `objects` / `cdt` / `lifecycle`,
+    so the `IntermediateState` invariant witnesses forward unchanged (the
+    `applyMachineConfig` pattern — they do not depend on scheduler fields). -/
+def installIdleThread (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) : IntermediateState :=
+  let withTcb : IntermediateState :=
+    Builder.createObject ist (idleThreadId c).toObjId
+      (KernelObject.tcb (createIdleThread c))
+      (fun _ hEq => by cases hEq) (fun _ hEq => by cases hEq)
+  { state := { withTcb.state with
+      scheduler := withTcb.state.scheduler.setCurrentOnCore c (some (idleThreadId c)) }
+    hAllTables := withTcb.hAllTables
+    hPerObjectSlots := withTcb.hPerObjectSlots
+    hPerObjectMappings := withTcb.hPerObjectMappings
+    hLifecycleConsistent := withTcb.hLifecycleConsistent }
+
+/-- **WS-SM SM4.G**: `installIdleThread` inserts the idle TCB into the object
+    store (definitional — the scheduler-update record update leaves `objects`
+    untouched). -/
+theorem installIdleThread_objects (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.objects =
+      ist.state.objects.insert (idleThreadId c).toObjId
+        (KernelObject.tcb (createIdleThread c)) := rfl
+
+/-- **WS-SM SM4.G**: `installIdleThread` sets core `c`'s current slot
+    (definitional — `createObject` preserves the scheduler). -/
+theorem installIdleThread_scheduler (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.scheduler =
+      ist.state.scheduler.setCurrentOnCore c (some (idleThreadId c)) := rfl
+
+/-- **WS-SM SM4.G**: after installing core `c`'s idle thread, `c`'s current
+    slot reads the idle thread. -/
+theorem installIdleThread_currentOnCore_self (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.scheduler.currentOnCore c = some (idleThreadId c) := by
+  rw [installIdleThread_scheduler]
+  exact SchedulerState.setCurrentOnCore_currentOnCore_self _ _ _
+
+/-- **WS-SM SM4.G**: installing core `c`'s idle thread frames any *other*
+    core `c'`'s current slot. -/
+theorem installIdleThread_currentOnCore_ne (ist : IntermediateState)
+    (c c' : SeLe4n.Kernel.Concurrency.CoreId) (h : c ≠ c') :
+    (installIdleThread ist c).state.scheduler.currentOnCore c' =
+      ist.state.scheduler.currentOnCore c' := by
+  rw [installIdleThread_scheduler]
+  exact SchedulerState.setCurrentOnCore_currentOnCore_ne _ c c' _ h
+
+/-- **WS-SM SM4.G**: after installing core `c`'s idle thread, its object-store
+    slot holds the idle TCB. -/
+theorem installIdleThread_objects_self (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.objects[(idleThreadId c).toObjId]? =
+      some (KernelObject.tcb (createIdleThread c)) := by
+  rw [installIdleThread_objects]
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  exact RHTable.getElem?_insert_self ist.state.objects (idleThreadId c).toObjId _ hObjK.1
+
+/-- **WS-SM SM4.G**: installing core `c`'s idle thread frames the object-store
+    slot of any *distinct* ObjId. -/
+theorem installIdleThread_objects_ne (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (oid : SeLe4n.ObjId)
+    (h : (idleThreadId c).toObjId ≠ oid) :
+    (installIdleThread ist c).state.objects[oid]? = ist.state.objects[oid]? := by
+  rw [installIdleThread_objects]
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  have hNe : ¬(((idleThreadId c).toObjId == oid) = true) := fun heq => h (eq_of_beq heq)
+  exact RHTable.getElem?_insert_ne ist.state.objects (idleThreadId c).toObjId oid _ hNe hObjK.1
+
+/-- **WS-SM SM4.G** (plan §3.7): the SMP boot path — `bootFromPlatform`
+    followed by installing a per-core idle thread on every core in
+    `allCores`.  Each core's current slot becomes its own idle thread; the
+    object store gains the per-core idle TCBs.  This is the path on which the
+    `some (idleThreadId c)` disjunct of `bootFromPlatform_smp_witness` is the
+    live one (witnessed by `bootFromPlatformWithIdleThreads_all_cores_have_idle`).
+
+    Defined as a wrapper (analogous to `bootFromPlatformWithInterrupts`) so the
+    base `bootFromPlatform` — and its entire verified invariant surface — is
+    left unchanged.
+
+    **SM5 integration scope (tracked debt).**  This idle-thread bootstrap is
+    forward-looking infrastructure; it is **not** yet wired into the production
+    boot path, and SM5 (per-core scheduler) owns that integration.  Three
+    consequences are intentionally deferred to SM5 (none is a defect in the
+    current staged surface — they are gaps that surface only on full production
+    wiring):
+
+    1. **Not on the checked boot path.**  `bootFromPlatformChecked` (the
+       production entry point) still builds `bootFromPlatform config`, so
+       checked/RPi5 boots return `currentOnCore c = none` with no idle TCBs.
+       The SM4.G idle guarantees apply only to callers that opt into this
+       wrapper.  SM5 wires the idle install into the checked boot path (or
+       adds a checked idle variant) so the bootstrap state is production-reachable.
+    2. **Boot-core-only thread-state inference.**
+       `Scheduler.Operations.Core.inferThreadState` / `syncThreadStates` read
+       only `currentOnCore bootCoreId` / `runQueueOnCore bootCoreId`, so a
+       *secondary* core's idle TCB (created `.Running`) would be re-inferred as
+       `.Inactive` by a sync, even though that core's `currentOnCore` points at
+       it.  SM5 lifts `inferThreadState` to the per-core shape (mirroring the
+       SM4.C per-core invariant migration); until then no production path runs
+       `syncThreadStates` on the idle boot state.
+    3. **Idle TCBs are not `KernelObject.wellFormed`.**  `createIdleThread`
+       uses `ObjId.sentinel` for `cspaceRoot` / `vspaceRoot` (idle runs in
+       kernel context with no user caps — seL4 idle-thread semantics), so the
+       idle TCB fails `KernelObject.wellFormed` (which requires both roots to
+       resolve).  That predicate is a **retype-time precondition**
+       (`Lifecycle/Operations/RetypeWrappers.lean`), **not** a global
+       invariant, and idle TCBs are builder-installed — never retyped — so
+       there is **no current contract violation** and no system invariant is
+       broken.  SM5, when wiring idle through any `wellFormed`-checked path,
+       either installs valid idle roots or formalises an explicit idle-thread
+       exemption in `KernelObject.wellFormed`. -/
+def bootFromPlatformWithIdleThreads (config : PlatformConfig) : IntermediateState :=
+  SeLe4n.Kernel.Concurrency.allCores.foldl installIdleThread (bootFromPlatform config)
+
+/-- **WS-SM SM4.G**: folding `installIdleThread` over a list of cores all
+    distinct from `c` frames core `c`'s current slot. -/
+theorem foldl_installIdleThread_currentOnCore_frame
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (h : ∀ c' ∈ L, c' ≠ c) :
+    (L.foldl installIdleThread ist).state.scheduler.currentOnCore c =
+      ist.state.scheduler.currentOnCore c := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x) (fun c' hc' => h c' (List.mem_cons.mpr (Or.inr hc')))]
+    exact installIdleThread_currentOnCore_ne ist x c (h x (List.mem_cons.mpr (Or.inl rfl)))
+
+/-- **WS-SM SM4.G**: folding `installIdleThread` over a list of cores all
+    distinct from `c` frames core `c`'s idle-object slot. -/
+theorem foldl_installIdleThread_objects_frame
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (h : ∀ c' ∈ L, c' ≠ c) :
+    (L.foldl installIdleThread ist).state.objects[(idleThreadId c).toObjId]? =
+      ist.state.objects[(idleThreadId c).toObjId]? := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x) (fun c' hc' => h c' (List.mem_cons.mpr (Or.inr hc')))]
+    exact installIdleThread_objects_ne ist x (idleThreadId c).toObjId
+      (idleThreadId_toObjId_ne (h x (List.mem_cons.mpr (Or.inl rfl))))
+
+/-- **WS-SM SM4.G**: folding `installIdleThread` over a `Nodup` list `L`
+    containing `c` installs `c`'s idle thread — both the per-core current slot
+    and the object-store entry hold the idle thread after the whole fold.
+    `c`'s install step is preserved by every later step (which targets a
+    distinct core, by `Nodup`), via the two frame lemmas. -/
+theorem foldl_installIdleThread_installs
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (L : List SeLe4n.Kernel.Concurrency.CoreId)
+    (ist : IntermediateState) :
+    L.Nodup → c ∈ L →
+    (L.foldl installIdleThread ist).state.scheduler.currentOnCore c = some (idleThreadId c) ∧
+    (L.foldl installIdleThread ist).state.objects[(idleThreadId c).toObjId]? =
+      some (KernelObject.tcb (createIdleThread c)) := by
+  induction L generalizing ist with
+  | nil => intro _ hc; exact (List.not_mem_nil hc).elim
+  | cons x xs ih =>
+    intro hnd hc
+    simp only [List.foldl_cons]
+    rw [List.nodup_cons] at hnd
+    rcases List.mem_cons.mp hc with hxc | hxs
+    · -- `c = x`: installed by the head step; the (distinct) tail frames it.
+      subst hxc
+      have hframe : ∀ c' ∈ xs, c' ≠ c := fun c' hc' heq => hnd.1 (heq ▸ hc')
+      refine ⟨?_, ?_⟩
+      · rw [foldl_installIdleThread_currentOnCore_frame xs (installIdleThread ist c) c hframe]
+        exact installIdleThread_currentOnCore_self ist c
+      · rw [foldl_installIdleThread_objects_frame xs (installIdleThread ist c) c hframe]
+        exact installIdleThread_objects_self ist c
+    · -- `c ∈ xs`: the tail fold installs it (induction hypothesis).
+      exact ih (installIdleThread ist x) hnd.2 hxs
+
+/-- **WS-SM SM4.G** (plan §3.7, Theorem 3.7.1): on the SMP boot path, **every**
+    core's current slot holds its own idle thread and the idle TCB is present
+    in the object store.  This is the fully-substantive `some (idleThreadId c)`
+    witness — the live branch of `bootFromPlatform_smp_witness` on the
+    idle-thread boot path.  Holds unconditionally (the per-core idle ObjIds are
+    distinct by `idleThreadId_injective`, and `createObject`'s insert makes the
+    idle TCB present regardless of the base config). -/
+theorem bootFromPlatformWithIdleThreads_all_cores_have_idle (config : PlatformConfig)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (bootFromPlatformWithIdleThreads config).state.scheduler.currentOnCore c =
+        some (idleThreadId c) ∧
+    (bootFromPlatformWithIdleThreads config).state.objects[(idleThreadId c).toObjId]? =
+      some (KernelObject.tcb (createIdleThread c)) := by
+  unfold bootFromPlatformWithIdleThreads
+  exact foldl_installIdleThread_installs c SeLe4n.Kernel.Concurrency.allCores
+    (bootFromPlatform config) SeLe4n.Kernel.Concurrency.allCores_nodup (List.mem_finRange c)
+
+/-- **WS-SM SM4.G** (plan §3.7): the per-core idle `ObjId` slots are *fresh*
+    (unoccupied) in intermediate state `ist` — no object already lives at any
+    idle thread's `ObjId`.  This is the precondition under which the idle-thread
+    install is purely additive (overwrites nothing): `createObject` uses
+    `RHTable.insert`, which overwrites on key collision, so installing an idle
+    thread at an already-occupied slot would silently clobber the prior object.
+    The canonical platforms discharge `idleSlotsFreshAt` because their config
+    objects live below `idleThreadIdBase` (witnessed generally by
+    `idleSlotsFreshAt_of_initialObjects_below_base`). -/
+def idleSlotsFreshAt (ist : IntermediateState) : Prop :=
+  ∀ c : SeLe4n.Kernel.Concurrency.CoreId,
+    ist.state.objects[(idleThreadId c).toObjId]? = none
+
+/-- **WS-SM SM4.G**: folding `installIdleThread` over a list of cores frames any
+    `ObjId` `oid` distinct from *every* idle slot the fold touches.  Generalises
+    `foldl_installIdleThread_objects_frame` (which fixed `oid` to a particular
+    core's idle slot) to an arbitrary non-idle `oid`. -/
+theorem foldl_installIdleThread_objects_frame_of_not_idle
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (oid : SeLe4n.ObjId)
+    (h : ∀ c' ∈ L, (idleThreadId c').toObjId ≠ oid) :
+    (L.foldl installIdleThread ist).state.objects[oid]? = ist.state.objects[oid]? := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x) (fun c' hc' => h c' (List.mem_cons.mpr (Or.inr hc')))]
+    exact installIdleThread_objects_ne ist x oid (h x (List.mem_cons.mpr (Or.inl rfl)))
+
+/-- **WS-SM SM4.G** (plan §3.7): under `idleSlotsFreshAt`, the idle-thread
+    install fold preserves *every* platform object — no platform object is
+    silently overwritten by an idle TCB.  This substantiates the
+    `idleThreadIdBase` disjointness rationale: when the platform config's objects
+    do not occupy any idle slot (the canonical case, since config objects live
+    below the 16-bit `idleThreadIdBase`), the idle install is purely additive.
+    Without freshness the install theorems still hold (`…_all_cores_have_idle`
+    is unconditional), but a config object placed in the idle range would be
+    clobbered — which this theorem's hypothesis rules out. -/
+theorem bootFromPlatformWithIdleThreads_preserves_platform_objects
+    (config : PlatformConfig)
+    (hFresh : idleSlotsFreshAt (bootFromPlatform config))
+    (oid : SeLe4n.ObjId) (o : KernelObject)
+    (hPlat : (bootFromPlatform config).state.objects[oid]? = some o) :
+    (bootFromPlatformWithIdleThreads config).state.objects[oid]? = some o := by
+  unfold bootFromPlatformWithIdleThreads
+  rw [foldl_installIdleThread_objects_frame_of_not_idle SeLe4n.Kernel.Concurrency.allCores
+    (bootFromPlatform config) oid (fun c' _ hEq => ?_)]
+  · exact hPlat
+  · -- If `oid` were an idle slot, freshness (`= none`) would contradict `hPlat`.
+    have hAt : (bootFromPlatform config).state.objects[(idleThreadId c').toObjId]? = some o := by
+      rw [hEq]; exact hPlat
+    rw [hFresh c'] at hAt
+    simp at hAt
+
+/-- **WS-SM SM4.G**: `installIdleThread` (via `setCurrentOnCore`) frames every
+    core's run queue — idle install only writes current slots. -/
+theorem installIdleThread_runQueueOnCore (ist : IntermediateState)
+    (c c' : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.scheduler.runQueueOnCore c' =
+      ist.state.scheduler.runQueueOnCore c' := by
+  rw [installIdleThread_scheduler]
+  exact SchedulerState.setCurrentOnCore_runQueueOnCore _ _ _ _
+
+/-- **WS-SM SM4.G**: the idle-thread install fold frames every core's run
+    queue. -/
+theorem foldl_installIdleThread_runQueueOnCore
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (L.foldl installIdleThread ist).state.scheduler.runQueueOnCore c =
+      ist.state.scheduler.runQueueOnCore c := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x)]
+    exact installIdleThread_runQueueOnCore ist x c
+
+/-- **WS-SM SM4.G**: the SMP idle-thread boot path leaves the boot-core run
+    queue empty (idle threads are dispatched as `current`, not enqueued — the
+    dequeue-on-dispatch discipline `queueCurrentConsistent` encodes). -/
+theorem bootFromPlatformWithIdleThreads_runnable_nil (config : PlatformConfig) :
+    (bootFromPlatformWithIdleThreads config).state.scheduler.runnable = [] := by
+  show ((bootFromPlatformWithIdleThreads config).state.scheduler.runQueueOnCore
+        SeLe4n.Kernel.Concurrency.bootCoreId).toList = []
+  unfold bootFromPlatformWithIdleThreads
+  rw [foldl_installIdleThread_runQueueOnCore, bootFromPlatform_scheduler_eq]
+  have h : (default : SystemState).scheduler.runQueueOnCore
+      SeLe4n.Kernel.Concurrency.bootCoreId = SeLe4n.Kernel.RunQueue.empty :=
+    (default_state_perCoreInitialized SeLe4n.Kernel.Concurrency.bootCoreId).2.1
+  rw [h]
+  exact SeLe4n.Kernel.RunQueue.toList_empty
+
+/-- **WS-SM SM4.G**: soundness of the idle-thread boot path — the installed
+    state satisfies the scheduler invariant bundle.  The boot-core current
+    thread is the idle thread, which is a valid TCB in the object store
+    (`currentThreadValid`), is not in the (empty) run queue
+    (`queueCurrentConsistent` / dequeue-on-dispatch), and the empty run queue
+    is duplicate-free (`runQueueUnique`).  Confirms that installing an idle
+    thread as `current` yields a scheduler-valid state — no dangling current
+    reference, no double-scheduling. -/
+theorem bootFromPlatformWithIdleThreads_schedulerInvariantBundle (config : PlatformConfig) :
+    SeLe4n.Kernel.schedulerInvariantBundle (bootFromPlatformWithIdleThreads config).state := by
+  have hCur := bootFromPlatformWithIdleThreads_all_cores_have_idle config
+    SeLe4n.Kernel.Concurrency.bootCoreId
+  have hNil := bootFromPlatformWithIdleThreads_runnable_nil config
+  refine ⟨?_, ?_, ?_⟩
+  · -- queueCurrentConsistent: idle thread is not in the (empty) run queue.
+    simp only [SeLe4n.Kernel.queueCurrentConsistent, hCur.1, hNil, List.not_mem_nil,
+      not_false_eq_true]
+  · -- runQueueUnique: the empty run queue is duplicate-free.
+    simp only [SeLe4n.Kernel.runQueueUnique, hNil, List.nodup_nil]
+  · -- currentThreadValid: the idle thread resolves to a TCB in the store.
+    simp only [SeLe4n.Kernel.currentThreadValid, hCur.1]
+    exact ⟨createIdleThread SeLe4n.Kernel.Concurrency.bootCoreId, hCur.2⟩
+
+/-- **WS-SM SM4.G**: the idle-thread boot path preserves the four structural
+    boot invariants — the idle TCBs are added via `Builder.createObject`,
+    exactly as platform objects, so `allTablesInvExtK`, per-object CNode slots,
+    per-object VSpace mappings, and lifecycle metadata all carry forward
+    (the `IntermediateState` witnesses thread through the scheduler update by
+    defeq).  Mirrors `bootFromPlatform_valid`. -/
+theorem bootFromPlatformWithIdleThreads_valid (config : PlatformConfig) :
+    let ist := bootFromPlatformWithIdleThreads config
+    ist.state.allTablesInvExtK ∧
+    perObjectSlotsInvariant ist.state ∧
+    perObjectMappingsInvariant ist.state ∧
+    SystemState.lifecycleMetadataConsistent ist.state :=
+  ⟨(bootFromPlatformWithIdleThreads config).hAllTables,
+   (bootFromPlatformWithIdleThreads config).hPerObjectSlots,
+   (bootFromPlatformWithIdleThreads config).hPerObjectMappings,
+   (bootFromPlatformWithIdleThreads config).hLifecycleConsistent⟩
+
+/-- **WS-SM SM4.G**: `installIdleThread` frames the machine state (it touches
+    only `objects` and the scheduler's current slot — `applyMachineConfig`
+    pattern). -/
+theorem installIdleThread_machine (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (installIdleThread ist c).state.machine = ist.state.machine := rfl
+
+/-- **WS-SM SM4.G**: the install fold frames the machine state. -/
+theorem foldl_installIdleThread_machine
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState) :
+    (L.foldl installIdleThread ist).state.machine = ist.state.machine := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x)]
+    exact installIdleThread_machine ist x
+
+/-- **WS-SM SM4.G**: the install fold frames every core's domain-time-remaining
+    slot (idle install writes only the current slot). -/
+theorem foldl_installIdleThread_domainTimeRemainingOnCore
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (L.foldl installIdleThread ist).state.scheduler.domainTimeRemainingOnCore c =
+      ist.state.scheduler.domainTimeRemainingOnCore c := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x), installIdleThread_scheduler]
+    exact SchedulerState.setCurrentOnCore_domainTimeRemainingOnCore _ _ _ _
+
+/-- **WS-SM SM4.G**: the install fold frames every core's active-domain slot. -/
+theorem foldl_installIdleThread_activeDomainOnCore
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (L.foldl installIdleThread ist).state.scheduler.activeDomainOnCore c =
+      ist.state.scheduler.activeDomainOnCore c := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x), installIdleThread_scheduler]
+    exact SchedulerState.setCurrentOnCore_activeDomainOnCore _ _ _ _
+
+/-- **WS-SM SM4.G**: the install fold frames the (system-wide) domain
+    schedule. -/
+theorem foldl_installIdleThread_domainSchedule
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState) :
+    (L.foldl installIdleThread ist).state.scheduler.domainSchedule =
+      ist.state.scheduler.domainSchedule := by
+  induction L generalizing ist with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [List.foldl_cons]
+    rw [ih (installIdleThread ist x), installIdleThread_scheduler]
+    exact SchedulerState.setCurrentOnCore_domainSchedule _ _ _
+
 /-- V4-A2/A4: The post-boot state preserves CDT from default. -/
 theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdt =
@@ -1782,6 +2323,95 @@ theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.systemRegisters = (default : SystemState).machine.systemRegisters ∧
     (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
   refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default])
+
+/-- **WS-SM SM4.G**: the idle-thread boot state's boot-core current thread is in
+    the active domain — the idle thread's domain `⟨0⟩` equals the boot active
+    domain `⟨0⟩` (so the idle thread is legitimately schedulable, not stranded
+    in a foreign domain).  This is the `currentThreadInActiveDomain` conjunct of
+    the *extended* scheduler bundle, established for the idle-thread state (the
+    plain `bootFromPlatform` discharges it vacuously via `current = none`; the
+    idle path discharges it substantively via the idle TCB's domain). -/
+theorem bootFromPlatformWithIdleThreads_currentThreadInActiveDomain (config : PlatformConfig) :
+    SeLe4n.Kernel.currentThreadInActiveDomain (bootFromPlatformWithIdleThreads config).state := by
+  have hCur := bootFromPlatformWithIdleThreads_all_cores_have_idle config
+    SeLe4n.Kernel.Concurrency.bootCoreId
+  have hAD : (bootFromPlatformWithIdleThreads config).state.scheduler.activeDomainOnCore
+      SeLe4n.Kernel.Concurrency.bootCoreId = ⟨0⟩ := by
+    unfold bootFromPlatformWithIdleThreads
+    rw [foldl_installIdleThread_activeDomainOnCore, bootFromPlatform_scheduler_eq]
+    exact (default_state_perCoreInitialized SeLe4n.Kernel.Concurrency.bootCoreId).2.2.2.1
+  simp only [SeLe4n.Kernel.currentThreadInActiveDomain, hCur.1, hCur.2, hAD]
+  rfl
+
+/-- **WS-SM SM4.G**: the idle-thread boot state satisfies the **full** scheduler
+    invariant bundle (all 9 conjuncts), not merely the base triad — the stronger
+    soundness claim that the installed idle-thread state is a fully scheduler-valid
+    boot state.  The `∀ tid ∈ runnable` conjuncts (`timeSlicePositive`,
+    `edfCurrentHasEarliestDeadline`'s inner quantifier, `runnableThreadsAreTCBs`,
+    `schedulerPriorityMatch`) hold vacuously (empty run queue);
+    `currentTimeSlicePositive` via the idle TCB's `timeSlice = 5`;
+    `contextMatchesCurrent` because the boot machine registers and the idle TCB's
+    `registerContext` are both the default `RegisterFile`
+    (`bootFromPlatform_machine_non_config_fields`); `domainTimeRemainingPositive`
+    via the default `5`; `domainScheduleEntriesPositive` vacuously (empty domain
+    schedule).  Unlike the plain `bootFromPlatform` Full bundle (which discharges
+    every current-thread conjunct vacuously via `current = none`), the idle path
+    discharges `currentTimeSlicePositive` / `contextMatchesCurrent` substantively
+    against the live idle TCB. -/
+theorem bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull (config : PlatformConfig) :
+    SeLe4n.Kernel.schedulerInvariantBundleFull (bootFromPlatformWithIdleThreads config).state := by
+  have hCur := bootFromPlatformWithIdleThreads_all_cores_have_idle config
+    SeLe4n.Kernel.Concurrency.bootCoreId
+  have hNil := bootFromPlatformWithIdleThreads_runnable_nil config
+  have hRegs : (bootFromPlatformWithIdleThreads config).state.machine.regs =
+      (default : SystemState).machine.regs := by
+    have hm : (bootFromPlatformWithIdleThreads config).state.machine =
+        (bootFromPlatform config).state.machine := by
+      unfold bootFromPlatformWithIdleThreads; exact foldl_installIdleThread_machine _ _
+    rw [hm]; exact (bootFromPlatform_machine_non_config_fields config).1
+  have hDTR : (bootFromPlatformWithIdleThreads config).state.scheduler.domainTimeRemainingOnCore
+      SeLe4n.Kernel.Concurrency.bootCoreId = 5 := by
+    unfold bootFromPlatformWithIdleThreads
+    rw [foldl_installIdleThread_domainTimeRemainingOnCore, bootFromPlatform_scheduler_eq]
+    exact (default_state_perCoreInitialized SeLe4n.Kernel.Concurrency.bootCoreId).2.2.2.2.1
+  have hDS : (bootFromPlatformWithIdleThreads config).state.scheduler.domainSchedule = [] := by
+    unfold bootFromPlatformWithIdleThreads
+    rw [foldl_installIdleThread_domainSchedule, bootFromPlatform_scheduler_eq]
+    decide
+  refine ⟨bootFromPlatformWithIdleThreads_schedulerInvariantBundle config,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- timeSlicePositive (vacuous: empty run queue)
+    intro tid hMem
+    rw [hNil] at hMem
+    exact (List.not_mem_nil hMem).elim
+  · -- currentTimeSlicePositive (idle TCB timeSlice = 5 > 0)
+    simp only [SeLe4n.Kernel.currentTimeSlicePositive, hCur.1, hCur.2]
+    decide
+  · -- edfCurrentHasEarliestDeadline (vacuous inner: empty run queue)
+    simp only [SeLe4n.Kernel.edfCurrentHasEarliestDeadline, hCur.1, hCur.2]
+    intro tid hMem
+    rw [hNil] at hMem
+    exact (List.not_mem_nil hMem).elim
+  · -- contextMatchesCurrent (machine.regs = default = idle.registerContext)
+    exact SeLe4n.Kernel.contextMatchesCurrent_of_regs_eq hCur.1 hCur.2 (hRegs.trans rfl)
+  · -- runnableThreadsAreTCBs (vacuous: empty run queue)
+    intro tid hMem
+    rw [hNil] at hMem
+    exact (List.not_mem_nil hMem).elim
+  · -- schedulerPriorityMatch (vacuous: empty run queue / empty bucket index)
+    intro tid hMem
+    have hFlat : tid ∈ (bootFromPlatformWithIdleThreads config).state.scheduler.runnable :=
+      (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+    rw [hNil] at hFlat
+    exact (List.not_mem_nil hFlat).elim
+  · -- domainTimeRemainingPositive (= 5 > 0)
+    unfold SeLe4n.Kernel.domainTimeRemainingPositive
+    rw [hDTR]
+    decide
+  · -- domainScheduleEntriesPositive (vacuous: empty domain schedule)
+    intro e he
+    rw [hDS] at he
+    exact (List.not_mem_nil he).elim
 
 /-- Fold-level: foldIrqs preserves capabilityRefs. -/
 private theorem foldIrqs_capabilityRefs (irqs : List IrqEntry) (ist : IntermediateState) :
@@ -2014,6 +2644,47 @@ private theorem foldObjects_objects_reachable
           intro heq; exact hEq (eq_of_beq heq)
         rw [RHTable.getElem?_insert_ne ist.state.objects e.id oid e.obj hNe hInvExt] at hBase
         exact Or.inr (by simp only [RHTable_getElem?_eq_get?]; exact hBase)
+
+/-- **WS-SM SM4.G** (plan §3.7): canonical-platform discharge of
+    `idleSlotsFreshAt`.  When every config object's `ObjId` lies below
+    `idleThreadIdBase` (the 16-bit ObjId space the canonical platforms — RPi5,
+    Sim — assign their objects from), no config object occupies an idle slot
+    (every idle slot's value is `idleThreadIdBase + c.val ≥ idleThreadIdBase`),
+    so the boot state's idle slots are all empty.  This makes the
+    `idleThreadIdBase` disjointness rationale a *proven* property and is the
+    hypothesis-discharge for
+    `bootFromPlatformWithIdleThreads_preserves_platform_objects`. -/
+theorem idleSlotsFreshAt_of_initialObjects_below_base
+    (config : PlatformConfig)
+    (hBelow : ∀ e ∈ config.initialObjects, e.id.val < idleThreadIdBase) :
+    idleSlotsFreshAt (bootFromPlatform config) := by
+  intro c
+  -- Every idle slot's ObjId value is ≥ idleThreadIdBase.
+  have hGe : idleThreadIdBase ≤ (idleThreadId c).toObjId.val := by
+    show idleThreadIdBase ≤ idleThreadIdBase + c.val
+    exact Nat.le_add_right _ _
+  cases hLook : (bootFromPlatform config).state.objects[(idleThreadId c).toObjId]? with
+  | none => rfl
+  | some o =>
+    exfalso
+    -- `applyMachineConfig` preserves objects; trace the lookup into `foldObjects`.
+    have hLook' : (foldObjects config.initialObjects
+        (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[(idleThreadId c).toObjId]? =
+          some o := by
+      have hb := hLook
+      unfold bootFromPlatform at hb
+      rwa [applyMachineConfig_objects_eq] at hb
+    rcases foldObjects_objects_reachable config.initialObjects _ _ _ hLook' with
+      ⟨e, hMem, hId, _hObj⟩ | hBase
+    · -- A config object lives at the idle slot ⟹ its id ≥ base, contradicting hBelow.
+      have hlt : (idleThreadId c).toObjId.val < idleThreadIdBase := hId ▸ hBelow e hMem
+      omega
+    · -- The base (foldIrqs over the empty intermediate state) has no objects.
+      rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
+      have hEmpty : (default : SystemState).objects[(idleThreadId c).toObjId]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [hEmpty] at hBase
+      simp at hBase
 
 /-- AK8-A: If the base-state has no untyped objects and the config satisfies
 `untypedRegionsDisjoint`, the post-boot object store satisfies the runtime

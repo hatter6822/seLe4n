@@ -2981,12 +2981,14 @@ WS-AN AN6-F addresses five CX MEDIUM items from the v0.30.6 audit:
   semantically what `storeObjectKindChecked` (the runtime guard)
   enforces at write time.
 
-- **CX-M03** (`bootFromPlatform_singleCore_witness`): anchors the
-  single-core MPIDR-mask assumption (see Rust HAL
-  `rust/sele4n-hal/src/cpu.rs::MPIDR_CORE_ID_MASK` and `cpu::current_core_id`,
-  plus AK5-I boot.S core-0 gate) to the Lean boot bridge. The Lean model
-  has no per-core state, so the witness is a documentation anchor: any
-  reachable system state at v1.0.0 is single-core by construction.
+- **CX-M03** (`bootFromPlatform_singleCore_witness` — RETIRED at SM4.E.1):
+  historically anchored the single-core boot-core current-thread shape.
+  SM4.B replaced `SchedulerState.current` with a per-core `Vector`, so the
+  boot-core-only witness was retired and replaced by the per-core SMP-shape
+  witness `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness` (with the
+  substantive companion `…bootFromPlatform_smp_currentAllNone`).  See the
+  CX-M03 retirement note in §"Single-core boot witness — RETIRED" below;
+  the replacement lives on the boot side to avoid an import cycle.
 
 - **CX-M04** (`archInvariantBundle_interruptsEnabled_all_eight`): composes
   the eight individual `_preserves_interruptsEnabled` theorems from
@@ -3238,47 +3240,44 @@ theorem collectQueueMembers_head_is_start
 -- lives in `SeLe4n/Model/State.lean:721` and is updated by AN6-F.
 -- ============================================================================
 
--- CX-M03: Single-core boot witness
+-- CX-M03: Single-core boot witness — RETIRED at WS-SM SM4.E
 -- ============================================================================
 
-/-- AN6-F (CX-M03): boot-core current-thread witness — the anchor for the
-    `singleCoreOperation` `ArchAssumption`.
+/-! ## AN6-F (CX-M03) — `bootFromPlatform_singleCore_witness` RETIRED (SM4.E.1)
 
-    **Honest post-SM4.B statement of content.** Before WS-SM SM4.B,
-    `SchedulerState.current` was a single `Option ThreadId`, and this
-    theorem's *type* was the structural witness that the field was a
-    single slot, not a per-core map. **SM4.B (v0.31.12) flipped the field
-    to `Vector (Option ThreadId) Concurrency.numCores`** (the path-a
-    per-core replacement), so that original framing no longer holds — the
-    field IS a per-core map now. The theorem is therefore restated over
-    the *boot core's* accessor, `currentOnCore bootCoreId`, where it is
-    trivially true (any `Option` is `none` or `some _`).
+The boot-core current-thread witness `bootFromPlatform_singleCore_witness`
+**has been retired** by WS-SM **SM4.E.1** (plan
+`docs/planning/SMP_PER_CORE_STATE_PLAN.md` §4.3 / §5.5).
 
-    What it still anchors at v1.0.0: the verified kernel drives **only**
-    `bootCoreId` (secondary-core bring-up is staged in the SM1 Rust HAL —
-    `boot.S` core-0 wake gate, `cpu.rs::MPIDR_CORE_ID_MASK = 0x00FFFFFF`,
-    PSCI `cpu_on` — but is not yet entered from the verified kernel), so
-    "the single-core operation's current thread is well-defined" is
-    witnessed by the boot core's slot. It is the named `sourceTheorem`
-    of the `Architecture.ArchAssumption.singleCoreOperation` constructor
-    (SM0.A) and of the `smpLatentInventory` entry; the build-time `@`
-    references there fail if it is renamed/removed.
+History: before SM4.B, `SchedulerState.current` was a single
+`Option ThreadId`, and the witness's *type* recorded the structural fact
+that the field was a single slot rather than a per-core map.  SM4.B
+(v0.31.12) flipped the field to `Vector (Option ThreadId)
+Concurrency.numCores` (the path-a per-core replacement), so the original
+framing no longer applies — the field IS a per-core map.  Across SM4.B the
+witness was kept *valid* (restated over `currentOnCore bootCoreId`) so the
+SMP assumption was never silently dropped mid-migration; SM4.E now retires
+it per the implement-the-improvement rule, because the boot-core-only form
+is structurally too weak to characterise the per-core SMP shape.
 
-    **Not a strong invariant; scheduled for retirement.** This is an
-    interim restatement, deliberately kept *valid* (not deleted) across
-    SM4.B so the SMP assumption is never silently dropped mid-migration.
-    WS-SM **SM4.E** retires it: it is replaced by
-    `bootFromPlatform_smp_witness` and the `singleCoreOperation`
-    `ArchAssumption` / inventory entry are repointed (plan
-    `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.5). -/
-theorem bootFromPlatform_singleCore_witness :
-    ∀ (s : SchedulerState),
-      s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId = none ∨
-        ∃ tid : SeLe4n.ThreadId, s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId = some tid := by
-  intro s
-  cases h : s.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId with
-  | none => exact Or.inl rfl
-  | some tid => exact Or.inr ⟨tid, rfl⟩
+Replacement (the per-core SMP shape, `∀ c : CoreId`):
+`SeLe4n.Platform.Boot.bootFromPlatform_smp_witness`, with the substantive
+companion `SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone`.
+
+**Why the replacement does NOT live here**: the replacement references
+`bootFromPlatform`, which is defined in `Platform/Boot.lean`.  That module
+sits *above* `CrossSubsystem.lean` in the import DAG
+(`Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem`),
+so restating the witness here over `bootFromPlatform` would create an
+import cycle.  The witness therefore lives on the boot side where it
+naturally composes `bootFromPlatform_scheduler_eq` with the SM4.B.9
+per-core default-init theorem; this note is the discoverability anchor a
+reader browsing the CrossSubsystem CX-M03 section uses to locate it (same
+pattern as the CX-M04 bundle note below).
+
+The `Architecture.ArchAssumption.singleCoreOperation` consumer mapping and
+the `smpLatentInventory` / `smpRetiredInventory` entries are repointed to
+the boot-side replacement (SM4.E.3/E.4/E.5). -/
 
 -- CX-M04: archInvariantBundle interruptsEnabled composition
 -- ============================================================================

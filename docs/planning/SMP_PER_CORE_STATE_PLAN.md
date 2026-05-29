@@ -219,6 +219,54 @@ theorem default_state_perCoreInitialized :
 
 ### 3.7 Idle thread bootstrap
 
+> **LANDED at v0.31.36 (SM4.G)**, with two faithfulness adaptations to the
+> sketch below: (a) seLe4n's `TCB` has **no `cpuAffinity` field**, so the
+> per-core binding is carried by the `tid = idleThreadId c` identity rather
+> than `cpuAffinity := some c`; (b) the install is a **wrapper**
+> `bootFromPlatformWithIdleThreads` (over an unchanged `bootFromPlatform`),
+> not a mutation of `bootFromPlatform` itself — this keeps the base boot
+> path's entire verified invariant surface intact, the established
+> `bootFromPlatformWithInterrupts` pattern.  Theorem 3.7.1 landed as
+> `bootFromPlatformWithIdleThreads_all_cores_have_idle` (the
+> `cpuAffinity = some c` clause replaced by the exact-TCB form
+> `objects[(idleThreadId c).toObjId]? = some (.tcb (createIdleThread c))`),
+> plus the soundness theorems `…_schedulerInvariantBundle` and `…_valid`.
+> `Priority` needs no bound proof, so `⟨0⟩` (not `⟨0, by decide⟩`).
+>
+> **Audit-pass-1 (v0.31.37)** strengthened the soundness from the base triad
+> to the **full** 9-conjunct bundle
+> (`bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull`, discharging
+> `currentTimeSlicePositive` / `contextMatchesCurrent` *substantively* against
+> the live idle TCB — where plain `bootFromPlatform` is vacuous), added
+> `…_currentThreadInActiveDomain`, and implemented the freshness machinery the
+> `idleThreadIdBase` rationale relies on: `idleSlotsFreshAt`,
+> `bootFromPlatformWithIdleThreads_preserves_platform_objects` (the install is
+> purely additive — no config object clobbered — under freshness), and
+> `idleSlotsFreshAt_of_initialObjects_below_base` (freshness for any below-base
+> config, the canonical case).
+>
+> **SM5 integration scope (tracked debt, per PR #803 Codex review).**  The idle
+> bootstrap is staged forward-looking infra; SM5 (per-core scheduler) owns
+> production integration.  Three items are intentionally deferred to SM5 — none
+> is a current defect (the wrapper leaves production boot, the trace, and all
+> proofs untouched), they are gaps that surface only on full wiring:
+> 1. **Not on the checked boot path** — `bootFromPlatformChecked` still builds
+>    `bootFromPlatform config`, so checked/RPi5 boots return `currentOnCore c =
+>    none`.  SM5 wires the idle install into the checked path (or a checked idle
+>    variant).
+> 2. **Boot-core-only thread-state inference** — `inferThreadState` /
+>    `syncThreadStates` read only `currentOnCore bootCoreId`, so a secondary
+>    core's idle TCB would be re-inferred `.Inactive`.  SM5 lifts
+>    `inferThreadState` to the per-core shape (mirroring SM4.C); no production
+>    path runs `syncThreadStates` on the idle boot state today.
+> 3. **Idle TCBs are not `KernelObject.wellFormed`** — sentinel cspace/vspace
+>    roots (seL4 idle-thread semantics) fail the root-resolution check.  That
+>    predicate is a *retype-time precondition* (`RetypeWrappers.lean`), **not** a
+>    global invariant, and idle TCBs are builder-installed (never retyped), so
+>    there is **no current contract violation**.  SM5, when wiring idle through a
+>    `wellFormed`-checked path, installs valid idle roots or formalises an
+>    explicit idle exemption in `KernelObject.wellFormed`.
+
 Per decision #8 (per-core idle threads), `bootFromPlatform`
 installs an idle TCB on each core:
 
@@ -257,6 +305,15 @@ sequence. The proof unfolds the boot pipeline and applies
 `Vector.get_replicate` for the per-core initialization. □
 
 ### 3.8 SMP-shape witness theorem
+
+> **LANDED at v0.31.35 (SM4.E.2) + v0.31.36 (SM4.G).**  The witness lives in
+> `SeLe4n.Platform.Boot` (not `CrossSubsystem` — import-cycle, see §5.5), over
+> `(bootFromPlatform config).state.scheduler.currentOnCore c`.  At SM4.E the
+> `some` branch was `∃ tid, = some tid` (`idleThreadId` did not yet exist); at
+> SM4.G it became the substantive `= some (idleThreadId c)` shown below.  The
+> live `some` branch is realised on the `bootFromPlatformWithIdleThreads` boot
+> path (`bootFromPlatformWithIdleThreads_all_cores_have_idle`); the
+> `bootFromPlatform` path takes the `none` branch (`…_smp_currentAllNone`).
 
 **Theorem 3.8.1** (`bootFromPlatform_smp_witness`). Replaces the
 retired `bootFromPlatform_singleCore_witness`:
@@ -567,6 +624,48 @@ migrations.
 | SM4.E.4 | AN12-B inventory entry 8 (`bootFromPlatform_currentCore_is_zero_smpLatent`): same treatment | Inventory updated | S |
 | SM4.E.5 | Add `smpRetiredInventory` aggregator (8 entries, all retired). Pin size at 8. | New aggregator + size witness | M |
 
+> **SM4.E LANDED (v0.31.35).**  All five sub-tasks landed in one cut; closes
+> the SMP-H2 finding (retired — per-core fields replace the singular ones).
+> Purely additive at the proof surface (trace fixture byte-identical, 227/227;
+> zero new axioms).
+>
+> - **SM4.E.1** — `bootFromPlatform_singleCore_witness` **deleted** from
+>   `CrossSubsystem.lean`.  A discoverability retirement note remains at the
+>   CX-M03 site (the boot-core-only witness is structurally too weak for the
+>   per-core SMP shape after SM4.B).
+> - **SM4.E.2** — `bootFromPlatform_smp_witness` added in `Platform/Boot.lean`
+>   (NOT `CrossSubsystem.lean`: the replacement references `bootFromPlatform`,
+>   and `Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem`,
+>   so siting it in `CrossSubsystem` would cycle — same reason as the CX-M04
+>   bundle note).  Per §3.8 / §4.3, the `some` branch is `= some (idleThreadId c)`
+>   (`bootFromPlatform config : IntermediateState`, so the path is
+>   `(bootFromPlatform config).state.scheduler.currentOnCore c`).  At the SM4.E
+>   cut the disjunct's `some` branch was stated as `∃ tid, = some tid` because
+>   `idleThreadId` did not yet exist; **SM4.G (v0.31.36, below) defined
+>   `idleThreadId` and restated the witness to the substantive
+>   `none ∨ = some (idleThreadId c)`** (non-vacuous — excludes non-idle
+>   currents).  Substantive companion `bootFromPlatform_smp_currentAllNone`
+>   proves `= none` on every core (via `bootFromPlatform_scheduler_eq` + SM4.B.9
+>   `default_state_perCoreInitialized`).
+> - **SM4.E.3 / SM4.E.4** — inventory entries 7 + 8 `smpDischarge` →
+>   "implemented in SM4 path-a"; `sourceTheorem`s repointed to
+>   `bootFromPlatform_smp_witness` (entry 7) and `bootFromPlatform_smp_currentAllNone`
+>   (entry 8 — distinct, so `smpLatentInventory_sourceTheorems_nodup` holds).
+>   The `Architecture.ArchAssumption.singleCoreOperation` consumer mapping is
+>   repointed to `bootFromPlatform_smp_witness` (a `Lean.Name` literal).
+> - **SM4.E.5** — `smpRetiredInventory` (8-entry `SmpRetiredAssumption` ledger
+>   mirroring `smpLatentInventory` one-to-one).  Witnesses: `_count = 8`,
+>   `_covers_latent`, `_identifiers_nodup`, `_retiredBy_nodup`, and (honest
+>   disposition) the partition `_pathARetired_count = 2` /
+>   `_perCoreBracketGated_count = 6`.  "All retired" is the ledger's
+>   *purpose* (tracking the retirement of all 8 latent assumptions); per the
+>   honesty corollary only the 2 path-a-genuine entries are
+>   `.pathARetired`, the other 6 are `.perCoreBracketGated` pending SM5+.  SM9
+>   adds `smpRetiredInventory_complete` once all are discharged.
+>
+> Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
+> `SmpFoundationsSuite` / `ModelIntegritySuite` (both green).
+
 ### 5.6 Per-core invariant suite (within SM4.C.29 + .30)
 
 Two aggregate theorems wrap the per-core invariants:
@@ -666,10 +765,15 @@ No new Lean axioms.
       predicate-bearing sub-tasks are migrated with per-op SMP-preservation,
       the operation-only / frozen-state / no-predicate sub-tasks are
       documented N/A.)
-- [ ] `bootFromPlatform_singleCore_witness` retired.
-- [ ] `bootFromPlatform_smp_witness` proven.
-- [ ] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".
-- [ ] `smpRetiredInventory` aggregator added.
+- [x] `bootFromPlatform_singleCore_witness` retired. (SM4.E.1, v0.31.35)
+- [x] `bootFromPlatform_smp_witness` proven. (SM4.E.2, v0.31.35; in
+      `Platform/Boot.lean`, with the substantive companion
+      `bootFromPlatform_smp_currentAllNone`.)
+- [x] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".
+      (SM4.E.3 / SM4.E.4, v0.31.35.)
+- [x] `smpRetiredInventory` aggregator added. (SM4.E.5, v0.31.35; 8 entries,
+      `_count = 8`, `_covers_latent`, disposition partition
+      `_pathARetired_count = 2` / `_perCoreBracketGated_count = 6`.)
 - [ ] Tier 1..3 green.
 - [ ] Tier 2 trace byte-identical at single-core scenario.
 - [ ] Aggregate SM4 closure CHANGELOG entry.
