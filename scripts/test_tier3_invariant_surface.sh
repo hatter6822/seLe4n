@@ -1247,6 +1247,14 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.smpAnchorVerified
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.smpLatentInventory_sourceTheorems_nodup
+-- SM4.E — single-core witness retirement + retirement ledger
+#check @SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
+#check @SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_count
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_covers_latent
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_retiredBy_nodup
+#check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
 -- SM0.G — PlatformBinding extension
 #check @SeLe4n.Platform.PlatformBinding.coreCount
 #check @SeLe4n.Platform.PlatformBinding.bootCoreId

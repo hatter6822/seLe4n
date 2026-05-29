@@ -2153,6 +2153,47 @@ single-core forms, zero warnings, `#print axioms` clean, suite 34/34,
 two doc typos; ap4 = one documentation overclaim, no code defect.  Items
 deferred past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM4.E LANDED at v0.31.35** (single-core witness retirement +
+per-core SMP boot witness + retirement ledger; closes plan §5.5 — 5
+sub-tasks — and the SMP-H2 finding).  Purely additive at the proof surface:
+trace fixture byte-identical (227/227), zero new axioms.
+
+- **SM4.E.1** — `bootFromPlatform_singleCore_witness` **deleted** from
+  `CrossSubsystem.lean`.  After SM4.B flipped `SchedulerState.current` to a
+  per-core `Vector`, the boot-core-only witness was structurally too weak to
+  characterise the per-core shape.  A CX-M03 discoverability retirement note
+  remains, pointing at the boot-side replacement (sited in `Platform/Boot.lean`
+  because it references `bootFromPlatform`, and `Platform.Boot → Kernel.API →
+  Architecture.Invariant → CrossSubsystem` would cycle — same reason as the
+  CX-M04 bundle note).
+- **SM4.E.2** — `Platform.Boot.bootFromPlatform_smp_witness` added (plan
+  §3.8): `∀ c : CoreId`, the booted scheduler's `currentOnCore c` is
+  `none ∨ ∃ tid, = some tid` (the `∀ c` quantification is the genuine
+  improvement over the boot-core-only form).  Forward-compatible (the
+  `some tid` disjunct becomes `idleThreadId c` once SM4.G lands).
+  Substantive companion `bootFromPlatform_smp_currentAllNone` proves
+  `currentOnCore c = none` on every core at boot, via
+  `bootFromPlatform_scheduler_eq` + the SM4.B.9
+  `default_state_perCoreInitialized`.
+- **SM4.E.3 / SM4.E.4** — `smpLatentInventory` entries 7 + 8 `smpDischarge`
+  → "implemented in SM4 path-a"; `sourceTheorem`s repointed to
+  `bootFromPlatform_smp_witness` (entry 7) and `bootFromPlatform_smp_currentAllNone`
+  (entry 8, kept distinct so `smpLatentInventory_sourceTheorems_nodup` holds);
+  the `ArchAssumption.singleCoreOperation` consumer mapping repointed (a
+  `Lean.Name` literal).
+- **SM4.E.5** — `smpRetiredInventory` retirement ledger: 8-entry
+  `SmpRetiredAssumption` list mirroring `smpLatentInventory` one-to-one by
+  identifier (`smpRetiredInventory_covers_latent`), with a
+  `SmpRetirementStatus` enum.  Witnesses: `_count = 8`, `_identifiers_nodup`,
+  `_retiredBy_nodup`, `_covers_latent`, and — per the honesty corollary —
+  `_pathARetired_count = 2` (only the scheduler-state shape + boot-core
+  current are genuinely path-a-retired; the other six are
+  `perCoreBracketGated` pending SM5+).  SM9 adds `smpRetiredInventory_complete`.
+
+Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
+`SmpFoundationsSuite` / `ModelIntegritySuite` (both green, 0 fails).  Items
+deferred past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

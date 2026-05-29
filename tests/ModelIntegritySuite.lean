@@ -1528,29 +1528,41 @@ def an6f_cxm01_collectQueueMembers_structural_signatures : IO Unit := do
   let _ := @SeLe4n.Kernel.collectQueueMembers_head_is_start
   expect "CX-M01 structural bridges reachable" (True == True)
 
-/-- AN6-F (CX-M03): Single-core model witness — `SchedulerState.current`
-    is a single `Option ThreadId`, not a per-core indexed map. The
-    witness theorem proves the slot has exactly two inhabited forms
-    (`none` or `some tid`), which is the structural single-core shape.
-
-    **AN6 post-audit**: the test now invokes the witness with TWO
-    concrete scheduler states (one with `current = none`, one with
-    `current = some _`) to confirm both branches resolve correctly. -/
-def an6f_cxm03_singleCore_witness_reachable : IO Unit := do
-  let sEmpty : SeLe4n.Model.SchedulerState := default
-  let _witnessEmpty :
-      sEmpty.currentOnCore bootCoreId = none ∨ ∃ tid, sEmpty.currentOnCore bootCoreId = some tid :=
-    SeLe4n.Kernel.bootFromPlatform_singleCore_witness sEmpty
-  -- Default boot-core `current` is `none`, so the structural witness
-  -- must match the `.inl` branch.
-  expect "CX-M03: default sched has current = none"
-    ((sEmpty.currentOnCore bootCoreId).isNone)
+/-- WS-SM SM4.E (CX-M03 successor): the per-core SMP boot witness is
+    reachable and substantive.  Replaces the retired
+    `bootFromPlatform_singleCore_witness` reachability test (SM4.E.1): the
+    single-core form characterised only `bootCoreId`'s slot, whereas the SMP
+    form (`Platform.Boot.bootFromPlatform_smp_witness`, with the substantive
+    companion `…_smp_currentAllNone`) proves the per-core shape for *every*
+    core — exercised here over the whole `allCores` enumeration, which is the
+    genuine improvement over the boot-core-only witness. -/
+def bootFromPlatform_smp_witness_reachable : IO Unit := do
+  let config : SeLe4n.Platform.Boot.PlatformConfig := { irqTable := [], initialObjects := [] }
+  let booted := (SeLe4n.Platform.Boot.bootFromPlatform config).state.scheduler
+  -- Substantive (SM4.E.4 sourceTheorem for inventory entry 8): the booted
+  -- scheduler's current-thread slot is `none` on the boot core.
+  let _bootCoreNone : booted.currentOnCore bootCoreId = none :=
+    SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone config bootCoreId
+  expect "SM4.E: boot scheduler current = none on boot core"
+    ((booted.currentOnCore bootCoreId).isNone)
+  -- The genuine per-core improvement over the single-core witness: the
+  -- `none` shape holds for *every* core, not just the boot core.
+  expect "SM4.E: boot scheduler current = none on EVERY core"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c => (booted.currentOnCore c).isNone))
+  -- The forward-compatible disjunctive witness (SM4.E.2 / inventory entry 7
+  -- sourceTheorem) type-checks for an arbitrary core.
+  let _smpWitness :
+      ∀ c : SeLe4n.Kernel.Concurrency.CoreId,
+        booted.currentOnCore c = none ∨ ∃ tid, booted.currentOnCore c = some tid :=
+    fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_witness config c
+  expect "SM4.E: bootFromPlatform_smp_witness reachable for all cores" (True == True)
+  -- The disjunction's `some` branch is genuinely inhabitable: a scheduler
+  -- with a current thread set on the boot core reads back `some tid` (so the
+  -- witness is not vacuously always-`none`; the forward path to SM4.G's
+  -- per-core idle threads is real).
   let sWithTid : SeLe4n.Model.SchedulerState :=
-    sEmpty.setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 7))
-  let _witnessTid :
-      sWithTid.currentOnCore bootCoreId = none ∨ ∃ tid, sWithTid.currentOnCore bootCoreId = some tid :=
-    SeLe4n.Kernel.bootFromPlatform_singleCore_witness sWithTid
-  expect "CX-M03: explicit current has tid 7"
+    (default : SeLe4n.Model.SchedulerState).setCurrentOnCore bootCoreId (some (SeLe4n.ThreadId.ofNat 7))
+  expect "SM4.E: setCurrentOnCore yields some-branch current"
     ((sWithTid.currentOnCore bootCoreId) == some (SeLe4n.ThreadId.ofNat 7))
 
 /-- AN6-F (CX-M04): The `InterruptsEnabledPreservationBundle` structure
@@ -1944,7 +1956,7 @@ def main : IO Unit := do
   an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase
   -- AN6-F (CX-M01/M03/M04/M05): CrossSubsystem MEDIUM batch
   an6f_cxm01_collectQueueMembers_structural_signatures
-  an6f_cxm03_singleCore_witness_reachable
+  bootFromPlatform_smp_witness_reachable
   an6f_cxm04_interruptsEnabled_bundle_inhabited
   an6f_cxm05_crossSubsystemInvariant_positive
   IO.println ""

@@ -171,29 +171,38 @@ def architecture_singleCoreOnly_smpLatent : SmpLatentAssumption :=
        via the `ArchAssumption` inductive (incl. the `singleCoreOperation` \
        arm) + `assumptionInventory` aggregator."
     smpDischarge      :=
-      "SMP: SM4.B made the scheduler state per-core-shaped; SM4.C/SM4.D migrate \
-       the theorems and SM5 wires the per-core scheduler so transitions act on \
-       the calling core (`Concurrency.currentCoreId`) rather than `bootCoreId`. \
-       AN9-J/SM1 ship the Rust HAL secondary-core bring-up; cross-core kernel \
-       transitions remain gated until SM5 lands."
-    sourceTheorem     := `SeLe4n.Kernel.Architecture.architecture_assumptions_index
-    auditReference    := "AG-* baseline / AN12-B" }
+      "Implemented in SM4 path-a (v0.31.12, SM4.B): the singular \
+       `SchedulerState` fields are now per-core `Vector α numCores` indexed \
+       by `CoreId`, so the single-core *state shape* is structurally retired — \
+       `SchedulerState.current` IS a per-core map. The SMP shape is witnessed \
+       for every core by `Platform.Boot.bootFromPlatform_smp_witness` \
+       (`∀ c : CoreId`). SM4.E.1 retired the boot-core-only \
+       `bootFromPlatform_singleCore_witness` accordingly. SM5 wires the \
+       per-core scheduler so transitions act on `Concurrency.currentCoreId`; \
+       cross-core *scheduling* remains gated until SM5, but the state shape is \
+       no longer single-core."
+    sourceTheorem     := `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
+    auditReference    := "AG-* baseline / AN12-B / SM4.E.3" }
 
 /-- CX-M03 / AN6-F: bootFromPlatform single-core boot bridge. -/
 def bootFromPlatform_currentCore_is_zero_smpLatent : SmpLatentAssumption :=
   { identifier        := `SeLe4n.Platform.Boot.bootFromPlatform
     singleCoreWitness :=
-      "Single-core: bootFromPlatform returns IntermediateState whose scheduler \
-       runs on the boot core (`bootCoreId`); post-SM4.B the AN6-F witness \
-       `bootFromPlatform_singleCore_witness` is restated over \
-       `currentOnCore bootCoreId` (the per-core field's boot-core slot)."
+      "Single-core: `bootFromPlatform` returns an IntermediateState whose \
+       scheduler holds no running thread at boot. Historically the AN6-F \
+       witness `bootFromPlatform_singleCore_witness` characterised only the \
+       boot core's `current` slot (a single `Option ThreadId` before SM4.B)."
     smpDischarge      :=
-      "SMP: AN9-J's bring_up_secondaries() spins up secondary cores after the \
-       boot core has finished bootFromPlatform; the boot bridge predicate \
-       holds for the boot core specifically. Secondary cores enter through \
-       `rust_secondary_main` which is a separate proof obligation."
-    sourceTheorem     := `SeLe4n.Kernel.bootFromPlatform_singleCore_witness
-    auditReference    := "CX-M03 / AN6-F" }
+      "Implemented in SM4 path-a (v0.31.12, SM4.B): `bootFromPlatform`'s \
+       scheduler is per-core-shaped, so `Platform.Boot.bootFromPlatform_smp_currentAllNone` \
+       proves the boot current is `none` on *every* core (`∀ c : CoreId`), not \
+       just `bootCoreId` — the genuine per-core boot shape. The disjunctive \
+       `bootFromPlatform_smp_witness` is forward-compatible: it survives SM4.G's \
+       per-core idle-thread bootstrap (`some (idleThreadId c)`) unchanged. \
+       Secondary cores still enter through `rust_secondary_main`, a separate \
+       proof obligation gated on SM5."
+    sourceTheorem     := `SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone
+    auditReference    := "CX-M03 / AN6-F / SM4.E.4" }
 
 /-- AN12-B.4: aggregator. The full inventory aggregates the 8 entries above
 into a single value that downstream tooling (e.g. `audit_testing_framework.sh`)
@@ -265,6 +274,229 @@ theorem smpLatentInventory_sourceTheorems_nodup :
     timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
     architecture_singleCoreOnly_smpLatent,
     bootFromPlatform_currentCore_is_zero_smpLatent]
+  decide
+
+/-! ## WS-SM SM4.E.5 — retirement inventory (`smpRetiredInventory`)
+
+SM4 path-a (the per-core `Vector` replacement of the singular
+`SchedulerState` fields) begins discharging the SMP-latent single-core
+assumptions recorded in `smpLatentInventory`.  `smpRetiredInventory` is the
+companion ledger that tracks the retirement of each of the 8 latent
+assumptions toward the v1.0.0 SMP release; it mirrors `smpLatentInventory`
+one-to-one by `identifier` (`smpRetiredInventory_covers_latent`).
+
+At SM4.E exactly two assumptions are genuinely retired by path-a — the
+scheduler-state shape (`Architecture.ArchAssumption`) and the boot-core
+current-thread shape (`Platform.Boot.bootFromPlatform`) — because SM4.B
+made `SchedulerState.current` (and the other six per-core fields) a
+`Vector α numCores`, so the single-core *state shape* no longer applies.
+The other six remain `perCoreBracketGated`: their single-core property is
+preserved per-core by the FFI interrupt-disabled dispatch bracket, with
+full cross-core retirement tracked against later WS-SM phases (SM5 per-core
+scheduler / SM6 cross-core IPC).  This honest disposition is pinned by
+`smpRetiredInventory_pathARetired_count` (= 2 at SM4.E); WS-SM SM9 (release
+closure) adds `smpRetiredInventory_complete` once every entry is
+discharged. -/
+
+/-- WS-SM SM4.E.5: retirement disposition of an `smpLatentInventory` entry. -/
+inductive SmpRetirementStatus where
+  /-- The SM4 path-a per-core `Vector` replacement makes the single-core
+      *state shape* structurally inapplicable (the scheduler field IS a
+      per-core map now).  The `retiredBy` theorem witnesses the
+      post-retirement SMP shape. -/
+  | pathARetired
+  /-- The assumption's single-core property is preserved on the calling
+      core by the FFI interrupt-disabled dispatch bracket; full cross-core
+      retirement is gated on a later WS-SM phase (SM5 per-core scheduler /
+      SM6 cross-core IPC).  Tracked here for completeness. -/
+  | perCoreBracketGated
+  deriving Repr, DecidableEq, Inhabited
+
+/-- WS-SM SM4.E.5: record schema for the retirement of an SMP-latent
+assumption.  Parallels `SmpLatentAssumption`; `smpRetiredInventory` mirrors
+`smpLatentInventory` one-to-one (every latent assumption has a retirement
+record).  `retiredBy` is a `Lean.Name` literal (audited by source-read,
+build-anchored in `Concurrency.Anchors`) naming the theorem that witnesses
+the retirement (for `.pathARetired`) or the per-core consumer that
+discharges the single-core property today (for `.perCoreBracketGated`). -/
+structure SmpRetiredAssumption where
+  identifier     : Lean.Name
+  status         : SmpRetirementStatus
+  retirement     : String
+  retiredBy      : Lean.Name
+  auditReference : String
+deriving Inhabited
+
+/-- H-05 / AN4-D: resolved-CNode validity across the multi-level walk. -/
+def cspaceLookupMultiLevel_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.cspaceLookupMultiLevel
+    status         := .perCoreBracketGated
+    retirement     :=
+      "Per-core: the no-retype-during-walk invariant holds on the calling \
+       core under the AN9-D interrupt-disabled dispatch bracket. Cross-core \
+       retirement tracked against SM5 (per-core scheduler)."
+    retiredBy      := `SeLe4n.Kernel.resolveCapAddress_result_valid_cnode
+    auditReference := "H-05 / AN4-D" }
+
+/-- AK7-F.cascade: CDT post-state composition for cspaceCopy/Move/Mutate. -/
+def cspaceCopyMoveMutate_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.cspaceCopy
+    status         := .perCoreBracketGated
+    retirement     :=
+      "Per-core: the AM4 lifecycleObjectTypeLockstep invariant + single-step \
+       storeObject + FFI bracket serialise capability ops on the calling \
+       core. Cross-core retirement tracked against SM5."
+    retiredBy      := `SeLe4n.Kernel.cspaceCopy_preserves_capabilityInvariantBundle
+    auditReference := "AK7-F.cascade / AN10-B" }
+
+/-- C-M04 / AN9-D: lifecyclePreRetypeCleanup sequential cleanup ordering. -/
+def lifecyclePreRetypeCleanup_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
+    status         := .perCoreBracketGated
+    retirement     :=
+      "Per-core: cleanup runs interrupts-disabled on the calling core via the \
+       `sele4n_suspend_thread` FFI bracket idiom. Cross-core retirement \
+       tracked against SM5."
+    retiredBy      := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
+    auditReference := "C-M04 / AN9-D" }
+
+/-- SVC-M01 / AN4-H: serviceHasPathTo graph traversal. -/
+def serviceHasPathTo_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.serviceHasPathTo
+    status         := .perCoreBracketGated
+    retirement     :=
+      "Per-core: ServiceRegistry mutations route through capability ops, \
+       serialised on the calling core by the AN9-D bracket. Cross-core \
+       retirement tracked against SM5."
+    retiredBy      := `SeLe4n.Kernel.serviceHasPathTo
+    auditReference := "SVC-M01 / AN4-H" }
+
+/-- AK2-K / AN5-D: timer-tick + replenishment-pipeline atomicity. -/
+def timerTickReplenishmentPipeline_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.timerTickWithBudget
+    status         := .perCoreBracketGated
+    retirement     :=
+      "Per-core: each core runs its own timer tick; the GIC EOI precedes the \
+       IRQ re-enable (AN8-C ordering) so the pop-due/refill/process pipeline \
+       is atomic per core. Cross-core retirement tracked against SM5."
+    retiredBy      := `SeLe4n.Kernel.replenishmentPipelineOrder
+    auditReference := "AK2-K / AN5-D" }
+
+/-- H-10 / AN2-D: typed-id disjointness. -/
+def typedIdDisjointness_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.typedIdDisjointness
+    status         := .perCoreBracketGated
+    retirement     :=
+      "Per-core: the invariant is a Prop on the immutable typed-id namespaces, \
+       preserved by the single Lean step storeObject; no cross-core mutable \
+       resource is involved. Tracked against SM5 for uniformity with the other \
+       runtime entries."
+    retiredBy      := `SeLe4n.Kernel.typedIdDisjointness
+    auditReference := "H-10 / AN2-D" }
+
+/-- AG-* / AN12-B: single-core kernel *state shape* — RETIRED by SM4 path-a. -/
+def architecture_singleCoreOnly_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Kernel.Architecture.ArchAssumption
+    status         := .pathARetired
+    retirement     :=
+      "Retired by SM4 path-a (v0.31.12, SM4.B): the singular `SchedulerState` \
+       fields are now per-core `Vector α numCores`, so the single-core state \
+       shape is structurally inapplicable. The per-core SMP shape is witnessed \
+       by `bootFromPlatform_smp_witness` (`∀ c : CoreId`). SM4.E.1 retired the \
+       boot-core-only `bootFromPlatform_singleCore_witness`."
+    retiredBy      := `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
+    auditReference := "AG-* baseline / AN12-B / SM4.E.3" }
+
+/-- CX-M03 / AN6-F: bootFromPlatform boot-core current — RETIRED by SM4 path-a. -/
+def bootFromPlatform_currentCore_is_zero_smpRetired : SmpRetiredAssumption :=
+  { identifier     := `SeLe4n.Platform.Boot.bootFromPlatform
+    status         := .pathARetired
+    retirement     :=
+      "Retired by SM4 path-a (v0.31.12, SM4.B): `bootFromPlatform`'s scheduler \
+       is per-core-shaped, so `bootFromPlatform_smp_currentAllNone` proves the \
+       boot current is `none` on every core (`∀ c : CoreId`). The boot-core- \
+       only `bootFromPlatform_singleCore_witness` was retired at SM4.E.1."
+    retiredBy      := `SeLe4n.Platform.Boot.bootFromPlatform_smp_currentAllNone
+    auditReference := "CX-M03 / AN6-F / SM4.E.4" }
+
+/-- WS-SM SM4.E.5: the retirement ledger.  One record per `smpLatentInventory`
+entry, in the same order, so `smpRetiredInventory_covers_latent` is a clean
+identifier-list equality. -/
+def smpRetiredInventory : List SmpRetiredAssumption :=
+  [ cspaceLookupMultiLevel_smpRetired
+  , cspaceCopyMoveMutate_smpRetired
+  , lifecyclePreRetypeCleanup_smpRetired
+  , serviceHasPathTo_smpRetired
+  , timerTickReplenishmentPipeline_smpRetired
+  , typedIdDisjointness_smpRetired
+  , architecture_singleCoreOnly_smpRetired
+  , bootFromPlatform_currentCore_is_zero_smpRetired ]
+
+/-- WS-SM SM4.E.5: tier-3-anchorable size witness — the retirement ledger has
+exactly 8 entries, one per `smpLatentInventory` entry.  Pinned so a future
+entry added to (or removed from) either inventory without updating the other
+fails this size check (in concert with `smpRetiredInventory_covers_latent`). -/
+theorem smpRetiredInventory_count : smpRetiredInventory.length = 8 := by decide
+
+/-- WS-SM SM4.E.5: structural mirror — the retirement ledger covers exactly
+the SMP-latent assumptions, in the same order.  This is the substantive
+content of the ledger: every latent single-core assumption has a retirement
+record, and no spurious record exists.  Together with `smpRetiredInventory_count`
+it pins the 1:1 correspondence with `smpLatentInventory`. -/
+theorem smpRetiredInventory_covers_latent :
+    smpRetiredInventory.map (·.identifier) = smpLatentInventory.map (·.identifier) := by
+  unfold smpRetiredInventory smpLatentInventory
+  simp only [List.map_cons, List.map_nil,
+    cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
+    lifecyclePreRetypeCleanup_smpRetired, serviceHasPathTo_smpRetired,
+    timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
+    architecture_singleCoreOnly_smpRetired,
+    bootFromPlatform_currentCore_is_zero_smpRetired,
+    cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+    timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
+    architecture_singleCoreOnly_smpLatent,
+    bootFromPlatform_currentCore_is_zero_smpLatent]
+
+/-- WS-SM SM4.E.5: NoDup on the retirement ledger's `identifier` projection.
+Inherits from `smpRetiredInventory_covers_latent` + the latent inventory's
+own `smpLatentInventory_identifiers_nodup`, but proved directly so a rename
+collision is caught at this file's build step. -/
+theorem smpRetiredInventory_identifiers_nodup :
+    (smpRetiredInventory.map (·.identifier)).Nodup := by
+  unfold smpRetiredInventory
+  simp only [List.map_cons, List.map_nil,
+    cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
+    lifecyclePreRetypeCleanup_smpRetired, serviceHasPathTo_smpRetired,
+    timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
+    architecture_singleCoreOnly_smpRetired,
+    bootFromPlatform_currentCore_is_zero_smpRetired]
+  decide
+
+/-- WS-SM SM4.E.5: NoDup on the `retiredBy` projection — every retirement
+record cites a distinct anchoring theorem (the two `.pathARetired` boot
+witnesses plus the six per-core-bracket consumers). -/
+theorem smpRetiredInventory_retiredBy_nodup :
+    (smpRetiredInventory.map (·.retiredBy)).Nodup := by
+  unfold smpRetiredInventory
+  simp only [List.map_cons, List.map_nil,
+    cspaceLookupMultiLevel_smpRetired, cspaceCopyMoveMutate_smpRetired,
+    lifecyclePreRetypeCleanup_smpRetired, serviceHasPathTo_smpRetired,
+    timerTickReplenishmentPipeline_smpRetired, typedIdDisjointness_smpRetired,
+    architecture_singleCoreOnly_smpRetired,
+    bootFromPlatform_currentCore_is_zero_smpRetired]
+  decide
+
+/-- WS-SM SM4.E.5: honest disposition pin — at SM4.E exactly **two** entries
+are genuinely retired by path-a (the scheduler-state shape and the boot-core
+current-thread shape); the other six are `perCoreBracketGated` (single-core
+property preserved per-core by the FFI bracket, full retirement gated on
+SM5+).  This count is the honest current state per the implement-the-improvement
+rule — it deliberately does NOT claim all 8 are retired.  WS-SM SM9 (release
+closure) flips the gated entries to retired as SM5..SM8 land and proves
+`smpRetiredInventory_complete`. -/
+theorem smpRetiredInventory_pathARetired_count :
+    (smpRetiredInventory.filter (fun e => decide (e.status = .pathARetired))).length = 2 := by
   decide
 
 end SeLe4n.Kernel.Concurrency

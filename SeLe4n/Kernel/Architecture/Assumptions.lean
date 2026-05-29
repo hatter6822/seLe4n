@@ -40,9 +40,10 @@ inductive ArchAssumption where
       the Rust HAL, but cross-core kernel transitions remain gated until
       WS-SM SM5 wires the per-core scheduler (transitions keyed on
       `Concurrency.currentCoreId`).  The consuming theorem is the
-      boot-core witness `bootFromPlatform_singleCore_witness` in
-      `SeLe4n.Kernel.CrossSubsystem` (restated over `currentOnCore
-      bootCoreId` at SM4.B; retired at SM4.E). -/
+      per-core SMP-shape witness `bootFromPlatform_smp_witness` in
+      `SeLe4n.Platform.Boot` (SM4.E.1 retired the boot-core-only
+      `bootFromPlatform_singleCore_witness` and SM4.E.2 replaced it with
+      this `∀ c : CoreId` form). -/
   | singleCoreOperation
   deriving Repr, DecidableEq
 
@@ -174,10 +175,12 @@ in `Invariant.lean`; the index is pointers only so this file has no
     full binding matrix.
 
     **WS-SM SM0.B**: extended with the `singleCoreOperation` arm —
-    consumer is `bootFromPlatform_singleCore_witness` in
-    `SeLe4n.Kernel.CrossSubsystem`, the boot-core witness over
-    `currentOnCore bootCoreId` (post-SM4.B `SchedulerState.current` is a
-    per-core `Vector`; the witness is retired at SM4.E). -/
+    consumer is `bootFromPlatform_smp_witness` in `SeLe4n.Platform.Boot`,
+    the per-core SMP-shape witness (`∀ c : CoreId`,
+    `currentOnCore c = none ∨ ∃ tid, … = some tid`).  **WS-SM SM4.E**
+    repointed this arm: it previously named the boot-core-only
+    `bootFromPlatform_singleCore_witness`, which SM4.E.1 retired once
+    SM4.B made `SchedulerState.current` a per-core `Vector`. -/
 def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .deterministicTimerProgress =>
       `SeLe4n.Kernel.Architecture.deterministicTimerProgress_consumed_by_advanceTimer
@@ -190,7 +193,7 @@ def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .irqRoutingTotality =>
       `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
   | .singleCoreOperation =>
-      `SeLe4n.Kernel.bootFromPlatform_singleCore_witness
+      `SeLe4n.Platform.Boot.bootFromPlatform_smp_witness
 
 /-- AN6-B: Total-mapping marker theorem — every architecture assumption has a
     named consumer. The proof is by case analysis over the finite inductive;

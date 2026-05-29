@@ -3037,4 +3037,20 @@ require any new entries — each entry's `smpDischarge` field already
 documents the runtime invariant that AN9-J's bring-up code preserves
 on a per-core basis.
 
+**WS-SM SM4.E** begins discharging this inventory as the SM4 path-a
+migration lands. SM4.B made `SchedulerState.current` a per-core
+`Vector`, so the boot-core-only single-core witness
+`bootFromPlatform_singleCore_witness` was **retired** (SM4.E.1) and
+replaced by the per-core SMP-shape witness
+`Platform.Boot.bootFromPlatform_smp_witness` (with the substantive
+companion `bootFromPlatform_smp_currentAllNone` — `currentOnCore c =
+none` on every core at boot). Entries 7 + 8 are repointed to these
+theorems (SM4.E.3 / SM4.E.4). SM4.E.5 adds the companion **retirement
+ledger** `smpRetiredInventory` (an 8-entry `SmpRetiredAssumption` list
+mirroring `smpLatentInventory` one-to-one by `identifier`, status
+`.pathARetired` for the 2 path-a-retired entries and
+`.perCoreBracketGated` for the 6 gated on SM5+; `_count = 8`,
+`_pathARetired_count = 2`). SM9 (release closure) adds
+`smpRetiredInventory_complete` once all 8 are discharged.
+
 Zero sorry/axiom/native_decide in production surface throughout.

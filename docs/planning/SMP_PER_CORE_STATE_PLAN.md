@@ -567,6 +567,45 @@ migrations.
 | SM4.E.4 | AN12-B inventory entry 8 (`bootFromPlatform_currentCore_is_zero_smpLatent`): same treatment | Inventory updated | S |
 | SM4.E.5 | Add `smpRetiredInventory` aggregator (8 entries, all retired). Pin size at 8. | New aggregator + size witness | M |
 
+> **SM4.E LANDED (v0.31.35).**  All five sub-tasks landed in one cut; closes
+> the SMP-H2 finding (retired — per-core fields replace the singular ones).
+> Purely additive at the proof surface (trace fixture byte-identical, 227/227;
+> zero new axioms).
+>
+> - **SM4.E.1** — `bootFromPlatform_singleCore_witness` **deleted** from
+>   `CrossSubsystem.lean`.  A discoverability retirement note remains at the
+>   CX-M03 site (the boot-core-only witness is structurally too weak for the
+>   per-core SMP shape after SM4.B).
+> - **SM4.E.2** — `bootFromPlatform_smp_witness` added in `Platform/Boot.lean`
+>   (NOT `CrossSubsystem.lean`: the replacement references `bootFromPlatform`,
+>   and `Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem`,
+>   so siting it in `CrossSubsystem` would cycle — same reason as the CX-M04
+>   bundle note).  Adapted from §3.8: the disjunct's `some` branch is
+>   `∃ tid, … = some tid` (forward-compatible — `idleThreadId c` does not exist
+>   until SM4.G), and `bootFromPlatform config : IntermediateState` so the path
+>   is `(bootFromPlatform config).state.scheduler.currentOnCore c`.  Substantive
+>   companion `bootFromPlatform_smp_currentAllNone` proves `= none` on every
+>   core (via `bootFromPlatform_scheduler_eq` + SM4.B.9
+>   `default_state_perCoreInitialized`) — the non-vacuous content the
+>   disjunctive witness rests on.
+> - **SM4.E.3 / SM4.E.4** — inventory entries 7 + 8 `smpDischarge` →
+>   "implemented in SM4 path-a"; `sourceTheorem`s repointed to
+>   `bootFromPlatform_smp_witness` (entry 7) and `bootFromPlatform_smp_currentAllNone`
+>   (entry 8 — distinct, so `smpLatentInventory_sourceTheorems_nodup` holds).
+>   The `Architecture.ArchAssumption.singleCoreOperation` consumer mapping is
+>   repointed to `bootFromPlatform_smp_witness` (a `Lean.Name` literal).
+> - **SM4.E.5** — `smpRetiredInventory` (8-entry `SmpRetiredAssumption` ledger
+>   mirroring `smpLatentInventory` one-to-one).  Witnesses: `_count = 8`,
+>   `_covers_latent`, `_identifiers_nodup`, `_retiredBy_nodup`, and (honest
+>   disposition) `_pathARetired_count = 2`.  "All retired" is the ledger's
+>   *purpose* (tracking the retirement of all 8 latent assumptions); per the
+>   honesty corollary only the 2 path-a-genuine entries are
+>   `.pathARetired`, the other 6 are `.perCoreBracketGated` pending SM5+.  SM9
+>   adds `smpRetiredInventory_complete` once all are discharged.
+>
+> Build-anchored in `Concurrency.Anchors` (SMP-H3) + tier-3 surface +
+> `SmpFoundationsSuite` / `ModelIntegritySuite` (both green).
+
 ### 5.6 Per-core invariant suite (within SM4.C.29 + .30)
 
 Two aggregate theorems wrap the per-core invariants:
@@ -666,10 +705,14 @@ No new Lean axioms.
       predicate-bearing sub-tasks are migrated with per-op SMP-preservation,
       the operation-only / frozen-state / no-predicate sub-tasks are
       documented N/A.)
-- [ ] `bootFromPlatform_singleCore_witness` retired.
-- [ ] `bootFromPlatform_smp_witness` proven.
-- [ ] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".
-- [ ] `smpRetiredInventory` aggregator added.
+- [x] `bootFromPlatform_singleCore_witness` retired. (SM4.E.1, v0.31.35)
+- [x] `bootFromPlatform_smp_witness` proven. (SM4.E.2, v0.31.35; in
+      `Platform/Boot.lean`, with the substantive companion
+      `bootFromPlatform_smp_currentAllNone`.)
+- [x] AN12-B inventory entries 7 + 8 marked as "implemented in SM4".
+      (SM4.E.3 / SM4.E.4, v0.31.35.)
+- [x] `smpRetiredInventory` aggregator added. (SM4.E.5, v0.31.35; 8 entries,
+      `_count = 8`, `_covers_latent`, `_pathARetired_count = 2`.)
 - [ ] Tier 1..3 green.
 - [ ] Tier 2 trace byte-identical at single-core scenario.
 - [ ] Aggregate SM4 closure CHANGELOG entry.

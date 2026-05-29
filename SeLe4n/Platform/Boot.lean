@@ -1700,6 +1700,70 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_scheduler_eq, foldObjects_scheduler, foldIrqs_scheduler, mkEmpty_state_eq_default]
 
+-- ============================================================================
+-- WS-SM SM4.E.2: SMP-shape boot witness (replaces the retired
+-- CrossSubsystem.bootFromPlatform_singleCore_witness)
+-- ============================================================================
+
+/-- **WS-SM SM4.E.2** (plan §3.8): substantive per-core boot witness — at
+    boot, **every** core's current-thread slot is `none`, not just the boot
+    core's.  This is the genuine SMP shape of `bootFromPlatform`'s scheduler
+    after the SM4.B path-a `Vector` replacement: the freshly-booted scheduler
+    holds no running thread on any of the `Concurrency.numCores` cores.
+
+    Proved by transporting `bootFromPlatform`'s scheduler to the default
+    scheduler (`bootFromPlatform_scheduler_eq`) and reading the per-core
+    initialisation witness (`Model.default_state_perCoreInitialized`, the
+    SM4.B.9 theorem).  Non-vacuous: it pins the actual boot value, not merely
+    the `Option`-inhabitation tautology.
+
+    This is the non-vacuous content behind the forward-compatible
+    `bootFromPlatform_smp_witness` below, and it is the `sourceTheorem` that
+    the AN12-B inventory entry `bootFromPlatform_currentCore_is_zero_smpLatent`
+    points at after SM4.E.
+
+    When WS-SM SM4.G (per-core idle-thread bootstrap, plan §3.7) lands, the
+    *current-state* fact this theorem records evolves into
+    `bootFromPlatform_all_cores_have_idle`
+    (`currentOnCore c = some (idleThreadId c)`); the disjunctive
+    `bootFromPlatform_smp_witness` below survives that change unchanged. -/
+theorem bootFromPlatform_smp_currentAllNone
+    (config : PlatformConfig) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (bootFromPlatform config).state.scheduler.currentOnCore c = none := by
+  rw [bootFromPlatform_scheduler_eq]
+  exact (default_state_perCoreInitialized c).1
+
+/-- **WS-SM SM4.E.2** (plan §3.8): the SMP-shape boot witness that replaces
+    the retired `SeLe4n.Kernel.bootFromPlatform_singleCore_witness`
+    (SM4.E.1).
+
+    The single-core witness only characterised the boot core's slot
+    (`currentOnCore bootCoreId`).  SM4.B (v0.31.12) flipped
+    `SchedulerState.current` to a per-core `Vector (Option ThreadId)
+    Concurrency.numCores`, so the structural property worth witnessing is now
+    the **per-core** one: for *every* core `c`, the boot scheduler's
+    current-thread slot is either `none` (no thread bootstrapped yet) or
+    `some tid` (a bootstrapped thread).  The `∀ c : CoreId` quantification is
+    the genuine improvement over the single-core form — it proves
+    `SchedulerState.current` is a per-core map, which the single slot could
+    not express.
+
+    The disjunctive shape mirrors plan §3.8.  Today the `none` disjunct holds
+    on every core (witnessed substantively by
+    `bootFromPlatform_smp_currentAllNone`); once SM4.G installs per-core idle
+    threads, the `some tid` disjunct holds with `tid = idleThreadId c` — so
+    this witness is **forward-compatible** and never needs a second
+    retirement.  It is the `sourceTheorem` of the AN12-B inventory entry
+    `architecture_singleCoreOnly_smpLatent` and the `retiredBy` anchor of the
+    `smpRetiredInventory` entry for `Architecture.ArchAssumption` after
+    SM4.E. -/
+theorem bootFromPlatform_smp_witness
+    (config : PlatformConfig) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (bootFromPlatform config).state.scheduler.currentOnCore c = none ∨
+      ∃ tid : SeLe4n.ThreadId,
+        (bootFromPlatform config).state.scheduler.currentOnCore c = some tid :=
+  Or.inl (bootFromPlatform_smp_currentAllNone config c)
+
 /-- V4-A2/A4: The post-boot state preserves CDT from default. -/
 theorem bootFromPlatform_cdt_eq (config : PlatformConfig) :
     (bootFromPlatform config).state.cdt =

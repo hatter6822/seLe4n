@@ -127,10 +127,11 @@ representation; useful as a surface anchor for downstream theorems. -/
 theorem bootCoreId_valid : bootCoreId.val < numCores :=
   bootCoreId.isLt
 
-/-- WS-SM SM0.E: `bootCoreId` has raw value `0`.  Used by the
-single-core-witness bridge (`CrossSubsystem.bootFromPlatform_singleCore_witness`)
-which assumes the boot core is core 0 in `SchedulerState.current`
-semantics. -/
+/-- WS-SM SM0.E: `bootCoreId` has raw value `0`.  Used by the per-core
+boot-state reasoning that the SMP-shape witness
+(`Platform.Boot.bootFromPlatform_smp_witness`, SM4.E) rests on: at boot the
+verified kernel drives core 0, so `currentOnCore bootCoreId` is the boot
+core's slot of `SchedulerState.current` (a per-core `Vector` since SM4.B). -/
 theorem bootCoreId_val_zero : bootCoreId.val = 0 := rfl
 
 /-- WS-SM SM0.E: `allCores` is non-empty.  Direct consequence of

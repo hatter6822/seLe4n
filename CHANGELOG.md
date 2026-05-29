@@ -1,3 +1,78 @@
+## v0.31.35 — WS-SM SM4.E: single-core witness retirement + per-core SMP boot witness + retirement ledger
+
+Closes §5.5 of `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (SM4.E, 2 PRs, 5
+sub-tasks, all LANDED) within the SM4 path-a per-core-state migration.
+Retires the boot-core-only single-core witness now that SM4.B made
+`SchedulerState.current` a per-core `Vector`, replaces it with the per-core
+SMP-shape witness, and adds the SM4.E.5 retirement ledger.  Closes the
+SMP-H2 audit finding (no longer applicable — per-core fields replace the
+singular ones).  Purely additive at the proof surface; **trace fixture
+byte-identical (227/227)**, zero new axioms.
+
+- **SM4.E.1 — `bootFromPlatform_singleCore_witness` RETIRED.** Deleted from
+  `SeLe4n/Kernel/CrossSubsystem.lean`.  The boot-core-only witness
+  (`currentOnCore bootCoreId = none ∨ ∃ tid, … = some tid`) is structurally
+  too weak to characterise the per-core SMP shape after SM4.B flipped
+  `SchedulerState.current` to `Vector (Option ThreadId) numCores`.  A
+  discoverability retirement note remains at the CX-M03 site pointing at the
+  boot-side replacement (the replacement cannot live in `CrossSubsystem`
+  because it references `bootFromPlatform`, and
+  `Platform.Boot → Kernel.API → Architecture.Invariant → CrossSubsystem` —
+  same import-cycle reason as the CX-M04 bundle note).
+
+- **SM4.E.2 — `bootFromPlatform_smp_witness` ADDED** (in `Platform/Boot.lean`,
+  plan §3.8).  The per-core SMP-shape witness: `∀ c : CoreId`, the booted
+  scheduler's `currentOnCore c` is `none ∨ ∃ tid, = some tid`.  The
+  `∀ c : CoreId` quantification is the genuine improvement over the
+  boot-core-only form — it proves `SchedulerState.current` is a per-core map.
+  The disjunctive shape is **forward-compatible**: today the `none` disjunct
+  holds on every core (witnessed substantively by the companion
+  `bootFromPlatform_smp_currentAllNone`, which proves `currentOnCore c = none`
+  for every core via `bootFromPlatform_scheduler_eq` + the SM4.B.9 per-core
+  default-init theorem); once SM4.G installs per-core idle threads the
+  `some tid` disjunct holds with `tid = idleThreadId c`, so the witness never
+  needs a second retirement.  Both theorems are axiom-clean.
+
+- **SM4.E.3 — AN12-B inventory entry 7** (`architecture_singleCoreOnly_smpLatent`):
+  `smpDischarge` rewritten to "implemented in SM4 path-a" (the singular
+  scheduler fields are now per-core `Vector`s, so the single-core *state shape*
+  is structurally retired); `sourceTheorem` repointed to
+  `Platform.Boot.bootFromPlatform_smp_witness`.  The
+  `Architecture.ArchAssumption.singleCoreOperation` consumer mapping is
+  repointed to the same witness (a `Lean.Name` literal, no import needed).
+
+- **SM4.E.4 — AN12-B inventory entry 8** (`bootFromPlatform_currentCore_is_zero_smpLatent`):
+  same treatment — `smpDischarge` → "implemented in SM4 path-a";
+  `sourceTheorem` repointed to `bootFromPlatform_smp_currentAllNone` (distinct
+  from entry 7's witness, so `smpLatentInventory_sourceTheorems_nodup` still
+  holds).  Stale `singleCoreWitness` prose (which cited the retired witness)
+  updated.
+
+- **SM4.E.5 — `smpRetiredInventory` ledger ADDED** (in `Concurrency/Assumptions.lean`).
+  An 8-entry retirement ledger mirroring `smpLatentInventory` one-to-one by
+  `identifier` (`smpRetiredInventory_covers_latent`), with a new
+  `SmpRetirementStatus` enum (`.pathARetired` / `.perCoreBracketGated`) and
+  `SmpRetiredAssumption` schema.  Witnesses: `_count = 8` (the size pin),
+  `_identifiers_nodup`, `_retiredBy_nodup`, `_covers_latent`, and — per the
+  implement-the-improvement honesty corollary — `_pathARetired_count = 2`
+  (the **honest** disposition: only the scheduler-state shape and boot-core
+  current are genuinely retired by SM4 path-a; the other six remain
+  `perCoreBracketGated`, single-core property preserved per-core by the FFI
+  interrupt-disabled dispatch bracket, full retirement gated on SM5+).  WS-SM
+  SM9 (release closure) flips the gated entries and proves
+  `smpRetiredInventory_complete` once SM5..SM8 land.
+
+- **Build-anchor + surface coverage**: `Concurrency/Anchors.lean` (the SMP-H3
+  gate) repoints the two inventory `@`-references and adds six for the ledger;
+  `tests/SmpFoundationsSuite.lean` and `tests/ModelIntegritySuite.lean`
+  migrate their CX-M03 / consumer-mapping checks to the replacement and add
+  ledger checks (`smp_foundations_suite` + `model_integrity_suite` green, 0
+  fails); `scripts/test_tier3_invariant_surface.sh` adds seven surface
+  anchors.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.5 (SM4.E)
+
 ## v0.31.34 — WS-SM SM4.D audit-pass-4: scope-correction of the audit-pass-3 completeness claim
 
 Fourth deep audit (verifying code, not docs).  **No code-soundness defect** —
