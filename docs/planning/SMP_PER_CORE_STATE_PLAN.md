@@ -427,6 +427,16 @@ invariant file. Pattern (from §3.4):
 | SM4.C.29 | Aggregate invariant `schedulerInvariant_perCore` | New aggregate | L |
 | SM4.C.30 | Cross-core `schedulerInvariant_perCore_pairwise` | Theorem | M |
 
+> **OPEN (tracked debt) — SM4.C.11**: the `Scheduler/Liveness/*.lean`
+> per-core forms (`eventuallyExits`, `higherBandExhausted`,
+> `rpi5CanonicalConfig`, `WCRTHypotheses`, `wcrtBound`, the `TraceModel`
+> step/selection predicates, … ~15 scheduler-reading decls) were **not**
+> delivered in SM4.C's landing — they remain `bootCoreId`-pinned (correct
+> single-core surface; SMP liveness needs `∀ c` forms).  Surfaced by the
+> SM4.D audit-pass-4 whole-tree re-scan (see §5.4); closure target stays
+> **SM4.C.11**.  This is a Scheduler-subsystem item, deliberately *not*
+> pulled into the SM4.D cross-subsystem cut.
+
 **Migration discipline**: each PR (covering 1-3 sub-tasks)
 follows the same pattern:
 
@@ -520,14 +530,32 @@ migrations.
 > `tests/CrossSubsystemPerCoreSuite.lean` (Tier-2 + Tier-3 wired).
 >
 > **audit-pass-3 (v0.31.33)**: an exhaustive whole-tree re-scan found one
-> further scheduler-reading definition outside the six subsystems —
+> further scheduler-reading definition adjacent to the six subsystems —
 > `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`, a
 > `Bool` runtime contract reading `currentOnCore` + `.runnable`).  Migrated
 > to `registerContextStableCheckOnCore` in the new staged module
 > `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle /
-> default witnesses), so **every** `SchedulerState`-reading definition in
-> the tree now has a per-core form or an explicit documented disposition.
+> default witnesses), so every `SchedulerState`-reading definition **within
+> SM4.D's six subsystems plus the adjacent Platform/RPi5 runtime contract**
+> now has a per-core form or an explicit documented disposition.
 > Partition gate: 42 staged-only modules.
+>
+> **audit-pass-4 (v0.31.34)**: scope-correction.  audit-pass-3's phrasing
+> ("every definition *in the tree*") was an overclaim.  The
+> Scheduler-subsystem **Liveness** predicates
+> (`Scheduler/Liveness/*.lean`: `eventuallyExits`, `higherBandExhausted`,
+> `rpi5CanonicalConfig`, `CanonicalDeploymentProgress`, `stepPrecondition`,
+> `stepPost`, `selectedAt`, `runnableAt`, `budgetAvailableAt`,
+> `WCRTHypotheses`, `wcrtBound`, … ~15 decls) also read scheduler state
+> (pinned to `bootCoreId`) and have no per-core form — but they are
+> **SM4.C.11** scope (the §5.3 row `Scheduler/Liveness/*.lean (incl.
+> WCRT)`), the Scheduler-subsystem migration, NOT the SM4.D cross-subsystem
+> boundary.  Their per-core SMP forms remain **open tracked debt against
+> SM4.C.11** (SMP liveness needs `∀ c` reasoning; the bootCoreId-pinned
+> predicates are correct single-core surface).  No SM4.D code change —
+> migrating Liveness inside this cut would misattribute SM4.C work and
+> break one-coherent-slice.  SM4.D's per-core cross-subsystem surface is
+> complete and axiom-clean.
 
 ### 5.5 Witness retirement + replacement (SM4.E, 2 PRs, 5 sub-tasks)
 

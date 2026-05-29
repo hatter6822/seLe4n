@@ -1,3 +1,64 @@
+## v0.31.34 — WS-SM SM4.D audit-pass-4: scope-correction of the audit-pass-3 completeness claim
+
+Fourth deep audit (verifying code, not docs).  **No code-soundness defect** —
+the SM4.D per-core cross-subsystem surface is complete, faithful, and
+axiom-clean.  This pass closes one **documentation-accuracy** defect: an
+*overclaim* introduced by audit-pass-3.
+
+- **The finding**: audit-pass-3 (v0.31.33) asserted that the whole-tree
+  re-scan left "**every** `SchedulerState`-reading definition in the tree"
+  with a per-core form or an explicit disposition.  A re-enumeration of
+  *every* `def`/`abbrev`/`structure` reading a scheduler accessor
+  (`currentOnCore` / `runQueueOnCore` / `replenishQueueOnCore` /
+  `activeDomainOnCore` / `domainTimeRemainingOnCore` / `.runnable`, direct
+  or transitive) confirms SM4.D's six subsystems **plus** the Platform/RPi5
+  runtime contract are fully covered — but the **Scheduler-subsystem
+  `Liveness/*.lean` predicates** (`eventuallyExits`, `higherBandExhausted`,
+  `rpi5CanonicalConfig`, `CanonicalDeploymentProgress`, the `TraceModel`
+  step/selection predicates `stepPrecondition`/`stepPost`/`selectedAt`/
+  `runnableAt`/`budgetAvailableAt`, `WCRTHypotheses`, `wcrtBound`, … ~15
+  decls across `BandExhaustion`/`RPi5CanonicalConfig`/`TraceModel`/`WCRT`)
+  also read scheduler state pinned to `bootCoreId` and have **no** per-core
+  form.
+
+- **Correct scope = SM4.C.11, not SM4.D**: those Liveness predicates are
+  the §5.3 plan row **SM4.C.11** (`Scheduler/Liveness/*.lean (incl. WCRT)`)
+  — the Scheduler-subsystem migration, *not* the SM4.D cross-subsystem
+  boundary (§5.4).  Migrating them inside the SM4.D cut would misattribute
+  SM4.C work and break the one-coherent-slice rule.
+
+- **Tracked debt (explicit closure target)**: per-core Liveness forms remain
+  **open against SM4.C.11**.  SMP liveness genuinely needs `∀ c` reasoning
+  (a runnable thread may be selected on any core), so the bootCoreId-pinned
+  predicates are correct *single-core* surface but incomplete for SMP.
+  Recorded in `docs/planning/SMP_PER_CORE_STATE_PLAN.md` §5.3 (OPEN marker at
+  the SM4.C.11 row) + §5.4 (audit-pass-4 note), per the
+  implement-the-improvement honesty corollary: a forced deferral is recorded
+  as tracked debt with an explicit closure target, never absorbed into a
+  falsely-strong public claim.
+
+- **No SM4.D code change**: the SM4.D modules are unchanged.  Re-verified
+  this pass: machine-checked semantic faithfulness (every per-core def body
+  reads `c`, never a stray `bootCoreId`; the compiling `Iff.rfl`/`simp`
+  boot-core bridges *prove* defeq/equivalence to the single-core forms;
+  `getEndpoint?_eq_some_iff` / `getNotification?_eq_some_iff` are
+  bidirectional, so the typed-accessor migration is semantically equivalent
+  with zero security impact); zero warnings on a clean rebuild; the
+  `budgetSufficientCheck` `private`→public widening broke no encapsulation
+  test; `#print axioms` clean; `lake exe cross_subsystem_per_core_suite`
+  34/34; full `test_full.sh` green; trace fixture byte-identical.
+
+- **Audit convergence**: ap1 = `lowEquivalent` indirect reader; ap2 =
+  preservation layer; ap3 = one Platform `Bool` check + two doc typos;
+  ap4 = one documentation overclaim (this entry), no code defect.
+
+Docs synced: `CLAUDE.md` + `AGENTS.md` (byte-identical SM4.D ap4 block +
+ap3 scope-correction), `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (§5.3
+SM4.C.11 OPEN marker + §5.4 ap4 note + ap3 scope-correction),
+`docs/CLAIM_EVIDENCE_INDEX.md`, `docs/WORKSTREAM_HISTORY.md`,
+`docs/codebase_map.json` (version field).  Refs:
+docs/planning/SMP_PER_CORE_STATE_PLAN.md §5.4.
+
 ## v0.31.33 — WS-SM SM4.D audit-pass-3: last missed scheduler-reader + doc-code mismatch fixes
 
 Third deep audit (verifying code, not docs).  No correctness defect in the

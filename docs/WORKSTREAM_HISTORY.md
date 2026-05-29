@@ -2119,13 +2119,39 @@ the §5.4 file list.  Migrated to `registerContextStableCheckOnCore` (+
 `registerContextStablePredOnCore`) in the new staged module
 `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle/default
 witnesses); `budgetSufficientCheck` widened `private`→public (pure proof-side
-`Bool`).  Every `SchedulerState`-reading definition now has a per-core form
-or an explicit disposition.  Also fixed two documentation defects: the stale
-"no `@[simp]`" claim (audit-pass-2 added 2 `RetypeTargetSmp` id-projection
-lemmas) and the "132"-anchor count (actually 121).  Final suite: 127 `#check`
-anchors, 19 examples, 34 runtime assertions.  42 staged-only modules;
-axiom-clean (full `#print axioms` sweep); Tier 0–3 + Rust green; trace fixture
-byte-identical.  Items deferred past v1.0.0 with correctness impact: NONE.
+`Bool`).  Every `SchedulerState`-reading definition **within SM4.D's six
+subsystems plus the adjacent Platform/RPi5 runtime contract** now has a
+per-core form or an explicit disposition.  Also fixed two documentation
+defects: the stale "no `@[simp]`" claim (audit-pass-2 added 2 `RetypeTargetSmp`
+id-projection lemmas) and the "132"-anchor count (actually 121).  Final suite:
+127 `#check` anchors, 19 examples, 34 runtime assertions.  42 staged-only
+modules; axiom-clean (full `#print axioms` sweep); Tier 0–3 + Rust green; trace
+fixture byte-identical.  Items deferred past v1.0.0 with correctness impact:
+NONE.
+
+**WS-SM SM4.D audit-pass-4 LANDED at v0.31.34** (fourth deep audit; no
+code-soundness defect — closes one documentation completeness *overclaim*
+introduced by audit-pass-3).  audit-pass-3's "every `SchedulerState`-reading
+definition *in the tree*" was too strong: a re-enumeration of every
+`def`/`abbrev`/`structure` reading a scheduler accessor confirms SM4.D's six
+subsystems + the Platform/RPi5 runtime contract are fully covered, but the
+Scheduler-subsystem **Liveness** predicates (`Scheduler/Liveness/*.lean`:
+`eventuallyExits`, `higherBandExhausted`, `rpi5CanonicalConfig`,
+`CanonicalDeploymentProgress`, the `TraceModel` step/selection predicates,
+`WCRTHypotheses`, `wcrtBound`, … ~15 decls) also read scheduler state
+(pinned to `bootCoreId`) with no per-core form.  These are **SM4.C.11** scope
+(plan §5.3, `Scheduler/Liveness/*.lean (incl. WCRT)`) — the Scheduler-subsystem
+migration, NOT the SM4.D cross-subsystem boundary.  Recorded as open tracked
+debt against SM4.C.11 (SMP liveness needs `∀ c` reasoning; the bootCoreId-pinned
+predicates are correct single-core surface); deliberately not pulled into the
+SM4.D cut (one-coherent-slice).  No SM4.D code change — the per-core
+cross-subsystem surface is complete and axiom-clean.  Re-verified: per-core
+bodies read `c` (no stray `bootCoreId`), compiling bridges prove defeq to the
+single-core forms, zero warnings, `#print axioms` clean, suite 34/34,
+`test_full.sh` green, trace fixture byte-identical.  Audit convergence: ap1 =
+`lowEquivalent`; ap2 = preservation layer; ap3 = one Platform `Bool` check +
+two doc typos; ap4 = one documentation overclaim, no code defect.  Items
+deferred past v1.0.0 with correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.33.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.34.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4274,9 +4274,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **WS-SM SM4.D audit-pass-3 LANDED at v0.31.33** (third deep audit; no
   correctness defect — closes one completeness gap + two doc-code mismatches):
-  - **Last missed scheduler-reader**: an exhaustive whole-tree re-scan
-    (handling line-end `.runnable` + indirect readers) found one
-    scheduler-reading def with no per-core form / no documented disposition:
+  - **Last missed scheduler-reader (within / adjacent to SM4.D's
+    subsystems)**: an exhaustive whole-tree re-scan (handling line-end
+    `.runnable` + indirect readers) found one further scheduler-reading
+    def adjacent to SM4.D's six subsystems with no per-core form:
     `registerContextStableCheck` (`Platform/RPi5/RuntimeContract.lean`, a
     `Bool` runtime contract reading `currentOnCore` + `.runnable`).
     Platform-layer (adjacent to SM4.D's six subsystems), so it fell outside
@@ -4284,9 +4285,14 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `registerContextStablePredOnCore`) in the new staged module
     `Platform/RPi5/RuntimeContractPerCore.lean` (boot-core bridge + idle /
     default witnesses); `budgetSufficientCheck` widened `private`→public
-    (pure proof-side `Bool`, no runtime/TCB impact).  Now **every**
-    `SchedulerState`-reading def in the tree has a per-core form or an
-    explicit disposition.  Partition gate: 42 staged-only modules.
+    (pure proof-side `Bool`, no runtime/TCB impact).  Now every
+    `SchedulerState`-reading definition **within SM4.D's six subsystems
+    plus the adjacent Platform/RPi5 runtime contract** has a per-core
+    form or an explicit disposition.  (The Scheduler-subsystem
+    `Liveness/*.lean` predicates also read scheduler state but are
+    **SM4.C.11** scope, not SM4.D — flagged accurately by audit-pass-4
+    below; audit-pass-3's "every def in the tree" phrasing was an
+    overclaim.)  Partition gate: 42 staged-only modules.
   - **Doc-code fix #1**: audit-pass-1's "no `@[simp]` in the SM4.D modules"
     was stale — audit-pass-2 added two `@[simp]` `RetypeTargetSmp`
     id-projection lemmas (correct, mirroring single-core `mkRetypeTarget_id`);
@@ -4297,6 +4303,56 @@ documentation lives under `docs/` and `docs/gitbook/`.
   - Comprehensive `#print axioms` sweep over all SM4.D-module theorems:
     zero `sorryAx`/`native`/`unsafe`; zero warnings on clean rebuild; AK7
     all pass; Tier 0–3 + Rust green; trace fixture byte-identical.
+
+  **WS-SM SM4.D audit-pass-4 LANDED at v0.31.34** (fourth deep audit; no
+  code-soundness defect — the SM4.D per-core cross-subsystem surface is
+  complete, faithful, and axiom-clean.  Closes one documentation
+  completeness *overclaim* introduced by audit-pass-3, per the
+  implement-the-improvement rule's honesty corollary: a forced deferral
+  must be recorded as tracked debt with an explicit closure target, never
+  absorbed into a falsely-strong public claim):
+  - **Scope correction (the finding)**: audit-pass-3 asserted the
+    whole-tree re-scan left "**every** `SchedulerState`-reading def in the
+    tree" with a per-core form or disposition.  A re-enumeration of *every*
+    `def`/`abbrev`/`structure` reading a scheduler accessor
+    (`currentOnCore` / `runQueueOnCore` / `replenishQueueOnCore` /
+    `activeDomainOnCore` / `domainTimeRemainingOnCore` / `.runnable`,
+    direct or transitive) confirms SM4.D's six subsystems + the Platform/
+    RPi5 runtime contract are fully covered — BUT the Scheduler-subsystem
+    **Liveness** predicates (`SeLe4n/Kernel/Scheduler/Liveness/*.lean`:
+    `eventuallyExits`, `higherBandExhausted`, `rpi5CanonicalConfig`,
+    `CanonicalDeploymentProgress`, `stepPrecondition`, `stepPost`,
+    `selectedAt`, `runnableAt`, `budgetAvailableAt`,
+    `countHigherOrEqualEffectivePriority`, `maxBudgetInBand`,
+    `maxPeriodInBand`, `bucketPosition`, `WCRTHypotheses`, `wcrtBound` —
+    ~15 decls across `BandExhaustion`/`RPi5CanonicalConfig`/`TraceModel`/
+    `WCRT`) read scheduler state pinned to `bootCoreId` and have **no**
+    per-core form.  These are explicitly **SM4.C.11** scope
+    (`Scheduler/Liveness/*.lean (incl. WCRT)` — plan §5.3 table), the
+    Scheduler-subsystem migration, NOT the SM4.D cross-subsystem boundary
+    (§5.4).  Migrating them inside the SM4.D cut would misattribute SM4.C
+    work and break the one-coherent-slice rule.
+  - **Tracked debt (explicit closure target = SM4.C.11)**: per-core
+    Liveness forms remain open.  SMP liveness genuinely needs `∀ c`
+    reasoning (a runnable thread may be selected on any core), so the
+    bootCoreId-pinned predicates are correct *single-core* surface but
+    incomplete for SMP.  Recorded as tracked debt against **SM4.C.11**
+    (plan §5.3) — out of the SM4.D one-coherent-slice scope; not an SM4.D
+    correctness gap.  The SM4.D modules are unchanged: no code edit, the
+    per-core cross-subsystem surface is complete and axiom-clean.
+  - **Re-verification (no new logic error — findings have converged)**:
+    machine-checked semantic faithfulness (every per-core def body reads
+    `c`, never a stray `bootCoreId`; the compiling `Iff.rfl` / `simp`
+    boot-core bridges *prove* defeq/equivalence to the single-core forms;
+    `getEndpoint?_eq_some_iff` / `getNotification?_eq_some_iff` are
+    bidirectional, so the typed-accessor migration is semantically
+    equivalent with zero security impact); zero warnings on a clean
+    rebuild; the `budgetSufficientCheck` `private`→public widening broke no
+    encapsulation test; `#print axioms` clean; suite 34/34; full
+    `test_full.sh` green; trace fixture byte-identical.  Audit convergence:
+    ap1 = `lowEquivalent`; ap2 = preservation layer; ap3 = one Platform
+    `Bool` check + two doc typos; ap4 = one documentation overclaim
+    (this), no code defect.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
