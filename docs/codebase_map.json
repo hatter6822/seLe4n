@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/gallant-darwin-zWsYi",
-      "commit_sha": "e2c177741e4612a891f76ea96ff455d4401ff524",
-      "tree_sha": "ce9e123eadd27868e35a553de75a03d63e1d6a9f",
-      "committed_at_utc": "2026-05-29T08:03:28+00:00"
+      "commit_sha": "68f82b4a595d20c68a73552e53efa91c5fd42e5d",
+      "tree_sha": "6d86c4ef609b925bcd29e016dda2a1fe2267593a",
+      "committed_at_utc": "2026-05-29T18:23:53+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ab3ee85fa1b06b6a77dd1ec25d82089beb912489e5391df80f332899642ba31a"
+    "source_digest": "d771c72a42666ddfd2a8e6759722e39c08dafcc1000d7261c9de50ad6c15ea8f"
   },
   "summary": {
     "module_count": 256,
@@ -27,7 +27,7 @@
     "version": "0.31.37",
     "lean_toolchain": "v4.28.0",
     "production_files": 209,
-    "production_loc": 146536,
+    "production_loc": 146569,
     "test_files": 47,
     "test_loc": 31886,
     "proved_theorem_lemma_decls": 4625,
@@ -85748,7 +85748,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatformWithIdleThreads",
-          "line": 1942,
+          "line": 1975,
           "called": [
             "IntermediateState",
             "PlatformConfig",
@@ -85760,7 +85760,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_currentOnCore_frame",
-          "line": 1947,
+          "line": 1980,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85773,7 +85773,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_objects_frame",
-          "line": 1961,
+          "line": 1994,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85788,7 +85788,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_installs",
-          "line": 1979,
+          "line": 2012,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85807,7 +85807,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_all_cores_have_idle",
-          "line": 2011,
+          "line": 2044,
           "called": [
             "CoreId",
             "PlatformConfig",
@@ -85826,7 +85826,7 @@
         {
           "kind": "def",
           "name": "idleSlotsFreshAt",
-          "line": 2030,
+          "line": 2063,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85838,7 +85838,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_objects_frame_of_not_idle",
-          "line": 2038,
+          "line": 2071,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85853,7 +85853,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_preserves_platform_objects",
-          "line": 2059,
+          "line": 2092,
           "called": [
             "KernelObject",
             "ObjId",
@@ -85871,7 +85871,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_runQueueOnCore",
-          "line": 2077,
+          "line": 2110,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85884,7 +85884,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_runQueueOnCore",
-          "line": 2086,
+          "line": 2119,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85897,7 +85897,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_runnable_nil",
-          "line": 2101,
+          "line": 2134,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -85918,7 +85918,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundle",
-          "line": 2121,
+          "line": 2154,
           "called": [
             "PlatformConfig",
             "bootCoreId",
@@ -85936,7 +85936,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_valid",
-          "line": 2142,
+          "line": 2175,
           "called": [
             "PlatformConfig",
             "allTablesInvExtK",
@@ -85950,7 +85950,7 @@
         {
           "kind": "theorem",
           "name": "installIdleThread_machine",
-          "line": 2156,
+          "line": 2189,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85960,7 +85960,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_machine",
-          "line": 2161,
+          "line": 2194,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85972,7 +85972,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_domainTimeRemainingOnCore",
-          "line": 2173,
+          "line": 2206,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -85986,7 +85986,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_activeDomainOnCore",
-          "line": 2186,
+          "line": 2219,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -86000,7 +86000,7 @@
         {
           "kind": "theorem",
           "name": "foldl_installIdleThread_domainSchedule",
-          "line": 2200,
+          "line": 2233,
           "called": [
             "CoreId",
             "IntermediateState",
@@ -86013,7 +86013,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdt_eq",
-          "line": 2212,
+          "line": 2245,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86029,7 +86029,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_services_eq",
-          "line": 2219,
+          "line": 2252,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86045,7 +86045,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_serviceRegistry_eq",
-          "line": 2226,
+          "line": 2259,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86061,7 +86061,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_interfaceRegistry_eq",
-          "line": 2233,
+          "line": 2266,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86077,7 +86077,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_asidTable_eq",
-          "line": 2240,
+          "line": 2273,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86093,7 +86093,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_tlb_eq",
-          "line": 2247,
+          "line": 2280,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86109,7 +86109,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_physicalAddressWidth",
-          "line": 2257,
+          "line": 2290,
           "called": [
             "PlatformConfig",
             "applyMachineConfig_physicalAddressWidth",
@@ -86120,7 +86120,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_machine_non_config_fields",
-          "line": 2286,
+          "line": 2319,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86136,7 +86136,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_currentThreadInActiveDomain",
-          "line": 2301,
+          "line": 2334,
           "called": [
             "PlatformConfig",
             "activeDomainOnCore",
@@ -86153,7 +86153,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull",
-          "line": 2328,
+          "line": 2361,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86184,7 +86184,7 @@
         {
           "kind": "theorem",
           "name": "foldIrqs_capabilityRefs",
-          "line": 2384,
+          "line": 2417,
           "called": [
             "IntermediateState",
             "IrqEntry",
@@ -86195,7 +86195,7 @@
         {
           "kind": "theorem",
           "name": "applyMachineConfig_capabilityRefs_eq",
-          "line": 2391,
+          "line": 2424,
           "called": [
             "IntermediateState",
             "MachineConfig",
@@ -86206,7 +86206,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_capabilityRefs_eq",
-          "line": 2395,
+          "line": 2428,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86221,7 +86221,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_cdtNodeSlot_eq",
-          "line": 2404,
+          "line": 2437,
           "called": [
             "PlatformConfig",
             "SystemState",
@@ -86237,7 +86237,7 @@
         {
           "kind": "def",
           "name": "bootSafeObject",
-          "line": 2445,
+          "line": 2478,
           "called": [
             "KernelObject",
             "bitsConsumed",
@@ -86256,7 +86256,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 2477,
+          "line": 2510,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -86266,7 +86266,7 @@
         {
           "kind": "theorem",
           "name": "bootSafeObject_admits_rpi5BootVSpaceRoot",
-          "line": 2485,
+          "line": 2518,
           "called": [
             "bootSafeObject",
             "rpi5BootVSpaceRoot",
@@ -86276,7 +86276,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 2516,
+          "line": 2549,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -86287,7 +86287,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 2529,
+          "line": 2562,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -86295,7 +86295,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 2540,
+          "line": 2573,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -86314,7 +86314,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 2568,
+          "line": 2601,
           "called": [
             "KernelObject",
             "ObjId",
@@ -86333,7 +86333,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 2589,
+          "line": 2622,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -86351,7 +86351,7 @@
         {
           "kind": "theorem",
           "name": "idleSlotsFreshAt_of_initialObjects_below_base",
-          "line": 2624,
+          "line": 2657,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -86377,7 +86377,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 2661,
+          "line": 2694,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -86395,7 +86395,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 2730,
+          "line": 2763,
           "called": [
             "ObjId",
             "PlatformConfig",
@@ -86489,7 +86489,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 3216,
+          "line": 3249,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
