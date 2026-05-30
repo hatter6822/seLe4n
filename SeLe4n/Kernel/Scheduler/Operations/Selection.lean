@@ -559,19 +559,54 @@ theorem chooseThread_eq_chooseThreadOnCore_bootCore (st : SystemState) :
        | .error e => .error e
        | .ok result => .ok (result, st)) := rfl
 
+/-- WS-SM SM5.A (budget-aware companion to `chooseThreadOnCore`): per-core
+SchedContext-aware thread selection.
+
+The per-core analogue of `chooseThreadEffective`: selects the
+highest-*effective*-priority runnable thread in core `c`'s active domain that
+also has sufficient CBS budget, reading only core `c`'s run-queue slot and
+active-domain slot (plus the global object store for the SchedContext/budget
+lookups, which is held under the implicit ObjStore lock like every
+transition).  Pure read.
+
+Unlike `chooseThreadOnCore` (which mirrors the non-budget `chooseThread`),
+this respects CBS budgets via `hasSufficientBudget` — a thread whose
+SchedContext budget is exhausted is **not** selected.  The legacy
+`chooseThreadEffective` is this function specialised to `bootCoreId` and
+lifted into the `Kernel` monad.  Returns `Except KernelError (Option
+ThreadId)` for the same fail-closed reason as `chooseThreadOnCore`. -/
+def chooseThreadEffectiveOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError (Option SeLe4n.ThreadId) :=
+  match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
+      (st.scheduler.activeDomainOnCore c) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some (tid, _, _)) => .ok (some tid)
+
 /-- Z4-D/E: SchedContext-aware thread selection.
 
 Uses `chooseBestInBucketEffective` which filters by budget eligibility and
 resolves effective priorities from SchedContext objects. This is used by the
 extended scheduler operations (`scheduleEffective`, `timerTickWithBudget`,
 `handleYieldWithBudget`). The original `chooseThread` is preserved for
-backward compatibility with existing preservation proofs. -/
+backward compatibility with existing preservation proofs.
+
+WS-SM SM5.A: now defined as the per-core `chooseThreadEffectiveOnCore`
+specialised to the boot core (symmetric with the `chooseThread` migration). -/
 def chooseThreadEffective : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+    match chooseThreadEffectiveOnCore st bootCoreId with
     | .error e => .error e
-    | .ok none => .ok (none, st)
-    | .ok (some (tid, _, _)) => .ok (some tid, st)
+    | .ok result => .ok (result, st)
+
+/-- WS-SM SM5.A: the legacy `chooseThreadEffective` is exactly the per-core
+budget-aware selection specialised to the boot core, lifted into the `Kernel`
+monad. `rfl` by definition. -/
+theorem chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore (st : SystemState) :
+    chooseThreadEffective st =
+      (match chooseThreadEffectiveOnCore st bootCoreId with
+       | .error e => .error e
+       | .ok result => .ok (result, st)) := rfl
 
 /-- Z4-D/E: `chooseThreadEffective` is read-only — preserves state. -/
 theorem chooseThreadEffective_preserves_state
@@ -579,7 +614,7 @@ theorem chooseThreadEffective_preserves_state
     (next : Option SeLe4n.ThreadId)
     (hStep : chooseThreadEffective st = .ok (next, st')) :
     st' = st := by
-  unfold chooseThreadEffective at hStep
+  unfold chooseThreadEffective chooseThreadEffectiveOnCore at hStep
   cases hPick : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>

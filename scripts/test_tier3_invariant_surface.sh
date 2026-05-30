@@ -2983,6 +2983,34 @@ open SeLe4n.Kernel
 #check @chooseThreadOnCoreSelects
 #check @chooseThreadOnCoreIdleFallback
 
+-- SM5.A.3 — selection optimality (§3.1.1) + literal preserves-wellFormed anchor.
+#check @chooseThreadOnCore_selects_highest
+#check @chooseThreadOnCore_preserves_wellFormed
+
+-- SM5.A.2 — run-queue-lock total order + §4.4 level.
+#check @RunQueueLockId.le
+#check @RunQueueLockId.lt
+#check @RunQueueLockId.le_refl
+#check @RunQueueLockId.le_trans
+#check @RunQueueLockId.le_antisymm
+#check @RunQueueLockId.le_total
+#check @RunQueueLockId.lt_irrefl
+#check @RunQueueLockId.lt_asymm
+#check @RunQueueLockId.runQueueLockLevel
+#check @RunQueueLockId.objectLockLevels_lt_runQueueLockLevel
+
+-- SM5.A §6 — budget-aware companion `chooseThreadEffectiveOnCore`.
+#check @chooseThreadEffectiveOnCore
+#check @chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore
+#check @chooseThreadEffectiveOnCore_frame
+#check @chooseThreadEffectiveOnCore_independent_of_setRunQueueOnCore
+#check @chooseThreadEffectiveOnCore_ok_of_runnableTCBs
+#check @chooseThreadEffectiveOnCore_some_mem_runQueueOnCore
+#check @chooseThreadEffectiveOnCore_selected_has_budget
+#check @chooseThreadEffectiveOnCore_none_no_eligible
+#check @chooseThreadEffectiveOnCoreSelects
+#check @chooseThreadEffectiveOnCoreIdleFallback
+
 -- SM5.A support: RunQueue.ofList well-formedness (production helper).
 #check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
 EOF'

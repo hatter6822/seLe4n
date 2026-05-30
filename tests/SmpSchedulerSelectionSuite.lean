@@ -77,6 +77,32 @@ open SeLe4n.Testing
 #check @chooseThreadOnCoreSelects
 #check @chooseThreadOnCoreIdleFallback
 
+-- SM5.A.3 selection optimality (§3.1.1) + the literal preserves-wellFormed anchor:
+#check @chooseThreadOnCore_selects_highest
+#check @chooseThreadOnCore_preserves_wellFormed
+
+-- SM5.A.2 run-queue-lock total order (+ §4.4 level):
+#check @RunQueueLockId.le
+#check @RunQueueLockId.lt
+#check @RunQueueLockId.le_refl
+#check @RunQueueLockId.le_trans
+#check @RunQueueLockId.le_antisymm
+#check @RunQueueLockId.le_total
+#check @RunQueueLockId.lt_irrefl
+#check @RunQueueLockId.lt_asymm
+#check @RunQueueLockId.runQueueLockLevel
+#check @RunQueueLockId.objectLockLevels_lt_runQueueLockLevel
+
+-- Budget-aware companion (§6):
+#check @chooseThreadEffectiveOnCore
+#check @chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore
+#check @chooseThreadEffectiveOnCore_frame
+#check @chooseThreadEffectiveOnCore_independent_of_setRunQueueOnCore
+#check @chooseThreadEffectiveOnCore_ok_of_runnableTCBs
+#check @chooseThreadEffectiveOnCore_some_mem_runQueueOnCore
+#check @chooseThreadEffectiveOnCore_selected_has_budget
+#check @chooseThreadEffectiveOnCore_none_no_eligible
+
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
 -- ============================================================================
@@ -145,8 +171,41 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
     tid ∈ (st.scheduler.runQueueOnCore c).toList :=
   chooseThreadOnCore_some_mem_of_schedulerInvariant st c tid hInv h
 
+-- SM5.A.3 (§3.1.1): selection optimality over the maximum-priority bucket.
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hr : runnableThreadsAreTCBsOnCore st c)
+    (hSel : chooseThreadOnCore st c = .ok (some tid))
+    (hSelTcb : st.getTcb? tid = some selTcb) :
+    ∀ t ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket, ∀ tcb : TCB,
+      st.getTcb? t = some tcb → tcb.domain = st.scheduler.activeDomainOnCore c →
+        isBetterCandidate selTcb.priority selTcb.deadline tcb.priority tcb.deadline = false :=
+  chooseThreadOnCore_selects_highest st c tid selTcb hwf hr hSel hSelTcb
+
+-- SM5.A.2: the run-queue-lock total order witnesses (decidable inhabitation).
+example : RunQueueLockId.runQueueLockLevel = 10 := rfl
+example (n : Nat) (h : n ≤ 9) : n < RunQueueLockId.runQueueLockLevel :=
+  RunQueueLockId.objectLockLevels_lt_runQueueLockLevel n h
+
+-- Budget variant: the property unique to the budget-aware selector — a
+-- dispatched thread genuinely has CBS budget.
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (h : chooseThreadEffectiveOnCore st c = .ok (some tid)) :
+    ∃ tcb : TCB, st.getTcb? tid = some tcb ∧ hasSufficientBudget st tcb = true
+      ∧ tcb.domain = st.scheduler.activeDomainOnCore c :=
+  chooseThreadEffectiveOnCore_selected_has_budget st c tid hwf h
+
+-- Budget variant: completeness (idle fallback only when nothing in-domain has budget).
+example (st : SystemState) (c : CoreId)
+    (h : chooseThreadEffectiveOnCore st c = .ok none)
+    (tid : SeLe4n.ThreadId) (htid : tid ∈ (st.scheduler.runQueueOnCore c).toList)
+    (tcb : TCB) (htcb : st.getTcb? tid = some tcb) :
+    ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
+  chooseThreadEffectiveOnCore_none_no_eligible st c h tid htid tcb htcb
+
 -- ============================================================================
--- §3  Runtime assertions (Tier-2): the six SM5.A.8 scenarios + lock-set
+-- §3  Runtime assertions (Tier-2): the SM5.A.8 scenarios + lock-set + budget
 -- ============================================================================
 
 /-- Minimal test TCB at `tid`, priority `prio`, scheduling domain `dom`. -/
@@ -192,6 +251,37 @@ core `c ≠ bootCoreId` — the whole point of the `(c : CoreId)` parameter. -/
 private def stCore1Runnable : SystemState :=
   let base := (BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).build
   { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(tidA, ⟨10⟩)]) }
+
+/-- A test TCB at `tid`, priority `prio`, domain `dom`, and explicit deadline. -/
+private def mkTcbD (tid prio dom dl : Nat) : TCB :=
+  { mkTcb tid prio dom with deadline := ⟨dl⟩ }
+
+/-- EDF fixture: `tidA` and `tidB` share priority 10 but `tidB` has the earlier
+(smaller, non-zero) deadline, so EDF tie-breaking must pick `tidB`. -/
+private def stEdf : SystemState :=
+  (((BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcbD 100 10 0 5))).withObject
+    tidB.toObjId (.tcb (mkTcbD 101 10 0 3))).withRunnable [tidA, tidB]).build
+
+/-- Error-path fixture: the run queue references a "ghost" thread that does
+**not** resolve to a TCB in the object store, so the selector must surface a
+`schedulerInvariantViolation` (`.error`) rather than silently returning `none`. -/
+private def tidGhost : SeLe4n.ThreadId := ThreadId.ofNat 999
+private def stGhost : SystemState :=
+  (BootstrapBuilder.empty.withRunnable [tidGhost]).build
+
+/-- Budget fixture: `tidBound` is a runnable, in-domain TCB whose bound
+SchedContext has **exhausted** budget (`budgetRemaining = 0`).  The non-budget
+`chooseThreadOnCore` selects it (it ignores budget); the budget-aware
+`chooseThreadEffectiveOnCore` must reject it and fall back to idle. -/
+private def scId : SeLe4n.SchedContextId := SchedContextId.ofNat 300
+private def tidBound : SeLe4n.ThreadId := ThreadId.ofNat 200
+private def mkScExhausted (sc : SeLe4n.SchedContextId) : SeLe4n.Kernel.SchedContext :=
+  { scId := sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨10⟩, deadline := ⟨0⟩,
+    domain := ⟨0⟩, budgetRemaining := SeLe4n.Kernel.Budget.zero }
+private def stBudgetExhausted : SystemState :=
+  (((BootstrapBuilder.empty.withObject tidBound.toObjId
+      (.tcb { mkTcb 200 10 0 with schedContextBinding := .bound scId })).withObject
+      scId.toObjId (.schedContext (mkScExhausted scId))).withRunnable [tidBound]).build
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -255,12 +345,51 @@ private def runLockSetChecks : IO Unit := do
     (decide ((chooseThreadOnCoreLockSet bootCoreId).all (fun p => p.1.core == bootCoreId)))
   assertBool "every core's chooseThread lock-set is a singleton"
     (allCores.all (fun c => decide ((chooseThreadOnCoreLockSet c).length = 1)))
+  -- SM5.A.2 lock-order: the run-queue lock total order is decidable and total.
+  assertBool "run-queue lock order is total over allCores"
+    (allCores.all (fun a => allCores.all (fun b =>
+      decide ((⟨a⟩ : RunQueueLockId) ≤ ⟨b⟩) || decide ((⟨b⟩ : RunQueueLockId) ≤ ⟨a⟩))))
+  assertBool "runQueueLockLevel (10) exceeds every object-lock level (0..9)"
+    ((List.range 10).all (fun n => decide (n < RunQueueLockId.runQueueLockLevel)))
+
+/-- §3.8: advanced scenarios — selector error path, EDF tie-break, and the
+budget-aware selector's CBS-budget rejection (the budget-guarantee in action). -/
+private def runAdvancedScenarios : IO Unit := do
+  IO.println "--- §3.8 error path / EDF / budget-aware selection ---"
+  -- Error path: a run queue referencing a non-TCB "ghost" thread must error
+  -- (`.error schedulerInvariantViolation`), i.e. neither select nor idle-fall-back.
+  assertBool "error path: a corrupt run queue selects nothing"
+    (!decide (chooseThreadOnCoreSelects stGhost bootCoreId tidGhost))
+  assertBool "error path: a corrupt run queue does NOT report idle fallback (it errors)"
+    (!decide (chooseThreadOnCoreIdleFallback stGhost bootCoreId))
+  -- EDF tie-break: equal priority, B has earlier deadline ⇒ B wins.
+  assertBool "EDF: equal-priority thread B (deadline 3) beats A (deadline 5)"
+    (decide (chooseThreadOnCoreSelects stEdf bootCoreId tidB))
+  assertBool "EDF: the later-deadline thread A is NOT selected"
+    (!decide (chooseThreadOnCoreSelects stEdf bootCoreId tidA))
+  -- Budget guarantee: the non-budget selector picks the exhausted-budget thread,
+  -- but the budget-aware selector rejects it and falls back to idle.
+  assertBool "budget: non-budget chooseThreadOnCore selects the exhausted-budget thread"
+    (decide (chooseThreadOnCoreSelects stBudgetExhausted bootCoreId tidBound))
+  assertBool "budget: budget-aware chooseThreadEffectiveOnCore REJECTS it (idle fallback)"
+    (decide (chooseThreadEffectiveOnCoreIdleFallback stBudgetExhausted bootCoreId))
+  assertBool "budget: budget-aware selector does NOT select the exhausted-budget thread"
+    (!decide (chooseThreadEffectiveOnCoreSelects stBudgetExhausted bootCoreId tidBound))
+  -- Budget positive case: an *unbound* thread (trivially in-budget) IS selected
+  -- by the budget-aware selector — confirming the rejection above is the budget
+  -- filter at work, not a blanket failure.
+  assertBool "budget: budget-aware selector DOES select an unbound (in-budget) thread"
+    (decide (chooseThreadEffectiveOnCoreSelects stSingle bootCoreId tidA))
+  assertBool "budget: budget-aware selector and non-budget selector agree on an all-unbound queue"
+    (decide (chooseThreadEffectiveOnCoreSelects stSingle bootCoreId tidA)
+      && decide (chooseThreadOnCoreSelects stSingle bootCoreId tidA))
 
 def runSmpSchedulerSelectionChecks : IO Unit := do
   IO.println "WS-SM SM5.A — Per-core chooseThread suite"
   IO.println "===================================="
   runSelectionScenarios
   runLockSetChecks
+  runAdvancedScenarios
   IO.println "===================================="
   IO.println "All SM5.A per-core chooseThread checks PASS."
 

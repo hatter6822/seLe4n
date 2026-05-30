@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/sharp-mayer-tAap4",
-      "commit_sha": "82ac78e6e88d78f5331a4692bff39cf452f1224f",
-      "tree_sha": "0898a5ae18ad9365030a50d93db08032c483658b",
-      "committed_at_utc": "2026-05-29T20:18:48+00:00"
+      "commit_sha": "18d5404576b4c7be47cd3054a13197127db56e5e",
+      "tree_sha": "c1cb3b3285c8f2414f897e9bf2aaf399304c72f4",
+      "committed_at_utc": "2026-05-30T00:44:07+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "49a6ef8f561e09724ab8acea0b4cea8c3cba3bfac12d127623aa88dd5928f43b"
+    "source_digest": "950daa87794b9c447b965b26d414b1a83fa51caa028dbb5d337d59415ed6e892"
   },
   "summary": {
     "module_count": 258,
-    "declaration_count": 9214
+    "declaration_count": 9273
   },
   "readme_sync": {
-    "version": "0.31.38",
+    "version": "0.31.39",
     "lean_toolchain": "v4.28.0",
     "production_files": 210,
-    "production_loc": 147347,
+    "production_loc": 148034,
     "test_files": 48,
-    "test_loc": 32156,
-    "proved_theorem_lemma_decls": 4656,
+    "test_loc": 32285,
+    "proved_theorem_lemma_decls": 4688,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -17238,6 +17238,7 @@
           "line": 158,
           "called": [
             "LockId",
+            "le",
             "level"
           ]
         },
@@ -17246,7 +17247,8 @@
           "name": "<anonymous:instance:164>",
           "line": 164,
           "called": [
-            "LockId"
+            "LockId",
+            "lt"
           ]
         },
         {
@@ -18177,6 +18179,7 @@
           "line": 498,
           "called": [
             "LockSet",
+            "le",
             "leLockId_bool_total",
             "leLockId_bool_trans",
             "lockAcquireSequence"
@@ -66218,18 +66221,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean",
-      "declaration_count": 36,
+      "declaration_count": 79,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 55,
+          "line": 58,
           "called": []
         },
         {
           "kind": "structure",
           "name": "RunQueueLockId",
-          "line": 76,
+          "line": 79,
           "called": [
             "CoreId"
           ]
@@ -66237,7 +66240,7 @@
         {
           "kind": "def",
           "name": "chooseThreadOnCoreLockSet",
-          "line": 96,
+          "line": 99,
           "called": [
             "AccessMode",
             "CoreId",
@@ -66247,7 +66250,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCoreLockSet_length",
-          "line": 101,
+          "line": 104,
           "called": [
             "CoreId",
             "chooseThreadOnCoreLockSet",
@@ -66257,7 +66260,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCoreLockSet_read_only",
-          "line": 106,
+          "line": 109,
           "called": [
             "CoreId",
             "chooseThreadOnCoreLockSet",
@@ -66267,7 +66270,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCoreLockSet_core",
-          "line": 114,
+          "line": 117,
           "called": [
             "CoreId",
             "chooseThreadOnCoreLockSet",
@@ -66277,16 +66280,136 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCoreLockSet_keys_nodup",
-          "line": 123,
+          "line": 126,
           "called": [
             "CoreId",
             "chooseThreadOnCoreLockSet"
           ]
         },
         {
+          "kind": "namespace",
+          "name": "RunQueueLockId",
+          "line": 130,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "le",
+          "line": 147,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lt",
+          "line": 150,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:152>",
+          "line": 152,
+          "called": [
+            "RunQueueLockId",
+            "le"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:153>",
+          "line": 153,
+          "called": [
+            "RunQueueLockId",
+            "lt"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:155>",
+          "line": 155,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:157>",
+          "line": 157,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_refl",
+          "line": 161,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_trans",
+          "line": 164,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_antisymm",
+          "line": 168,
+          "called": [
+            "RunQueueLockId",
+            "ext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_total",
+          "line": 175,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lt_irrefl",
+          "line": 178,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lt_asymm",
+          "line": 182,
+          "called": [
+            "RunQueueLockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runQueueLockLevel",
+          "line": 190,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "objectLockLevels_lt_runQueueLockLevel",
+          "line": 196,
+          "called": [
+            "RunQueueLockId",
+            "runQueueLockLevel"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "chooseThreadOnCore_frame",
-          "line": 139,
+          "line": 213,
           "called": [
             "CoreId",
             "SystemState",
@@ -66298,7 +66421,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_independent_of_setRunQueueOnCore",
-          "line": 153,
+          "line": 227,
           "called": [
             "CoreId",
             "RunQueue",
@@ -66313,7 +66436,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_independent_of_setActiveDomainOnCore",
-          "line": 166,
+          "line": 240,
           "called": [
             "CoreId",
             "DomainId",
@@ -66328,7 +66451,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_independent_of_setCurrentOnCore",
-          "line": 181,
+          "line": 255,
           "called": [
             "CoreId",
             "SystemState",
@@ -66343,7 +66466,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_independent_of_write_off_lockSet",
-          "line": 197,
+          "line": 271,
           "called": [
             "CoreId",
             "RunQueue",
@@ -66357,7 +66480,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_perCore_independence",
-          "line": 214,
+          "line": 288,
           "called": [
             "CoreId",
             "RunQueue",
@@ -66370,7 +66493,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_some_ne_ok_none",
-          "line": 241,
+          "line": 315,
           "called": [
             "Deadline",
             "KernelObject",
@@ -66388,7 +66511,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_none_no_eligible",
-          "line": 271,
+          "line": 345,
           "called": [
             "KernelObject",
             "ObjId",
@@ -66404,7 +66527,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_ok_of_allTcb",
-          "line": 313,
+          "line": 387,
           "called": [
             "Deadline",
             "KernelObject",
@@ -66420,7 +66543,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem_aux",
-          "line": 335,
+          "line": 409,
           "called": [
             "Deadline",
             "KernelObject",
@@ -66438,7 +66561,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem",
-          "line": 387,
+          "line": 461,
           "called": [
             "Deadline",
             "KernelObject",
@@ -66454,7 +66577,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_none_imp_toList_none",
-          "line": 404,
+          "line": 478,
           "called": [
             "DomainId",
             "KernelObject",
@@ -66471,7 +66594,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_ok_of_allTcb",
-          "line": 421,
+          "line": 495,
           "called": [
             "DomainId",
             "KernelObject",
@@ -66494,7 +66617,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_result_mem",
-          "line": 446,
+          "line": 520,
           "called": [
             "Deadline",
             "DomainId",
@@ -66518,7 +66641,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_eq_none_imp_bucket_none",
-          "line": 474,
+          "line": 548,
           "called": [
             "CoreId",
             "SystemState",
@@ -66533,7 +66656,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_eq_some_imp_bucket_some",
-          "line": 489,
+          "line": 563,
           "called": [
             "CoreId",
             "SystemState",
@@ -66549,7 +66672,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_ok_of_bucket_ok",
-          "line": 511,
+          "line": 585,
           "called": [
             "CoreId",
             "Deadline",
@@ -66567,7 +66690,7 @@
         {
           "kind": "theorem",
           "name": "runnableThreadsAreTCBs_objects_get",
-          "line": 527,
+          "line": 601,
           "called": [
             "CoreId",
             "SystemState",
@@ -66583,7 +66706,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_ok_of_runnableTCBs",
-          "line": 544,
+          "line": 618,
           "called": [
             "CoreId",
             "SystemState",
@@ -66601,7 +66724,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_none_no_eligible",
-          "line": 560,
+          "line": 634,
           "called": [
             "CoreId",
             "SystemState",
@@ -66622,7 +66745,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_some_of_eligible",
-          "line": 583,
+          "line": 657,
           "called": [
             "CoreId",
             "SystemState",
@@ -66643,7 +66766,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_some_mem_runQueueOnCore",
-          "line": 606,
+          "line": 680,
           "called": [
             "CoreId",
             "SystemState",
@@ -66661,7 +66784,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_runQueueOnCore_wellFormed",
-          "line": 620,
+          "line": 694,
           "called": [
             "CoreId",
             "SystemState",
@@ -66673,9 +66796,55 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "chooseThreadOnCore_preserves_wellFormed",
+          "line": 709,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "chooseThreadOnCore",
+            "chooseThreadOnCore_some_mem_runQueueOnCore",
+            "runQueueOnCore",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadOnCore_selects_highest",
+          "line": 740,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "activeDomainOnCore",
+            "bucketFirst_fullScan_equivalence",
+            "chooseBestRunnableBy_none_no_eligible",
+            "chooseBestRunnableBy_optimal",
+            "chooseBestRunnableBy_result_fields",
+            "chooseBestRunnableInDomain",
+            "chooseThreadOnCore",
+            "chooseThreadOnCore_eq_some_imp_bucket_some",
+            "get",
+            "getTcb",
+            "isBetterCandidate",
+            "maxPriorityBucket",
+            "maxPriorityBucket_subset",
+            "membership_implies_flat",
+            "none",
+            "runQueueOnCore",
+            "runnableThreadsAreTCBsOnCore",
+            "runnableThreadsAreTCBs_objects_get",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
           "kind": "def",
           "name": "chooseThreadOnCoreSelects",
-          "line": 636,
+          "line": 803,
           "called": [
             "CoreId",
             "SystemState",
@@ -66685,8 +66854,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:644>",
-          "line": 644,
+          "name": "<anonymous:instance:811>",
+          "line": 811,
           "called": [
             "CoreId",
             "SystemState",
@@ -66699,7 +66868,7 @@
         {
           "kind": "def",
           "name": "chooseThreadOnCoreIdleFallback",
-          "line": 656,
+          "line": 823,
           "called": [
             "CoreId",
             "SystemState",
@@ -66709,8 +66878,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:659>",
-          "line": 659,
+          "name": "<anonymous:instance:826>",
+          "line": 826,
           "called": [
             "CoreId",
             "SystemState",
@@ -66720,9 +66889,56 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "chooseThreadEffectiveOnCoreSelects",
+          "line": 835,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "chooseThreadEffectiveOnCore"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:839>",
+          "line": 839,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCoreSelects",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "chooseThreadEffectiveOnCoreIdleFallback",
+          "line": 850,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "chooseThreadEffectiveOnCore",
+            "none"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:853>",
+          "line": 853,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCoreIdleFallback",
+            "none"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "chooseThreadOnCore_ok_of_schedulerInvariant",
-          "line": 674,
+          "line": 868,
           "called": [
             "CoreId",
             "SystemState",
@@ -66736,10 +66952,9 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_some_mem_of_schedulerInvariant",
-          "line": 683,
+          "line": 877,
           "called": [
             "CoreId",
-            "Kernel",
             "SystemState",
             "ThreadId",
             "chooseThreadOnCore",
@@ -66748,6 +66963,380 @@
             "schedulerInvariant_perCore",
             "schedulerInvariant_perCore_to_runQueueOnCoreWellFormed",
             "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableEffective_ok_of_allTcb",
+          "line": 898,
+          "called": [
+            "Deadline",
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "chooseBestRunnableEffective",
+            "cons",
+            "get",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "hasSufficientBudget_objects_congr",
+          "line": 918,
+          "called": [
+            "SystemState",
+            "TCB",
+            "getSchedContext",
+            "hasSufficientBudget"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveEffectivePrioDeadline_objects_congr",
+          "line": 926,
+          "called": [
+            "SystemState",
+            "TCB",
+            "getSchedContext",
+            "resolveEffectivePrioDeadline"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableEffective_objects_congr",
+          "line": 936,
+          "called": [
+            "Deadline",
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "chooseBestRunnableEffective",
+            "cons",
+            "get",
+            "hasSufficientBudget_objects_congr",
+            "none",
+            "resolveEffectivePrioDeadline_objects_congr",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestInBucketEffective_objects_congr",
+          "line": 966,
+          "called": [
+            "DomainId",
+            "RunQueue",
+            "SystemState",
+            "chooseBestInBucketEffective",
+            "chooseBestRunnableEffective_objects_congr",
+            "chooseBestRunnableInDomainEffective"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_frame",
+          "line": 977,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective_objects_congr",
+            "chooseThreadEffectiveOnCore",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_independent_of_setRunQueueOnCore",
+          "line": 988,
+          "called": [
+            "CoreId",
+            "RunQueue",
+            "SystemState",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_frame",
+            "setRunQueueOnCore",
+            "setRunQueueOnCore_activeDomainOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "bucketFirstEffective_fullScan_equivalence",
+          "line": 1003,
+          "called": [
+            "DomainId",
+            "RunQueue",
+            "SystemState",
+            "chooseBestInBucketEffective",
+            "chooseBestRunnableInDomainEffective",
+            "maxPriorityBucket",
+            "none",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableEffective_result_props_aux",
+          "line": 1016,
+          "called": [
+            "Deadline",
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "chooseBestRunnableEffective",
+            "cons",
+            "get",
+            "hasSufficientBudget",
+            "isBetterCandidate",
+            "none",
+            "resolveEffectivePrioDeadline",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableEffective_result_props",
+          "line": 1078,
+          "called": [
+            "Deadline",
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "chooseBestRunnableEffective",
+            "chooseBestRunnableEffective_result_props_aux",
+            "get",
+            "hasSufficientBudget",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestInBucketEffective_result_props",
+          "line": 1092,
+          "called": [
+            "Deadline",
+            "DomainId",
+            "Priority",
+            "RunQueue",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "bucketFirstEffective_fullScan_equivalence",
+            "chooseBestInBucketEffective",
+            "chooseBestRunnableEffective_result_props",
+            "chooseBestRunnableInDomainEffective",
+            "get",
+            "hasSufficientBudget",
+            "maxPriorityBucket",
+            "maxPriorityBucket_subset",
+            "membership_implies_flat",
+            "none",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_eq_some_imp_bucket_some",
+          "line": 1123,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective",
+            "chooseThreadEffectiveOnCore",
+            "none",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_ok_of_bucket_ok",
+          "line": 1144,
+          "called": [
+            "CoreId",
+            "Deadline",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective",
+            "chooseThreadEffectiveOnCore",
+            "none",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestInBucketEffective_ok_of_allTcb",
+          "line": 1158,
+          "called": [
+            "DomainId",
+            "RunQueue",
+            "SystemState",
+            "TCB",
+            "bucketFirstEffective_fullScan_equivalence",
+            "chooseBestInBucketEffective",
+            "chooseBestRunnableEffective_ok_of_allTcb",
+            "chooseBestRunnableInDomainEffective",
+            "get",
+            "maxPriorityBucket",
+            "maxPriorityBucket_subset",
+            "membership_implies_flat",
+            "none",
+            "toList",
+            "toObjId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_ok_of_runnableTCBs",
+          "line": 1183,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective_ok_of_allTcb",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_ok_of_bucket_ok",
+            "runQueueOnCore",
+            "runnableThreadsAreTCBsOnCore",
+            "runnableThreadsAreTCBs_objects_get",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_some_mem_runQueueOnCore",
+          "line": 1195,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective_result_props",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_eq_some_imp_bucket_some",
+            "runQueueOnCore",
+            "toList",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_selected_has_budget",
+          "line": 1209,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective_result_props",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_eq_some_imp_bucket_some",
+            "getTcb",
+            "hasSufficientBudget",
+            "runQueueOnCore",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableEffective_some_ne_ok_none",
+          "line": 1226,
+          "called": [
+            "Deadline",
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "chooseBestRunnableEffective",
+            "cons",
+            "get",
+            "hasSufficientBudget",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestRunnableEffective_none_no_eligible",
+          "line": 1255,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "chooseBestRunnableEffective",
+            "chooseBestRunnableEffective_some_ne_ok_none",
+            "cons",
+            "get",
+            "hasSufficientBudget",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseBestInBucketEffective_none_imp_toList_none",
+          "line": 1295,
+          "called": [
+            "DomainId",
+            "RunQueue",
+            "SystemState",
+            "bucketFirstEffective_fullScan_equivalence",
+            "chooseBestInBucketEffective",
+            "chooseBestRunnableInDomainEffective",
+            "maxPriorityBucket",
+            "none",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_eq_none_imp_bucket_none",
+          "line": 1309,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective",
+            "chooseThreadEffectiveOnCore",
+            "none",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffectiveOnCore_none_no_eligible",
+          "line": 1326,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SystemState",
+            "TCB",
+            "activeDomainOnCore",
+            "chooseBestInBucketEffective_none_imp_toList_none",
+            "chooseBestRunnableEffective_none_no_eligible",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_eq_none_imp_bucket_none",
+            "get",
+            "getTcb",
+            "hasSufficientBudget",
+            "none",
+            "runQueueOnCore",
+            "toList",
+            "toObjId"
           ]
         }
       ]
@@ -68854,7 +69443,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Selection",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Selection.lean",
-      "declaration_count": 35,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -69190,22 +69779,45 @@
         },
         {
           "kind": "def",
-          "name": "chooseThreadEffective",
-          "line": 569,
+          "name": "chooseThreadEffectiveOnCore",
+          "line": 578,
           "called": [
-            "Kernel",
+            "CoreId",
+            "KernelError",
+            "SystemState",
             "ThreadId",
             "activeDomainOnCore",
-            "bootCoreId",
             "chooseBestInBucketEffective",
             "none",
             "runQueueOnCore"
           ]
         },
         {
+          "kind": "def",
+          "name": "chooseThreadEffective",
+          "line": 596,
+          "called": [
+            "Kernel",
+            "ThreadId",
+            "bootCoreId",
+            "chooseThreadEffectiveOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore",
+          "line": 605,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "chooseThreadEffective",
+            "chooseThreadEffectiveOnCore"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "chooseThreadEffective_preserves_state",
-          "line": 577,
+          "line": 612,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69213,6 +69825,7 @@
             "bootCoreId",
             "chooseBestInBucketEffective",
             "chooseThreadEffective",
+            "chooseThreadEffectiveOnCore",
             "none",
             "runQueueOnCore"
           ]
@@ -69220,7 +69833,7 @@
         {
           "kind": "def",
           "name": "saveOutgoingContext",
-          "line": 605,
+          "line": 640,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -69233,7 +69846,7 @@
         {
           "kind": "def",
           "name": "saveOutgoingContextChecked",
-          "line": 622,
+          "line": 657,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -69246,7 +69859,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_always_succeeds_under_currentThreadValid",
-          "line": 647,
+          "line": 682,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -69259,7 +69872,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextChecked_fst_eq",
-          "line": 660,
+          "line": 695,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -69273,7 +69886,7 @@
         {
           "kind": "def",
           "name": "restoreIncomingContext",
-          "line": 678,
+          "line": 713,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69283,7 +69896,7 @@
         {
           "kind": "def",
           "name": "restoreIncomingContextChecked",
-          "line": 689,
+          "line": 724,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69293,7 +69906,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContextChecked_fst_eq",
-          "line": 697,
+          "line": 732,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69306,7 +69919,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableEffective_unbound_equiv",
-          "line": 708,
+          "line": 743,
           "called": [
             "Deadline",
             "Priority",
@@ -95248,6 +95861,7 @@
             "setBootRqCur",
             "setDomainScheduleIndexOnCore",
             "setDomainTimeRemainingOnCore",
+            "stEdf",
             "switchDomain",
             "tick",
             "timerTick",
@@ -117330,7 +117944,7 @@
     {
       "module": "tests.SmpSchedulerSelectionSuite",
       "path": "tests/SmpSchedulerSelectionSuite.lean",
-      "declaration_count": 26,
+      "declaration_count": 40,
       "declarations": [
         {
           "kind": "namespace",
@@ -117338,6 +117952,14 @@
           "line": 34,
           "called": [
             "RunQueueLockId",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_frame",
+            "chooseThreadEffectiveOnCore_independent_of_setRunQueueOnCore",
+            "chooseThreadEffectiveOnCore_none_no_eligible",
+            "chooseThreadEffectiveOnCore_ok_of_runnableTCBs",
+            "chooseThreadEffectiveOnCore_selected_has_budget",
+            "chooseThreadEffectiveOnCore_some_mem_runQueueOnCore",
+            "chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore",
             "chooseThreadOnCore",
             "chooseThreadOnCoreIdleFallback",
             "chooseThreadOnCoreLockSet",
@@ -117355,17 +117977,29 @@
             "chooseThreadOnCore_ok_of_runnableTCBs",
             "chooseThreadOnCore_ok_of_schedulerInvariant",
             "chooseThreadOnCore_perCore_independence",
+            "chooseThreadOnCore_preserves_wellFormed",
+            "chooseThreadOnCore_selects_highest",
             "chooseThreadOnCore_some_mem_of_schedulerInvariant",
             "chooseThreadOnCore_some_mem_runQueueOnCore",
             "chooseThreadOnCore_some_of_eligible",
             "chooseThread_eq_chooseThreadOnCore_bootCore",
-            "chooseThread_preserves_runQueueOnCore_wellFormed"
+            "chooseThread_preserves_runQueueOnCore_wellFormed",
+            "le",
+            "le_antisymm",
+            "le_refl",
+            "le_total",
+            "le_trans",
+            "lt",
+            "lt_asymm",
+            "lt_irrefl",
+            "objectLockLevels_lt_runQueueLockLevel",
+            "runQueueLockLevel"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:86>",
-          "line": 86,
+          "name": "<anonymous:example:112>",
+          "line": 112,
           "called": [
             "CoreId",
             "SystemState",
@@ -117377,8 +118011,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:94>",
-          "line": 94,
+          "name": "<anonymous:example:120>",
+          "line": 120,
           "called": [
             "CoreId",
             "RunQueue",
@@ -117390,8 +118024,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:100>",
-          "line": 100,
+          "name": "<anonymous:example:126>",
+          "line": 126,
           "called": [
             "CoreId",
             "RunQueue",
@@ -117403,8 +118037,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:106>",
-          "line": 106,
+          "name": "<anonymous:example:132>",
+          "line": 132,
           "called": [
             "CoreId",
             "SystemState",
@@ -117417,8 +118051,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:113>",
-          "line": 113,
+          "name": "<anonymous:example:139>",
+          "line": 139,
           "called": [
             "CoreId",
             "SystemState",
@@ -117435,8 +118069,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:120>",
-          "line": 120,
+          "name": "<anonymous:example:146>",
+          "line": 146,
           "called": [
             "CoreId",
             "SystemState",
@@ -117454,8 +118088,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:131>",
-          "line": 131,
+          "name": "<anonymous:example:157>",
+          "line": 157,
           "called": [
             "CoreId",
             "SystemState",
@@ -117469,8 +118103,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:138>",
-          "line": 138,
+          "name": "<anonymous:example:164>",
+          "line": 164,
           "called": [
             "CoreId",
             "SystemState",
@@ -117481,8 +118115,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:142>",
-          "line": 142,
+          "name": "<anonymous:example:168>",
+          "line": 168,
           "called": [
             "CoreId",
             "SystemState",
@@ -117495,9 +118129,83 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:175>",
+          "line": 175,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseThreadOnCore",
+            "chooseThreadOnCore_selects_highest",
+            "getTcb",
+            "isBetterCandidate",
+            "maxPriorityBucket",
+            "runQueueOnCore",
+            "runnableThreadsAreTCBsOnCore",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:186>",
+          "line": 186,
+          "called": [
+            "runQueueLockLevel"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:187>",
+          "line": 187,
+          "called": [
+            "objectLockLevels_lt_runQueueLockLevel",
+            "runQueueLockLevel"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:192>",
+          "line": 192,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_selected_has_budget",
+            "getTcb",
+            "hasSufficientBudget",
+            "runQueueOnCore",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:200>",
+          "line": 200,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "activeDomainOnCore",
+            "chooseThreadEffectiveOnCore",
+            "chooseThreadEffectiveOnCore_none_no_eligible",
+            "getTcb",
+            "hasSufficientBudget",
+            "none",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
           "kind": "def",
           "name": "mkTcb",
-          "line": 153,
+          "line": 212,
           "called": [
             "TCB",
             "ofNat"
@@ -117506,7 +118214,7 @@
         {
           "kind": "def",
           "name": "tidA",
-          "line": 158,
+          "line": 217,
           "called": [
             "ThreadId",
             "ofNat"
@@ -117515,7 +118223,7 @@
         {
           "kind": "def",
           "name": "tidB",
-          "line": 159,
+          "line": 218,
           "called": [
             "ThreadId",
             "ofNat"
@@ -117524,7 +118232,7 @@
         {
           "kind": "def",
           "name": "tidC",
-          "line": 160,
+          "line": 219,
           "called": [
             "ThreadId",
             "ofNat"
@@ -117533,7 +118241,7 @@
         {
           "kind": "def",
           "name": "stEmpty",
-          "line": 165,
+          "line": 224,
           "called": [
             "SystemState",
             "build"
@@ -117542,7 +118250,7 @@
         {
           "kind": "def",
           "name": "stSingle",
-          "line": 167,
+          "line": 226,
           "called": [
             "SystemState",
             "build",
@@ -117556,7 +118264,7 @@
         {
           "kind": "def",
           "name": "stTwo",
-          "line": 171,
+          "line": 230,
           "called": [
             "SystemState",
             "build",
@@ -117571,7 +118279,7 @@
         {
           "kind": "def",
           "name": "stOutOfDomain",
-          "line": 175,
+          "line": 234,
           "called": [
             "SystemState",
             "build",
@@ -117585,7 +118293,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 180,
+          "line": 239,
           "called": [
             "CoreId"
           ]
@@ -117593,7 +118301,7 @@
         {
           "kind": "def",
           "name": "stSingleWithCore1Busy",
-          "line": 184,
+          "line": 243,
           "called": [
             "SystemState",
             "core1",
@@ -117606,7 +118314,7 @@
         {
           "kind": "def",
           "name": "stCore1Runnable",
-          "line": 192,
+          "line": 251,
           "called": [
             "SystemState",
             "build",
@@ -117621,8 +118329,97 @@
         },
         {
           "kind": "def",
+          "name": "mkTcbD",
+          "line": 256,
+          "called": [
+            "TCB",
+            "mkTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stEdf",
+          "line": 261,
+          "called": [
+            "SystemState",
+            "build",
+            "mkTcbD",
+            "tidA",
+            "tidB",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidGhost",
+          "line": 268,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stGhost",
+          "line": 269,
+          "called": [
+            "SystemState",
+            "build",
+            "tidGhost",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scId",
+          "line": 276,
+          "called": [
+            "SchedContextId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidBound",
+          "line": 277,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkScExhausted",
+          "line": 278,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "scId",
+            "zero"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stBudgetExhausted",
+          "line": 281,
+          "called": [
+            "SystemState",
+            "build",
+            "mkScExhausted",
+            "mkTcb",
+            "scId",
+            "tidBound",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "assertBool",
-          "line": 196,
+          "line": 286,
           "called": [
             "throw"
           ]
@@ -117630,7 +118427,7 @@
         {
           "kind": "def",
           "name": "runSelectionScenarios",
-          "line": 205,
+          "line": 295,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -117653,20 +118450,44 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 248,
+          "line": 338,
           "called": [
+            "RunQueueLockId",
             "all",
             "assertBool",
             "bootCoreId",
             "chooseThreadOnCoreLockSet",
-            "length"
+            "length",
+            "runQueueLockLevel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAdvancedScenarios",
+          "line": 357,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "chooseThreadEffectiveOnCoreIdleFallback",
+            "chooseThreadEffectiveOnCoreSelects",
+            "chooseThreadOnCoreIdleFallback",
+            "chooseThreadOnCoreSelects",
+            "stBudgetExhausted",
+            "stEdf",
+            "stGhost",
+            "stSingle",
+            "tidA",
+            "tidB",
+            "tidBound",
+            "tidGhost"
           ]
         },
         {
           "kind": "def",
           "name": "runSmpSchedulerSelectionChecks",
-          "line": 259,
+          "line": 387,
           "called": [
+            "runAdvancedScenarios",
             "runLockSetChecks",
             "runSelectionScenarios"
           ]
@@ -117674,7 +118495,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 269,
+          "line": 398,
           "called": [
             "runSmpSchedulerSelectionChecks"
           ]

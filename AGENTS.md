@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.38.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.39.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -251,6 +251,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1343 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
 - `tests/LockSetSuite.lean` (~1307 lines)
 - `SeLe4n/Platform/FFI.lean` (~1268 lines)
@@ -4596,6 +4597,44 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (`c ≠ bootCoreId`) — the first runtime witness of the `(c : CoreId)`
   parameter beyond the boot core.  Suite: 23 anchors / 9 examples / 19 runtime
   assertions (counts verified against the source).  Axiom-clean; Tier 0–3 green.
+
+  **WS-SM SM5.A completion LANDED at v0.31.39 on branch
+  `claude/sharp-mayer-tAap4`** (closes the gaps from the SM5.A deep
+  self-audit, bringing the per-core chooseThread phase to a complete +
+  optimal implementation; two maintainer decisions steered the new scope —
+  "order + defer to SM5.B" for the lock-set, "add it now" for the budget
+  selector).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
+
+  - **Selection optimality (`chooseThreadOnCore_selects_highest`, plan §3.1.1)**
+    — the headline correctness property that the audit found missing: the
+    selected thread is not `isBetterCandidate`-beaten by any active-domain
+    thread in the run queue's **maximum-priority bucket**.  This is the
+    *honest, correct* optimality — `chooseBestInBucket` buckets by *effective*
+    priority (`max(base, pipBoost)`) and picks the best within the top bucket by
+    *base* priority + EDF, so a global "highest base priority over the whole
+    queue" claim is **false** (a lower-effective-bucket thread can have a higher
+    base priority) and is deliberately not made.  Lifts the de-privatized
+    single-core `chooseBestRunnableBy_optimal` / `_result_fields`.
+  - **Budget-aware per-core selector `chooseThreadEffectiveOnCore`** (production
+    def + legacy `chooseThreadEffective` migration in `Selection.lean`) — the
+    CBS-budget-aware companion that rejects exhausted-budget threads.  Full
+    mirrored suite: objects-congruence + frame + independence, non-erroring,
+    completeness, soundness, and the unique-to-the-variant
+    `chooseThreadEffectiveOnCore_selected_has_budget` (a dispatched thread
+    genuinely has budget).
+  - **`RunQueueLockId` total order (SM5.A.2)** — `le`/`lt` keyed by `CoreId`
+    with `le_refl`/`_trans`/`_antisymm`/`_total`/`lt_irrefl`/`lt_asymm` +
+    `Decidable` + `runQueueLockLevel = 10` +
+    `objectLockLevels_lt_runQueueLockLevel` (plan §4.4).  Full SM3-`LockSet`
+    cross-domain unification is SM5.B (the maintainer "order + defer"
+    disposition).
+  - **`chooseThreadOnCore_preserves_wellFormed`** — the literal SM5.A.6
+    plan-named anchor; 12 selection bridge lemmas de-privatized for SM5.B/E.
+  - **Tests** grow to 43 anchors / 14 examples / 30 runtime assertions, incl.
+    the **error path** (corrupt run queue ⇒ `.error`, the security path), **EDF**
+    tie-break, and the **budget guarantee** contrast (non-budget selects an
+    exhausted-budget thread; budget-aware rejects it).  Items deferred past
+    v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

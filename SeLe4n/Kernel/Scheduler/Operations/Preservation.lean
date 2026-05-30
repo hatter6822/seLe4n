@@ -927,7 +927,7 @@ private theorem chooseBestRunnableBy_optimal_combined
           · exact ihP2
 
 /-- WS-H6: Specialized optimality for init = none. -/
-private theorem chooseBestRunnableBy_optimal
+theorem chooseBestRunnableBy_optimal
     (objects : SeLe4n.ObjId → Option KernelObject)
     (eligible : TCB → Bool)
     (runnable : List SeLe4n.ThreadId)
@@ -2294,7 +2294,7 @@ theorem setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
 
 /-- WS-H6: If `chooseBestRunnableBy` returns `some (resTid, resPrio, resDl)`, then
 `objects resTid.toObjId = some (.tcb tcb)` for some TCB. -/
-private theorem chooseBestRunnableBy_result_fields
+theorem chooseBestRunnableBy_result_fields
     (objects : SeLe4n.ObjId → Option KernelObject)
     (eligible : TCB → Bool)
     (runnable : List SeLe4n.ThreadId)

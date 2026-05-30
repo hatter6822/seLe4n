@@ -2298,6 +2298,36 @@ byte-identical).
   modules.  Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on:
   SM5.B (per-core `switchToThread`), SM5.C..SM5.K + SM6..SM9.
 
+**WS-SM SM5.A completion LANDED at v0.31.39** (deep-audit gap closure — brings
+the per-core chooseThread phase to a complete + optimal implementation; two
+maintainer decisions: "order + defer to SM5.B" lock-set, "add it now" budget
+selector).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
+
+- **Selection optimality** `chooseThreadOnCore_selects_highest` (plan §3.1.1) —
+  the headline correctness property the audit found missing: the selection is
+  not `isBetterCandidate`-beaten by any active-domain thread in the run queue's
+  **maximum-priority bucket**.  The *honest* optimality: `chooseBestInBucket`
+  buckets by *effective* priority (`max(base, pipBoost)`) and picks the top
+  bucket's best by base priority + EDF, so a global "highest base priority over
+  the whole queue" claim is **false** and is deliberately not made.  Lifts the
+  de-privatized single-core `chooseBestRunnableBy_optimal` / `_result_fields`.
+- **Budget-aware per-core selector** `chooseThreadEffectiveOnCore` (production
+  def + legacy `chooseThreadEffective` migration in `Selection.lean`) — rejects
+  exhausted-budget threads.  Full mirrored suite: objects-congruence + frame +
+  independence, non-erroring, completeness, soundness, and the
+  unique-to-the-variant `_selected_has_budget` (a dispatched thread genuinely
+  has budget).
+- **`RunQueueLockId` total order** (`le`/`lt` + `le_refl`/`_trans`/`_antisymm`/
+  `_total`/`lt_irrefl`/`lt_asymm` + `Decidable` + `runQueueLockLevel = 10` +
+  `objectLockLevels_lt_runQueueLockLevel`, plan §4.4).  Full SM3-`LockSet`
+  cross-domain unification is SM5.B.
+- **`chooseThreadOnCore_preserves_wellFormed`** literal SM5.A.6 anchor; 12
+  selection bridge lemmas de-privatized for SM5.B/E reuse.
+- **Tests** grow to 43 anchors / 14 examples / 30 runtime assertions: the
+  **error path** (corrupt run queue ⇒ `.error` — the security path), **EDF**
+  tie-break, and the **budget guarantee** contrast.  Items deferred past v1.0.0
+  with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

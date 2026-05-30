@@ -1,3 +1,63 @@
+## v0.31.39 — WS-SM SM5.A completion: selection optimality, budget-aware per-core selector, lock-order
+
+Closes the gaps identified in the SM5.A deep self-audit, bringing the per-core
+chooseThread phase to a complete, optimal implementation.  Two maintainer
+decisions steered the new scope: the run-queue lock-set gains a total order
+(full SM3-`LockSet` unification deferred to SM5.B), and the budget-aware
+selector is added now (rather than deferred to SM5.H).  All new theorems
+axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only); default
+build green (320 jobs); Tier 0–3 green.
+
+- **Selection optimality (`chooseThreadOnCore_selects_highest`, plan §3.1.1)** —
+  the headline correctness property that was missing: the selected thread is
+  not `isBetterCandidate`-beaten by any active-domain thread in the run queue's
+  **maximum-priority bucket**.  The honest, *correct* optimality: `chooseBestInBucket`
+  is bucket-first (buckets by *effective* priority = `max(base, pipBoost)`, picks
+  the best within the top bucket by *base* priority + EDF deadline), so a global
+  "highest base priority over the whole queue" claim would be **false** (a
+  lower-effective-bucket thread can have a higher base priority) and is
+  deliberately not made.  Lifts the (now de-privatized) single-core
+  `chooseBestRunnableBy_optimal` / `_result_fields` to the per-core form.
+- **Budget-aware per-core selector `chooseThreadEffectiveOnCore`** (production
+  def + legacy `chooseThreadEffective` migration in `Selection.lean`, theorems
+  staged) — the CBS-budget-aware companion to `chooseThreadOnCore` that
+  additionally rejects threads whose SchedContext budget is exhausted.  Full
+  mirrored theorem suite: objects-congruence + frame + per-core independence,
+  non-erroring (`_ok_of_runnableTCBs`), completeness (`_none_no_eligible`),
+  selection soundness (`_some_mem_runQueueOnCore`), and — unique to the budget
+  variant — **`chooseThreadEffectiveOnCore_selected_has_budget`**: a dispatched
+  thread genuinely has sufficient budget (the soundness of the budget filter,
+  the whole reason the variant exists).
+- **`RunQueueLockId` total order (SM5.A.2)** — `RunQueueLockId.le` / `lt` keyed
+  by `CoreId` with `le_refl` / `le_trans` / `le_antisymm` / `le_total` /
+  `lt_irrefl` / `lt_asymm` + `Decidable` instances, plus `runQueueLockLevel = 10`
+  and `objectLockLevels_lt_runQueueLockLevel` (the plan §4.4 "object locks at
+  levels 0..9 acquired before run-queue locks" foundation).  Full SM3-`LockSet`
+  / `withLockSet` cross-domain unification is SM5.B (where the first mixed
+  object+run-queue lock-set, `switchToThreadOnCore`'s, appears) — the
+  maintainer-chosen "order + defer to SM5.B" disposition.
+- **`chooseThreadOnCore_preserves_wellFormed`** — the literal plan-named SM5.A.6
+  anchor (bundling the trivial run-queue preservation with the substantive
+  membership of the chosen thread).
+- **Reusability**: 12 selection bridge lemmas in `PerCoreChooseThread.lean`
+  de-privatized for SM5.B/SM5.E reuse; the single-core `chooseBestRunnableBy_optimal`
+  + `chooseBestRunnableBy_result_fields` de-privatized in `Preservation.lean`.
+- **Tests (`tests/SmpSchedulerSelectionSuite.lean`)**: grows to 43 surface
+  anchors, 14 elaboration examples, 30 runtime assertions.  New §3.8 scenarios:
+  the **error path** (a run queue referencing a non-TCB ghost thread surfaces
+  `.error schedulerInvariantViolation` — the security path, neither selecting
+  nor idle-falling-back), **EDF** tie-break (equal priority, earlier deadline
+  wins), and the **budget guarantee** in action (the non-budget selector picks
+  an exhausted-budget thread, the budget-aware selector rejects it and falls
+  back to idle), plus the run-queue-lock total-order witnesses.
+
+Items deferred past v1.0.0 with correctness impact: NONE.  Items legitimately
+deferred to later SM5 sub-phases: full SM3-`LockSet` cross-domain lock-order
+unification (SM5.B); per-core idle-thread install for the unconditional
+`chooseThreadOnCore_always_succeeds` (SM5.E).
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.1.1 (optimality), §3.1, §4.4
+
 ## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness)
 
 Opens WS-SM Phase SM5 (per-core scheduler) with the first sub-phase, SM5.A —
