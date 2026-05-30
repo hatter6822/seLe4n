@@ -351,6 +351,50 @@ theorem chooseThreadOnCoreLockSet_keys_nodup (c : CoreId) :
     ((chooseThreadOnCoreLockSet c).map (·.1)).Nodup := by
   simp [chooseThreadOnCoreLockSet]
 
+/-- WS-SM SM5.A.2 / §6 (cross-domain unification): the lock-set footprint of the
+budget-aware `chooseThreadEffectiveOnCore c`.
+
+The budget-aware selector reads the same per-core scheduler state as
+`chooseThreadOnCore` **plus** each candidate's SchedContext (via
+`hasSufficientBudget` → `st.getSchedContext?`) — but both the TCB resolutions
+and the SchedContext reads go through the *single* object store, so the
+table-level object-store read lock (`schedObjStoreLockId`) already guards them.
+The footprint therefore coincides with `chooseThreadOnCoreLockSet`:
+`[(SchedLockId.object schedObjStoreLockId, .read), (SchedLockId.runQueue ⟨c⟩, .read)]`.
+The selector is production-reached (legacy `chooseThreadEffective` delegates to
+it), so it carries the same complete two-domain footprint contract as its
+non-budget sibling — closing the same under-locking gap on the budget path. -/
+def chooseThreadEffectiveOnCoreLockSet (c : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  chooseThreadOnCoreLockSet c
+
+/-- SM5.A §6: the budget selector's footprint is exactly the non-budget
+selector's (both read the object store + the per-core run queue). -/
+@[simp] theorem chooseThreadEffectiveOnCoreLockSet_eq (c : CoreId) :
+    chooseThreadEffectiveOnCoreLockSet c = chooseThreadOnCoreLockSet c := rfl
+
+/-- SM5.A §6: the budget selector's footprint declares the object-store read
+lock (guards both the TCB resolutions and the `hasSufficientBudget`
+SchedContext reads). -/
+theorem chooseThreadEffectiveOnCoreLockSet_contains_objStore_read (c : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.read)
+      ∈ chooseThreadEffectiveOnCoreLockSet c :=
+  chooseThreadOnCoreLockSet_contains_objStore_read c
+
+/-- SM5.A §6: the budget selector's footprint declares the per-core run-queue
+read lock. -/
+theorem chooseThreadEffectiveOnCoreLockSet_contains_runQueue_read (c : CoreId) :
+    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.read)
+      ∈ chooseThreadEffectiveOnCoreLockSet c :=
+  chooseThreadOnCoreLockSet_contains_runQueue_read c
+
+/-- SM5.A §6: the budget selector's footprint is read-only (a pure read of both
+domains). -/
+theorem chooseThreadEffectiveOnCoreLockSet_read_only (c : CoreId) :
+    ∀ p ∈ chooseThreadEffectiveOnCoreLockSet c,
+      p.2 = Concurrency.AccessMode.read :=
+  chooseThreadOnCoreLockSet_read_only c
+
 -- ============================================================================
 -- §2  SM5.A.3 — Per-core independence (plan §3.1, Theorem 3.1.2)
 -- ============================================================================

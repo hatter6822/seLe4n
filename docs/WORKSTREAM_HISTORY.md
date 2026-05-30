@@ -2333,11 +2333,17 @@ implementation).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
   over `SchedLockId` is SM5.B.
 - **`chooseThreadOnCore_preserves_wellFormed`** literal SM5.A.6 anchor; 12
   selection bridge lemmas de-privatized for SM5.B/E reuse.
-- **Tests** grow to 50 anchors / 17 examples / 33 runtime assertions: the
+- **Budget selector footprint symmetry**: `chooseThreadEffectiveOnCoreLockSet`
+  = `chooseThreadOnCoreLockSet` — the production-reached budget-aware selector
+  reads the object store too (TCB + `hasSufficientBudget` SchedContext reads),
+  both guarded by the single table read lock, so it carries the same complete
+  footprint.
+- **Tests** grow to 54 anchors / 17 examples / 35 runtime assertions: the
   **error path** (corrupt run queue ⇒ `.error` — the security path), **EDF**
-  tie-break, the **budget guarantee** contrast, and the **cross-domain
+  tie-break, the **budget guarantee** contrast, the **cross-domain
   footprint** witnesses (object-store + run-queue locks; §4.4 acquisition
-  order).  Items deferred past v1.0.0 with correctness impact: NONE.
+  order), and the **budget footprint** equality.  Items deferred past v1.0.0
+  with correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

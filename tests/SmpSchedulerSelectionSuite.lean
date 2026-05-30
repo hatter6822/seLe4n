@@ -109,6 +109,11 @@ open SeLe4n.Testing
 #check @chooseThreadEffectiveOnCore_some_mem_runQueueOnCore
 #check @chooseThreadEffectiveOnCore_selected_has_budget
 #check @chooseThreadEffectiveOnCore_none_no_eligible
+-- SM5.A §6 budget selector's complete footprint (object-store + run-queue):
+#check @chooseThreadEffectiveOnCoreLockSet
+#check @chooseThreadEffectiveOnCoreLockSet_eq
+#check @chooseThreadEffectiveOnCoreLockSet_contains_objStore_read
+#check @chooseThreadEffectiveOnCoreLockSet_read_only
 
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
@@ -383,6 +388,13 @@ private def runLockSetChecks : IO Unit := do
       decide ((⟨a⟩ : RunQueueLockId) ≤ ⟨b⟩) || decide ((⟨b⟩ : RunQueueLockId) ≤ ⟨a⟩))))
   assertBool "runQueueLockLevel (10) exceeds every object-lock level (0..9)"
     ((List.range 10).all (fun n => decide (n < RunQueueLockId.runQueueLockLevel)))
+  -- SM5.A §6: the budget-aware selector carries the same complete footprint.
+  assertBool "budget selector footprint equals the non-budget footprint"
+    (decide (chooseThreadEffectiveOnCoreLockSet bootCoreId
+              = chooseThreadOnCoreLockSet bootCoreId))
+  assertBool "budget selector footprint contains the object-store read lock"
+    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.read)
+              ∈ chooseThreadEffectiveOnCoreLockSet bootCoreId))
 
 /-- §3.8: advanced scenarios — selector error path, EDF tie-break, and the
 budget-aware selector's CBS-budget rejection (the budget-guarantee in action). -/

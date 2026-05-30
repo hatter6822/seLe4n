@@ -3025,6 +3025,13 @@ open SeLe4n.Kernel
 #check @chooseThreadEffectiveOnCoreSelects
 #check @chooseThreadEffectiveOnCoreIdleFallback
 
+-- SM5.A §6 — budget selector complete footprint: object-store + run-queue.
+#check @chooseThreadEffectiveOnCoreLockSet
+#check @chooseThreadEffectiveOnCoreLockSet_eq
+#check @chooseThreadEffectiveOnCoreLockSet_contains_objStore_read
+#check @chooseThreadEffectiveOnCoreLockSet_contains_runQueue_read
+#check @chooseThreadEffectiveOnCoreLockSet_read_only
+
 -- SM5.A support: RunQueue.ofList well-formedness (production helper).
 #check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
 EOF'

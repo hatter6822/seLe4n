@@ -4642,9 +4642,14 @@ documentation lives under `docs/` and `docs/gitbook/`.
     object-store read lock (`schedObjStoreLockId`, the SM3.A.10 table-level
     lock) guards the `st.objects` reads.  Runtime `withLockSet` acquisition
     wiring over `SchedLockId` is SM5.B.
+  - **Budget selector footprint symmetry**: `chooseThreadEffectiveOnCoreLockSet`
+    = `chooseThreadOnCoreLockSet` — the production-reached budget-aware selector
+    reads the object store too (TCB resolutions + `hasSufficientBudget`
+    SchedContext reads), both guarded by the single table read lock, so it
+    carries the same complete footprint.
   - **`chooseThreadOnCore_preserves_wellFormed`** — the literal SM5.A.6
     plan-named anchor; 12 selection bridge lemmas de-privatized for SM5.B/E.
-  - **Tests** grow to 50 anchors / 17 examples / 33 runtime assertions, incl.
+  - **Tests** grow to 54 anchors / 17 examples / 35 runtime assertions, incl.
     the **error path** (corrupt run queue ⇒ `.error`, the security path), **EDF**
     tie-break, the **budget guarantee** contrast (non-budget selects an
     exhausted-budget thread; budget-aware rejects it), and the **cross-domain

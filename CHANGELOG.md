@@ -38,8 +38,15 @@ Closes two PR-review findings on PR #804:
   command substitution and failed the Fast gate (x86 + ARM64) at Tier 0.  The
   cosmetic backticks are dropped.
 
-Test surface (`tests/SmpSchedulerSelectionSuite.lean`): 50 surface anchors /
-17 elaboration examples / 33 runtime assertions.
+The budget-aware selector `chooseThreadEffectiveOnCore` (production-reached via
+`chooseThreadEffective`) also reads the object store (TCB resolutions *and* the
+`hasSufficientBudget` SchedContext reads), so it carries the same complete
+footprint — `chooseThreadEffectiveOnCoreLockSet` = `chooseThreadOnCoreLockSet`
+(the single object-store table read lock guards both kinds of read) — closing
+the same under-locking gap on the budget path.
+
+Test surface (`tests/SmpSchedulerSelectionSuite.lean`): 54 surface anchors /
+17 elaboration examples / 35 runtime assertions.
 
 ### Completion — selection optimality, budget-aware per-core selector, lock-order
 
