@@ -2999,7 +2999,7 @@ open SeLe4n.Kernel
 #check @RunQueueLockId.runQueueLockLevel
 #check @RunQueueLockId.objectLockLevels_lt_runQueueLockLevel
 
--- SM5.A §6 — budget-aware companion `chooseThreadEffectiveOnCore`.
+-- SM5.A §6 — budget-aware companion chooseThreadEffectiveOnCore.
 #check @chooseThreadEffectiveOnCore
 #check @chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore
 #check @chooseThreadEffectiveOnCore_frame
