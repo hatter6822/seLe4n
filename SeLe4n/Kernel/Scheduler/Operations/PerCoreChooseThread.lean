@@ -206,6 +206,17 @@ theorem chooseThreadOnCore_independent_of_write_off_lockSet
     simp [chooseThreadOnCoreLockSet, heq]
   exact chooseThreadOnCore_independent_of_setRunQueueOnCore s c c' rq hne
 
+/-- WS-SM SM5.A.3 (plan §3.1.2, the named `chooseThreadOnCore_perCore_independence`
+form): the selection on core `c₁` does **not** depend on a distinct core
+`c₂`'s run queue.  This is the plan's canonical statement of per-core
+independence; it is exactly the run-queue-write corollary above, restated with
+the plan's `c₁ ≠ c₂` variable naming for traceability. -/
+theorem chooseThreadOnCore_perCore_independence
+    (s : SystemState) (c₁ c₂ : CoreId) (h : c₁ ≠ c₂) (rq : RunQueue) :
+    chooseThreadOnCore { s with scheduler := s.scheduler.setRunQueueOnCore c₂ rq } c₁
+      = chooseThreadOnCore s c₁ :=
+  chooseThreadOnCore_independent_of_setRunQueueOnCore s c₁ c₂ rq h
+
 -- ============================================================================
 -- §3  SM5.A.4 — Idle-fallback completeness (plan §3.5, Theorem 3.5.2)
 -- ============================================================================
@@ -618,9 +629,10 @@ theorem chooseThread_preserves_runQueueOnCore_wellFormed
 -- ============================================================================
 
 /-- WS-SM SM5.A.7: "core `c` selects `tid`" — the decidable proposition the
-SM5.A unit tests discharge on concrete states by `decide`.  Decidability
-flows from `DecidableEq (Except KernelError (Option ThreadId))` (both
-`KernelError` and `ThreadId` derive `DecidableEq`). -/
+SM5.A unit tests discharge on concrete states by `decide`.  Its `Decidable`
+instance is supplied explicitly just below (Lean core does **not** derive
+`DecidableEq (Except _ _)`, so the instance cannot be `inferInstance`d; it is
+discharged by structural case analysis on the evaluated selection result). -/
 def chooseThreadOnCoreSelects (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : Prop :=
   chooseThreadOnCore st c = .ok (some tid)

@@ -59,13 +59,14 @@ build green, 320 jobs; trace fixture byte-identical).
   decidable predicates (Lean core does not derive `DecidableEq (Except _ _)`,
   so decidability is discharged by structural case analysis on the evaluated
   result) — what lets the unit tests decide concrete selection scenarios.
-- **SM5.A.8 (`tests/SmpSchedulerSelectionSuite.lean`)**: 25 surface anchors,
+- **SM5.A.8 (`tests/SmpSchedulerSelectionSuite.lean`)**: 22 surface anchors,
   8 elaboration-time theorem-application examples, and 16 runtime assertions
-  across the six SM5.A.8 scenarios — empty queue ⇒ idle fallback, single
-  in-domain thread selected, highest-priority wins, out-of-(active-)domain
-  thread skipped, per-core independence (a busy sibling core does not change
-  the boot core's pick), selection soundness (chosen ∈ run queue) — plus the
-  SM5.A.2 lock-set witnesses.  Tier-2 + Tier-3 wired.
+  at landing (raised to 23 / 9 / 19 by audit-pass-1 below) across the six
+  selection scenarios — empty queue ⇒ idle fallback, single in-domain thread
+  selected, highest-priority wins, out-of-(active-)domain thread skipped,
+  per-core independence (a busy sibling core does not change the boot core's
+  pick), selection soundness (chosen ∈ run queue) — plus the SM5.A.2 lock-set
+  witnesses.  Tier-2 + Tier-3 wired.
 - **Production support**: `RunQueue.ofList_wellFormed` added to
   `Scheduler/RunQueue.lean` (`ofList` folds `insert` over `empty`, both
   well-formedness-preserving) so the per-core scheduler proofs and tests can
@@ -75,6 +76,28 @@ build green, 320 jobs; trace fixture byte-identical).
   `chooseThreadOnCore` itself is production-reached (legacy `chooseThread`
   delegates to it).  SM5.B's per-core `switchToThread` (which dispatches the
   chosen thread) is the first runtime exerciser of the SM5.A theorems.
+
+**Audit-pass-1 refinements** (post-initial-landing deep audit; ship inside
+v0.31.38 — no re-bump; the initial landing was sound + axiom-clean):
+- **Plan-name traceability (SM5.A.3)**: added `chooseThreadOnCore_perCore_independence`
+  — the plan §3.1.2 named statement of per-core independence (selection on
+  core `c₁` is independent of a distinct core `c₂`'s run queue), restating the
+  run-queue-write corollary with the plan's `c₁ ≠ c₂` variable naming so a
+  reader searching for the plan's theorem name finds it.  Axiom-clean; surface-
+  anchored (Tier-3 + suite).
+- **Doc-code fix**: the `chooseThreadOnCoreSelects` docstring claimed
+  decidability "flows from `DecidableEq (Except KernelError (Option ThreadId))`"
+  — but that instance does not exist (the very reason its `Decidable` instance
+  uses manual structural case analysis).  Corrected to describe the actual
+  mechanism.
+- **Test coverage (SM5.A.8)**: added a 7th runtime scenario exercising genuine
+  per-core selection on a **non-boot** core (`c ≠ bootCoreId`) — core 1 holds
+  the in-domain runnable thread, the boot core is empty, so `chooseThreadOnCore`
+  selects on core 1, the boot core falls back to idle, and core 1's thread is
+  invisible to the boot core's selection.  All prior scenarios evaluated only
+  `bootCoreId`; this is the first runtime witness of the `(c : CoreId)`
+  parameter beyond the boot core.  Suite now: 23 surface anchors, 9 examples,
+  19 runtime assertions (counts verified against the source, not estimated).
 
 Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.B
 (per-core `switchToThread`), SM5.C (cross-core wake via SGI), SM5.D..SM5.K per

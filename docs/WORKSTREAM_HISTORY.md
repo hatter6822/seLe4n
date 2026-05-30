@@ -2289,9 +2289,10 @@ byte-identical).
 - **SM5.A.7**: `chooseThreadOnCoreSelects` / `chooseThreadOnCoreIdleFallback`
   decidable predicates (Lean core lacks `DecidableEq (Except _ _)`; decided by
   structural case analysis).
-- **SM5.A.8** (`tests/SmpSchedulerSelectionSuite.lean`): 25 surface anchors +
-  8 theorem-application examples + 16 runtime assertions (6 scenarios + lock-set
-  witnesses).  Tier-2 + Tier-3 wired.
+- **SM5.A.8** (`tests/SmpSchedulerSelectionSuite.lean`): 23 surface anchors +
+  9 theorem-application examples + 19 runtime assertions (7 scenarios — incl.
+  genuine per-core selection on a non-boot core, added in audit-pass-1 — +
+  lock-set witnesses).  Tier-2 + Tier-3 wired.
 - **Production support**: `RunQueue.ofList_wellFormed` (`Scheduler/RunQueue.lean`)
   discharges `wellFormed` on concrete fixtures.  Partition gate: 43 staged-only
   modules.  Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on:

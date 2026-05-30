@@ -56,6 +56,7 @@ open SeLe4n.Testing
 
 -- SM5.A.3 per-core independence:
 #check @chooseThreadOnCore_frame
+#check @chooseThreadOnCore_perCore_independence
 #check @chooseThreadOnCore_independent_of_setRunQueueOnCore
 #check @chooseThreadOnCore_independent_of_setActiveDomainOnCore
 #check @chooseThreadOnCore_independent_of_setCurrentOnCore
@@ -94,6 +95,12 @@ example (s : SystemState) (c c' : CoreId) (rq : RunQueue) (h : c ≠ c') :
     chooseThreadOnCore { s with scheduler := s.scheduler.setRunQueueOnCore c' rq } c
       = chooseThreadOnCore s c :=
   chooseThreadOnCore_independent_of_setRunQueueOnCore s c c' rq h
+
+-- SM5.A.3: the plan §3.1.2 named per-core-independence form.
+example (s : SystemState) (c₁ c₂ : CoreId) (h : c₁ ≠ c₂) (rq : RunQueue) :
+    chooseThreadOnCore { s with scheduler := s.scheduler.setRunQueueOnCore c₂ rq } c₁
+      = chooseThreadOnCore s c₁ :=
+  chooseThreadOnCore_perCore_independence s c₁ c₂ h rq
 
 -- SM5.A.4: never errors on a well-formed all-TCB run queue.
 example (st : SystemState) (c : CoreId)
@@ -178,6 +185,14 @@ private def stSingleWithCore1Busy : SystemState :=
   { stSingle with scheduler :=
       stSingle.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(tidB, ⟨99⟩)]) }
 
+/-- A state whose **boot core** run queue is empty but whose **core 1** run
+queue holds the in-(active-)domain runnable thread `tidA` (a genuine TCB in
+the global object store).  Exercises `chooseThreadOnCore` at a *non-boot*
+core `c ≠ bootCoreId` — the whole point of the `(c : CoreId)` parameter. -/
+private def stCore1Runnable : SystemState :=
+  let base := (BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).build
+  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(tidA, ⟨10⟩)]) }
+
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
     IO.println s!"  PASS: {name}"
@@ -220,6 +235,14 @@ private def runSelectionScenarios : IO Unit := do
     (decide (tidA ∈ (stSingle.scheduler.runQueueOnCore bootCoreId).toList))
   assertBool "scenario 6: selected thread B is a member of the two-thread run queue"
     (decide (tidB ∈ (stTwo.scheduler.runQueueOnCore bootCoreId).toList))
+  -- Scenario 7: genuine per-core selection on a NON-boot core (c ≠ bootCoreId).
+  -- Core 1 has the in-domain runnable thread A; the boot core is empty.
+  assertBool "scenario 7: core 1 selects its own in-domain runnable thread A"
+    (decide (chooseThreadOnCoreSelects stCore1Runnable core1 tidA))
+  assertBool "scenario 7: the boot core (empty) falls back to idle"
+    (decide (chooseThreadOnCoreIdleFallback stCore1Runnable bootCoreId))
+  assertBool "scenario 7: core 1's thread A is NOT visible to the boot core's selection"
+    (!decide (chooseThreadOnCoreSelects stCore1Runnable bootCoreId tidA))
 
 /-- §3.7: SM5.A.2 lock-set structural witnesses (decidable). -/
 private def runLockSetChecks : IO Unit := do

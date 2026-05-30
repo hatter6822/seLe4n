@@ -2962,6 +2962,7 @@ open SeLe4n.Kernel
 
 -- SM5.A.3 — per-core-independence frame + corollaries.
 #check @chooseThreadOnCore_frame
+#check @chooseThreadOnCore_perCore_independence
 #check @chooseThreadOnCore_independent_of_setRunQueueOnCore
 #check @chooseThreadOnCore_independent_of_setActiveDomainOnCore
 #check @chooseThreadOnCore_independent_of_setCurrentOnCore

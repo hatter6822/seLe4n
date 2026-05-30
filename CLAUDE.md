@@ -4566,11 +4566,12 @@ documentation lives under `docs/` and `docs/gitbook/`.
     decidable predicates (Lean core does not derive `DecidableEq (Except _ _)`,
     so decidability is by structural case analysis on the evaluated result) —
     what lets the unit tests `decide` concrete selection scenarios.
-  - **SM5.A.8** (`tests/SmpSchedulerSelectionSuite.lean`): 25 surface anchors,
-    8 elaboration-time theorem-application examples, 16 runtime assertions
-    across the six selection scenarios (empty ⇒ idle fallback; single
-    in-domain selected; highest-priority wins; out-of-domain skipped; per-core
-    independence; selection soundness) + the SM5.A.2 lock-set witnesses.
+  - **SM5.A.8** (`tests/SmpSchedulerSelectionSuite.lean`): 22 surface anchors,
+    8 elaboration-time theorem-application examples, 16 runtime assertions at
+    landing (raised to 23 / 9 / 19 by audit-pass-1) across the six selection
+    scenarios (empty ⇒ idle fallback; single in-domain selected;
+    highest-priority wins; out-of-domain skipped; per-core independence;
+    selection soundness) + the SM5.A.2 lock-set witnesses.
     Tier-2 + Tier-3 wired.
 
   **Production support**: `RunQueue.ofList_wellFormed` added to
@@ -4582,6 +4583,19 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `chooseThread` delegates to it).  SM5.B's per-core `switchToThread` is the
   first runtime exerciser of the SM5.A theorems.  Items deferred past v1.0.0
   with correctness impact: NONE.
+
+  **Audit-pass-1 refinements** (post-initial-landing deep audit; ship inside
+  v0.31.38 — the initial landing was sound + axiom-clean): added
+  `chooseThreadOnCore_perCore_independence` (the plan §3.1.2 named per-core-
+  independence statement, restating the run-queue-write corollary with the
+  plan's `c₁ ≠ c₂` naming for traceability); corrected the
+  `chooseThreadOnCoreSelects` docstring (it claimed decidability "flows from
+  `DecidableEq (Except _ _)`" — a non-existent instance, which is why the
+  `Decidable` instance uses manual case analysis); and added a 7th runtime
+  test scenario exercising genuine per-core selection on a **non-boot** core
+  (`c ≠ bootCoreId`) — the first runtime witness of the `(c : CoreId)`
+  parameter beyond the boot core.  Suite: 23 anchors / 9 examples / 19 runtime
+  assertions (counts verified against the source).  Axiom-clean; Tier 0–3 green.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
