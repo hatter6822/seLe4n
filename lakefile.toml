@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.38"
+version = "0.31.39"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -371,3 +371,13 @@ root = "tests.CrossSubsystemPerCoreSuite"
 [[lean_exe]]
 name = "smp_scheduler_selection_suite"
 root = "tests.SmpSchedulerSelectionSuite"
+
+# WS-SM SM5.B — Per-core switchToThread test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM5.B.9 switch scenarios (sets-current, dequeue-on-dispatch, preempt-previous,
+# reject-remote, admit-unbound / admit-matching-affinity, cross-core
+# independence, non-TCB error path), the SM5.B.2 lock-set witnesses, and the
+# SM5.B.7 FFI seam.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_switch_to_thread_suite"
+root = "tests.SmpSwitchToThreadSuite"

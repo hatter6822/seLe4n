@@ -426,6 +426,34 @@ opaque ffiPerCoreSgiCount : UInt64 → BaseIO UInt64
 opaque ffiPerCoreSyscallCount : UInt64 → BaseIO UInt64
 
 -- ============================================================================
+-- WS-SM SM5.B.7 — Per-core context-switch FFI declarations
+-- ============================================================================
+
+/-- **WS-SM SM5.B.7**: record that core `coreId` is now running thread `tid`.
+
+    The verified Lean kernel calls this after `switchToThreadOnCore`
+    (`Scheduler/Operations/Selection.lean`) has computed the new per-core
+    scheduler state, so the HAL's trap-return / dispatch path knows which
+    thread to resume on this core.  Returns `0` on success, `1` on an
+    out-of-range `coreId` (fail-closed — nothing is recorded).  A well-typed
+    Lean caller passes `coreId < numCores`, so the `1` status is unreachable
+    from the typed `Concurrency.switchToThreadHw` wrapper.
+
+    Rust: `ffi_switch_to_thread` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_switch_to_thread"]
+opaque ffiSwitchToThread : (tid : UInt64) → (coreId : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM5.B.7**: read the per-core current-thread id recorded for
+    `coreId` by the most recent `ffiSwitchToThread`.
+
+    Returns the HAL sentinel (`u64::MAX`) for an out-of-range `coreId` or a
+    core that has not had a switch recorded yet.
+
+    Rust: `ffi_per_core_current_thread` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_per_core_current_thread"]
+opaque ffiPerCoreCurrentThread : UInt64 → BaseIO UInt64
+
+-- ============================================================================
 -- WS-SM SM2.D — Verified-lock FFI declarations
 -- ============================================================================
 --
@@ -607,7 +635,7 @@ opaque ffiRwLockReleaseWriteCount : (handle : UInt64) → BaseIO UInt64
 
 /-- WS-RC R2.B.0: Map a `KernelError` to its `u32` FFI discriminant.
 
-The discriminants 0..51 mirror `rust/sele4n-types/src/error.rs` exactly.
+The discriminants 0..53 mirror `rust/sele4n-types/src/error.rs` exactly.
 A regression that adds a Lean variant without updating the Rust enum (or
 vice versa) is caught by `tests/SyscallDispatchSuite.lean`'s round-trip
 check (`KernelError.toUInt32` ∘ `SyscallId.toNat` matches the documented
@@ -670,6 +698,7 @@ def KernelError.toUInt32 : KernelError → UInt32
   | .nullCapability                => 50
   | .partialResolution             => 51
   | .missingSchedContext           => 52
+  | .threadOnDifferentCore         => 53
 
 /-- WS-RC R2.B.0: Encode a `KernelError` into the FFI return contract.
 

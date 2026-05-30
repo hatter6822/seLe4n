@@ -115,6 +115,17 @@ inductive KernelError where
                            -- distinct discriminant lets observability layers
                            -- surface the invariant violation instead of
                            -- absorbing it.
+  | threadOnDifferentCore  -- WS-SM SM5.B.4 (plan §3.2, Theorem 3.2.3): a
+                           -- per-core context switch (`switchToThreadOnCore`)
+                           -- was asked to dispatch a thread on a core other
+                           -- than the core its `cpuAffinity` binds it to.
+                           -- Migration of a thread between cores is a
+                           -- separate, explicit operation; a context switch
+                           -- never implicitly migrates.  Surfacing this as a
+                           -- distinct discriminant lets the per-core
+                           -- scheduler (SM5.C+) and userspace distinguish a
+                           -- genuine wrong-core dispatch from an unrelated
+                           -- scheduler fault (`schedulerInvariantViolation`).
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard

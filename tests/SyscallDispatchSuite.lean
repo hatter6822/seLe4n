@@ -78,7 +78,7 @@ private def mkState (objs : List (ObjId × KernelObject))
 
 /-- SD-001: `KernelError.toUInt32` matches the Rust enum's discriminants.
 
-Pins ALL 52 variants (0..51) explicitly so a regression that
+Pins ALL 54 variants (0..53) explicitly so a regression that
 re-orders the Lean `inductive KernelError` or the `toUInt32` arms
 silently is caught here.  The Rust side's
 `from_u32_roundtrip` test pins the Rust enum self-consistency; this
@@ -142,11 +142,12 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_50_nullCapability"               .nullCapability               50
   pin "sd001_51_partialResolution"            .partialResolution            51
   pin "sd001_52_missingSchedContext"          .missingSchedContext          52
+  pin "sd001_53_threadOnDifferentCore"        .threadOnDifferentCore        53
 
 /-- SD-002: `encodeError` sets bit 63 for every variant AND embeds
     the discriminant in the low 32 bits.
 
-The runtime check exercises every one of the 52 `KernelError`
+The runtime check exercises every one of the 54 `KernelError`
 variants exactly once.  The structural witness for "bit 63 set" lives
 at `SeLe4n.Platform.FFI.encodeError_high_bit_set` in `FFI.lean`. -/
 private def sd002_encodeError : IO Unit := do
@@ -169,12 +170,14 @@ private def sd002_encodeError : IO Unit := do
     , .mmioUnaligned, .invalidSyscallArgument, .ipcTimeout
     , .alignmentError, .vmFault, .userException, .hardwareFault
     , .notSupported, .invalidIrq, .invalidObjectType
-    , .nullCapability, .partialResolution, .missingSchedContext ]
-  -- Pin variant count: matches the Lean inductive (53 variants 0..52).
-  -- R5.E (DEEP-SCH-04): added `.missingSchedContext` at discriminant 52.
-  expect "sd002_variant_count_is_53"
-    (variants.length == 53)
-    s!"variants list should have 53 entries, got {variants.length}"
+    , .nullCapability, .partialResolution, .missingSchedContext
+    , .threadOnDifferentCore ]
+  -- Pin variant count: matches the Lean inductive (54 variants 0..53).
+  -- WS-SM SM5.B.4: added `.threadOnDifferentCore` at discriminant 53
+  -- (R5.E previously added `.missingSchedContext` at 52).
+  expect "sd002_variant_count_is_54"
+    (variants.length == 54)
+    s!"variants list should have 54 entries, got {variants.length}"
   for v in variants do
     let encoded := encodeError v
     -- Phase A: bit 63 is set.

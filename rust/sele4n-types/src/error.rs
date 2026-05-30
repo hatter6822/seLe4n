@@ -2,9 +2,9 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/State.lean` lines 19–97.
-//! Discriminants 0–52 are a 1:1 mapping from the Lean inductive (53 variants
-//! after R5.E's `MissingSchedContext` at 52, extending AN7-E's
-//! `PartialResolution` at 51).
+//! Discriminants 0–53 are a 1:1 mapping from the Lean inductive (54 variants
+//! after WS-SM SM5.B's `ThreadOnDifferentCore` at 53, extending R5.E's
+//! `MissingSchedContext` at 52 and AN7-E's `PartialResolution` at 51).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
@@ -112,8 +112,16 @@ pub enum KernelError {
     /// this as a fatal kernel-side invariant violation and surface it
     /// as `SchedulerInvariantViolation` to the application.
     MissingSchedContext = 52,
+    /// WS-SM SM5.B.4 (plan §3.2, Theorem 3.2.3): a per-core context switch
+    /// (`switchToThreadOnCore`) was asked to dispatch a thread on a core other
+    /// than the core its `cpuAffinity` binds it to.  Cross-core migration is a
+    /// separate, explicit operation; a context switch never implicitly
+    /// migrates.  Distinct from `SchedulerInvariantViolation` so the per-core
+    /// scheduler and userspace can tell a genuine wrong-core dispatch from an
+    /// unrelated scheduler fault.
+    ThreadOnDifferentCore = 53,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–52.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–53.
     UnknownKernelError = 255,
 }
 
@@ -174,6 +182,7 @@ impl KernelError {
             50 => Some(Self::NullCapability),
             51 => Some(Self::PartialResolution),
             52 => Some(Self::MissingSchedContext),
+            53 => Some(Self::ThreadOnDifferentCore),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -237,6 +246,7 @@ impl std::fmt::Display for KernelError {
             Self::NullCapability => write!(f, "null capability (seL4_CapNull sentinel)"),
             Self::PartialResolution => write!(f, "partial capability resolution (noisy-resolution debug mode)"),
             Self::MissingSchedContext => write!(f, "scheduler bound thread references missing SchedContext (cross-subsystem invariant drift)"),
+            Self::ThreadOnDifferentCore => write!(f, "thread bound to a different core (context switch never migrates)"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -253,7 +263,8 @@ mod tests {
     fn from_u32_roundtrip() {
         // AN7-E (API-M01): variants 0-51 added through prior workstreams.
         // R5.E (DEEP-SCH-04): MissingSchedContext added at discriminant 52.
-        for i in 0..=52u32 {
+        // WS-SM SM5.B.4: ThreadOnDifferentCore added at discriminant 53.
+        for i in 0..=53u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -262,7 +273,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(53).is_none());
+        assert!(KernelError::from_u32(54).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
@@ -297,6 +308,8 @@ mod tests {
         assert_eq!(KernelError::PartialResolution as u32, 51);
         // R5.E (DEEP-SCH-04): cross-subsystem invariant drift surfacing
         assert_eq!(KernelError::MissingSchedContext as u32, 52);
+        // WS-SM SM5.B.4: per-core switch reject-remote
+        assert_eq!(KernelError::ThreadOnDifferentCore as u32, 53);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -307,23 +320,23 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // R5.E (DEEP-SCH-04): 53 variants (0-52) — verify total
-        // variant count matches Lean (extends AN7-E's range of 0..=51).
-        let max_valid = 52u32;
+        // WS-SM SM5.B.4: 54 variants (0-53) — verify total
+        // variant count matches Lean (extends R5.E's range of 0..=52).
+        let max_valid = 53u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (53–254) return None
+        // Verify from_u32: unknown discriminants in the gap (54–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–52 are sequential.
-    /// R5.E (DEEP-SCH-04) extended the range with MissingSchedContext at 52;
-    /// AN7-E previously extended it with PartialResolution at 51.
+    /// T1-H: Discriminant ordering — kernel variants 0–53 are sequential.
+    /// WS-SM SM5.B.4 extended the range with ThreadOnDifferentCore at 53;
+    /// R5.E (DEEP-SCH-04) previously extended it with MissingSchedContext at 52.
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=52u32 {
+        for i in 0..=53u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -334,13 +347,13 @@ mod tests {
     }
 
     /// AF6-A: UnknownKernelError sentinel at discriminant 255.
-    /// R5.E: the 52 gap closed, so the None range starts at 53.
+    /// WS-SM SM5.B.4: the 53 gap closed, so the None range starts at 54.
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
-        // Gap between 52 and 255 is all None
-        for i in 53..255u32 {
+        // Gap between 53 and 255 is all None
+        for i in 54..255u32 {
             assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
         }
     }

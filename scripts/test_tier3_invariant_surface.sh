@@ -3036,4 +3036,68 @@ open SeLe4n.Kernel
 #check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
 EOF'
 
+# WS-SM SM5.B — per-core switchToThread surface anchors.  Covers the SM5.B.4
+# foundation (the `TCB.cpuAffinity` field + `KernelError.threadOnDifferentCore`),
+# the SM5.B.1/.3/.4 production operations (`switchToThreadOnCore` /
+# `preemptCurrentOnCore` / `affinityAdmitsCore`), the SM5.B.2 cross-domain
+# lock-set + the preempt frame lemmas, the SM5.B.1/.3/.4/.5/.6 switch-semantics
+# theorems, the SM5.B.8 totality + decidability, and the SM5.B.7 FFI seam
+# (extern decls + typed wrappers + markers).  A rename / removal of any SM5.B
+# symbol fails here at elaboration time, before SM5.C's cross-core wake / SGI
+# dispatch loop consumes them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
+import SeLe4n.Kernel.Concurrency.Runtime
+open SeLe4n.Model
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency
+
+-- SM5.B.4 foundation: the per-thread CPU-affinity field + reject-remote error.
+#check @TCB.cpuAffinity
+#check @SeLe4n.Model.KernelError.threadOnDifferentCore
+
+-- SM5.B.1/.3/.4 production operations (Scheduler.Operations.Selection).
+#check @affinityAdmitsCore
+#check @affinityAdmitsCore_none
+#check @affinityAdmitsCore_some
+#check @preemptCurrentOnCore
+#check @switchToThreadOnCore
+
+-- SM5.B.2 cross-domain lock-set.
+#check @switchToThreadOnCoreLockSet
+#check @switchToThreadOnCoreLockSet_length
+#check @switchToThreadOnCoreLockSet_write_only
+#check @switchToThreadOnCoreLockSet_contains_objStore_write
+#check @switchToThreadOnCoreLockSet_contains_runQueue_write
+#check @switchToThreadOnCoreLockSet_object_before_runQueue
+#check @switchToThreadOnCoreLockSet_keys_nodup
+
+-- preempt frame lemmas.
+#check @preemptCurrentOnCore_currentOnCore
+#check @preemptCurrentOnCore_runQueueOnCore_ne
+#check @preemptCurrentOnCore_runQueueOnCore_self_active
+
+-- SM5.B.1/.3/.4/.5/.6 switch-semantics theorems.
+#check @switchToThreadOnCore_sets_current
+#check @switchToThreadOnCore_preempts_previous
+#check @switchToThreadOnCore_rejects_remote
+#check @switchToThreadOnCore_ok_of_admits
+#check @switchToThreadOnCore_runQueueOnCore_excludes_current
+#check @switchToThreadOnCore_independent_of_other_core
+
+-- SM5.B.8 totality + decidability.
+#check @switchToThreadOnCore_total
+#check @switchToThreadOnCoreSucceeds
+#check @switchToThreadOnCoreRejectsRemote
+
+-- SM5.B.7 FFI seam: extern decls + typed wrappers + markers.
+#check @SeLe4n.Platform.FFI.ffiSwitchToThread
+#check @SeLe4n.Platform.FFI.ffiPerCoreCurrentThread
+#check @switchToThreadHw
+#check @perCoreCurrentThreadHw
+#check @switchToThreadHw_returns_baseio_uint64_marker
+#check @perCoreCurrentThreadHw_returns_baseio_uint64_marker
+EOF'
+
 finalize_report

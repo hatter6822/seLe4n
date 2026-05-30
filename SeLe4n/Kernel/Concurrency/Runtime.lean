@@ -216,4 +216,44 @@ theorem idleWaitBounded_returns_baseio_uint64_marker (maxTicks : UInt64) :
       Platform.FFI.ffiIdleWaitBounded maxTicks := by
   rfl
 
+-- ============================================================================
+-- WS-SM SM5.B.7 — Per-core context-switch typed wrappers
+-- ============================================================================
+
+/-- **WS-SM SM5.B.7**: typed wrapper for `Platform.FFI.ffiSwitchToThread`.
+
+    Records (on the HAL side) that core `c` is now running thread `tid`, after
+    the verified `switchToThreadOnCore` (`Scheduler/Operations/Selection.lean`)
+    has computed the new per-core scheduler state.  Takes a typed `ThreadId`
+    and `CoreId`, so the Rust-side `coreId < numCores` bound check never trips
+    (`c.val < numCores`) — the `1` out-of-range status is unreachable from this
+    typed entry point, so the returned status is always `0`.  At SM5.B.7 no
+    Lean caller exists; SM5.C wires this into the per-core dispatch loop after
+    a verified switch. -/
+def switchToThreadHw (tid : SeLe4n.ThreadId) (c : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiSwitchToThread (UInt64.ofNat tid.toNat) (UInt64.ofNat c.val)
+
+/-- **WS-SM SM5.B.7**: typed wrapper for `Platform.FFI.ffiPerCoreCurrentThread`.
+
+    Reads the per-core current-thread id the HAL recorded for core `c` (the
+    value of the most recent `switchToThreadHw` for that core).  Returns the
+    HAL sentinel (`u64::MAX`) for a core with no switch recorded yet. -/
+def perCoreCurrentThreadHw (c : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val)
+
+/-- **WS-SM SM5.B.7** structural marker: `switchToThreadHw` is a direct FFI
+pass-through (Tier-3 surface anchor; symmetry with the SM1.I marker family). -/
+theorem switchToThreadHw_returns_baseio_uint64_marker
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (switchToThreadHw tid c : BaseIO UInt64) =
+      Platform.FFI.ffiSwitchToThread (UInt64.ofNat tid.toNat) (UInt64.ofNat c.val) := by
+  rfl
+
+/-- **WS-SM SM5.B.7** structural marker: `perCoreCurrentThreadHw` is a direct
+FFI pass-through. -/
+theorem perCoreCurrentThreadHw_returns_baseio_uint64_marker (c : CoreId) :
+    (perCoreCurrentThreadHw c : BaseIO UInt64) =
+      Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val) := by
+  rfl
+
 end SeLe4n.Kernel.Concurrency

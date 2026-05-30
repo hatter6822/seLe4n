@@ -101,6 +101,7 @@ fn main() {
     // would surface it.
     scan_lock_bridge_rs_intact();
     scan_ffi_rs_exposes_lock_ffi_exports();
+    scan_ffi_rs_exposes_switch_to_thread_exports();
 
     // WS-SM SM2.E (closes the queued_rw_lock protocol contract):
     // verify that the mode-encoded four-state parked machine and the
@@ -1000,6 +1001,52 @@ fn scan_ffi_rs_exposes_lock_ffi_exports() {
                  corresponding `@[extern]` declaration in \
                  `SeLe4n/Platform/FFI.lean`, the helper in \
                  `src/lock_bridge.rs`, and the scanner entry above (in lockstep)."
+            );
+        }
+    }
+}
+
+/// **WS-SM SM5.B.7**: verify `src/ffi.rs` still declares the per-core
+/// context-switch FFI seam (`ffi_switch_to_thread` + `ffi_per_core_current_thread`).
+/// The Lean `@[extern]` declarations in `SeLe4n/Platform/FFI.lean` resolve
+/// against these exports at the verified-kernel hardware build's link step;
+/// pinning them at elaboration time forces the contract earlier than the
+/// link-time failure would.
+fn scan_ffi_rs_exposes_switch_to_thread_exports() {
+    let path = "src/ffi.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM5.B.7 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip line comments so the needles match only real declarations.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let required_ffi_symbols = [
+        "pub extern \"C\" fn ffi_switch_to_thread(",
+        "pub extern \"C\" fn ffi_per_core_current_thread(",
+    ];
+    for needle in required_ffi_symbols {
+        if !stripped.contains(needle) {
+            panic!(
+                "WS-SM SM5.B.7 regression: `{path}` no longer declares `{needle}`.  \
+                 The verified-kernel hardware build expects the per-core \
+                 context-switch FFI seam to remain reachable via \
+                 `#[no_mangle] pub extern \"C\"`.  If you removed the export \
+                 deliberately, also remove the corresponding `@[extern]` \
+                 declaration in `SeLe4n/Platform/FFI.lean` and the Lean typed \
+                 wrapper in `SeLe4n/Kernel/Concurrency/Runtime.lean` (in lockstep)."
             );
         }
     }
