@@ -2952,12 +2952,26 @@ open SeLe4n.Kernel
 #check @chooseThreadOnCore
 #check @chooseThread_eq_chooseThreadOnCore_bootCore
 
--- SM5.A.2 — run-queue lock identifier + read-only chooseThread lock-set.
+-- SM5.A.2 — run-queue lock identifier + cross-domain SchedLockId + the
+-- complete (object-store + run-queue) chooseThread lock-set.
 #check @RunQueueLockId
+#check @SchedLockId
+#check @schedObjStoreLockId
+#check @SchedLockId.le
+#check @SchedLockId.lt
+#check @SchedLockId.le_refl
+#check @SchedLockId.le_trans
+#check @SchedLockId.le_antisymm
+#check @SchedLockId.le_total
+#check @SchedLockId.lt_irrefl
+#check @SchedLockId.lt_asymm
+#check @SchedLockId.object_lt_runQueue
 #check @chooseThreadOnCoreLockSet
 #check @chooseThreadOnCoreLockSet_length
 #check @chooseThreadOnCoreLockSet_read_only
-#check @chooseThreadOnCoreLockSet_core
+#check @chooseThreadOnCoreLockSet_contains_objStore_read
+#check @chooseThreadOnCoreLockSet_contains_runQueue_read
+#check @chooseThreadOnCoreLockSet_object_before_runQueue
 #check @chooseThreadOnCoreLockSet_keys_nodup
 
 -- SM5.A.3 — per-core-independence frame + corollaries.

@@ -2298,10 +2298,10 @@ byte-identical).
   modules.  Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on:
   SM5.B (per-core `switchToThread`), SM5.C..SM5.K + SM6..SM9.
 
-**WS-SM SM5.A completion LANDED at v0.31.39** (deep-audit gap closure — brings
-the per-core chooseThread phase to a complete + optimal implementation; two
-maintainer decisions: "order + defer to SM5.B" lock-set, "add it now" budget
-selector).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
+**WS-SM SM5.A completion + cross-domain unification (in the single v0.31.38
+cut)** (deep-audit gap closure + the post-audit PR #804 cross-domain lock-set
+fix — brings the per-core chooseThread phase to a complete + optimal
+implementation).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
 
 - **Selection optimality** `chooseThreadOnCore_selects_highest` (plan §3.1.1) —
   the headline correctness property the audit found missing: the selection is
@@ -2319,14 +2319,25 @@ selector).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
   has budget).
 - **`RunQueueLockId` total order** (`le`/`lt` + `le_refl`/`_trans`/`_antisymm`/
   `_total`/`lt_irrefl`/`lt_asymm` + `Decidable` + `runQueueLockLevel = 10` +
-  `objectLockLevels_lt_runQueueLockLevel`, plan §4.4).  Full SM3-`LockSet`
-  cross-domain unification is SM5.B.
+  `objectLockLevels_lt_runQueueLockLevel`, plan §4.4).
+- **Cross-domain lock-set unification** (post-audit, closing PR #804's P1
+  under-locking finding): the unified `SchedLockId` (object-lock `LockId` ⊕
+  run-queue `RunQueueLockId`) with the plan §4.4 total order (`le_total` /
+  `le_antisymm` / … + `object_lt_runQueue`: every object lock before every
+  run-queue lock — kept a *constructor* of `SchedLockId`, not an eleventh
+  `LockKind`, preserving the pinned 10-level SM0.I hierarchy), and
+  `chooseThreadOnCoreLockSet` now declaring the **complete two-domain** footprint
+  `[(object schedObjStoreLockId, read), (runQueue ⟨c⟩, read)]` — the object-store
+  read lock guards the `st.objects.get?` TCB resolutions the selection performs
+  (which the run-queue-only footprint omitted).  Runtime `withLockSet` wiring
+  over `SchedLockId` is SM5.B.
 - **`chooseThreadOnCore_preserves_wellFormed`** literal SM5.A.6 anchor; 12
   selection bridge lemmas de-privatized for SM5.B/E reuse.
-- **Tests** grow to 43 anchors / 14 examples / 30 runtime assertions: the
+- **Tests** grow to 50 anchors / 17 examples / 33 runtime assertions: the
   **error path** (corrupt run queue ⇒ `.error` — the security path), **EDF**
-  tie-break, and the **budget guarantee** contrast.  Items deferred past v1.0.0
-  with correctness impact: NONE.
+  tie-break, the **budget guarantee** contrast, and the **cross-domain
+  footprint** witnesses (object-store + run-queue locks; §4.4 acquisition
+  order).  Items deferred past v1.0.0 with correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

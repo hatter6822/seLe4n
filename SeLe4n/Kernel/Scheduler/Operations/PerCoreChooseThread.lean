@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
+import SeLe4n.Kernel.Concurrency.Locks.Kind
 
 /-!
 # WS-SM SM5.A — Per-core `chooseThread` (lock-set, independence, completeness)
@@ -28,10 +29,16 @@ loop.
 
 ## What this module proves
 
-* **SM5.A.2** `RunQueueLockId` + `chooseThreadOnCoreLockSet` — the per-core
-  run-queue lock identifier (with a total order keyed by `CoreId` + the §4.4
-  `runQueueLockLevel`, for the deadlock-freedom argument) and the read-only
-  lock-set footprint of `chooseThreadOnCore c`, with structural witnesses.
+* **SM5.A.2** `RunQueueLockId` + the cross-domain `SchedLockId` + the unified
+  `chooseThreadOnCoreLockSet` — the per-core run-queue lock identifier (total
+  order keyed by `CoreId` + the §4.4 `runQueueLockLevel`) **and** the unified
+  cross-domain lock identifier `SchedLockId` (object-domain `LockId` ⊕ run-queue
+  `RunQueueLockId`, with the plan §4.4 total order: every object lock precedes
+  every run-queue lock — `SchedLockId.object_lt_runQueue`).  The read-only
+  footprint of `chooseThreadOnCore c` is now the *complete* two-domain set
+  `[(object objStore-table-lock, read), (runQueue c, read)]`: the object-store
+  read lock guards the `st.objects.get?` TCB resolutions the selection performs,
+  closing the run-queue-only footprint's under-locking gap.
 * **SM5.A.3** per-core independence (Theorem 3.1.2): `chooseThreadOnCore_frame`
   + the named `chooseThreadOnCore_perCore_independence` + corollaries — the
   selection on core `c` reads only core `c`'s run-queue and active-domain
@@ -81,51 +88,12 @@ structure RunQueueLockId where
   core : CoreId
   deriving DecidableEq, Repr
 
-/-- WS-SM SM5.A.2: the lock-set footprint of `chooseThreadOnCore c`
-(plan §3.1 / the SM5.A.2 row of §5).
-
-`chooseThreadOnCore c` is a pure read of core `c`'s run-queue slot (and its
-active-domain slot, guarded by the same per-core scheduler lock), so it
-acquires a single **read** lock on core `c`'s run queue:
-`{(RunQueueLockId.mk c, .read)}`.
-
-It reuses SM3.B's `AccessMode` (read / write) so the per-core scheduler
-lock declarations speak the same vocabulary as the SM3 object-lock
-subsystem — the eventual SM3.C.9 `withLockSet` integration (deferred to
-SM5) composes the two.  The declared footprint is exactly the read
-footprint of `chooseThreadOnCore` (witnessed by
-`chooseThreadOnCore_independent_of_write_off_lockSet` below: a write to any
-core *not* in the lock-set leaves the selection unchanged). -/
-def chooseThreadOnCoreLockSet (c : CoreId) :
-    List (RunQueueLockId × Concurrency.AccessMode) :=
-  [(⟨c⟩, .read)]
-
-/-- SM5.A.2: the `chooseThreadOnCore` lock-set is a singleton. -/
-@[simp] theorem chooseThreadOnCoreLockSet_length (c : CoreId) :
-    (chooseThreadOnCoreLockSet c).length = 1 := rfl
-
-/-- SM5.A.2: every lock in the `chooseThreadOnCore` lock-set is acquired in
-**read** mode — the selection is a pure read. -/
-theorem chooseThreadOnCoreLockSet_read_only (c : CoreId) :
-    ∀ p ∈ chooseThreadOnCoreLockSet c, p.2 = Concurrency.AccessMode.read := by
-  intro p hp
-  simp only [chooseThreadOnCoreLockSet, List.mem_singleton] at hp
-  subst hp; rfl
-
-/-- SM5.A.2: the only lock in the `chooseThreadOnCore c` lock-set is the
-run-queue lock for core `c` itself. -/
-theorem chooseThreadOnCoreLockSet_core (c : CoreId) :
-    ∀ p ∈ chooseThreadOnCoreLockSet c, p.1.core = c := by
-  intro p hp
-  simp only [chooseThreadOnCoreLockSet, List.mem_singleton] at hp
-  subst hp; rfl
-
-/-- SM5.A.2: the lock-set's projected keys are duplicate-free (it is a
-singleton), mirroring the SM3.B `LockSet.hUniqueKeys` key-uniqueness
-invariant. -/
-theorem chooseThreadOnCoreLockSet_keys_nodup (c : CoreId) :
-    ((chooseThreadOnCoreLockSet c).map (·.1)).Nodup := by
-  simp [chooseThreadOnCoreLockSet]
+-- The `chooseThreadOnCore` lock-set footprint (`chooseThreadOnCoreLockSet`)
+-- and its theorems are defined in §1b below — after both the `RunQueueLockId`
+-- order *and* the unified cross-domain `SchedLockId` order it now ranges over.
+-- (Post-audit cross-domain unification: the footprint includes the
+-- object-store read lock that the `st.objects.get?` resolutions require, not
+-- only the per-core run-queue lock; see §1b.)
 
 namespace RunQueueLockId
 
@@ -185,18 +153,203 @@ theorem lt_asymm {a b : RunQueueLockId} (h : a < b) : ¬ b < a :=
 /-- WS-SM SM5.A.2 (plan §4.4 lock-order level): run-queue locks sit *after*
 every SM0.I object-lock level (`objStore`=0 .. `page`=9), hence `10`.  This
 encodes "object locks before run-queue locks": every object-lock level (≤ 9)
-is strictly below `runQueueLockLevel`.  The cross-domain acquisition sequence
-that consumes this is SM5.B. -/
+is strictly below `runQueueLockLevel`.  The unified cross-domain order built on
+top of this level fact is `SchedLockId` (§1b); its runtime acquisition sequence
+(`withLockSet`) is SM5.B. -/
 def runQueueLockLevel : Nat := 10
 
 /-- SM5.A.2: every SM0.I object-lock level (0..9) is strictly below the
-run-queue lock level — the plan §4.4 "object locks acquired before run-queue
-locks" foundation, stated arithmetically (the full cross-domain `LockId`
-order is SM5.B). -/
+run-queue lock level — the arithmetic foundation under the plan §4.4 "object
+locks acquired before run-queue locks" rule.  The order-theoretic form is
+`SchedLockId.object_lt_runQueue` (§1b). -/
 theorem objectLockLevels_lt_runQueueLockLevel : ∀ n : Nat, n ≤ 9 → n < runQueueLockLevel := by
   intro n hn; unfold runQueueLockLevel; omega
 
 end RunQueueLockId
+
+-- ============================================================================
+-- §1b  SM5.A.2 (cross-domain unification, plan §4.4) — SchedLockId + the
+--      complete `chooseThreadOnCore` footprint (object-store + run-queue locks)
+-- ============================================================================
+
+/-- WS-SM SM5.A.2 (cross-domain unification): the canonical object-store
+*table* lock, as an SM0.I `LockId`.  `chooseThreadOnCore` resolves every
+runnable thread's priority / deadline / domain through `st.objects.get?`
+(threaded into `chooseBestInBucket`), so the selection reads the RobinHood
+object store.  Per SM3.A.10 that table is guarded by the single table-level
+lock at the top of the SM0.I hierarchy (`LockKind.objStore`, level 0); a
+`.objStore` `LockId` routes to `SystemState.objStoreLock` regardless of its
+`objId`, so the canonical form carries `ObjId.sentinel`. -/
+def schedObjStoreLockId : Concurrency.LockId :=
+  ⟨Concurrency.LockKind.objStore, SeLe4n.ObjId.sentinel⟩
+
+/-- WS-SM SM5.A.2 (cross-domain unification, plan §4.4): the unified lock
+identifier spanning **both** lock domains the per-core scheduler touches — the
+SM0.I object-lock domain (`LockId`, kind levels 0..9) and the per-core
+run-queue domain (`RunQueueLockId`).  A single `withLockSet` acquisition
+sequence must order locks drawn from both domains; `SchedLockId` is that
+common order.
+
+Keeping the two domains as constructors of one sum — rather than adding an
+eleventh "runQueue" kind to the carefully-pinned 10-level SM0.I `LockKind`
+hierarchy (`level_surjective` / `level_bounded`) — preserves that pinning while
+giving the cross-domain total order plan §4.4 requires: **every object-domain
+lock is acquired before every run-queue lock** (`object_lt_runQueue`). -/
+inductive SchedLockId where
+  /-- An SM0.I object-domain lock (the `objStore` table lock, a per-object TCB
+  lock, …) keyed by `(LockKind, ObjId)`. -/
+  | object (l : Concurrency.LockId)
+  /-- A per-core run-queue lock. -/
+  | runQueue (r : RunQueueLockId)
+  deriving DecidableEq, Repr
+
+namespace SchedLockId
+
+/-- WS-SM SM5.A.2: the unified cross-domain order.  Object-domain locks compare
+by the SM0.I `LockId` lex order; run-queue locks by `CoreId`; and **every**
+object lock precedes **every** run-queue lock (plan §4.4 — object levels 0..9
+acquired before the notional run-queue level 10). -/
+protected def le : SchedLockId → SchedLockId → Prop
+  | .object l₁,   .object l₂   => l₁ ≤ l₂
+  | .object _,    .runQueue _  => True
+  | .runQueue _,  .object _     => False
+  | .runQueue r₁, .runQueue r₂ => r₁.core.val ≤ r₂.core.val
+
+/-- WS-SM SM5.A.2: strict cross-domain order. -/
+protected def lt (a b : SchedLockId) : Prop := SchedLockId.le a b ∧ ¬ SchedLockId.le b a
+
+instance decLeAux (a b : SchedLockId) : Decidable (SchedLockId.le a b) := by
+  cases a <;> cases b <;> simp only [SchedLockId.le] <;> infer_instance
+
+instance : LE SchedLockId := ⟨SchedLockId.le⟩
+instance : LT SchedLockId := ⟨SchedLockId.lt⟩
+
+instance (a b : SchedLockId) : Decidable (a ≤ b) := decLeAux a b
+instance (a b : SchedLockId) : Decidable (a < b) :=
+  inferInstanceAs (Decidable (SchedLockId.le a b ∧ ¬ SchedLockId.le b a))
+
+/-- SM5.A.2: reflexivity (reuses each domain's reflexivity). -/
+protected theorem le_refl (l : SchedLockId) : l ≤ l := by
+  cases l with
+  | object a => exact Concurrency.LockId.le_refl a
+  | runQueue r => exact RunQueueLockId.le_refl r
+
+/-- SM5.A.2: transitivity across both domains (cross-domain edges go
+object→runQueue only, so no transitivity violation is possible). -/
+protected theorem le_trans {a b c : SchedLockId} (h₁ : a ≤ b) (h₂ : b ≤ c) : a ≤ c := by
+  cases a <;> cases b <;> cases c <;>
+    first
+      | exact Concurrency.LockId.le_trans _ _ _ h₁ h₂
+      | exact Nat.le_trans h₁ h₂
+      | exact True.intro
+      | exact (h₁ : False).elim
+      | exact (h₂ : False).elim
+
+/-- SM5.A.2: antisymmetry (the cross-domain edges are strict, so equal-pair
+hypotheses force the same domain). -/
+protected theorem le_antisymm {a b : SchedLockId} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
+  cases a <;> cases b
+  · exact congrArg SchedLockId.object (Concurrency.LockId.le_antisymm _ _ h₁ h₂)
+  · exact (h₂ : False).elim
+  · exact (h₁ : False).elim
+  · exact congrArg SchedLockId.runQueue (RunQueueLockId.le_antisymm h₁ h₂)
+
+/-- SM5.A.2: totality — any two locks (same or cross domain) are comparable. -/
+protected theorem le_total (a b : SchedLockId) : a ≤ b ∨ b ≤ a := by
+  cases a <;> cases b
+  · exact Concurrency.LockId.le_total _ _
+  · exact Or.inl True.intro
+  · exact Or.inr True.intro
+  · exact RunQueueLockId.le_total _ _
+
+/-- SM5.A.2: strict-order irreflexivity. -/
+protected theorem lt_irrefl (l : SchedLockId) : ¬ l < l := fun h => h.2 h.1
+
+/-- SM5.A.2: strict-order asymmetry (the lock-ladder property the
+deadlock-freedom argument rests on). -/
+protected theorem lt_asymm {a b : SchedLockId} (h : a < b) : ¬ b < a := fun h' => h.2 h'.1
+
+/-- WS-SM SM5.A.2 (plan §4.4): every object-domain lock is strictly below every
+run-queue lock — "object locks acquired before run-queue locks", now a theorem
+on the unified order itself rather than only an arithmetic fact about the
+levels (`RunQueueLockId.objectLockLevels_lt_runQueueLockLevel`). -/
+theorem object_lt_runQueue (l : Concurrency.LockId) (r : RunQueueLockId) :
+    SchedLockId.object l < SchedLockId.runQueue r :=
+  ⟨True.intro, fun h => h⟩
+
+end SchedLockId
+
+/-- WS-SM SM5.A.2 (cross-domain unification): the **complete** lock-set
+footprint of `chooseThreadOnCore c`.
+
+`chooseThreadOnCore c` reads two distinct kinds of state:
+* core `c`'s run-queue slot and active-domain slot (the per-core scheduler
+  state), and
+* the RobinHood **object store** — it resolves every runnable thread's
+  priority / deadline / domain through `st.objects.get?` (threaded into
+  `chooseBestInBucket`).
+
+The footprint therefore declares a lock from *both* domains, in plan §4.4
+ascending order (object-domain lock first):
+`[(SchedLockId.object schedObjStoreLockId, .read), (SchedLockId.runQueue ⟨c⟩, .read)]`.
+
+The object-store read lock (`schedObjStoreLockId`, the SM3.A.10 table-level
+lock) is what makes the footprint sound under the SM5.B `withLockSet`
+integration: holding it read-locked prevents a concurrent retype / delete /
+write of a queued TCB from changing the selection (or turning it into
+`schedulerInvariantViolation`) while only the run-queue lock is held.  The two
+reads `chooseThreadOnCore_frame` identifies — `objects` and (`runQueueOnCore
+c`, `activeDomainOnCore c`) — are guarded respectively by the object-store and
+run-queue locks.  The cross-domain acquisition *order* is
+`chooseThreadOnCoreLockSet_object_before_runQueue`; the *runtime* acquisition
+wiring (`withLockSet`) is SM5.B. -/
+def chooseThreadOnCoreLockSet (c : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.object schedObjStoreLockId, .read)
+  , (SchedLockId.runQueue ⟨c⟩, .read) ]
+
+/-- SM5.A.2 (cross-domain): the footprint is the two-lock object-store +
+run-queue set. -/
+@[simp] theorem chooseThreadOnCoreLockSet_length (c : CoreId) :
+    (chooseThreadOnCoreLockSet c).length = 2 := rfl
+
+/-- SM5.A.2: every lock in the `chooseThreadOnCore` footprint is acquired in
+**read** mode — the selection is a pure read of both domains. -/
+theorem chooseThreadOnCoreLockSet_read_only (c : CoreId) :
+    ∀ p ∈ chooseThreadOnCoreLockSet c, p.2 = Concurrency.AccessMode.read := by
+  intro p hp
+  simp only [chooseThreadOnCoreLockSet, List.mem_cons,
+    List.not_mem_nil, or_false] at hp
+  rcases hp with h | h <;> subst h <;> rfl
+
+/-- SM5.A.2 (cross-domain — the audit-fix witness): the object-store read lock
+is in the footprint, so the `st.objects.get?` TCB resolutions
+`chooseThreadOnCore` performs are guarded.  This is the lock the run-queue-only
+footprint omitted. -/
+theorem chooseThreadOnCoreLockSet_contains_objStore_read (c : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.read)
+      ∈ chooseThreadOnCoreLockSet c := by
+  simp [chooseThreadOnCoreLockSet]
+
+/-- SM5.A.2: the per-core run-queue read lock is in the footprint. -/
+theorem chooseThreadOnCoreLockSet_contains_runQueue_read (c : CoreId) :
+    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.read)
+      ∈ chooseThreadOnCoreLockSet c := by
+  simp [chooseThreadOnCoreLockSet]
+
+/-- SM5.A.2 (plan §4.4): inside the footprint the object-store lock is
+acquired *before* the run-queue lock — the cross-domain ascending order. -/
+theorem chooseThreadOnCoreLockSet_object_before_runQueue (c : CoreId) :
+    SchedLockId.object schedObjStoreLockId
+      < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+  SchedLockId.object_lt_runQueue _ _
+
+/-- SM5.A.2: the footprint's projected keys are duplicate-free — the
+object-store lock and the run-queue lock are distinct (different
+constructors), mirroring the SM3.B `LockSet.hUniqueKeys` invariant. -/
+theorem chooseThreadOnCoreLockSet_keys_nodup (c : CoreId) :
+    ((chooseThreadOnCoreLockSet c).map (·.1)).Nodup := by
+  simp [chooseThreadOnCoreLockSet]
 
 -- ============================================================================
 -- §2  SM5.A.3 — Per-core independence (plan §3.1, Theorem 3.1.2)
@@ -262,22 +415,26 @@ theorem chooseThreadOnCore_independent_of_setCurrentOnCore
   · exact SchedulerState.setCurrentOnCore_runQueueOnCore s.scheduler c' c v
   · exact SchedulerState.setCurrentOnCore_activeDomainOnCore s.scheduler c' c v
 
-/-- WS-SM SM5.A.3 / SM5.A.2 bridge: the lock-set is the exact read
-footprint.  A run-queue write on a core *not* listed in
-`chooseThreadOnCoreLockSet c` (equivalently, any `c' ≠ c`) leaves the
-selection unchanged.  This connects the SM5.A.2 lock-set declaration to the
-SM5.A.3 independence result: the declared lock-set cores are precisely the
-cores the selection depends on. -/
+/-- WS-SM SM5.A.3 / SM5.A.2 bridge: a run-queue write on a core whose
+run-queue lock is *not* a key of `chooseThreadOnCoreLockSet c` (equivalently,
+any `c' ≠ c`) leaves the selection unchanged.  This connects the SM5.A.2
+unified footprint to the SM5.A.3 independence result: the only run-queue lock
+the footprint declares is `c`'s own, and that is precisely the run queue the
+selection depends on.  (The footprint's *other* key — the object-store read
+lock — guards the orthogonal `st.objects` read footprint, so it does not
+appear in this run-queue-write statement.) -/
 theorem chooseThreadOnCore_independent_of_write_off_lockSet
     (s : SystemState) (c c' : CoreId) (rq : RunQueue)
-    (h : c' ∉ (chooseThreadOnCoreLockSet c).map (·.1.core)) :
+    (h : SchedLockId.runQueue (⟨c'⟩ : RunQueueLockId)
+          ∉ (chooseThreadOnCoreLockSet c).map (·.1)) :
     chooseThreadOnCore
         { s with scheduler := s.scheduler.setRunQueueOnCore c' rq } c
       = chooseThreadOnCore s c := by
   have hne : c ≠ c' := by
     intro heq
+    subst heq
     apply h
-    simp [chooseThreadOnCoreLockSet, heq]
+    simp [chooseThreadOnCoreLockSet]
   exact chooseThreadOnCore_independent_of_setRunQueueOnCore s c c' rq hne
 
 /-- WS-SM SM5.A.3 (plan §3.1.2, the named `chooseThreadOnCore_perCore_independence`

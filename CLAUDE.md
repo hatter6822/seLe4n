@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.39.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.38.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4598,12 +4598,12 @@ documentation lives under `docs/` and `docs/gitbook/`.
   parameter beyond the boot core.  Suite: 23 anchors / 9 examples / 19 runtime
   assertions (counts verified against the source).  Axiom-clean; Tier 0–3 green.
 
-  **WS-SM SM5.A completion LANDED at v0.31.39 on branch
-  `claude/sharp-mayer-tAap4`** (closes the gaps from the SM5.A deep
-  self-audit, bringing the per-core chooseThread phase to a complete +
-  optimal implementation; two maintainer decisions steered the new scope —
-  "order + defer to SM5.B" for the lock-set, "add it now" for the budget
-  selector).  Axiom-clean; default build green (320 jobs); Tier 0–3 green.
+  **WS-SM SM5.A completion + cross-domain unification (in the single
+  v0.31.38 cut) on branch `claude/sharp-mayer-tAap4`** (closes the gaps from
+  the SM5.A deep self-audit *and* the post-audit PR #804 cross-domain
+  lock-set finding, bringing the per-core chooseThread phase to a complete +
+  optimal implementation).  Axiom-clean; default build green (320 jobs);
+  Tier 0–3 green.
 
   - **Selection optimality (`chooseThreadOnCore_selects_highest`, plan §3.1.1)**
     — the headline correctness property that the audit found missing: the
@@ -4625,15 +4625,31 @@ documentation lives under `docs/` and `docs/gitbook/`.
   - **`RunQueueLockId` total order (SM5.A.2)** — `le`/`lt` keyed by `CoreId`
     with `le_refl`/`_trans`/`_antisymm`/`_total`/`lt_irrefl`/`lt_asymm` +
     `Decidable` + `runQueueLockLevel = 10` +
-    `objectLockLevels_lt_runQueueLockLevel` (plan §4.4).  Full SM3-`LockSet`
-    cross-domain unification is SM5.B (the maintainer "order + defer"
-    disposition).
+    `objectLockLevels_lt_runQueueLockLevel` (plan §4.4).
+  - **Cross-domain lock-set unification (post-audit, closing PR #804's P1
+    under-locking finding)** — `chooseThreadOnCore` resolves every queued
+    thread through `st.objects.get?`, so the run-queue-only footprint
+    under-locked: a concurrent retype / delete / write of a queued TCB could
+    change the selection (or force `schedulerInvariantViolation`) while only
+    the run-queue lock was held.  Fixed by the unified `SchedLockId`
+    (object-lock `LockId` ⊕ run-queue `RunQueueLockId`) with the plan §4.4
+    total order (`le_total` / `le_antisymm` / … + `object_lt_runQueue`: every
+    object lock before every run-queue lock — kept a *constructor* of
+    `SchedLockId`, not an eleventh `LockKind`, preserving the pinned 10-level
+    SM0.I hierarchy), and `chooseThreadOnCoreLockSet` now declaring the
+    **complete two-domain** footprint
+    `[(object schedObjStoreLockId, .read), (runQueue ⟨c⟩, .read)]` — the
+    object-store read lock (`schedObjStoreLockId`, the SM3.A.10 table-level
+    lock) guards the `st.objects` reads.  Runtime `withLockSet` acquisition
+    wiring over `SchedLockId` is SM5.B.
   - **`chooseThreadOnCore_preserves_wellFormed`** — the literal SM5.A.6
     plan-named anchor; 12 selection bridge lemmas de-privatized for SM5.B/E.
-  - **Tests** grow to 43 anchors / 14 examples / 30 runtime assertions, incl.
+  - **Tests** grow to 50 anchors / 17 examples / 33 runtime assertions, incl.
     the **error path** (corrupt run queue ⇒ `.error`, the security path), **EDF**
-    tie-break, and the **budget guarantee** contrast (non-budget selects an
-    exhausted-budget thread; budget-aware rejects it).  Items deferred past
+    tie-break, the **budget guarantee** contrast (non-budget selects an
+    exhausted-budget thread; budget-aware rejects it), and the **cross-domain
+    footprint** witnesses (object-store + run-queue read locks; the §4.4
+    object-before-run-queue acquisition order).  Items deferred past
     v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,

@@ -172,8 +172,9 @@ import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 -- `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1, §5).  The selection function
 -- `chooseThreadOnCore` itself is production-reached (the legacy
 -- `chooseThread` delegates to it, SM5.A.5); this module collects the
--- forward-looking SM5.A theorems: the `RunQueueLockId` + read-only
--- `chooseThreadOnCoreLockSet` (SM5.A.2), the per-core-independence frame +
+-- forward-looking SM5.A theorems: the `RunQueueLockId` + the cross-domain
+-- `SchedLockId` (object-lock ⊕ run-queue, plan §4.4 order) + the complete
+-- two-domain `chooseThreadOnCoreLockSet` (SM5.A.2), the per-core-independence frame +
 -- corollaries (SM5.A.3), idle-fallback completeness
 -- (`chooseThreadOnCore_ok_of_runnableTCBs` / `_none_no_eligible` /
 -- `_some_of_eligible`, SM5.A.4), selection soundness

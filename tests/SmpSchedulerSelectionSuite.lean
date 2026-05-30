@@ -46,12 +46,19 @@ open SeLe4n.Testing
 #check @chooseThreadOnCore
 #check @chooseThread_eq_chooseThreadOnCore_bootCore
 
--- SM5.A.2 lock-set:
+-- SM5.A.2 lock-set (cross-domain unification):
 #check @RunQueueLockId
+#check @SchedLockId
+#check @schedObjStoreLockId
+#check @SchedLockId.le_total
+#check @SchedLockId.le_antisymm
+#check @SchedLockId.object_lt_runQueue
 #check @chooseThreadOnCoreLockSet
 #check @chooseThreadOnCoreLockSet_length
 #check @chooseThreadOnCoreLockSet_read_only
-#check @chooseThreadOnCoreLockSet_core
+#check @chooseThreadOnCoreLockSet_contains_objStore_read
+#check @chooseThreadOnCoreLockSet_contains_runQueue_read
+#check @chooseThreadOnCoreLockSet_object_before_runQueue
 #check @chooseThreadOnCoreLockSet_keys_nodup
 
 -- SM5.A.3 per-core independence:
@@ -186,6 +193,20 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
 example : RunQueueLockId.runQueueLockLevel = 10 := rfl
 example (n : Nat) (h : n ≤ 9) : n < RunQueueLockId.runQueueLockLevel :=
   RunQueueLockId.objectLockLevels_lt_runQueueLockLevel n h
+
+-- SM5.A.2 (cross-domain unification): the unified `SchedLockId` order — every
+-- object-domain lock precedes every run-queue lock (plan §4.4), and the order
+-- is total/antisymmetric across both domains.
+example (l : Concurrency.LockId) (r : RunQueueLockId) :
+    SchedLockId.object l < SchedLockId.runQueue r :=
+  SchedLockId.object_lt_runQueue l r
+example (a b : SchedLockId) : a ≤ b ∨ b ≤ a := SchedLockId.le_total a b
+-- The complete footprint declares the object-store read lock, closing the
+-- run-queue-only under-locking gap the audit flagged.
+example (c : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, AccessMode.read)
+      ∈ chooseThreadOnCoreLockSet c :=
+  chooseThreadOnCoreLockSet_contains_objStore_read c
 
 -- Budget variant: the property unique to the budget-aware selector — a
 -- dispatched thread genuinely has CBS budget.
@@ -336,16 +357,27 @@ private def runSelectionScenarios : IO Unit := do
 
 /-- §3.7: SM5.A.2 lock-set structural witnesses (decidable). -/
 private def runLockSetChecks : IO Unit := do
-  IO.println "--- §3.7 SM5.A.2 lock-set witnesses ---"
-  assertBool "chooseThreadOnCoreLockSet bootCoreId is a singleton"
-    (decide ((chooseThreadOnCoreLockSet bootCoreId).length = 1))
+  IO.println "--- §3.7 SM5.A.2 lock-set witnesses (cross-domain) ---"
+  assertBool "chooseThreadOnCoreLockSet bootCoreId has both domain locks (length 2)"
+    (decide ((chooseThreadOnCoreLockSet bootCoreId).length = 2))
   assertBool "chooseThreadOnCoreLockSet bootCoreId is read-only"
     (decide ((chooseThreadOnCoreLockSet bootCoreId).all (fun p => p.2 == AccessMode.read)))
-  assertBool "chooseThreadOnCoreLockSet bootCoreId guards exactly the boot core"
-    (decide ((chooseThreadOnCoreLockSet bootCoreId).all (fun p => p.1.core == bootCoreId)))
-  assertBool "every core's chooseThread lock-set is a singleton"
-    (allCores.all (fun c => decide ((chooseThreadOnCoreLockSet c).length = 1)))
-  -- SM5.A.2 lock-order: the run-queue lock total order is decidable and total.
+  assertBool "footprint contains the object-store read lock (guards st.objects reads)"
+    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.read)
+              ∈ chooseThreadOnCoreLockSet bootCoreId))
+  assertBool "footprint contains the boot core's run-queue read lock"
+    (decide ((SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.read)
+              ∈ chooseThreadOnCoreLockSet bootCoreId))
+  assertBool "footprint acquires the object-store lock before the run-queue lock (§4.4)"
+    (decide (SchedLockId.object schedObjStoreLockId
+              < SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)))
+  assertBool "every core's chooseThread footprint has both domain locks (length 2)"
+    (allCores.all (fun c => decide ((chooseThreadOnCoreLockSet c).length = 2)))
+  -- SM5.A.2 lock-order: the cross-domain SchedLockId order is decidable and total.
+  assertBool "SchedLockId run-queue order is total over allCores"
+    (allCores.all (fun a => allCores.all (fun b =>
+      decide ((SchedLockId.runQueue ⟨a⟩) ≤ (SchedLockId.runQueue ⟨b⟩))
+        || decide ((SchedLockId.runQueue ⟨b⟩) ≤ (SchedLockId.runQueue ⟨a⟩)))))
   assertBool "run-queue lock order is total over allCores"
     (allCores.all (fun a => allCores.all (fun b =>
       decide ((⟨a⟩ : RunQueueLockId) ≤ ⟨b⟩) || decide ((⟨b⟩ : RunQueueLockId) ≤ ⟨a⟩))))

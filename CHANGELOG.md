@@ -1,4 +1,47 @@
-## v0.31.39 — WS-SM SM5.A completion: selection optimality, budget-aware per-core selector, lock-order
+## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness, + cross-domain lock unification)
+
+WS-SM Phase SM5 (per-core scheduler) opens with SM5.A — per-core thread
+selection — shipped as a single v0.31.38 cut: the initial landing, the
+deep-audit completion (selection optimality + budget-aware selector +
+lock-order), the post-audit cross-domain lock-set unification, and the CI
+shellcheck fix.  All new theorems axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice` only); default build green (320 jobs); Tier 0–3 green.
+
+### Cross-domain lock-set unification + CI shellcheck fix (post-audit)
+
+Closes two PR-review findings on PR #804:
+
+- **P1 — complete `chooseThread` lock-set footprint (cross-domain
+  unification).**  The original `chooseThreadOnCoreLockSet` declared only the
+  per-core run-queue read lock, but `chooseThreadOnCore` also resolves every
+  runnable thread through `st.objects.get?` — so a concurrent retype / delete /
+  write of a queued TCB could change the selection (or force
+  `schedulerInvariantViolation`) while only the run-queue lock was held.  The
+  footprint is now the complete two-domain set
+  `[(SchedLockId.object schedObjStoreLockId, .read), (SchedLockId.runQueue ⟨c⟩, .read)]`.
+  `SchedLockId` (NEW) is the unified cross-domain lock identifier — the SM0.I
+  object-lock domain (`LockId`) ⊕ the per-core run-queue domain
+  (`RunQueueLockId`) — with the plan §4.4 total order (`le_refl` / `le_trans` /
+  `le_antisymm` / `le_total` / `lt_irrefl` / `lt_asymm` + the cross-domain
+  `object_lt_runQueue`: every object lock is acquired before every run-queue
+  lock).  Keeping the run-queue lock a *constructor* of `SchedLockId` rather
+  than an eleventh `LockKind` preserves the pinned 10-level SM0.I hierarchy.
+  The object-store read lock (`schedObjStoreLockId`, the SM3.A.10 table-level
+  lock) guards the `st.objects` reads; the runtime `withLockSet` acquisition
+  wiring over `SchedLockId` is SM5.B.  All new theorems axiom-clean.
+- **P2 — single patch version per PR.**  This branch ships as a single
+  v0.31.38 cut (was 0.31.38 landing + 0.31.39 completion) so the merge is one
+  patch bump from main's 0.31.37, per the versioning policy.
+- **CI — Tier 0 shellcheck SC2016.**  The SM5.A §6 tier-3 anchor comment
+  wrapped `chooseThreadEffectiveOnCore` in markdown backticks inside a
+  `bash -lc '… <<"EOF" … EOF'` block; shellcheck read the backtick pair as a
+  command substitution and failed the Fast gate (x86 + ARM64) at Tier 0.  The
+  cosmetic backticks are dropped.
+
+Test surface (`tests/SmpSchedulerSelectionSuite.lean`): 50 surface anchors /
+17 elaboration examples / 33 runtime assertions.
+
+### Completion — selection optimality, budget-aware per-core selector, lock-order
 
 Closes the gaps identified in the SM5.A deep self-audit, bringing the per-core
 chooseThread phase to a complete, optimal implementation.  Two maintainer
@@ -58,10 +101,10 @@ unification (SM5.B); per-core idle-thread install for the unconditional
 
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.1.1 (optimality), §3.1, §4.4
 
-## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness)
+### Initial landing — selection, lock-set, independence, completeness
 
-Opens WS-SM Phase SM5 (per-core scheduler) with the first sub-phase, SM5.A —
-per-core thread selection (`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1,
+The first sub-phase, SM5.A — per-core thread selection
+(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1,
 §5).  All eight sub-tasks land in one cut.  Every new theorem is axiom-clean
 (`propext` / `Quot.sound` only); the legacy single-core `chooseThread` migrates
 to delegate to the per-core form with **zero behavioural change** (full default
