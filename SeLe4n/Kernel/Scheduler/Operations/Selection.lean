@@ -12,7 +12,7 @@ import SeLe4n.Kernel.Scheduler.Invariant
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId)
 
 -- ============================================================================
 -- M-03/WS-E6: EDF (Earliest Deadline First) tie-breaking
@@ -484,6 +484,47 @@ def chooseBestInBucketEffective
   | .ok none =>
     chooseBestRunnableInDomainEffective st rq.toList activeDomain none
 
+/-- WS-SM SM5.A.1: per-core thread selection (plan
+`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.1).
+
+The per-core analogue of `chooseThread`: selects the highest-priority
+runnable thread in core `c`'s active scheduling domain, reading **only**
+core `c`'s run-queue slot (`runQueueOnCore c`) and active-domain slot
+(`activeDomainOnCore c`).  This single-core-slot read footprint is the
+per-core-independence property proven in SM5.A.3
+(`chooseThreadOnCore_perCore_independence`): the selection on core `c` is
+unaffected by writes to any other core's scheduler slots.
+
+It is a **pure read** — no state is threaded or mutated (the result is the
+selection alone, not a `(choice, state)` pair).  The legacy `chooseThread`
+(SM5.A.5) is this function specialised to `bootCoreId` and lifted into the
+`Kernel` monad with the state threaded unchanged.
+
+**Return type rationale (plan §3.1 adaptation).** The plan's pseudocode
+returns a bare `Option ThreadId`; the implementation returns
+`Except KernelError (Option ThreadId)` to preserve the error-detection
+discipline of the underlying `chooseBestInBucket`, which surfaces a
+`schedulerInvariantViolation` when a run-queue entry fails to resolve to a
+TCB (a corrupted run queue).  Collapsing that error to `none` would
+silently treat queue corruption as "no runnable thread", masking the fault
+and potentially idling a core that ought to be running a thread — a
+security/correctness regression.  The richer error-returning type is
+strictly more informative; `chooseThreadOnCore_ok_of_runnableTCBs`
+(SM5.A.4) proves the error branch is unreachable under the per-core
+scheduler invariant, so no well-formed state ever observes the `.error`
+result.
+
+Selection policy is identical to `chooseThread`: bucket-first
+priority/EDF/FIFO via `chooseBestInBucket` (no budget filter — the
+budget-aware variant is `chooseThreadEffective`). -/
+def chooseThreadOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError (Option SeLe4n.ThreadId) :=
+  match chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore c)
+      (st.scheduler.activeDomainOnCore c) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some (tid, _, _)) => .ok (some tid)
+
 /-- M-03/M-05 WS-E6/WS-G4: Choose the highest-priority runnable thread from the
 active domain using deterministic selection: priority > EDF deadline > FIFO.
 
@@ -502,10 +543,45 @@ This is a pure read operation — the system state is returned unchanged.
 If no runnable thread exists in the active domain, selection returns `none`. -/
 def chooseThread : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+    match chooseThreadOnCore st bootCoreId with
     | .error e => .error e
-    | .ok none => .ok (none, st)
-    | .ok (some (tid, _, _)) => .ok (some tid, st)
+    | .ok result => .ok (result, st)
+
+/-- WS-SM SM5.A.5: the legacy single-core `chooseThread` is exactly the
+per-core selection `chooseThreadOnCore` specialised to the boot core,
+lifted into the `Kernel` monad (`chooseThread` is a pure read, so the
+state is threaded unchanged).  `rfl` because that is now the literal
+definition; this names the migration so downstream rewrites can appeal to
+it without re-`unfold`ing both layers. -/
+theorem chooseThread_eq_chooseThreadOnCore_bootCore (st : SystemState) :
+    chooseThread st =
+      (match chooseThreadOnCore st bootCoreId with
+       | .error e => .error e
+       | .ok result => .ok (result, st)) := rfl
+
+/-- WS-SM SM5.A (budget-aware companion to `chooseThreadOnCore`): per-core
+SchedContext-aware thread selection.
+
+The per-core analogue of `chooseThreadEffective`: selects the
+highest-*effective*-priority runnable thread in core `c`'s active domain that
+also has sufficient CBS budget, reading only core `c`'s run-queue slot and
+active-domain slot (plus the global object store for the SchedContext/budget
+lookups, which is held under the implicit ObjStore lock like every
+transition).  Pure read.
+
+Unlike `chooseThreadOnCore` (which mirrors the non-budget `chooseThread`),
+this respects CBS budgets via `hasSufficientBudget` — a thread whose
+SchedContext budget is exhausted is **not** selected.  The legacy
+`chooseThreadEffective` is this function specialised to `bootCoreId` and
+lifted into the `Kernel` monad.  Returns `Except KernelError (Option
+ThreadId)` for the same fail-closed reason as `chooseThreadOnCore`. -/
+def chooseThreadEffectiveOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError (Option SeLe4n.ThreadId) :=
+  match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore c)
+      (st.scheduler.activeDomainOnCore c) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some (tid, _, _)) => .ok (some tid)
 
 /-- Z4-D/E: SchedContext-aware thread selection.
 
@@ -513,13 +589,24 @@ Uses `chooseBestInBucketEffective` which filters by budget eligibility and
 resolves effective priorities from SchedContext objects. This is used by the
 extended scheduler operations (`scheduleEffective`, `timerTickWithBudget`,
 `handleYieldWithBudget`). The original `chooseThread` is preserved for
-backward compatibility with existing preservation proofs. -/
+backward compatibility with existing preservation proofs.
+
+WS-SM SM5.A: now defined as the per-core `chooseThreadEffectiveOnCore`
+specialised to the boot core (symmetric with the `chooseThread` migration). -/
 def chooseThreadEffective : Kernel (Option SeLe4n.ThreadId) :=
   fun st =>
-    match chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
+    match chooseThreadEffectiveOnCore st bootCoreId with
     | .error e => .error e
-    | .ok none => .ok (none, st)
-    | .ok (some (tid, _, _)) => .ok (some tid, st)
+    | .ok result => .ok (result, st)
+
+/-- WS-SM SM5.A: the legacy `chooseThreadEffective` is exactly the per-core
+budget-aware selection specialised to the boot core, lifted into the `Kernel`
+monad. `rfl` by definition. -/
+theorem chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore (st : SystemState) :
+    chooseThreadEffective st =
+      (match chooseThreadEffectiveOnCore st bootCoreId with
+       | .error e => .error e
+       | .ok result => .ok (result, st)) := rfl
 
 /-- Z4-D/E: `chooseThreadEffective` is read-only — preserves state. -/
 theorem chooseThreadEffective_preserves_state
@@ -527,7 +614,7 @@ theorem chooseThreadEffective_preserves_state
     (next : Option SeLe4n.ThreadId)
     (hStep : chooseThreadEffective st = .ok (next, st')) :
     st' = st := by
-  unfold chooseThreadEffective at hStep
+  unfold chooseThreadEffective chooseThreadEffectiveOnCore at hStep
   cases hPick : chooseBestInBucketEffective st (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>

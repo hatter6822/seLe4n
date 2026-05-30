@@ -66,7 +66,7 @@ theorem chooseThread_preserves_state
     (next : Option SeLe4n.ThreadId)
     (hStep : chooseThread st = .ok (next, st')) :
     st' = st := by
-  unfold chooseThread at hStep
+  unfold chooseThread chooseThreadOnCore at hStep
   cases hPick : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hPick] at hStep
   | ok best =>
@@ -927,7 +927,7 @@ private theorem chooseBestRunnableBy_optimal_combined
           · exact ihP2
 
 /-- WS-H6: Specialized optimality for init = none. -/
-private theorem chooseBestRunnableBy_optimal
+theorem chooseBestRunnableBy_optimal
     (objects : SeLe4n.ObjId → Option KernelObject)
     (eligible : TCB → Bool)
     (runnable : List SeLe4n.ThreadId)
@@ -2168,7 +2168,7 @@ private theorem chooseThread_preserves_domainSchedule
     (st stCT : SystemState) (opt : Option SeLe4n.ThreadId)
     (hStep : chooseThread st = .ok (opt, stCT)) :
     stCT.scheduler.domainSchedule = st.scheduler.domainSchedule := by
-  unfold chooseThread at hStep
+  unfold chooseThread chooseThreadOnCore at hStep
   cases hCB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId) (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hCB] at hStep
   | ok val =>
@@ -2294,7 +2294,7 @@ theorem setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline
 
 /-- WS-H6: If `chooseBestRunnableBy` returns `some (resTid, resPrio, resDl)`, then
 `objects resTid.toObjId = some (.tcb tcb)` for some TCB. -/
-private theorem chooseBestRunnableBy_result_fields
+theorem chooseBestRunnableBy_result_fields
     (objects : SeLe4n.ObjId → Option KernelObject)
     (eligible : TCB → Bool)
     (runnable : List SeLe4n.ThreadId)
@@ -2593,7 +2593,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
     (hStep : schedule st = .ok ((), st')) :
     edfCurrentHasEarliestDeadline st' := by
   unfold schedule at hStep
-  simp only [chooseThread] at hStep
+  simp only [chooseThread, chooseThreadOnCore] at hStep
   cases hCIB : chooseBestInBucket st.objects.get? (st.scheduler.runQueueOnCore bootCoreId)
       (st.scheduler.activeDomainOnCore bootCoreId) with
   | error e => simp [hCIB] at hStep

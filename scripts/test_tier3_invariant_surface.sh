@@ -2934,4 +2934,106 @@ open SeLe4n.Platform.RPi5
 #check @default_registerContextStableCheckOnCore
 EOF'
 
+# WS-SM SM5.A — per-core chooseThread surface anchors.  Covers the SM5.A.2
+# run-queue lock-set (`RunQueueLockId` + `chooseThreadOnCoreLockSet` + 4
+# witnesses), the SM5.A.3 per-core-independence frame + corollaries, the
+# SM5.A.4 idle-fallback completeness theorems + `schedulerInvariant_perCore`
+# corollaries, the SM5.A.6 selection-soundness results, and the SM5.A.7
+# decidable predicates.  `chooseThreadOnCore` (SM5.A.1) and the legacy
+# `chooseThread` migration bridge (SM5.A.5) are checked against the
+# production module.  A rename / removal of any SM5.A symbol fails here at
+# elaboration time, before SM5.B's per-core `switchToThread` consumes them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
+open SeLe4n.Kernel
+
+-- SM5.A.1 + SM5.A.5 — per-core selection + legacy-chooseThread migration bridge.
+#check @chooseThreadOnCore
+#check @chooseThread_eq_chooseThreadOnCore_bootCore
+
+-- SM5.A.2 — run-queue lock identifier + cross-domain SchedLockId + the
+-- complete (object-store + run-queue) chooseThread lock-set.
+#check @RunQueueLockId
+#check @SchedLockId
+#check @schedObjStoreLockId
+#check @SchedLockId.le
+#check @SchedLockId.lt
+#check @SchedLockId.le_refl
+#check @SchedLockId.le_trans
+#check @SchedLockId.le_antisymm
+#check @SchedLockId.le_total
+#check @SchedLockId.lt_irrefl
+#check @SchedLockId.lt_asymm
+#check @SchedLockId.object_lt_runQueue
+#check @chooseThreadOnCoreLockSet
+#check @chooseThreadOnCoreLockSet_length
+#check @chooseThreadOnCoreLockSet_read_only
+#check @chooseThreadOnCoreLockSet_contains_objStore_read
+#check @chooseThreadOnCoreLockSet_contains_runQueue_read
+#check @chooseThreadOnCoreLockSet_object_before_runQueue
+#check @chooseThreadOnCoreLockSet_keys_nodup
+
+-- SM5.A.3 — per-core-independence frame + corollaries.
+#check @chooseThreadOnCore_frame
+#check @chooseThreadOnCore_perCore_independence
+#check @chooseThreadOnCore_independent_of_setRunQueueOnCore
+#check @chooseThreadOnCore_independent_of_setActiveDomainOnCore
+#check @chooseThreadOnCore_independent_of_setCurrentOnCore
+#check @chooseThreadOnCore_independent_of_write_off_lockSet
+
+-- SM5.A.4 — idle-fallback completeness + schedulerInvariant_perCore corollary.
+#check @chooseThreadOnCore_ok_of_runnableTCBs
+#check @chooseThreadOnCore_none_no_eligible
+#check @chooseThreadOnCore_some_of_eligible
+#check @chooseThreadOnCore_ok_of_schedulerInvariant
+
+-- SM5.A.6 — selection soundness + preservation form + invariant corollary.
+#check @chooseThreadOnCore_some_mem_runQueueOnCore
+#check @chooseThread_preserves_runQueueOnCore_wellFormed
+#check @chooseThreadOnCore_some_mem_of_schedulerInvariant
+
+-- SM5.A.7 — decidable selection predicates.
+#check @chooseThreadOnCoreSelects
+#check @chooseThreadOnCoreIdleFallback
+
+-- SM5.A.3 — selection optimality (§3.1.1) + literal preserves-wellFormed anchor.
+#check @chooseThreadOnCore_selects_highest
+#check @chooseThreadOnCore_preserves_wellFormed
+
+-- SM5.A.2 — run-queue-lock total order + §4.4 level.
+#check @RunQueueLockId.le
+#check @RunQueueLockId.lt
+#check @RunQueueLockId.le_refl
+#check @RunQueueLockId.le_trans
+#check @RunQueueLockId.le_antisymm
+#check @RunQueueLockId.le_total
+#check @RunQueueLockId.lt_irrefl
+#check @RunQueueLockId.lt_asymm
+#check @RunQueueLockId.runQueueLockLevel
+#check @RunQueueLockId.objectLockLevels_lt_runQueueLockLevel
+
+-- SM5.A §6 — budget-aware companion chooseThreadEffectiveOnCore.
+#check @chooseThreadEffectiveOnCore
+#check @chooseThreadEffective_eq_chooseThreadEffectiveOnCore_bootCore
+#check @chooseThreadEffectiveOnCore_frame
+#check @chooseThreadEffectiveOnCore_independent_of_setRunQueueOnCore
+#check @chooseThreadEffectiveOnCore_ok_of_runnableTCBs
+#check @chooseThreadEffectiveOnCore_some_mem_runQueueOnCore
+#check @chooseThreadEffectiveOnCore_selected_has_budget
+#check @chooseThreadEffectiveOnCore_none_no_eligible
+#check @chooseThreadEffectiveOnCoreSelects
+#check @chooseThreadEffectiveOnCoreIdleFallback
+
+-- SM5.A §6 — budget selector complete footprint: object-store + run-queue.
+#check @chooseThreadEffectiveOnCoreLockSet
+#check @chooseThreadEffectiveOnCoreLockSet_eq
+#check @chooseThreadEffectiveOnCoreLockSet_contains_objStore_read
+#check @chooseThreadEffectiveOnCoreLockSet_contains_runQueue_read
+#check @chooseThreadEffectiveOnCoreLockSet_read_only
+
+-- SM5.A support: RunQueue.ofList well-formedness (production helper).
+#check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
+EOF'
+
 finalize_report

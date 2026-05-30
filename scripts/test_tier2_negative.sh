@@ -230,4 +230,12 @@ run_check_with_timeout "TRACE" lake exe scheduler_invariant_per_core_preservatio
 # default state), and the cross-subsystem capstone aggregates.
 run_check_with_timeout "TRACE" lake exe cross_subsystem_per_core_suite
 
+# WS-SM SM5.A — per-core chooseThread suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + the six SM5.A.8 runtime
+# selection scenarios (empty/idle-fallback, single in-domain, highest-
+# priority, out-of-domain skip, per-core independence, selection soundness)
+# evaluating the real `chooseThreadOnCore` computation, plus the SM5.A.2
+# lock-set witnesses.
+run_check_with_timeout "TRACE" lake exe smp_scheduler_selection_suite
+
 finalize_report

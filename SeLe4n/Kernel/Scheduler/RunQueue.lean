@@ -998,5 +998,26 @@ theorem remove_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed)
       exact hpTP
     · exact remove_byPrio_from_orig rq tid p t hTNe hpBucket
 
+/-- WS-SM SM5.A: `RunQueue.ofList` builds a well-formed run queue.  `ofList`
+folds `insert` over `empty`; `empty_wellFormed` is the base case and
+`insert_preserves_wellFormed` the inductive step, so well-formedness is
+maintained by construction.  Used by the SM5 per-core scheduler proofs and
+test suites to discharge the `RunQueue.wellFormed` hypothesis on concrete
+fixtures (`wellFormed` is `∀`-quantified over priorities and thread IDs,
+hence not directly `decide`-able). -/
+theorem ofList_wellFormed (entries : List (ThreadId × Priority)) :
+    (ofList entries).wellFormed := by
+  have h : ∀ (es : List (ThreadId × Priority)) (rq : RunQueue), rq.wellFormed →
+      (es.foldl (fun rq (tid, prio) => rq.insert tid prio) rq).wellFormed := by
+    intro es
+    induction es with
+    | nil => intro rq hwf; exact hwf
+    | cons hd tl ih =>
+      intro rq hwf
+      obtain ⟨tid, prio⟩ := hd
+      exact ih (rq.insert tid prio) (insert_preserves_wellFormed rq hwf tid prio)
+  unfold ofList
+  exact h entries empty empty_wellFormed
+
 end RunQueue
 end SeLe4n.Kernel
