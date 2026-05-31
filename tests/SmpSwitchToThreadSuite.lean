@@ -101,6 +101,10 @@ open SeLe4n.Testing
 #check @perCoreCurrentThreadHw
 #check @switchToThreadHw_returns_baseio_uint64_marker
 #check @perCoreCurrentThreadHw_returns_baseio_uint64_marker
+-- PR #805 review P2-2: fail-closed ThreadId encodability guard on the FFI seam.
+#check @switchToThreadHwTidBound
+#check @switchToThreadHwRejected
+#check @switchToThreadHw_rejects_unencodable
 
 -- ============================================================================
 -- §2  Elaboration-time examples: apply each headline theorem to verified inputs
@@ -201,6 +205,21 @@ example (c : CoreId) :
 /-- SM5.B.4: affinity-admits algebra — an unbound thread runs on any core. -/
 example (tcb : TCB) (c : CoreId) (h : tcb.cpuAffinity = none) :
     affinityAdmitsCore tcb c = true := affinityAdmitsCore_none tcb c h
+
+/-- PR #805 review P2-2: the FFI seam is fail-closed — a `ThreadId` that does not
+fit in a `UInt64` (or collides with the `NO_CURRENT_THREAD` sentinel) is rejected
+without touching the HAL, so a valid Lean `ThreadId` can never be recorded as the
+wrong thread. -/
+example (tid : SeLe4n.ThreadId) (c : CoreId) (h : ¬ tid.toNat < switchToThreadHwTidBound) :
+    (switchToThreadHw tid c : BaseIO UInt64) = pure switchToThreadHwRejected :=
+  switchToThreadHw_rejects_unencodable tid c h
+
+/-- PR #805 review P2-2: on an FFI-encodable `ThreadId` (every well-formed kernel
+TID) the wrapper is the direct HAL pass-through. -/
+example (tid : SeLe4n.ThreadId) (c : CoreId) (h : tid.toNat < switchToThreadHwTidBound) :
+    (switchToThreadHw tid c : BaseIO UInt64) =
+      Platform.FFI.ffiSwitchToThread (UInt64.ofNat tid.toNat) (UInt64.ofNat c.val) :=
+  switchToThreadHw_returns_baseio_uint64_marker tid c h
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.B.9 switch scenarios

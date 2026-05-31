@@ -205,6 +205,66 @@ postponed to SM5.I.8):
   `Quot.sound`).  Default build green (320 jobs); Tier 0–3 green; trace fixture
   byte-identical.
 
+### Audit-pass-3 refinements (PR #805 automated-review closure; also in v0.31.39)
+
+Two valid P2 findings from the PR's automated reviewer, both squarely in SM5.B's
+scope (the `TCB.cpuAffinity` field + the FFI seam this cut introduced), closed
+per the implement-the-improvement rule:
+
+- **Information-flow projection leak (P2-4)** — adding `TCB.cpuAffinity` made it
+  survive `projectKernelObject`'s TCB record update by default, while the same
+  projection deliberately erases every other scheduler-only field
+  (`registerContext`, `schedContextBinding`, `pipBoost`, `pendingMessage`,
+  `timedOut`).  Per-thread CPU *placement* is the same class — a scheduler
+  resource-management decision, not observable logical identity — so two states
+  differing only by a (high/scheduler-driven) affinity change would project to
+  *different* low objects, leaking placement across security domains once
+  `setThreadCpuAffinity` (SM5.C) can change it.  Fixed by stripping
+  `cpuAffinity := none` in the `.tcb` projection arm (structurally, per the
+  projection's pure-function discipline, mirroring AK6-G), with the witness
+  theorem `projectKernelObject_erases_cpuAffinity`.
+- **FFI ThreadId encodability (P2-2)** — `switchToThreadHw` did
+  `UInt64.ofNat tid.toNat` on an unbounded-`Nat` `ThreadId`, silently wrapping
+  for values ≥ 2^64 and colliding with the HAL `NO_CURRENT_THREAD = u64::MAX`
+  sentinel at exactly 2^64−1, so a valid Lean TID could be recorded as the wrong
+  thread (or as "no current thread") once SM5.C wires the wrapper.  Fixed
+  fail-closed (mirroring the SM1.I.4 u64-before-cast discipline): the single
+  bound `tid.toNat < switchToThreadHwTidBound` (= 2^64−1) covers both overflow
+  and sentinel collision; an out-of-range `tid` returns
+  `switchToThreadHwRejected` (`1`, "not recorded") without touching the HAL.
+  Witnesses `switchToThreadHw_returns_baseio_uint64_marker` (now the conditional
+  passthrough) + `switchToThreadHw_rejects_unencodable`.
+
+Both fixes axiom-clean (`propext` / `Quot.sound`); AK7 `RAW_LOOKUP_TID` unchanged
+at the 810 floor; default build green (320 jobs); Tier 0–3 green; trace fixture
+byte-identical; `docs/codebase_map.json` regenerated.
+
+**Tracked debt (maintainer-confirmed deferral, with closure targets).** Three
+further P2 findings are genuinely future-phase, not SM5.B defects:
+
+- **Reject non-runnable switch targets (→ SM5.C).** `switchToThreadOnCore`
+  accepts any affinity-admitted TCB without a run-queue-membership / active-
+  domain guard (unlike the legacy `schedule` dispatch path in
+  `Scheduler/Operations/Core.lean`).  Its *intended* composition —
+  `switchToThreadOnCore (chooseThreadOnCore c)` — is already membership-sound by
+  construction (`chooseThreadOnCore_some_mem_runQueueOnCore`, SM5.A.6), so no
+  current path can hand it a stale target.  The standalone-guard hardening is
+  deferred to **SM5.C**, where the cross-core wake / SGI dispatch loop becomes
+  the first runtime caller and the membership/domain precondition is wired (it
+  reworks the staged switch theorems to carry the precondition, so it belongs
+  with that caller, not ahead of it).
+- **Idle-thread re-enqueue (→ SM5.E).** `preemptCurrentOnCore` unconditionally
+  re-enqueues the previous current thread, including a per-core SM4.G idle TCB.
+  The clean fix needs `idleThreadId`, which lives in `Platform.Boot` —
+  structurally *above* `Scheduler/Operations/Selection.lean`; skipping idle
+  re-enqueue locally would invert the module layering.  Per-core idle modelling
+  (and whether idle is queue-resident or modelled separately) is **SM5.E** scope.
+- **`syncThreadStates` per-core lift (→ SM5 / SM5.C).** `inferThreadState` /
+  `syncThreadStates` still read only `currentOnCore bootCoreId`; the
+  `Platform/Boot.lean` note already flags this as needing an SM5 per-core lift
+  before a secondary-core caller exists.  No secondary-core caller exists at
+  SM5.B, so there is no live disagreement yet.
+
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.2, §5 (SM5.B)
 
 ## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness, + cross-domain lock unification)

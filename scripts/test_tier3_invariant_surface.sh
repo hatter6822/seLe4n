@@ -639,6 +639,10 @@ run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Pro
 # CNode slot filtering safety theorems (F-22):
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType' SeLe4n/Kernel/InformationFlow/Projection.lean
+# WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity' SeLe4n/Kernel/InformationFlow/Projection.lean
+# WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity' SeLe4n/Kernel/InformationFlow/Projection.lean
 # NI theorems (CRIT-03/F-21):
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
@@ -3114,6 +3118,10 @@ open SeLe4n.Kernel.Concurrency
 #check @perCoreCurrentThreadHw
 #check @switchToThreadHw_returns_baseio_uint64_marker
 #check @perCoreCurrentThreadHw_returns_baseio_uint64_marker
+-- WS-SM SM5.B (PR #805 review P2-2): fail-closed ThreadId encodability guard.
+#check @switchToThreadHwTidBound
+#check @switchToThreadHwRejected
+#check @switchToThreadHw_rejects_unencodable
 EOF'
 
 finalize_report

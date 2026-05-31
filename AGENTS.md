@@ -4785,6 +4785,35 @@ documentation lives under `docs/` and `docs/gitbook/`.
     theorems axiom-clean.  Default build green (320 jobs); Tier 0–3 green; trace
     byte-identical.  Items deferred past v1.0.0 with correctness impact: NONE.
 
+  **WS-SM SM5.B audit-pass-3 (PR #805 automated-review closure; also in
+  v0.31.39)**: two valid P2 findings from the PR's automated reviewer, both in
+  SM5.B's scope (the `TCB.cpuAffinity` field + the FFI seam this cut
+  introduced), closed per the implement-the-improvement rule:
+  - **Information-flow projection leak (P2-4)**: adding `TCB.cpuAffinity` made
+    it survive `projectKernelObject`'s TCB record update, while the projection
+    deliberately erases every other scheduler-only field (`registerContext`,
+    `schedContextBinding`, `pipBoost`, `pendingMessage`, `timedOut`).  Per-thread
+    CPU *placement* is the same class, so two states differing only by an
+    affinity change would project to different low objects — a cross-domain
+    placement leak once `setThreadCpuAffinity` (SM5.C) lands.  Fixed by stripping
+    `cpuAffinity := none` in the `.tcb` projection arm (structurally, mirroring
+    AK6-G) with the witness `projectKernelObject_erases_cpuAffinity`.
+  - **FFI ThreadId encodability (P2-2)**: `switchToThreadHw` did
+    `UInt64.ofNat tid.toNat` on an unbounded-`Nat` `ThreadId`, silently wrapping
+    for values ≥ 2^64 and colliding with the HAL `NO_CURRENT_THREAD = u64::MAX`
+    sentinel at 2^64−1.  Fixed fail-closed (SM1.I.4 u64-before-cast discipline):
+    `tid.toNat < switchToThreadHwTidBound` (= 2^64−1) covers both overflow and
+    sentinel; an out-of-range `tid` returns `switchToThreadHwRejected` (`1`)
+    without touching the HAL.  Witnesses
+    `switchToThreadHw_returns_baseio_uint64_marker` (now conditional passthrough)
+    + `switchToThreadHw_rejects_unencodable`.
+  - Both axiom-clean (`propext` / `Quot.sound`); AK7 `RAW_LOOKUP_TID` unchanged
+    (810); default build green (320 jobs); Tier 0–3 green; trace byte-identical;
+    `codebase_map.json` regenerated.  Three further P2 findings (reject-non-
+    runnable targets, idle-thread re-enqueue, `syncThreadStates` per-core lift)
+    are SM5.C / SM5.E / already-tracked future-phase concerns, not SM5.B
+    defects.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:
