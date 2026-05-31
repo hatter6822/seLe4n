@@ -175,6 +175,36 @@ initial 6-theorem spot-check):
   branch fires) plus elaboration-time witnesses for every new theorem (the suite
   now exercises the preservation + classification + acquisition-order results).
 
+### Audit-pass-2 refinements (post-audit-pass-1 deep audit; also in v0.31.39)
+
+Closes the one substantive deferral audit-pass-1 left open, per the
+implement-the-improvement rule (the deferral's stated AK7 blocker proved
+avoidable, so the symmetric sibling theorem is materialised rather than
+postponed to SM5.I.8):
+
+- **`switchToThreadOnCore_establishes_currentThreadValidOnCore`** — audit-pass-1
+  proved `_establishes_queueCurrentConsistentOnCore` (one of the two SM4.C
+  current-thread conjuncts a successful switch establishes) but *deferred* its
+  symmetric sibling (the new current thread resolves to a TCB), citing the AK7
+  `RAW_LOOKUP_TID` gate.  That blocker is avoidable: the AK7 metric counts only
+  the raw `[·]?` bracket text, while the frame lemma `RHTable.getElem?_insert_ne`
+  is stated in the `.get?`-method form.  The new typed-accessor frame
+  `preemptCurrentOnCore_getTcb?_incoming` (the preempt's only object write is the
+  *previous* current's register save at a *different* key, so the lookup at the
+  switch target is unchanged) closes the proof with **zero** raw-bracket source —
+  `RAW_LOOKUP_TID` stays at the 810 floor (`GETTCB_ADOPTION` grows 284 → 303).
+- **Documentation drift fixed** — the module docstring's "What this module
+  proves" list still named `switchToThreadOnCore_total`, which audit-pass-1 had
+  already replaced with the substantive `switchToThreadOnCore_ok_iff` (no
+  `_total` symbol exists at landing).  Corrected, and both establishment
+  theorems documented.
+- **Tests** — +2 surface anchors (`switchToThreadOnCore_establishes_currentThreadValidOnCore`,
+  `preemptCurrentOnCore_getTcb?_incoming`) + 1 elaboration example + 2 runtime
+  scenarios (`smp_switch_to_thread_suite` 28 → 30 PASS) + 2 tier-3 anchors.
+  Both new theorems verified axiom-clean (`propext` / `Classical.choice` /
+  `Quot.sound`).  Default build green (320 jobs); Tier 0–3 green; trace fixture
+  byte-identical.
+
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.2, §5 (SM5.B)
 
 ## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness, + cross-domain lock unification)

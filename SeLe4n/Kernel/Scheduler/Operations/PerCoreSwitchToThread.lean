@@ -49,11 +49,19 @@ runtime `withLockSet` acquisition over `switchToThreadOnCoreLockSet`.
 * **SM5.B.5** `switchToThreadOnCore_runQueueOnCore_excludes_current` — after the
   switch the new current thread is *not* simultaneously in the run queue
   (dequeue-on-dispatch).
+* **SM5.B.5** `switchToThreadOnCore_establishes_queueCurrentConsistentOnCore` +
+  `switchToThreadOnCore_establishes_currentThreadValidOnCore` — a successful
+  switch *establishes* both SM4.C current-thread conjuncts on core `c`: its new
+  current thread is dequeued from the run queue **and** resolves to a TCB.  The
+  latter routes through the typed-accessor frame
+  `preemptCurrentOnCore_getTcb?_incoming` (the `.get?`-method form, AK7-clean).
 * **SM5.B.6** `switchToThreadOnCore_independent_of_other_core` — switching on
   core `c` leaves every other core's `current` and `runQueue` slots untouched
   (the cross-core lock-set protection / per-core independence frame).
-* **SM5.B.8** `switchToThreadOnCore_total` + the decidable predicates
-  `switchToThreadOnCoreSucceeds` / `switchToThreadOnCoreRejectsRemote`.
+* **SM5.B.8** `switchToThreadOnCore_ok_iff` (the substantive totality form:
+  succeeds **iff** `tid` resolves to a TCB whose affinity admits `c`) + the
+  decidable predicates `switchToThreadOnCoreSucceeds` /
+  `switchToThreadOnCoreRejectsRemote`.
 
 Axiom-clean: every theorem depends only on the standard foundational axioms
 (`propext` / `Quot.sound` / `Classical.choice`).
@@ -271,6 +279,36 @@ theorem preemptCurrentOnCore_active_under_valid (st : SystemState) (c : CoreId)
   exact ⟨prevTcb, hPrevTcb,
     preemptCurrentOnCore_runQueueOnCore_self_active st c incoming prevTid prevTcb hCur hNe hPrevTcb⟩
 
+/-- WS-SM SM5.B.3 (typed-accessor frame): `preemptCurrentOnCore` leaves the
+incoming thread's `getTcb?` lookup unchanged.  The preempt's only object-store
+write is the *previous* current thread's register-context save, at key
+`prevTid.toObjId` with `prevTid ≠ incoming` (the `prevTid == incoming` no-op
+branch already discharged the equal case); so the lookup at `incoming` is
+framed out.  Proved through the typed `getTcb?` accessor + the `.get?`-method
+form of `RHTable.getElem?_insert_ne` (no raw object-store `[·]?` bracket in the
+proof source), so it composes the `currentThreadValidOnCore` establishment
+below without growing the AK7 `RAW_LOOKUP_TID` metric. -/
+theorem preemptCurrentOnCore_getTcb?_incoming (st : SystemState) (c : CoreId)
+    (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (preemptCurrentOnCore st c incoming).getTcb? incoming = st.getTcb? incoming := by
+  unfold preemptCurrentOnCore
+  split
+  · rfl
+  · next prevTid _ =>
+    split
+    · rfl
+    · next hBeq =>
+      split
+      · next prevTcb _ =>
+        have hNeT : prevTid ≠ incoming := by
+          intro he; subst he; simp at hBeq
+        have hNeO : ¬ (prevTid.toObjId == incoming.toObjId) = true := fun he =>
+          hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId
+          incoming.toObjId _ hNeO hInv]
+      · rfl
+
 -- ============================================================================
 -- §3  SM5.B.1/.3/.4/.5/.6 — Switch-semantics theorems
 -- ============================================================================
@@ -409,7 +447,8 @@ theorem switchToThreadOnCore_independent_of_other_core (st : SystemState)
 -- `chooseThreadOnCore` — it carries preservation obligations.  The structural
 -- invariants a sound transition must preserve (the RobinHood object-store
 -- invariant + core `c`'s run-queue well-formedness) are proved here, together
--- with the queue/current-consistency the switch *establishes*.  The full
+-- with the two SM4.C current-thread conjuncts the switch *establishes* on core
+-- `c` (queue/current-consistency AND current-thread-validity).  The full
 -- aggregate `schedulerInvariant_perCore` preservation (all 10 conjuncts) is
 -- SM5.I.8 ("preservation by every transition") per the plan; these are the
 -- foundations it composes.
@@ -496,21 +535,50 @@ theorem switchToThreadOnCore_objects_eq_preempt (st : SystemState) (c : CoreId)
       simp only [restoreIncomingContext_objects]
     · rw [if_neg hAff] at h; simp at h
 
--- Note (deferred to SM5.I.8): the *full* `currentThreadValidOnCore`
--- establishment (the new current thread resolves to a TCB) is intentionally
--- NOT proved here.  Its proof needs an object-store insert-frame at the switch
--- target — showing the preempt's insert at the *previous* current's key leaves
--- the *target* thread's lookup unchanged — which is a *raw* object-store lookup
--- by thread id, and the AK7 cascade discipline
--- (`scripts/ak7_cascade_check_monotonic.sh`) requires those raw lookups
--- (`RAW_LOOKUP_TID`) to *drop*, never grow.  Adding it here would regress that
--- metric.  The right home is SM5.I.8 ("preservation by every transition"),
--- which should first introduce a *typed* `SystemState.getTcb?`-insert frame
--- lemma (the `.get?`-method form, which the AK7 metric does not count) and prove
--- the full `schedulerInvariant_perCore` preservation through it.  SM5.B provides
--- the AK7-clean object-footprint bridge `switchToThreadOnCore_objects_eq_preempt`
--- (the switch writes only what the preempt does — at most the preempted
--- thread's TCB) as the foundation that SM5.I.8 composition rests on.
+/-- WS-SM SM5.B.5 (invariant established): after a successful switch, core `c`
+satisfies `currentThreadValidOnCore` — its new current thread (`= tid`) resolves
+to a TCB in the object store.  The switch requires `tid` to resolve to a TCB up
+front (the `.ok` precondition), and its *only* object-store write is the
+*previous* current thread's register-context save at a *different* key
+(`preemptCurrentOnCore_getTcb?_incoming`), so the lookup at `tid` is unchanged
+across the transition.
+
+This is the symmetric sibling of
+`switchToThreadOnCore_establishes_queueCurrentConsistentOnCore`: together they
+establish the two SM4.C current-thread conjuncts a successful switch must
+discharge.  The proof routes entirely through the typed `getTcb?` accessor and
+the `.get?`-method-form frame `preemptCurrentOnCore_getTcb?_incoming` (no raw
+object-store `[·]?` bracket in the proof source), so it adds nothing to the AK7
+`RAW_LOOKUP_TID` metric.  SM5.I.8 ("preservation by every transition") composes
+this with `_establishes_queueCurrentConsistentOnCore`,
+`_preserves_runQueueOnCore_wellFormed`, and `_preserves_objects_invExt` into the
+full `schedulerInvariant_perCore` preservation. -/
+theorem switchToThreadOnCore_establishes_currentThreadValidOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    currentThreadValidOnCore st' c := by
+  unfold currentThreadValidOnCore
+  rw [switchToThreadOnCore_sets_current st c tid st' h]
+  -- Goal: `∃ tcb, st'.getTcb? tid = some tcb`.
+  -- A successful switch requires `tid` to resolve to a TCB in the pre-state
+  -- (the `getTcb? tid = none` arm is the `.error .schedulerInvariantViolation`
+  -- branch).  Extract that witness from `h` by inverting the definition.
+  have hPre : ∃ tidTcb, st.getTcb? tid = some tidTcb := by
+    cases hTcb : st.getTcb? tid with
+    | none => simp [switchToThreadOnCore, hTcb] at h
+    | some t => exact ⟨t, rfl⟩
+  obtain ⟨tidTcb, hTcb⟩ := hPre
+  refine ⟨tidTcb, ?_⟩
+  -- `st'.objects = (preempt).objects` (the switch writes only via the preempt),
+  -- and `getTcb?` reads only `objects`, so the lookup at `tid` is the preempt's,
+  -- and the preempt frames `tid` out (its write is at the *previous* current's
+  -- key).  No raw `[·]?` bracket appears — AK7-clean.
+  have hobj : st'.objects = (preemptCurrentOnCore st c tid).objects :=
+    switchToThreadOnCore_objects_eq_preempt st c tid st' h
+  have heq : st'.getTcb? tid = (preemptCurrentOnCore st c tid).getTcb? tid := by
+    simp only [SystemState.getTcb?, hobj]
+  rw [heq, preemptCurrentOnCore_getTcb?_incoming st c tid hInv, hTcb]
 
 -- ============================================================================
 -- §3c  Acquisition-order completeness (SM5.B.2, plan §4.4)

@@ -82,6 +82,8 @@ open SeLe4n.Testing
 #check @switchToThreadOnCore_preserves_objects_invExt
 #check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
 #check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
+#check @switchToThreadOnCore_establishes_currentThreadValidOnCore
+#check @preemptCurrentOnCore_getTcb?_incoming
 #check @switchToThreadOnCore_objects_eq_preempt
 
 -- §3c acquisition-order completeness (SM5.B.2):
@@ -170,6 +172,14 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemSta
     (h : switchToThreadOnCore st c tid = .ok st') :
     queueCurrentConsistentOnCore st'.scheduler c :=
   switchToThreadOnCore_establishes_queueCurrentConsistentOnCore st c tid st' h
+
+/-- SM5.B.5 (invariant established): a successful switch establishes
+current-thread validity on core `c` — the new current thread resolves to a TCB.
+The symmetric sibling of the queue/current-consistency establishment. -/
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt) (h : switchToThreadOnCore st c tid = .ok st') :
+    currentThreadValidOnCore st' c :=
+  switchToThreadOnCore_establishes_currentThreadValidOnCore st c tid st' hInv h
 
 /-- SM5.B (object frame): the switch's object footprint is exactly the preempt's
 (which writes at most the preempted thread's TCB). -/
@@ -283,6 +293,19 @@ private def runSwitchScenarios : IO Unit := do
   assertBool "scenario 1: switch to tidA ⇒ current thread is tidA"
     (switchOkAnd stRunnable bootCoreId tidA
       (fun st' => st'.scheduler.currentOnCore bootCoreId == some tidA))
+  -- Scenario 1b (SM5.B.5 established): the new current thread resolves to a TCB
+  -- (the runtime content of `currentThreadValidOnCore`).
+  assertBool "scenario 1b: after switch, the new current thread resolves to a TCB"
+    (switchOkAnd stRunnable bootCoreId tidA
+      (fun st' => match st'.scheduler.currentOnCore bootCoreId with
+                  | some t => (st'.getTcb? t).isSome
+                  | none   => false))
+  -- Same after a preempting switch (object store also mutated by the save).
+  assertBool "scenario 1b: after preempt-switch, the new current thread resolves to a TCB"
+    (switchOkAnd stPreempt bootCoreId tidA
+      (fun st' => match st'.scheduler.currentOnCore bootCoreId with
+                  | some t => (st'.getTcb? t).isSome
+                  | none   => false))
   -- Scenario 2 (SM5.B.5): dequeue-on-dispatch — the new current thread is NOT
   -- simultaneously in the run queue.
   assertBool "scenario 2: after switch, tidA is dequeued (not in the run queue)"

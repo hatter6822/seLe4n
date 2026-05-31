@@ -3095,6 +3095,8 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadOnCore_preserves_objects_invExt
 #check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
 #check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
+#check @switchToThreadOnCore_establishes_currentThreadValidOnCore
+#check @preemptCurrentOnCore_getTcb?_incoming
 #check @switchToThreadOnCore_objects_eq_preempt
 
 -- §3c acquisition-order completeness (SM5.B.2).

@@ -4734,11 +4734,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `preemptCurrentOnCore_preserves_objects_invExt` / `_preserves_runQueueOnCore_wellFormed`.
     The full 10-conjunct `schedulerInvariant_perCore` preservation remains SM5.I.8
     ("preservation by every transition") per the plan; these are its foundations.
-    The per-conjunct `currentThreadValidOnCore` establishment is left to SM5.I.8
-    on purpose: proving it needs a raw `.toObjId]?` object-store insert-frame at
-    the switch target, and the AK7 cascade discipline requires raw `.toObjId]?`
-    lookups to *drop*; SM5.I.8 should add a *typed* `getTcb?`-insert frame and
-    route through it rather than regress `RAW_LOOKUP_TID`.
+    The per-conjunct `currentThreadValidOnCore` establishment was initially
+    left to SM5.I.8 here, then **closed in audit-pass-2 below** (the cited AK7
+    blocker proved avoidable via a typed `.get?`-method-form frame).
   - **Defense-in-depth**: `preemptCurrentOnCore_active_under_valid` proves the
     "previous current isn't a TCB" no-op fallback is **unreachable** under
     `currentThreadValidOnCore` (mirrors `saveOutgoingContext_always_succeeds_under_currentThreadValid`).
@@ -4763,6 +4761,29 @@ documentation lives under `docs/` and `docs/gitbook/`.
     preempt no-op branch) + elaboration-time witnesses for every new theorem;
     tier-3 anchors updated.  Items deferred past v1.0.0 with correctness impact:
     NONE.
+
+  **WS-SM SM5.B audit-pass-2 (also in v0.31.39)**: closes the one substantive
+  deferral audit-pass-1 left open, per the implement-the-improvement rule (the
+  deferral's stated AK7 blocker was avoidable, so the symmetric sibling theorem
+  is materialised rather than postponed to SM5.I.8):
+  - **`switchToThreadOnCore_establishes_currentThreadValidOnCore`** — the
+    symmetric sibling of `_establishes_queueCurrentConsistentOnCore`: a
+    successful switch establishes that core `c`'s new current thread resolves to
+    a TCB.  Audit-pass-1 deferred it citing the AK7 `RAW_LOOKUP_TID` gate, but
+    the metric counts only the raw `[·]?` bracket text while
+    `RHTable.getElem?_insert_ne` is stated in the `.get?`-method form.  The new
+    typed-accessor frame `preemptCurrentOnCore_getTcb?_incoming` (the preempt's
+    only object write is the *previous* current's save at a *different* key, so
+    the lookup at the switch target is unchanged) closes the proof with **zero**
+    raw-bracket source — `RAW_LOOKUP_TID` stays at the 810 floor
+    (`GETTCB_ADOPTION` 284 → 303).
+  - **Documentation drift fixed**: the module docstring still listed the
+    renamed-away `switchToThreadOnCore_total`; corrected to
+    `switchToThreadOnCore_ok_iff` + both establishment theorems.
+  - **Tests**: +2 surface anchors + 1 example + 2 runtime scenarios
+    (`smp_switch_to_thread_suite` 28 → 30 PASS) + 2 tier-3 anchors; both new
+    theorems axiom-clean.  Default build green (320 jobs); Tier 0–3 green; trace
+    byte-identical.  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

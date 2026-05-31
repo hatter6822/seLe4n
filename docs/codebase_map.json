@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/lucid-allen-6c48D",
-      "commit_sha": "c9b9a4366afe697899b2d3f9a69c75cbd10dfc74",
-      "tree_sha": "69abd83606d03af7c8eb8eaef5d9ba57d7eb66ac",
-      "committed_at_utc": "2026-05-30T23:14:56+00:00"
+      "commit_sha": "1d039cccc06e140c4cc8bea364cfa77b0b86fba6",
+      "tree_sha": "9a8e143453525ae3763d1ca8dc80bf38437af8f5",
+      "committed_at_utc": "2026-05-31T03:25:59+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7ea0239c6e112c373f70607eb2189c125f6dffe6d57ef408a4d4090b8e9fedf5"
+    "source_digest": "15b101d9033894822491905c75e6fec993dab2f0e08f1b7bf7cfdf1aed7d6713"
   },
   "summary": {
     "module_count": 260,
-    "declaration_count": 9377
+    "declaration_count": 9380
   },
   "readme_sync": {
     "version": "0.31.39",
     "lean_toolchain": "v4.28.0",
     "production_files": 211,
-    "production_loc": 149096,
+    "production_loc": 149164,
     "test_files": 49,
-    "test_loc": 32724,
-    "proved_theorem_lemma_decls": 4724,
+    "test_loc": 32747,
+    "proved_theorem_lemma_decls": 4726,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -67611,18 +67611,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean",
-      "declaration_count": 30,
+      "declaration_count": 32,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 62,
+          "line": 70,
           "called": []
         },
         {
           "kind": "def",
           "name": "switchToThreadOnCoreLockSet",
-          "line": 116,
+          "line": 124,
           "called": [
             "AccessMode",
             "CoreId",
@@ -67633,7 +67633,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_length",
-          "line": 122,
+          "line": 130,
           "called": [
             "CoreId",
             "length",
@@ -67643,7 +67643,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_write_only",
-          "line": 128,
+          "line": 136,
           "called": [
             "CoreId",
             "switchToThreadOnCoreLockSet"
@@ -67652,7 +67652,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_contains_objStore_write",
-          "line": 138,
+          "line": 146,
           "called": [
             "CoreId",
             "schedObjStoreLockId",
@@ -67662,7 +67662,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_contains_runQueue_write",
-          "line": 145,
+          "line": 153,
           "called": [
             "CoreId",
             "switchToThreadOnCoreLockSet"
@@ -67671,7 +67671,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_object_before_runQueue",
-          "line": 153,
+          "line": 161,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -67682,7 +67682,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_keys_nodup",
-          "line": 161,
+          "line": 169,
           "called": [
             "CoreId",
             "switchToThreadOnCoreLockSet"
@@ -67691,7 +67691,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_currentOnCore",
-          "line": 173,
+          "line": 181,
           "called": [
             "CoreId",
             "SystemState",
@@ -67703,7 +67703,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_runQueueOnCore_ne",
-          "line": 189,
+          "line": 197,
           "called": [
             "CoreId",
             "SystemState",
@@ -67716,7 +67716,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_runQueueOnCore_self_active",
-          "line": 207,
+          "line": 215,
           "called": [
             "CoreId",
             "SystemState",
@@ -67733,7 +67733,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_preserves_objects_invExt",
-          "line": 223,
+          "line": 231,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -67746,7 +67746,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 239,
+          "line": 247,
           "called": [
             "CoreId",
             "SystemState",
@@ -67761,7 +67761,7 @@
         {
           "kind": "theorem",
           "name": "preemptCurrentOnCore_active_under_valid",
-          "line": 260,
+          "line": 268,
           "called": [
             "CoreId",
             "SystemState",
@@ -67778,8 +67778,25 @@
         },
         {
           "kind": "theorem",
+          "name": "preemptCurrentOnCore_getTcb",
+          "line": 291,
+          "called": [
+            "CoreId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "getTcb",
+            "invExt",
+            "preemptCurrentOnCore",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "switchToThreadOnCore_rejects_remote",
-          "line": 282,
+          "line": 320,
           "called": [
             "CoreId",
             "SystemState",
@@ -67794,7 +67811,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_ok_of_admits",
-          "line": 297,
+          "line": 335,
           "called": [
             "CoreId",
             "SystemState",
@@ -67808,7 +67825,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_sets_current",
-          "line": 309,
+          "line": 347,
           "called": [
             "CoreId",
             "SystemState",
@@ -67823,7 +67840,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_runQueueOnCore_excludes_current",
-          "line": 326,
+          "line": 364,
           "called": [
             "CoreId",
             "SystemState",
@@ -67843,7 +67860,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preempts_previous",
-          "line": 348,
+          "line": 386,
           "called": [
             "CoreId",
             "SystemState",
@@ -67868,7 +67885,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_independent_of_other_core",
-          "line": 380,
+          "line": 418,
           "called": [
             "CoreId",
             "SystemState",
@@ -67891,7 +67908,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_objects_invExt",
-          "line": 421,
+          "line": 460,
           "called": [
             "CoreId",
             "SystemState",
@@ -67908,7 +67925,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 443,
+          "line": 482,
           "called": [
             "CoreId",
             "SystemState",
@@ -67929,7 +67946,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_establishes_queueCurrentConsistentOnCore",
-          "line": 469,
+          "line": 508,
           "called": [
             "CoreId",
             "SystemState",
@@ -67943,7 +67960,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_objects_eq_preempt",
-          "line": 484,
+          "line": 523,
           "called": [
             "CoreId",
             "SystemState",
@@ -67958,8 +67975,27 @@
         },
         {
           "kind": "theorem",
+          "name": "switchToThreadOnCore_establishes_currentThreadValidOnCore",
+          "line": 556,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentThreadValidOnCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_getTcb",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_objects_eq_preempt",
+            "switchToThreadOnCore_sets_current"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_pairwise_le",
-          "line": 528,
+          "line": 596,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -67972,7 +68008,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_ok_iff",
-          "line": 551,
+          "line": 619,
           "called": [
             "CoreId",
             "SystemState",
@@ -67987,7 +68023,7 @@
         {
           "kind": "def",
           "name": "switchToThreadOnCoreSucceeds",
-          "line": 575,
+          "line": 643,
           "called": [
             "CoreId",
             "SystemState",
@@ -67997,8 +68033,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:579>",
-          "line": 579,
+          "name": "<anonymous:instance:647>",
+          "line": 647,
           "called": [
             "CoreId",
             "SystemState",
@@ -68010,7 +68046,7 @@
         {
           "kind": "def",
           "name": "switchToThreadOnCoreRejectsRemote",
-          "line": 587,
+          "line": 655,
           "called": [
             "CoreId",
             "SystemState",
@@ -68020,8 +68056,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:591>",
-          "line": 591,
+          "name": "<anonymous:instance:659>",
+          "line": 659,
           "called": [
             "CoreId",
             "Kernel",
@@ -119601,7 +119637,7 @@
     {
       "module": "tests.SmpSwitchToThreadSuite",
       "path": "tests/SmpSwitchToThreadSuite.lean",
-      "declaration_count": 36,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -119618,6 +119654,7 @@
             "preemptCurrentOnCore",
             "preemptCurrentOnCore_active_under_valid",
             "preemptCurrentOnCore_currentOnCore",
+            "preemptCurrentOnCore_getTcb",
             "preemptCurrentOnCore_preserves_objects_invExt",
             "preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed",
             "preemptCurrentOnCore_runQueueOnCore_ne",
@@ -119635,6 +119672,7 @@
             "switchToThreadOnCoreLockSet_write_only",
             "switchToThreadOnCoreRejectsRemote",
             "switchToThreadOnCoreSucceeds",
+            "switchToThreadOnCore_establishes_currentThreadValidOnCore",
             "switchToThreadOnCore_establishes_queueCurrentConsistentOnCore",
             "switchToThreadOnCore_independent_of_other_core",
             "switchToThreadOnCore_objects_eq_preempt",
@@ -119650,8 +119688,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:108>",
-          "line": 108,
+          "name": "<anonymous:example:110>",
+          "line": 110,
           "called": [
             "CoreId",
             "SystemState",
@@ -119663,8 +119701,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:114>",
-          "line": 114,
+          "name": "<anonymous:example:116>",
+          "line": 116,
           "called": [
             "CoreId",
             "SystemState",
@@ -119677,8 +119715,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:120>",
-          "line": 120,
+          "name": "<anonymous:example:122>",
+          "line": 122,
           "called": [
             "CoreId",
             "SystemState",
@@ -119694,8 +119732,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:129>",
-          "line": 129,
+          "name": "<anonymous:example:131>",
+          "line": 131,
           "called": [
             "CoreId",
             "SystemState",
@@ -119708,8 +119746,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:136>",
-          "line": 136,
+          "name": "<anonymous:example:138>",
+          "line": 138,
           "called": [
             "CoreId",
             "SystemState",
@@ -119722,8 +119760,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:143>",
-          "line": 143,
+          "name": "<anonymous:example:145>",
+          "line": 145,
           "called": [
             "CoreId",
             "SystemState",
@@ -119737,8 +119775,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:149>",
-          "line": 149,
+          "name": "<anonymous:example:151>",
+          "line": 151,
           "called": [
             "CoreId",
             "SystemState",
@@ -119751,8 +119789,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:155>",
-          "line": 155,
+          "name": "<anonymous:example:157>",
+          "line": 157,
           "called": [
             "CoreId",
             "SystemState",
@@ -119764,8 +119802,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:161>",
-          "line": 161,
+          "name": "<anonymous:example:163>",
+          "line": 163,
           "called": [
             "CoreId",
             "SystemState",
@@ -119778,8 +119816,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:169>",
-          "line": 169,
+          "name": "<anonymous:example:171>",
+          "line": 171,
           "called": [
             "CoreId",
             "SystemState",
@@ -119791,8 +119829,22 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:176>",
-          "line": 176,
+          "name": "<anonymous:example:179>",
+          "line": 179,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentThreadValidOnCore",
+            "invExt",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_establishes_currentThreadValidOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:186>",
+          "line": 186,
           "called": [
             "CoreId",
             "SystemState",
@@ -119804,8 +119856,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:182>",
-          "line": 182,
+          "name": "<anonymous:example:192>",
+          "line": 192,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -119815,8 +119867,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:187>",
-          "line": 187,
+          "name": "<anonymous:example:197>",
+          "line": 197,
           "called": [
             "CoreId",
             "switchToThreadOnCoreLockSet",
@@ -119825,8 +119877,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:192>",
-          "line": 192,
+          "name": "<anonymous:example:202>",
+          "line": 202,
           "called": [
             "CoreId",
             "TCB",
@@ -119838,7 +119890,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 200,
+          "line": 210,
           "called": [
             "TCB",
             "ofNat"
@@ -119847,7 +119899,7 @@
         {
           "kind": "def",
           "name": "tidA",
-          "line": 205,
+          "line": 215,
           "called": [
             "ThreadId",
             "ofNat"
@@ -119856,7 +119908,7 @@
         {
           "kind": "def",
           "name": "tidP",
-          "line": 206,
+          "line": 216,
           "called": [
             "ThreadId",
             "ofNat"
@@ -119865,7 +119917,7 @@
         {
           "kind": "def",
           "name": "tidR",
-          "line": 207,
+          "line": 217,
           "called": [
             "ThreadId",
             "ofNat"
@@ -119874,7 +119926,7 @@
         {
           "kind": "def",
           "name": "tidBoot",
-          "line": 208,
+          "line": 218,
           "called": [
             "ThreadId",
             "ofNat"
@@ -119883,7 +119935,7 @@
         {
           "kind": "def",
           "name": "tidGhost",
-          "line": 209,
+          "line": 219,
           "called": [
             "ThreadId",
             "ofNat"
@@ -119892,7 +119944,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 212,
+          "line": 222,
           "called": [
             "CoreId"
           ]
@@ -119900,7 +119952,7 @@
         {
           "kind": "def",
           "name": "stRunnable",
-          "line": 215,
+          "line": 225,
           "called": [
             "SystemState",
             "build",
@@ -119914,7 +119966,7 @@
         {
           "kind": "def",
           "name": "stPreempt",
-          "line": 221,
+          "line": 231,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -119931,7 +119983,7 @@
         {
           "kind": "def",
           "name": "stSelfCurrent",
-          "line": 230,
+          "line": 240,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -119946,7 +119998,7 @@
         {
           "kind": "def",
           "name": "stRemote",
-          "line": 237,
+          "line": 247,
           "called": [
             "SystemState",
             "build",
@@ -119961,7 +120013,7 @@
         {
           "kind": "def",
           "name": "stAffinityBoot",
-          "line": 243,
+          "line": 253,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -119976,7 +120028,7 @@
         {
           "kind": "def",
           "name": "stGhost",
-          "line": 249,
+          "line": 259,
           "called": [
             "SystemState",
             "build",
@@ -119987,7 +120039,7 @@
         {
           "kind": "def",
           "name": "stCrossCore",
-          "line": 254,
+          "line": 264,
           "called": [
             "SystemState",
             "build",
@@ -120006,7 +120058,7 @@
         {
           "kind": "def",
           "name": "switchOkAnd",
-          "line": 262,
+          "line": 272,
           "called": [
             "CoreId",
             "SystemState",
@@ -120017,7 +120069,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 268,
+          "line": 278,
           "called": [
             "throw"
           ]
@@ -120025,12 +120077,14 @@
         {
           "kind": "def",
           "name": "runSwitchScenarios",
-          "line": 277,
+          "line": 287,
           "called": [
             "assertBool",
             "bootCoreId",
             "core1",
             "currentOnCore",
+            "getTcb",
+            "none",
             "runQueueOnCore",
             "stAffinityBoot",
             "stCrossCore",
@@ -120053,7 +120107,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 347,
+          "line": 370,
           "called": [
             "RunQueueLockId",
             "all",
@@ -120067,7 +120121,7 @@
         {
           "kind": "def",
           "name": "runAffinityAlgebraChecks",
-          "line": 368,
+          "line": 391,
           "called": [
             "affinityAdmitsCore",
             "all",
@@ -120080,7 +120134,7 @@
         {
           "kind": "def",
           "name": "runSmpSwitchToThreadChecks",
-          "line": 379,
+          "line": 402,
           "called": [
             "runAffinityAlgebraChecks",
             "runLockSetChecks",
@@ -120090,7 +120144,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 390,
+          "line": 413,
           "called": [
             "runSmpSwitchToThreadChecks"
           ]
