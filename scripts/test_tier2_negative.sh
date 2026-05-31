@@ -238,4 +238,12 @@ run_check_with_timeout "TRACE" lake exe cross_subsystem_per_core_suite
 # lock-set witnesses.
 run_check_with_timeout "TRACE" lake exe smp_scheduler_selection_suite
 
+# WS-SM SM5.B — per-core switchToThread suite.  25 runtime assertions over the
+# real `switchToThreadOnCore` computation: the SM5.B.9 switch scenarios
+# (sets-current, dequeue-on-dispatch, preempt-previous, reject-remote,
+# admit-unbound / admit-matching-affinity, cross-core independence, non-TCB
+# error path), the SM5.B.2 cross-domain lock-set witnesses, and the SM5.B.4
+# affinity-admits algebra.
+run_check_with_timeout "TRACE" lake exe smp_switch_to_thread_suite
+
 finalize_report

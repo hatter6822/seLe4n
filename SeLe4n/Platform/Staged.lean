@@ -183,6 +183,21 @@ import SeLe4n.Platform.RPi5.RuntimeContractPerCore
 -- per-core `switchToThread` (which dispatches the chosen thread) is the
 -- first runtime exerciser (which will move it production-reached).
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
+-- WS-SM SM5.B: per-core `switchToThread` (plan
+-- `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.2, §5).  The context-switch transition
+-- `switchToThreadOnCore` itself (with `preemptCurrentOnCore` / the
+-- `affinityAdmitsCore` gate) is in production `Scheduler.Operations.Selection`;
+-- this module collects the forward-looking SM5.B theorems: the cross-domain
+-- `switchToThreadOnCoreLockSet` (object-store + run-queue write locks, plan
+-- §4.4 order; SM5.B.2), the switch-semantics theorems
+-- (`switchToThreadOnCore_sets_current` SM5.B.1, `_preempts_previous` SM5.B.3,
+-- `_rejects_remote` SM5.B.4, `_runQueueOnCore_excludes_current` SM5.B.5), the
+-- cross-core-independence frame (`_independent_of_other_core`, SM5.B.6), and
+-- the totality + decidability witnesses (SM5.B.8).  Reachability: staged at
+-- SM5.B; SM5.C's cross-core wake / SGI dispatch loop is the first runtime
+-- exerciser (wiring `switchToThreadOnCore` + the runtime `withLockSet`
+-- acquisition over `switchToThreadOnCoreLockSet`).
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

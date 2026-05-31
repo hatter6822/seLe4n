@@ -768,3 +768,140 @@ theorem chooseBestRunnableEffective_unbound_equiv
         exact hAllUnbound t (List.mem_cons_of_mem _ hMemRest)
       | _ => rfl
 
+-- ============================================================================
+-- WS-SM SM5.B — Per-core context switch (`switchToThreadOnCore`)
+-- ============================================================================
+--
+-- The per-core analogue of seL4's `switchToThread`: dispatch a chosen thread
+-- `tid` on a specific core `c`.  Unlike the read-only `chooseThreadOnCore`
+-- (SM5.A), this is a state *transition* (it mutates the run queue, the current
+-- thread, and the machine register file), so its definition lives here in the
+-- production `Selection.lean` module alongside the other switch primitives
+-- (`saveOutgoingContext` / `restoreIncomingContext`).
+--
+-- The forward-looking SM5.B theorems (sets-current, preempts-previous,
+-- rejects-remote, run-queue-excludes-current, cross-core independence,
+-- lock-set, totality, decidability) live in the staged module
+-- `Scheduler.Operations.PerCoreSwitchToThread`, mirroring how SM5.A split the
+-- production `chooseThreadOnCore` (here) from its staged theorem collection
+-- (`PerCoreChooseThread`).  SM5.C's cross-core wake / SGI handler is the first
+-- runtime exerciser.
+
+/-- WS-SM SM5.B.4: does core `c` admit running `tcb`?
+
+A thread with no CPU affinity (`cpuAffinity = none`) is *unbound* and runs on
+any core; a thread bound to `some c'` runs only on `c'`.  This is the predicate
+`switchToThreadOnCore` consults for its reject-remote gate (Theorem 3.2.3): a
+switch onto a core the thread is not admitted on is rejected with
+`KernelError.threadOnDifferentCore` rather than silently migrating the thread. -/
+def affinityAdmitsCore (tcb : TCB) (c : SeLe4n.Kernel.Concurrency.CoreId) : Bool :=
+  match tcb.cpuAffinity with
+  | none    => true
+  | some c' => c' == c
+
+/-- WS-SM SM5.B.4: an unbound thread (`cpuAffinity = none`) is admitted on
+every core. -/
+@[simp] theorem affinityAdmitsCore_none (tcb : TCB) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : tcb.cpuAffinity = none) : affinityAdmitsCore tcb c = true := by
+  simp [affinityAdmitsCore, h]
+
+/-- WS-SM SM5.B.4: a thread bound to `some c'` is admitted on core `c` iff
+`c' = c`. -/
+theorem affinityAdmitsCore_some (tcb : TCB) (c c' : SeLe4n.Kernel.Concurrency.CoreId)
+    (h : tcb.cpuAffinity = some c') : affinityAdmitsCore tcb c = (c' == c) := by
+  simp [affinityAdmitsCore, h]
+
+/-- WS-SM SM5.B.3 (plan §3.2, Theorem 3.2.2): preempt core `c`'s current
+thread in favour of an `incoming` thread.
+
+Saves the outgoing thread's machine registers into its TCB `registerContext`
+(so the preempted thread resumes exactly where it left off) and re-enqueues it
+into core `c`'s run queue at its effective priority (`effectiveRunQueuePriority`,
+i.e. `max(base, pipBoost)` — the priority every other re-enqueue site uses).
+This is the "preempted thread goes back to the run queue" discipline.
+
+No-op in three cases:
+- core `c` has no current thread (`currentOnCore c = none`);
+- the current thread *is* `incoming` (switching to the already-running thread —
+  nothing to preempt);
+- the current thread fails to resolve to a TCB (unreachable under
+  `currentThreadValid`; fail-safe identity rather than corrupting state).
+
+Only core `c`'s run-queue slot and the outgoing TCB are written; every other
+core's scheduler slot is untouched (the cross-core-independence frame,
+SM5.B.6). -/
+def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (incoming : SeLe4n.ThreadId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st
+  | some prevTid =>
+    if prevTid == incoming then st
+    else
+      match st.getTcb? prevTid with
+      | some prevTcb =>
+        let savedTcb : KernelObject := .tcb { prevTcb with registerContext := st.machine.regs }
+        let reenqueuedRq := (st.scheduler.runQueueOnCore c).insert prevTid (effectiveRunQueuePriority prevTcb)
+        { st with
+            objects := st.objects.insert prevTid.toObjId savedTcb,
+            scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
+      | none => st
+
+/-- WS-SM SM5.B.1 (plan §3.2): per-core context switch to `tid` on core `c`.
+
+Performs, in order:
+1. **Preempt** core `c`'s current thread (`preemptCurrentOnCore`): save its
+   context + re-enqueue it (SM5.B.3 / Theorem 3.2.2).
+2. **Dequeue** `tid` from core `c`'s run queue — dequeue-on-dispatch, matching
+   seL4's `switchToThread` → `tcbSchedDequeue` (SM5.B.5: the new current thread
+   is not simultaneously in the run queue).
+3. **Restore** `tid`'s register context into the machine register file
+   (`restoreIncomingContext`).
+4. **Set** core `c`'s current thread to `tid` (SM5.B.1 / Theorem 3.2.1).
+
+Failure modes are explicit (fail-closed `Except`):
+- `tid` does not resolve to a TCB → `.schedulerInvariantViolation`.  A chosen
+  thread must be a real TCB; a corrupted run-queue entry is surfaced, never
+  silently dispatched (mirrors `chooseThreadOnCore`'s discipline).
+- `tid`'s `cpuAffinity` binds it to a core `c' ≠ c` → `.threadOnDifferentCore`
+  (SM5.B.4 / Theorem 3.2.3): cross-core migration is a separate explicit
+  operation, never an implicit side effect of a context switch.
+
+Returns the updated `SystemState` on success.  The single-state form (rather
+than the `Kernel` monad) mirrors `chooseThreadOnCore`: SM5.C wraps it in the
+per-core dispatch loop and the `withLockSet` acquisition over
+`switchToThreadOnCoreLockSet` (the object-store + run-queue write locks).
+
+**Relationship to `schedule` (deliberately distinct, not a missed
+unification).**  `schedule`/`scheduleEffective` *drop* the outgoing thread —
+under dequeue-on-dispatch the previous current was already removed from the run
+queue when it was dispatched, so `schedule` does not re-enqueue it
+(re-enqueue-on-preemption is the caller's job: `timerTick` / `handleYield` /
+`switchDomain`).  `switchToThreadOnCore` is the higher-level *preemptive* switch:
+it **does** re-enqueue the preempted thread (Theorem 3.2.2), as the SM5.C
+cross-core wake / SGI handler requires when it preempts a running thread to
+admit a higher-priority one.  Because the preempt-vs-drop semantics genuinely
+differ, the two are *not* unified into one primitive (and there is no
+`rfl`-bridge, unlike `chooseThread = chooseThreadOnCore bootCoreId`); they share
+only the conceptual dequeue→restore→set-current tail.
+
+**Per-core register model (SM4.C note).**  The abstract machine carries a
+*single* `machine.regs` register file modelling the executing core's registers;
+`switchToThreadOnCore` restores `tid`'s context into it, which is exactly
+correct for the core actually running the switch.  Genuine per-core register
+banking (one file per core) is introduced by SM5 alongside per-core scheduling —
+the same staging `contextMatchesCurrentOnCore` (SM4.C) already documents — at
+which point this restore targets core `c`'s bank. -/
+def switchToThreadOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (tid : SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match st.getTcb? tid with
+  | some tidTcb =>
+    if affinityAdmitsCore tidTcb c then
+      let stPreempt := preemptCurrentOnCore st c tid
+      let dequeuedRq := (stPreempt.scheduler.runQueueOnCore c).remove tid
+      let stDequeued := { stPreempt with scheduler := stPreempt.scheduler.setRunQueueOnCore c dequeuedRq }
+      let stRestored := restoreIncomingContext stDequeued tid
+      .ok { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some tid) }
+    else
+      .error .threadOnDifferentCore
+  | none => .error .schedulerInvariantViolation
+

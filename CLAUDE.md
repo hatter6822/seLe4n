@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.38.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.39.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,8 +182,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~22257 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7460 lines)
+- `CHANGELOG.md` (~22653 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~7623 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -193,14 +193,14 @@ To find files that need pagination today, run:
 - `docs/spec/SELE4N_SPEC.md` (~3806 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3392 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
-- `SeLe4n/Platform/Boot.lean` (~3230 lines)
+- `SeLe4n/Platform/Boot.lean` (~3263 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3153 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3057 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~3014 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3006 lines)
-- `SeLe4n/Model/State.lean` (~2938 lines)
+- `SeLe4n/Model/State.lean` (~2949 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2673 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
@@ -221,11 +221,11 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1892 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1885 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~1868 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1865 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1860 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1857 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~1812 lines)
@@ -242,6 +242,7 @@ To find files that need pagination today, run:
 - `tests/InformationFlowSuite.lean` (~1622 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1619 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1544 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1529 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -251,10 +252,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1343 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
 - `tests/LockSetSuite.lean` (~1307 lines)
-- `SeLe4n/Platform/FFI.lean` (~1268 lines)
+- `SeLe4n/Platform/FFI.lean` (~1297 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1244 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
@@ -265,9 +265,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~1183 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1181 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
+- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1172 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
-- `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1150 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
 - `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1111 lines)
@@ -291,6 +291,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~907 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
@@ -4656,6 +4657,162 @@ documentation lives under `docs/` and `docs/gitbook/`.
     footprint** witnesses (object-store + run-queue read locks; the §4.4
     object-before-run-queue acquisition order).  Items deferred past
     v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.B LANDED at v0.31.39 on branch
+  `claude/lucid-allen-6c48D`** (per-core `switchToThread` — the per-core
+  context-switch transition; plan §3.2 / §5).  All nine sub-tasks landed in one
+  cut; every new theorem axiom-clean (`propext` / `Quot.sound` /
+  `Classical.choice` only); default build green (320 jobs); trace fixture
+  byte-identical; Tier 0–3 green; full Rust HAL suite green (718) with zero
+  clippy warnings.
+
+  - **Foundation (SM5.B.4)**: `TCB.cpuAffinity : Option CoreId := none`
+    (`none` = unbound, runs on any core; `some c` = pinned to core `c`) is
+    pulled forward from the plan's nominal SM5.C.7 slot because reject-remote
+    cannot be a non-vacuous theorem without a per-thread core binding (a stub
+    would be a security/correctness shortcut, forbidden by the
+    implement-the-improvement rule).  Default `none` keeps the single-core
+    trace byte-identical; `BEq TCB` grows 23 → 24 conjuncts, `TCB.ext` gains the
+    `cpuAffinity` hypothesis; TCBs pass `freezeObject` unchanged (no freeze
+    cascade).  `KernelError.threadOnDifferentCore` (discriminant 53) added
+    across the Lean enum + `KernelError.toUInt32` + the Rust `sele4n-types`
+    enum (`from_u32` / `Display`) + the `sele4n-abi` decode layer + every
+    discriminant-pinning test (54 variants, kernel range 0..=53, unknown-code
+    fallback from 54).
+  - **SM5.B.1/.3/.4** (production `Scheduler/Operations/Selection.lean`):
+    `switchToThreadOnCore (st) (c) (tid) : Except KernelError SystemState` —
+    preempt core `c`'s current thread (`preemptCurrentOnCore`: save its
+    register context + re-enqueue at effective priority), dequeue `tid`
+    (dequeue-on-dispatch), restore `tid`'s context, set current = `tid`.
+    Fail-closed: non-TCB `tid` → `.schedulerInvariantViolation`; wrong-core
+    affinity → `.threadOnDifferentCore` (the `affinityAdmitsCore` gate).
+  - **SM5.B.2/.5/.6/.8** (staged
+    `Scheduler/Operations/PerCoreSwitchToThread.lean`):
+    `switchToThreadOnCoreLockSet` — the *complete* cross-domain footprint over
+    SM5.A's `SchedLockId` (object-store **write** lock guarding the `getTcb?`
+    resolutions + the preempted-thread register save, plus the per-core
+    run-queue **write** lock; plan §4.4 object-before-run-queue order; the
+    table lock subsumes the dynamic preempted-TCB write a static
+    `LockId.tcb tid`-only set would under-lock — the class SM5.A's audit
+    closed).  Switch-semantics theorems `_sets_current` (Thm 3.2.1),
+    `_preempts_previous` (Thm 3.2.2), `_rejects_remote` / `_ok_of_admits`
+    (Thm 3.2.3), `_runQueueOnCore_excludes_current` (SM5.B.5),
+    `_independent_of_other_core` (SM5.B.6, via the `preemptCurrentOnCore`
+    frame lemmas); totality + the decidable `switchToThreadOnCoreSucceeds` /
+    `switchToThreadOnCoreRejectsRemote` (SM5.B.8).
+  - **SM5.B.7** FFI seam: Rust `ffi_switch_to_thread` /
+    `ffi_per_core_current_thread` (per-core `PER_CPU_CURRENT_THREAD` slot,
+    fail-closed u64-before-cast bound check) + Lean `@[extern]`
+    (`Platform.FFI.ffiSwitchToThread` / `ffiPerCoreCurrentThread`) + typed
+    `Concurrency.switchToThreadHw` / `perCoreCurrentThreadHw` wrappers + marker
+    theorems; new `build.rs` scanner `scan_ffi_rs_exposes_switch_to_thread_exports`
+    pins both exports.  No Lean caller at SM5.B; SM5.C's per-core dispatch loop
+    is the consumer.
+  - **Tests**: `tests/SmpSwitchToThreadSuite.lean`
+    (`lake exe smp_switch_to_thread_suite`) — 35 surface anchors, 9
+    elaboration-time theorem-application examples, 25 runtime assertions over
+    the real `switchToThreadOnCore` computation (the eight SM5.B.9 scenarios +
+    the SM5.B.2 lock-set + the SM5.B.4 affinity algebra); 6 new Rust
+    `ffi::tests::sm5b7_*` (HAL 712 → 718).  `PerCoreSwitchToThread` registered
+    in `Platform/Staged.lean` + `staged_module_allowlist.txt` (44 staged-only
+    modules; partition gate green).  Items deferred past v1.0.0 with
+    correctness impact: NONE.  Follow-on: SM5.C (cross-core wake via SGI)
+    consumes `switchToThreadOnCore` + `switchToThreadOnCoreLockSet`.
+
+  **WS-SM SM5.B audit-pass-1 (also in v0.31.39)**: a deep self-audit closed the
+  verification-completeness + documentation gaps of the SM5.B landing (sound +
+  axiom-clean, but a state *mutation* had shipped with no preservation theorems
+  plus a few dead-weight / under-documented spots).  All axiom-clean (full
+  `#print axioms` sweep over *every* SM5.B theorem, not the initial 6):
+
+  - **Invariant preservation** (the main gap): `switchToThreadOnCore_preserves_objects_invExt`
+    (object-store `invExt`), `_preserves_runQueueOnCore_wellFormed` (run-queue
+    `RunQueue.wellFormed`), `_establishes_queueCurrentConsistentOnCore` (the SM4.C
+    invariant form of dequeue-on-dispatch), the object-footprint bridge
+    `switchToThreadOnCore_objects_eq_preempt` (the switch writes only what the
+    preempt does — at most the preempted thread's TCB), + preempt-side helpers
+    `preemptCurrentOnCore_preserves_objects_invExt` / `_preserves_runQueueOnCore_wellFormed`.
+    The full 10-conjunct `schedulerInvariant_perCore` preservation remains SM5.I.8
+    ("preservation by every transition") per the plan; these are its foundations.
+    The per-conjunct `currentThreadValidOnCore` establishment was initially
+    left to SM5.I.8 here, then **closed in audit-pass-2 below** (the cited AK7
+    blocker proved avoidable via a typed `.get?`-method-form frame).
+  - **Defense-in-depth**: `preemptCurrentOnCore_active_under_valid` proves the
+    "previous current isn't a TCB" no-op fallback is **unreachable** under
+    `currentThreadValidOnCore` (mirrors `saveOutgoingContext_always_succeeds_under_currentThreadValid`).
+  - **Dead-weight removed**: the vacuous `switchToThreadOnCore_total` (`∃ r, … = r`)
+    is replaced by the substantive `switchToThreadOnCore_ok_iff` (succeeds **iff**
+    `tid` is a TCB whose affinity admits the core).
+  - **Acquisition-order completeness**: `switchToThreadOnCoreLockSet_pairwise_le`
+    (the lock-set's keys are `SchedLockId`-ascending — a valid `withLockSet`
+    acquisition sequence; the switch's part of the SM3.D deadlock-freedom ladder).
+  - **Honest lock-set rationale (documented, not changed)**: the object-store
+    **table** write lock is the *sound* SM3.A.10 choice (RobinHood structural
+    safety is table-granularity — an insert can relocate slots — so per-object TCB
+    locks would be unsound); the cross-core-switch serialization is recorded as a
+    tracked post-SM5 optimization (per-slot RHTable concurrency), not presented as
+    strictly superior.  `switchToThreadOnCore`'s docstring now documents its
+    deliberate preempt-vs-drop distinction from `schedule` (no `rfl`-bridge) and
+    the single-`machine.regs` per-core register-model assumption (per-core banks
+    land with SM5, as `contextMatchesCurrentOnCore` notes); the FFI
+    `PER_CPU_CURRENT_THREAD` docstring explains the cross-core-readable `AtomicU64`
+    array vs the non-atomic owner-only `PerCpuData`.
+  - **Tests**: the suite gains a self-switch scenario (the `prevTid == incoming`
+    preempt no-op branch) + elaboration-time witnesses for every new theorem;
+    tier-3 anchors updated.  Items deferred past v1.0.0 with correctness impact:
+    NONE.
+
+  **WS-SM SM5.B audit-pass-2 (also in v0.31.39)**: closes the one substantive
+  deferral audit-pass-1 left open, per the implement-the-improvement rule (the
+  deferral's stated AK7 blocker was avoidable, so the symmetric sibling theorem
+  is materialised rather than postponed to SM5.I.8):
+  - **`switchToThreadOnCore_establishes_currentThreadValidOnCore`** — the
+    symmetric sibling of `_establishes_queueCurrentConsistentOnCore`: a
+    successful switch establishes that core `c`'s new current thread resolves to
+    a TCB.  Audit-pass-1 deferred it citing the AK7 `RAW_LOOKUP_TID` gate, but
+    the metric counts only the raw `[·]?` bracket text while
+    `RHTable.getElem?_insert_ne` is stated in the `.get?`-method form.  The new
+    typed-accessor frame `preemptCurrentOnCore_getTcb?_incoming` (the preempt's
+    only object write is the *previous* current's save at a *different* key, so
+    the lookup at the switch target is unchanged) closes the proof with **zero**
+    raw-bracket source — `RAW_LOOKUP_TID` stays at the 810 floor
+    (`GETTCB_ADOPTION` 284 → 303).
+  - **Documentation drift fixed**: the module docstring still listed the
+    renamed-away `switchToThreadOnCore_total`; corrected to
+    `switchToThreadOnCore_ok_iff` + both establishment theorems.
+  - **Tests**: +2 surface anchors + 1 example + 2 runtime scenarios
+    (`smp_switch_to_thread_suite` 28 → 30 PASS) + 2 tier-3 anchors; both new
+    theorems axiom-clean.  Default build green (320 jobs); Tier 0–3 green; trace
+    byte-identical.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.B audit-pass-3 (PR #805 automated-review closure; also in
+  v0.31.39)**: two valid P2 findings from the PR's automated reviewer, both in
+  SM5.B's scope (the `TCB.cpuAffinity` field + the FFI seam this cut
+  introduced), closed per the implement-the-improvement rule:
+  - **Information-flow projection leak (P2-4)**: adding `TCB.cpuAffinity` made
+    it survive `projectKernelObject`'s TCB record update, while the projection
+    deliberately erases every other scheduler-only field (`registerContext`,
+    `schedContextBinding`, `pipBoost`, `pendingMessage`, `timedOut`).  Per-thread
+    CPU *placement* is the same class, so two states differing only by an
+    affinity change would project to different low objects — a cross-domain
+    placement leak once `setThreadCpuAffinity` (SM5.C) lands.  Fixed by stripping
+    `cpuAffinity := none` in the `.tcb` projection arm (structurally, mirroring
+    AK6-G) with the witness `projectKernelObject_erases_cpuAffinity`.
+  - **FFI ThreadId encodability (P2-2)**: `switchToThreadHw` did
+    `UInt64.ofNat tid.toNat` on an unbounded-`Nat` `ThreadId`, silently wrapping
+    for values ≥ 2^64 and colliding with the HAL `NO_CURRENT_THREAD = u64::MAX`
+    sentinel at 2^64−1.  Fixed fail-closed (SM1.I.4 u64-before-cast discipline):
+    `tid.toNat < switchToThreadHwTidBound` (= 2^64−1) covers both overflow and
+    sentinel; an out-of-range `tid` returns `switchToThreadHwRejected` (`1`)
+    without touching the HAL.  Witnesses
+    `switchToThreadHw_returns_baseio_uint64_marker` (now conditional passthrough)
+    + `switchToThreadHw_rejects_unencodable`.
+  - Both axiom-clean (`propext` / `Quot.sound`); AK7 `RAW_LOOKUP_TID` unchanged
+    (810); default build green (320 jobs); Tier 0–3 green; trace byte-identical;
+    `codebase_map.json` regenerated.  Three further P2 findings (reject-non-
+    runnable targets, idle-thread re-enqueue, `syncThreadStates` per-core lift)
+    are SM5.C / SM5.E / already-tracked future-phase concerns, not SM5.B
+    defects.  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

@@ -639,6 +639,10 @@ run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Pro
 # CNode slot filtering safety theorems (F-22):
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType' SeLe4n/Kernel/InformationFlow/Projection.lean
+# WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity' SeLe4n/Kernel/InformationFlow/Projection.lean
+# WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity' SeLe4n/Kernel/InformationFlow/Projection.lean
 # NI theorems (CRIT-03/F-21):
 run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
@@ -3034,6 +3038,90 @@ open SeLe4n.Kernel
 
 -- SM5.A support: RunQueue.ofList well-formedness (production helper).
 #check @SeLe4n.Kernel.RunQueue.ofList_wellFormed
+EOF'
+
+# WS-SM SM5.B — per-core switchToThread surface anchors.  Covers the SM5.B.4
+# foundation (the `TCB.cpuAffinity` field + `KernelError.threadOnDifferentCore`),
+# the SM5.B.1/.3/.4 production operations (`switchToThreadOnCore` /
+# `preemptCurrentOnCore` / `affinityAdmitsCore`), the SM5.B.2 cross-domain
+# lock-set + acquisition-order completeness, the preempt frame + preservation +
+# unreachability lemmas, the SM5.B.1/.3/.4/.5/.6 switch-semantics theorems, the
+# §3b invariant-preservation foundations, the SM5.B.8 complete classification +
+# decidability, and the SM5.B.7 FFI seam (extern decls + typed wrappers +
+# markers).  A rename / removal of any SM5.B
+# symbol fails here at elaboration time, before SM5.C's cross-core wake / SGI
+# dispatch loop consumes them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
+import SeLe4n.Kernel.Concurrency.Runtime
+open SeLe4n.Model
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency
+
+-- SM5.B.4 foundation: the per-thread CPU-affinity field + reject-remote error.
+#check @TCB.cpuAffinity
+#check @SeLe4n.Model.KernelError.threadOnDifferentCore
+
+-- SM5.B.1/.3/.4 production operations (Scheduler.Operations.Selection).
+#check @affinityAdmitsCore
+#check @affinityAdmitsCore_none
+#check @affinityAdmitsCore_some
+#check @preemptCurrentOnCore
+#check @switchToThreadOnCore
+
+-- SM5.B.2 cross-domain lock-set.
+#check @switchToThreadOnCoreLockSet
+#check @switchToThreadOnCoreLockSet_length
+#check @switchToThreadOnCoreLockSet_write_only
+#check @switchToThreadOnCoreLockSet_contains_objStore_write
+#check @switchToThreadOnCoreLockSet_contains_runQueue_write
+#check @switchToThreadOnCoreLockSet_object_before_runQueue
+#check @switchToThreadOnCoreLockSet_keys_nodup
+
+-- §2/§2b preempt frame + preservation + unreachability lemmas.
+#check @preemptCurrentOnCore_currentOnCore
+#check @preemptCurrentOnCore_runQueueOnCore_ne
+#check @preemptCurrentOnCore_runQueueOnCore_self_active
+#check @preemptCurrentOnCore_preserves_objects_invExt
+#check @preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed
+#check @preemptCurrentOnCore_active_under_valid
+
+-- SM5.B.1/.3/.4/.5/.6 switch-semantics theorems.
+#check @switchToThreadOnCore_sets_current
+#check @switchToThreadOnCore_preempts_previous
+#check @switchToThreadOnCore_rejects_remote
+#check @switchToThreadOnCore_ok_of_admits
+#check @switchToThreadOnCore_runQueueOnCore_excludes_current
+#check @switchToThreadOnCore_independent_of_other_core
+
+-- §3b invariant preservation + object frame (structural foundations for SM5.I.8).
+#check @switchToThreadOnCore_preserves_objects_invExt
+#check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
+#check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
+#check @switchToThreadOnCore_establishes_currentThreadValidOnCore
+#check @preemptCurrentOnCore_getTcb?_incoming
+#check @switchToThreadOnCore_objects_eq_preempt
+
+-- §3c acquisition-order completeness (SM5.B.2).
+#check @switchToThreadOnCoreLockSet_pairwise_le
+
+-- SM5.B.8 complete classification + decidability.
+#check @switchToThreadOnCore_ok_iff
+#check @switchToThreadOnCoreSucceeds
+#check @switchToThreadOnCoreRejectsRemote
+
+-- SM5.B.7 FFI seam: extern decls + typed wrappers + markers.
+#check @SeLe4n.Platform.FFI.ffiSwitchToThread
+#check @SeLe4n.Platform.FFI.ffiPerCoreCurrentThread
+#check @switchToThreadHw
+#check @perCoreCurrentThreadHw
+#check @switchToThreadHw_returns_baseio_uint64_marker
+#check @perCoreCurrentThreadHw_returns_baseio_uint64_marker
+-- WS-SM SM5.B (PR #805 review P2-2): fail-closed ThreadId encodability guard.
+#check @switchToThreadHwTidBound
+#check @switchToThreadHwRejected
+#check @switchToThreadHw_rejects_unencodable
 EOF'
 
 finalize_report

@@ -752,6 +752,27 @@ structure TCB where
       `rust/sele4n-hal/src/rw_lock.rs`. -/
   lock : SeLe4n.Kernel.Concurrency.RwLockState :=
     SeLe4n.Kernel.Concurrency.RwLockState.unheld
+  /-- WS-SM SM5.B.4 (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`
+      §3.2 / §5 SM5.B.4): CPU affinity — the core this thread is bound to.
+      `none` means *unbound* (the thread may run on any core); `some c` pins
+      the thread to core `c`.
+
+      Default `none` is the pre-SMP-compatible value: every thread constructed
+      without an explicit affinity is unbound, so the per-core
+      `switchToThreadOnCore` reject-remote gate (SM5.B.4) never fires for it
+      and the single-core boot trace stays byte-identical.
+
+      `switchToThreadOnCore` (`Scheduler/Operations/Selection.lean`) rejects a
+      switch onto any core other than this affinity with
+      `KernelError.threadOnDifferentCore` (Theorem 3.2.3): migration is a
+      separate, explicit operation, never implicit in a context switch.  The
+      field is introduced at SM5.B (rather than the plan's nominal SM5.C.7
+      slot) because SM5.B.4's reject-remote semantics structurally requires a
+      per-thread core binding — it cannot be expressed as a non-vacuous
+      theorem without it.  SM5.C will add the `setThreadCpuAffinity` capability
+      operation (SM5.C.8) and the boot-time default-affinity wiring
+      (SM5.C.9). -/
+  cpuAffinity : Option SeLe4n.Kernel.Concurrency.CoreId := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -780,7 +801,11 @@ instance : BEq TCB where
     a.timedOut == b.timedOut &&
     -- WS-SM SM3.A.1: per-TCB lock state participates in structural equality.
     -- `RwLockState` derives `DecidableEq`, so its `==` agrees with `=`.
-    a.lock == b.lock
+    a.lock == b.lock &&
+    -- WS-SM SM5.B.4: per-TCB CPU affinity participates in structural equality.
+    -- `Option CoreId` (`CoreId = Fin numCores`) derives `DecidableEq`, so its
+    -- `==` agrees with `=`.
+    a.cpuAffinity == b.cpuAffinity
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -844,13 +869,15 @@ theorem TCB.ext {a b : TCB}
     (hPip : a.pipBoost = b.pipBoost)
     (hTo : a.timedOut = b.timedOut)
     -- WS-SM SM3.A.1: extensionality covers the per-TCB lock field.
-    (hLock : a.lock = b.lock) :
+    (hLock : a.lock = b.lock)
+    -- WS-SM SM5.B.4: extensionality covers the per-TCB CPU-affinity field.
+    (hCpuAff : a.cpuAffinity = b.cpuAffinity) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock⟩
+         hLock, hCpuAff⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

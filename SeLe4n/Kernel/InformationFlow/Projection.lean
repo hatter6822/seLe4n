@@ -254,8 +254,20 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- relationships and could leak timing information across security domains.
       -- A thread's effective priority boost is an internal scheduling detail,
       -- not a security-relevant observable property.
+      -- WS-SM SM5.B (NI-M01 lineage, PR #805 review P2-4): Strip cpuAffinity —
+      -- per-thread CPU *placement* is a scheduler resource-management decision
+      -- (which physical core runs the thread), structurally the same class as
+      -- schedContextBinding and pipBoost above, not part of the thread's
+      -- observable logical identity for IPC/capability purposes.  Two states
+      -- differing only by a (high/scheduler-driven) affinity change must project
+      -- to the *same* low object, or the NI projection would leak cross-domain
+      -- placement decisions once setThreadCpuAffinity (SM5.C) can change it.
+      -- Stripped structurally (not by a "no operation sets it yet" invariant
+      -- witness) per the projection's pure-function discipline — mirrors AK6-G's
+      -- structural stripping of pendingMessage/timedOut.
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
-                       pipBoost := none, pendingMessage := none, timedOut := false }
+                       pipBoost := none, pendingMessage := none, timedOut := false,
+                       cpuAffinity := none }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -316,6 +328,22 @@ theorem projectKernelObject_erases_timeout_signal
     (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
     match projectKernelObject ctx observer (.tcb tcb) with
     | .tcb tcb' => tcb'.timedOut = false
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM5.B (NI-M01 lineage, PR #805 review P2-4): `projectKernelObject`
+    strips the per-thread CPU-affinity field from projected TCBs (resets it to
+    `none`). Per-thread CPU *placement* is a scheduler resource-management
+    decision — the same class as `schedContextBinding`, `pipBoost`, and register
+    state, all of which the projection already erases. Two states differing only
+    by a (high/scheduler-driven) affinity change therefore project to the *same*
+    low object, so the information-flow projection cannot leak cross-domain
+    placement decisions once `setThreadCpuAffinity` (SM5.C) can change it.
+    Mirrors `projectKernelObject_erases_timeout_signal`. -/
+theorem projectKernelObject_erases_cpuAffinity
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
+    match projectKernelObject ctx observer (.tcb tcb) with
+    | .tcb tcb' => tcb'.cpuAffinity = none
     | _ => True := by
   simp [projectKernelObject]
 

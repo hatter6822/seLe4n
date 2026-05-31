@@ -216,4 +216,90 @@ theorem idleWaitBounded_returns_baseio_uint64_marker (maxTicks : UInt64) :
       Platform.FFI.ffiIdleWaitBounded maxTicks := by
   rfl
 
+-- ============================================================================
+-- WS-SM SM5.B.7 — Per-core context-switch typed wrappers
+-- ============================================================================
+
+/-- **WS-SM SM5.B.7** (PR #805 review P2-2): the largest `ThreadId.toNat` that
+    `switchToThreadHw` will encode over the FFI.  Any `tid.toNat <
+    switchToThreadHwTidBound` both (a) fits in a `UInt64` (so `UInt64.ofNat`
+    does not silently wrap) **and** (b) is distinct from the HAL's
+    `NO_CURRENT_THREAD = u64::MAX` sentinel (`UInt64.size - 1`), so a recorded
+    id can never be misread as "no current thread".  Equal to `2^64 - 1`. -/
+def switchToThreadHwTidBound : Nat := UInt64.size - 1
+
+/-- **WS-SM SM5.B.7** (PR #805 review P2-2): rejected-status returned by
+    `switchToThreadHw` when the `ThreadId` is not FFI-encodable.  Shares the
+    HAL's `0 = recorded`, `nonzero = not recorded` status convention (the Rust
+    side already returns `1` for an out-of-range `core_id`); the Lean wrapper
+    returns the same `1` when it refuses to encode an out-of-range `tid`,
+    fail-closed. -/
+def switchToThreadHwRejected : UInt64 := 1
+
+/-- **WS-SM SM5.B.7**: typed wrapper for `Platform.FFI.ffiSwitchToThread`.
+
+    Records (on the HAL side) that core `c` is now running thread `tid`, after
+    the verified `switchToThreadOnCore` (`Scheduler/Operations/Selection.lean`)
+    has computed the new per-core scheduler state.  Takes a typed `ThreadId`
+    and `CoreId`.  The `CoreId` side is bound by construction (`c.val <
+    numCores`), so the Rust-side `coreId < numCores` check never trips.
+
+    The `ThreadId` side, however, wraps an *unbounded* `Nat` (PR #805 review
+    P2-2), so the wrapper is **fail-closed** on it: a `tid` whose `toNat` does
+    not fit in a `UInt64`, or that collides with the HAL `NO_CURRENT_THREAD =
+    u64::MAX` sentinel (both captured by `tid.toNat ≥ switchToThreadHwTidBound`),
+    is **not** encoded — the wrapper returns `switchToThreadHwRejected` (`1`,
+    "not recorded") without touching the HAL, rather than silently recording the
+    wrong thread id or aliasing "no current thread".  Mirrors the SM1.I.4
+    u64-before-cast FFI discipline.  Well-formed kernel `ThreadId`s are far below
+    the bound, so the happy path is unchanged.  At SM5.B.7 no Lean caller
+    exists; SM5.C wires this into the per-core dispatch loop after a verified
+    switch. -/
+def switchToThreadHw (tid : SeLe4n.ThreadId) (c : CoreId) : BaseIO UInt64 :=
+  if tid.toNat < switchToThreadHwTidBound then
+    Platform.FFI.ffiSwitchToThread (UInt64.ofNat tid.toNat) (UInt64.ofNat c.val)
+  else
+    pure switchToThreadHwRejected
+
+/-- **WS-SM SM5.B.7**: typed wrapper for `Platform.FFI.ffiPerCoreCurrentThread`.
+
+    Reads the per-core current-thread id the HAL recorded for core `c` (the
+    value of the most recent `switchToThreadHw` for that core).  Returns the
+    HAL sentinel (`u64::MAX`) for a core with no switch recorded yet. -/
+def perCoreCurrentThreadHw (c : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val)
+
+/-- **WS-SM SM5.B.7** structural marker: on an FFI-encodable `tid`
+(`tid.toNat < switchToThreadHwTidBound`), `switchToThreadHw` is a direct FFI
+pass-through (Tier-3 surface anchor; symmetry with the SM1.I marker family).
+The encodability hypothesis is the PR #805 review P2-2 fail-closed guard;
+well-formed kernel `ThreadId`s satisfy it trivially. -/
+theorem switchToThreadHw_returns_baseio_uint64_marker
+    (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : tid.toNat < switchToThreadHwTidBound) :
+    (switchToThreadHw tid c : BaseIO UInt64) =
+      Platform.FFI.ffiSwitchToThread (UInt64.ofNat tid.toNat) (UInt64.ofNat c.val) := by
+  unfold switchToThreadHw
+  rw [if_pos h]
+
+/-- **WS-SM SM5.B.7** (PR #805 review P2-2 fail-closed witness): a `ThreadId`
+that is not FFI-encodable (`tid.toNat ≥ switchToThreadHwTidBound` — too large
+for `UInt64` or colliding with the `NO_CURRENT_THREAD` sentinel) is
+**rejected** — `switchToThreadHw` returns `switchToThreadHwRejected` without
+touching the HAL, so a valid Lean `ThreadId` can never be recorded as the wrong
+thread or aliased to "no current thread". -/
+theorem switchToThreadHw_rejects_unencodable
+    (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : ¬ tid.toNat < switchToThreadHwTidBound) :
+    (switchToThreadHw tid c : BaseIO UInt64) = pure switchToThreadHwRejected := by
+  unfold switchToThreadHw
+  rw [if_neg h]
+
+/-- **WS-SM SM5.B.7** structural marker: `perCoreCurrentThreadHw` is a direct
+FFI pass-through. -/
+theorem perCoreCurrentThreadHw_returns_baseio_uint64_marker (c : CoreId) :
+    (perCoreCurrentThreadHw c : BaseIO UInt64) =
+      Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val) := by
+  rfl
+
 end SeLe4n.Kernel.Concurrency

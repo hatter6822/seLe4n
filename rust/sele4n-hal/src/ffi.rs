@@ -570,6 +570,98 @@ pub extern "C" fn ffi_per_core_syscall_count(core_id: u64) -> u64 {
 }
 
 // ============================================================================
+// WS-SM SM5.B.7 — Per-core context-switch FFI seam
+// ============================================================================
+//
+// The verified Lean kernel computes the new per-core scheduler state via
+// `switchToThreadOnCore` (`Scheduler/Operations/Selection.lean`); on hardware
+// the HAL must record which thread each core is now running so the
+// trap-return path and the SM5.C cross-core dispatch loop can resume it.
+// `ffi_switch_to_thread(tid, core_id)` records the per-core current-thread id
+// into `PER_CPU_CURRENT_THREAD[core_id]`; `ffi_per_core_current_thread` reads
+// it back.  At SM5.B no Lean caller is wired yet (the per-core scheduler
+// runtime is SM5.C+); the slot + accessors are the seam SM5.C consumes, and
+// the Rust unit tests exercise them directly.
+
+/// WS-SM SM5.B.7: sentinel for "no thread currently recorded for this core".
+pub const NO_CURRENT_THREAD: u64 = u64::MAX;
+
+/// WS-SM SM5.B.7: per-core current-thread id, as recorded by the most recent
+/// `ffi_switch_to_thread` for that core.  One `AtomicU64` slot per core
+/// (`MAX_SECONDARY_CORES + 1` = `PlatformBinding.coreCount`), initialised to
+/// `NO_CURRENT_THREAD`.
+///
+/// Relaxed ordering: this is an observability / dispatch pointer, not a
+/// synchronisation primitive — the verified happens-before ordering lives in
+/// the Lean `switchToThreadOnCore` lock-set discipline
+/// (`switchToThreadOnCoreLockSet`), not here.
+///
+/// **Why a separate `AtomicU64` array, not a field in [`crate::per_cpu::PerCpuData`].**
+/// `PerCpuData` is the *owner-accessed* per-CPU block reached via `TPIDR_EL1`:
+/// a core reads/writes only its own slot, non-atomically.  This pointer is
+/// instead **cross-core readable** — `ffi_per_core_current_thread(core_id)`
+/// (and SM5.C's dispatch loop) read *other* cores' current-thread slots, which
+/// would race with the owning core's writes.  A dedicated `AtomicU64` array is
+/// the right structure for cross-core reads; `PerCpuData`'s non-atomic
+/// owner-only fields are not.
+static PER_CPU_CURRENT_THREAD:
+    [core::sync::atomic::AtomicU64; crate::smp::MAX_SECONDARY_CORES + 1] = [
+    core::sync::atomic::AtomicU64::new(NO_CURRENT_THREAD),
+    core::sync::atomic::AtomicU64::new(NO_CURRENT_THREAD),
+    core::sync::atomic::AtomicU64::new(NO_CURRENT_THREAD),
+    core::sync::atomic::AtomicU64::new(NO_CURRENT_THREAD),
+];
+
+// Compile-time pin: one slot per core (matches the Lean `numCores` topology).
+// The array type `[_; MAX_SECONDARY_CORES + 1]` above already enforces the
+// element count at the literal (a wrong number of `AtomicU64::new` entries is a
+// hard compile error).  We deliberately do NOT write
+// `const _: () = assert!(PER_CPU_CURRENT_THREAD.len() == ...)`: reading a
+// `static` from a const context needs `feature(const_refs_to_statics)`
+// (rust-lang/rust#119618, stabilised in Rust 1.83), and Sele4n's MSRV is 1.82
+// — the same constraint documented in `per_cpu_stats.rs`.
+
+/// WS-SM SM5.B.7: record that core `core_id` is now running thread `tid`.
+///
+/// The Lean kernel calls this after `switchToThreadOnCore` has computed the
+/// new per-core scheduler state, so the HAL's trap-return / dispatch path
+/// knows which thread to resume on this core.  Returns `0` on success, or `1`
+/// on an out-of-range `core_id` — fail-closed: nothing is recorded for a bad
+/// core, so a malformed call cannot alias another core's slot.
+///
+/// **Defense-in-depth narrowing**: the bound check is performed in `u64` space
+/// before the `as usize` cast.  Sele4n targets aarch64 (`usize == u64`), so the
+/// cast is identity; a hypothetical 32-bit port would otherwise truncate a
+/// high-bit `core_id` and could alias an in-range slot.  Mirrors
+/// `ffi_per_core_irq_count`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSwitchToThread`.
+#[no_mangle]
+pub extern "C" fn ffi_switch_to_thread(tid: u64, core_id: u64) -> u64 {
+    if core_id >= PER_CPU_CURRENT_THREAD.len() as u64 {
+        return 1;
+    }
+    PER_CPU_CURRENT_THREAD[core_id as usize]
+        .store(tid, core::sync::atomic::Ordering::Relaxed);
+    0
+}
+
+/// WS-SM SM5.B.7: read the per-core current-thread id recorded for `core_id`.
+///
+/// Returns `NO_CURRENT_THREAD` for an out-of-range `core_id`, or for a core
+/// that has not had a switch recorded yet.  Same `u64` defense-in-depth bound
+/// check as `ffi_switch_to_thread`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreCurrentThread`.
+#[no_mangle]
+pub extern "C" fn ffi_per_core_current_thread(core_id: u64) -> u64 {
+    if core_id >= PER_CPU_CURRENT_THREAD.len() as u64 {
+        return NO_CURRENT_THREAD;
+    }
+    PER_CPU_CURRENT_THREAD[core_id as usize].load(core::sync::atomic::Ordering::Relaxed)
+}
+
+// ============================================================================
 // WS-SM SM2.D — Verified-lock FFI exports
 // ============================================================================
 //
@@ -1389,6 +1481,80 @@ mod tests {
     fn sm1i4_ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_syscall_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_syscall_count(0xFFFF_FFFF_0000_0000), 0);
+    }
+
+    // ========================================================================
+    // WS-SM SM5.B.7 — Per-core context-switch FFI seam tests
+    //
+    // `ffi_switch_to_thread` records a per-core current-thread id; tests that
+    // mutate + observe `PER_CPU_CURRENT_THREAD` are serialised through
+    // `SM5B7_SWITCH_TARGET_MUTEX` so cargo's parallel runner cannot race two
+    // writers/readers on the same core slot.
+    // ========================================================================
+
+    static SM5B7_SWITCH_TARGET_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn sm5b7_ffi_switch_to_thread_records_and_reads_back_per_core() {
+        let _guard = SM5B7_SWITCH_TARGET_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        // Distinct tids to distinct cores; each core reads back exactly its own
+        // recorded tid (no cross-core aliasing — the per-core isolation).
+        for core_id in 0..4u64 {
+            let tid = 0x100 + core_id;
+            assert_eq!(ffi_switch_to_thread(tid, core_id), 0, "record must succeed for core {core_id}");
+        }
+        for core_id in 0..4u64 {
+            assert_eq!(
+                ffi_per_core_current_thread(core_id),
+                0x100 + core_id,
+                "core {core_id} must read back its own recorded tid"
+            );
+        }
+    }
+
+    #[test]
+    fn sm5b7_ffi_switch_to_thread_out_of_range_returns_error_status() {
+        // Out-of-range core_id returns the non-zero (1) status and records nothing.
+        assert_eq!(ffi_switch_to_thread(7, 4), 1);
+        assert_eq!(ffi_switch_to_thread(7, 100), 1);
+        assert_eq!(ffi_switch_to_thread(7, u64::MAX), 1);
+    }
+
+    #[test]
+    fn sm5b7_ffi_switch_to_thread_out_of_range_records_nothing() {
+        let _guard = SM5B7_SWITCH_TARGET_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        // Record a known value on core 0, then attempt an out-of-range switch:
+        // core 0's slot must be untouched (the out-of-range path stores nothing).
+        assert_eq!(ffi_switch_to_thread(0xABC, 0), 0);
+        assert_eq!(ffi_switch_to_thread(0xDEF, 4), 1);
+        assert_eq!(ffi_per_core_current_thread(0), 0xABC);
+    }
+
+    #[test]
+    fn sm5b7_ffi_per_core_current_thread_out_of_range_returns_sentinel() {
+        assert_eq!(ffi_per_core_current_thread(4), NO_CURRENT_THREAD);
+        assert_eq!(ffi_per_core_current_thread(100), NO_CURRENT_THREAD);
+        assert_eq!(ffi_per_core_current_thread(u64::MAX), NO_CURRENT_THREAD);
+    }
+
+    #[test]
+    fn sm5b7_ffi_switch_to_thread_rejects_u64_high_bits_aliasing_slot() {
+        // Same u64-before-cast defense as the per-core stats FFI: a high-bit
+        // core_id (which a 32-bit `as usize` would truncate to an in-range slot)
+        // is rejected in u64 space — switch returns 1 and records nothing; read
+        // returns the sentinel.
+        assert_eq!(ffi_switch_to_thread(9, 0x1_0000_0001), 1);
+        assert_eq!(ffi_switch_to_thread(9, 0xFFFF_FFFF_0000_0000), 1);
+        assert_eq!(ffi_per_core_current_thread(0x1_0000_0001), NO_CURRENT_THREAD);
+        assert_eq!(ffi_per_core_current_thread(0xFFFF_FFFF_0000_0000), NO_CURRENT_THREAD);
+    }
+
+    #[test]
+    fn sm5b7_ffi_switch_signatures_pinned() {
+        // Pin the SM5.B.7 FFI export signatures; an ABI change breaking the
+        // Lean `@[extern]` callers would surface here.
+        let _: extern "C" fn(u64, u64) -> u64 = ffi_switch_to_thread;
+        let _: extern "C" fn(u64) -> u64 = ffi_per_core_current_thread;
     }
 
     // ========================================================================

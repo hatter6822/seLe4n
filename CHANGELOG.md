@@ -1,3 +1,272 @@
+## v0.31.39 — WS-SM SM5.B: per-core `switchToThread` (context switch, preempt-previous, reject-remote, cross-core independence, FFI seam)
+
+WS-SM Phase SM5 (per-core scheduler) continues with SM5.B — the per-core
+context-switch transition `switchToThreadOnCore` (plan
+`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.2, §5).  All nine sub-tasks
+landed in one cut.  Every new Lean theorem is axiom-clean (`propext` /
+`Quot.sound` / `Classical.choice` only); the default build is green (320 jobs);
+the trace fixture is byte-identical; Tier 0–3 green; the full Rust HAL suite is
+green (718 tests) with zero clippy warnings.
+
+### Foundation: `TCB.cpuAffinity` + `KernelError.threadOnDifferentCore`
+
+SM5.B.4's reject-remote semantics structurally require a per-thread core
+binding, which cannot be expressed as a non-vacuous theorem without it — so the
+plan's nominal SM5.C.7 field is pulled forward into SM5.B (per the
+implement-the-improvement rule: a stub reject-remote would be a security/
+correctness shortcut):
+
+- **`TCB.cpuAffinity : Option CoreId := none`** (`Model/Object/Types.lean`).
+  `none` = unbound (the thread may run on any core); `some c` = pinned to core
+  `c`.  Default `none` is pre-SMP-compatible — every existing thread is unbound,
+  so the reject-remote gate never fires for it and the single-core boot trace is
+  byte-identical.  The manual `BEq TCB` (23 → 24 conjuncts) and `TCB.ext` grow
+  the `cpuAffinity` conjunct/hypothesis; TCBs pass through `freezeObject`
+  unchanged, so there is no freeze cascade.
+- **`KernelError.threadOnDifferentCore`** (discriminant 53) added to the Lean
+  enum, `KernelError.toUInt32`, the Rust `sele4n-types` enum (+ `from_u32` +
+  `Display`), and the `sele4n-abi` decode layer; every discriminant-pinning
+  test (Lean `SyscallDispatchSuite`-adjacent + Rust `error.rs` / `conformance.rs`
+  / `decode.rs`) grows in lock-step (kernel range 0..=53; the unknown-code
+  fallback starts at 54; 54 total variants).
+
+### SM5.B.1/.3/.4 — `switchToThreadOnCore` (production, `Selection.lean`)
+
+`switchToThreadOnCore (st) (c) (tid) : Except KernelError SystemState` — the
+per-core analogue of seL4's `switchToThread`: preempt core `c`'s current thread
+(`preemptCurrentOnCore`: save its register context + re-enqueue it at its
+effective priority), dequeue `tid` (dequeue-on-dispatch), restore `tid`'s
+register context, set `tid` as core `c`'s current thread.  Fail-closed: a `tid`
+that does not resolve to a TCB → `.schedulerInvariantViolation`; a `tid` bound
+to a core other than `c` → `.threadOnDifferentCore` (the `affinityAdmitsCore`
+gate).  Single-state form (mirrors `chooseThreadOnCore`'s SM5.A split); SM5.C
+wraps it in the cross-core dispatch loop + the runtime `withLockSet`
+acquisition.
+
+### SM5.B.2/.5/.6/.8 — theorems (staged `PerCoreSwitchToThread.lean`)
+
+- **SM5.B.2** `switchToThreadOnCoreLockSet` — the *complete* cross-domain
+  footprint over SM5.A's `SchedLockId`: the object-store **write** lock
+  (`schedObjStoreLockId`, guarding the `getTcb?` resolutions *and* the preempted
+  thread's register-context save) + the per-core run-queue **write** lock, in
+  plan §4.4 ascending order (`switchToThreadOnCoreLockSet_object_before_runQueue`).
+  The write modes (vs `chooseThreadOnCoreLockSet`'s read modes) reflect that the
+  switch mutates both domains; the object-store *table* lock subsumes the
+  dynamically-discovered preempted-thread TCB write that a static
+  `LockId.tcb tid`-only set would under-lock — the same under-locking class
+  SM5.A's audit (PR #804) closed for `chooseThreadOnCore`.
+- **Theorem 3.2.1** `switchToThreadOnCore_sets_current` — on success the new
+  current thread of core `c` is `tid`.
+- **Theorem 3.2.2** `switchToThreadOnCore_preempts_previous` — the evicted
+  previous current thread is re-enqueued into the *same* core's run queue
+  (preempted, not lost).
+- **Theorem 3.2.3** `switchToThreadOnCore_rejects_remote` — a switch onto a
+  non-affinity core is rejected with `.threadOnDifferentCore`; the dual
+  `switchToThreadOnCore_ok_of_admits` shows an admitted thread succeeds (the
+  affinity gate characterised exactly).
+- **SM5.B.5** `switchToThreadOnCore_runQueueOnCore_excludes_current` —
+  dequeue-on-dispatch: the new current thread is not simultaneously in the run
+  queue.
+- **SM5.B.6** `switchToThreadOnCore_independent_of_other_core` — switching on
+  core `c` leaves every *other* core's `current` and `runQueue` slots untouched
+  (cross-core lock-set protection, via the `preemptCurrentOnCore` frame lemmas
+  `_currentOnCore` / `_runQueueOnCore_ne` / `_runQueueOnCore_self_active`).
+- **SM5.B.8** `switchToThreadOnCore_total` + the decidable predicates
+  `switchToThreadOnCoreSucceeds` / `switchToThreadOnCoreRejectsRemote`.
+
+### SM5.B.7 — FFI seam
+
+Rust `ffi_switch_to_thread(tid, core_id) -> u64` records the per-core
+current-thread id into a `PER_CPU_CURRENT_THREAD` slot (Relaxed; fail-closed,
+returning a non-zero status on an out-of-range `core_id` with the same
+u64-before-cast bound check as the per-core stats FFI);
+`ffi_per_core_current_thread(core_id) -> u64` reads it back.  Lean `@[extern]`
+bindings (`Platform.FFI.ffiSwitchToThread` / `ffiPerCoreCurrentThread`) + typed
+wrappers (`Concurrency.switchToThreadHw` / `perCoreCurrentThreadHw`) with
+pass-through marker theorems.  A new `build.rs` scanner
+(`scan_ffi_rs_exposes_switch_to_thread_exports`) pins both exports at
+elaboration time.  At SM5.B no Lean caller is wired; SM5.C's per-core dispatch
+loop is the consumer.
+
+### Tests + wiring
+
+- `tests/SmpSwitchToThreadSuite.lean` (`lake exe smp_switch_to_thread_suite`):
+  35 surface anchors, 9 elaboration-time theorem-application examples, and 25
+  runtime assertions over the real `switchToThreadOnCore` computation (the eight
+  SM5.B.9 switch scenarios + the SM5.B.2 lock-set witnesses + the SM5.B.4
+  affinity-admits algebra).  Tier-2 + Tier-3 wired.
+- 6 new Rust HAL tests (`ffi::tests::sm5b7_*`, full HAL suite 712 → 718); the
+  `sele4n-types` / `sele4n-abi` discriminant + decode tests grow for
+  discriminant 53 (+ a `thread_on_different_core_decode` round-trip).
+- `Scheduler.Operations.PerCoreSwitchToThread` registered in
+  `Platform/Staged.lean` + `staged_module_allowlist.txt` (44 staged-only
+  modules; the production/staged partition gate is green).
+
+Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.C
+(cross-core wake via SGI) consumes `switchToThreadOnCore` +
+`switchToThreadOnCoreLockSet`.
+
+### Audit-pass-1 refinements (post-landing deep self-audit; also in v0.31.39)
+
+A deep self-audit of the SM5.B landing surfaced verification-completeness and
+documentation gaps relative to the codebase standard (the initial cut was sound
++ axiom-clean, but a state *mutation* shipped with no preservation theorems and
+a few dead-weight / under-documented spots).  All closed in the same v0.31.39
+cut; every new theorem axiom-clean (`#print axioms`: `propext` / `Quot.sound` /
+`Classical.choice` only — a full sweep over *all* SM5.B theorems, not the
+initial 6-theorem spot-check):
+
+- **Invariant preservation (the main gap).**  `switchToThreadOnCore` now carries
+  the structural preservation a sound transition must:
+  `switchToThreadOnCore_preserves_objects_invExt` (the RobinHood object-store
+  invariant survives the preempted-thread context save) and
+  `switchToThreadOnCore_preserves_runQueueOnCore_wellFormed` (the run queue stays
+  well-formed across the re-enqueue + dequeue), plus
+  `switchToThreadOnCore_establishes_queueCurrentConsistentOnCore` (the SM4.C
+  invariant form of dequeue-on-dispatch — the new current thread is not in its
+  run queue).  Built on the new preempt-side helpers
+  `preemptCurrentOnCore_preserves_objects_invExt` /
+  `_preserves_runQueueOnCore_wellFormed`, plus the object-footprint bridge
+  `switchToThreadOnCore_objects_eq_preempt` (the switch's only object write is
+  the preempt's — at most the preempted thread's TCB).  The full 10-conjunct
+  `schedulerInvariant_perCore` preservation remains SM5.I.8 ("preservation by
+  every transition") per the plan; these are the foundations it composes.  Note
+  the per-conjunct `currentThreadValidOnCore` establishment is *deliberately*
+  left to SM5.I.8: proving it needs an object-store insert-frame at the switch
+  target — a *raw* `.toObjId]?` lookup — and the AK7 cascade discipline
+  (`scripts/ak7_cascade_check_monotonic.sh`) requires raw `.toObjId]?` lookups to
+  *drop*, never grow.  SM5.I.8 should add a *typed* `getTcb?`-insert frame (the
+  `.get?`-method form the AK7 metric does not count) and route the full
+  preservation through it, rather than SM5.B regressing `RAW_LOOKUP_TID`.
+- **Defense-in-depth (preempt fallback).**  `preemptCurrentOnCore_active_under_valid`
+  proves the "previous current isn't a TCB" no-op fallback is **unreachable**
+  under `currentThreadValidOnCore` — the preempt genuinely re-enqueues — mirroring
+  the `saveOutgoingContext_always_succeeds_under_currentThreadValid` discipline.
+- **Dead-weight removed.**  The vacuous `switchToThreadOnCore_total`
+  (`∃ r, … = r`) is replaced by the substantive complete classification
+  `switchToThreadOnCore_ok_iff` (`switchToThreadOnCore` succeeds **iff** `tid`
+  resolves to a TCB whose affinity admits the core).
+- **Acquisition-order completeness.**  `switchToThreadOnCoreLockSet_pairwise_le`
+  certifies the lock-set's keys are `SchedLockId`-ascending (object lock before
+  run-queue lock) — i.e. it *is* a valid `withLockSet` ascending acquisition
+  sequence — contributing the per-core switch's part of the SM3.D
+  deadlock-freedom argument.
+- **Lock-set rationale (honest trade-off).**  The `switchToThreadOnCoreLockSet`
+  docstring now states why the object-store **table** write lock — not a
+  per-object `LockId.tcb tid` set — is the *sound* choice: SM3.A.10 guards the
+  RobinHood store's structural concurrency-safety at **table** granularity (an
+  insert can relocate slots), so per-object TCB locks would not protect the table
+  structure.  It also records the resulting SMP trade-off honestly — cross-core
+  switches that mutate the store serialize on it (the per-core *run-queue* lock
+  does not), a tracked **post-SM5** optimization once per-slot RHTable concurrency
+  is established — rather than presenting the table lock as strictly superior.
+- **`schedule` distinction documented.**  `switchToThreadOnCore`'s docstring now
+  explains it is *deliberately* not unified with `schedule`/`scheduleEffective`:
+  `schedule` *drops* the outgoing thread (dequeue-on-dispatch) whereas
+  `switchToThreadOnCore` *preempts* (re-enqueues) it (Theorem 3.2.2), so the
+  preempt-vs-drop semantics genuinely differ — there is no `rfl`-bridge, unlike
+  `chooseThread = chooseThreadOnCore bootCoreId`.  The per-core register-model
+  assumption (single `machine.regs` = executing core; per-core banks land with
+  SM5, as `contextMatchesCurrentOnCore` already notes) is documented too.
+- **FFI rationale + self-switch test.**  The `PER_CPU_CURRENT_THREAD` docstring
+  explains why a dedicated cross-core-readable `AtomicU64` array is correct (vs
+  the non-atomic owner-only `PerCpuData`).  The Lean suite gains a self-switch
+  scenario (current already = target ⇒ the `prevTid == incoming` preempt no-op
+  branch fires) plus elaboration-time witnesses for every new theorem (the suite
+  now exercises the preservation + classification + acquisition-order results).
+
+### Audit-pass-2 refinements (post-audit-pass-1 deep audit; also in v0.31.39)
+
+Closes the one substantive deferral audit-pass-1 left open, per the
+implement-the-improvement rule (the deferral's stated AK7 blocker proved
+avoidable, so the symmetric sibling theorem is materialised rather than
+postponed to SM5.I.8):
+
+- **`switchToThreadOnCore_establishes_currentThreadValidOnCore`** — audit-pass-1
+  proved `_establishes_queueCurrentConsistentOnCore` (one of the two SM4.C
+  current-thread conjuncts a successful switch establishes) but *deferred* its
+  symmetric sibling (the new current thread resolves to a TCB), citing the AK7
+  `RAW_LOOKUP_TID` gate.  That blocker is avoidable: the AK7 metric counts only
+  the raw `[·]?` bracket text, while the frame lemma `RHTable.getElem?_insert_ne`
+  is stated in the `.get?`-method form.  The new typed-accessor frame
+  `preemptCurrentOnCore_getTcb?_incoming` (the preempt's only object write is the
+  *previous* current's register save at a *different* key, so the lookup at the
+  switch target is unchanged) closes the proof with **zero** raw-bracket source —
+  `RAW_LOOKUP_TID` stays at the 810 floor (`GETTCB_ADOPTION` grows 284 → 303).
+- **Documentation drift fixed** — the module docstring's "What this module
+  proves" list still named `switchToThreadOnCore_total`, which audit-pass-1 had
+  already replaced with the substantive `switchToThreadOnCore_ok_iff` (no
+  `_total` symbol exists at landing).  Corrected, and both establishment
+  theorems documented.
+- **Tests** — +2 surface anchors (`switchToThreadOnCore_establishes_currentThreadValidOnCore`,
+  `preemptCurrentOnCore_getTcb?_incoming`) + 1 elaboration example + 2 runtime
+  scenarios (`smp_switch_to_thread_suite` 28 → 30 PASS) + 2 tier-3 anchors.
+  Both new theorems verified axiom-clean (`propext` / `Classical.choice` /
+  `Quot.sound`).  Default build green (320 jobs); Tier 0–3 green; trace fixture
+  byte-identical.
+
+### Audit-pass-3 refinements (PR #805 automated-review closure; also in v0.31.39)
+
+Two valid P2 findings from the PR's automated reviewer, both squarely in SM5.B's
+scope (the `TCB.cpuAffinity` field + the FFI seam this cut introduced), closed
+per the implement-the-improvement rule:
+
+- **Information-flow projection leak (P2-4)** — adding `TCB.cpuAffinity` made it
+  survive `projectKernelObject`'s TCB record update by default, while the same
+  projection deliberately erases every other scheduler-only field
+  (`registerContext`, `schedContextBinding`, `pipBoost`, `pendingMessage`,
+  `timedOut`).  Per-thread CPU *placement* is the same class — a scheduler
+  resource-management decision, not observable logical identity — so two states
+  differing only by a (high/scheduler-driven) affinity change would project to
+  *different* low objects, leaking placement across security domains once
+  `setThreadCpuAffinity` (SM5.C) can change it.  Fixed by stripping
+  `cpuAffinity := none` in the `.tcb` projection arm (structurally, per the
+  projection's pure-function discipline, mirroring AK6-G), with the witness
+  theorem `projectKernelObject_erases_cpuAffinity`.
+- **FFI ThreadId encodability (P2-2)** — `switchToThreadHw` did
+  `UInt64.ofNat tid.toNat` on an unbounded-`Nat` `ThreadId`, silently wrapping
+  for values ≥ 2^64 and colliding with the HAL `NO_CURRENT_THREAD = u64::MAX`
+  sentinel at exactly 2^64−1, so a valid Lean TID could be recorded as the wrong
+  thread (or as "no current thread") once SM5.C wires the wrapper.  Fixed
+  fail-closed (mirroring the SM1.I.4 u64-before-cast discipline): the single
+  bound `tid.toNat < switchToThreadHwTidBound` (= 2^64−1) covers both overflow
+  and sentinel collision; an out-of-range `tid` returns
+  `switchToThreadHwRejected` (`1`, "not recorded") without touching the HAL.
+  Witnesses `switchToThreadHw_returns_baseio_uint64_marker` (now the conditional
+  passthrough) + `switchToThreadHw_rejects_unencodable`.
+
+Both fixes axiom-clean (`propext` / `Quot.sound`); AK7 `RAW_LOOKUP_TID` unchanged
+at the 810 floor; default build green (320 jobs); Tier 0–3 green; trace fixture
+byte-identical; `docs/codebase_map.json` regenerated.
+
+**Tracked debt (maintainer-confirmed deferral, with closure targets).** Three
+further P2 findings are genuinely future-phase, not SM5.B defects:
+
+- **Reject non-runnable switch targets (→ SM5.C).** `switchToThreadOnCore`
+  accepts any affinity-admitted TCB without a run-queue-membership / active-
+  domain guard (unlike the legacy `schedule` dispatch path in
+  `Scheduler/Operations/Core.lean`).  Its *intended* composition —
+  `switchToThreadOnCore (chooseThreadOnCore c)` — is already membership-sound by
+  construction (`chooseThreadOnCore_some_mem_runQueueOnCore`, SM5.A.6), so no
+  current path can hand it a stale target.  The standalone-guard hardening is
+  deferred to **SM5.C**, where the cross-core wake / SGI dispatch loop becomes
+  the first runtime caller and the membership/domain precondition is wired (it
+  reworks the staged switch theorems to carry the precondition, so it belongs
+  with that caller, not ahead of it).
+- **Idle-thread re-enqueue (→ SM5.E).** `preemptCurrentOnCore` unconditionally
+  re-enqueues the previous current thread, including a per-core SM4.G idle TCB.
+  The clean fix needs `idleThreadId`, which lives in `Platform.Boot` —
+  structurally *above* `Scheduler/Operations/Selection.lean`; skipping idle
+  re-enqueue locally would invert the module layering.  Per-core idle modelling
+  (and whether idle is queue-resident or modelled separately) is **SM5.E** scope.
+- **`syncThreadStates` per-core lift (→ SM5 / SM5.C).** `inferThreadState` /
+  `syncThreadStates` still read only `currentOnCore bootCoreId`; the
+  `Platform/Boot.lean` note already flags this as needing an SM5 per-core lift
+  before a secondary-core caller exists.  No secondary-core caller exists at
+  SM5.B, so there is no live disagreement yet.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.2, §5 (SM5.B)
+
 ## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness, + cross-domain lock unification)
 
 WS-SM Phase SM5 (per-core scheduler) opens with SM5.A — per-core thread
