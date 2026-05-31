@@ -212,6 +212,12 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 -- Reachability: staged at SM5.C; SM5.D's per-core timer tick (whose cross-core
 -- CBS-replenish wake calls `wakeThread`) is the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
+-- WS-SM SM5.C (audit-pass-1): the SM5.C theorem inventory (78-entry typed
+-- aggregator with `s5ct!` compile-time identifier validation + per-category
+-- counts + partition-sum + Nodup witnesses), mirroring the SM3.A/B/C/D/E
+-- inventories.  A renamed / removed SM5.C theorem fails the inventory's
+-- elaboration here.
+import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

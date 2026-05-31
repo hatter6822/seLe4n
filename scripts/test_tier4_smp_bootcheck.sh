@@ -61,4 +61,14 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_kprintln_stress.sh"
 # spot-check on real hardware-modelled cores.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
 
+# SM5.C.12 — cross-core wake-via-SGI round-trip (plan §6).  SKIPs at
+# SM5.C if the cross-core wake driver isn't wired in the kernel image
+# (needs SM5.D+ per-core scheduler state + the @[export] wake body under
+# withLockSet).  The wake correctness — the woken thread is not lost,
+# the .reschedule SGI is emitted, and the target dispatches it — is
+# established FORMALLY for all executions in tests/SmpWakeSuite.lean;
+# this is a complementary runtime spot-check on real cores with a real
+# GIC delivering the SGI.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
+
 finalize_report

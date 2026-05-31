@@ -1000,8 +1000,19 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
   let target := determineTargetCore st tid
   let st' := enqueueRunnableOnCore st target tid
+  -- SGI decision (SM5.C.4, audit-pass-1: ghost-wake guard).  Emit a cross-core
+  -- `.reschedule` SGI iff the wake *actually* made `tid` runnable on a *remote*
+  -- core — i.e. iff `tid` resolves to a TCB (so `enqueueRunnableOnCore` was not a
+  -- fail-closed no-op) AND the target is not the executing core.  Guarding on
+  -- `getTcb?` keeps the SGI emission *consistent with the state effect*: a wake
+  -- of a thread that does not resolve to a TCB enqueues nothing, so it must not
+  -- poke a remote core (which would otherwise run its scheduler for no reason —
+  -- wasted cross-core work on a corrupted-state path).  Well-formed callers wake
+  -- real threads, so the happy path is unchanged.
   let sgi : Option (CoreId × SgiKind) :=
-    if target == executingCore then none else some (target, SgiKind.reschedule)
+    match st.getTcb? tid with
+    | none   => none
+    | some _ => if target == executingCore then none else some (target, SgiKind.reschedule)
   (st', sgi)
 
 /-- WS-SM SM5.C.5 (plan §4.4): the target core's `.reschedule` SGI handler.

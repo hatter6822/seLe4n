@@ -2468,9 +2468,51 @@ axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); default build green
   `Concurrency.Sgi` is promoted production-reached (production `Selection`
   imports it for `SgiKind`); its `STATUS: staged` marker is dropped and it
   leaves the staged allowlist, which gains `Scheduler.Operations.PerCoreWake`
-  (44 staged-only modules).  Items deferred past v1.0.0 with correctness impact:
-  NONE.  Follow-on: SM5.D (per-core timer tick), SM5.E (per-core idle threads),
-  SM5.F..SM5.K + SM6..SM9.
+  (44 staged-only modules at the initial landing).  Items deferred past v1.0.0
+  with correctness impact: NONE.  Follow-on: SM5.D (per-core timer tick), SM5.E
+  (per-core idle threads), SM5.F..SM5.K + SM6..SM9.
+
+**WS-SM SM5.C audit-pass-1 (deep self-audit; also in v0.31.40)**: a deep
+self-audit closed seven optimality gaps in the SM5.C landing — most importantly
+the soundness-adjacent invariant-preservation gap (the wake had shipped with
+strictly weaker invariant coverage than SM5.B's switch).  Every new theorem is
+axiom-clean; default build green (322 jobs); trace byte-identical; Rust 718 HAL
+tests green; zero clippy warnings; Tier 0–3 green.
+
+- **§10 invariant preservation (the SM5.B-parity coverage)** — the wake now
+  preserves SM4.C `currentThreadValidOnCore` (every core, unconditional) and
+  `queueCurrentConsistentOnCore` (under the seL4-faithful
+  "don't-wake-the-running-thread" precondition, stated explicitly not via a
+  never-taken runtime guard), plus the full SM4.D
+  `ipcSchedulerContractPredicates_perCore` IPC↔scheduler-coherence bundle
+  (`wakeThread_preserves_ipcSchedulerContract`).  The pivotal soundness result:
+  enqueuing a freshly-woken thread is coherent *because* the wake sets
+  `ipcState := .ready` — it can never create a runnable-but-blocked thread (a
+  generic `enqueueRunnableOnCore_preserves_blockedNotRunnable_aux` discharges all
+  five blocked-state conjuncts).  Corrects the original "deferred: NONE" by
+  *proving* the safety obligation rather than folding it into SM5.I.
+- **Ghost-wake SGI guard (gap d)** — `wakeThread` emits the cross-core
+  `.reschedule` SGI only when `tid` resolves to a TCB
+  (`wakeThread_no_sgi_if_no_tcb`); the SGI decision is now consistent with the
+  state effect.  `wakeThread_emits_sgi_if_remote` gains the `hTcb` hypothesis.
+- **§6b multi-step liveness (gap c)** —
+  `wakeThread_then_handle_dispatches_current` / `_roundtrip_reachable_current`
+  prove the wake → reschedule-SGI-handler round-trip dispatches the woken thread
+  to *current* in two real scheduler steps, walking the `SchedReachable`
+  `.tail`/`.switch` closure that `wakeThread_lossless` (reflexive) left unused.
+- **§11 memory-model happens-before (gap e)** — `wakeOrdering_happensBefore`
+  models the wake's BKL ordering in SM2.A's operational memory model (the
+  executing core's release-store synchronizes-with the target core's
+  acquire-load); the prose ordering is now a theorem.
+- **Honest latency-bound scoping (gap f)**, the **78-entry `Sm5CInventory.lean`**
+  (gap m, `s5ct!` macro + counts + partition-sum + Nodup), and the
+  **`test_qemu_smp_wake.sh`** tier-4 SKIP-stub (gap h, mirroring SM1.H / SM3.D).
+  `tests/SmpWakeSuite.lean` grows to 54 runtime assertions (+13: IPC-ready
+  preservation on a real send-blocked thread, the ghost-SGI guard, the multi-step
+  round-trip, the full `1 <<< c` GIC mask on every core (gaps k/l), the
+  memory-model-HB well-formed trace, and the inventory partition).
+  `Sm5CInventory` staged (45 staged-only modules); Rust suite confirmed
+  unaffected (gap j).
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

@@ -3135,8 +3135,10 @@ EOF'
 # typed wrappers.  A rename / removal of any SM5.C symbol fails here at
 # elaboration time, before SM5.D's per-core timer tick consumes them.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreWake'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
+import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
 import SeLe4n.Kernel.Concurrency.Runtime
 open SeLe4n.Model
 open SeLe4n.Kernel
@@ -3235,6 +3237,54 @@ open SeLe4n.Kernel.Concurrency
 #check @emitWakeSgi_some
 #check @sgiIntidU8_reschedule
 #check @coreIdTargetMask_bootCore
+
+-- WS-SM SM5.C audit-pass-1: ghost-wake SGI guard (SM5.C.4).
+#check @wakeThread_no_sgi_if_no_tcb
+
+-- WS-SM SM5.C audit-pass-1 §10: invariant preservation (SM5.B-parity coverage).
+#check @enqueueRunnableOnCore_getTcb?_isSome
+#check @enqueueRunnableOnCore_preserves_currentThreadValidOnCore
+#check @enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne
+#check @enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
+#check @enqueueRunnableOnCore_preserves_runnableThreadIpcReady
+#check @enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable
+#check @enqueueRunnableOnCore_preserves_ipcSchedulerContract
+#check @wakeThread_preserves_currentThreadValidOnCore
+#check @wakeThread_preserves_ipcSchedulerContract
+#check @wakeThread_preserves_queueCurrentConsistentOnCore
+
+-- WS-SM SM5.C audit-pass-1 §6b: multi-step wake→dispatch liveness.
+#check @wakeThread_then_handle_dispatches_current
+#check @wakeThread_roundtrip_reachable_current
+
+-- WS-SM SM5.C audit-pass-1 SM5.C.11: honest latency-bound scoping.
+#check @sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis
+
+-- WS-SM SM5.C audit-pass-1 §11: memory-model happens-before (BKL ordering).
+#check @SeLe4n.Kernel.Concurrency.wakeReleaseEvent
+#check @SeLe4n.Kernel.Concurrency.wakeAcquireEvent
+#check @SeLe4n.Kernel.Concurrency.wakeOrderingTrace
+#check @SeLe4n.Kernel.Concurrency.wakeOrderingTrace_wellFormed
+#check @SeLe4n.Kernel.Concurrency.wakeOrdering_synchronizesWith
+#check @SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore
+
+-- WS-SM SM5.C audit-pass-1 (gap m): the SM5.C theorem inventory.
+#check @sm5CTheorems
+#check @sm5CTheorems_count
+#check @sm5CTheorems_lockSet_count
+#check @sm5CTheorems_target_count
+#check @sm5CTheorems_enqueue_count
+#check @sm5CTheorems_wake_count
+#check @sm5CTheorems_handler_count
+#check @sm5CTheorems_preservation_count
+#check @sm5CTheorems_latencyAffinityEmit_count
+#check @sm5CTheorems_partition_sum
+#check @sm5CTheorems_identifiers_nodup
+#check @sm5CTheorems_descriptions_nodup
 EOF'
 
 finalize_report

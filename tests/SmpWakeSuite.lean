@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
+import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Testing.StateBuilder
 
@@ -137,16 +138,57 @@ open SeLe4n.Testing
 #check @sgiIntidU8_reschedule
 #check @coreIdTargetMask_bootCore
 
+-- audit-pass-1: ghost-wake SGI guard (SM5.C.4).
+#check @wakeThread_no_sgi_if_no_tcb
+
+-- audit-pass-1 §10: invariant preservation (the SM5.B-parity coverage).
+#check @enqueueRunnableOnCore_getTcb?_isSome
+#check @enqueueRunnableOnCore_preserves_currentThreadValidOnCore
+#check @enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne
+#check @enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
+#check @enqueueRunnableOnCore_preserves_runnableThreadIpcReady
+#check @enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable
+#check @enqueueRunnableOnCore_preserves_ipcSchedulerContract
+#check @wakeThread_preserves_currentThreadValidOnCore
+#check @wakeThread_preserves_ipcSchedulerContract
+#check @wakeThread_preserves_queueCurrentConsistentOnCore
+
+-- audit-pass-1 §6b: multi-step wake→dispatch liveness.
+#check @wakeThread_then_handle_dispatches_current
+#check @wakeThread_roundtrip_reachable_current
+
+-- audit-pass-1 SM5.C.11: honest latency-bound scoping.
+#check @sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis
+
+-- audit-pass-1 §11: memory-model happens-before for the wake's BKL ordering.
+#check @SeLe4n.Kernel.Concurrency.wakeReleaseEvent
+#check @SeLe4n.Kernel.Concurrency.wakeAcquireEvent
+#check @SeLe4n.Kernel.Concurrency.wakeOrderingTrace
+#check @SeLe4n.Kernel.Concurrency.wakeOrderingTrace_wellFormed
+#check @SeLe4n.Kernel.Concurrency.wakeOrdering_synchronizesWith
+#check @SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore
+
+-- audit-pass-1 (gap m): the SM5.C theorem inventory.
+#check @sm5CTheorems
+#check @sm5CTheorems_count
+#check @sm5CTheorems_partition_sum
+#check @sm5CTheorems_identifiers_nodup
+
 -- ============================================================================
 -- §2  Elaboration-time examples: apply each headline theorem to verified inputs
 -- ============================================================================
 
 /-- SM5.C.4 / Thm 3.3.1: a remote wake emits a reschedule SGI to the target. -/
-example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
     (h : determineTargetCore st tid ≠ executingCore) :
     (wakeThread st tid executingCore).2
       = some (determineTargetCore st tid, SgiKind.reschedule) :=
-  wakeThread_emits_sgi_if_remote st tid executingCore h
+  wakeThread_emits_sgi_if_remote st tid executingCore tcb hTcb h
 
 /-- SM5.C.4: a local wake emits no SGI. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
@@ -200,6 +242,57 @@ example (target : CoreId) :
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) :
     wakeSgiCount (wakeThread st tid executingCore).2 ≤ 1 :=
   wakeThread_emits_at_most_one_sgi st tid executingCore
+
+-- audit-pass-1 examples: apply the new headline theorems to verified inputs.
+
+/-- audit-pass-1 (gap b headline): the wake preserves the full IPC↔scheduler
+coherence bundle — it never creates a runnable-but-blocked thread. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hInv : st.objects.invExt)
+    (hpre : ipcSchedulerContractPredicates_perCore st (determineTargetCore st tid)) :
+    ipcSchedulerContractPredicates_perCore (wakeThread st tid executingCore).1
+      (determineTargetCore st tid) :=
+  wakeThread_preserves_ipcSchedulerContract st tid executingCore hInv hpre
+
+/-- audit-pass-1 (gap a): the wake preserves queue/current consistency under the
+"don't-wake-current" precondition. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (c' : CoreId)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st tid) ≠ some tid)
+    (hcons : queueCurrentConsistentOnCore st.scheduler c') :
+    queueCurrentConsistentOnCore (wakeThread st tid executingCore).1.scheduler c' :=
+  wakeThread_preserves_queueCurrentConsistentOnCore st tid executingCore c' hNotCur hcons
+
+/-- audit-pass-1 (gap a): the wake preserves current-thread validity everywhere. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (c' : CoreId)
+    (hInv : st.objects.invExt) (hValid : currentThreadValidOnCore st c') :
+    currentThreadValidOnCore (wakeThread st tid executingCore).1 c' :=
+  wakeThread_preserves_currentThreadValidOnCore st tid executingCore c' hInv hValid
+
+/-- audit-pass-1 (gap c): the multi-step wake→handler round-trip dispatches the
+woken thread to *current* via a genuine `SchedReachable` path from the pre-state. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (st2 : SystemState)
+    (hChoose : chooseThreadOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) = .ok (some tid))
+    (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) = .ok st2) :
+    SchedReachable st st2 ∧
+      st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid :=
+  wakeThread_roundtrip_reachable_current st tid executingCore st2 hChoose hHandle
+
+/-- audit-pass-1 (gap d): a ghost (non-TCB) wake emits no SGI. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hTcb : st.getTcb? tid = none) :
+    (wakeThread st tid executingCore).2 = none :=
+  wakeThread_no_sgi_if_no_tcb st tid executingCore hTcb
+
+/-- audit-pass-1 (gap e): the wake's BKL ordering is a happens-before edge in the
+verified memory model. -/
+example (execCore tgtCore : CoreId) (loc : SeLe4n.Kernel.Concurrency.AtomicLocation) (v : Nat) :
+    SeLe4n.Kernel.Concurrency.happensBefore
+      (SeLe4n.Kernel.Concurrency.wakeOrderingTrace execCore tgtCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeReleaseEvent execCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeAcquireEvent tgtCore loc v) :=
+  SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore execCore tgtCore loc v
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.C.12 cross-core wake scenarios
@@ -377,6 +470,77 @@ private def runLatencyChecks : IO Unit := do
   assertBool "core 1's GIC target mask is bit 1 (= 2)"
     (decide (coreIdTargetMask core1 = 2))
 
+/-- A send-blocked unbound thread `tidB` (ipcState = .blockedOnSend ep), runnable
+nowhere — the realistic wake target.  Waking it must clear the block to `.ready`. -/
+private def tidB : SeLe4n.ThreadId := ThreadId.ofNat 202
+
+private def stBlocked : SystemState :=
+  (BootstrapBuilder.empty.withObject tidB.toObjId
+    (.tcb { mkTcb 202 10 0 with ipcState := .blockedOnSend (ObjId.ofNat 50) })).build
+
+/-- §3.8 (audit-pass-1): the new soundness / liveness / ghost-guard scenarios. -/
+private def runAuditPass1Checks : IO Unit := do
+  IO.println "--- §3.8 audit-pass-1: preservation / liveness / ghost-guard / HB ---"
+  -- gap (b): waking a send-blocked thread makes it ipcState=.ready (IPC↔scheduler
+  -- coherence by construction — never runnable-but-blocked).
+  assertBool "waking a send-blocked thread clears it to ipcState=.ready"
+    (match (enqueueRunnableOnCore stBlocked bootCoreId tidB).getTcb? tidB with
+     | some t => decide (t.ipcState = .ready)
+     | none   => false)
+  assertBool "the woken (formerly send-blocked) thread is enqueued"
+    (rqHas (enqueueRunnableOnCore stBlocked bootCoreId tidB) bootCoreId tidB)
+  -- gap (d): ghost-wake guard — a non-TCB wake from a remote core emits NO SGI
+  -- (consistent with its no-op state effect), whereas a real remote wake does.
+  assertBool "ghost wake (non-TCB) from core 1 emits no SGI"
+    (decide ((wakeThread stWake tidGhost core1).2 = none))
+  assertBool "real remote wake (TCB tidU) from core 1 DOES emit an SGI to the boot core"
+    (decide ((wakeThread stWake tidU core1).2 = some (bootCoreId, SgiKind.reschedule)))
+  -- gap (c): the multi-step wake→handler round-trip dispatches tidW to current on
+  -- core 1 (a genuine two-step path: enqueue then switch).
+  let stPostWake := (wakeThread stWake tidW bootCoreId).1
+  assertBool "round-trip: handler on the post-wake state dispatches tidW to current on core 1"
+    (match handleRescheduleSgiOnCore stPostWake core1 with
+     | .ok st2 => st2.scheduler.currentOnCore core1 == some tidW
+     | .error _ => false)
+  -- gap (k): the full per-core GIC target-mask convention (1 <<< c) on EVERY core.
+  assertBool "coreIdTargetMask c = (1 <<< c) on every core (full mask check)"
+    (allCores.all (fun c => coreIdTargetMask c == UInt8.ofNat (1 <<< c.val)))
+  assertBool "core 2's GIC target mask is bit 2 (= 4)"
+    (decide (coreIdTargetMask ⟨2, by decide⟩ = 4))
+  assertBool "core 3's GIC target mask is bit 3 (= 8)"
+    (decide (coreIdTargetMask ⟨3, by decide⟩ = 8))
+  -- gap (e): the wake's BKL ordering is a well-formed synchronizes-with edge
+  -- (decidable on concrete cores/loc/value).
+  assertBool "the wake's ordering trace is well-formed (distinct cores)"
+    (decide (SeLe4n.Kernel.Concurrency.wakeOrderingTrace bootCoreId core1
+              ⟨7⟩ 42 |>.wellFormed))
+  -- gap (f): honest latency-bound scoping — the "= 0" is exactly the count of
+  -- higher-GIC-priority kernel SGIs.
+  assertBool "latency bound = count of higher-priority kernel SGIs (= 0, honest scope)"
+    (decide (sgiDeliveryLatencyBound
+              = (SgiKind.all.filter (fun k =>
+                  k.toIntid.val < SgiKind.reschedule.toIntid.val)).length))
+  -- gap (l): richer cross-core independence — a wake to core 1 leaves cores 2 and
+  -- 3 untouched (run queues stay empty), exercising the general frame theorem.
+  assertBool "wake to core 1 leaves core 2's run queue untouched"
+    (wakeStateAnd stWake tidW bootCoreId
+      (fun st' => (st'.scheduler.runQueueOnCore ⟨2, by decide⟩).toList.isEmpty))
+  assertBool "wake to core 1 leaves core 3's run queue untouched"
+    (wakeStateAnd stWake tidW bootCoreId
+      (fun st' => (st'.scheduler.runQueueOnCore ⟨3, by decide⟩).toList.isEmpty))
+  -- gap (m): the inventory size + partition witnesses are decidably consistent.
+  assertBool "SM5.C inventory has 78 entries"
+    (decide (sm5CTheorems.length = 78))
+  assertBool "SM5.C inventory per-category counts partition the total"
+    (decide ((sm5CTheorems.filter (fun t => t.category == .lockSet)).length +
+             (sm5CTheorems.filter (fun t => t.category == .target)).length +
+             (sm5CTheorems.filter (fun t => t.category == .enqueue)).length +
+             (sm5CTheorems.filter (fun t => t.category == .wake)).length +
+             (sm5CTheorems.filter (fun t => t.category == .handler)).length +
+             (sm5CTheorems.filter (fun t => t.category == .preservation)).length +
+             (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length
+             = sm5CTheorems.length))
+
 def runSmpWakeChecks : IO Unit := do
   IO.println "WS-SM SM5.C — Cross-core wake via SGI suite"
   IO.println "===================================="
@@ -387,6 +551,7 @@ def runSmpWakeChecks : IO Unit := do
   runAffinityOpChecks
   runLockSetChecks
   runLatencyChecks
+  runAuditPass1Checks
   IO.println "===================================="
   IO.println "All SM5.C cross-core wake checks PASS."
 
