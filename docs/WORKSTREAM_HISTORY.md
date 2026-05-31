@@ -2416,6 +2416,62 @@ zero clippy warnings.
   `switchToThreadOnCoreLockSet` (and wires the runtime `withLockSet` acquisition
   over `SchedLockId`).
 
+**WS-SM SM5.C LANDED at v0.31.40** (cross-core wake via SGI; opens the
+cross-core scheduler-notification phase of SM5).  All 12 sub-tasks landed in
+one cut per `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.3/§4.4/§5 (SM5.C.7, the
+`TCB.cpuAffinity` field, was pulled forward to SM5.B.4).  Production transitions
+in `Scheduler/Operations/Selection.lean`; forward-looking theorems in the new
+staged module `Scheduler/Operations/PerCoreWake.lean`.  Every new theorem is
+axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); default build green
+(322 jobs); trace fixture byte-identical (SM5.C is additive).
+
+- **SM5.C.1** `enqueueRunnableOnCore (st) (c) (tid)` — the per-core "make `tid`
+  runnable on core `c`" primitive (per-core analogue of `IPC.ensureRunnable`):
+  sets `ipcState := .ready` (the field the per-core IPC↔scheduler invariants
+  gate run-queue membership on) + inserts at `effectiveRunQueuePriority`;
+  idempotent; fail-closed on a non-TCB.  Lemmas: object-store-`invExt` +
+  run-queue-`wellFormed` preservation, membership, make-ready, cross-core
+  run-queue/current frames, AK7-clean per-thread `getTcb?` frame, no-TCB no-op.
+- **SM5.C.2** `wakeThread (st) (tid) (executingCore) : SystemState × Option
+  (CoreId × SgiKind)` (Thm 3.3.1) — determine target (`determineTargetCore`) →
+  make runnable → emit a `.reschedule` SGI iff the target is remote
+  (`wakeThread_emits_sgi_if_remote` / `_no_sgi_if_local` / `_sgi_is_reschedule`).
+- **SM5.C.3** `wakeThreadLockSet` + `handleRescheduleSgiOnCoreLockSet` — the
+  cross-domain object-store + run-queue WRITE footprints over SM5.A's
+  `SchedLockId`, plan §4.4 ascending order (`_pairwise_le`).
+- **SM5.C.4** SGI emission under BKL discipline — the wake SGI-decision theorems
+  + the typed FFI emission wrappers `coreIdTargetMask` / `sgiIntidU8` /
+  `sendSgiToCore` / `sendRescheduleSgi` / `emitWakeSgi` (`Concurrency/Runtime.lean`)
+  routing to `Platform.FFI.ffiSendSgi` (`dsb ish` before `GICD_SGIR`, SM1.F.8).
+- **SM5.C.5** `handleRescheduleSgiOnCore (st) (c)` — the target core's
+  re-choose (`chooseThreadOnCore`) + switch (`switchToThreadOnCore`), or idle;
+  `_switches_current`, object/run-queue preservation, cross-core independence.
+- **SM5.C.6** `wakeThread_lossless` (Thm 3.3.2) — the woken thread is recoverable
+  (scheduler-reachable to current-on / enqueued-on its target, via the genuine
+  `SchedStep` / `SchedReachable` RT-closure); non-vacuous via
+  `wakeThread_target_runQueue_contains` (SM5.C.10).
+- **SM5.C.8** `setThreadCpuAffinity (st) (targetTid) (affinity)` — the
+  affinity-control op (bind/unbind), modelled on `setPriorityOp`; fail-closed
+  `.invalidArgument`; sets-affinity, scheduler/`invExt` preservation, per-thread
+  frame, `_affects_determineTargetCore`.
+- **SM5.C.9** `determineTargetCore` — bound thread → affinity core; unbound
+  (`cpuAffinity = none`) → `bootCoreId` (the boot-default-target rule).
+- **SM5.C.11** SGI delivery latency bound — `wakeThread_emits_at_most_one_sgi`
+  + `rescheduleSgi_lowest_intid` (INTID 0 = highest GIC priority) +
+  `sgiDeliveryLatencyBound = 0`.
+- **SM5.C.12** `tests/SmpWakeSuite.lean` (`lake exe smp_wake_suite`) — 80+
+  surface anchors, 9 elaboration-time examples, 41 runtime assertions across
+  seven sections (determine-target, enqueue + make-ready, local/remote wake SGI
+  emission, the full wake→SGI→handle round-trip, the affinity op, lock-sets,
+  latency bound).  Tier-2 + Tier-3 wired.
+
+  `Concurrency.Sgi` is promoted production-reached (production `Selection`
+  imports it for `SgiKind`); its `STATUS: staged` marker is dropped and it
+  leaves the staged allowlist, which gains `Scheduler.Operations.PerCoreWake`
+  (44 staged-only modules).  Items deferred past v1.0.0 with correctness impact:
+  NONE.  Follow-on: SM5.D (per-core timer tick), SM5.E (per-core idle threads),
+  SM5.F..SM5.K + SM6..SM9.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

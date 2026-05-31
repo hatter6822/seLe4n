@@ -1,3 +1,95 @@
+## v0.31.40 — WS-SM SM5.C: cross-core wake via SGI
+
+WS-SM Phase SM5 (per-core scheduler) continues with SM5.C — **cross-core wake
+via SGI** (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.3, §4.4, §5).
+Implements the cross-core wake protocol on top of the SM5.A per-core
+`chooseThread` and SM5.B per-core `switchToThread`: when a thread becomes
+runnable, it is enqueued on its *target* core (determined by CPU affinity) and —
+if that core is not the one executing the wake — a `.reschedule` SGI is emitted
+so the target core re-runs its scheduler.  All 12 sub-tasks landed in one cut
+(SM5.C.7, the `TCB.cpuAffinity` field, was pulled forward to SM5.B.4 and is
+recapped here).  Every new theorem is axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice` only); the full production build (322 jobs) is green and the
+trace fixture is byte-identical (SM5.C is additive — the wake transitions have
+no caller on the single-core path yet).
+
+### Production transitions (`Scheduler/Operations/Selection.lean`)
+
+- **SM5.C.1** `enqueueRunnableOnCore (st) (c) (tid) : SystemState` — the
+  per-core "make `tid` runnable on core `c`" primitive (per-core analogue of
+  `IPC.ensureRunnable`).  Sets `ipcState := .ready` (the exact field the per-core
+  IPC↔scheduler invariants `runnableThreadIpcReady_perCore` /
+  `blockedOn*NotRunnable_perCore` gate run-queue membership on — `threadState` is
+  *not* gated by any run-queue invariant, so it is left unchanged) and inserts at
+  `effectiveRunQueuePriority`.  Idempotent (`RunQueue.insert`), fail-closed on a
+  non-TCB.
+- **SM5.C.2** `wakeThread (st) (tid) (executingCore) : SystemState × Option
+  (CoreId × SgiKind)` — determine target (`determineTargetCore`) → make runnable
+  (`enqueueRunnableOnCore`) → emit a `.reschedule` SGI iff the target is remote.
+  The pure state-plus-SGI form (the `executingCore` is an explicit parameter, not
+  an FFI read) mirrors `chooseThreadOnCore` / `switchToThreadOnCore`.
+- **SM5.C.5** `handleRescheduleSgiOnCore (st) (c) : Except KernelError
+  SystemState` — the target core's reschedule-SGI handler: re-choose
+  (`chooseThreadOnCore`) + switch (`switchToThreadOnCore`), or idle when nothing
+  is runnable.
+- **SM5.C.8** `setThreadCpuAffinity (st) (targetTid) (affinity)` — the
+  affinity-control op (bind/unbind), modelled on `setPriorityOp`; fail-closed
+  with `.invalidArgument` on a non-TCB.
+- **SM5.C.9** `determineTargetCore (st) (tid)` — a bound thread → its affinity
+  core; an unbound thread (`cpuAffinity = none`, the TCB default) → `bootCoreId`
+  (the "boot-time default affinity = `bootCoreId`" rule, realised as the default
+  wake *target* — the field stays `none`, preserving the SM5.B "unbound runs on
+  every core" admission semantics).
+
+### Forward-looking theorems (staged `Scheduler/Operations/PerCoreWake.lean`)
+
+- **SM5.C.3** `wakeThreadLockSet` + `handleRescheduleSgiOnCoreLockSet` — the
+  cross-domain (object-store table **write** + per-core run-queue **write**)
+  footprints over SM5.A's `SchedLockId`, in plan §4.4 ascending order (object
+  lock before run-queue lock; `_pairwise_le` certifies the canonical
+  `withLockSet` acquisition order); same table-lock rationale as SM5.B (SM3.A.10:
+  RHTable structural safety is table-granularity).
+- **SM5.C.1 lemmas** — `enqueueRunnableOnCore` object-store-`invExt` +
+  run-queue-`wellFormed` preservation, membership, make-ready, cross-core
+  run-queue + current frames, AK7-clean per-thread `getTcb?` frame, no-TCB no-op.
+- **SM5.C.4** `wakeThread_emits_sgi_if_remote` (Thm 3.3.1) / `_no_sgi_if_local` /
+  `_sgi_is_reschedule`, plus the typed FFI emission wrappers `coreIdTargetMask` /
+  `sgiIntidU8` / `sendSgiToCore` / `sendRescheduleSgi` / `emitWakeSgi`
+  (`Concurrency/Runtime.lean`) routing the wake's optional SGI to
+  `Platform.FFI.ffiSendSgi` (which emits `dsb ish` before `GICD_SGIR` per SM1.F.8
+  — the BKL-discipline ordering: emit after the state write is visible).
+- **SM5.C.6** `wakeThread_lossless` (Thm 3.3.2) — the woken thread is recoverable
+  (a scheduler-reachable state, via the new genuine `SchedStep` / `SchedReachable`
+  RT-closure, in which it is current on or enqueued on its target core);
+  non-vacuous via `wakeThread_target_runQueue_contains` (**SM5.C.10**).
+- **SM5.C.5 lemmas** — `handleRescheduleSgiOnCore` idle-when-none,
+  `_switches_current`, object/run-queue preservation, cross-core independence.
+- **SM5.C.8 lemmas** — `setThreadCpuAffinity` sets-affinity, object-store-`invExt`
+  + scheduler preservation, per-thread frame, ok/error classification,
+  `_affects_determineTargetCore`.
+- **SM5.C.11** SGI delivery latency bound — `wakeThread_emits_at_most_one_sgi`
+  (bounded emission) + `rescheduleSgi_lowest_intid` (the `.reschedule` SGI is
+  INTID 0 — the lowest-INTID, hence highest-GIC-priority, kernel SGI) +
+  `sgiDeliveryLatencyBound = 0`.
+
+### Tests + reachability
+
+- **SM5.C.12** `tests/SmpWakeSuite.lean` (`lake exe smp_wake_suite`) — 80+
+  surface anchors, 9 elaboration-time theorem-application examples, and 41
+  runtime assertions across seven sections: determine-target affinity routing,
+  enqueue + make-ready, local vs remote wake (SGI emission), the full
+  wake→SGI→handle round-trip (core 1 receives the SGI and switches to the woken
+  thread), the affinity-control op, the lock-set witnesses, and the latency-bound
+  witnesses.  Tier-2 (negative) + Tier-3 (invariant surface) wired.
+- `Scheduler.Operations.PerCoreWake` staged via `Platform.Staged`
+  (`staged_module_allowlist.txt`, 45 staged-only modules).
+  `Concurrency.Sgi` is promoted **production-reached** (its `STATUS: staged`
+  marker dropped) since production `Selection.lean` now imports it for `SgiKind`.
+  SM5.D's per-core timer tick (whose cross-core CBS-replenish wake calls
+  `wakeThread`) is the first runtime exerciser.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.39 — WS-SM SM5.B: per-core `switchToThread` (context switch, preempt-previous, reject-remote, cross-core independence, FFI seam)
 
 WS-SM Phase SM5 (per-core scheduler) continues with SM5.B — the per-core

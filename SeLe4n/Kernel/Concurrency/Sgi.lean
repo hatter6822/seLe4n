@@ -7,7 +7,13 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM (SM0.H SgiKind enumeration)
+-- WS-SM SM0.H SgiKind enumeration.  Production-reachable since WS-SM SM5.C:
+-- `Scheduler.Operations.Selection` imports this module for `SgiKind` (the
+-- return type of `wakeThread`'s optional cross-core reschedule SGI), and
+-- `Selection` is in the production import closure.  So `SgiKind` is no longer
+-- staged-only — the staged-status header marker is dropped per the
+-- production/staged partition discipline (mirroring SM3.A's promotion of
+-- `RwLock` / `MemoryModel` out of the staged allowlist).
 
 import SeLe4n.Prelude
 

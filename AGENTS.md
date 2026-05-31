@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.39.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.40.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4813,6 +4813,105 @@ documentation lives under `docs/` and `docs/gitbook/`.
     runnable targets, idle-thread re-enqueue, `syncThreadStates` per-core lift)
     are SM5.C / SM5.E / already-tracked future-phase concerns, not SM5.B
     defects.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.C LANDED at v0.31.40 on branch
+  `claude/brave-hawking-ueuMe`** (cross-core wake via SGI — the cross-core
+  scheduler-notification phase; plan §3.3, §4.4, §5).  All 12 sub-tasks landed
+  in one cut (SM5.C.7, the `TCB.cpuAffinity` field, was pulled forward to SM5.B.4
+  and is recapped here).  Every new theorem is axiom-clean (`propext` /
+  `Quot.sound` / `Classical.choice` only); the full production build (322 jobs)
+  is green and the trace fixture is byte-identical (SM5.C is purely additive —
+  the wake transitions have no single-core caller yet).  Production transitions
+  live in `Scheduler/Operations/Selection.lean` (alongside SM5.A
+  `chooseThreadOnCore` and SM5.B `switchToThreadOnCore`); the forward-looking
+  theorems live in the new staged module
+  `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean`.
+
+  - **SM5.C.1** `enqueueRunnableOnCore (st) (c) (tid)` — the per-core "make
+    `tid` runnable on core `c`" primitive (per-core analogue of
+    `IPC.ensureRunnable`).  Sets `ipcState := .ready` (the exact field the
+    per-core IPC↔scheduler invariants
+    `runnableThreadIpcReady_perCore` / `blockedOn*NotRunnable_perCore` gate
+    run-queue membership on — `threadState` is *not* gated by any run-queue
+    invariant, so it is left unchanged) and inserts at
+    `effectiveRunQueuePriority`.  Idempotent (`RunQueue.insert`), fail-closed on
+    non-TCB.  Theorems: object-store-`invExt` + run-queue-`wellFormed`
+    preservation, membership, make-ready, cross-core run-queue + current frames,
+    AK7-clean per-thread `getTcb?` frame, no-TCB no-op.
+  - **SM5.C.2** `wakeThread (st) (tid) (executingCore) : SystemState × Option
+    (CoreId × SgiKind)` (plan §3.3, Theorem 3.3.1) — determine target
+    (`determineTargetCore`) → make runnable (`enqueueRunnableOnCore`) → emit a
+    `.reschedule` SGI iff the target is remote.  The pure state-plus-SGI form
+    (the `executingCore` is an explicit parameter, not an FFI read) mirrors
+    `chooseThreadOnCore` / `switchToThreadOnCore`; SM5.C's dispatch loop reads
+    the executing core from `TPIDR_EL1` (`Concurrency.currentCoreId`) and passes
+    it in.
+  - **SM5.C.3** `wakeThreadLockSet` + `handleRescheduleSgiOnCoreLockSet` — the
+    cross-domain (object-store table **write** + per-core run-queue **write**)
+    footprints over SM5.A's unified `SchedLockId`, in plan §4.4 ascending order
+    (object lock before run-queue lock; `_pairwise_le` certifies the canonical
+    `withLockSet` acquisition order).  Same table-lock rationale as SM5.B
+    (SM3.A.10: RHTable structural safety is table-granularity, so a per-object
+    TCB lock would not protect the table).
+  - **SM5.C.4** SGI emission under BKL discipline:
+    `wakeThread_emits_sgi_if_remote` / `_no_sgi_if_local` / `_sgi_is_reschedule`,
+    plus the typed FFI emission wrappers `coreIdTargetMask` / `sgiIntidU8` /
+    `sendSgiToCore` / `sendRescheduleSgi` / `emitWakeSgi` in
+    `Concurrency/Runtime.lean` routing the wake's optional SGI to
+    `Platform.FFI.ffiSendSgi` (which emits `dsb ish` before `GICD_SGIR` per
+    SM1.F.8 — the BKL-discipline ordering: emit *after* the state write is
+    visible).
+  - **SM5.C.5** `handleRescheduleSgiOnCore (st) (c)` — the target core's
+    reschedule-SGI handler: re-choose (`chooseThreadOnCore`, SM5.A) + switch
+    (`switchToThreadOnCore`, SM5.B), or idle when nothing is runnable.  Theorems:
+    idle-when-none, eq-switch-when-some, `_switches_current`, object/run-queue
+    preservation, cross-core independence.  Its lock-set coincides with
+    `switchToThreadOnCoreLockSet`.
+  - **SM5.C.6** `wakeThread_lossless` (plan §3.3, Theorem 3.3.2) — the woken
+    thread is recoverable: there is a scheduler-reachable state (the post-wake
+    state itself, via the new genuine `SchedStep` / `SchedReachable` RT-closure)
+    in which it is current on or enqueued on its target core.  Non-vacuous via
+    `wakeThread_target_runQueue_contains`; the conjunction form
+    (`reachable ∧ disjunct`) is strictly stronger than the plan pseudocode's
+    ambiguous `(reachable ∧ A) ∨ B` precedence.  Full eventually-scheduled
+    liveness is SM5.J.
+  - **SM5.C.8** `setThreadCpuAffinity (st) (targetTid) (affinity)` — the
+    affinity-control op (bind/unbind), modelled on `setPriorityOp`; fail-closed
+    with `.invalidArgument` on non-TCB.  Theorems: sets-affinity,
+    object-store-`invExt` + scheduler preservation, per-thread frame, ok/error
+    classification, and `_affects_determineTargetCore` (feeds the wake routing).
+    The SchedContext / run-queue migration on an affinity change is the separate
+    SM5.H.4 op.
+  - **SM5.C.9** `determineTargetCore` — bound thread → its affinity core; unbound
+    thread (`cpuAffinity = none`, the TCB default) → `bootCoreId` (the
+    "boot-time default affinity = `bootCoreId`" rule, realised as the default
+    wake *target* — the field stays `none`, preserving the SM5.B "unbound runs
+    on every core" admission semantics of `affinityAdmitsCore`).
+  - **SM5.C.10** `wakeThread_target_runQueue_contains` — the woken thread is in
+    the target core's run queue immediately after the wake (it is not lost).
+  - **SM5.C.11** SGI delivery latency bound: `wakeThread_emits_at_most_one_sgi`
+    (bounded emission, no SGI storm) + `rescheduleSgi_lowest_intid` (the
+    `.reschedule` SGI is INTID 0 — the lowest-INTID, hence highest-GIC-priority,
+    kernel SGI, so it is never starved by another kernel coordination SGI) +
+    `sgiDeliveryLatencyBound = 0` (no kernel SGI is serviced ahead of it).
+  - **SM5.C.12** `tests/SmpWakeSuite.lean` (`lake exe smp_wake_suite`) — 80+
+    surface anchors, 9 elaboration-time theorem-application examples, and 41
+    runtime assertions across seven sections: determine-target affinity routing,
+    enqueue + make-ready, local vs remote wake (SGI emission), the full
+    wake→SGI→handle round-trip (core 1 receives the SGI and switches to the
+    woken thread), the affinity-control op, the lock-set witnesses, and the
+    latency-bound witnesses.  Tier-2 (negative) + Tier-3 (invariant surface)
+    wired.
+
+  **Module reachability**: `Scheduler.Operations.PerCoreWake` staged via
+  `Platform.Staged` (`staged_module_allowlist.txt`, 44 staged-only modules);
+  `Concurrency.Sgi` is promoted production-reached (production `Selection.lean`
+  now imports it for `SgiKind`), so its `STATUS: staged` marker is dropped and it
+  leaves the staged allowlist.  SM5.D's per-core timer tick (whose cross-core
+  CBS-replenish wake calls `wakeThread`) is the first runtime exerciser.  Items
+  deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.D (per-core
+  timer tick), SM5.E (per-core idle threads), SM5.F (per-core PIP), SM5.G/H/I/J/K
+  per the master overview.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

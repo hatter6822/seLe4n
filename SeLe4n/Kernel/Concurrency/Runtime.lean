@@ -12,6 +12,7 @@
 -- WS-SM SM1.B.5 (closes SMP-M4): typed wrapper for the
 -- `ffi_current_core_id` FFI export.
 import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Platform.FFI
 
 /-!
@@ -301,5 +302,81 @@ theorem perCoreCurrentThreadHw_returns_baseio_uint64_marker (c : CoreId) :
     (perCoreCurrentThreadHw c : BaseIO UInt64) =
       Platform.FFI.ffiPerCoreCurrentThread (UInt64.ofNat c.val) := by
   rfl
+
+-- ============================================================================
+-- WS-SM SM5.C.4 — Cross-core wake SGI-emission typed wrappers
+-- ============================================================================
+
+/-- **WS-SM SM5.C.4**: encode a `CoreId` as a single-bit GIC-400 CPU target
+    mask — bit `c.val` set, every other bit clear.
+
+    GICD_SGIR's `TargetListFilter = 0b00` interprets the 8-bit target list as a
+    bitmask of CPU interfaces (bit `i` = CPU `i`), so a cross-core
+    `.reschedule` SGI addressed to exactly one core `c` uses the mask `1 << c`.
+    For RPi5 (`numCores = 4`) only bits `0..3` are ever set, well inside the
+    8-bit field; the GIC-400 SGI target list is 8 bits, so this encoding is
+    valid for any platform with `≤ 8` cores. -/
+def coreIdTargetMask (c : CoreId) : UInt8 := UInt8.ofNat (1 <<< c.val)
+
+/-- **WS-SM SM5.C.4**: the SGI INTID of an `SgiKind`, as the `UInt8` the
+    `ffi_send_sgi` FFI expects.  Structurally `< 16` (`SgiKind.toIntid_in_range`),
+    so the Rust-side `intid >= 16` panic never trips on a well-formed call. -/
+def sgiIntidU8 (k : SgiKind) : UInt8 := UInt8.ofNat k.toIntid.val
+
+/-- **WS-SM SM5.C.4**: emit an SGI of kind `k` to a single target core `c` over
+    the FFI.  Wraps `Platform.FFI.ffiSendSgi` with the typed `CoreId` → target
+    mask and `SgiKind` → INTID encodings, so the Rust-side bound checks
+    (`targetMask` bits, `intid < 16`) never trip on a well-formed Lean call.
+
+    **BKL-discipline ordering (SM5.C.4).**  This must be invoked *after* the
+    wake's state write is committed and visible: the Rust `ffi_send_sgi` emits a
+    `dsb ish` before writing `GICD_SGIR` (SM1.F.8 / ARM ARM B2.7.5), so the
+    woken thread's run-queue insertion is observable on the target core before
+    the `.reschedule` SGI fires there.  The verified `wakeThread` returns the
+    SGI to emit; the runtime dispatch loop commits the state under
+    `wakeThreadLockSet`, releases, then calls `emitWakeSgi`. -/
+def sendSgiToCore (target : CoreId) (k : SgiKind) : BaseIO Unit :=
+  Platform.FFI.ffiSendSgi (coreIdTargetMask target) (sgiIntidU8 k)
+
+/-- **WS-SM SM5.C.4**: emit a cross-core `.reschedule` SGI to `target` — the
+    poke a remote wake sends so the target core re-runs its scheduler
+    (`handleRescheduleSgiOnCore`). -/
+def sendRescheduleSgi (target : CoreId) : BaseIO Unit :=
+  sendSgiToCore target SgiKind.reschedule
+
+/-- **WS-SM SM5.C.4**: emit the optional SGI a `wakeThread` returned.  `none`
+    (the target was the executing core — a local wake) emits nothing; `some
+    (target, kind)` (a remote wake) emits the SGI.  This is the runtime side of
+    the SM5.C.2 `wakeThread` decision: the pure `wakeThread` computes *whether*
+    and *what* to emit, `emitWakeSgi` performs the FFI emission. -/
+def emitWakeSgi (sgi : Option (CoreId × SgiKind)) : BaseIO Unit :=
+  match sgi with
+  | none => pure ()
+  | some (target, k) => sendSgiToCore target k
+
+/-- **WS-SM SM5.C.4** structural marker: `sendSgiToCore` is a direct FFI
+    pass-through with the typed encodings. -/
+theorem sendSgiToCore_eq_ffi (target : CoreId) (k : SgiKind) :
+    (sendSgiToCore target k : BaseIO Unit) =
+      Platform.FFI.ffiSendSgi (coreIdTargetMask target) (sgiIntidU8 k) := rfl
+
+/-- **WS-SM SM5.C.4** structural marker: `sendRescheduleSgi` emits the
+    `.reschedule` SGI. -/
+theorem sendRescheduleSgi_eq (target : CoreId) :
+    sendRescheduleSgi target = sendSgiToCore target SgiKind.reschedule := rfl
+
+/-- **WS-SM SM5.C.4** structural marker: a local wake (`none`) emits no SGI. -/
+theorem emitWakeSgi_none : (emitWakeSgi none : BaseIO Unit) = pure () := rfl
+
+/-- **WS-SM SM5.C.4** structural marker: a remote wake (`some (target, kind)`)
+    emits the SGI to the target core. -/
+theorem emitWakeSgi_some (target : CoreId) (k : SgiKind) :
+    (emitWakeSgi (some (target, k)) : BaseIO Unit) = sendSgiToCore target k := rfl
+
+/-- **WS-SM SM5.C.4**: the `.reschedule` SGI's INTID byte is `0`. -/
+theorem sgiIntidU8_reschedule : sgiIntidU8 SgiKind.reschedule = 0 := by decide
+
+/-- **WS-SM SM5.C.4**: the boot core's GIC target mask is bit 0 (`= 1`). -/
+theorem coreIdTargetMask_bootCore : coreIdTargetMask bootCoreId = 1 := by decide
 
 end SeLe4n.Kernel.Concurrency
