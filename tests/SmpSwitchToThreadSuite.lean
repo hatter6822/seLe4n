@@ -62,10 +62,13 @@ open SeLe4n.Testing
 #check @switchToThreadOnCoreLockSet_object_before_runQueue
 #check @switchToThreadOnCoreLockSet_keys_nodup
 
--- §2 preempt frame lemmas:
+-- §2/§2b preempt frame + preservation + unreachability lemmas:
 #check @preemptCurrentOnCore_currentOnCore
 #check @preemptCurrentOnCore_runQueueOnCore_ne
 #check @preemptCurrentOnCore_runQueueOnCore_self_active
+#check @preemptCurrentOnCore_preserves_objects_invExt
+#check @preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed
+#check @preemptCurrentOnCore_active_under_valid
 
 -- SM5.B.1/.3/.4/.5/.6 switch-semantics theorems:
 #check @switchToThreadOnCore_rejects_remote
@@ -75,8 +78,17 @@ open SeLe4n.Testing
 #check @switchToThreadOnCore_preempts_previous
 #check @switchToThreadOnCore_independent_of_other_core
 
--- SM5.B.8 totality + decidability:
-#check @switchToThreadOnCore_total
+-- §3b invariant preservation + object frame (structural foundations for SM5.I.8):
+#check @switchToThreadOnCore_preserves_objects_invExt
+#check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
+#check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
+#check @switchToThreadOnCore_objects_eq_preempt
+
+-- §3c acquisition-order completeness (SM5.B.2):
+#check @switchToThreadOnCoreLockSet_pairwise_le
+
+-- SM5.B.8 complete classification + decidability:
+#check @switchToThreadOnCore_ok_iff
 #check @switchToThreadOnCoreSucceeds
 #check @switchToThreadOnCoreRejectsRemote
 
@@ -133,15 +145,48 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tidTcb : TCB)
     ∃ st', switchToThreadOnCore st c tid = .ok st' :=
   switchToThreadOnCore_ok_of_admits st c tid tidTcb hTcb hAff
 
-/-- SM5.B.8: totality. -/
+/-- SM5.B.8: complete success classification — succeeds iff TCB-and-admits. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
-    ∃ r, switchToThreadOnCore st c tid = r :=
-  switchToThreadOnCore_total st c tid
+    (∃ st', switchToThreadOnCore st c tid = .ok st')
+      ↔ (∃ tidTcb, st.getTcb? tid = some tidTcb ∧ affinityAdmitsCore tidTcb c = true) :=
+  switchToThreadOnCore_ok_iff st c tid
+
+/-- SM5.B (preservation): a successful switch preserves the object-store invariant. -/
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt) (h : switchToThreadOnCore st c tid = .ok st') :
+    st'.objects.invExt :=
+  switchToThreadOnCore_preserves_objects_invExt st c tid st' hInv h
+
+/-- SM5.B (preservation): a successful switch preserves run-queue well-formedness. -/
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    (st'.scheduler.runQueueOnCore c).wellFormed :=
+  switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c tid st' hwf h
+
+/-- SM5.B.5 (invariant established): a successful switch establishes
+queue/current consistency on core `c`. -/
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    queueCurrentConsistentOnCore st'.scheduler c :=
+  switchToThreadOnCore_establishes_queueCurrentConsistentOnCore st c tid st' h
+
+/-- SM5.B (object frame): the switch's object footprint is exactly the preempt's
+(which writes at most the preempted thread's TCB). -/
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    st'.objects = (preemptCurrentOnCore st c tid).objects :=
+  switchToThreadOnCore_objects_eq_preempt st c tid st' h
 
 /-- SM5.B.2: the lock-set acquires the object lock before the run-queue lock. -/
 example (c : CoreId) :
     SchedLockId.object schedObjStoreLockId < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
   switchToThreadOnCoreLockSet_object_before_runQueue c
+
+/-- SM5.B.2: the lock-set's keys form a `SchedLockId`-ascending acquisition sequence. -/
+example (c : CoreId) :
+    ((switchToThreadOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) :=
+  switchToThreadOnCoreLockSet_pairwise_le c
 
 /-- SM5.B.4: affinity-admits algebra — an unbound thread runs on any core. -/
 example (tcb : TCB) (c : CoreId) (h : tcb.cpuAffinity = none) :
@@ -177,6 +222,14 @@ private def stPreempt : SystemState :=
   let base := (((BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).withObject
     tidP.toObjId (.tcb (mkTcb 101 15 0))).withRunnable [tidA]).build
   { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some tidP) }
+
+/-- Boot core's current thread is already `tidA` (a TCB), run queue empty.
+Switching to `tidA` is a *self-switch*: `preemptCurrentOnCore`'s
+`prevTid == incoming` no-op branch fires (nothing is preempted/re-enqueued),
+yet the switch still succeeds with current = `tidA` and `tidA ∉` the run queue. -/
+private def stSelfCurrent : SystemState :=
+  let base := (BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).build
+  { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some tidA) }
 
 /-- `tidR` is a TCB bound to core 1 (`cpuAffinity = some core1`), sitting in the
 boot core's run queue.  A switch on the boot core must reject it; a switch on
@@ -278,6 +331,17 @@ private def runSwitchScenarios : IO Unit := do
     (!decide (switchToThreadOnCoreSucceeds stGhost bootCoreId tidGhost))
   assertBool "scenario 8: the ghost error is NOT a reject-remote (it is a sched-invariant violation)"
     (!decide (switchToThreadOnCoreRejectsRemote stGhost bootCoreId tidGhost))
+  -- Scenario 9: self-switch — the core's current thread IS the switch target,
+  -- so `preemptCurrentOnCore`'s `prevTid == incoming` no-op branch fires; the
+  -- switch still succeeds with current = tidA and tidA dequeued.
+  assertBool "scenario 9: self-switch (current already tidA) ⇒ succeeds"
+    (decide (switchToThreadOnCoreSucceeds stSelfCurrent bootCoreId tidA))
+  assertBool "scenario 9: self-switch keeps current = tidA"
+    (switchOkAnd stSelfCurrent bootCoreId tidA
+      (fun st' => st'.scheduler.currentOnCore bootCoreId == some tidA))
+  assertBool "scenario 9: self-switch leaves tidA dequeued (not in the run queue)"
+    (switchOkAnd stSelfCurrent bootCoreId tidA
+      (fun st' => !decide (tidA ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)))
 
 /-- §3.9: the SM5.B.2 cross-domain lock-set witnesses. -/
 private def runLockSetChecks : IO Unit := do

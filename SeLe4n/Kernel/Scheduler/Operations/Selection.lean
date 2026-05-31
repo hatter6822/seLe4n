@@ -869,7 +869,28 @@ Failure modes are explicit (fail-closed `Except`):
 Returns the updated `SystemState` on success.  The single-state form (rather
 than the `Kernel` monad) mirrors `chooseThreadOnCore`: SM5.C wraps it in the
 per-core dispatch loop and the `withLockSet` acquisition over
-`switchToThreadOnCoreLockSet` (the object-store + run-queue write locks). -/
+`switchToThreadOnCoreLockSet` (the object-store + run-queue write locks).
+
+**Relationship to `schedule` (deliberately distinct, not a missed
+unification).**  `schedule`/`scheduleEffective` *drop* the outgoing thread —
+under dequeue-on-dispatch the previous current was already removed from the run
+queue when it was dispatched, so `schedule` does not re-enqueue it
+(re-enqueue-on-preemption is the caller's job: `timerTick` / `handleYield` /
+`switchDomain`).  `switchToThreadOnCore` is the higher-level *preemptive* switch:
+it **does** re-enqueue the preempted thread (Theorem 3.2.2), as the SM5.C
+cross-core wake / SGI handler requires when it preempts a running thread to
+admit a higher-priority one.  Because the preempt-vs-drop semantics genuinely
+differ, the two are *not* unified into one primitive (and there is no
+`rfl`-bridge, unlike `chooseThread = chooseThreadOnCore bootCoreId`); they share
+only the conceptual dequeue→restore→set-current tail.
+
+**Per-core register model (SM4.C note).**  The abstract machine carries a
+*single* `machine.regs` register file modelling the executing core's registers;
+`switchToThreadOnCore` restores `tid`'s context into it, which is exactly
+correct for the core actually running the switch.  Genuine per-core register
+banking (one file per core) is introduced by SM5 alongside per-core scheduling —
+the same staging `contextMatchesCurrentOnCore` (SM4.C) already documents — at
+which point this restore targets core `c`'s bank. -/
 def switchToThreadOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId)
     (tid : SeLe4n.ThreadId) : Except KernelError SystemState :=
   match st.getTcb? tid with

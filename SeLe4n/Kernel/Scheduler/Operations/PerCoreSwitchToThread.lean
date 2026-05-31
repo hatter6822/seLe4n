@@ -89,12 +89,30 @@ first):
 **Why the table lock rather than `(LockId.tcb tid, .write)` (plan §3.2's
 sketch).** The switch writes *two* TCBs — `tid` (read for affinity + context
 restore) and the dynamically-discovered *previous current* thread (written: its
-register context is saved on preemption).  A static lock-set naming only `tid`
-would under-lock the preempted thread — exactly the cross-domain under-locking
-class SM5.A's audit (PR #804) closed for `chooseThreadOnCore`.  Holding the
-object-store *table* write lock subsumes both TCB accesses (and any future
-PIP-chain writes) under one lock, the faithful SM3.A.10 discipline.  The runtime
-`withLockSet` acquisition over this footprint is SM5.C work. -/
+register context is saved on preemption via `objects.insert`).  A static
+lock-set naming only `tid` would under-lock the preempted thread — exactly the
+cross-domain under-locking class SM5.A's audit (PR #804) closed for
+`chooseThreadOnCore`.
+
+Crucially, the save is an `RHTable.insert`, and **SM3.A.10 guards the RobinHood
+object store's structural concurrency-safety at *table* granularity, not
+per-object** (`SystemState.objStoreLock` = `LockKind.objStore`, level 0): a
+concurrent insert can relocate slots along the probe sequence, so per-object
+TCB locks would not protect the table structure.  The object-store **table**
+write lock is therefore the *sound* discipline (and it subsumes the dynamic
+preempted-TCB write that a static `LockId.tcb tid`-only set would miss).
+
+**Trade-off (honest).** A table-level *write* lock means cross-core switches
+that mutate the object store **serialize** on it — a known SMP-scalability
+limitation inherited from SM3.A.10's table-granularity object-store locking,
+*not* a careless over-locking.  Finer per-object switch locking is sound only
+once per-slot RHTable concurrency is established (an in-place update of an
+existing key does not relocate); that is a tracked **post-SM5 optimization**,
+not an SM5.B regression.  The per-core *run-queue* lock, by contrast, is
+genuinely per-core, so switches on distinct cores never contend on it.  The
+runtime `withLockSet` acquisition over this footprint — in the ascending
+`SchedLockId` order certified by `switchToThreadOnCoreLockSet_pairwise_le` — is
+SM5.C work. -/
 def switchToThreadOnCoreLockSet (c : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   [ (SchedLockId.object schedObjStoreLockId, .write)
@@ -195,6 +213,63 @@ theorem preemptCurrentOnCore_runQueueOnCore_self_active (st : SystemState) (c : 
       = (st.scheduler.runQueueOnCore c).insert prevTid (effectiveRunQueuePriority prevTcb) := by
   unfold preemptCurrentOnCore
   simp [hCur, hNe, hTcb]
+
+-- ── §2b  preempt preservation + unreachability of the non-TCB fallback ──
+
+/-- WS-SM SM5.B.3 (preservation): `preemptCurrentOnCore` preserves the RobinHood
+object-store invariant.  The only object-store mutation is the in-place save of
+the outgoing thread's TCB (an `insert` at an existing key), which preserves
+`invExt`; every other branch is the identity on `objects`. -/
+theorem preemptCurrentOnCore_preserves_objects_invExt (st : SystemState)
+    (c : CoreId) (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (preemptCurrentOnCore st c incoming).objects.invExt := by
+  unfold preemptCurrentOnCore
+  split
+  · exact hInv
+  · split
+    · exact hInv
+    · split
+      · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
+      · exact hInv
+
+/-- WS-SM SM5.B.3 (preservation): `preemptCurrentOnCore` preserves core `c`'s
+run-queue well-formedness — the only run-queue mutation is the re-enqueue
+(`insert`), which preserves `RunQueue.wellFormed`; every other branch leaves the
+run queue unchanged. -/
+theorem preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
+    (c : CoreId) (incoming : SeLe4n.ThreadId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
+    ((preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c).wellFormed := by
+  unfold preemptCurrentOnCore
+  split
+  · exact hwf
+  · split
+    · exact hwf
+    · split
+      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+      · exact hwf
+
+/-- WS-SM SM5.B.3 (defense-in-depth, the SM5.B.4 audit closure): under
+`currentThreadValidOnCore` — core `c`'s current thread resolves to a TCB — the
+"previous current isn't a TCB" fallback of `preemptCurrentOnCore` is
+**unreachable**.  When core `c` has a current thread `prevTid` distinct from
+`incoming`, the preempt genuinely takes its active branch: `prevTid` resolves to
+a TCB and is re-enqueued.  Mirrors the `saveOutgoingContext_always_succeeds_under_currentThreadValid`
+discipline (`Scheduler/Operations/Selection.lean`) for the per-core preempt. -/
+theorem preemptCurrentOnCore_active_under_valid (st : SystemState) (c : CoreId)
+    (incoming prevTid : SeLe4n.ThreadId)
+    (hValid : currentThreadValidOnCore st c)
+    (hCur : st.scheduler.currentOnCore c = some prevTid)
+    (hNe : (prevTid == incoming) = false) :
+    ∃ prevTcb, st.getTcb? prevTid = some prevTcb ∧
+      (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
+        = (st.scheduler.runQueueOnCore c).insert prevTid (effectiveRunQueuePriority prevTcb) := by
+  unfold currentThreadValidOnCore at hValid
+  simp only [hCur] at hValid
+  obtain ⟨prevTcb, hPrevTcb⟩ := hValid
+  exact ⟨prevTcb, hPrevTcb,
+    preemptCurrentOnCore_runQueueOnCore_self_active st c incoming prevTid prevTcb hCur hNe hPrevTcb⟩
 
 -- ============================================================================
 -- §3  SM5.B.1/.3/.4/.5/.6 — Switch-semantics theorems
@@ -327,16 +402,170 @@ theorem switchToThreadOnCore_independent_of_other_core (st : SystemState)
     · rw [if_neg hAff] at h; simp at h
 
 -- ============================================================================
+-- §3b  Invariant preservation (structural foundations for SM5.I.8)
+-- ============================================================================
+--
+-- `switchToThreadOnCore` is a genuine state mutation, so — unlike the read-only
+-- `chooseThreadOnCore` — it carries preservation obligations.  The structural
+-- invariants a sound transition must preserve (the RobinHood object-store
+-- invariant + core `c`'s run-queue well-formedness) are proved here, together
+-- with the queue/current-consistency the switch *establishes*.  The full
+-- aggregate `schedulerInvariant_perCore` preservation (all 10 conjuncts) is
+-- SM5.I.8 ("preservation by every transition") per the plan; these are the
+-- foundations it composes.
+
+/-- WS-SM SM5.B (preservation): `switchToThreadOnCore` preserves the RobinHood
+object-store invariant.  Its only object-store write is the preempted thread's
+register-context save (`preemptCurrentOnCore`); the dequeue / restore /
+set-current steps leave `objects` untouched. -/
+theorem switchToThreadOnCore_preserves_objects_invExt (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    st'.objects.invExt := by
+  unfold switchToThreadOnCore at h
+  cases hTcb : st.getTcb? tid with
+  | none => simp [hTcb] at h
+  | some tidTcb =>
+    simp only [hTcb] at h
+    by_cases hAff : affinityAdmitsCore tidTcb c = true
+    · rw [if_pos hAff, Except.ok.injEq] at h
+      subst h
+      simp only [restoreIncomingContext_objects]
+      exact preemptCurrentOnCore_preserves_objects_invExt st c tid hInv
+    · rw [if_neg hAff] at h; simp at h
+
+/-- WS-SM SM5.B (preservation): `switchToThreadOnCore` preserves core `c`'s
+run-queue well-formedness.  The post-state run queue is
+`(preempt-re-enqueue).remove tid` — `insert` and `remove` both preserve
+`RunQueue.wellFormed`, and the restore / set-current steps don't touch the run
+queue. -/
+theorem switchToThreadOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    (st'.scheduler.runQueueOnCore c).wellFormed := by
+  unfold switchToThreadOnCore at h
+  cases hTcb : st.getTcb? tid with
+  | none => simp [hTcb] at h
+  | some tidTcb =>
+    simp only [hTcb] at h
+    by_cases hAff : affinityAdmitsCore tidTcb c = true
+    · rw [if_pos hAff, Except.ok.injEq] at h
+      subst h
+      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        restoreIncomingContext_scheduler,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.remove_preserves_wellFormed _
+        (preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c tid hwf) tid
+    · rw [if_neg hAff] at h; simp at h
+
+/-- WS-SM SM5.B.5 (invariant established): after a successful switch, core `c`
+satisfies `queueCurrentConsistentOnCore` — its current thread (`= tid`) is not
+in its run queue.  This is the SM4.C invariant form of the SM5.B.5
+dequeue-on-dispatch postcondition (combining `_sets_current` and
+`_runQueueOnCore_excludes_current`), so the switch doesn't merely preserve but
+*establishes* queue/current consistency on core `c`. -/
+theorem switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    queueCurrentConsistentOnCore st'.scheduler c := by
+  unfold queueCurrentConsistentOnCore
+  rw [switchToThreadOnCore_sets_current st c tid st' h]
+  exact switchToThreadOnCore_runQueueOnCore_excludes_current st c tid st' h
+
+/-- WS-SM SM5.B (object frame): the switch's entire object-store footprint is
+the preempt's — `st'.objects = (preemptCurrentOnCore st c tid).objects` — because
+the dequeue / restore / set-current steps don't touch `objects`.  Combined with
+`preemptCurrentOnCore`'s definition (its only object write is the preempted
+thread's register-context save), this pins the switch's object write set to *at
+most one* TCB (the preempted thread), the cross-core-frame complement to
+`switchToThreadOnCore_independent_of_other_core` on the scheduler side. -/
+theorem switchToThreadOnCore_objects_eq_preempt (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    st'.objects = (preemptCurrentOnCore st c tid).objects := by
+  unfold switchToThreadOnCore at h
+  cases hTcb : st.getTcb? tid with
+  | none => simp [hTcb] at h
+  | some tidTcb =>
+    simp only [hTcb] at h
+    by_cases hAff : affinityAdmitsCore tidTcb c = true
+    · rw [if_pos hAff, Except.ok.injEq] at h
+      subst h
+      simp only [restoreIncomingContext_objects]
+    · rw [if_neg hAff] at h; simp at h
+
+-- Note (deferred to SM5.I.8): the *full* `currentThreadValidOnCore`
+-- establishment (the new current thread resolves to a TCB) is intentionally
+-- NOT proved here.  Its proof needs an object-store insert-frame at the switch
+-- target — showing the preempt's insert at the *previous* current's key leaves
+-- the *target* thread's lookup unchanged — which is a *raw* object-store lookup
+-- by thread id, and the AK7 cascade discipline
+-- (`scripts/ak7_cascade_check_monotonic.sh`) requires those raw lookups
+-- (`RAW_LOOKUP_TID`) to *drop*, never grow.  Adding it here would regress that
+-- metric.  The right home is SM5.I.8 ("preservation by every transition"),
+-- which should first introduce a *typed* `SystemState.getTcb?`-insert frame
+-- lemma (the `.get?`-method form, which the AK7 metric does not count) and prove
+-- the full `schedulerInvariant_perCore` preservation through it.  SM5.B provides
+-- the AK7-clean object-footprint bridge `switchToThreadOnCore_objects_eq_preempt`
+-- (the switch writes only what the preempt does — at most the preempted
+-- thread's TCB) as the foundation that SM5.I.8 composition rests on.
+
+-- ============================================================================
+-- §3c  Acquisition-order completeness (SM5.B.2, plan §4.4)
+-- ============================================================================
+
+/-- WS-SM SM5.B.2 (plan §4.4): the lock-set's projected keys form a
+**`SchedLockId`-ascending acquisition sequence** — they are `Pairwise (· ≤ ·)`.
+The `withLockSet` discipline (SM3.C) acquires a lock-set in ascending lock order;
+this theorem certifies `switchToThreadOnCoreLockSet` is already in that order
+(object lock before run-queue lock), so its canonical acquisition sequence is the
+list itself.  Combined with the SchedLockId total order (SM5.A) and SM3.D's
+ladder argument, this is the per-core switch's contribution to cross-core
+deadlock-freedom.  (The two-element list needs no runtime sort; the dynamic
+acquisition over a `SchedLockId` `LockSet` is wired by SM5.C's dispatch loop.) -/
+theorem switchToThreadOnCoreLockSet_pairwise_le (c : CoreId) :
+    ((switchToThreadOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
+  have hle : SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+    (SchedLockId.object_lt_runQueue _ _).1
+  simp only [switchToThreadOnCoreLockSet, List.map_cons, List.map_nil]
+  exact List.Pairwise.cons
+    (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)
+    (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
+
+-- ============================================================================
 -- §4  SM5.B.8 — Totality + decidability
 -- ============================================================================
 
-/-- WS-SM SM5.B.8: `switchToThreadOnCore` is a total function — it always
-returns (no fuel, no partiality); the only question is `.ok` vs `.error`,
-characterised by `switchToThreadOnCore_ok_of_admits` /
-`switchToThreadOnCore_rejects_remote`. -/
-theorem switchToThreadOnCore_total (st : SystemState) (c : CoreId)
+/-- WS-SM SM5.B.8: complete success classification — `switchToThreadOnCore`
+succeeds **iff** `tid` resolves to a TCB whose CPU affinity admits core `c`.
+Combined with `switchToThreadOnCore_rejects_remote` (the `affinity = some c'`,
+`c' ≠ c` error) and the `getTcb? = none → schedulerInvariantViolation` arm, this
+pins the operation's total input→outcome behaviour exactly: every input maps to
+a determined `.ok`/`.error`, and the `.ok` set is characterised structurally
+(this is the substantive form of "totality" — it replaces the vacuous
+`∃ r, … = r`).  The forward direction reuses the `ok`-inversion case analysis;
+the reverse is `switchToThreadOnCore_ok_of_admits`. -/
+theorem switchToThreadOnCore_ok_iff (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) :
-    ∃ r, switchToThreadOnCore st c tid = r := ⟨_, rfl⟩
+    (∃ st', switchToThreadOnCore st c tid = .ok st')
+      ↔ (∃ tidTcb, st.getTcb? tid = some tidTcb ∧ affinityAdmitsCore tidTcb c = true) := by
+  constructor
+  · rintro ⟨st', h⟩
+    unfold switchToThreadOnCore at h
+    cases hTcb : st.getTcb? tid with
+    | none => simp [hTcb] at h
+    | some t =>
+      -- `cases hTcb` rewrites `st.getTcb? tid` to `some t` in the goal, so the
+      -- witness equation is `rfl`.
+      by_cases hAff : affinityAdmitsCore t c = true
+      · exact ⟨t, rfl, hAff⟩
+      · simp only [hTcb] at h
+        rw [if_neg hAff] at h; simp at h
+  · rintro ⟨tidTcb, hTcb, hAff⟩
+    exact switchToThreadOnCore_ok_of_admits st c tid tidTcb hTcb hAff
 
 /-- WS-SM SM5.B.8: "core `c` can switch to `tid`" — the decidable proposition
 the SM5.B unit tests discharge by `decide` on concrete states.  Like SM5.A's

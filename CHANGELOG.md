@@ -106,6 +106,75 @@ Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.C
 (cross-core wake via SGI) consumes `switchToThreadOnCore` +
 `switchToThreadOnCoreLockSet`.
 
+### Audit-pass-1 refinements (post-landing deep self-audit; also in v0.31.39)
+
+A deep self-audit of the SM5.B landing surfaced verification-completeness and
+documentation gaps relative to the codebase standard (the initial cut was sound
++ axiom-clean, but a state *mutation* shipped with no preservation theorems and
+a few dead-weight / under-documented spots).  All closed in the same v0.31.39
+cut; every new theorem axiom-clean (`#print axioms`: `propext` / `Quot.sound` /
+`Classical.choice` only — a full sweep over *all* SM5.B theorems, not the
+initial 6-theorem spot-check):
+
+- **Invariant preservation (the main gap).**  `switchToThreadOnCore` now carries
+  the structural preservation a sound transition must:
+  `switchToThreadOnCore_preserves_objects_invExt` (the RobinHood object-store
+  invariant survives the preempted-thread context save) and
+  `switchToThreadOnCore_preserves_runQueueOnCore_wellFormed` (the run queue stays
+  well-formed across the re-enqueue + dequeue), plus
+  `switchToThreadOnCore_establishes_queueCurrentConsistentOnCore` (the SM4.C
+  invariant form of dequeue-on-dispatch — the new current thread is not in its
+  run queue).  Built on the new preempt-side helpers
+  `preemptCurrentOnCore_preserves_objects_invExt` /
+  `_preserves_runQueueOnCore_wellFormed`, plus the object-footprint bridge
+  `switchToThreadOnCore_objects_eq_preempt` (the switch's only object write is
+  the preempt's — at most the preempted thread's TCB).  The full 10-conjunct
+  `schedulerInvariant_perCore` preservation remains SM5.I.8 ("preservation by
+  every transition") per the plan; these are the foundations it composes.  Note
+  the per-conjunct `currentThreadValidOnCore` establishment is *deliberately*
+  left to SM5.I.8: proving it needs an object-store insert-frame at the switch
+  target — a *raw* `.toObjId]?` lookup — and the AK7 cascade discipline
+  (`scripts/ak7_cascade_check_monotonic.sh`) requires raw `.toObjId]?` lookups to
+  *drop*, never grow.  SM5.I.8 should add a *typed* `getTcb?`-insert frame (the
+  `.get?`-method form the AK7 metric does not count) and route the full
+  preservation through it, rather than SM5.B regressing `RAW_LOOKUP_TID`.
+- **Defense-in-depth (preempt fallback).**  `preemptCurrentOnCore_active_under_valid`
+  proves the "previous current isn't a TCB" no-op fallback is **unreachable**
+  under `currentThreadValidOnCore` — the preempt genuinely re-enqueues — mirroring
+  the `saveOutgoingContext_always_succeeds_under_currentThreadValid` discipline.
+- **Dead-weight removed.**  The vacuous `switchToThreadOnCore_total`
+  (`∃ r, … = r`) is replaced by the substantive complete classification
+  `switchToThreadOnCore_ok_iff` (`switchToThreadOnCore` succeeds **iff** `tid`
+  resolves to a TCB whose affinity admits the core).
+- **Acquisition-order completeness.**  `switchToThreadOnCoreLockSet_pairwise_le`
+  certifies the lock-set's keys are `SchedLockId`-ascending (object lock before
+  run-queue lock) — i.e. it *is* a valid `withLockSet` ascending acquisition
+  sequence — contributing the per-core switch's part of the SM3.D
+  deadlock-freedom argument.
+- **Lock-set rationale (honest trade-off).**  The `switchToThreadOnCoreLockSet`
+  docstring now states why the object-store **table** write lock — not a
+  per-object `LockId.tcb tid` set — is the *sound* choice: SM3.A.10 guards the
+  RobinHood store's structural concurrency-safety at **table** granularity (an
+  insert can relocate slots), so per-object TCB locks would not protect the table
+  structure.  It also records the resulting SMP trade-off honestly — cross-core
+  switches that mutate the store serialize on it (the per-core *run-queue* lock
+  does not), a tracked **post-SM5** optimization once per-slot RHTable concurrency
+  is established — rather than presenting the table lock as strictly superior.
+- **`schedule` distinction documented.**  `switchToThreadOnCore`'s docstring now
+  explains it is *deliberately* not unified with `schedule`/`scheduleEffective`:
+  `schedule` *drops* the outgoing thread (dequeue-on-dispatch) whereas
+  `switchToThreadOnCore` *preempts* (re-enqueues) it (Theorem 3.2.2), so the
+  preempt-vs-drop semantics genuinely differ — there is no `rfl`-bridge, unlike
+  `chooseThread = chooseThreadOnCore bootCoreId`.  The per-core register-model
+  assumption (single `machine.regs` = executing core; per-core banks land with
+  SM5, as `contextMatchesCurrentOnCore` already notes) is documented too.
+- **FFI rationale + self-switch test.**  The `PER_CPU_CURRENT_THREAD` docstring
+  explains why a dedicated cross-core-readable `AtomicU64` array is correct (vs
+  the non-atomic owner-only `PerCpuData`).  The Lean suite gains a self-switch
+  scenario (current already = target ⇒ the `prevTid == incoming` preempt no-op
+  branch fires) plus elaboration-time witnesses for every new theorem (the suite
+  now exercises the preservation + classification + acquisition-order results).
+
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.2, §5 (SM5.B)
 
 ## v0.31.38 — WS-SM SM5.A: per-core `chooseThread` (selection, lock-set, independence, completeness, + cross-domain lock unification)

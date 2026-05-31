@@ -595,6 +595,15 @@ pub const NO_CURRENT_THREAD: u64 = u64::MAX;
 /// synchronisation primitive — the verified happens-before ordering lives in
 /// the Lean `switchToThreadOnCore` lock-set discipline
 /// (`switchToThreadOnCoreLockSet`), not here.
+///
+/// **Why a separate `AtomicU64` array, not a field in [`crate::per_cpu::PerCpuData`].**
+/// `PerCpuData` is the *owner-accessed* per-CPU block reached via `TPIDR_EL1`:
+/// a core reads/writes only its own slot, non-atomically.  This pointer is
+/// instead **cross-core readable** — `ffi_per_core_current_thread(core_id)`
+/// (and SM5.C's dispatch loop) read *other* cores' current-thread slots, which
+/// would race with the owning core's writes.  A dedicated `AtomicU64` array is
+/// the right structure for cross-core reads; `PerCpuData`'s non-atomic
+/// owner-only fields are not.
 static PER_CPU_CURRENT_THREAD:
     [core::sync::atomic::AtomicU64; crate::smp::MAX_SECONDARY_CORES + 1] = [
     core::sync::atomic::AtomicU64::new(NO_CURRENT_THREAD),

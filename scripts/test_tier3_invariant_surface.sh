@@ -3040,9 +3040,11 @@ EOF'
 # foundation (the `TCB.cpuAffinity` field + `KernelError.threadOnDifferentCore`),
 # the SM5.B.1/.3/.4 production operations (`switchToThreadOnCore` /
 # `preemptCurrentOnCore` / `affinityAdmitsCore`), the SM5.B.2 cross-domain
-# lock-set + the preempt frame lemmas, the SM5.B.1/.3/.4/.5/.6 switch-semantics
-# theorems, the SM5.B.8 totality + decidability, and the SM5.B.7 FFI seam
-# (extern decls + typed wrappers + markers).  A rename / removal of any SM5.B
+# lock-set + acquisition-order completeness, the preempt frame + preservation +
+# unreachability lemmas, the SM5.B.1/.3/.4/.5/.6 switch-semantics theorems, the
+# §3b invariant-preservation foundations, the SM5.B.8 complete classification +
+# decidability, and the SM5.B.7 FFI seam (extern decls + typed wrappers +
+# markers).  A rename / removal of any SM5.B
 # symbol fails here at elaboration time, before SM5.C's cross-core wake / SGI
 # dispatch loop consumes them.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread'
@@ -3073,10 +3075,13 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadOnCoreLockSet_object_before_runQueue
 #check @switchToThreadOnCoreLockSet_keys_nodup
 
--- preempt frame lemmas.
+-- §2/§2b preempt frame + preservation + unreachability lemmas.
 #check @preemptCurrentOnCore_currentOnCore
 #check @preemptCurrentOnCore_runQueueOnCore_ne
 #check @preemptCurrentOnCore_runQueueOnCore_self_active
+#check @preemptCurrentOnCore_preserves_objects_invExt
+#check @preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed
+#check @preemptCurrentOnCore_active_under_valid
 
 -- SM5.B.1/.3/.4/.5/.6 switch-semantics theorems.
 #check @switchToThreadOnCore_sets_current
@@ -3086,8 +3091,17 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadOnCore_runQueueOnCore_excludes_current
 #check @switchToThreadOnCore_independent_of_other_core
 
--- SM5.B.8 totality + decidability.
-#check @switchToThreadOnCore_total
+-- §3b invariant preservation + object frame (structural foundations for SM5.I.8).
+#check @switchToThreadOnCore_preserves_objects_invExt
+#check @switchToThreadOnCore_preserves_runQueueOnCore_wellFormed
+#check @switchToThreadOnCore_establishes_queueCurrentConsistentOnCore
+#check @switchToThreadOnCore_objects_eq_preempt
+
+-- §3c acquisition-order completeness (SM5.B.2).
+#check @switchToThreadOnCoreLockSet_pairwise_le
+
+-- SM5.B.8 complete classification + decidability.
+#check @switchToThreadOnCore_ok_iff
 #check @switchToThreadOnCoreSucceeds
 #check @switchToThreadOnCoreRejectsRemote
 

@@ -182,8 +182,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~22584 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7552 lines)
+- `CHANGELOG.md` (~22653 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~7623 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -291,8 +291,8 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~907 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~886 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~848 lines)
@@ -4718,6 +4718,51 @@ documentation lives under `docs/` and `docs/gitbook/`.
     modules; partition gate green).  Items deferred past v1.0.0 with
     correctness impact: NONE.  Follow-on: SM5.C (cross-core wake via SGI)
     consumes `switchToThreadOnCore` + `switchToThreadOnCoreLockSet`.
+
+  **WS-SM SM5.B audit-pass-1 (also in v0.31.39)**: a deep self-audit closed the
+  verification-completeness + documentation gaps of the SM5.B landing (sound +
+  axiom-clean, but a state *mutation* had shipped with no preservation theorems
+  plus a few dead-weight / under-documented spots).  All axiom-clean (full
+  `#print axioms` sweep over *every* SM5.B theorem, not the initial 6):
+
+  - **Invariant preservation** (the main gap): `switchToThreadOnCore_preserves_objects_invExt`
+    (object-store `invExt`), `_preserves_runQueueOnCore_wellFormed` (run-queue
+    `RunQueue.wellFormed`), `_establishes_queueCurrentConsistentOnCore` (the SM4.C
+    invariant form of dequeue-on-dispatch), the object-footprint bridge
+    `switchToThreadOnCore_objects_eq_preempt` (the switch writes only what the
+    preempt does — at most the preempted thread's TCB), + preempt-side helpers
+    `preemptCurrentOnCore_preserves_objects_invExt` / `_preserves_runQueueOnCore_wellFormed`.
+    The full 10-conjunct `schedulerInvariant_perCore` preservation remains SM5.I.8
+    ("preservation by every transition") per the plan; these are its foundations.
+    The per-conjunct `currentThreadValidOnCore` establishment is left to SM5.I.8
+    on purpose: proving it needs a raw `.toObjId]?` object-store insert-frame at
+    the switch target, and the AK7 cascade discipline requires raw `.toObjId]?`
+    lookups to *drop*; SM5.I.8 should add a *typed* `getTcb?`-insert frame and
+    route through it rather than regress `RAW_LOOKUP_TID`.
+  - **Defense-in-depth**: `preemptCurrentOnCore_active_under_valid` proves the
+    "previous current isn't a TCB" no-op fallback is **unreachable** under
+    `currentThreadValidOnCore` (mirrors `saveOutgoingContext_always_succeeds_under_currentThreadValid`).
+  - **Dead-weight removed**: the vacuous `switchToThreadOnCore_total` (`∃ r, … = r`)
+    is replaced by the substantive `switchToThreadOnCore_ok_iff` (succeeds **iff**
+    `tid` is a TCB whose affinity admits the core).
+  - **Acquisition-order completeness**: `switchToThreadOnCoreLockSet_pairwise_le`
+    (the lock-set's keys are `SchedLockId`-ascending — a valid `withLockSet`
+    acquisition sequence; the switch's part of the SM3.D deadlock-freedom ladder).
+  - **Honest lock-set rationale (documented, not changed)**: the object-store
+    **table** write lock is the *sound* SM3.A.10 choice (RobinHood structural
+    safety is table-granularity — an insert can relocate slots — so per-object TCB
+    locks would be unsound); the cross-core-switch serialization is recorded as a
+    tracked post-SM5 optimization (per-slot RHTable concurrency), not presented as
+    strictly superior.  `switchToThreadOnCore`'s docstring now documents its
+    deliberate preempt-vs-drop distinction from `schedule` (no `rfl`-bridge) and
+    the single-`machine.regs` per-core register-model assumption (per-core banks
+    land with SM5, as `contextMatchesCurrentOnCore` notes); the FFI
+    `PER_CPU_CURRENT_THREAD` docstring explains the cross-core-readable `AtomicU64`
+    array vs the non-atomic owner-only `PerCpuData`.
+  - **Tests**: the suite gains a self-switch scenario (the `prevTid == incoming`
+    preempt no-op branch) + elaboration-time witnesses for every new theorem;
+    tier-3 anchors updated.  Items deferred past v1.0.0 with correctness impact:
+    NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
