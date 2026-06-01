@@ -9,14 +9,14 @@
 
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
-import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
+import SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory
 
 /-!
 # WS-SM SM3.D — Deadlock-freedom regression suite
 
 Tier-2 / Tier-3 surface anchors + decidable examples + runtime
 structural assertions for every public symbol introduced by SM3.D
-(`Deadlock` / `Sm3DInventory`).
+(`Deadlock` / `DeadlockInventory`).
 
 The suite exercises four families of checks:
 

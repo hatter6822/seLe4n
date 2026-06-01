@@ -15,11 +15,11 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
-import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
+import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
-import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
+import SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
-import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
+import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 
 /-!
 # WS-SM SM3.B + SM3.C + SM3.D + SM3.E — LockSet re-export hub
@@ -55,7 +55,7 @@ the underlying modules.
 * `DynamicChainExtension` — `withDynamicChainExtension` (SM3.C.11)
   for PIP-chain dynamic locking under the SM0.I total-order
   discipline.
-* `Sm3CInventory` — SM3.C typed theorem inventory.
+* `WithLockSetInventory` — SM3.C typed theorem inventory.
 
 ## SM3.D modules (deadlock-freedom)
 
@@ -65,7 +65,7 @@ the underlying modules.
   N-core DAG form, SM3.D.5), `boundedWait_under_2pl` (SM3.D.6), and
   the §7 grounding bridge that discharges the hypotheses from the
   SM3.B/SM3.C `lockAcquireSequence` discipline.
-* `Sm3DInventory` — SM3.D typed theorem inventory.
+* `DeadlockInventory` — SM3.D typed theorem inventory.
 
 ## SM3.E modules (serializability)
 
@@ -76,5 +76,5 @@ the underlying modules.
   (SM3.E.5) + `singleCore_proof_preservation` (Corollary 2.1.11,
   SM3.E.6), built on the conflict-graph acyclicity
   (`conflictGraph_acyclic`).
-* `Sm3EInventory` — SM3.E typed theorem inventory.
+* `SerializabilityInventory` — SM3.E typed theorem inventory.
 -/

@@ -2603,6 +2603,152 @@ composers are unchanged.  Inventory 81 → 83; `SmpWakeSuite` 64 runtime asserti
 axiom-clean; Tier 0–3 green; trace byte-identical.  Items deferred past v1.0.0 with
 correctness impact: NONE.
 
+**WS-SM SM5.D LANDED at v0.31.41** (per-core timer tick; plan §3.4 / §5).  Each
+core's ARM Generic Timer fires independently; `timerTickOnCore (st) (c : CoreId) :
+Except KernelError (SystemState × List (CoreId × SgiKind))`
+(`Scheduler/Operations/Core.lean`, production) advances *that core's* domain
+accounting, processes its due CBS replenishments (cross-core-waking refilled
+threads onto their target core via SM5.C's `wakeThread`, emitting `.reschedule`
+SGIs for remote targets — SM5.D.4), and preempts the running thread on budget /
+time-slice exhaust (SM5.D.5) — reading but **never advancing** the global
+`machine.timer` (the SMP per-core decision: each core's CNTV is local; the global
+monotonic count is primary-owned, mirroring the Rust HAL's `TICK_COUNT`).  All 10
+sub-tasks landed in one cut.
+
+- **SM5.D.3 lock-set** (`PerCoreChooseThread.lean`): `ReplenishQueueLockId`
+  (per-core, level 11) + `SchedLockId.replenishQueue` extend the SM5.A cross-domain
+  order to **object < runQueue < replenishQueue** (plan §4.4), with re-proved
+  order theorems + the two new cross-domain edges.
+- **SM5.D staged theorems** (`PerCoreTimerTick.lean`): the SM5.D.3
+  `timerTickOnCoreLockSet` (3-lock write set) + SM5.D.7 WCRT bound; SM5.D.6
+  `decrementDomainTimeOnCore_decrements` / `_rotates` + frames; the SM5.D.4
+  headline `cbsReplenish_can_wake_remote_core` + the replenishment preservation
+  lemmas; the SM5.D.5 budget-tick preemption witnesses + the reusable,
+  previously-missing IPC-timeout objects-`invExt` preservation chain
+  (`revertPriorityInheritance` / `timeoutThread` / `timeoutBlockedThreads_preserves_objects_invExt`);
+  the SM5.D.2 headlines `timerTickOnCore_advances_per_core` / `_preempts_local` /
+  `_rotates_domain` / `_clears_lastTimeoutErrors` + `_preserves_objects_invExt`
+  (SM5.B/C object-store-invariant parity) via the `timerTickOnCorePrepared` /
+  `_eq_prepared` `rfl`-bridge; SM5.D.8 decidability.
+- **SM5.D.1**: the Rust `timer::per_core_timer_tick_isr(core_id)` (records the
+  per-core tick, re-arms the per-core comparator, drives the Lean per-core tick
+  under `hw_target`) + `handle_irq_per_core` wiring (build.rs Check 5) + the
+  `lean_per_core_timer_tick` export seam (`Kernel.perCoreTimerTickEntry`,
+  `PerCoreTimerEntry.lean`, deliberate `pure ()` placeholder — SM5.I drives the
+  live tick); +4 Rust HAL tests (722 total, zero clippy warnings).
+
+Tests `tests/SmpTimerSuite.lean` (`smp_timer_suite`, 33 runtime assertions + 60+
+anchors + 6 examples); 2 new staged modules (partition gate 47 staged-only); all
+SM5.D theorems axiom-clean; Tier 0–3 green; default build 322 jobs; trace
+byte-identical.  The runtime per-core scheduler-tick driver (live per-core kernel
+state, `withLockSet` over `timerTickOnCoreLockSet`, cross-core SGI emission) is
+SM5.I work; the pure transition + full theorem surface land here.  Items deferred
+past v1.0.0 with correctness impact: NONE.
+
+**WS-SM SM5.D audit-pass-1 LANDED at v0.31.42** (deep self-audit closing the
+verification-completeness gaps the v0.31.41 landing deferred — it had shipped only
+object-store-`invExt` preservation for the composed tick).  Per the
+maintainer-approved **"parameterize + track"** scope decision: clean paths proved
+unconditionally; the bound-budget-exhausted timeout branch (re-enqueuing through
+the bootCoreId-pinned `ensureRunnable` / `revertPriorityInheritance`) parameterized
+by a single clean hypothesis and recorded as explicit SM5.F (per-core PIP
+migration) tracked debt.
+
+- **§4b full per-core domain re-dispatch (SM5.D.6)**: `switchDomainOnCore`
+  no-op / `_preserves_objects_invExt` / `_sets_currentOnCore_none` / `_rotates`
+  + `scheduleDomainOnCore_decrements` / `_preserves_objects_invExt` (the
+  domain-boundary counterparts of §2's in-tick `decrementDomainTimeOnCore`).
+- **§7 per-core invariant preservation (B1/B2/B3)**: the headline
+  `timerTickOnCore_preserves_currentThreadValidOnCore` is **UNCONDITIONAL** (idle
+  / not-preempted clean-path + preempted re-establishment via
+  `scheduleEffectiveOnCore_establishes_currentThreadValidOnCore` absorb the
+  timeout's object-store effect); `timerTickOnCore_preserves_runQueueOnCoreWellFormed`
+  (B2) and `_preserves_queueCurrentConsistentOnCore` parameterized by clean
+  budget-tick / prepared-state hypotheses (discharged on every clean path,
+  bound-exhausted is SM5.F).  Full helper layer: decrement preserves all four,
+  `saveOutgoingContextOnCore` frames, `scheduleEffectiveOnCore` establishes/preserves
+  the four (mirroring SM5.B), `timerTickBudgetOnCore_notPreempted_*`.
+- **D3**: `Sm5DInventory.lean` — 99-entry typed inventory in 7 categories with the
+  `s5dt!` compile-time identifier-validation macro + count/partition/Nodup witnesses
+  (mirrors `Sm5CInventory`; partition gate now 48 staged-only).
+- **D4**: `scripts/test_qemu_smp_timer.sh` tier-4 `-smp 4` SKIP-stub (wired into
+  `test_tier4_smp_bootcheck.sh`).
+- **C1** (full-path `machine.timer`) folded into the same SM5.F gap; the idle
+  headline + `timerTickOnCorePrepared_machine_eq` cover the property substantively.
+
+`SmpTimerSuite` gains 31 anchors + 3 examples + a §3.9 runtime section (5
+assertions); tier-3 adds the §4b/§7 anchors + the `Sm5DInventory` build.  All new
+theorems axiom-clean; Tier 0–3 green; default build 322 jobs; trace byte-identical.
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+**WS-SM SM5.D audit-pass-2 LANDED at v0.31.43** (deep code-first audit of the full
+SM5.D workstream — reading the code, not the docstrings; PR #809).  Closed **one
+substantive correctness divergence** + three LOW Rust/doc findings.
+
+- **CRITICAL FIX — `timerTickOnCore` no longer breaks `currentThreadInActiveDomain`.**
+  The pre-fix tick folded an in-tick domain *rotation* (`decrementDomainTimeOnCore`
+  advancing `activeDomainOnCore` on expiry) into the tick **without** the coupled
+  re-dispatch, so on a multi-domain config the not-preempted path returned with the
+  running thread's `tcb.domain` (old) ≠ the rotated `activeDomainOnCore c` —
+  violating the maintained `currentThreadInActiveDomain` invariant (a
+  domain-separation / temporal-isolation property).  The single-core model never
+  produces this: **neither** `timerTick` nor `timerTickWithBudget` touches domain
+  time; rotation lives only in `scheduleDomain`, which *atomically* couples it with
+  re-dispatch (`switchDomain` re-enqueues, then `schedule`).  (Latent — unreachable
+  on the single-domain RPi5 v1.0.0 target.)  Fix: `timerTickOnCore` is now a **pure
+  per-core budget tick** mirroring `timerTickWithBudget`; rotation is the separate,
+  atomic `scheduleDomainOnCore`.  `decrementDomainTimeOnCore` is rewritten as the
+  pure non-boundary decrement and wired into `scheduleDomainOnCore`'s `else`-branch
+  (not orphaned).  Retired `timerTickOnCore_rotates_domain` + 5 obsolete in-tick
+  rotation theorems; `switchDomainOnCore_rotates` is the rotation witness.
+- **Capstone (§7f):** the fix is *proved* —
+  `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` (parameterized by the
+  replenishment's domain-preservation), built on
+  `scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore` (the
+  dispatch checks `tcb.domain = activeDomain`) + three domain-frame helpers.
+- **Rust HAL (LOW):** Finding 3 — the per-core timer is **CNTP** (EL1 physical;
+  `cntp_*`, PPI 30), not "CNTV"; corrected across all SM5.D docs.  Finding 1 — added a
+  hw-only `debug_assert_eq!(core_id, current_core_id_from_tpidr())` in
+  `per_core_timer_tick_isr` (the stat slot is TPIDR-selected).  Finding 5 —
+  `reprogram_timer` uses `wrapping_add`.
+- **Verification:** axiom-clean; AK7 `RAW_LOOKUP_TID` unchanged; `Sm5DInventory`
+  100 entries (domain 10 / tick 18 / preservation 25); Tier 0+1+2 green (722 Rust HAL
+  tests, zero clippy); trace byte-identical.  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
+**WS-SM SM5.D audit-pass-3 LANDED at v0.31.44** (PR #809 automated-review closure;
+three valid P2 findings, all in SM5.D's scope, closed per the
+implement-the-improvement rule).
+
+- **P2 (cross-core double-placement):** `processOneReplenishmentOnCore`'s CBS-wake
+  guard used `runnableOnSomeCore` (run-queue membership), but a thread that is
+  **current** on a core is dequeued from every run queue, so the guard missed it and
+  could `wakeThread` it onto its `determineTargetCore` target — the same TCB then
+  *current* on core A and *runnable* on core B (a thread on two cores).  Fixed by the
+  new `runningOnSomeCore` predicate (`currentOnCore` across `allCores`); the guard is
+  now `if runningOnSomeCore … then (refilled, none) else wakeThread …`.
+  `cbsReplenish_can_wake_remote_core`'s hypothesis updates `hNotCur` →
+  `hNotRunning`.
+- **P2 (naming hygiene):** the five phase-coded theorem-inventory modules renamed to
+  semantic names per the internal-first naming rule — `Sm5DInventory` →
+  `PerCoreTimerInventory` (`perCoreTimerTheorems`, macro `pctt!`; +`runningOnSomeCore`
+  → 101 entries), `Sm5CInventory` → `CrossCoreWakeInventory` (`crossCoreWakeTheorems`,
+  macro `ccwt!`), `Sm3CInventory` → `WithLockSetInventory`, `Sm3DInventory` →
+  `DeadlockInventory`, `Sm3EInventory` → `SerializabilityInventory` (the last three
+  already had semantic identifiers — file/module-path only).  Consumer references
+  updated in `Staged.lean`, `Concurrency/LockSet.lean`, the staged allowlist, the
+  tier-3 surface script, and the four affected suites.
+- **P2 (timeout cross-core wake):** the bound-budget-exhausted timeout re-enqueues
+  onto the boot core via `ensureRunnable` and emits no `.reschedule` SGI — a latency
+  gap (no safety violation: no thread lost, none on two cores, object-store invariant
+  unaffected), deferred to SM5.F (per-core PIP) and documented precisely in the
+  `PerCoreTimerTick.lean` §4 tracked-debt note (both facets: run-queue placement +
+  missing SGI).
+- **Verification:** axiom-clean; partition gate 48 staged-only modules; AK7
+  `RAW_LOOKUP_TID` unchanged; the five renamed suites + `SmpTimerSuite` PASS;
+  Tier 0+1+2+3 green; trace byte-identical.  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

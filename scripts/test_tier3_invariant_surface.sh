@@ -2075,14 +2075,14 @@ EOF'
 # WS-SM SM3.C — withLockSet 2PL discipline + lockSetHeld + dynamic
 # chain extension + 51-theorem inventory.  Surface anchors verify
 # every SM3.C public symbol survives renames at elaboration time.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
-import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
+import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 
 -- SM3.C.1: withLockSet combinator + unfolding lemmas.
 #check @SeLe4n.Kernel.Concurrency.withLockSet
@@ -2225,11 +2225,11 @@ EOF'
 # WS-SM SM3.D — deadlock-freedom + wait-graph acyclicity + bounded-wait +
 # 37-theorem inventory.  Surface anchors verify every SM3.D public symbol
 # survives renames at elaboration time.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.Deadlock
-import SeLe4n.Kernel.Concurrency.Locks.Sm3DInventory
+import SeLe4n.Kernel.Concurrency.Locks.DeadlockInventory
 
 -- SM3.D.1: KernelExecution model + blockedAt / heldBy.
 #check @SeLe4n.Kernel.Concurrency.KernelExecution
@@ -2333,11 +2333,11 @@ EOF'
 # serialization order + single-core proof preservation + 111-theorem inventory.
 # Surface anchors verify every SM3.E public symbol survives renames at
 # elaboration time.  SM3.E.8: `#check` of the major theorems.
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
-import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
+import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 
 -- SM3.E.2: KernelTransitionInstance model + applySequential.
 #check @SeLe4n.Kernel.Concurrency.KernelTransitionInstance
@@ -3135,10 +3135,10 @@ EOF'
 # typed wrappers.  A rename / removal of any SM5.C symbol fails here at
 # elaboration time, before SM5.D's per-core timer tick consumes them.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreWake'
-run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
-import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
+import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
 import SeLe4n.Kernel.Concurrency.Runtime
 open SeLe4n.Model
 open SeLe4n.Kernel
@@ -3280,18 +3280,137 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore
 
 -- WS-SM SM5.C audit-pass-1 (gap m): the SM5.C theorem inventory.
-#check @sm5CTheorems
-#check @sm5CTheorems_count
-#check @sm5CTheorems_lockSet_count
-#check @sm5CTheorems_target_count
-#check @sm5CTheorems_enqueue_count
-#check @sm5CTheorems_wake_count
-#check @sm5CTheorems_handler_count
-#check @sm5CTheorems_preservation_count
-#check @sm5CTheorems_latencyAffinityEmit_count
-#check @sm5CTheorems_partition_sum
-#check @sm5CTheorems_identifiers_nodup
-#check @sm5CTheorems_descriptions_nodup
+#check @crossCoreWakeTheorems
+#check @crossCoreWakeTheorems_count
+#check @crossCoreWakeTheorems_lockSet_count
+#check @crossCoreWakeTheorems_target_count
+#check @crossCoreWakeTheorems_enqueue_count
+#check @crossCoreWakeTheorems_wake_count
+#check @crossCoreWakeTheorems_handler_count
+#check @crossCoreWakeTheorems_preservation_count
+#check @crossCoreWakeTheorems_latencyAffinityEmit_count
+#check @crossCoreWakeTheorems_partition_sum
+#check @crossCoreWakeTheorems_identifiers_nodup
+#check @crossCoreWakeTheorems_descriptions_nodup
 EOF'
+
+# WS-SM SM5.D — per-core timer tick surface anchors.  Covers the SM5.D.2/.4/.5/.6/.9
+# production transitions (`timerTickOnCore` / `timerTickBudgetOnCore` /
+# `processReplenishmentsDueOnCore` / `decrementDomainTimeOnCore` /
+# `scheduleEffectiveOnCore` / `switchDomainOnCore`+`scheduleDomainOnCore`, in
+# `Scheduler.Operations.Core`), the SM5.D.3 cross-domain lock-set (+
+# `ReplenishQueueLockId` / `SchedLockId.replenishQueue` order facts), SM5.D.6
+# domain-rotation theorems, the SM5.D.4 cross-core wake (`cbsReplenish_can_wake_remote_core`),
+# the SM5.D.5 budget tick + the IPC-timeout objects-`invExt` preservation chain,
+# the SM5.D.2 headlines + objects-`invExt` preservation, SM5.D.7 WCRT bound,
+# SM5.D.8 decidability, and the SM5.D.1 export seam.  A rename / removal of any
+# SM5.D symbol fails here at elaboration time before the test suite.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.PerCoreTimerEntry'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5d_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.PerCoreTimerEntry
+open SeLe4n.Kernel
+-- SM5.D.2/.4/.5/.6/.9 production transitions.
+#check @timerTickOnCore
+#check @timerTickBudgetOnCore
+#check @processReplenishmentsDueOnCore
+#check @processOneReplenishmentOnCore
+#check @replenishWakeTarget
+#check @decrementDomainTimeOnCore
+#check @scheduleEffectiveOnCore
+#check @saveOutgoingContextOnCore
+#check @switchDomainOnCore
+#check @scheduleDomainOnCore
+#check @tcbBlockingInfo
+-- SM5.D.3 lock-set + replenish-queue lock domain.
+#check @ReplenishQueueLockId
+#check @ReplenishQueueLockId.le_total
+#check @ReplenishQueueLockId.replenishQueueLockLevel
+#check @SchedLockId.object_lt_replenishQueue
+#check @SchedLockId.runQueue_lt_replenishQueue
+#check @timerTickOnCoreLockSet
+#check @timerTickOnCoreLockSet_length
+#check @timerTickOnCoreLockSet_write_only
+#check @timerTickOnCoreLockSet_contains_objStore_write
+#check @timerTickOnCoreLockSet_contains_runQueue_write
+#check @timerTickOnCoreLockSet_contains_replenishQueue_write
+#check @timerTickOnCoreLockSet_keys_nodup
+#check @timerTickOnCoreLockSet_pairwise_le
+#check @timerTickOnCoreLockSet_size_le_maxLockSetSize
+-- SM5.D.6 domain accounting (audit-pass-2: pure non-boundary decrement).
+#check @decrementDomainTimeOnCore_decrements
+#check @decrementDomainTimeOnCore_activeDomainOnCore
+#check @decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne
+#check @decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore
+#check @decrementDomainTimeOnCore_objects_eq
+-- SM5.D.4 CBS replenishment + cross-core wake.
+#check @cbsReplenish_can_wake_remote_core
+#check @runningOnSomeCore
+#check @processOneReplenishmentOnCore_local_no_sgi
+#check @processOneReplenishmentOnCore_no_sgi_if_no_target
+#check @processOneReplenishmentOnCore_preserves_objects_invExt
+#check @processReplenishmentsDueOnCore_preserves_objects_invExt
+#check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
+#check @processReplenishmentsDueOnCore_machine_eq
+-- SM5.D.5 budget tick + IPC-timeout objects preservation chain.
+#check @timerTickBudgetOnCore_unbound_not_preempted
+#check @timerTickBudgetOnCore_unbound_preempts
+#check @timerTickBudgetOnCore_preserves_objects_invExt
+#check @revertPriorityInheritance_preserves_objects_invExt
+#check @timeoutThread_preserves_objects_invExt
+#check @timeoutBlockedThreads_preserves_objects_invExt
+#check @scheduleEffectiveOnCore_preserves_objects_invExt
+-- SM5.D.2 headlines + preservation.
+#check @timerTickOnCore_eq_prepared
+#check @timerTickOnCorePrepared
+#check @timerTickOnCorePreDomain
+#check @timerTickOnCore_idle
+#check @timerTickOnCore_advances_per_core
+#check @timerTickOnCore_clears_lastTimeoutErrors
+#check @timerTickOnCore_preempts_local
+#check @timerTickOnCore_preserves_objects_invExt
+-- SM5.D.6 audit-pass-2 capstone: the budget-only tick preserves currentThreadInActiveDomain.
+#check @timerTickOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore
+#check @scheduleEffectiveOnCore_getTcb?_domain
+#check @timerTickBudgetOnCore_notPreempted_getTcb?_domain
+-- SM5.D.8 decidability.
+#check @timerTickOnCoreSucceeds
+#check @timerTickOnCoreEmitsSgi
+#check @timerTickBudgetOnCorePreempts
+-- SM5.D.1 export seam.
+#check @perCoreTimerTickEntry
+#check @perCoreTimerTickEntry_returns_unit_marker
+-- SM5.D.6 full per-core domain re-dispatch (§4b).
+#check @switchDomainOnCore_singleDomain_noop
+#check @switchDomainOnCore_preserves_objects_invExt
+#check @switchDomainOnCore_sets_currentOnCore_none
+#check @switchDomainOnCore_rotates
+#check @scheduleDomainOnCore_decrements
+#check @scheduleDomainOnCore_preserves_objects_invExt
+-- SM5.D.5/.6 per-core invariant preservation (§7 B1/B2/B3).
+#check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
+#check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
+#check @decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
+#check @saveOutgoingContextOnCore_scheduler_eq
+#check @saveOutgoingContextOnCore_getTcb?_isSome
+#check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore
+#check @scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore
+#check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
+#check @scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @timerTickBudgetOnCore_notPreempted_scheduler_eq
+#check @timerTickBudgetOnCore_notPreempted_getTcb?_tid
+#check @timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
+#check @timerTickOnCore_preserves_currentThreadValidOnCore
+#check @timerTickOnCorePrepared_runQueueOnCore_wellFormed
+#check @timerTickOnCore_preserves_runQueueOnCoreWellFormed
+#check @timerTickOnCore_preserves_queueCurrentConsistentOnCore
+EOF
+lake env lean /tmp/sm5d_surface.lean'
+# WS-SM SM5.D audit-pass-1: build the 99-entry SM5.D theorem inventory so a
+# renamed / removed SM5.D theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory'
 
 finalize_report

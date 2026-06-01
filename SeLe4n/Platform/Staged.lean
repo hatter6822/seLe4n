@@ -212,12 +212,35 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
 -- Reachability: staged at SM5.C; SM5.D's per-core timer tick (whose cross-core
 -- CBS-replenish wake calls `wakeThread`) is the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
--- WS-SM SM5.C (audit-pass-1): the SM5.C theorem inventory (78-entry typed
--- aggregator with `s5ct!` compile-time identifier validation + per-category
--- counts + partition-sum + Nodup witnesses), mirroring the SM3.A/B/C/D/E
--- inventories.  A renamed / removed SM5.C theorem fails the inventory's
--- elaboration here.
-import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
+-- WS-SM SM5.C: the cross-core-wake theorem inventory (83-entry typed
+-- aggregator with `ccwt!` compile-time identifier validation + per-category
+-- counts + partition-sum + Nodup witnesses), mirroring the per-object-lock /
+-- lock-set / deadlock / serializability inventories.  A renamed / removed SM5.C
+-- theorem fails the inventory's elaboration here.
+import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
+-- WS-SM SM5.D: the per-core timer-tick theorem surface — the SM5.D.3 cross-domain
+-- lock-set (`timerTickOnCoreLockSet` over the `SchedLockId` extended with the
+-- replenish-queue domain) + WCRT bound, SM5.D.6 domain rotation, SM5.D.4 CBS
+-- replenishment + cross-core wake (`cbsReplenish_can_wake_remote_core`), SM5.D.5
+-- budget tick + the IPC-timeout objects-`invExt` preservation chain, and the
+-- SM5.D.2 `timerTickOnCore` headlines (advances-per-core / preempts-local /
+-- clears-lastTimeoutErrors / preserves-currentThreadInActiveDomainOnCore) +
+-- objects-`invExt` preservation + SM5.D.8 decidability (domain rotation is the
+-- separate atomic `scheduleDomainOnCore`, not the budget-only tick).  The
+-- production transitions are in `Scheduler.Operations.Core`; SM5.I's per-core
+-- scheduler-tick driver is the first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+-- WS-SM SM5.D.1: the per-core timer-tick kernel entry seam
+-- (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP ISR
+-- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I moves it
+-- production-reached when the per-core scheduler-tick driver lands.
+import SeLe4n.Kernel.PerCoreTimerEntry
+-- WS-SM SM5.D: the 101-entry per-core-timer theorem inventory (7 categories:
+-- lockSet/domain/replenish/budget/tick/preservation/decidability) with the `pctt!`
+-- compile-time identifier-validation macro + per-category count + partition-sum +
+-- Nodup witnesses; mirrors `CrossCoreWakeInventory`.  A renamed/removed SM5.D theorem fails
+-- this module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

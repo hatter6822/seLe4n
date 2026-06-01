@@ -17,7 +17,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Serializability
 Aggregates the SM3.E substantive definitions and theorems into a single typed
 inventory with size and per-category witnesses.  Mirrors the SM3.A
 `PerObjectLockInventory.lean`, SM3.B `LockSetInventory.lean`, SM3.C
-`Sm3CInventory.lean`, and SM3.D `Sm3DInventory.lean` patterns.
+`WithLockSetInventory.lean`, and SM3.D `DeadlockInventory.lean` patterns.
 
 Nine categories matching the plan §5.5 sub-tasks (the last two added by the
 audit-pass-3 atomicity-bridge and observational-serializability closures):

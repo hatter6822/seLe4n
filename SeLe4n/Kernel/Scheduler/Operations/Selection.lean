@@ -930,6 +930,19 @@ def runnableOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
   (SeLe4n.Kernel.Concurrency.allCores).any
     (fun c => (st.scheduler.runQueueOnCore c).contains tid)
 
+/-- WS-SM SM5.D.4 (audit-pass-2 / Codex-P2): is `tid` the *current* (running)
+thread on *some* core?  A running thread is dequeued-on-dispatch, so it is absent
+from every run queue — `runnableOnSomeCore` (run-queue membership) does NOT catch
+it.  The cross-core CBS-replenish wake (`processOneReplenishmentOnCore`) uses this
+to suppress re-enqueueing a thread that is currently running on a *different* core
+than its `determineTargetCore` (the deferred-affinity-migration case): without it,
+the thread would be both current on the old core and runnable on the new — the same
+TCB dispatchable on two cores.  Reads every per-core `currentOnCore` slot via
+`Concurrency.allCores`. -/
+def runningOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  (SeLe4n.Kernel.Concurrency.allCores).any
+    (fun c => st.scheduler.currentOnCore c == some tid)
+
 /-- WS-SM SM5.C.1 (plan §3.3): enqueue `tid` as a runnable thread on core `c`.
 
 The per-core "make `tid` runnable on core `c`" primitive — the per-core

@@ -40,7 +40,7 @@ Seven categories matching the plan §3.3/§4.4/§5 sub-tasks:
 
 ## Identifier validation
 
-Identifiers are compile-time-validated via the `s5ct!` macro, mirroring SM3.A's
+Identifiers are compile-time-validated via the `ccwt!` macro, mirroring SM3.A's
 `polt!` / SM3.B's `lkst!` / SM3.C's `wlst!`.  A typo or stale rename fails the
 build at this module's elaboration step with "unknown identifier '<name>'".
 -/
@@ -51,7 +51,7 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency
 
 /-- WS-SM SM5.C: category tag for the SM5.C theorem inventory. -/
-inductive Sm5CCategory where
+inductive CrossCoreWakeCategory where
   /-- SM5.C.3 lock-set footprints. -/
   | lockSet
   /-- SM5.C.9 `determineTargetCore` routing. -/
@@ -70,249 +70,249 @@ inductive Sm5CCategory where
 
 /-- WS-SM SM5.C: a theorem entry in the SM5.C inventory.  Records a description,
 the fully-qualified name as a `String`, a compile-time elaboration witness, and a
-category tag.  The `_elabCheck` field (produced by `s5ct!`) forces Lean to
+category tag.  The `_elabCheck` field (produced by `ccwt!`) forces Lean to
 resolve the referenced declaration at construction time. -/
-structure Sm5CTheorem where
+structure CrossCoreWakeTheorem where
   description : String
   identifier  : String
   _elabCheck  : Unit
-  category    : Sm5CCategory
+  category    : CrossCoreWakeCategory
   deriving Repr, Inhabited
 
-/-- WS-SM SM5.C: build a `Sm5CTheorem` with a compile-time-validated identifier. -/
-syntax (name := s5ctMacro) "s5ct!" str ident term : term
+/-- WS-SM SM5.C: build a `CrossCoreWakeTheorem` with a compile-time-validated identifier. -/
+syntax (name := crossCoreWakeTheoremMacro) "ccwt!" str ident term : term
 
 macro_rules
-  | `(s5ct! $desc:str $ident:ident $cat:term) => do
+  | `(ccwt! $desc:str $ident:ident $cat:term) => do
       let nameStr : String := ident.getId.toString
       let nameStxLit := Lean.Syntax.mkStrLit nameStr
       `(({ description := $desc,
            identifier := $nameStxLit,
            _elabCheck := (let _ := @$ident; ()),
            category := $cat
-         } : Sm5CTheorem))
+         } : CrossCoreWakeTheorem))
 
 /-- WS-SM SM5.C: substantive theorem inventory.  Every entry's identifier is
-compile-time-validated by `s5ct!`. -/
-def sm5CTheorems : List Sm5CTheorem :=
+compile-time-validated by `ccwt!`. -/
+def crossCoreWakeTheorems : List CrossCoreWakeTheorem :=
   [-- ── SM5.C.3 lock-set footprints (.lockSet) ──
-    s5ct! "wakeThreadLockSet: the wake's cross-domain (object-store + run-queue WRITE) footprint"
+    ccwt! "wakeThreadLockSet: the wake's cross-domain (object-store + run-queue WRITE) footprint"
       wakeThreadLockSet .lockSet,
-    s5ct! "wakeThreadLockSet_write_only: every wake lock is WRITE mode"
+    ccwt! "wakeThreadLockSet_write_only: every wake lock is WRITE mode"
       wakeThreadLockSet_write_only .lockSet,
-    s5ct! "wakeThreadLockSet_contains_objStore_write: object-store write lock present"
+    ccwt! "wakeThreadLockSet_contains_objStore_write: object-store write lock present"
       wakeThreadLockSet_contains_objStore_write .lockSet,
-    s5ct! "wakeThreadLockSet_contains_runQueue_write: target run-queue write lock present"
+    ccwt! "wakeThreadLockSet_contains_runQueue_write: target run-queue write lock present"
       wakeThreadLockSet_contains_runQueue_write .lockSet,
-    s5ct! "wakeThreadLockSet_object_before_runQueue: §4.4 object-before-run-queue order"
+    ccwt! "wakeThreadLockSet_object_before_runQueue: §4.4 object-before-run-queue order"
       wakeThreadLockSet_object_before_runQueue .lockSet,
-    s5ct! "wakeThreadLockSet_keys_nodup: footprint keys are duplicate-free"
+    ccwt! "wakeThreadLockSet_keys_nodup: footprint keys are duplicate-free"
       wakeThreadLockSet_keys_nodup .lockSet,
-    s5ct! "wakeThreadLockSet_pairwise_le: canonical SchedLockId-ascending acquisition order"
+    ccwt! "wakeThreadLockSet_pairwise_le: canonical SchedLockId-ascending acquisition order"
       wakeThreadLockSet_pairwise_le .lockSet,
-    s5ct! "handleRescheduleSgiOnCoreLockSet: the SGI-handler footprint (= switch footprint)"
+    ccwt! "handleRescheduleSgiOnCoreLockSet: the SGI-handler footprint (= switch footprint)"
       handleRescheduleSgiOnCoreLockSet .lockSet,
-    s5ct! "handleRescheduleSgiOnCoreLockSet_eq: coincides with switchToThreadOnCoreLockSet"
+    ccwt! "handleRescheduleSgiOnCoreLockSet_eq: coincides with switchToThreadOnCoreLockSet"
       handleRescheduleSgiOnCoreLockSet_eq .lockSet,
     -- ── SM5.C.9 determineTargetCore routing (.target) ──
-    s5ct! "determineTargetCore: production wake-target routing"
+    ccwt! "determineTargetCore: production wake-target routing"
       determineTargetCore .target,
-    s5ct! "determineTargetCore_bound_eq_affinity: bound thread wakes onto its affinity core"
+    ccwt! "determineTargetCore_bound_eq_affinity: bound thread wakes onto its affinity core"
       determineTargetCore_bound_eq_affinity .target,
-    s5ct! "determineTargetCore_unbound_eq_bootCore: unbound thread wakes onto bootCoreId"
+    ccwt! "determineTargetCore_unbound_eq_bootCore: unbound thread wakes onto bootCoreId"
       determineTargetCore_unbound_eq_bootCore .target,
-    s5ct! "determineTargetCore_no_tcb_eq_bootCore: non-TCB defaults to bootCoreId (fail-safe)"
+    ccwt! "determineTargetCore_no_tcb_eq_bootCore: non-TCB defaults to bootCoreId (fail-safe)"
       determineTargetCore_no_tcb_eq_bootCore .target,
-    s5ct! "determineTargetCore_in_range: the wake target is always a valid core"
+    ccwt! "determineTargetCore_in_range: the wake target is always a valid core"
       determineTargetCore_in_range .target,
-    s5ct! "determineTargetCore_admits_thread: the wake target always admits the woken thread (no liveness-stranding)"
+    ccwt! "determineTargetCore_admits_thread: the wake target always admits the woken thread (no liveness-stranding)"
       determineTargetCore_admits_thread .target,
     -- ── SM5.C.1 enqueueRunnableOnCore (.enqueue) ──
-    s5ct! "enqueueRunnableOnCore: the per-core make-runnable primitive"
+    ccwt! "enqueueRunnableOnCore: the per-core make-runnable primitive"
       enqueueRunnableOnCore .enqueue,
-    s5ct! "enqueueRunnableOnCore_preserves_woken_thread_fields: only ipcState changes on the woken thread"
+    ccwt! "enqueueRunnableOnCore_preserves_woken_thread_fields: only ipcState changes on the woken thread"
       enqueueRunnableOnCore_preserves_woken_thread_fields .enqueue,
-    s5ct! "enqueueRunnableOnCore_preserves_objects_invExt: preserves object-store invariant"
+    ccwt! "enqueueRunnableOnCore_preserves_objects_invExt: preserves object-store invariant"
       enqueueRunnableOnCore_preserves_objects_invExt .enqueue,
-    s5ct! "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed: preserves run-queue well-formedness"
+    ccwt! "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed: preserves run-queue well-formedness"
       enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed .enqueue,
-    s5ct! "enqueueRunnableOnCore_mem_runQueueOnCore: the woken thread is enqueued"
+    ccwt! "enqueueRunnableOnCore_mem_runQueueOnCore: the woken thread is enqueued"
       enqueueRunnableOnCore_mem_runQueueOnCore .enqueue,
-    s5ct! "enqueueRunnableOnCore_makes_ready: the woken thread becomes ipcState=.ready"
+    ccwt! "enqueueRunnableOnCore_makes_ready: the woken thread becomes ipcState=.ready"
       enqueueRunnableOnCore_makes_ready .enqueue,
-    s5ct! "enqueueRunnableOnCore_runQueueOnCore_ne: sibling-core run queues framed out"
+    ccwt! "enqueueRunnableOnCore_runQueueOnCore_ne: sibling-core run queues framed out"
       enqueueRunnableOnCore_runQueueOnCore_ne .enqueue,
-    s5ct! "enqueueRunnableOnCore_currentOnCore: never writes any current slot"
+    ccwt! "enqueueRunnableOnCore_currentOnCore: never writes any current slot"
       enqueueRunnableOnCore_currentOnCore .enqueue,
-    s5ct! "enqueueRunnableOnCore_getTcb?_ne: every other thread's TCB framed out (AK7-clean)"
+    ccwt! "enqueueRunnableOnCore_getTcb?_ne: every other thread's TCB framed out (AK7-clean)"
       enqueueRunnableOnCore_getTcb?_ne .enqueue,
-    s5ct! "enqueueRunnableOnCore_getTcb?_isSome: preserves TCB-resolvability of any thread"
+    ccwt! "enqueueRunnableOnCore_getTcb?_isSome: preserves TCB-resolvability of any thread"
       enqueueRunnableOnCore_getTcb?_isSome .enqueue,
-    s5ct! "enqueueRunnableOnCore_no_tcb_noop: fail-closed on a non-TCB target"
+    ccwt! "enqueueRunnableOnCore_no_tcb_noop: fail-closed on a non-TCB target"
       enqueueRunnableOnCore_no_tcb_noop .enqueue,
-    s5ct! "enqueueRunnableOnCore_eq_self_of_runnable: single-placement reject — an already-runnable wake is the identity (Codex-P2)"
+    ccwt! "enqueueRunnableOnCore_eq_self_of_runnable: single-placement reject — an already-runnable wake is the identity (Codex-P2)"
       enqueueRunnableOnCore_eq_self_of_runnable .enqueue,
     -- ── SM5.C.2 / C.4 / C.10 / C.6 wakeThread semantics + losslessness (.wake) ──
-    s5ct! "wakeThread: the cross-core wake transition (state + optional SGI)"
+    ccwt! "wakeThread: the cross-core wake transition (state + optional SGI)"
       wakeThread .wake,
-    s5ct! "wakeThread_state_eq_enqueue: the wake's state effect is enqueueRunnableOnCore"
+    ccwt! "wakeThread_state_eq_enqueue: the wake's state effect is enqueueRunnableOnCore"
       wakeThread_state_eq_enqueue .wake,
-    s5ct! "wakeThread_emits_sgi_if_remote: a remote wake of a TCB emits a reschedule SGI (Thm 3.3.1)"
+    ccwt! "wakeThread_emits_sgi_if_remote: a remote wake of a TCB emits a reschedule SGI (Thm 3.3.1)"
       wakeThread_emits_sgi_if_remote .wake,
-    s5ct! "wakeThread_no_sgi_if_local: a local wake emits no SGI"
+    ccwt! "wakeThread_no_sgi_if_local: a local wake emits no SGI"
       wakeThread_no_sgi_if_local .wake,
-    s5ct! "wakeThread_no_sgi_if_no_tcb: a ghost (non-TCB) wake emits no SGI (audit-pass-1 guard)"
+    ccwt! "wakeThread_no_sgi_if_no_tcb: a ghost (non-TCB) wake emits no SGI (audit-pass-1 guard)"
       wakeThread_no_sgi_if_no_tcb .wake,
-    s5ct! "wakeThread_sgi_is_reschedule: every wake SGI is the reschedule kind"
+    ccwt! "wakeThread_sgi_is_reschedule: every wake SGI is the reschedule kind"
       wakeThread_sgi_is_reschedule .wake,
-    s5ct! "wakeThread_target_runQueue_contains: the woken thread is in the target run queue (SM5.C.10)"
+    ccwt! "wakeThread_target_runQueue_contains: the woken thread is in the target run queue (SM5.C.10)"
       wakeThread_target_runQueue_contains .wake,
-    s5ct! "wakeThread_target_admits_thread: the wake target admits the woken thread (no liveness-stranding)"
+    ccwt! "wakeThread_target_admits_thread: the wake target admits the woken thread (no liveness-stranding)"
       wakeThread_target_admits_thread .wake,
-    s5ct! "wakeThread_preserves_objects_invExt: the wake preserves the object-store invariant"
+    ccwt! "wakeThread_preserves_objects_invExt: the wake preserves the object-store invariant"
       wakeThread_preserves_objects_invExt .wake,
-    s5ct! "wakeThread_preserves_target_runQueue_wellFormed: preserves the target run-queue well-formedness"
+    ccwt! "wakeThread_preserves_target_runQueue_wellFormed: preserves the target run-queue well-formedness"
       wakeThread_preserves_target_runQueue_wellFormed .wake,
-    s5ct! "wakeThread_independent_of_other_core: cross-core independence frame"
+    ccwt! "wakeThread_independent_of_other_core: cross-core independence frame"
       wakeThread_independent_of_other_core .wake,
-    s5ct! "SchedStep: a single per-core scheduler step (enqueue or switch)"
+    ccwt! "SchedStep: a single per-core scheduler step (enqueue or switch)"
       SchedStep .wake,
-    s5ct! "SchedReachable: the RT-closure of scheduler steps"
+    ccwt! "SchedReachable: the RT-closure of scheduler steps"
       SchedReachable .wake,
-    s5ct! "SchedReachable.of_enqueue: an enqueue step is reachable (non-vacuity)"
+    ccwt! "SchedReachable.of_enqueue: an enqueue step is reachable (non-vacuity)"
       SchedReachable.of_enqueue .wake,
-    s5ct! "SchedReachable.trans: the reachability relation is transitive"
+    ccwt! "SchedReachable.trans: the reachability relation is transitive"
       SchedReachable.trans .wake,
-    s5ct! "wakeThread_lossless: the woken thread is recoverable (Thm 3.3.2, reflexive witness)"
+    ccwt! "wakeThread_lossless: the woken thread is recoverable (Thm 3.3.2, reflexive witness)"
       wakeThread_lossless .wake,
-    s5ct! "wakeThread_then_handle_dispatches_current: multi-step wake→handler dispatches to current"
+    ccwt! "wakeThread_then_handle_dispatches_current: multi-step wake→handler dispatches to current"
       wakeThread_then_handle_dispatches_current .wake,
-    s5ct! "wakeThread_roundtrip_reachable_current: full wake→SGI→current round-trip from the pre-state"
+    ccwt! "wakeThread_roundtrip_reachable_current: full wake→SGI→current round-trip from the pre-state"
       wakeThread_roundtrip_reachable_current .wake,
     -- ── SM5.C.5 handleRescheduleSgiOnCore (.handler) ──
-    s5ct! "handleRescheduleSgiOnCore: the target core's reschedule-SGI handler"
+    ccwt! "handleRescheduleSgiOnCore: the target core's reschedule-SGI handler"
       handleRescheduleSgiOnCore .handler,
-    s5ct! "handleRescheduleSgiOnCore_idle_when_none: idle when no eligible thread"
+    ccwt! "handleRescheduleSgiOnCore_idle_when_none: idle when no eligible thread"
       handleRescheduleSgiOnCore_idle_when_none .handler,
-    s5ct! "handleRescheduleSgiOnCore_eq_switch_of_choose_some: dispatch = switchToThreadOnCore"
+    ccwt! "handleRescheduleSgiOnCore_eq_switch_of_choose_some: dispatch = switchToThreadOnCore"
       handleRescheduleSgiOnCore_eq_switch_of_choose_some .handler,
-    s5ct! "handleRescheduleSgiOnCore_switches_current: a dispatch sets the chosen thread current"
+    ccwt! "handleRescheduleSgiOnCore_switches_current: a dispatch sets the chosen thread current"
       handleRescheduleSgiOnCore_switches_current .handler,
-    s5ct! "handleRescheduleSgiOnCore_preserves_objects_invExt: handler preserves object-store invariant"
+    ccwt! "handleRescheduleSgiOnCore_preserves_objects_invExt: handler preserves object-store invariant"
       handleRescheduleSgiOnCore_preserves_objects_invExt .handler,
-    s5ct! "handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed: handler preserves run-queue wf"
+    ccwt! "handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed: handler preserves run-queue wf"
       handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed .handler,
-    s5ct! "handleRescheduleSgiOnCore_independent_of_other_core: handler cross-core independence"
+    ccwt! "handleRescheduleSgiOnCore_independent_of_other_core: handler cross-core independence"
       handleRescheduleSgiOnCore_independent_of_other_core .handler,
-    s5ct! "handleRescheduleSgiOnCore_keeps_current_when_outranked: a lower-priority candidate does not preempt the running thread (Codex-P1)"
+    ccwt! "handleRescheduleSgiOnCore_keeps_current_when_outranked: a lower-priority candidate does not preempt the running thread (Codex-P1)"
       handleRescheduleSgiOnCore_keeps_current_when_outranked .handler,
     -- ── §10 audit-pass-1 invariant preservation (.preservation) ──
-    s5ct! "enqueueRunnableOnCore_preserves_currentThreadValidOnCore: preserves SM4.C current-validity"
+    ccwt! "enqueueRunnableOnCore_preserves_currentThreadValidOnCore: preserves SM4.C current-validity"
       enqueueRunnableOnCore_preserves_currentThreadValidOnCore .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne: sibling-core queue consistency"
+    ccwt! "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne: sibling-core queue consistency"
       enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self: target queue consistency (don't-wake-current)"
+    ccwt! "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self: target queue consistency (don't-wake-current)"
       enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_runnableThreadIpcReady: runnable-are-ready preserved"
+    ccwt! "enqueueRunnableOnCore_preserves_runnableThreadIpcReady: runnable-are-ready preserved"
       enqueueRunnableOnCore_preserves_runnableThreadIpcReady .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable: send-blocked-not-runnable preserved"
+    ccwt! "enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable: send-blocked-not-runnable preserved"
       enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable: recv-blocked-not-runnable preserved"
+    ccwt! "enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable: recv-blocked-not-runnable preserved"
       enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable: call-blocked-not-runnable preserved"
+    ccwt! "enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable: call-blocked-not-runnable preserved"
       enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable: reply-blocked-not-runnable preserved"
+    ccwt! "enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable: reply-blocked-not-runnable preserved"
       enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable: ntfn-blocked-not-runnable preserved"
+    ccwt! "enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable: ntfn-blocked-not-runnable preserved"
       enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable .preservation,
-    s5ct! "enqueueRunnableOnCore_preserves_ipcSchedulerContract: the full IPC↔scheduler coherence bundle"
+    ccwt! "enqueueRunnableOnCore_preserves_ipcSchedulerContract: the full IPC↔scheduler coherence bundle"
       enqueueRunnableOnCore_preserves_ipcSchedulerContract .preservation,
-    s5ct! "wakeThread_preserves_currentThreadValidOnCore: the wake preserves current-validity (every core)"
+    ccwt! "wakeThread_preserves_currentThreadValidOnCore: the wake preserves current-validity (every core)"
       wakeThread_preserves_currentThreadValidOnCore .preservation,
-    s5ct! "wakeThread_preserves_ipcSchedulerContract: the wake preserves IPC↔scheduler coherence (gap-b headline)"
+    ccwt! "wakeThread_preserves_ipcSchedulerContract: the wake preserves IPC↔scheduler coherence (gap-b headline)"
       wakeThread_preserves_ipcSchedulerContract .preservation,
-    s5ct! "wakeThread_preserves_queueCurrentConsistentOnCore: the wake preserves queue/current consistency"
+    ccwt! "wakeThread_preserves_queueCurrentConsistentOnCore: the wake preserves queue/current consistency"
       wakeThread_preserves_queueCurrentConsistentOnCore .preservation,
     -- ── SM5.C.11 latency + SM5.C.8 affinity + SM5.C.4 FFI emit + §11 memory model ──
-    s5ct! "wakeSgiCount: the number of SGIs a wake emits"
+    ccwt! "wakeSgiCount: the number of SGIs a wake emits"
       wakeSgiCount .latencyAffinityEmit,
-    s5ct! "wakeThread_emits_at_most_one_sgi: bounded emission (no SGI storm)"
+    ccwt! "wakeThread_emits_at_most_one_sgi: bounded emission (no SGI storm)"
       wakeThread_emits_at_most_one_sgi .latencyAffinityEmit,
-    s5ct! "rescheduleSgi_lowest_intid: reschedule is the lowest-INTID kernel SGI"
+    ccwt! "rescheduleSgi_lowest_intid: reschedule is the lowest-INTID kernel SGI"
       rescheduleSgi_lowest_intid .latencyAffinityEmit,
-    s5ct! "sgiDeliveryLatencyBound_eq_zero: no kernel SGI is serviced ahead of reschedule"
+    ccwt! "sgiDeliveryLatencyBound_eq_zero: no kernel SGI is serviced ahead of reschedule"
       sgiDeliveryLatencyBound_eq_zero .latencyAffinityEmit,
-    s5ct! "sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis: honest scoping of the =0 bound"
+    ccwt! "sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis: honest scoping of the =0 bound"
       sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis .latencyAffinityEmit,
-    s5ct! "setThreadCpuAffinity: the affinity-control op"
+    ccwt! "setThreadCpuAffinity: the affinity-control op"
       setThreadCpuAffinity .latencyAffinityEmit,
-    s5ct! "setThreadCpuAffinity_sets_affinity: sets the target's affinity"
+    ccwt! "setThreadCpuAffinity_sets_affinity: sets the target's affinity"
       setThreadCpuAffinity_sets_affinity .latencyAffinityEmit,
-    s5ct! "setThreadCpuAffinity_error_of_no_tcb: fail-closed on a non-TCB target"
+    ccwt! "setThreadCpuAffinity_error_of_no_tcb: fail-closed on a non-TCB target"
       setThreadCpuAffinity_error_of_no_tcb .latencyAffinityEmit,
-    s5ct! "setThreadCpuAffinity_preserves_objects_invExt: preserves the object-store invariant"
+    ccwt! "setThreadCpuAffinity_preserves_objects_invExt: preserves the object-store invariant"
       setThreadCpuAffinity_preserves_objects_invExt .latencyAffinityEmit,
-    s5ct! "setThreadCpuAffinity_preserves_scheduler: leaves the scheduler state untouched"
+    ccwt! "setThreadCpuAffinity_preserves_scheduler: leaves the scheduler state untouched"
       setThreadCpuAffinity_preserves_scheduler .latencyAffinityEmit,
-    s5ct! "setThreadCpuAffinity_affects_determineTargetCore: binding feeds the wake target"
+    ccwt! "setThreadCpuAffinity_affects_determineTargetCore: binding feeds the wake target"
       setThreadCpuAffinity_affects_determineTargetCore .latencyAffinityEmit,
-    s5ct! "Concurrency.emitWakeSgi: the FFI SGI-emission wrapper for the wake's optional SGI"
+    ccwt! "Concurrency.emitWakeSgi: the FFI SGI-emission wrapper for the wake's optional SGI"
       SeLe4n.Kernel.Concurrency.emitWakeSgi .latencyAffinityEmit,
-    s5ct! "Concurrency.sendRescheduleSgi: emit a cross-core reschedule SGI"
+    ccwt! "Concurrency.sendRescheduleSgi: emit a cross-core reschedule SGI"
       SeLe4n.Kernel.Concurrency.sendRescheduleSgi .latencyAffinityEmit,
-    s5ct! "Concurrency.coreIdTargetMask: CoreId → GIC single-bit target mask"
+    ccwt! "Concurrency.coreIdTargetMask: CoreId → GIC single-bit target mask"
       SeLe4n.Kernel.Concurrency.coreIdTargetMask .latencyAffinityEmit,
-    s5ct! "Concurrency.wakeOrdering_happensBefore: the wake's BKL release→acquire happens-before (§11)"
+    ccwt! "Concurrency.wakeOrdering_happensBefore: the wake's BKL release→acquire happens-before (§11)"
       SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore .latencyAffinityEmit,
-    s5ct! "Concurrency.wakeOrdering_synchronizesWith: the wake's release-store synchronizes-with the acquire-load"
+    ccwt! "Concurrency.wakeOrdering_synchronizesWith: the wake's release-store synchronizes-with the acquire-load"
       SeLe4n.Kernel.Concurrency.wakeOrdering_synchronizesWith .latencyAffinityEmit,
-    s5ct! "Concurrency.wakeOrderingTrace_wellFormed: the wake's ordering trace is well-formed"
+    ccwt! "Concurrency.wakeOrderingTrace_wellFormed: the wake's ordering trace is well-formed"
       SeLe4n.Kernel.Concurrency.wakeOrderingTrace_wellFormed .latencyAffinityEmit]
 
 /-- WS-SM SM5.C: the inventory has 81 substantive entries.  A regression that
 adds a new SM5.C theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem sm5CTheorems_count : sm5CTheorems.length = 83 := by decide
+theorem crossCoreWakeTheorems_count : crossCoreWakeTheorems.length = 83 := by decide
 
 /-- WS-SM SM5.C: 9 entries in the `lockSet` category (SM5.C.3). -/
-theorem sm5CTheorems_lockSet_count :
-    (sm5CTheorems.filter (fun t => t.category == .lockSet)).length = 9 := by decide
+theorem crossCoreWakeTheorems_lockSet_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .lockSet)).length = 9 := by decide
 
 /-- WS-SM SM5.C: 6 entries in the `target` category (SM5.C.9). -/
-theorem sm5CTheorems_target_count :
-    (sm5CTheorems.filter (fun t => t.category == .target)).length = 6 := by decide
+theorem crossCoreWakeTheorems_target_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .target)).length = 6 := by decide
 
 /-- WS-SM SM5.C: 12 entries in the `enqueue` category (SM5.C.1). -/
-theorem sm5CTheorems_enqueue_count :
-    (sm5CTheorems.filter (fun t => t.category == .enqueue)).length = 12 := by decide
+theorem crossCoreWakeTheorems_enqueue_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .enqueue)).length = 12 := by decide
 
 /-- WS-SM SM5.C: 18 entries in the `wake` category (SM5.C.2 / C.4 / C.10 / C.6). -/
-theorem sm5CTheorems_wake_count :
-    (sm5CTheorems.filter (fun t => t.category == .wake)).length = 18 := by decide
+theorem crossCoreWakeTheorems_wake_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .wake)).length = 18 := by decide
 
 /-- WS-SM SM5.C: 8 entries in the `handler` category (SM5.C.5). -/
-theorem sm5CTheorems_handler_count :
-    (sm5CTheorems.filter (fun t => t.category == .handler)).length = 8 := by decide
+theorem crossCoreWakeTheorems_handler_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .handler)).length = 8 := by decide
 
 /-- WS-SM SM5.C: 13 entries in the `preservation` category (§10 audit-pass-1). -/
-theorem sm5CTheorems_preservation_count :
-    (sm5CTheorems.filter (fun t => t.category == .preservation)).length = 13 := by decide
+theorem crossCoreWakeTheorems_preservation_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .preservation)).length = 13 := by decide
 
 /-- WS-SM SM5.C: 17 entries in the `latencyAffinityEmit` category
 (SM5.C.11 latency + SM5.C.8 affinity + SM5.C.4 FFI emit + §11 memory model). -/
-theorem sm5CTheorems_latencyAffinityEmit_count :
-    (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length = 17 := by decide
+theorem crossCoreWakeTheorems_latencyAffinityEmit_count :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length = 17 := by decide
 
 /-- WS-SM SM5.C: per-category counts sum to the total. -/
-theorem sm5CTheorems_partition_sum :
-    (sm5CTheorems.filter (fun t => t.category == .lockSet)).length +
-    (sm5CTheorems.filter (fun t => t.category == .target)).length +
-    (sm5CTheorems.filter (fun t => t.category == .enqueue)).length +
-    (sm5CTheorems.filter (fun t => t.category == .wake)).length +
-    (sm5CTheorems.filter (fun t => t.category == .handler)).length +
-    (sm5CTheorems.filter (fun t => t.category == .preservation)).length +
-    (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length =
-    sm5CTheorems.length := by decide
+theorem crossCoreWakeTheorems_partition_sum :
+    (crossCoreWakeTheorems.filter (fun t => t.category == .lockSet)).length +
+    (crossCoreWakeTheorems.filter (fun t => t.category == .target)).length +
+    (crossCoreWakeTheorems.filter (fun t => t.category == .enqueue)).length +
+    (crossCoreWakeTheorems.filter (fun t => t.category == .wake)).length +
+    (crossCoreWakeTheorems.filter (fun t => t.category == .handler)).length +
+    (crossCoreWakeTheorems.filter (fun t => t.category == .preservation)).length +
+    (crossCoreWakeTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length =
+    crossCoreWakeTheorems.length := by decide
 
 set_option maxRecDepth 10000 in
 /-- WS-SM SM5.C: every inventory identifier is unique.
@@ -328,19 +328,19 @@ set_option maxRecDepth 10000 in
 
     Audit-pass-2 (maxRecDepth): the 81-entry list's `Nodup` decision procedure
     recurses past the default `maxRecDepth` of 512 when reducing in the kernel
-    (the longer `description` strings in `sm5CTheorems_descriptions_nodup`
+    (the longer `description` strings in `crossCoreWakeTheorems_descriptions_nodup`
     overflow it first).  Both Nodup witnesses therefore run under an elevated
     `set_option maxRecDepth 10000`, which only raises the recursion *limit* (it
     adds no work and no axioms — the proof remains a kernel-checked
     `of_decide_eq_true`, not a `native_decide`). -/
-theorem sm5CTheorems_identifiers_nodup :
-    (sm5CTheorems.map (·.identifier)).Nodup := by decide
+theorem crossCoreWakeTheorems_identifiers_nodup :
+    (crossCoreWakeTheorems.map (·.identifier)).Nodup := by decide
 
 set_option maxRecDepth 10000 in
 /-- WS-SM SM5.C: every inventory description is unique.  Kernel-sound `decide`
-    under an elevated `maxRecDepth` (see `sm5CTheorems_identifiers_nodup` for why
+    under an elevated `maxRecDepth` (see `crossCoreWakeTheorems_identifiers_nodup` for why
     not `native_decide`, and why the depth is raised). -/
-theorem sm5CTheorems_descriptions_nodup :
-    (sm5CTheorems.map (·.description)).Nodup := by decide
+theorem crossCoreWakeTheorems_descriptions_nodup :
+    (crossCoreWakeTheorems.map (·.description)).Nodup := by decide
 
 end SeLe4n.Kernel

@@ -71,4 +71,14 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_deadlock_stress.sh"
 # GIC delivering the SGI.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
 
+# SM5.D — per-core timer-tick boot test (plan §6).  SKIPs at SM5.D if the
+# per-core timer driver isn't wired in the kernel image (needs SM5.I
+# per-core scheduler state + the per-core ISR driving timerTickOnCore under
+# withLockSet).  The tick correctness — each core advances its OWN local
+# accounting without advancing the single global timer, rotates its domain,
+# preempts on budget exhaustion, and fires cross-core CBS-replenish wakes —
+# is established FORMALLY for all executions in tests/SmpTimerSuite.lean;
+# this is a complementary runtime spot-check on real cores with a real GIC.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
+
 finalize_report
