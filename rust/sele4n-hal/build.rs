@@ -854,6 +854,20 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
              read at the top of the function body."
         );
     }
+
+    // Check 5: WS-SM SM5.D.1 — the timer branch drives the verified Lean
+    // per-core scheduler timer tick via the per-core CNTV ISR seam.  A refactor
+    // that drops this call (reverting the timer branch to a bare comparator
+    // re-arm) would silently disconnect the per-core scheduler from its timer.
+    if !body.contains("crate::timer::per_core_timer_tick_isr") {
+        panic!(
+            "WS-SM SM5.D.1 regression: `{path}::handle_irq_per_core`'s timer \
+             branch no longer calls `crate::timer::per_core_timer_tick_isr(core_id)`. \
+             This is the seam that drives the verified Lean per-core scheduler \
+             timer tick (`Kernel.timerTickOnCore`).  Restore the call in the \
+             `intid == TIMER_PPI_ID` branch."
+        );
+    }
 }
 
 /// WS-SM SM2.D.5: Verify `lock_bridge.rs` defines every required

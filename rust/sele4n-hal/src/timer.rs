@@ -327,6 +327,64 @@ pub fn get_tick_count() -> u64 {
 }
 
 // ============================================================================
+// WS-SM SM5.D.1 — Per-core CNTV timer ISR
+// ============================================================================
+
+/// WS-SM SM5.D.1: the per-core ARM Generic Timer (CNTV) interrupt service
+/// routine — the seam that drives the verified Lean per-core scheduler timer
+/// tick (`Kernel.timerTickOnCore`, plan §3.4).
+///
+/// Each core's CNTV fires **independently** (the comparator / control registers
+/// are per-core, banked at the hardware level — see [`init_timer_secondary`]).
+/// On each tick of core `core_id` this routine:
+///
+/// 1. **Records** the per-core tick counter (an SMP-local diagnostic, separate
+///    from the primary-owned global `TICK_COUNT`).
+/// 2. **Re-arms** the per-core comparator for the next tick
+///    ([`reprogram_timer`], counter-relative to avoid missed-tick accumulation).
+/// 3. **Drives** the Lean per-core scheduler tick via the C-callable export
+///    `lean_per_core_timer_tick(core_id)` (the Lean kernel reads core `core_id`'s
+///    scheduler slots, advances its domain accounting, processes CBS, and emits
+///    any cross-core `.reschedule` SGIs the replenishment wakes produce — the
+///    pure `timerTickOnCore` transition + its `withLockSet` bracket).  Gated on
+///    `feature = "hw_target"`: on the host the call is omitted (no kernel image
+///    is linked), so the ISR is unit-testable as the record-and-rearm seam.
+///
+/// **Global-timer ownership.** This routine does **not** touch the primary-owned
+/// global `TICK_COUNT` (that is advanced once per global tick by the boot core
+/// via `ffi_timer_reprogram`), mirroring the Lean model where `timerTickOnCore`
+/// reads but never advances `machine.timer` — each core's CNTV is local, the
+/// global monotonic count is owned by a single authority.  See the SM5.D section
+/// header of `SeLe4n/Kernel/Scheduler/Operations/Core.lean`.
+///
+/// **Re-entrancy.** The IRQ is acknowledged + EOI'd before this runs, and the
+/// CPU-interface running-priority mask holds INTID 30 off until `PSTATE.I` clears
+/// on exception return, so the comparator re-arm cannot itself re-trigger.
+pub fn per_core_timer_tick_isr(core_id: u64) {
+    // 1. Per-core tick accounting (SMP-localised diagnostic).
+    let _ = crate::per_cpu_stats::record_timer_tick();
+    // 2. Re-arm the per-core comparator for the next tick.
+    reprogram_timer();
+    // 3. Drive the Lean per-core scheduler timer tick (hardware only).
+    #[cfg(feature = "hw_target")]
+    {
+        // SAFETY: `lean_per_core_timer_tick` is the C-callable wrapper the Lean
+        // compiler emits for `Kernel.perCoreTimerTickEntry`
+        // (`@[export lean_per_core_timer_tick]`).  It takes a `u64` core id and
+        // returns no value; calling it is sound from EL1 kernel context after
+        // the per-core hardware init has completed.
+        extern "C" {
+            fn lean_per_core_timer_tick(core_id: u64);
+        }
+        unsafe {
+            lean_per_core_timer_tick(core_id);
+        }
+    }
+    #[cfg(not(feature = "hw_target"))]
+    let _ = core_id;
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -652,5 +710,65 @@ mod tests {
             "Display output was: {}",
             buf.as_str()
         );
+    }
+
+    // ------------------------------------------------------------------------
+    // WS-SM SM5.D.1 — per-core CNTV timer ISR
+    // ------------------------------------------------------------------------
+
+    /// SM5.D.1: the per-core timer ISR is callable on the host (the
+    /// `hw_target`-gated Lean call is omitted) and does not panic.
+    #[test]
+    fn sm5d1_per_core_timer_tick_isr_callable_on_host() {
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        // Should not panic for the boot core or any secondary core id.
+        per_core_timer_tick_isr(0);
+        per_core_timer_tick_isr(1);
+        per_core_timer_tick_isr(3);
+    }
+
+    /// SM5.D.1: the ISR advances the calling core's per-core timer-tick counter
+    /// (the SMP-localised diagnostic), via `record_timer_tick`.  On the host the
+    /// calling core is the boot core (TPIDR_EL1 stub returns 0).
+    #[test]
+    fn sm5d1_per_core_timer_tick_isr_records_tick() {
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let before = crate::per_cpu_stats::timer_tick_count_for(0);
+        per_core_timer_tick_isr(0);
+        let after = crate::per_cpu_stats::timer_tick_count_for(0);
+        assert_eq!(
+            after,
+            before.wrapping_add(1),
+            "the per-core timer ISR must advance the calling core's tick counter by exactly one"
+        );
+    }
+
+    /// SM5.D.1: the ISR does not advance the primary-owned global `TICK_COUNT`
+    /// (that is the boot core's / FFI's responsibility — the per-core tick reads
+    /// but never advances the global monotonic counter, mirroring the Lean model
+    /// where `timerTickOnCore` never advances `machine.timer`).
+    #[test]
+    fn sm5d1_per_core_timer_tick_isr_does_not_advance_global_tick_count() {
+        let _guard = TIMER_GLOBAL_STATE_MUTEX
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let before = get_tick_count();
+        per_core_timer_tick_isr(0);
+        let after = get_tick_count();
+        assert_eq!(
+            after, before,
+            "the per-core timer ISR must NOT advance the primary-owned global TICK_COUNT"
+        );
+    }
+
+    /// SM5.D.1: signature pin — `per_core_timer_tick_isr` is `fn(u64)`.
+    #[test]
+    fn sm5d1_per_core_timer_tick_isr_signature() {
+        let f: fn(u64) = per_core_timer_tick_isr;
+        let _ = f;
     }
 }

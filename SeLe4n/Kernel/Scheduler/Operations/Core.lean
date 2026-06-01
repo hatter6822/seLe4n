@@ -71,7 +71,7 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 
 -- WS-H12c: Frame lemmas — context save/restore do not affect scheduler state.
 
@@ -575,8 +575,14 @@ def processReplenishmentsDue (st : SystemState) (now : Nat) : SystemState :=
 -- ============================================================================
 
 /-- Z6-E: Helper to determine if a TCB's IPC state is a blocking state
-that should be timed out, and returns the endpoint ID and queue type. -/
-private def tcbBlockingInfo (tcb : TCB) : Option (SeLe4n.ObjId × Bool) :=
+that should be timed out, and returns the endpoint ID and queue type.
+
+WS-SM SM5.D.5: de-privatized (was `private`) so the per-core timer-tick
+preservation proofs (`timeoutBlockedThreads_preserves_objects_invExt`, which fold
+over `tcbBlockingInfo`'s `Option` result) can `cases` on it as an opaque
+`Option (ObjId × Bool)` rather than splitting it into `ipcState` constructor
+cases. -/
+def tcbBlockingInfo (tcb : TCB) : Option (SeLe4n.ObjId × Bool) :=
   match tcb.ipcState with
   | .blockedOnSend epId => some (epId, false)      -- sendQ
   | .blockedOnReceive epId => some (epId, true)     -- receiveQ
@@ -980,6 +986,370 @@ def scheduleDomain : Kernel Unit :=
       let sched' := st.scheduler.setDomainTimeRemainingOnCore bootCoreId
         ((st.scheduler.domainTimeRemainingOnCore bootCoreId) - 1)
       .ok ((), { st with scheduler := sched' })
+
+-- ============================================================================
+-- WS-SM SM5.D — Per-core timer tick (production transitions)
+-- ============================================================================
+--
+-- The per-core timer tick (plan §3.4): each core's ARM Generic Timer (CNTV)
+-- fires locally; the handler advances *that core's* domain accounting, processes
+-- CBS replenishment for its replenish queue (cross-core-waking refilled threads
+-- onto their target core via SM5.C's `wakeThread`), and emits a local preemption
+-- if the running thread's budget / time-slice is exhausted.  Each transition is
+-- the per-core analogue of the single-core production timer machinery
+-- (`processReplenishmentsDue`, `timerTickBudget`, `scheduleEffective`,
+-- `switchDomain`/`scheduleDomain`), indexed by an explicit `(c : CoreId)` and
+-- reading / writing only core `c`'s scheduler slots (plus the shared object
+-- store and — for the cross-core replenish wake — the target core's run queue).
+--
+-- **Global-timer ownership (SMP per-core decision).**  Unlike the single-core
+-- `timerTickWithBudget`, the per-core tick does **not** advance the shared
+-- `machine.timer` (the abstract global tick counter).  On real hardware each
+-- core's CNTV is independent, but the *global* monotonic tick count is
+-- maintained by a single authority — exactly mirroring the Rust HAL, where
+-- `TICK_COUNT` is "primary-owned" and `init_timer_secondary` deliberately does
+-- **not** reset or advance it (SM1.C.4).  A per-core tick that advanced
+-- `machine.timer` would over-count it `numCores`× per real tick.  Each per-core
+-- tick therefore *reads* `now := machine.timer` (the current global time, the
+-- same value every core sees in a round) for CBS replenishment scheduling but
+-- never mutates it; the boot core's global tick (or the FFI `ffi_timer_reprogram`)
+-- owns the advance.
+
+/-- WS-SM SM5.D.6 (plan §3.4 / §3.7): per-core domain-time decrement + rotation.
+
+Advances core `c`'s domain accounting by one tick: if `domainTimeRemainingOnCore
+c` has reached its last tick (`≤ 1`), rotate to the next entry of the
+(system-wide) `domainSchedule` — writing core `c`'s `activeDomainOnCore`,
+`domainTimeRemainingOnCore` (reset to the new entry's length), and
+`domainScheduleIndexOnCore` slots; otherwise decrement core `c`'s
+`domainTimeRemainingOnCore`.
+
+This is the *pure domain-accounting* advance (plan §3.7 `advanceDomainOnCore`):
+it writes **only** core `c`'s three domain slots and touches neither `current`
+nor any run queue.  Domain enforcement in seLe4n is at *selection* time
+(`chooseThreadOnCore` filters by `activeDomainOnCore c`), so a currently-running
+thread keeps running past a rotated domain boundary until the next scheduling
+decision — exactly as the single-core model, where `scheduleDomain` (the full
+domain-boundary re-dispatch) is a *separate* transition from `timerTickWithBudget`.
+The per-core re-dispatch counterpart is `scheduleDomainOnCore` (below); both
+together discharge SM5.D.6.
+
+Single-domain mode (`domainSchedule = []`) and the unreachable out-of-bounds
+index (`nextIdx < domainSchedule.length` for a non-empty schedule, by
+`switchDomain_index_in_bounds`) are no-ops — the canonical RPi5 config runs
+single-domain, so the tick's domain step is a no-op there. -/
+def decrementDomainTimeOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  if (st.scheduler.domainTimeRemainingOnCore c) ≤ 1 then
+    match st.scheduler.domainSchedule with
+    | [] => st  -- single-domain mode: no rotation
+    | _ =>
+        let nextIdx := ((st.scheduler.domainScheduleIndexOnCore c) + 1) % st.scheduler.domainSchedule.length
+        match st.scheduler.domainSchedule[nextIdx]? with
+        | none => st  -- unreachable: nextIdx < length for a non-empty schedule
+        | some entry =>
+            { st with scheduler :=
+                (((st.scheduler.setActiveDomainOnCore c (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
+                    c (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore c nextIdx) }
+  else
+    let dtr := (st.scheduler.domainTimeRemainingOnCore c) - 1
+    { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }
+
+/-- WS-SM SM5.D (per-core context save): save core `c`'s current thread's machine
+registers into its TCB `registerContext`.  The per-core analogue of
+`saveOutgoingContext` (Selection.lean), reading `currentOnCore c` instead of the
+boot core's slot and routing the TCB lookup through the typed `getTcb?` accessor
+(AK7-clean).  No-op when core `c` is idle or the current TCB fails to resolve
+(unreachable under `currentThreadValidOnCore`). -/
+def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  match st.scheduler.currentOnCore c with
+  | none => st
+  | some outTid =>
+      match st.getTcb? outTid with
+      | some outTcb =>
+          let savedTcb : KernelObject := .tcb { outTcb with registerContext := st.machine.regs }
+          { st with objects := st.objects.insert outTid.toObjId savedTcb }
+      | none => st
+
+/-- WS-SM SM5.D.5 (per-core budget-aware reschedule): the per-core analogue of
+`scheduleEffective` (Core.lean).  Re-selects core `c`'s highest-priority
+*budget-eligible* runnable thread (`chooseThreadEffectiveOnCore`, SM5.A §6) and
+dispatches it with the inline save→dequeue→restore→set-current sequence, reading
+/ writing **only** core `c`'s scheduler slots (`currentOnCore c`,
+`runQueueOnCore c`, `activeDomainOnCore c`) plus the shared object store and
+`machine.regs` (the executing core's register file).
+
+This is the *drop-current* dispatch (it does **not** re-enqueue the previous
+current — the caller `timerTickOnCore` has already re-enqueued it via
+`timerTickBudgetOnCore`, exactly as the single-core `timerTickWithBudget` →
+`scheduleEffective` pairing).  The selected thread is dequeued-on-dispatch
+(SM5.B.5); if it is core `c`'s previously-current thread re-selected, it simply
+continues running with a fresh time-slice / budget.
+
+Failure modes mirror `scheduleEffective`: a selected `tid` not in core `c`'s run
+queue or not in its active domain surfaces `.schedulerInvariantViolation` (a
+corrupted selection, never silently dispatched). -/
+def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError SystemState :=
+  match chooseThreadEffectiveOnCore st c with
+  | .error e => .error e
+  | .ok none =>
+      -- idle: save outgoing context and clear core `c`'s current thread.
+      let stSaved := saveOutgoingContextOnCore st c
+      .ok { stSaved with scheduler := stSaved.scheduler.setCurrentOnCore c none }
+  | .ok (some tid) =>
+      match st.getTcb? tid with
+      | some tcb =>
+          if tid ∈ (st.scheduler.runQueueOnCore c) ∧
+              tcb.domain = (st.scheduler.activeDomainOnCore c) then
+            let stSaved := saveOutgoingContextOnCore st c
+            let stDequeued := { stSaved with scheduler :=
+              stSaved.scheduler.setRunQueueOnCore c ((stSaved.scheduler.runQueueOnCore c).remove tid) }
+            let stRestored := restoreIncomingContext stDequeued tid
+            .ok { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some tid) }
+          else
+            .error .schedulerInvariantViolation
+      | _ => .error .schedulerInvariantViolation
+
+/-- WS-SM SM5.D.4 (replenishment wake decision): which bound thread, if any, a
+CBS replenishment of `scId` should make runnable.
+
+Returns `some tid` exactly when the SchedContext was **exhausted before the
+refill** (`stPre`'s `budgetRemaining = 0`) **and is positive after** (`refilled`'s
+`budgetRemaining > 0`) **and is bound** to `tid` — i.e. the thread genuinely
+transitioned from budget-starved to runnable.  A no-op refill (already-positive
+budget) or an unbound SC yields `none` (no wake).  Factored out of
+`processOneReplenishmentOnCore` so the latter's state result is cleanly either the
+refilled state or a `wakeThread` on top of it.  AK7-clean (typed
+`getSchedContext?`). -/
+def replenishWakeTarget (stPre refilled : SystemState)
+    (scId : SeLe4n.SchedContextId) : Option SeLe4n.ThreadId :=
+  let wasExhausted := match stPre.getSchedContext? scId with
+    | some sc => sc.budgetRemaining.isZero
+    | none    => false
+  match refilled.getSchedContext? scId with
+  | some sc => if wasExhausted && sc.budgetRemaining.isPositive then sc.boundThread else none
+  | none    => none
+
+/-- WS-SM SM5.D.4 (cross-core CBS replenish wakes remote): process **one** due
+SchedContext replenishment on the executing core `execCore`.
+
+Refills `scId`'s budget (`refillSchedContext`), and — if its budget went from
+exhausted (`0`) to positive — makes its bound thread runnable on its **target**
+core via SM5.C's `wakeThread` (returning the optional cross-core `.reschedule`
+SGI).  The target core is `determineTargetCore` (the thread's `cpuAffinity`, or
+the boot core when unbound); under the `schedContextRunQueueConsistent_perCore`
+invariant the target is `execCore` (a local enqueue, no SGI), but a thread whose
+affinity changed (SM5.H.4 migration deferred) targets a *remote* core and the
+wake fires a `.reschedule` SGI to it — the defensive cross-core path SM5.D.4
+realises.
+
+Guards (faithful to the single-core `processReplenishmentsDue`): the wake fires
+only when the SC was genuinely exhausted-and-now-positive (a no-op refill does
+not wake), and never re-enqueues a thread that is *currently running* on its
+target core (`currentOnCore target == some tid` ⇒ skip — re-enqueuing the running
+thread would violate dequeue-on-dispatch).  `wakeThread`'s own single-placement
+guard (`runnableOnSomeCore`) additionally suppresses a second placement of an
+already-runnable thread.  Routes every object lookup through the typed
+`getSchedContext?` accessor (AK7-clean). -/
+def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
+    (scId : SeLe4n.SchedContextId) (now : Nat) :
+    SystemState × Option (CoreId × SgiKind) :=
+  let refilled := refillSchedContext st scId now
+  match replenishWakeTarget st refilled scId with
+  | some tid =>
+      if (refilled.scheduler.currentOnCore (determineTargetCore refilled tid)) == some tid then
+        -- the refilled thread is already running on its target core: skip.
+        (refilled, none)
+      else
+        -- wake it on its target core (local enqueue, or remote + SGI).
+        wakeThread refilled tid execCore
+  | none => (refilled, none)
+
+/-- WS-SM SM5.D.4: process **all** of core `c`'s due CBS replenishments at time
+`now`, accumulating the cross-core `.reschedule` SGIs the remote-targeted wakes
+emit.
+
+Pops the due entries from core `c`'s replenish queue
+(`replenishQueueOnCore c |>.popDue now`) — writing back the remaining queue —
+then folds `processOneReplenishmentOnCore` over them, threading the state and
+collecting each step's optional SGI.  The per-core analogue of
+`processReplenishmentsDue`, reading / writing core `c`'s replenish-queue slot
+(plus, via the wakes, the target cores' run queues and the object store).  Pure;
+deterministic; the returned SGI list is the set of cross-core pokes
+`timerTickOnCore` must emit after the state write is visible. -/
+def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
+    SystemState × List (CoreId × SgiKind) :=
+  let (remainingQueue, dueIds) := (st.scheduler.replenishQueueOnCore c).popDue now
+  let st' := { st with scheduler := st.scheduler.setReplenishQueueOnCore c remainingQueue }
+  dueIds.foldl (fun (acc : SystemState × List (CoreId × SgiKind)) scId =>
+    let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+    (s, acc.2 ++ sgi?.toList)) (st', [])
+
+/-- WS-SM SM5.D.5 (per-core budget/time-slice tick): the per-core analogue of
+`timerTickBudget`.  Charges the current thread `tid` (with TCB `tcb`) one tick of
+budget on core `c`, returning `(updatedState, wasPreempted)`.
+
+Dispatches on `tcb.schedContextBinding` exactly as `timerTickBudget`:
+- **Unbound, time-slice > 1**: decrement `timeSlice`; no preemption.
+- **Unbound, time-slice ≤ 1**: reset `timeSlice` to `configDefaultTimeSlice`,
+  re-enqueue `tid` into core `c`'s run queue at `effectiveRunQueuePriority`,
+  signal preemption.
+- **Bound, budget > 1**: decrement the SchedContext budget; no preemption.
+- **Bound, budget ≤ 1**: budget exhausted — schedule a replenishment, insert it
+  into core `c`'s replenish queue, re-enqueue `tid` into core `c`'s run queue,
+  time out any IPC-blocked threads the SC bounded (recording errors in core `c`'s
+  `lastTimeoutErrorsOnCore` diagnostic), signal preemption.
+- **Bound, SC missing**: `.error .missingSchedContext` (R5.E fail-closed; the
+  branch is unreachable under `schedContextStoreConsistent`).
+
+Reads / writes **only** core `c`'s scheduler slots (`runQueueOnCore c`,
+`replenishQueueOnCore c`, `lastTimeoutErrorsOnCore c`) and the object store.
+
+**No `machine.timer` advance** (unlike `timerTickBudget`): the per-core tick is
+read-only w.r.t. the shared global tick counter (see the SM5.D section header —
+global-timer ownership). -/
+def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : Except KernelError (SystemState × Bool) :=
+  match tcb.schedContextBinding with
+  | .unbound =>
+    if tcb.timeSlice ≤ 1 then
+      let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
+      let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+      let rq := (st'.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)
+      let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
+      .ok (st'', true)
+    else
+      let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
+      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }, false)
+  | .bound scId | .donated scId _ =>
+    match st.getSchedContext? scId with
+    | some sc =>
+      if sc.budgetRemaining.val ≤ 1 then
+        let now := st.machine.timer
+        let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
+        let sc' := consumeBudget sc 1
+        let sc'' := scheduleReplenishment sc' now consumedAmount
+        let sc''' := cbsUpdateDeadline sc'' now true
+        let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc''') }
+        let rq := (st'.scheduler.replenishQueueOnCore c).insert scId (now + sc.period.val)
+        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore c rq).setRunQueueOnCore
+          c ((st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc))) }
+        let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
+        let st'''' := { st''' with scheduler :=
+          st'''.scheduler.setLastTimeoutErrorsOnCore c timeoutErrors }
+        .ok (st'''', true)
+      else
+        let sc' := consumeBudget sc 1
+        let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
+        .ok (st', false)
+    | _ =>
+      -- R5.E fail-closed: SchedContext lookup failed for a bound-budget thread.
+      -- Unreachable under `schedContextStoreConsistent`; surfaced explicitly
+      -- rather than advancing on stale budget state.
+      .error .missingSchedContext
+
+/-- WS-SM SM5.D.2 (plan §3.4): the per-core timer tick — the full per-core
+analogue of `timerTickWithBudget`.
+
+Processing order (on core `c`, at the current global time `now := machine.timer`,
+which the tick reads but does not advance — see the SM5.D section header):
+1. **SM5.D.9**: clear core `c`'s `lastTimeoutErrorsOnCore` diagnostic, so a stale
+   timeout-error record never survives across rounds.
+2. **SM5.D.4**: process core `c`'s due CBS replenishments
+   (`processReplenishmentsDueOnCore`), collecting the cross-core `.reschedule`
+   SGIs the remote-targeted wakes emit.
+3. **SM5.D.6**: advance core `c`'s domain accounting
+   (`decrementDomainTimeOnCore`).
+4. **SM5.D.5**: charge the running thread one tick (`timerTickBudgetOnCore`); if
+   that exhausts its budget / time-slice (preemption), re-select and dispatch the
+   highest-priority budget-eligible runnable thread on core `c`
+   (`scheduleEffectiveOnCore`).  An idle core (`currentOnCore c = none`) skips the
+   budget charge.
+
+Returns the post-tick state paired with the list of cross-core SGIs to emit
+(from the replenish wakes).  The pure single-state-plus-SGIs form mirrors
+`wakeThread` / `chooseThreadOnCore`: the runtime ISR (SM5.D.1) reads core `c`
+from `TPIDR_EL1`, commits the state under the `timerTickOnCoreLockSet`
+`withLockSet` bracket, then emits the returned SGIs after the write is visible.
+Fail-closed `Except`: a non-TCB current thread surfaces
+`.schedulerInvariantViolation`; a bound-budget thread with a missing SchedContext
+surfaces `.missingSchedContext` (R5.E). -/
+def timerTickOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError (SystemState × List (CoreId × SgiKind)) :=
+  -- SM5.D.9: clear core c's timeout-error diagnostic at tick entry.
+  let st0 := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }
+  let now := st0.machine.timer
+  -- SM5.D.4: process core c's due CBS replenishments (+ cross-core wakes).
+  let (st1, replenishSgis) := processReplenishmentsDueOnCore st0 c now
+  -- SM5.D.6: per-core domain-time decrement + rotation (pure accounting).
+  let st2 := decrementDomainTimeOnCore st1 c
+  -- SM5.D.5: per-core budget/time-slice tick + local preemption.
+  match st2.scheduler.currentOnCore c with
+  | none => .ok (st2, replenishSgis)   -- idle core: nothing to charge
+  | some tid =>
+      match st2.getTcb? tid with
+      | some tcb =>
+          match timerTickBudgetOnCore st2 c tid tcb with
+          | .error e => .error e
+          | .ok (st3, preempted) =>
+              if preempted then
+                match scheduleEffectiveOnCore st3 c with
+                | .error e => .error e
+                | .ok st4 => .ok (st4, replenishSgis)
+              else
+                .ok (st3, replenishSgis)
+      | none => .error .schedulerInvariantViolation
+
+-- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the
+--   single-core `switchDomain` / `scheduleDomain` split) ─
+
+/-- WS-SM SM5.D.6 (per-core domain switch): the per-core analogue of
+`switchDomain`.  Advances core `c` to the next domain-schedule entry, saving the
+outgoing thread's register context, re-enqueueing core `c`'s current thread at
+`effectiveRunQueuePriority`, clearing `currentOnCore c`, and writing core `c`'s
+active-domain / time-remaining / schedule-index slots.
+
+Reads / writes only core `c`'s slots (plus the object store via the context
+save).  Single-domain mode (`domainSchedule = []`) is a no-op; the unreachable
+out-of-bounds index surfaces `.schedulerInvariantViolation` (AK2-I, mirroring
+`switchDomain`).  This is the full domain-boundary re-dispatch counterpart of
+`decrementDomainTimeOnCore` (which is the lightweight in-tick accounting). -/
+def switchDomainOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError SystemState :=
+  match st.scheduler.domainSchedule with
+  | [] => .ok st  -- single-domain mode: no-op
+  | _ =>
+      let nextIdx := ((st.scheduler.domainScheduleIndexOnCore c) + 1) % st.scheduler.domainSchedule.length
+      match st.scheduler.domainSchedule[nextIdx]? with
+      | none => .error .schedulerInvariantViolation
+      | some entry =>
+          let stSaved := saveOutgoingContextOnCore st c
+          let rq' := match st.scheduler.currentOnCore c with
+            | none => st.scheduler.runQueueOnCore c
+            | some tid =>
+                match st.getTcb? tid with
+                | some tcb => (st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)
+                | none => st.scheduler.runQueueOnCore c
+          let sched' := ((((st.scheduler.setRunQueueOnCore c rq').setCurrentOnCore
+              c none).setActiveDomainOnCore c (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
+              c (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore c nextIdx
+          .ok { stSaved with scheduler := sched' }
+
+/-- WS-SM SM5.D.6 (per-core domain tick): the per-core analogue of
+`scheduleDomain`.  Decrements core `c`'s domain time remaining; on expiry,
+performs the per-core domain switch (`switchDomainOnCore`) and re-dispatches via
+the budget-aware `scheduleEffectiveOnCore` (so a domain boundary never dispatches
+a budget-exhausted thread — a deliberate budget-aware refinement over the
+single-core `scheduleDomain`, which uses the non-budget `schedule`). -/
+def scheduleDomainOnCore (st : SystemState) (c : CoreId) :
+    Except KernelError SystemState :=
+  if (st.scheduler.domainTimeRemainingOnCore c) ≤ 1 then
+    match switchDomainOnCore st c with
+    | .error e => .error e
+    | .ok st' => scheduleEffectiveOnCore st' c
+  else
+    let dtr := (st.scheduler.domainTimeRemainingOnCore c) - 1
+    .ok { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }
 
 -- ============================================================================
 -- V8-G3: ThreadState synchronization

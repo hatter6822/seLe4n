@@ -376,15 +376,12 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
     // `boot.S::secondary_entry` (secondaries) before any kernel-mode
     // code runs.  On host the stub returns 0.
     //
-    // Audit-pass-4: this binding is retained as the SM5 landing-seam
-    // contract (verified by `build.rs::scan_trap_rs_handle_irq_per_core_intact`).
-    // The current closure body uses `kprintln_core!` (which reads
-    // TPIDR_EL1 internally) for log lines, so `core_id` is not
-    // directly consumed today; SM5 will use it as the per-core
-    // scheduler-state dispatch key.  The single redundant `mrs
-    // tpidr_el1` (one cycle on Cortex-A76) is the cost of pinning
-    // the SM5 contract at the structural level.
-    let _core_id = crate::per_cpu::current_core_id_from_tpidr();
+    // WS-SM SM5.D.1: the calling core's id is now the per-core scheduler
+    // dispatch key — the timer branch passes it to
+    // `timer::per_core_timer_tick_isr(core_id)`, which drives the verified Lean
+    // per-core timer tick for *this* core's scheduler slots.  (Pinned by
+    // `build.rs::scan_trap_rs_handle_irq_per_core_intact`.)
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
 
     crate::gic::dispatch_irq(|intid| {
         // WS-SM SM1.I.4 audit-pass-1: record the IRQ dispatch only
@@ -400,19 +397,21 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
         // count actual dispatched IRQs.
         let _ = crate::per_cpu_stats::record_irq_dispatch();
         if intid == crate::gic::TIMER_PPI_ID {
-            // Timer interrupt: re-arm the hardware comparator only.
-            // Tick accounting is performed by the Lean kernel via
-            // `ffi_timer_reprogram` — see ffi.rs:40-43.  The per-core
-            // tick counter advances here as an SMP-localised diagnostic;
-            // it is independent of the global `TICK_COUNT` the Lean
-            // kernel maintains.
+            // WS-SM SM5.D.1: the per-core CNTV timer ISR.  Records the
+            // per-core tick, re-arms the per-core comparator, and drives the
+            // verified Lean per-core scheduler timer tick
+            // (`Kernel.timerTickOnCore` via `lean_per_core_timer_tick(core_id)`)
+            // for *this* core's scheduler slots.  The per-core tick counter is
+            // an SMP-localised diagnostic, independent of the primary-owned
+            // global `TICK_COUNT` (advanced once per global tick by
+            // `ffi_timer_reprogram`) — mirroring the Lean model where
+            // `timerTickOnCore` reads but never advances `machine.timer`.
             //
             // The same AN8-C.4 re-entrancy guarantee applies: the IRQ
             // is acknowledged + EOI'd before this closure runs, and the
             // CPU-interface running-priority mask holds INTID 30 off
             // until PSTATE.I clears on exception return.
-            let _ = crate::per_cpu_stats::record_timer_tick();
-            crate::timer::reprogram_timer();
+            crate::timer::per_core_timer_tick_isr(core_id);
         } else if intid < u32::from(crate::gic::MAX_SGI_INTID) {
             // SGI dispatch range (INTIDs 0..15).  WS-SM SM1.I.1: at
             // this phase we increment the per-core SGI counter so

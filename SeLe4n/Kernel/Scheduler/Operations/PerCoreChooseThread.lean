@@ -168,6 +168,86 @@ theorem objectLockLevels_lt_runQueueLockLevel : ∀ n : Nat, n ≤ 9 → n < run
 end RunQueueLockId
 
 -- ============================================================================
+-- §1a  WS-SM SM5.D.3 — Per-core replenish-queue lock identifier
+-- ============================================================================
+
+/-- WS-SM SM5.D.3 (plan §3.4's `LockId.replenishQueue c`): per-core
+*replenish*-queue lock identifier.
+
+Like the run queue, the per-core CBS replenish queue (`replenishQueueOnCore c`)
+is a `SchedulerState` field (`Vector ReplenishQueue numCores`), **not** a kernel
+object, so it is identified purely by its `CoreId` and is *not* addressed by the
+SM0.I object-lock `LockId` hierarchy.  It is a distinct lockable resource from
+the run queue (a tick mutates both), so it carries its own typed identifier —
+keeping the pinned 10-level SM0.I `LockKind` hierarchy untouched while faithfully
+matching the per-core data model.  The SM5.D timer tick's lock-set
+(`timerTickOnCoreLockSet`) lists both the run-queue and the replenish-queue write
+locks (plan §3.4). -/
+structure ReplenishQueueLockId where
+  /-- The core whose replenish-queue slot this lock guards. -/
+  core : CoreId
+  deriving DecidableEq, Repr
+
+namespace ReplenishQueueLockId
+
+/-- WS-SM SM5.D.3: the total order on per-core replenish-queue locks, keyed by
+`CoreId` (mirrors `RunQueueLockId.le`).  The unified cross-domain order folding
+object, run-queue, and replenish-queue locks into one `withLockSet` acquisition
+sequence is `SchedLockId` (§1b). -/
+protected def le (l₁ l₂ : ReplenishQueueLockId) : Prop := l₁.core ≤ l₂.core
+
+/-- WS-SM SM5.D.3: strict order on replenish-queue locks. -/
+protected def lt (l₁ l₂ : ReplenishQueueLockId) : Prop := l₁.core < l₂.core
+
+instance : LE ReplenishQueueLockId := ⟨ReplenishQueueLockId.le⟩
+instance : LT ReplenishQueueLockId := ⟨ReplenishQueueLockId.lt⟩
+
+instance (a b : ReplenishQueueLockId) : Decidable (a ≤ b) :=
+  inferInstanceAs (Decidable (a.core ≤ b.core))
+instance (a b : ReplenishQueueLockId) : Decidable (a < b) :=
+  inferInstanceAs (Decidable (a.core < b.core))
+
+/-- SM5.D.3: reflexivity. -/
+theorem le_refl (l : ReplenishQueueLockId) : l ≤ l := Nat.le_refl l.core.val
+
+/-- SM5.D.3: transitivity. -/
+theorem le_trans {a b c : ReplenishQueueLockId} (h₁ : a ≤ b) (h₂ : b ≤ c) : a ≤ c :=
+  Nat.le_trans (show a.core.val ≤ b.core.val from h₁) (show b.core.val ≤ c.core.val from h₂)
+
+/-- SM5.D.3: antisymmetry (the `core` field determines the lock). -/
+theorem le_antisymm {a b : ReplenishQueueLockId} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
+  have hcore : a.core = b.core :=
+    Fin.ext (Nat.le_antisymm (show a.core.val ≤ b.core.val from h₁)
+      (show b.core.val ≤ a.core.val from h₂))
+  cases a; cases b; simp_all
+
+/-- SM5.D.3: totality — any two replenish-queue locks are comparable. -/
+theorem le_total (a b : ReplenishQueueLockId) : a ≤ b ∨ b ≤ a := Nat.le_total a.core.val b.core.val
+
+/-- SM5.D.3: strict-order irreflexivity. -/
+theorem lt_irrefl (l : ReplenishQueueLockId) : ¬ l < l := Nat.lt_irrefl l.core.val
+
+/-- SM5.D.3: strict-order asymmetry. -/
+theorem lt_asymm {a b : ReplenishQueueLockId} (h : a < b) : ¬ b < a :=
+  Nat.lt_asymm (show a.core.val < b.core.val from h)
+
+/-- WS-SM SM5.D.3 (plan §4.4 lock-order level): replenish-queue locks sit *after*
+every SM0.I object-lock level (0..9) **and** after the run-queue lock level (10),
+hence `11`.  The unified cross-domain order built on top of this is `SchedLockId`
+(§1b: object < runQueue < replenishQueue); its runtime acquisition sequence is
+the SM5.D timer tick under `withLockSet`. -/
+def replenishQueueLockLevel : Nat := 11
+
+/-- SM5.D.3: the run-queue lock level (10) is strictly below the replenish-queue
+lock level (11) — the arithmetic foundation under "run-queue locks acquired
+before replenish-queue locks".  The order-theoretic form is
+`SchedLockId.runQueue_lt_replenishQueue` (§1b). -/
+theorem runQueueLockLevel_lt_replenishQueueLockLevel :
+    RunQueueLockId.runQueueLockLevel < replenishQueueLockLevel := by decide
+
+end ReplenishQueueLockId
+
+-- ============================================================================
 -- §1b  SM5.A.2 (cross-domain unification, plan §4.4) — SchedLockId + the
 --      complete `chooseThreadOnCore` footprint (object-store + run-queue locks)
 -- ============================================================================
@@ -201,6 +281,9 @@ inductive SchedLockId where
   | object (l : Concurrency.LockId)
   /-- A per-core run-queue lock. -/
   | runQueue (r : RunQueueLockId)
+  /-- WS-SM SM5.D.3: a per-core replenish-queue lock (the SM5.D timer tick's
+  third lock domain — plan §3.4). -/
+  | replenishQueue (r : ReplenishQueueLockId)
   deriving DecidableEq, Repr
 
 namespace SchedLockId
@@ -210,10 +293,15 @@ by the SM0.I `LockId` lex order; run-queue locks by `CoreId`; and **every**
 object lock precedes **every** run-queue lock (plan §4.4 — object levels 0..9
 acquired before the notional run-queue level 10). -/
 protected def le : SchedLockId → SchedLockId → Prop
-  | .object l₁,   .object l₂   => l₁ ≤ l₂
-  | .object _,    .runQueue _  => True
-  | .runQueue _,  .object _     => False
-  | .runQueue r₁, .runQueue r₂ => r₁.core.val ≤ r₂.core.val
+  | .object l₁,        .object l₂        => l₁ ≤ l₂
+  | .object _,         .runQueue _       => True
+  | .object _,         .replenishQueue _ => True
+  | .runQueue _,       .object _         => False
+  | .runQueue r₁,      .runQueue r₂      => r₁.core.val ≤ r₂.core.val
+  | .runQueue _,       .replenishQueue _ => True
+  | .replenishQueue _, .object _         => False
+  | .replenishQueue _, .runQueue _       => False
+  | .replenishQueue r₁, .replenishQueue r₂ => r₁.core.val ≤ r₂.core.val
 
 /-- WS-SM SM5.A.2: strict cross-domain order. -/
 protected def lt (a b : SchedLockId) : Prop := SchedLockId.le a b ∧ ¬ SchedLockId.le b a
@@ -233,6 +321,7 @@ protected theorem le_refl (l : SchedLockId) : l ≤ l := by
   cases l with
   | object a => exact Concurrency.LockId.le_refl a
   | runQueue r => exact RunQueueLockId.le_refl r
+  | replenishQueue r => exact ReplenishQueueLockId.le_refl r
 
 /-- SM5.A.2: transitivity across both domains (cross-domain edges go
 object→runQueue only, so no transitivity violation is possible). -/
@@ -248,19 +337,23 @@ protected theorem le_trans {a b c : SchedLockId} (h₁ : a ≤ b) (h₂ : b ≤ 
 /-- SM5.A.2: antisymmetry (the cross-domain edges are strict, so equal-pair
 hypotheses force the same domain). -/
 protected theorem le_antisymm {a b : SchedLockId} (h₁ : a ≤ b) (h₂ : b ≤ a) : a = b := by
-  cases a <;> cases b
-  · exact congrArg SchedLockId.object (Concurrency.LockId.le_antisymm _ _ h₁ h₂)
-  · exact (h₂ : False).elim
-  · exact (h₁ : False).elim
-  · exact congrArg SchedLockId.runQueue (RunQueueLockId.le_antisymm h₁ h₂)
+  cases a <;> cases b <;>
+    first
+      | exact congrArg SchedLockId.object (Concurrency.LockId.le_antisymm _ _ h₁ h₂)
+      | exact congrArg SchedLockId.runQueue (RunQueueLockId.le_antisymm h₁ h₂)
+      | exact congrArg SchedLockId.replenishQueue (ReplenishQueueLockId.le_antisymm h₁ h₂)
+      | exact (h₁ : False).elim
+      | exact (h₂ : False).elim
 
 /-- SM5.A.2: totality — any two locks (same or cross domain) are comparable. -/
 protected theorem le_total (a b : SchedLockId) : a ≤ b ∨ b ≤ a := by
-  cases a <;> cases b
-  · exact Concurrency.LockId.le_total _ _
-  · exact Or.inl True.intro
-  · exact Or.inr True.intro
-  · exact RunQueueLockId.le_total _ _
+  cases a <;> cases b <;>
+    first
+      | exact Concurrency.LockId.le_total _ _
+      | exact RunQueueLockId.le_total _ _
+      | exact ReplenishQueueLockId.le_total _ _
+      | exact Or.inl True.intro
+      | exact Or.inr True.intro
 
 /-- SM5.A.2: strict-order irreflexivity. -/
 protected theorem lt_irrefl (l : SchedLockId) : ¬ l < l := fun h => h.2 h.1
@@ -275,6 +368,21 @@ on the unified order itself rather than only an arithmetic fact about the
 levels (`RunQueueLockId.objectLockLevels_lt_runQueueLockLevel`). -/
 theorem object_lt_runQueue (l : Concurrency.LockId) (r : RunQueueLockId) :
     SchedLockId.object l < SchedLockId.runQueue r :=
+  ⟨True.intro, fun h => h⟩
+
+/-- WS-SM SM5.D.3 (plan §4.4): every object-domain lock is strictly below every
+replenish-queue lock — the object→replenish-queue cross-domain edge of the
+unified order. -/
+theorem object_lt_replenishQueue (l : Concurrency.LockId) (r : ReplenishQueueLockId) :
+    SchedLockId.object l < SchedLockId.replenishQueue r :=
+  ⟨True.intro, fun h => h⟩
+
+/-- WS-SM SM5.D.3 (plan §4.4): every run-queue lock is strictly below every
+replenish-queue lock — "run-queue locks acquired before replenish-queue locks",
+the third cross-domain edge that completes the object < runQueue < replenishQueue
+total order the SM5.D timer-tick lock-set is sorted by. -/
+theorem runQueue_lt_replenishQueue (q : RunQueueLockId) (r : ReplenishQueueLockId) :
+    SchedLockId.runQueue q < SchedLockId.replenishQueue r :=
   ⟨True.intro, fun h => h⟩
 
 end SchedLockId

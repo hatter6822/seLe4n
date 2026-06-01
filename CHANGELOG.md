@@ -1,3 +1,102 @@
+## v0.31.41 — WS-SM SM5.D: per-core timer tick
+
+WS-SM Phase SM5 (per-core scheduler) continues with SM5.D — the **per-core timer
+tick** (plan `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.4, §5).  Each core's
+ARM Generic Timer fires independently; `timerTickOnCore` advances *that core's*
+domain accounting, processes CBS replenishment (cross-core-waking refilled threads
+onto their target core via SM5.C's `wakeThread`), and emits a local preemption if
+the running thread's budget / time-slice is exhausted — the per-core analogue of
+the single-core production timer (`processReplenishmentsDue` / `timerTickBudget` /
+`scheduleEffective` / `switchDomain`+`scheduleDomain`).  All 10 sub-tasks landed in
+one cut.  Every new theorem is axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice` only); the full production build (322 jobs) is green and the
+trace fixture is byte-identical (SM5.D is additive — the per-core timer has no
+caller on the single-core path yet).
+
+### Production transitions (`Scheduler/Operations/Core.lean`)
+
+- **SM5.D.2** `timerTickOnCore (st) (c) : Except KernelError (SystemState × List
+  (CoreId × SgiKind))` — the full per-core timer tick: clear core `c`'s
+  `lastTimeoutErrors` (SM5.D.9), process its due CBS replenishments collecting the
+  cross-core SGIs (SM5.D.4), advance its domain accounting (SM5.D.6), charge the
+  running thread one tick and re-dispatch on preemption (SM5.D.5).  Reads the
+  current global time `now := machine.timer` but — unlike `timerTickWithBudget` —
+  **never advances it** (the SMP per-core decision: each core's CNTV is local; the
+  global monotonic count is primary-owned, mirroring the Rust HAL's `TICK_COUNT`).
+- **SM5.D.6** `decrementDomainTimeOnCore` (per-core domain-time decrement +
+  rotation) + the separate re-dispatch `switchDomainOnCore` / `scheduleDomainOnCore`.
+- **SM5.D.4** `replenishWakeTarget` / `processOneReplenishmentOnCore` /
+  `processReplenishmentsDueOnCore` — per-core CBS replenishment; a refilled
+  SchedContext's bound thread is woken on its target core via `wakeThread`,
+  emitting a `.reschedule` SGI when that core is remote (the defensive cross-core
+  path the consistency invariant makes local in the well-formed case).
+- **SM5.D.5** `timerTickBudgetOnCore` (no `machine.timer` advance) +
+  `scheduleEffectiveOnCore` / `saveOutgoingContextOnCore`.
+
+### Lock-set (`Scheduler/Operations/PerCoreChooseThread.lean`)
+
+- **SM5.D.3** `ReplenishQueueLockId` (per-core replenish-queue lock, `CoreId`-keyed
+  total order, level 11) + `SchedLockId.replenishQueue` constructor extending the
+  SM5.A cross-domain order to **object < runQueue < replenishQueue** (plan §4.4),
+  with re-proved `le_refl`/`le_trans`/`le_antisymm`/`le_total` + the
+  `object_lt_replenishQueue` / `runQueue_lt_replenishQueue` edges.
+
+### Staged theorems (`Scheduler/Operations/PerCoreTimerTick.lean`)
+
+- **SM5.D.3 / .7** `timerTickOnCoreLockSet` (the 3-lock object-store + run-queue +
+  replenish-queue *write* set in §4.4 ascending order) + `_pairwise_le` /
+  `_keys_nodup` / `_write_only` / `_contains_*` + the WCRT size bound
+  (`_size_le_maxLockSetSize`).
+- **SM5.D.6** `decrementDomainTimeOnCore_decrements` / `_rotates` /
+  `_singleDomain_noop` + frame lemmas (objects / machine / run-queue / current /
+  replenish-queue / cross-core active-domain).
+- **SM5.D.4** the headline `cbsReplenish_can_wake_remote_core` (a remote-targeted
+  replenish emits a cross-core `.reschedule` SGI) + `_local_no_sgi` /
+  `_no_sgi_if_no_target` + objects-`invExt` and run-queue-`wellFormed` preservation
+  (single step + fold) + machine / lastTimeoutErrors frames.
+- **SM5.D.5** `timerTickBudgetOnCore_unbound_preempts` / `_not_preempted` + the
+  full **IPC-timeout objects-`invExt` preservation chain** (the reusable,
+  previously-missing `revertPriorityInheritance_preserves_objects_invExt`,
+  `timeoutThread_preserves_objects_invExt`,
+  `timeoutBlockedThreads_preserves_objects_invExt`) +
+  `timerTickBudgetOnCore_preserves_objects_invExt` +
+  `scheduleEffectiveOnCore_preserves_objects_invExt`.
+- **SM5.D.2** the headlines `timerTickOnCore_advances_per_core` (the tick reads but
+  never advances the global timer), `timerTickOnCore_preempts_local`,
+  `timerTickOnCore_rotates_domain`, `timerTickOnCore_clears_lastTimeoutErrors`, and
+  `timerTickOnCore_preserves_objects_invExt` (object-store-invariant parity with
+  SM5.B/C) — all via the `timerTickOnCorePrepared` / `_eq_prepared` `rfl`-bridge.
+- **SM5.D.8** `timerTickOnCoreSucceeds` / `timerTickOnCoreEmitsSgi` /
+  `timerTickBudgetOnCorePreempts` decidable witnesses.
+
+### Rust HAL (`timer.rs` / `trap.rs` / `build.rs`) + Lean export seam
+
+- **SM5.D.1** `timer::per_core_timer_tick_isr(core_id)` — the per-core CNTV timer
+  ISR: records the per-core tick (SMP-localised, not the global `TICK_COUNT`),
+  re-arms the per-core comparator, and (under `hw_target`) drives the verified Lean
+  per-core scheduler tick via `lean_per_core_timer_tick(core_id)`.
+  `handle_irq_per_core`'s timer branch is rewired to call it (passing the TPIDR_EL1
+  core id); a new `build.rs` Check 5 pins the wiring.  Lean
+  `Kernel.perCoreTimerTickEntry` (`@[export lean_per_core_timer_tick]`,
+  `PerCoreTimerEntry.lean`) is the C-callable seam — a deliberate `pure ()`
+  placeholder; SM5.I drives the live per-core tick under the
+  `timerTickOnCoreLockSet` bracket.  +4 Rust unit tests (722 HAL tests, zero clippy
+  warnings).
+
+### Tests + wiring
+
+- `tests/SmpTimerSuite.lean` (`lake exe smp_timer_suite`) — 60+ surface anchors, 6
+  elaboration-time headline applications, 33 runtime assertions across the SM5.D.10
+  tick scenarios (lock-set / WCRT, domain decrement + rotation, budget-tick
+  preemption, idle tick + lastTimeoutErrors clearing, CBS replenishment, the
+  per-core timer-entry seam).  Wired into Tier 2 (negative) + Tier 3 (invariant
+  surface).  2 new staged modules (`PerCoreTimerTick`, `PerCoreTimerEntry`);
+  production/staged partition gate verifies **47** staged-only modules (was 45).
+
+Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.E
+(per-core idle threads), SM5.F (per-core PIP), SM5.G/H/I/J/K per the master
+overview.
+
 ## v0.31.40 — WS-SM SM5.C: cross-core wake via SGI
 
 WS-SM Phase SM5 (per-core scheduler) continues with SM5.C — **cross-core wake

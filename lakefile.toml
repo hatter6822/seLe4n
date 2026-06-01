@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.40"
+version = "0.31.41"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -392,3 +392,13 @@ root = "tests.SmpSwitchToThreadSuite"
 [[lean_exe]]
 name = "smp_wake_suite"
 root = "tests.SmpWakeSuite"
+
+# WS-SM SM5.D — Per-core timer tick test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM5.D.10 tick scenarios (SM5.D.3 lock-set / SM5.D.7 WCRT bound, SM5.D.6 domain
+# decrement + rotation, SM5.D.5 budget-tick preemption, SM5.D.2/.9 idle tick +
+# lastTimeoutErrors clearing, SM5.D.4 CBS replenishment, SM5.D.1 per-core
+# timer-entry seam).  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_timer_suite"
+root = "tests.SmpTimerSuite"

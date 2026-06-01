@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.40.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.41.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5092,6 +5092,77 @@ documentation lives under `docs/` and `docs/gitbook/`.
   unchanged; the enqueue reject's all-core run-queue read is documented as SM5.D's
   `withLockSet` formalisation (the wake's *write* footprint is unchanged).  Items
   deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.D LANDED at v0.31.41 on branch
+  `claude/intelligent-goldberg-K7p4I`** (per-core timer tick; plan §3.4 / §5).
+  Each core's ARM Generic Timer fires independently; `timerTickOnCore` advances
+  *that core's* domain accounting, processes CBS replenishment
+  (cross-core-waking refilled threads onto their target core via SM5.C's
+  `wakeThread`), and emits a local preemption if the running thread's budget /
+  time-slice is exhausted — the per-core analogue of the single-core production
+  timer machinery.  All 10 sub-tasks landed in one cut; every new theorem is
+  axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only); the full
+  production build (322 jobs) is green and the trace fixture is byte-identical
+  (SM5.D is additive — the per-core timer has no single-core caller yet).
+
+  - **SM5.D.2 production transitions** (`Scheduler/Operations/Core.lean`):
+    `timerTickOnCore (st) (c) : Except KernelError (SystemState × List (CoreId ×
+    SgiKind))` — clears core `c`'s `lastTimeoutErrors` (SM5.D.9), processes its
+    due CBS replenishments collecting cross-core SGIs (SM5.D.4), advances its
+    domain accounting (SM5.D.6), charges the running thread one tick and
+    re-dispatches on preemption (SM5.D.5).  **Global-timer ownership** (the SMP
+    per-core decision): the per-core tick reads `now := machine.timer` but
+    **never advances it** — each core's CNTV is local; the global monotonic
+    count is primary-owned, mirroring the Rust HAL's `TICK_COUNT`.  Supporting
+    transitions: `decrementDomainTimeOnCore` (SM5.D.6) + `switchDomainOnCore` /
+    `scheduleDomainOnCore`; `replenishWakeTarget` / `processOneReplenishmentOnCore`
+    / `processReplenishmentsDueOnCore` (SM5.D.4); `timerTickBudgetOnCore`
+    (no-timer-advance) / `scheduleEffectiveOnCore` / `saveOutgoingContextOnCore`
+    (SM5.D.5).  `tcbBlockingInfo` de-privatized for the preservation proofs.
+  - **SM5.D.3 lock-set** (`Scheduler/Operations/PerCoreChooseThread.lean`):
+    `ReplenishQueueLockId` (per-core, `CoreId`-keyed, level 11) +
+    `SchedLockId.replenishQueue` constructor extending the SM5.A cross-domain
+    order to **object < runQueue < replenishQueue** (plan §4.4), with re-proved
+    `le_refl` / `le_trans` / `le_antisymm` / `le_total` + `object_lt_replenishQueue`
+    / `runQueue_lt_replenishQueue`.
+  - **SM5.D staged theorems** (`Scheduler/Operations/PerCoreTimerTick.lean`):
+    SM5.D.3/.7 `timerTickOnCoreLockSet` (3-lock object/run-queue/replenish-queue
+    write set, §4.4 ascending order) + `_pairwise_le` / `_keys_nodup` +
+    `_size_le_maxLockSetSize` (WCRT); SM5.D.6 `decrementDomainTimeOnCore_decrements`
+    / `_rotates` / `_singleDomain_noop` + frame lemmas; SM5.D.4 the headline
+    `cbsReplenish_can_wake_remote_core` + `_local_no_sgi` + objects-`invExt` /
+    run-queue-`wellFormed` preservation (single + fold) + machine / lastTimeout
+    frames; SM5.D.5 `timerTickBudgetOnCore_unbound_preempts` / `_not_preempted` +
+    the **reusable, previously-missing IPC-timeout objects-`invExt` preservation
+    chain** (`revertPriorityInheritance_preserves_objects_invExt`,
+    `timeoutThread_preserves_objects_invExt`,
+    `timeoutBlockedThreads_preserves_objects_invExt`) +
+    `timerTickBudgetOnCore_preserves_objects_invExt` +
+    `scheduleEffectiveOnCore_preserves_objects_invExt`; SM5.D.2 the headlines
+    `timerTickOnCore_advances_per_core` (reads but never advances the global
+    timer), `_preempts_local`, `_rotates_domain`, `_clears_lastTimeoutErrors`, and
+    `_preserves_objects_invExt` (object-store-invariant parity with SM5.B/C) — all
+    via the `timerTickOnCorePrepared` / `_eq_prepared` `rfl`-bridge; SM5.D.8
+    `timerTickOnCoreSucceeds` / `timerTickOnCoreEmitsSgi` /
+    `timerTickBudgetOnCorePreempts` decidability.
+  - **SM5.D.1 Rust HAL + Lean export seam**: `timer::per_core_timer_tick_isr(core_id)`
+    (records the per-core tick, re-arms the per-core comparator, drives the Lean
+    per-core tick via `lean_per_core_timer_tick(core_id)` under `hw_target`);
+    `handle_irq_per_core`'s timer branch rewired to call it (passing the TPIDR_EL1
+    core id); `build.rs` Check 5 pins the wiring.  Lean
+    `Kernel.perCoreTimerTickEntry` (`@[export lean_per_core_timer_tick]`,
+    `PerCoreTimerEntry.lean`) is the C-callable seam — a deliberate `pure ()`
+    placeholder (SM5.I drives the live tick under the `timerTickOnCoreLockSet`
+    bracket).  +4 Rust unit tests (722 HAL tests, zero clippy warnings).
+
+  **Test coverage**: `tests/SmpTimerSuite.lean` (`lake exe smp_timer_suite`) — 60+
+  surface anchors, 6 elaboration-time headline applications, 33 runtime assertions
+  across the SM5.D.10 tick scenarios.  Tier-2 + Tier-3 wired.  2 new staged modules
+  (`PerCoreTimerTick`, `PerCoreTimerEntry`); production/staged partition gate
+  verifies **47** staged-only modules (was 45).  Full Tier 0+1+2+3 green; default
+  build 322 jobs; trace byte-identical.  Items deferred past v1.0.0 with correctness
+  impact: NONE.  Follow-on: SM5.E (per-core idle threads), SM5.F (per-core PIP),
+  SM5.G/H/I/J/K per the master overview.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

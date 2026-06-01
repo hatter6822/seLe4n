@@ -3294,4 +3294,90 @@ open SeLe4n.Kernel.Concurrency
 #check @sm5CTheorems_descriptions_nodup
 EOF'
 
+# WS-SM SM5.D — per-core timer tick surface anchors.  Covers the SM5.D.2/.4/.5/.6/.9
+# production transitions (`timerTickOnCore` / `timerTickBudgetOnCore` /
+# `processReplenishmentsDueOnCore` / `decrementDomainTimeOnCore` /
+# `scheduleEffectiveOnCore` / `switchDomainOnCore`+`scheduleDomainOnCore`, in
+# `Scheduler.Operations.Core`), the SM5.D.3 cross-domain lock-set (+
+# `ReplenishQueueLockId` / `SchedLockId.replenishQueue` order facts), SM5.D.6
+# domain-rotation theorems, the SM5.D.4 cross-core wake (`cbsReplenish_can_wake_remote_core`),
+# the SM5.D.5 budget tick + the IPC-timeout objects-`invExt` preservation chain,
+# the SM5.D.2 headlines + objects-`invExt` preservation, SM5.D.7 WCRT bound,
+# SM5.D.8 decidability, and the SM5.D.1 export seam.  A rename / removal of any
+# SM5.D symbol fails here at elaboration time before the test suite.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.PerCoreTimerEntry'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5d_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.PerCoreTimerEntry
+open SeLe4n.Kernel
+-- SM5.D.2/.4/.5/.6/.9 production transitions.
+#check @timerTickOnCore
+#check @timerTickBudgetOnCore
+#check @processReplenishmentsDueOnCore
+#check @processOneReplenishmentOnCore
+#check @replenishWakeTarget
+#check @decrementDomainTimeOnCore
+#check @scheduleEffectiveOnCore
+#check @saveOutgoingContextOnCore
+#check @switchDomainOnCore
+#check @scheduleDomainOnCore
+#check @tcbBlockingInfo
+-- SM5.D.3 lock-set + replenish-queue lock domain.
+#check @ReplenishQueueLockId
+#check @ReplenishQueueLockId.le_total
+#check @ReplenishQueueLockId.replenishQueueLockLevel
+#check @SchedLockId.object_lt_replenishQueue
+#check @SchedLockId.runQueue_lt_replenishQueue
+#check @timerTickOnCoreLockSet
+#check @timerTickOnCoreLockSet_length
+#check @timerTickOnCoreLockSet_write_only
+#check @timerTickOnCoreLockSet_contains_objStore_write
+#check @timerTickOnCoreLockSet_contains_runQueue_write
+#check @timerTickOnCoreLockSet_contains_replenishQueue_write
+#check @timerTickOnCoreLockSet_keys_nodup
+#check @timerTickOnCoreLockSet_pairwise_le
+#check @timerTickOnCoreLockSet_size_le_maxLockSetSize
+-- SM5.D.6 domain rotation.
+#check @decrementDomainTimeOnCore_decrements
+#check @decrementDomainTimeOnCore_rotates
+#check @decrementDomainTimeOnCore_singleDomain_noop
+#check @decrementDomainTimeOnCore_activeDomainOnCore_ne
+#check @decrementDomainTimeOnCore_objects_eq
+-- SM5.D.4 CBS replenishment + cross-core wake.
+#check @cbsReplenish_can_wake_remote_core
+#check @processOneReplenishmentOnCore_local_no_sgi
+#check @processOneReplenishmentOnCore_no_sgi_if_no_target
+#check @processOneReplenishmentOnCore_preserves_objects_invExt
+#check @processReplenishmentsDueOnCore_preserves_objects_invExt
+#check @processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
+#check @processReplenishmentsDueOnCore_machine_eq
+-- SM5.D.5 budget tick + IPC-timeout objects preservation chain.
+#check @timerTickBudgetOnCore_unbound_not_preempted
+#check @timerTickBudgetOnCore_unbound_preempts
+#check @timerTickBudgetOnCore_preserves_objects_invExt
+#check @revertPriorityInheritance_preserves_objects_invExt
+#check @timeoutThread_preserves_objects_invExt
+#check @timeoutBlockedThreads_preserves_objects_invExt
+#check @scheduleEffectiveOnCore_preserves_objects_invExt
+-- SM5.D.2 headlines + preservation.
+#check @timerTickOnCore_eq_prepared
+#check @timerTickOnCorePrepared
+#check @timerTickOnCorePreDomain
+#check @timerTickOnCore_idle
+#check @timerTickOnCore_advances_per_core
+#check @timerTickOnCore_clears_lastTimeoutErrors
+#check @timerTickOnCore_rotates_domain
+#check @timerTickOnCore_preempts_local
+#check @timerTickOnCore_preserves_objects_invExt
+-- SM5.D.8 decidability.
+#check @timerTickOnCoreSucceeds
+#check @timerTickOnCoreEmitsSgi
+#check @timerTickBudgetOnCorePreempts
+-- SM5.D.1 export seam.
+#check @perCoreTimerTickEntry
+#check @perCoreTimerTickEntry_returns_unit_marker
+EOF
+lake env lean /tmp/sm5d_surface.lean'
+
 finalize_report

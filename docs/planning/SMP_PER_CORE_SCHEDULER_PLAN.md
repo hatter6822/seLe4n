@@ -441,6 +441,26 @@ similar to SM0/SM1 patterns.)
 | SM5.D.9 | Per-core lastTimeoutErrors clearing | S |
 | SM5.D.10 | 8 tick scenarios | L |
 
+> **WS-SM SM5.D LANDED at v0.31.41** (all 10 sub-tasks).  Production
+> transitions (`timerTickOnCore`, `decrementDomainTimeOnCore`,
+> `processReplenishmentsDueOnCore`, `timerTickBudgetOnCore`,
+> `scheduleEffectiveOnCore`, `switchDomainOnCore`/`scheduleDomainOnCore`) in
+> `Scheduler/Operations/Core.lean`; the SM5.D.3 lock-set (`ReplenishQueueLockId`
+> + `SchedLockId.replenishQueue`, plan §4.4 object<runQueue<replenishQueue) in
+> `PerCoreChooseThread.lean`; the staged theorem surface — SM5.D.3/.7 lock-set +
+> WCRT, SM5.D.6 domain rotation, SM5.D.4 `cbsReplenish_can_wake_remote_core` +
+> preservation, SM5.D.5 budget tick + the full IPC-timeout objects-`invExt`
+> preservation chain, the SM5.D.2 headlines (`timerTickOnCore_advances_per_core`
+> / `_preempts_local` / `_rotates_domain` / `_clears_lastTimeoutErrors`) +
+> objects-`invExt` preservation, SM5.D.8 decidability — in
+> `PerCoreTimerTick.lean` (all axiom-clean).  SM5.D.1: `timer::per_core_timer_tick_isr`
+> + `handle_irq_per_core` wiring + the `lean_per_core_timer_tick` export seam
+> (`PerCoreTimerEntry.lean`).  Tests: `tests/SmpTimerSuite.lean`; +4 Rust HAL
+> tests.  The runtime per-core scheduler-tick driver (reading live per-core
+> kernel state, committing under the `timerTickOnCoreLockSet` `withLockSet`
+> bracket, emitting the cross-core SGIs) is SM5.I work — the pure transition +
+> its full theorem surface land here.
+
 ### SM5.E — Per-core idle threads (3 PRs, 6 sub-tasks)
 
 | Sub | Description | Est |

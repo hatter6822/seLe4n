@@ -2603,6 +2603,48 @@ composers are unchanged.  Inventory 81 → 83; `SmpWakeSuite` 64 runtime asserti
 axiom-clean; Tier 0–3 green; trace byte-identical.  Items deferred past v1.0.0 with
 correctness impact: NONE.
 
+**WS-SM SM5.D LANDED at v0.31.41** (per-core timer tick; plan §3.4 / §5).  Each
+core's ARM Generic Timer fires independently; `timerTickOnCore (st) (c : CoreId) :
+Except KernelError (SystemState × List (CoreId × SgiKind))`
+(`Scheduler/Operations/Core.lean`, production) advances *that core's* domain
+accounting, processes its due CBS replenishments (cross-core-waking refilled
+threads onto their target core via SM5.C's `wakeThread`, emitting `.reschedule`
+SGIs for remote targets — SM5.D.4), and preempts the running thread on budget /
+time-slice exhaust (SM5.D.5) — reading but **never advancing** the global
+`machine.timer` (the SMP per-core decision: each core's CNTV is local; the global
+monotonic count is primary-owned, mirroring the Rust HAL's `TICK_COUNT`).  All 10
+sub-tasks landed in one cut.
+
+- **SM5.D.3 lock-set** (`PerCoreChooseThread.lean`): `ReplenishQueueLockId`
+  (per-core, level 11) + `SchedLockId.replenishQueue` extend the SM5.A cross-domain
+  order to **object < runQueue < replenishQueue** (plan §4.4), with re-proved
+  order theorems + the two new cross-domain edges.
+- **SM5.D staged theorems** (`PerCoreTimerTick.lean`): the SM5.D.3
+  `timerTickOnCoreLockSet` (3-lock write set) + SM5.D.7 WCRT bound; SM5.D.6
+  `decrementDomainTimeOnCore_decrements` / `_rotates` + frames; the SM5.D.4
+  headline `cbsReplenish_can_wake_remote_core` + the replenishment preservation
+  lemmas; the SM5.D.5 budget-tick preemption witnesses + the reusable,
+  previously-missing IPC-timeout objects-`invExt` preservation chain
+  (`revertPriorityInheritance` / `timeoutThread` / `timeoutBlockedThreads_preserves_objects_invExt`);
+  the SM5.D.2 headlines `timerTickOnCore_advances_per_core` / `_preempts_local` /
+  `_rotates_domain` / `_clears_lastTimeoutErrors` + `_preserves_objects_invExt`
+  (SM5.B/C object-store-invariant parity) via the `timerTickOnCorePrepared` /
+  `_eq_prepared` `rfl`-bridge; SM5.D.8 decidability.
+- **SM5.D.1**: the Rust `timer::per_core_timer_tick_isr(core_id)` (records the
+  per-core tick, re-arms the per-core comparator, drives the Lean per-core tick
+  under `hw_target`) + `handle_irq_per_core` wiring (build.rs Check 5) + the
+  `lean_per_core_timer_tick` export seam (`Kernel.perCoreTimerTickEntry`,
+  `PerCoreTimerEntry.lean`, deliberate `pure ()` placeholder — SM5.I drives the
+  live tick); +4 Rust HAL tests (722 total, zero clippy warnings).
+
+Tests `tests/SmpTimerSuite.lean` (`smp_timer_suite`, 33 runtime assertions + 60+
+anchors + 6 examples); 2 new staged modules (partition gate 47 staged-only); all
+SM5.D theorems axiom-clean; Tier 0–3 green; default build 322 jobs; trace
+byte-identical.  The runtime per-core scheduler-tick driver (live per-core kernel
+state, `withLockSet` over `timerTickOnCoreLockSet`, cross-core SGI emission) is
+SM5.I work; the pure transition + full theorem surface land here.  Items deferred
+past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

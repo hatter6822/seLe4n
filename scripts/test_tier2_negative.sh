@@ -254,4 +254,11 @@ run_check_with_timeout "TRACE" lake exe smp_switch_to_thread_suite
 # SGI-delivery latency bound.
 run_check_with_timeout "TRACE" lake exe smp_wake_suite
 
+# WS-SM SM5.D — per-core timer tick.  Runtime assertions for the SM5.D.10 tick
+# scenarios: the SM5.D.3 lock-set + SM5.D.7 WCRT bound, SM5.D.6 domain decrement +
+# rotation, SM5.D.5 budget-tick preemption, SM5.D.2/.9 idle tick +
+# lastTimeoutErrors clearing, SM5.D.4 CBS replenishment, and the SM5.D.1 per-core
+# timer-entry seam.
+run_check_with_timeout "TRACE" lake exe smp_timer_suite
+
 finalize_report
