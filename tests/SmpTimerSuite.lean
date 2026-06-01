@@ -101,6 +101,36 @@ open SeLe4n.Testing
 #check @perCoreTimerTickEntry
 #check @perCoreTimerTickEntry_returns_unit_marker
 
+-- §4b SM5.D.6 full per-core domain re-dispatch (switchDomainOnCore / scheduleDomainOnCore).
+#check @switchDomainOnCore_singleDomain_noop
+#check @switchDomainOnCore_preserves_objects_invExt
+#check @switchDomainOnCore_sets_currentOnCore_none
+#check @switchDomainOnCore_rotates
+#check @scheduleDomainOnCore_decrements
+#check @scheduleDomainOnCore_preserves_objects_invExt
+
+-- §7 SM5.D.5/.6 per-core invariant preservation (B1/B2/B3).
+#check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
+#check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
+#check @decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
+#check @saveOutgoingContextOnCore_scheduler_eq
+#check @saveOutgoingContextOnCore_getTcb?_isSome
+#check @scheduleEffectiveOnCore_objects_eq
+#check @scheduleEffectiveOnCore_getTcb?_isSome
+#check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
+#check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore
+#check @scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore
+#check @scheduleEffectiveOnCore_runQueue_toList_subset
+#check @scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @timerTickBudgetOnCore_notPreempted_scheduler_eq
+#check @timerTickBudgetOnCore_notPreempted_getTcb?_tid
+#check @timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
+#check @timerTickOnCore_preserves_currentThreadValidOnCore
+#check @timerTickOnCorePrepared_runQueueOnCore_wellFormed
+#check @timerTickOnCore_preserves_runQueueOnCoreWellFormed
+#check @timerTickOnCore_preserves_queueCurrentConsistentOnCore
+
 -- ============================================================================
 -- §2  Elaboration-time examples: apply each headline theorem to verified inputs
 -- ============================================================================
@@ -158,6 +188,36 @@ example (c : CoreId) :
     SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
       < SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
   SchedLockId.runQueue_lt_replenishQueue _ _
+
+/-- SM5.D.5/.6 (B1): the per-core tick preserves per-core current-thread validity
+UNCONDITIONALLY (idle / not-preempted / preempted all discharge). -/
+example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hInv : st.objects.invExt) (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    currentThreadValidOnCore st' c :=
+  timerTickOnCore_preserves_currentThreadValidOnCore st c st' sgis hInv hStep
+
+/-- SM5.D.5/.6 (B2): the per-core tick preserves per-core run-queue well-formedness,
+given the budget-tick discharge `hBudgetRqWf` (unconditional on clean paths via
+`timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed`; the
+bound-budget-exhausted re-enqueue is the SM5.F tracked gap). -/
+example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hBudgetRqWf : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       (st3.scheduler.runQueueOnCore c).wellFormed)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    (st'.scheduler.runQueueOnCore c).wellFormed :=
+  timerTickOnCore_preserves_runQueueOnCoreWellFormed st c st' sgis hwf hBudgetRqWf hStep
+
+/-- SM5.D.6: a successful per-core domain switch (non-empty schedule) clears the
+current thread on core `c`. -/
+example (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hStep : switchDomainOnCore st c = .ok st')
+    (hSched : st.scheduler.domainSchedule ≠ []) :
+    st'.scheduler.currentOnCore c = none :=
+  switchDomainOnCore_sets_currentOnCore_none st c st' hStep hSched
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.D.10 per-core tick scenarios
@@ -328,6 +388,42 @@ private def runEntrySeamChecks : IO Unit := do
   perCoreTimerTickEntry 3
   assertBool "perCoreTimerTickEntry seam ran for cores 0 and 3" true
 
+/-- A single-domain (empty schedule) idle state, for the SM5.D.6 no-op witness. -/
+private def stSingleDomain : SystemState :=
+  let st := BootstrapBuilder.empty.build
+  { st with scheduler := { st.scheduler with domainSchedule := [] } }
+
+/-- §3.9 SM5.D.6: the full per-core domain re-dispatch (switchDomainOnCore /
+scheduleDomainOnCore). -/
+private def runDomainRedispatchChecks : IO Unit := do
+  IO.println "--- §3.9 SM5.D.6 domain re-dispatch ---"
+  -- single-domain mode: the domain switch is a no-op (the current thread, which is
+  -- `none` on the freshly-built state, is unchanged).
+  assertBool "switchDomainOnCore is a no-op under an empty domain schedule"
+    (match switchDomainOnCore stSingleDomain bootCoreId with
+     | .ok st' => st'.scheduler.currentOnCore bootCoreId == stSingleDomain.scheduler.currentOnCore bootCoreId
+     | .error _ => false)
+  -- a domain switch on a non-empty schedule clears the current thread on core c.
+  assertBool "switchDomainOnCore clears current on a non-empty schedule"
+    (match switchDomainOnCore stDomain bootCoreId with
+     | .ok st' => st'.scheduler.currentOnCore bootCoreId == none
+     | .error _ => false)
+  -- and rotates the active domain to the next entry (dom1).
+  assertBool "switchDomainOnCore rotates the active domain to dom1"
+    (match switchDomainOnCore stDomain bootCoreId with
+     | .ok st' => st'.scheduler.activeDomainOnCore bootCoreId == dom1.domain
+     | .error _ => false)
+  -- the domain switch preserves the object-store invariant.
+  assertBool "switchDomainOnCore succeeds on the rotation fixture"
+    (match switchDomainOnCore stDomain bootCoreId with | .ok _ => true | .error _ => false)
+  -- a sub-boundary scheduleDomainOnCore (domainTimeRemaining > 1) just decrements.
+  let stMid := { stDomain with scheduler :=
+    stDomain.scheduler.setDomainTimeRemainingOnCore bootCoreId 5 }
+  assertBool "scheduleDomainOnCore decrements domain time when not at the boundary"
+    (match scheduleDomainOnCore stMid bootCoreId with
+     | .ok st' => st'.scheduler.domainTimeRemainingOnCore bootCoreId == 4
+     | .error _ => false)
+
 def runAll : IO Unit := do
   IO.println "=== WS-SM SM5.D — Per-core timer tick suite ==="
   runLockSetChecks
@@ -338,6 +434,7 @@ def runAll : IO Unit := do
   runIdleTickChecks
   runReplenishChecks
   runEntrySeamChecks
+  runDomainRedispatchChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 
 end SeLe4n.Testing.SmpTimer

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.41.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.42.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5163,6 +5163,65 @@ documentation lives under `docs/` and `docs/gitbook/`.
   build 322 jobs; trace byte-identical.  Items deferred past v1.0.0 with correctness
   impact: NONE.  Follow-on: SM5.E (per-core idle threads), SM5.F (per-core PIP),
   SM5.G/H/I/J/K per the master overview.
+
+  **WS-SM SM5.D audit-pass-1 LANDED at v0.31.42** (deep self-audit; the v0.31.41
+  landing was sound + axiom-clean but delivered only object-store-`invExt`
+  preservation for the composed tick — this closes the SM4.C per-core *scheduler*
+  invariant-preservation gap, the full `switchDomainOnCore` / `scheduleDomainOnCore`
+  re-dispatch surface, and the SM5.D theorem inventory).  Per the maintainer-approved
+  **"parameterize + track"** scope decision, the clean paths are proved
+  unconditionally and the bound-budget-exhausted timeout branch (which re-enqueues
+  timed-out threads through the bootCoreId-pinned `ensureRunnable` /
+  `revertPriorityInheritance`) is parameterized by a single clean hypothesis and
+  recorded as explicit SM5.F (per-core PIP migration) tracked debt.  Axiom-clean;
+  default build 322 jobs green; trace byte-identical.
+
+  - **§4b — full per-core domain re-dispatch (SM5.D.6)**: six theorems for the
+    domain-*boundary* counterparts of §2's in-tick `decrementDomainTimeOnCore` —
+    `switchDomainOnCore_singleDomain_noop` / `_preserves_objects_invExt` /
+    `_sets_currentOnCore_none` / `_rotates`, and `scheduleDomainOnCore_decrements` /
+    `_preserves_objects_invExt` (sited after §4 since they depend on the context
+    save/restore preservation).
+  - **§7 — per-core invariant preservation (B1/B2/B3, the SM5.C-parity coverage)**:
+    * **B1 headline (UNCONDITIONAL)**:
+      `timerTickOnCore_preserves_currentThreadValidOnCore` — idle leaves
+      `current = none`; the not-preempted budget tick keeps the charged thread a TCB
+      (`timerTickBudgetOnCore_notPreempted_getTcb?_tid`, via the
+      `scId.toObjId ≠ tid.toObjId` disjointness derived from both lookups
+      succeeding); the preempted path *re-establishes* validity via
+      `scheduleEffectiveOnCore_establishes_currentThreadValidOnCore` (needing only
+      the budget result's object-store `invExt`), so the bound-exhausted timeout's
+      object-store effect is absorbed by the re-establishment — no timeout hypothesis.
+    * **B2**: `timerTickOnCore_preserves_runQueueOnCoreWellFormed` (parameterized by
+      a budget-tick run-queue hypothesis, discharged unconditionally on every clean
+      path by `timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed`;
+      the bound-exhausted `timeoutBlockedThreads` re-enqueue is the SM5.F gap) +
+      `timerTickOnCorePrepared_runQueueOnCore_wellFormed`.
+    * `timerTickOnCore_preserves_queueCurrentConsistentOnCore` (idle / preempted
+      discharge unconditionally — the preempted path *establishes* consistency via
+      dequeue-on-dispatch; not-preempted inherits from the prepared state).
+    * Helper layer: `decrementDomainTimeOnCore` preserves all four invariants (pure
+      domain-slot write); `saveOutgoingContextOnCore_scheduler_eq` / `_getTcb?_isSome`;
+      `scheduleEffectiveOnCore` establishes `currentThreadValidOnCore` /
+      `queueCurrentConsistentOnCore` and preserves `runQueueOnCoreWellFormed` /
+      `runnableThreadsAreTCBsOnCore` (mirroring SM5.B's switch);
+      `timerTickBudgetOnCore_notPreempted_scheduler_eq`.
+  - **D3 — `Sm5DInventory.lean`**: 99-entry typed theorem inventory in 7 categories
+    (`lockSet` / `domain` / `replenish` / `budget` / `tick` / `preservation` /
+    `decidability`) with the `s5dt!` compile-time identifier-validation macro +
+    per-category count + partition-sum + kernel-sound `Nodup` witnesses; mirrors
+    `Sm5CInventory`.  Staged via `Platform.Staged` (now **48** staged-only modules).
+  - **D4 — `scripts/test_qemu_smp_timer.sh`**: tier-4 `-smp 4` per-core-timer-tick
+    boot SKIP-stub, wired into `test_tier4_smp_bootcheck.sh`.
+  - **C1 (full-path `machine.timer` preservation)**: folded into the same SM5.F gap
+    (the bound-exhausted timeout's machine preservation needs the same bootCoreId-
+    pinned `timeoutBlockedThreads`-machine lemma); the idle headline
+    `timerTickOnCore_advances_per_core` + `timerTickOnCorePrepared_machine_eq` already
+    establish the no-global-timer-advance SMP property substantively.
+  - **Tests**: `tests/SmpTimerSuite.lean` gains 31 surface anchors (§4b + §7), 3
+    elaboration examples, and a §3.9 runtime section (5 assertions) exercising the
+    domain re-dispatch; tier-3 adds the §4b/§7 anchors + the `Sm5DInventory` build.
+    Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

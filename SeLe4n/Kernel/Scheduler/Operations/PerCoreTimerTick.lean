@@ -35,6 +35,9 @@ invariant suite will consume:
   preservation + the headline `cbsReplenish_can_wake_remote_core`.
 * **§4 — SM5.D.5** per-core budget tick: `timerTickBudgetOnCore` no-timer-advance
   / preemption / preservation + the headline `timerTickOnCore_preempts_local`.
+* **§4b — SM5.D.6** full per-core domain re-dispatch: `switchDomainOnCore` /
+  `scheduleDomainOnCore` no-op / decrement / rotation / current-clearing +
+  objects-`invExt` preservation (the domain-boundary counterparts of §2).
 * **§5 — SM5.D.2 / .9** `timerTickOnCore` semantics: idle case, the
   no-global-timer-advance SMP property, `lastTimeoutErrors` clearing (SM5.D.9),
   the headline `timerTickOnCore_advances_per_core`, and the foundation invariant
@@ -65,27 +68,44 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId allCores SgiKind)
 -- §1  SM5.D.3 — Cross-domain lock-set footprint (+ SM5.D.7 WCRT size bound)
 -- ============================================================================
 
-/-- WS-SM SM5.D.3 (cross-domain, plan §3.4 / §4.4): the **complete** lock-set
-footprint of `timerTickOnCore c`, over SM5.A's `SchedLockId` (extended at SM5.D.3
-with the replenish-queue domain).
+/-- WS-SM SM5.D.3 (cross-domain, plan §3.4 / §4.4): the **static** timer-proper
+lock-set footprint of `timerTickOnCore c`, over SM5.A's `SchedLockId` (extended at
+SM5.D.3 with the replenish-queue domain).
 
-The tick mutates three lock domains on core `c`:
+The tick's *own* writes (the SM5.D.4 replenishment, SM5.D.6 domain accounting,
+SM5.D.5 budget tick on its non-timeout branches, and the SM5.D.2 reschedule) touch
+three lock domains on core `c`:
 * the RobinHood **object store** (write): CBS refills + budget/time-slice writes +
   the context save/restore on preemption all `objects.insert`.  Per SM3.A.10 the
   store is guarded by the single table-level lock (`schedObjStoreLockId`), in
   **write** mode — which subsumes plan §3.4's "all TCB locks for threads whose
-  SchedContext is bound to `c`" (the dynamic per-thread set), exactly the SM5.B/C
+  SchedContext is bound to `c`" (the per-thread set), exactly the SM5.B/C
   table-lock rationale (RHTable structural safety is table-granularity);
 * core `c`'s **run-queue** slot (write): re-enqueue on preemption + dispatch
   dequeue; and
 * core `c`'s **replenish-queue** slot (write): `popDue` + the exhausted-budget
   replenishment insert.
 
-So the footprint is the three-lock set in plan §4.4 ascending order
+So the static footprint is the three-lock set in plan §4.4 ascending order
 (object < runQueue < replenishQueue):
 `[(object schedObjStoreLockId, .write), (runQueue ⟨c⟩, .write), (replenishQueue ⟨c⟩, .write)]`.
-The cross-domain acquisition order is certified by `timerTickOnCoreLockSet_pairwise_le`;
-the runtime `withLockSet` acquisition is the SM5.D.1 ISR / SM5.I work. -/
+
+**Dynamic timeout extension (the honest footprint caveat).**  This static set is
+**not** the *complete* footprint: the SM5.D.5 budget tick's bound-budget-exhausted
+branch invokes the cross-subsystem IPC-timeout machinery
+(`timeoutBlockedThreads → timeoutThread → ensureRunnable / revertPriorityInheritance`),
+which — pre-SM5.F, while the IPC / PIP layer is still `bootCoreId`-pinned —
+additionally writes the **boot core's** run queue (`ensureRunnable` re-enqueues a
+timed-out thread there; `updatePipBoost` rebuckets there).  Per plan §3.4 the timer
+lock-set is "computed dynamically; lock-set may grow with the bound thread count":
+this cross-core extension is declared explicitly as `timerTickOnCoreTimeoutDynamicLockSet`,
+and the **complete** over-approximated footprint a `withLockSet` caller must
+acquire is `timerTickOnCoreCompleteLockSet` (below).  SM5.F (per-core PIP) collapses
+the extension to `runQueue ⟨c⟩` — at which point the static set *is* complete.
+
+The cross-domain acquisition order is certified by `timerTickOnCoreLockSet_pairwise_le`
+(static) / `timerTickOnCoreCompleteLockSet_pairwise_le` (complete); the runtime
+`withLockSet` acquisition is the SM5.D.1 ISR / SM5.I work. -/
 def timerTickOnCoreLockSet (c : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   [ (SchedLockId.object schedObjStoreLockId, .write)
@@ -170,6 +190,178 @@ budget.  A surface witness pinning the tick to the bounded-WCRT class. -/
 theorem timerTickOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
     (timerTickOnCoreLockSet c).length ≤ 8 := by
   rw [timerTickOnCoreLockSet_length]; decide
+
+-- ── SM5.D.3 (honest-footprint completion): the dynamic IPC-timeout extension + the
+--    complete over-approximated lock-set ──
+
+/-- WS-SM SM5.D.3 (dynamic IPC-timeout footprint): the **additional** lock the
+SM5.D.5 budget tick's bound-budget-exhausted branch writes, beyond the static
+`timerTickOnCoreLockSet` — the **boot core's** run-queue write lock.
+
+The bound-exhausted branch invokes `timeoutBlockedThreads` (a cross-subsystem IPC
+operation) to unblock IPC-blocked threads whose budget expired; `timeoutThread`'s
+`ensureRunnable` re-enqueues each on the boot core, and `revertPriorityInheritance`'s
+`updatePipBoost` rebuckets there — both **`bootCoreId`-pinned** pre-SM5.F (the IPC
+/ PIP layer is not yet per-core).  So a tick on a core `c ≠ bootCoreId` whose
+current thread's SchedContext exhausts *and* has IPC-blocked dependents has a
+genuine cross-core write to `runQueue ⟨bootCoreId⟩`.  This is exactly plan §3.4's
+"computed dynamically; lock-set may grow" provision; SM5.F (per-core PIP) collapses
+this target to `runQueue ⟨c⟩` (already in the static set), at which point the
+dynamic extension is empty.
+
+Declaring it explicitly — rather than silently omitting it from the footprint —
+keeps the 2PL/serializability footprint sound (SM3): a `withLockSet` caller
+acquires `timerTickOnCoreCompleteLockSet` (the ordered union), never just the
+static set, on the bound-exhausted path. -/
+def timerTickOnCoreTimeoutDynamicLockSet :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.runQueue ⟨bootCoreId⟩, .write) ]
+
+/-- SM5.D.3: the dynamic timeout extension is the boot core's run-queue write. -/
+theorem timerTickOnCoreTimeoutDynamicLockSet_eq :
+    timerTickOnCoreTimeoutDynamicLockSet = [(SchedLockId.runQueue ⟨bootCoreId⟩, .write)] := rfl
+
+/-- SM5.D.3: the dynamic timeout extension is write-only. -/
+theorem timerTickOnCoreTimeoutDynamicLockSet_write_only :
+    ∀ p ∈ timerTickOnCoreTimeoutDynamicLockSet, p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [timerTickOnCoreTimeoutDynamicLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  subst hp; rfl
+
+/-- WS-SM SM5.D.3 (the **complete** over-approximated footprint): the full set of
+locks a `withLockSet` caller must acquire for `timerTickOnCore c` — the static
+timer-proper footprint **plus** the dynamic IPC-timeout extension
+(`runQueue ⟨bootCoreId⟩`), ordered ascending (plan §4.4).
+
+When `c = bootCoreId` the dynamic extension's `runQueue ⟨bootCoreId⟩` already *is*
+the static `runQueue ⟨c⟩`, so the complete set is the static 3-lock set (no
+duplicate key).  Otherwise it is the 4-lock set
+`[object, runQueue ⟨bootCoreId⟩, runQueue ⟨c⟩, replenishQueue ⟨c⟩]` — `bootCoreId`'s
+run-queue lock slots *before* `c`'s (since `bootCoreId.val = 0 ≤ c.val`), preserving
+the ascending acquisition order the SM3.D deadlock-freedom ladder needs.  This is
+the honest, sound footprint; SM5.F collapses it to the static set. -/
+def timerTickOnCoreCompleteLockSet (c : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  if c = bootCoreId then
+    timerTickOnCoreLockSet c
+  else
+    [ (SchedLockId.object schedObjStoreLockId, .write)
+    , (SchedLockId.runQueue ⟨bootCoreId⟩, .write)
+    , (SchedLockId.runQueue ⟨c⟩, .write)
+    , (SchedLockId.replenishQueue ⟨c⟩, .write) ]
+
+/-- SM5.D.3: the complete footprint contains the static timer-proper footprint. -/
+theorem timerTickOnCoreCompleteLockSet_contains_static (c : CoreId) :
+    ∀ p ∈ timerTickOnCoreLockSet c, p ∈ timerTickOnCoreCompleteLockSet c := by
+  intro p hp
+  unfold timerTickOnCoreCompleteLockSet
+  by_cases h : c = bootCoreId
+  · rw [if_pos h]; exact hp
+  · rw [if_neg h]
+    simp only [timerTickOnCoreLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+    rcases hp with rfl | rfl | rfl <;> simp
+
+/-- SM5.D.3: the complete footprint contains the dynamic IPC-timeout extension —
+the boot core's run-queue write lock the bound-exhausted timeout takes. -/
+theorem timerTickOnCoreCompleteLockSet_contains_timeout (c : CoreId) :
+    ∀ p ∈ timerTickOnCoreTimeoutDynamicLockSet, p ∈ timerTickOnCoreCompleteLockSet c := by
+  intro p hp
+  simp only [timerTickOnCoreTimeoutDynamicLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  subst hp
+  unfold timerTickOnCoreCompleteLockSet
+  by_cases h : c = bootCoreId
+  · rw [if_pos h, h]; simp [timerTickOnCoreLockSet]
+  · rw [if_neg h]; simp
+
+/-- SM5.D.3: every lock in the complete footprint is acquired in **write** mode. -/
+theorem timerTickOnCoreCompleteLockSet_write_only (c : CoreId) :
+    ∀ p ∈ timerTickOnCoreCompleteLockSet c, p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  unfold timerTickOnCoreCompleteLockSet at hp
+  by_cases h : c = bootCoreId
+  · rw [if_pos h] at hp; exact timerTickOnCoreLockSet_write_only c p hp
+  · rw [if_neg h] at hp
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+    rcases hp with rfl | rfl | rfl | rfl <;> rfl
+
+/-- SM5.D.3 (plan §4.4): the complete footprint's keys are duplicate-free — when
+`c ≠ bootCoreId` the boot-core and core-`c` run-queue locks are distinct (distinct
+cores). -/
+theorem timerTickOnCoreCompleteLockSet_keys_nodup (c : CoreId) :
+    ((timerTickOnCoreCompleteLockSet c).map (·.1)).Nodup := by
+  unfold timerTickOnCoreCompleteLockSet
+  by_cases h : c = bootCoreId
+  · rw [if_pos h]; exact timerTickOnCoreLockSet_keys_nodup c
+  · rw [if_neg h]
+    have hne : (SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId))
+        ≠ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) := by
+      intro he
+      have : bootCoreId = c := congrArg RunQueueLockId.core (SchedLockId.runQueue.inj he)
+      exact h this.symm
+    simp only [List.map_cons, List.map_nil]
+    refine List.nodup_cons.mpr ⟨by simp, List.nodup_cons.mpr ⟨?_, List.nodup_cons.mpr
+      ⟨by simp, by simp⟩⟩⟩
+    intro hmem
+    rcases List.mem_cons.mp hmem with h1 | h1
+    · exact hne h1
+    · exact absurd (List.mem_singleton.mp h1) (by simp)
+
+/-- SM5.D.3 (plan §4.4): the complete footprint's keys form a `SchedLockId`-ascending
+acquisition sequence — object < runQueue ⟨bootCoreId⟩ ≤ runQueue ⟨c⟩ <
+replenishQueue ⟨c⟩ (the boot core's run-queue lock, at level-10 core 0, precedes
+core `c`'s) — the tick's contribution to the SM3.D deadlock-freedom ladder. -/
+theorem timerTickOnCoreCompleteLockSet_pairwise_le (c : CoreId) :
+    ((timerTickOnCoreCompleteLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
+  unfold timerTickOnCoreCompleteLockSet
+  by_cases h : c = bootCoreId
+  · rw [if_pos h]; exact timerTickOnCoreLockSet_pairwise_le c
+  · rw [if_neg h]
+    have hObjRqB : SchedLockId.object schedObjStoreLockId
+        ≤ SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId) :=
+      (SchedLockId.object_lt_runQueue _ _).1
+    have hObjRq : SchedLockId.object schedObjStoreLockId
+        ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+      (SchedLockId.object_lt_runQueue _ _).1
+    have hObjRpq : SchedLockId.object schedObjStoreLockId
+        ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+      (SchedLockId.object_lt_replenishQueue _ _).1
+    have hRqBRq : SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)
+        ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) := by
+      show bootCoreId.val ≤ c.val
+      exact Nat.zero_le _
+    have hRqBRpq : SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)
+        ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+      (SchedLockId.runQueue_lt_replenishQueue _ _).1
+    have hRqRpq : SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
+        ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
+      (SchedLockId.runQueue_lt_replenishQueue _ _).1
+    simp only [List.map_cons, List.map_nil]
+    refine List.Pairwise.cons ?_ (List.Pairwise.cons ?_ (List.Pairwise.cons ?_
+      (List.Pairwise.cons ?_ List.Pairwise.nil)))
+    · intro a ha
+      rcases List.mem_cons.mp ha with rfl | ha'
+      · exact hObjRqB
+      · rcases List.mem_cons.mp ha' with rfl | ha''
+        · exact hObjRq
+        · rcases List.mem_singleton.mp ha'' with rfl; exact hObjRpq
+    · intro a ha
+      rcases List.mem_cons.mp ha with rfl | ha'
+      · exact hRqBRq
+      · rcases List.mem_singleton.mp ha' with rfl; exact hRqBRpq
+    · intro a ha
+      rcases List.mem_singleton.mp ha with rfl; exact hRqRpq
+    · intro a ha; simp at ha
+
+/-- WS-SM SM5.D.7 (WCRT bound, complete footprint): even the complete
+over-approximated footprint (≤ 4 locks) is within the SM3.D `maxLockSetSize` (= 8)
+cap, so the tick's worst-case response time is bounded by `maxLockSetSize ·
+(numCores − 1) · T_per_lock` (plan §3.9). -/
+theorem timerTickOnCoreCompleteLockSet_size_le_maxLockSetSize (c : CoreId) :
+    (timerTickOnCoreCompleteLockSet c).length ≤ 8 := by
+  unfold timerTickOnCoreCompleteLockSet
+  by_cases h : c = bootCoreId
+  · rw [if_pos h, timerTickOnCoreLockSet_length]; decide
+  · rw [if_neg h]; simp only [List.length_cons, List.length_nil]; omega
 
 -- ============================================================================
 -- §2  SM5.D.6 — Per-core domain rotation (`decrementDomainTimeOnCore`)
@@ -307,6 +499,52 @@ theorem decrementDomainTimeOnCore_rotates (st : SystemState) (c : CoreId)
     simp [SchedulerState.setDomainScheduleIndexOnCore_activeDomainOnCore,
       SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore,
       SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self]
+
+/-- WS-SM SM5.D.6 (the C4 rotation form, lookup discharged): when core `c`'s domain
+reaches its last tick and the domain schedule is non-empty, the active domain
+rotates to *some* schedule entry's domain — the entry's existence (and
+schedule-membership) is derived internally from non-emptiness via
+`switchDomain_index_lookup_isSome`, so the caller need not supply the lookup.
+This is the clean SM5.D.6 rotation witness (the `hEntry`-parameterised
+`decrementDomainTimeOnCore_rotates` above is the precise form). -/
+theorem decrementDomainTimeOnCore_rotates_nonempty (st : SystemState) (c : CoreId)
+    (hExpired : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
+    (hSched : st.scheduler.domainSchedule ≠ []) :
+    ∃ entry, (decrementDomainTimeOnCore st c).scheduler.activeDomainOnCore c
+        = DomainScheduleEntry.domain entry ∧ entry ∈ st.scheduler.domainSchedule := by
+  have hsome := switchDomain_index_lookup_isSome st.scheduler.domainSchedule
+    (st.scheduler.domainScheduleIndexOnCore c) hSched
+  obtain ⟨entry, hentry⟩ := Option.isSome_iff_exists.mp hsome
+  exact ⟨entry, decrementDomainTimeOnCore_rotates st c entry hExpired hSched hentry,
+    List.mem_of_getElem? hentry⟩
+
+/-- WS-SM SM5.D.6 / B3 (preservation): `decrementDomainTimeOnCore` preserves
+`domainTimeRemainingPositiveOnCore` — under `domainScheduleEntriesPositive` (every
+schedule entry has positive length).  The decrement branch leaves
+`old − 1 ≥ 1 > 0` (it fires only when `old > 1`); the rotation branch resets to the
+next entry's length (`> 0` by `domainScheduleEntriesPositive`); the single-domain /
+unreachable branches are no-ops.  So the per-core timer never zeroes the domain
+timer — the SM5.D.6 conjunct of `schedulerInvariant_perCore`. -/
+theorem decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore
+    (st : SystemState) (c : CoreId)
+    (hPos : domainTimeRemainingPositiveOnCore st c)
+    (hEntries : domainScheduleEntriesPositive st) :
+    domainTimeRemainingPositiveOnCore (decrementDomainTimeOnCore st c) c := by
+  unfold domainTimeRemainingPositiveOnCore at *
+  unfold domainScheduleEntriesPositive at hEntries
+  simp only [decrementDomainTimeOnCore]
+  split
+  · split
+    · exact hPos
+    · split
+      · exact hPos
+      · next entry hlookup =>
+          simp only [SchedulerState.setDomainScheduleIndexOnCore_domainTimeRemainingOnCore,
+            SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
+          exact hEntries entry (List.mem_of_getElem? hlookup)
+  · next hgt =>
+      simp only [SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
+      omega
 
 -- ============================================================================
 -- §3  SM5.D.4 — Per-core CBS replenishment + cross-core wake
@@ -629,6 +867,45 @@ theorem timerTickBudgetOnCore_unbound_preempts (st : SystemState) (c : CoreId)
     Prod.mk.injEq] at hStep
   exact hStep.2.symm
 
+/-- WS-SM SM5.D.5 / B4: a *bound* thread whose SchedContext budget is exhausted
+(`budgetRemaining ≤ 1`) **is** preempted — the per-core CBS budget-exhaustion
+preemption (the substantive one, beyond the time-slice case above). -/
+theorem timerTickBudgetOnCore_bound_preempts (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (st' : SystemState) (b : Bool)
+    (hBound : tcb.schedContextBinding = .bound scId)
+    (hSc : st.getSchedContext? scId = some sc) (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) : b = true := by
+  simp only [timerTickBudgetOnCore, hBound, hSc, if_pos hBudget, Except.ok.injEq,
+    Prod.mk.injEq] at hStep
+  exact hStep.2.symm
+
+/-- WS-SM SM5.D.5 / B4: a *bound* thread whose SchedContext budget has not expired
+(`budgetRemaining > 1`) is **not** preempted (the budget is decremented and the
+thread continues). -/
+theorem timerTickBudgetOnCore_bound_not_preempted (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (st' : SystemState) (b : Bool)
+    (hBound : tcb.schedContextBinding = .bound scId)
+    (hSc : st.getSchedContext? scId = some sc) (hBudget : ¬ sc.budgetRemaining.val ≤ 1)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) : b = false := by
+  simp only [timerTickBudgetOnCore, hBound, hSc, if_neg hBudget, Except.ok.injEq,
+    Prod.mk.injEq] at hStep
+  exact hStep.2.symm
+
+/-- WS-SM SM5.D.5 / B4: the *donated* SchedContext-binding case — budget exhausted
+(`budgetRemaining ≤ 1`) preempts.  (The `.donated scId _` arm of
+`timerTickBudgetOnCore` shares the bound-case body.) -/
+theorem timerTickBudgetOnCore_donated_preempts (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) (sc : SchedContext) (st' : SystemState) (b : Bool)
+    (hDonated : tcb.schedContextBinding = .donated scId originalOwner)
+    (hSc : st.getSchedContext? scId = some sc) (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) : b = true := by
+  simp only [timerTickBudgetOnCore, hDonated, hSc, if_pos hBudget, Except.ok.injEq,
+    Prod.mk.injEq] at hStep
+  exact hStep.2.symm
+
 /-- WS-SM SM5.D.5 (local helper): `saveOutgoingContextOnCore` preserves the
 object store (its only write is the outgoing TCB's register save — an insert). -/
 theorem saveOutgoingContextOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
@@ -664,6 +941,110 @@ theorem scheduleEffectiveOnCore_preserves_objects_invExt (st : SystemState) (c :
         exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
       · simp at hStep
     · simp at hStep
+
+-- ============================================================================
+-- §4b  SM5.D.6 — Full per-core domain re-dispatch (`switchDomainOnCore` /
+--      `scheduleDomainOnCore`).  These are the domain-*boundary* re-dispatch
+--      counterparts of §2's lightweight in-tick `decrementDomainTimeOnCore`.
+--      They depend on §4's context save/restore preservation, so they live
+--      here rather than in §2.
+-- ============================================================================
+
+/-- WS-SM SM5.D.6: in single-domain mode (`domainSchedule = []`) the per-core
+domain switch is a no-op. -/
+theorem switchDomainOnCore_singleDomain_noop (st : SystemState) (c : CoreId)
+    (hSched : st.scheduler.domainSchedule = []) :
+    switchDomainOnCore st c = .ok st := by
+  unfold switchDomainOnCore; rw [hSched]
+
+/-- WS-SM SM5.D.6 (preservation): `switchDomainOnCore` preserves the RobinHood
+object-store invariant.  The empty-schedule case is the identity; the domain-
+boundary case writes only the saved register context (`saveOutgoingContextOnCore`,
+which preserves `invExt`) plus scheduler-field slots. -/
+theorem switchDomainOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : switchDomainOnCore st c = .ok st') : st'.objects.invExt := by
+  unfold switchDomainOnCore at hStep
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at hStep; simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
+  | cons hd tl =>
+    rw [hcase] at hStep; dsimp only at hStep
+    split at hStep
+    · simp at hStep
+    · simp only [Except.ok.injEq] at hStep; subst hStep
+      exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
+
+/-- WS-SM SM5.D.6: a successful per-core domain switch on a non-empty schedule
+clears `currentOnCore c` (the outgoing thread is preempted and re-enqueued before
+the next domain's `chooseThread` selects a fresh current). -/
+theorem switchDomainOnCore_sets_currentOnCore_none (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hStep : switchDomainOnCore st c = .ok st')
+    (hSched : st.scheduler.domainSchedule ≠ []) :
+    st'.scheduler.currentOnCore c = none := by
+  unfold switchDomainOnCore at hStep
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => exact absurd hcase hSched
+  | cons hd tl =>
+    rw [hcase] at hStep; dsimp only at hStep
+    split at hStep
+    · simp at hStep
+    · simp only [Except.ok.injEq] at hStep; subst hStep
+      simp [SchedulerState.setDomainScheduleIndexOnCore_currentOnCore,
+        SchedulerState.setDomainTimeRemainingOnCore_currentOnCore,
+        SchedulerState.setActiveDomainOnCore_currentOnCore,
+        SchedulerState.setCurrentOnCore_currentOnCore_self]
+
+/-- WS-SM SM5.D.6: a successful per-core domain switch advances core `c`'s active
+domain to the domain of the next schedule entry (the per-core domain rotation
+that gives multi-domain SMP scheduling its round-robin shape). -/
+theorem switchDomainOnCore_rotates (st : SystemState) (c : CoreId) (st' : SystemState)
+    (entry : DomainScheduleEntry)
+    (hLookup : st.scheduler.domainSchedule[((st.scheduler.domainScheduleIndexOnCore c) + 1) %
+        st.scheduler.domainSchedule.length]? = some entry)
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hStep : switchDomainOnCore st c = .ok st') :
+    st'.scheduler.activeDomainOnCore c = DomainScheduleEntry.domain entry := by
+  unfold switchDomainOnCore at hStep
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => exact absurd hcase hSched
+  | cons hd tl =>
+    rw [hcase] at hStep
+    dsimp only at hStep
+    simp only [hcase] at hLookup
+    rw [hLookup] at hStep
+    simp only [Except.ok.injEq] at hStep
+    subst hStep
+    simp [SchedulerState.setDomainScheduleIndexOnCore_activeDomainOnCore,
+      SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore,
+      SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self]
+
+/-- WS-SM SM5.D.6: before the domain boundary expires (`domainTimeRemainingOnCore
+c > 1`), `scheduleDomainOnCore` only decrements core `c`'s domain time remaining
+(the lightweight in-domain tick); it does not rotate or re-dispatch. -/
+theorem scheduleDomainOnCore_decrements (st : SystemState) (c : CoreId)
+    (hle : st.scheduler.domainTimeRemainingOnCore c > 1) :
+    ∃ st', scheduleDomainOnCore st c = .ok st' ∧
+      st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c - 1 := by
+  let dtr := st.scheduler.domainTimeRemainingOnCore c - 1
+  refine ⟨{ st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }, ?_, ?_⟩
+  · unfold scheduleDomainOnCore; rw [if_neg (by omega)]
+  · simp [dtr, SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
+
+/-- WS-SM SM5.D.6 (preservation): `scheduleDomainOnCore` preserves the RobinHood
+object-store invariant.  On a domain boundary it composes `switchDomainOnCore`
+with the budget-aware `scheduleEffectiveOnCore` (both `invExt`-preserving); the
+in-domain tick only writes a scheduler slot. -/
+theorem scheduleDomainOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleDomainOnCore st c = .ok st') : st'.objects.invExt := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · split at hStep
+    · simp at hStep
+    · rename_i st'' hsw
+      exact scheduleEffectiveOnCore_preserves_objects_invExt st'' c st'
+        (switchDomainOnCore_preserves_objects_invExt st c st'' hInv hsw) hStep
+  · simp only [Except.ok.injEq] at hStep; subst hStep; exact hInv
 
 -- ============================================================================
 -- §5  SM5.D.2 / .9 — `timerTickOnCore` semantics (idle, no-global-timer-advance,
@@ -1012,5 +1393,553 @@ instance (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) :
   cases timerTickBudgetOnCore st c tid tcb with
   | error _ => simp; infer_instance
   | ok r => cases r; simp; infer_instance
+-- ============================================================================
+-- §7  SM5.D.5/.6 — per-core invariant preservation (the SM5.C-parity coverage)
+--
+--   The composed `timerTickOnCore` preserves the SM4.C per-core scheduler
+--   invariants.  `currentThreadValidOnCore` is preserved UNCONDITIONALLY (the
+--   preempted branch re-establishes it via `scheduleEffectiveOnCore`, the
+--   not-preempted branch is a clean budget tick that keeps the charged thread a
+--   TCB).  `runQueueOnCoreWellFormed` (B2) and `queueCurrentConsistentOnCore` are
+--   preserved modulo a single clean hypothesis on the budget tick / prepared
+--   state: the *bound-budget-exhausted* timeout branch re-enqueues timed-out
+--   threads through the bootCoreId-pinned `ensureRunnable` /
+--   `revertPriorityInheritance` (SM5.F per-core PIP migration, tracked debt), so
+--   its per-core run-queue effect is not yet provable here.  Every clean path
+--   (idle, unbound time-slice, bound budget-not-exhausted, replenishment, domain
+--   rotation, reschedule) is discharged unconditionally.
+-- ============================================================================
+
+-- ── §7a  `decrementDomainTimeOnCore` (pure domain-slot write) frames the four ──
+
+/-- WS-SM SM5.D.6 (preservation): the per-core domain decrement preserves per-core
+current-thread validity — it writes only domain slots, leaving `current` /
+`objects` untouched. -/
+theorem decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
+    (st : SystemState) (c c' : CoreId) (h : currentThreadValidOnCore st c') :
+    currentThreadValidOnCore (decrementDomainTimeOnCore st c) c' := by
+  unfold currentThreadValidOnCore at h ⊢
+  simp only [decrementDomainTimeOnCore_currentOnCore, SystemState.getTcb?,
+    decrementDomainTimeOnCore_objects_eq] at h ⊢
+  exact h
+
+/-- WS-SM SM5.D.6 (preservation): the per-core domain decrement preserves per-core
+dequeue-on-dispatch consistency. -/
+theorem decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
+    (st : SystemState) (c c' : CoreId) (h : queueCurrentConsistentOnCore st.scheduler c') :
+    queueCurrentConsistentOnCore (decrementDomainTimeOnCore st c).scheduler c' := by
+  unfold queueCurrentConsistentOnCore at h ⊢
+  simp only [decrementDomainTimeOnCore_currentOnCore, decrementDomainTimeOnCore_runQueueOnCore] at h ⊢
+  exact h
+
+/-- WS-SM SM5.D.6 (preservation): the per-core domain decrement preserves per-core
+runnable-threads-are-TCBs. -/
+theorem decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
+    (st : SystemState) (c c' : CoreId) (h : runnableThreadsAreTCBsOnCore st c') :
+    runnableThreadsAreTCBsOnCore (decrementDomainTimeOnCore st c) c' := by
+  unfold runnableThreadsAreTCBsOnCore at h ⊢
+  simp only [decrementDomainTimeOnCore_runQueueOnCore, SystemState.getTcb?,
+    decrementDomainTimeOnCore_objects_eq] at h ⊢
+  exact h
+
+/-- WS-SM SM5.D.6 (preservation, B2): the per-core domain decrement preserves
+per-core run-queue well-formedness. -/
+theorem decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
+    (st : SystemState) (c c' : CoreId) (h : runQueueOnCoreWellFormed st.scheduler c') :
+    runQueueOnCoreWellFormed (decrementDomainTimeOnCore st c).scheduler c' := by
+  unfold runQueueOnCoreWellFormed at h ⊢
+  simp only [decrementDomainTimeOnCore_runQueueOnCore] at h ⊢
+  exact h
+
+-- ── §7b  `saveOutgoingContextOnCore` frame lemmas ──
+
+/-- WS-SM SM5.D.5 (frame): the per-core register-context save touches only the
+object store; the scheduler is unchanged. -/
+theorem saveOutgoingContextOnCore_scheduler_eq (st : SystemState) (c : CoreId) :
+    (saveOutgoingContextOnCore st c).scheduler = st.scheduler := by
+  simp only [saveOutgoingContextOnCore]
+  split
+  · rfl
+  · split <;> rfl
+
+/-- WS-SM SM5.D.5 (frame): the per-core register-context save preserves
+TCB-resolvability of any thread — its only write replaces the outgoing thread's
+TCB with the same TCB plus a fresh register context (still a TCB), and any other
+key is untouched.  AK7-clean (`.get?` method form). -/
+theorem saveOutgoingContextOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (h : ∃ t, st.getTcb? tid = some t) :
+    ∃ t, (saveOutgoingContextOnCore st c).getTcb? tid = some t := by
+  cases hcur : st.scheduler.currentOnCore c with
+  | none => rw [show saveOutgoingContextOnCore st c = st from by
+      simp only [saveOutgoingContextOnCore, hcur]]; exact h
+  | some outTid =>
+    cases hout : st.getTcb? outTid with
+    | none => rw [show saveOutgoingContextOnCore st c = st from by
+        simp only [saveOutgoingContextOnCore, hcur, hout]]; exact h
+    | some outTcb =>
+      obtain ⟨t, ht⟩ := h
+      by_cases hEq : tid = outTid
+      · subst hEq
+        refine ⟨{ outTcb with registerContext := st.machine.regs }, ?_⟩
+        simp only [saveOutgoingContextOnCore, hcur, hout]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      · refine ⟨t, ?_⟩
+        have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
+          hEq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
+        simp only [saveOutgoingContextOnCore, hcur, hout]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId
+          _ hNeO hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using ht
+
+-- ── §7c  `scheduleEffectiveOnCore` preservation / establishment ──
+
+/-- WS-SM SM5.D.5 (object frame): in every OK branch (idle dispatch and
+thread dispatch), `scheduleEffectiveOnCore` writes the object store only through
+`saveOutgoingContextOnCore` — the dequeue / restore / set-current steps are
+object-neutral. -/
+theorem scheduleEffectiveOnCore_objects_eq (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    st'.objects = (saveOutgoingContextOnCore st c).objects := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none => simp only [Except.ok.injEq] at hStep; subst hStep; rfl
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          simp only [restoreIncomingContext_objects]
+        · simp at hStep
+
+/-- WS-SM SM5.D.5 (frame): `scheduleEffectiveOnCore` preserves TCB-resolvability of
+any thread (its only object write is the outgoing register-context save). -/
+theorem scheduleEffectiveOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
+    (st' : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') (h : ∃ t, st.getTcb? tid = some t) :
+    ∃ t, st'.getTcb? tid = some t := by
+  have hobj := scheduleEffectiveOnCore_objects_eq st c st' hStep
+  have : st'.getTcb? tid = (saveOutgoingContextOnCore st c).getTcb? tid := by
+    simp only [SystemState.getTcb?, hobj]
+  rw [this]; exact saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv h
+
+/-- WS-SM SM5.D.5 (preservation, B2): `scheduleEffectiveOnCore` preserves per-core
+run-queue well-formedness — the dispatch case dequeues (`remove`) the selected
+thread (`remove_preserves_wellFormed`); the idle case leaves the run queue. -/
+theorem scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    (st'.scheduler.runQueueOnCore c).wellFormed := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore]
+      rw [saveOutgoingContextOnCore_scheduler_eq]; exact hwf
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+            restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          rw [saveOutgoingContextOnCore_scheduler_eq]
+          exact RunQueue.remove_preserves_wellFormed _ hwf tid
+        · simp at hStep
+
+/-- WS-SM SM5.D.5 (invariant established): after a successful per-core reschedule,
+core `c` satisfies `currentThreadValidOnCore` — the dispatched thread resolves to a
+TCB (the dispatch requires it; the idle case sets `current = none`).  Mirror of
+SM5.B's `switchToThreadOnCore_establishes_currentThreadValidOnCore`. -/
+theorem scheduleEffectiveOnCore_establishes_currentThreadValidOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    currentThreadValidOnCore st' c := by
+  have hCopy := hStep
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      unfold currentThreadValidOnCore
+      simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          unfold currentThreadValidOnCore
+          simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+          exact scheduleEffectiveOnCore_getTcb?_isSome st c _ tid hInv hCopy ⟨tcb, hTcb⟩
+        · simp at hStep
+
+/-- WS-SM SM5.D.5 (invariant established): after a successful per-core reschedule,
+core `c` satisfies `queueCurrentConsistentOnCore` — the dispatched thread is
+dequeued-on-dispatch (`not_mem_remove_toList`), so it is not in core `c`'s run
+queue; the idle case sets `current = none`. -/
+theorem scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    queueCurrentConsistentOnCore st'.scheduler c := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      unfold queueCurrentConsistentOnCore
+      simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          unfold queueCurrentConsistentOnCore
+          simp only [SchedulerState.setCurrentOnCore_currentOnCore_self,
+            SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContext_scheduler,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          rw [saveOutgoingContextOnCore_scheduler_eq]
+          exact RunQueue.not_mem_remove_toList _ tid
+        · simp at hStep
+
+/-- WS-SM SM5.D.5 (frame): every thread in `scheduleEffectiveOnCore`'s post run
+queue was in the pre run queue (the dispatch dequeues, the idle case is the
+identity). -/
+theorem scheduleEffectiveOnCore_runQueue_toList_subset (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st')
+    (x : SeLe4n.ThreadId) (hx : x ∈ (st'.scheduler.runQueueOnCore c).toList) :
+    x ∈ (st.scheduler.runQueueOnCore c).toList := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore] at hx
+      rw [saveOutgoingContextOnCore_scheduler_eq] at hx; exact hx
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+            restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hx
+          rw [saveOutgoingContextOnCore_scheduler_eq] at hx
+          rw [RunQueue.mem_toList_iff_mem] at hx ⊢
+          exact (RunQueue.mem_remove _ tid x |>.mp hx).1
+        · simp at hStep
+
+/-- WS-SM SM5.D.5 (preservation): `scheduleEffectiveOnCore` preserves per-core
+runnable-threads-are-TCBs — its post run queue is a subset of the pre run queue,
+and it preserves TCB-resolvability of every thread. -/
+theorem scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c = .ok st')
+    (h : runnableThreadsAreTCBsOnCore st c) :
+    runnableThreadsAreTCBsOnCore st' c := by
+  intro x hx
+  exact scheduleEffectiveOnCore_getTcb?_isSome st c st' x hInv hStep
+    (h x (scheduleEffectiveOnCore_runQueue_toList_subset st c st' hStep x hx))
+
+-- ── §7d  `timerTickBudgetOnCore` clean (not-preempted) frame lemmas ──
+
+/-- WS-SM SM5.D.5 (frame): a *not-preempted* budget tick (unbound time-slice not
+expired, or bound budget not exhausted) writes only the object store; the
+scheduler is unchanged. -/
+theorem timerTickBudgetOnCore_notPreempted_scheduler_eq (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    st'.scheduler = st.scheduler := by
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.1]
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.1]
+
+/-- WS-SM SM5.D.5 (frame): a not-preempted budget tick keeps the charged thread
+`tid` a TCB.  Unbound: writes `tid`'s TCB with a decremented time-slice.  Bound:
+writes the SchedContext at `scId` — a *different* key from `tid` (both lookups
+succeed, so the keys are distinct), leaving `tid`'s TCB untouched.  AK7-clean. -/
+theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
+    (hCur : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    ∃ t, st'.getTcb? tid = some t := by
+  have hDisj : ∀ scId : SeLe4n.SchedContextId, (∃ s, st.getSchedContext? scId = some s) →
+      ¬ (scId.toObjId == tid.toObjId) = true := by
+    rintro scId ⟨s, hSc⟩ he
+    have he' : scId.toObjId = tid.toObjId := by simpa using he
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?] at hCur
+    simp only [SystemState.getSchedContext?, RHTable_getElem?_eq_get?] at hSc
+    rw [he'] at hSc
+    revert hCur hSc; cases st.objects.get? tid.toObjId with
+    | none => simp
+    | some o => cases o <;> simp
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?,
+        RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      exact ⟨_, rfl⟩
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hCur
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hCur
+
+-- ── §7e  Composed `timerTickOnCore` invariant preservation ──
+
+/-- WS-SM SM5.D.5/.6 (the headline B1 preservation): the per-core timer tick
+preserves per-core current-thread validity, **UNCONDITIONALLY**.  Three cases:
+the idle path leaves `current = none` (vacuously valid); the not-preempted budget
+tick keeps the charged current thread a TCB
+(`timerTickBudgetOnCore_notPreempted_getTcb?_tid`); the preempted path
+re-establishes validity from scratch via
+`scheduleEffectiveOnCore_establishes_currentThreadValidOnCore` (needing only the
+budget-tick result's object-store `invExt`, which `timerTickBudgetOnCore`
+preserves).  The bound-budget-exhausted timeout's effect on the object store is
+absorbed by the re-establishment, so no timeout hypothesis is needed here. -/
+theorem timerTickOnCore_preserves_currentThreadValidOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    currentThreadValidOnCore st' c := by
+  have hPrepInv : (timerTickOnCorePrepared st c).1.objects.invExt :=
+    timerTickOnCorePrepared_objects_invExt st c hInv
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]
+    simp only [currentThreadValidOnCore, hCur]
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        split at hStep
+        · -- preempted: re-select + dispatch via scheduleEffectiveOnCore
+          cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_establishes_currentThreadValidOnCore st3 c st4
+              (timerTickBudgetOnCore_preserves_objects_invExt (timerTickOnCorePrepared st c).1 c tid
+                tcb st3 preempted hPrepInv hbud) hsch
+        · -- not preempted: the charged thread stays current and a TCB
+          rename_i hpre
+          have hpf : preempted = false := Bool.not_eq_true _ |>.mp hpre
+          subst hpf
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]
+          simp only [currentThreadValidOnCore,
+            timerTickBudgetOnCore_notPreempted_scheduler_eq (timerTickOnCorePrepared st c).1 c tid tcb st3 hbud, hCur]
+          exact timerTickBudgetOnCore_notPreempted_getTcb?_tid (timerTickOnCorePrepared st c).1 c tid tcb st3 hPrepInv hTcb hbud
+/-- WS-SM SM5.D.2 (B2 helper): the prepared state preserves per-core run-queue
+well-formedness — the SM5.D.4 replenishment preserves it (wakes `insert`) and the
+SM5.D.6 domain decrement frames the run queue. -/
+theorem timerTickOnCorePrepared_runQueueOnCore_wellFormed (st : SystemState) (c : CoreId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
+    ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).wellFormed := by
+  simp only [timerTickOnCorePrepared, decrementDomainTimeOnCore_runQueueOnCore]
+  apply processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
+  simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hwf
+
+/-- WS-SM SM5.D.5 (B2 discharge, clean path): a *not-preempted* budget tick
+preserves per-core run-queue well-formedness — its scheduler is unchanged
+(`timerTickBudgetOnCore_notPreempted_scheduler_eq`).  This discharges the B2
+budget-tick hypothesis on every clean (non-budget-exhausted) path; the
+bound-budget-exhausted branch's run-queue effect (the `timeoutBlockedThreads`
+re-enqueue through the bootCoreId-pinned `ensureRunnable` /
+`revertPriorityInheritance`) is the SM5.F per-core-PIP-migration tracked gap. -/
+theorem timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    (st'.scheduler.runQueueOnCore c).wellFormed := by
+  rw [timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep]; exact hwf
+
+/-- WS-SM SM5.D.5/.6 (B2 preservation): the per-core timer tick preserves per-core
+run-queue well-formedness, given that the budget tick preserves it
+(`hBudgetRqWf`).  The idle path is the prepared state (well-formed via
+`timerTickOnCorePrepared_runQueueOnCore_wellFormed`); the not-preempted path is the
+budget result; the preempted path dequeues-on-dispatch via
+`scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed`.  `hBudgetRqWf` is
+discharged unconditionally on every clean path by
+`timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed` (and, for
+the unbound time-slice preemption, by `RunQueue.insert_preserves_wellFormed`); the
+bound-budget-exhausted preemption's `timeoutBlockedThreads` re-enqueue is the SM5.F
+tracked gap (the only case `hBudgetRqWf` is not yet provable here). -/
+theorem timerTickOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hBudgetRqWf : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       (st3.scheduler.runQueueOnCore c).wellFormed)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    (st'.scheduler.runQueueOnCore c).wellFormed := by
+  have hPrep := timerTickOnCorePrepared_runQueueOnCore_wellFormed st c hwf
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrep
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        have hst3 : (st3.scheduler.runQueueOnCore c).wellFormed :=
+          hBudgetRqWf tid tcb st3 preempted hCur hTcb hbud
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed st3 c st4 hst3 hsch
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]; exact hst3
+
+/-- WS-SM SM5.D.5/.6 (preservation): the per-core timer tick preserves per-core
+dequeue-on-dispatch consistency, given that the *prepared* state satisfies it
+(`hPrepQcc`).  The idle path is the prepared state; the preempted path
+*re-establishes* consistency via
+`scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore` (no hypothesis
+needed); the not-preempted path leaves the scheduler unchanged
+(`timerTickBudgetOnCore_notPreempted_scheduler_eq`), so consistency is inherited
+from `hPrepQcc`.  `hPrepQcc` follows from the input `queueCurrentConsistentOnCore`
+when the SM5.D.4 replenishment preserves it (the wake's don't-wake-the-running-
+thread guard, SM5.C); the SM5.D.6 domain decrement preserves it
+(`decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore`). -/
+theorem timerTickOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hPrepQcc : queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).1.scheduler c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    queueCurrentConsistentOnCore st'.scheduler c := by
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepQcc
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore st3 c st4 hsch
+        · rename_i hpre
+          have hpf : preempted = false := Bool.not_eq_true _ |>.mp hpre
+          subst hpf
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1, timerTickBudgetOnCore_notPreempted_scheduler_eq (timerTickOnCorePrepared st c).1 c tid tcb st3 hbud]
+          exact hPrepQcc
 
 end SeLe4n.Kernel

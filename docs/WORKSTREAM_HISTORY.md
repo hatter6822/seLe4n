@@ -2645,6 +2645,42 @@ state, `withLockSet` over `timerTickOnCoreLockSet`, cross-core SGI emission) is
 SM5.I work; the pure transition + full theorem surface land here.  Items deferred
 past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.D audit-pass-1 LANDED at v0.31.42** (deep self-audit closing the
+verification-completeness gaps the v0.31.41 landing deferred — it had shipped only
+object-store-`invExt` preservation for the composed tick).  Per the
+maintainer-approved **"parameterize + track"** scope decision: clean paths proved
+unconditionally; the bound-budget-exhausted timeout branch (re-enqueuing through
+the bootCoreId-pinned `ensureRunnable` / `revertPriorityInheritance`) parameterized
+by a single clean hypothesis and recorded as explicit SM5.F (per-core PIP
+migration) tracked debt.
+
+- **§4b full per-core domain re-dispatch (SM5.D.6)**: `switchDomainOnCore`
+  no-op / `_preserves_objects_invExt` / `_sets_currentOnCore_none` / `_rotates`
+  + `scheduleDomainOnCore_decrements` / `_preserves_objects_invExt` (the
+  domain-boundary counterparts of §2's in-tick `decrementDomainTimeOnCore`).
+- **§7 per-core invariant preservation (B1/B2/B3)**: the headline
+  `timerTickOnCore_preserves_currentThreadValidOnCore` is **UNCONDITIONAL** (idle
+  / not-preempted clean-path + preempted re-establishment via
+  `scheduleEffectiveOnCore_establishes_currentThreadValidOnCore` absorb the
+  timeout's object-store effect); `timerTickOnCore_preserves_runQueueOnCoreWellFormed`
+  (B2) and `_preserves_queueCurrentConsistentOnCore` parameterized by clean
+  budget-tick / prepared-state hypotheses (discharged on every clean path,
+  bound-exhausted is SM5.F).  Full helper layer: decrement preserves all four,
+  `saveOutgoingContextOnCore` frames, `scheduleEffectiveOnCore` establishes/preserves
+  the four (mirroring SM5.B), `timerTickBudgetOnCore_notPreempted_*`.
+- **D3**: `Sm5DInventory.lean` — 99-entry typed inventory in 7 categories with the
+  `s5dt!` compile-time identifier-validation macro + count/partition/Nodup witnesses
+  (mirrors `Sm5CInventory`; partition gate now 48 staged-only).
+- **D4**: `scripts/test_qemu_smp_timer.sh` tier-4 `-smp 4` SKIP-stub (wired into
+  `test_tier4_smp_bootcheck.sh`).
+- **C1** (full-path `machine.timer`) folded into the same SM5.F gap; the idle
+  headline + `timerTickOnCorePrepared_machine_eq` cover the property substantively.
+
+`SmpTimerSuite` gains 31 anchors + 3 examples + a §3.9 runtime section (5
+assertions); tier-3 adds the §4b/§7 anchors + the `Sm5DInventory` build.  All new
+theorems axiom-clean; Tier 0–3 green; default build 322 jobs; trace byte-identical.
+Items deferred past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

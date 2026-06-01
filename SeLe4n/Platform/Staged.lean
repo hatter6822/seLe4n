@@ -233,6 +233,12 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 -- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I moves it
 -- production-reached when the per-core scheduler-tick driver lands.
 import SeLe4n.Kernel.PerCoreTimerEntry
+-- WS-SM SM5.D (audit-pass-1): the 99-entry SM5.D theorem inventory (7 categories:
+-- lockSet/domain/replenish/budget/tick/preservation/decidability) with the `s5dt!`
+-- compile-time identifier-validation macro + per-category count + partition-sum +
+-- Nodup witnesses; mirrors `Sm5CInventory`.  A renamed/removed SM5.D theorem fails
+-- this module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.Sm5DInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

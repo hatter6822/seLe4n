@@ -3377,7 +3377,35 @@ open SeLe4n.Kernel
 -- SM5.D.1 export seam.
 #check @perCoreTimerTickEntry
 #check @perCoreTimerTickEntry_returns_unit_marker
+-- SM5.D.6 full per-core domain re-dispatch (§4b).
+#check @switchDomainOnCore_singleDomain_noop
+#check @switchDomainOnCore_preserves_objects_invExt
+#check @switchDomainOnCore_sets_currentOnCore_none
+#check @switchDomainOnCore_rotates
+#check @scheduleDomainOnCore_decrements
+#check @scheduleDomainOnCore_preserves_objects_invExt
+-- SM5.D.5/.6 per-core invariant preservation (§7 B1/B2/B3).
+#check @decrementDomainTimeOnCore_preserves_currentThreadValidOnCore
+#check @decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore
+#check @decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed
+#check @saveOutgoingContextOnCore_scheduler_eq
+#check @saveOutgoingContextOnCore_getTcb?_isSome
+#check @scheduleEffectiveOnCore_establishes_currentThreadValidOnCore
+#check @scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore
+#check @scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed
+#check @scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @timerTickBudgetOnCore_notPreempted_scheduler_eq
+#check @timerTickBudgetOnCore_notPreempted_getTcb?_tid
+#check @timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed
+#check @timerTickOnCore_preserves_currentThreadValidOnCore
+#check @timerTickOnCorePrepared_runQueueOnCore_wellFormed
+#check @timerTickOnCore_preserves_runQueueOnCoreWellFormed
+#check @timerTickOnCore_preserves_queueCurrentConsistentOnCore
 EOF
 lake env lean /tmp/sm5d_surface.lean'
+# WS-SM SM5.D audit-pass-1: build the 99-entry SM5.D theorem inventory so a
+# renamed / removed SM5.D theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.Sm5DInventory'
 
 finalize_report

@@ -460,6 +460,27 @@ similar to SM0/SM1 patterns.)
 > kernel state, committing under the `timerTickOnCoreLockSet` `withLockSet`
 > bracket, emitting the cross-core SGIs) is SM5.I work — the pure transition +
 > its full theorem surface land here.
+>
+> **WS-SM SM5.D audit-pass-1 LANDED at v0.31.42** (deep self-audit; closes the
+> verification-completeness gaps the initial cut deferred).  Per the maintainer-
+> approved **"parameterize + track"** decision: clean paths proved
+> unconditionally; the bound-budget-exhausted timeout branch (re-enqueuing
+> through the bootCoreId-pinned `ensureRunnable` / `revertPriorityInheritance`) is
+> parameterized by a single clean hypothesis and recorded as explicit **SM5.F**
+> (per-core PIP migration) tracked debt.  (1) **§4b** full per-core domain
+> re-dispatch — `switchDomainOnCore` no-op / `_preserves_objects_invExt` /
+> `_sets_currentOnCore_none` / `_rotates` + `scheduleDomainOnCore_decrements` /
+> `_preserves_objects_invExt`.  (2) **§7** per-core invariant preservation
+> (B1/B2/B3): `timerTickOnCore_preserves_currentThreadValidOnCore` UNCONDITIONAL
+> (preempted re-establishment absorbs the timeout's object-store effect);
+> `_preserves_runQueueOnCoreWellFormed` (B2) + `_preserves_queueCurrentConsistentOnCore`
+> parameterized (clean-path discharge unconditional, bound-exhausted = SM5.F);
+> full helper layer for `decrementDomainTimeOnCore` / `saveOutgoingContextOnCore` /
+> `scheduleEffectiveOnCore` / `timerTickBudgetOnCore_notPreempted_*`.  (3) **D3**
+> `Sm5DInventory.lean` (99-entry typed inventory, 7 categories, `s5dt!` macro).
+> (4) **D4** `scripts/test_qemu_smp_timer.sh` tier-4 SKIP-stub.  C1 (full-path
+> `machine.timer`) folds into the same SM5.F gap.  All axiom-clean; Tier 0–3
+> green; partition gate 48 staged-only; trace byte-identical.
 
 ### SM5.E — Per-core idle threads (3 PRs, 6 sub-tasks)
 

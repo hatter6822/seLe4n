@@ -1,3 +1,79 @@
+## v0.31.42 — WS-SM SM5.D audit-pass-1: per-core invariant preservation + domain re-dispatch + theorem inventory
+
+Deep self-audit of the v0.31.41 SM5.D landing, closing the verification-completeness
+gaps the initial cut deferred (the SM5.D landing was sound + axiom-clean, but
+delivered only object-store-`invExt` preservation for the composed tick — the SM4.C
+per-core *scheduler* invariants were not yet shown preserved, the full
+`switchDomainOnCore` / `scheduleDomainOnCore` re-dispatch had no theorems beyond the
+in-tick `decrementDomainTimeOnCore`, and there was no SM5.D theorem inventory).  Per
+the maintainer-approved "parameterize + track" scope decision, the clean paths are
+proved **unconditionally** and the bound-budget-exhausted timeout branch (which
+re-enqueues timed-out threads through the bootCoreId-pinned `ensureRunnable` /
+`revertPriorityInheritance`) is parameterized by a single clean hypothesis and
+recorded as explicit SM5.F (per-core PIP migration) tracked debt.  Every new theorem
+is axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only); the full
+production build (322 jobs) is green; trace fixture byte-identical.
+
+**§4b — full per-core domain re-dispatch (SM5.D.6).**  Six theorems for the
+domain-*boundary* counterparts of §2's in-tick `decrementDomainTimeOnCore`:
+`switchDomainOnCore_singleDomain_noop` / `_preserves_objects_invExt` /
+`_sets_currentOnCore_none` / `_rotates`, and `scheduleDomainOnCore_decrements` /
+`_preserves_objects_invExt`.  These depend on §4's context save/restore preservation
+(hence sited after §4), completing the SM5.D.6 surface beyond the lightweight tick.
+
+**§7 — per-core invariant preservation (B1/B2/B3, the SM5.C-parity coverage).**
+The composed `timerTickOnCore` now preserves the SM4.C per-core scheduler invariants:
+
+* **B1 (headline, UNCONDITIONAL): `timerTickOnCore_preserves_currentThreadValidOnCore`.**
+  Three cases discharge with no timeout hypothesis: the idle path leaves
+  `current = none`; the not-preempted budget tick keeps the charged current thread a
+  TCB (`timerTickBudgetOnCore_notPreempted_getTcb?_tid`, using the
+  `scId.toObjId ≠ tid.toObjId` disjointness derived from both lookups succeeding);
+  the preempted path *re-establishes* validity from scratch via
+  `scheduleEffectiveOnCore_establishes_currentThreadValidOnCore` (needing only the
+  budget result's object-store `invExt`, which the budget tick preserves) — so the
+  bound-exhausted timeout's object-store effect is absorbed by the re-establishment.
+* **B2: `timerTickOnCore_preserves_runQueueOnCoreWellFormed`** (parameterized by a
+  budget-tick run-queue hypothesis, discharged unconditionally on every clean path by
+  `timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed`; the
+  bound-exhausted `timeoutBlockedThreads` re-enqueue is the SM5.F gap) +
+  `timerTickOnCorePrepared_runQueueOnCore_wellFormed`.
+* **`timerTickOnCore_preserves_queueCurrentConsistentOnCore`** (idle / preempted
+  discharge unconditionally — the preempted path *establishes* consistency via
+  dequeue-on-dispatch; the not-preempted path inherits it from the prepared state).
+* Helper layer: `decrementDomainTimeOnCore` preserves all four invariants (pure
+  domain-slot write); `saveOutgoingContextOnCore_scheduler_eq` /
+  `_getTcb?_isSome`; `scheduleEffectiveOnCore` establishes
+  `currentThreadValidOnCore` / `queueCurrentConsistentOnCore` and preserves
+  `runQueueOnCoreWellFormed` / `runnableThreadsAreTCBsOnCore` (mirroring SM5.B's
+  switch); `timerTickBudgetOnCore_notPreempted_scheduler_eq`.
+
+**D3 — `Sm5DInventory.lean`** (99-entry typed theorem inventory in 7 categories —
+`lockSet` / `domain` / `replenish` / `budget` / `tick` / `preservation` /
+`decidability` — with the `s5dt!` compile-time identifier-validation macro,
+per-category count witnesses, partition-sum, and kernel-sound `Nodup` witnesses;
+mirrors `Sm5CInventory`).  Staged via `Platform.Staged`; a renamed/removed SM5.D
+theorem fails the inventory's elaboration.
+
+**D4 — `scripts/test_qemu_smp_timer.sh`** (tier-4 `-smp 4` per-core-timer-tick boot
+SKIP-stub, wired into `test_tier4_smp_bootcheck.sh`; SKIPs until the SM5.I per-core
+timer driver is wired, documenting the formal coverage that holds for all executions).
+
+**C1 (full-path `machine.timer` preservation) — folded into the same SM5.F gap:**
+the bound-budget-exhausted timeout's machine preservation needs a
+`timeoutBlockedThreads`-preserves-machine lemma (the same bootCoreId-pinned chain as
+B2's run-queue gap), so it is tracked under SM5.F rather than duplicated; the idle
+headline `timerTickOnCore_advances_per_core` + `timerTickOnCorePrepared_machine_eq`
+already establish the no-global-timer-advance SMP property substantively.
+
+**Tests:** `tests/SmpTimerSuite.lean` gains 31 surface anchors (§4b + §7), 3
+elaboration-time examples, and a §3.9 runtime section (5 assertions) exercising the
+full domain re-dispatch; tier-3 invariant surface adds the §4b/§7 anchors + the
+`Sm5DInventory` build.  Items deferred past v1.0.0 with correctness impact: NONE
+(the bound-exhausted timeout per-core run-queue/machine preservation is gated on
+SM5.F per-core PIP migration, tracked, not a correctness gap — the single-core
+property is preserved and the SMP per-core form is additive).
+
 ## v0.31.41 — WS-SM SM5.D: per-core timer tick
 
 WS-SM Phase SM5 (per-core scheduler) continues with SM5.D — the **per-core timer
