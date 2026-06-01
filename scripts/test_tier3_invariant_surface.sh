@@ -3180,6 +3180,8 @@ open SeLe4n.Kernel.Concurrency
 #check @enqueueRunnableOnCore_currentOnCore
 #check @enqueueRunnableOnCore_getTcb?_ne
 #check @enqueueRunnableOnCore_no_tcb_noop
+#check @enqueueRunnableOnCore_eq_self_of_runnable
+#check @runnableOnSomeCore
 
 -- SM5.C.2/.4/.10 wake-semantics theorems.
 #check @wakeThread_state_eq_enqueue
@@ -3206,6 +3208,8 @@ open SeLe4n.Kernel.Concurrency
 #check @handleRescheduleSgiOnCore_preserves_objects_invExt
 #check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed
 #check @handleRescheduleSgiOnCore_independent_of_other_core
+#check @handleRescheduleSgiOnCore_keeps_current_when_outranked
+#check @candidateOutranksCurrentOnCore
 
 -- SM5.C.11 SGI delivery latency bound.
 #check @wakeSgiCount

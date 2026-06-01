@@ -150,6 +150,8 @@ def sm5CTheorems : List Sm5CTheorem :=
       enqueueRunnableOnCore_getTcb?_isSome .enqueue,
     s5ct! "enqueueRunnableOnCore_no_tcb_noop: fail-closed on a non-TCB target"
       enqueueRunnableOnCore_no_tcb_noop .enqueue,
+    s5ct! "enqueueRunnableOnCore_eq_self_of_runnable: single-placement reject — an already-runnable wake is the identity (Codex-P2)"
+      enqueueRunnableOnCore_eq_self_of_runnable .enqueue,
     -- ── SM5.C.2 / C.4 / C.10 / C.6 wakeThread semantics + losslessness (.wake) ──
     s5ct! "wakeThread: the cross-core wake transition (state + optional SGI)"
       wakeThread .wake,
@@ -202,6 +204,8 @@ def sm5CTheorems : List Sm5CTheorem :=
       handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed .handler,
     s5ct! "handleRescheduleSgiOnCore_independent_of_other_core: handler cross-core independence"
       handleRescheduleSgiOnCore_independent_of_other_core .handler,
+    s5ct! "handleRescheduleSgiOnCore_keeps_current_when_outranked: a lower-priority candidate does not preempt the running thread (Codex-P1)"
+      handleRescheduleSgiOnCore_keeps_current_when_outranked .handler,
     -- ── §10 audit-pass-1 invariant preservation (.preservation) ──
     s5ct! "enqueueRunnableOnCore_preserves_currentThreadValidOnCore: preserves SM4.C current-validity"
       enqueueRunnableOnCore_preserves_currentThreadValidOnCore .preservation,
@@ -268,7 +272,7 @@ def sm5CTheorems : List Sm5CTheorem :=
 /-- WS-SM SM5.C: the inventory has 81 substantive entries.  A regression that
 adds a new SM5.C theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem sm5CTheorems_count : sm5CTheorems.length = 81 := by decide
+theorem sm5CTheorems_count : sm5CTheorems.length = 83 := by decide
 
 /-- WS-SM SM5.C: 9 entries in the `lockSet` category (SM5.C.3). -/
 theorem sm5CTheorems_lockSet_count :
@@ -278,17 +282,17 @@ theorem sm5CTheorems_lockSet_count :
 theorem sm5CTheorems_target_count :
     (sm5CTheorems.filter (fun t => t.category == .target)).length = 6 := by decide
 
-/-- WS-SM SM5.C: 11 entries in the `enqueue` category (SM5.C.1). -/
+/-- WS-SM SM5.C: 12 entries in the `enqueue` category (SM5.C.1). -/
 theorem sm5CTheorems_enqueue_count :
-    (sm5CTheorems.filter (fun t => t.category == .enqueue)).length = 11 := by decide
+    (sm5CTheorems.filter (fun t => t.category == .enqueue)).length = 12 := by decide
 
 /-- WS-SM SM5.C: 18 entries in the `wake` category (SM5.C.2 / C.4 / C.10 / C.6). -/
 theorem sm5CTheorems_wake_count :
     (sm5CTheorems.filter (fun t => t.category == .wake)).length = 18 := by decide
 
-/-- WS-SM SM5.C: 7 entries in the `handler` category (SM5.C.5). -/
+/-- WS-SM SM5.C: 8 entries in the `handler` category (SM5.C.5). -/
 theorem sm5CTheorems_handler_count :
-    (sm5CTheorems.filter (fun t => t.category == .handler)).length = 7 := by decide
+    (sm5CTheorems.filter (fun t => t.category == .handler)).length = 8 := by decide
 
 /-- WS-SM SM5.C: 13 entries in the `preservation` category (§10 audit-pass-1). -/
 theorem sm5CTheorems_preservation_count :

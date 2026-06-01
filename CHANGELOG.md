@@ -202,8 +202,11 @@ fully-passing state.
 A third, deepest audit read the SM5.C *implementation* against the plan §3.3/§4.4
 spec (not its docstrings), with two questions in mind: did any shortcut make the
 cross-core wake path less secure, and is every one of the 12 sub-tasks complete +
-optimal.  **Verdict: no bugs and no security shortcuts — the surface is complete
-and sound.**  The audit verified, and where it relied on an implicit property it
+optimal.  **Verdict: no shortcuts that made the path *less* secure than its
+single-core analogue** — though the subsequent Codex PR #806 review (closure
+below) found three real completeness/optimality gaps this self-audit missed
+(handler preemption policy + budget-awareness, cross-core single-placement), now
+fixed.  The audit verified, and where it relied on an implicit property it
 made that property explicit:
 
 - **`enqueueRunnableOnCore` faithfully mirrors the trusted `IPC.ensureRunnable`.**
@@ -245,10 +248,50 @@ made that property explicit:
   `dsb ish`-before-`GICD_SGIR` BKL ordering is honest, and the SGI is emitted by the
   caller *after* the state write is committed.
 
-No code-behaviour change (the two edits are a production docstring + two test
-assertions); `smp_wake_suite` 61/61 PASS, warning-clean; all SM5.C theorems remain
-axiom-clean; trace fixture byte-identical; Tier 0–3 green.  Items deferred past
-v1.0.0 with correctness impact: NONE.
+No code-behaviour change in this self-audit (the two edits are a production
+docstring + two test assertions); `smp_wake_suite` 61/61 PASS, warning-clean; all
+SM5.C theorems remain axiom-clean; trace fixture byte-identical; Tier 0–3 green.
+
+### Audit-pass-3 Codex PR #806 closure (also in v0.31.40)
+
+The automated Codex review of PR #806 found **three real cross-core
+scheduling-correctness gaps the code-first self-audit above missed** — all
+validated against the single-core semantics, then fixed with machine-checked,
+axiom-clean proofs (maintainer-directed "fix all three now"):
+
+- **P1 — preemption inversion (`handleRescheduleSgiOnCore`).**  The handler
+  `switchToThreadOnCore`'d whatever `chooseThreadOnCore` returned, but the running
+  thread is not in the run queue (dequeue-on-dispatch), so a *lower*-priority
+  cross-core wake demoted a *higher*-priority running thread.  Fixed by the
+  explicit preemption gate `candidateOutranksCurrentOnCore` (switch only when the
+  budget-eligible candidate strictly outranks current, else keep current; an idle
+  core admits any candidate); new theorem
+  `handleRescheduleSgiOnCore_keeps_current_when_outranked`.
+- **P1 — budget-skip (`handleRescheduleSgiOnCore`).**  It used the budget-skipping
+  `chooseThreadOnCore` while the production CBS timer path uses
+  `chooseThreadEffective`.  Fixed by switching to the budget-aware
+  `chooseThreadEffectiveOnCore` (SM5.A §6) — a reschedule can no longer dispatch a
+  budget-exhausted thread.
+- **P2 — cross-core double-placement (`enqueueRunnableOnCore`).**  Per-core
+  idempotency did not stop a thread already runnable on core A from also being
+  enqueued on core B (e.g. after an affinity change whose run-queue migration is
+  deferred to SM5.H.4), leaving the same TCB eligible on two cores (two SGI
+  handlers could dispatch it concurrently).  Fixed by the global single-placement
+  reject guard `runnableOnSomeCore` (a wake of an already-runnable thread is the
+  identity); new theorem `enqueueRunnableOnCore_eq_self_of_runnable`.
+
+The membership/ready enqueue lemmas gain a `runnableOnSomeCore … = false`
+precondition (the not-already-runnable wake); the §10 IPC↔scheduler-contract
+preservation lemmas discharge the reject branch internally, so their signatures
+and the `wakeThread_preserves_*` composers are unchanged.  Inventory 81 → **83**;
+`SmpWakeSuite` **64 runtime assertions / 107 surface anchors / 17 examples**,
+`smp_wake_suite` **64/64 PASS** (added cross-core-reject + preemption-gate runtime
+tests).  All SM5.C theorems re-verified axiom-clean; the handler's lock-set
+(`handleRescheduleSgiOnCoreLockSet = switchToThreadOnCoreLockSet`) is unchanged;
+the enqueue reject's all-core run-queue read is documented as SM5.D's `withLockSet`
+formalisation (the wake's write footprint is unchanged).  Trace fixture
+byte-identical; Tier 0–3 green.  Items deferred past v1.0.0 with correctness
+impact: NONE.
 
 ## v0.31.39 — WS-SM SM5.B: per-core `switchToThread` (context switch, preempt-previous, reject-remote, cross-core independence, FFI seam)
 

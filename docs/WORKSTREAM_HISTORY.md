@@ -2545,8 +2545,10 @@ audit-pass-1 introduced and added two missing security theorems.
 **WS-SM SM5.C audit-pass-3 (deepest code-first re-audit; also in v0.31.40)**: read
 the SM5.C *implementation* against the plan §3.3/§4.4 spec (not its docstrings),
 asking whether any shortcut made the cross-core wake path less secure and whether
-all 12 sub-tasks are complete + optimal.  **Verdict: no bugs and no security
-shortcuts.**
+all 12 sub-tasks are complete + optimal.  **Verdict: no shortcuts that made the
+path *less* secure than its single-core analogue** — though the Codex PR #806
+review (closure below) then found three real completeness/optimality gaps this
+self-audit missed, now fixed.
 
 - **`enqueueRunnableOnCore` faithfully mirrors the trusted `IPC.ensureRunnable`**:
   both gate run-queue membership on `ipcState` (not `threadState`), so there is no
@@ -2575,9 +2577,30 @@ shortcuts.**
   `API` entry, no caller) so there is **no live gap**; the note prevents a future
   privilege-escalation regression from naive wiring (the SM5.C.8 dispatch obligation).
 
-No code-behaviour change (a production docstring + two test assertions);
-`smp_wake_suite` 61/61 PASS, warning-clean; all SM5.C theorems remain axiom-clean;
-trace fixture byte-identical; Tier 0–3 green.  Items deferred past v1.0.0 with
+No code-behaviour change in this self-audit (a production docstring + two test
+assertions); `smp_wake_suite` 61/61 PASS, warning-clean; all SM5.C theorems remain
+axiom-clean; trace fixture byte-identical; Tier 0–3 green.
+
+**WS-SM SM5.C audit-pass-3 Codex PR #806 closure (also in v0.31.40)**: the
+automated Codex review of PR #806 found three real cross-core
+scheduling-correctness gaps the code-first self-audit missed (validated against
+the single-core semantics, fixed with axiom-clean proofs; maintainer-directed
+"fix all three now"): **(P1)** `handleRescheduleSgiOnCore` `switchToThreadOnCore`'d
+whatever `chooseThreadOnCore` returned, demoting a higher-priority running thread
+to a lower-priority cross-core wake — fixed by the explicit preemption gate
+`candidateOutranksCurrentOnCore` (+ theorem
+`handleRescheduleSgiOnCore_keeps_current_when_outranked`); **(P1)** it used the
+budget-skipping `chooseThreadOnCore` while the production CBS timer path uses
+`chooseThreadEffective` — fixed by `chooseThreadEffectiveOnCore`; **(P2)**
+`enqueueRunnableOnCore` per-core idempotency let a thread be runnable on two cores
+(an affinity change without the SM5.H.4 migration) — fixed by the global
+single-placement reject `runnableOnSomeCore` (+ theorem
+`enqueueRunnableOnCore_eq_self_of_runnable`).  The membership/ready lemmas gain a
+`runnableOnSomeCore … = false` precondition; the §10 IPC-contract preservation
+lemmas discharge the reject branch internally, so the `wakeThread_preserves_*`
+composers are unchanged.  Inventory 81 → 83; `SmpWakeSuite` 64 runtime assertions /
+107 anchors / 17 examples; `smp_wake_suite` 64/64 PASS; all SM5.C theorems
+axiom-clean; Tier 0–3 green; trace byte-identical.  Items deferred past v1.0.0 with
 correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry

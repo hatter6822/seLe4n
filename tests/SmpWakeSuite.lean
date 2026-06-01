@@ -80,6 +80,8 @@ open SeLe4n.Testing
 #check @enqueueRunnableOnCore_currentOnCore
 #check @enqueueRunnableOnCore_getTcb?_ne
 #check @enqueueRunnableOnCore_no_tcb_noop
+#check @enqueueRunnableOnCore_eq_self_of_runnable
+#check @runnableOnSomeCore
 
 -- SM5.C.2/.4/.10 wakeThread semantics:
 #check @wakeThread_state_eq_enqueue
@@ -106,6 +108,8 @@ open SeLe4n.Testing
 #check @handleRescheduleSgiOnCore_preserves_objects_invExt
 #check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed
 #check @handleRescheduleSgiOnCore_independent_of_other_core
+#check @handleRescheduleSgiOnCore_keeps_current_when_outranked
+#check @candidateOutranksCurrentOnCore
 
 -- SM5.C.11 SGI delivery latency bound:
 #check @wakeSgiCount
@@ -201,19 +205,19 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
 
 /-- SM5.C.10: the woken thread lands in the target core's run queue. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) :
+    (hTcb : st.getTcb? tid = some tcb) (hFresh : runnableOnSomeCore st tid = false) :
     tid ∈ ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore
             (determineTargetCore st tid)).toList :=
-  wakeThread_target_runQueue_contains st tid executingCore tcb hTcb
+  wakeThread_target_runQueue_contains st tid executingCore tcb hTcb hFresh
 
 /-- SM5.C.6 / Thm 3.3.2: cross-core wake is lossless. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) :
+    (hTcb : st.getTcb? tid = some tcb) (hFresh : runnableOnSomeCore st tid = false) :
     ∃ futureState : SystemState,
       SchedReachable (wakeThread st tid executingCore).1 futureState ∧
       (futureState.scheduler.currentOnCore (determineTargetCore st tid) = some tid ∨
        tid ∈ (futureState.scheduler.runQueueOnCore (determineTargetCore st tid)).toList) :=
-  wakeThread_lossless st tid executingCore tcb hTcb
+  wakeThread_lossless st tid executingCore tcb hTcb hFresh
 
 /-- SM5.C.9: an unbound thread wakes onto the boot core. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -232,18 +236,20 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     security-relevant fields (`priority` / `domain` / `cpuAffinity` /
     `threadState`); only `ipcState` changes. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
+    (hFresh : runnableOnSomeCore st tid = false) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
       tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
-  enqueueRunnableOnCore_preserves_woken_thread_fields st c tid tcb hTcb hInv
+  enqueueRunnableOnCore_preserves_woken_thread_fields st c tid tcb hTcb hInv hFresh
 
 /-- SM5.C.5: a successful SGI-handler dispatch sets the chosen thread current. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
-    (hc : chooseThreadOnCore st c = .ok (some tid))
+    (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hOut : candidateOutranksCurrentOnCore st c tid = true)
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     st'.scheduler.currentOnCore c = some tid :=
-  handleRescheduleSgiOnCore_switches_current st c tid st' hc h
+  handleRescheduleSgiOnCore_switches_current st c tid st' hc hOut h
 
 /-- SM5.C.8: setting affinity feeds the wake target. -/
 example (st : SystemState) (targetTid : SeLe4n.ThreadId) (c : CoreId) (st' : SystemState)
@@ -291,13 +297,15 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (c' 
 /-- audit-pass-1 (gap c): the multi-step wake→handler round-trip dispatches the
 woken thread to *current* via a genuine `SchedReachable` path from the pre-state. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (st2 : SystemState)
-    (hChoose : chooseThreadOnCore (wakeThread st tid executingCore).1
+    (hChoose : chooseThreadEffectiveOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok (some tid))
+    (hOut : candidateOutranksCurrentOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) tid = true)
     (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok st2) :
     SchedReachable st st2 ∧
       st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid :=
-  wakeThread_roundtrip_reachable_current st tid executingCore st2 hChoose hHandle
+  wakeThread_roundtrip_reachable_current st tid executingCore st2 hChoose hOut hHandle
 
 /-- audit-pass-1 (gap d): a ghost (non-TCB) wake emits no SGI. -/
 example (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
@@ -383,14 +391,12 @@ private def runEnqueueChecks : IO Unit := do
     (!rqHas (enqueueRunnableOnCore stWake core1 tidW) bootCoreId tidW)
   assertBool "enqueue of a non-TCB ghost is a no-op (boot run queue stays empty)"
     (((enqueueRunnableOnCore stWake bootCoreId tidGhost).scheduler.runQueueOnCore bootCoreId).toList.isEmpty)
-  -- audit-pass-3: double-wake idempotency.  `enqueueRunnableOnCore` (unlike the
-  -- single-core `IPC.ensureRunnable`, which has an external `if tid ∈ runQueue`
-  -- dedup guard) relies entirely on `RunQueue.insert`'s *internal* `if contains
-  -- tid then rq` guard.  A second wake of an already-runnable thread must NOT
-  -- create a duplicate run-queue entry (that would violate `runQueueUnique` and
-  -- let the scheduler double-dispatch the same thread).  These two assertions
-  -- pin that property directly — a future refactor that drops the internal guard
-  -- is caught here, not only by the (more indirect) wellFormed-preservation proof.
+  -- audit-pass-3 (Codex P2): single-placement.  `enqueueRunnableOnCore` now carries
+  -- a *global* reject guard (`runnableOnSomeCore`): a wake of a thread already
+  -- runnable on ANY core is a no-op, so the same TCB can never become eligible on
+  -- two cores (which two SGI handlers could otherwise dispatch concurrently).  A
+  -- second wake of an already-runnable thread therefore cannot create a duplicate
+  -- run-queue entry (which would violate `runQueueUnique`).
   assertBool "double-wake keeps tidU in the boot run queue exactly once (no duplicate)"
     (let st1 := enqueueRunnableOnCore stWake bootCoreId tidU
      let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
@@ -400,6 +406,16 @@ private def runEnqueueChecks : IO Unit := do
      let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
      (st2.scheduler.runQueueOnCore bootCoreId).toList
        == (st1.scheduler.runQueueOnCore bootCoreId).toList)
+  -- audit-pass-3 (Codex P2): the CROSS-core single-placement guard.  Enqueue tidU
+  -- on core 1, then attempt to enqueue it on the boot core: the global reject makes
+  -- the second a no-op, so tidU stays on core 1 ONLY — never eligible on two cores.
+  -- This is the multi-core double-dispatch hazard the guard closes.
+  assertBool "cross-core reject: tidU already on core 1 is NOT re-placed on the boot core"
+    (let st1 := enqueueRunnableOnCore stWake core1 tidU
+     let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
+     rqHas st2 core1 tidU && !rqHas st2 bootCoreId tidU)
+  assertBool "cross-core reject: runnableOnSomeCore detects the existing core-1 placement"
+    (runnableOnSomeCore (enqueueRunnableOnCore stWake core1 tidU) tidU)
 
 /-- §3.3 SM5.C.2/.4: local vs remote wake (SGI emission). -/
 private def runWakeSgiChecks : IO Unit := do
@@ -444,6 +460,16 @@ private def runRoundTripChecks : IO Unit := do
     (handlerOkAnd stWake core1
       (fun st2 => (st2.scheduler.currentOnCore core1 == none)
                     && (st2.scheduler.runQueueOnCore core1).toList.isEmpty))
+  -- audit-pass-3 (Codex P1): fixed-priority preemption gate `candidateOutranksCurrentOnCore`.
+  -- An idle core (current = none) admits any candidate; an equal-priority candidate
+  -- does NOT preempt the running thread (no gratuitous preemption — the fix that
+  -- stops a lower-priority cross-core wake from demoting a higher-priority current).
+  assertBool "preempt-gate: an idle core admits the candidate (current = none ⇒ outranks)"
+    (candidateOutranksCurrentOnCore st1 core1 tidW)
+  assertBool "preempt-gate: an equal-priority candidate does NOT preempt the running thread"
+    (let stCur := { stWake with
+                      scheduler := stWake.scheduler.setCurrentOnCore core1 (some tidU) }
+     !candidateOutranksCurrentOnCore stCur core1 tidW)
 
 /-- §3.5 SM5.C.8: affinity-control op. -/
 private def runAffinityOpChecks : IO Unit := do
@@ -588,8 +614,8 @@ private def runAuditPass1Checks : IO Unit := do
     (wakeStateAnd stWake tidW bootCoreId
       (fun st' => (st'.scheduler.runQueueOnCore ⟨3, by decide⟩).toList.isEmpty))
   -- gap (m): the inventory size + partition witnesses are decidably consistent.
-  assertBool "SM5.C inventory has 81 entries"
-    (decide (sm5CTheorems.length = 81))
+  assertBool "SM5.C inventory has 83 entries"
+    (decide (sm5CTheorems.length = 83))
   assertBool "SM5.C inventory per-category counts partition the total"
     (decide ((sm5CTheorems.filter (fun t => t.category == .lockSet)).length +
              (sm5CTheorems.filter (fun t => t.category == .target)).length +

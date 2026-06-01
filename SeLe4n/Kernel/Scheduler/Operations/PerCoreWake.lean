@@ -274,7 +274,9 @@ theorem enqueueRunnableOnCore_preserves_objects_invExt (st : SystemState)
   | none => simp only [enqueueRunnableOnCore, hTcb]; exact hInv
   | some tcb =>
       simp only [enqueueRunnableOnCore, hTcb]
-      exact RHTable_insert_preserves_invExt st.objects _ _ hInv
+      split
+      · exact hInv
+      · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
 
 /-- WS-SM SM5.C.1 (preservation): `enqueueRunnableOnCore` preserves core `c`'s
 run-queue well-formedness — the only run-queue mutation is the re-enqueue
@@ -287,17 +289,20 @@ theorem enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSt
   cases hTcb : st.getTcb? tid with
   | none => simp only [enqueueRunnableOnCore, hTcb]; exact hwf
   | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb,
-        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-      exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+      simp only [enqueueRunnableOnCore, hTcb]
+      split
+      · exact hwf
+      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_wellFormed _ hwf _ _
 
 /-- WS-SM SM5.C.1 (membership): the woken thread is a member of core `c`'s run
 queue immediately after `enqueueRunnableOnCore` (when it resolves to a TCB).
 The substantive "the wake genuinely enqueues" content. -/
 theorem enqueueRunnableOnCore_mem_runQueueOnCore (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hFresh : runnableOnSomeCore st tid = false) :
     tid ∈ ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).toList := by
-  simp only [enqueueRunnableOnCore, hTcb,
+  simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
     SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   rw [RunQueue.mem_toList_iff_mem]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
@@ -309,10 +314,11 @@ field the per-core IPC↔scheduler invariants gate run-queue membership on; the
 wake establishing it is why enqueuing a freshly-woken thread is invariant-safe. -/
 theorem enqueueRunnableOnCore_makes_ready (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
+    (hFresh : runnableOnSomeCore st tid = false) :
     (enqueueRunnableOnCore st c tid).getTcb? tid = some { tcb with ipcState := .ready } := by
-  simp only [enqueueRunnableOnCore, hTcb, SystemState.getTcb?_eq_some_iff,
-    RHTable_getElem?_eq_get?]
+  simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+    SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
   exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
 
 /-- WS-SM SM5.C.1 (audit-pass-2, woken-thread field frame): `enqueueRunnableOnCore`
@@ -331,12 +337,13 @@ the four security-relevant projections that callers / NI-reasoning depend on
 to `{ tcb with ipcState := .ready }` is `enqueueRunnableOnCore_makes_ready`. -/
 theorem enqueueRunnableOnCore_preserves_woken_thread_fields (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
+    (hFresh : runnableOnSomeCore st tid = false) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
       tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
       tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
   ⟨{ tcb with ipcState := .ready },
-    enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv, rfl, rfl, rfl, rfl⟩
+    enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv hFresh, rfl, rfl, rfl, rfl⟩
 
 /-- WS-SM SM5.C.1 (cross-core frame): `enqueueRunnableOnCore` on core `c` leaves
 every *other* core's run-queue slot (`c' ≠ c`) untouched — it writes only core
@@ -349,7 +356,9 @@ theorem enqueueRunnableOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreI
   | none => simp only [enqueueRunnableOnCore, hTcb]
   | some tcb =>
       simp only [enqueueRunnableOnCore, hTcb]
-      exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
+      split
+      · rfl
+      · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
 
 /-- WS-SM SM5.C.1 (no-current frame): `enqueueRunnableOnCore` never writes any
 core's `current` slot — it only saves the woken thread's IPC state (objects) and
@@ -362,8 +371,10 @@ theorem enqueueRunnableOnCore_currentOnCore (st : SystemState) (c : CoreId)
   cases hTcb : st.getTcb? tid with
   | none => simp only [enqueueRunnableOnCore, hTcb]
   | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb,
-        SchedulerState.setRunQueueOnCore_currentOnCore]
+      simp only [enqueueRunnableOnCore, hTcb]
+      split
+      · rfl
+      · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
 
 /-- WS-SM SM5.C.1 (per-thread frame): `enqueueRunnableOnCore tid` leaves every
 *other* thread's `getTcb?` lookup unchanged — its only object-store write is at
@@ -384,9 +395,11 @@ theorem enqueueRunnableOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
       -- the `st.getTcb? tid` discriminant inside `enqueueRunnableOnCore`, so
       -- `hTcb` could not fire on it.
       simp only [enqueueRunnableOnCore, hTcb]
-      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-      rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId other.toObjId
-        _ hNeO hInv]
+      split
+      · rfl
+      · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId other.toObjId
+          _ hNeO hInv]
 
 /-- WS-SM SM5.C.1 (fail-closed): a `tid` that does not resolve to a TCB makes
 `enqueueRunnableOnCore` the identity — a corrupted run-queue entry is never
@@ -395,6 +408,18 @@ theorem enqueueRunnableOnCore_no_tcb_noop (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hTcb : st.getTcb? tid = none) :
     enqueueRunnableOnCore st c tid = st := by
   simp only [enqueueRunnableOnCore, hTcb]
+
+/-- WS-SM SM5.C.1 (audit-pass-3 / Codex-P2): when `tid` is *already* runnable on
+some core, the single-placement guard makes `enqueueRunnableOnCore` the identity
+— the wake creates no second placement.  The structural fact every preservation
+proof uses to discharge the reject branch (the post-state is `st`, so any
+invariant trivially carries over). -/
+theorem enqueueRunnableOnCore_eq_self_of_runnable (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hRun : runnableOnSomeCore st tid = true) :
+    enqueueRunnableOnCore st c tid = st := by
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | some tcb => simp [enqueueRunnableOnCore, hTcb, hRun]
 
 
 -- ============================================================================
@@ -476,11 +501,12 @@ core's run queue immediately after the wake — the wake *does not lose* the
 thread.  The substantive content behind `wakeThread_lossless`. -/
 theorem wakeThread_target_runQueue_contains (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) :
+    (hTcb : st.getTcb? tid = some tcb)
+    (hFresh : runnableOnSomeCore st tid = false) :
     tid ∈ ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore
             (determineTargetCore st tid)).toList := by
   rw [wakeThread_state_eq_enqueue]
-  exact enqueueRunnableOnCore_mem_runQueueOnCore st (determineTargetCore st tid) tid tcb hTcb
+  exact enqueueRunnableOnCore_mem_runQueueOnCore st (determineTargetCore st tid) tid tcb hTcb hFresh
 
 /-- WS-SM SM5.C.2 (audit-pass-2, no-liveness-stranding at the wake level): the
 target core a wake lands `tid` on **admits** `tid` — so the woken thread, sitting
@@ -592,61 +618,78 @@ a real `switch` step once its reschedule SGI is serviced — is
 (§6b), which walk the `SchedReachable` closure through `.tail`/`.switch` rather
 than witnessing reflexively here. -/
 theorem wakeThread_lossless (st : SystemState) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    (executingCore : CoreId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hFresh : runnableOnSomeCore st tid = false) :
     ∃ futureState : SystemState,
       SchedReachable (wakeThread st tid executingCore).1 futureState ∧
       (futureState.scheduler.currentOnCore (determineTargetCore st tid) = some tid ∨
        tid ∈ (futureState.scheduler.runQueueOnCore (determineTargetCore st tid)).toList) :=
   ⟨(wakeThread st tid executingCore).1, SchedReachable.refl _,
-    Or.inr (wakeThread_target_runQueue_contains st tid executingCore tcb hTcb)⟩
+    Or.inr (wakeThread_target_runQueue_contains st tid executingCore tcb hTcb hFresh)⟩
 
 
 -- ============================================================================
 -- §6  SM5.C.5 — `handleRescheduleSgiOnCore` (re-choose + switch / idle)
 -- ============================================================================
 
-/-- WS-SM SM5.C.5: when the SGI handler's re-choose finds no eligible thread
-(`chooseThreadOnCore = .ok none`), the handler is the identity — core `c` keeps
-running whatever it was (or idles); no spurious dispatch is invented. -/
+/-- WS-SM SM5.C.5: when the SGI handler's budget-aware re-choose finds no
+eligible thread (`chooseThreadEffectiveOnCore = .ok none`), the handler is the
+identity — core `c` keeps running whatever it was (or idles); no spurious
+dispatch is invented. -/
 theorem handleRescheduleSgiOnCore_idle_when_none (st : SystemState) (c : CoreId)
-    (hc : chooseThreadOnCore st c = .ok none) :
+    (hc : chooseThreadEffectiveOnCore st c = .ok none) :
     handleRescheduleSgiOnCore st c = .ok st := by
   simp only [handleRescheduleSgiOnCore, hc]
 
-/-- WS-SM SM5.C.5: when the SGI handler's re-choose selects `tid`
-(`chooseThreadOnCore = .ok (some tid)`), the handler is exactly the switch to
-`tid` (`switchToThreadOnCore`). -/
+/-- WS-SM SM5.C.5 (audit-pass-3): when the budget-aware re-choose selects `tid`
+(`chooseThreadEffectiveOnCore = .ok (some tid)`) AND `tid` strictly outranks the
+current thread (`candidateOutranksCurrentOnCore`), the handler is exactly the
+switch to `tid` (`switchToThreadOnCore`). -/
 theorem handleRescheduleSgiOnCore_eq_switch_of_choose_some (st : SystemState)
-    (c : CoreId) (tid : SeLe4n.ThreadId) (hc : chooseThreadOnCore st c = .ok (some tid)) :
+    (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hout : candidateOutranksCurrentOnCore st c tid = true) :
     handleRescheduleSgiOnCore st c = switchToThreadOnCore st c tid := by
-  simp only [handleRescheduleSgiOnCore, hc]
+  simp [handleRescheduleSgiOnCore, hc, hout]
 
-/-- WS-SM SM5.C.5: a successful SGI-handler dispatch sets core `c`'s current
-thread to the re-chosen thread.  Composes the SM5.A selection with the SM5.B
-switch's `_sets_current` (Theorem 3.2.1). -/
+/-- WS-SM SM5.C.5 (audit-pass-3 / Codex-P1): when the budget-aware candidate
+`tid` does NOT outrank the current thread (`candidateOutranksCurrentOnCore =
+false`), the handler keeps the current thread (identity) — a lower-priority
+cross-core wake never preempts a higher-priority running thread. -/
+theorem handleRescheduleSgiOnCore_keeps_current_when_outranked (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId)
+    (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hout : candidateOutranksCurrentOnCore st c tid = false) :
+    handleRescheduleSgiOnCore st c = .ok st := by
+  simp [handleRescheduleSgiOnCore, hc, hout]
+
+/-- WS-SM SM5.C.5: a successful SGI-handler dispatch (candidate outranks current)
+sets core `c`'s current thread to the re-chosen thread.  Composes the SM5.A
+selection with the SM5.B switch's `_sets_current` (Theorem 3.2.1). -/
 theorem handleRescheduleSgiOnCore_switches_current (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (st' : SystemState)
-    (hc : chooseThreadOnCore st c = .ok (some tid))
+    (hc : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hout : candidateOutranksCurrentOnCore st c tid = true)
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     st'.scheduler.currentOnCore c = some tid := by
-  rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some st c tid hc] at h
+  rw [handleRescheduleSgiOnCore_eq_switch_of_choose_some st c tid hc hout] at h
   exact switchToThreadOnCore_sets_current st c tid st' h
 
 /-- WS-SM SM5.C.5 (preservation): the SGI handler preserves the RobinHood
-object-store invariant — the idle branch is the identity, the dispatch branch is
-a `switchToThreadOnCore` (which preserves `invExt`, SM5.B). -/
+object-store invariant — the idle and keep-current branches are the identity,
+the dispatch branch is a `switchToThreadOnCore` (which preserves `invExt`,
+SM5.B). -/
 theorem handleRescheduleSgiOnCore_preserves_objects_invExt (st : SystemState)
     (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     st'.objects.invExt := by
   unfold handleRescheduleSgiOnCore at h
-  cases hc : chooseThreadOnCore st c with
-  | error e => rw [hc] at h; exact absurd h (by simp)
-  | ok r =>
-      rw [hc] at h
-      cases r with
-      | none => rw [Except.ok.injEq] at h; subst h; exact hInv
-      | some tid => exact switchToThreadOnCore_preserves_objects_invExt st c tid st' hInv h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hInv
+  · split at h
+    · exact switchToThreadOnCore_preserves_objects_invExt st c _ st' hInv h
+    · rw [Except.ok.injEq] at h; subst h; exact hInv
 
 /-- WS-SM SM5.C.5 (preservation): the SGI handler preserves core `c`'s run-queue
 well-formedness. -/
@@ -656,31 +699,29 @@ theorem handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed (st : Syst
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     (st'.scheduler.runQueueOnCore c).wellFormed := by
   unfold handleRescheduleSgiOnCore at h
-  cases hc : chooseThreadOnCore st c with
-  | error e => rw [hc] at h; exact absurd h (by simp)
-  | ok r =>
-      rw [hc] at h
-      cases r with
-      | none => rw [Except.ok.injEq] at h; subst h; exact hwf
-      | some tid => exact switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c tid st' hwf h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hwf
+  · split at h
+    · exact switchToThreadOnCore_preserves_runQueueOnCore_wellFormed st c _ st' hwf h
+    · rw [Except.ok.injEq] at h; subst h; exact hwf
 
 /-- WS-SM SM5.C.5 (cross-core independence): the SGI handler on core `c` leaves
-every other core's `current` and `runQueue` slots untouched — the idle branch is
-the identity, the dispatch branch is a `switchToThreadOnCore` (which is
-per-core-independent, SM5.B.6). -/
+every other core's `current` and `runQueue` slots untouched — the idle and
+keep-current branches are the identity, the dispatch branch is a
+`switchToThreadOnCore` (which is per-core-independent, SM5.B.6). -/
 theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
     (c c' : CoreId) (st' : SystemState) (hcc : c ≠ c')
     (h : handleRescheduleSgiOnCore st c = .ok st') :
     st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c'
       ∧ st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
   unfold handleRescheduleSgiOnCore at h
-  cases hc : chooseThreadOnCore st c with
-  | error e => rw [hc] at h; exact absurd h (by simp)
-  | ok r =>
-      rw [hc] at h
-      cases r with
-      | none => rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
-      | some tid => exact switchToThreadOnCore_independent_of_other_core st c c' tid st' hcc h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
+  · split at h
+    · exact switchToThreadOnCore_independent_of_other_core st c c' _ st' hcc h
+    · rw [Except.ok.injEq] at h; subst h; exact ⟨rfl, rfl⟩
 
 -- ============================================================================
 -- §6b  SM5.C.6 — Multi-step wake→dispatch liveness (audit-pass-1)
@@ -699,57 +740,67 @@ theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
 round-trip dispatches the woken thread to **current** on its target core, in two
 genuine `SchedStep`s.
 
-Hypotheses: `tid` resolves to a TCB (`hTcb`); and after the wake, the target
-core's scheduler selects `tid` as its next thread (`hChoose` — this is the
-plan's "no higher-priority work preempts" condition, made precise: the handler's
-`chooseThreadOnCore` picks `tid`).  Under these, there is a state reachable from
-the post-wake state — by a real `switch` step, NOT reflexively — in which `tid`
-is **current** on the target core.
+Hypotheses: after the wake, the target core's budget-aware scheduler selects
+`tid` as its next thread (`hChoose` — the handler's `chooseThreadEffectiveOnCore`
+picks `tid`) AND `tid` strictly outranks the target core's current thread
+(`hOutrank` — the plan's "no higher-priority work preempts" condition, made
+precise by the audit-pass-3 preemption gate `candidateOutranksCurrentOnCore`).
+Under these, there is a state reachable from the post-wake state — by a real
+`switch` step, NOT reflexively — in which `tid` is **current** on the target
+core.
 
 This is the operational liveness `wakeThread_lossless` defers: it composes the
 enqueue (wake) with the dispatch (SGI handler) and genuinely walks the
 `SchedReachable` closure via `.tail`/`.switch`, witnessing that a cross-core wake
-is not merely "not lost" but *actually scheduled* once its SGI is serviced.  The
-fully-unconditional eventual-scheduling property (discharging `hChoose` from the
+is not merely "not lost" but *actually scheduled* once its SGI is serviced and
+the woken thread outranks the running one.  The fully-unconditional
+eventual-scheduling property (discharging `hChoose` / `hOutrank` from the
 per-core scheduler invariant + idle fallback) is SM5.E/SM5.J. -/
 theorem wakeThread_then_handle_dispatches_current (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore : CoreId)
     (st2 : SystemState)
-    (hChoose : chooseThreadOnCore (wakeThread st tid executingCore).1
+    (hChoose : chooseThreadEffectiveOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok (some tid))
+    (hOutrank : candidateOutranksCurrentOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) tid = true)
     (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok st2) :
     SchedReachable (wakeThread st tid executingCore).1 st2 ∧
       st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid := by
   refine ⟨?_, ?_⟩
   · -- A genuine 2nd `SchedStep`: the handler reduces to a `switchToThreadOnCore`
-    -- (since `chooseThreadOnCore = .ok (some tid)`), which is a `.switch` step.
+    -- (since the budget-aware choice is `.ok (some tid)` and `tid` outranks
+    -- current), which is a `.switch` step.
     have hSwitch : switchToThreadOnCore (wakeThread st tid executingCore).1
         (determineTargetCore st tid) tid = .ok st2 := by
-      rw [← handleRescheduleSgiOnCore_eq_switch_of_choose_some _ _ _ hChoose]; exact hHandle
+      rw [← handleRescheduleSgiOnCore_eq_switch_of_choose_some _ _ _ hChoose hOutrank]
+      exact hHandle
     exact SchedReachable.tail _ _ _ (SchedReachable.refl _)
       (SchedStep.switch _ _ (determineTargetCore st tid) tid hSwitch)
   · exact handleRescheduleSgiOnCore_switches_current _ (determineTargetCore st tid) tid st2
-      hChoose hHandle
+      hChoose hOutrank hHandle
 
 /-- WS-SM SM5.C.6 (multi-step liveness, the full chain from the *pre*-wake state):
 the whole `wake → SGI handler → current` round-trip is a `SchedReachable` path
 from the **original** state to the dispatched state — composing the wake's
 `enqueue` step with the handler's `switch` step into a single 2-step closure
 witness from `st`.  This is the end-to-end cross-core wake liveness: starting
-from any state, waking `tid` and servicing the resulting reschedule SGI reaches a
-state in which `tid` runs on its target core. -/
+from any state, waking `tid` and servicing the resulting reschedule SGI (when the
+woken thread outranks the target's current) reaches a state in which `tid` runs
+on its target core. -/
 theorem wakeThread_roundtrip_reachable_current (st : SystemState)
     (tid : SeLe4n.ThreadId) (executingCore : CoreId)
     (st2 : SystemState)
-    (hChoose : chooseThreadOnCore (wakeThread st tid executingCore).1
+    (hChoose : chooseThreadEffectiveOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok (some tid))
+    (hOutrank : candidateOutranksCurrentOnCore (wakeThread st tid executingCore).1
+                  (determineTargetCore st tid) tid = true)
     (hHandle : handleRescheduleSgiOnCore (wakeThread st tid executingCore).1
                   (determineTargetCore st tid) = .ok st2) :
     SchedReachable st st2 ∧
       st2.scheduler.currentOnCore (determineTargetCore st tid) = some tid := by
   obtain ⟨hReach, hCur⟩ :=
-    wakeThread_then_handle_dispatches_current st tid executingCore st2 hChoose hHandle
+    wakeThread_then_handle_dispatches_current st tid executingCore st2 hChoose hOutrank hHandle
   refine ⟨?_, hCur⟩
   -- Prepend the wake's `enqueue` step: `st → (wakeThread …).1` is a `SchedStep`.
   have hWakeStep : SchedReachable st (wakeThread st tid executingCore).1 := by
@@ -986,13 +1037,18 @@ theorem enqueueRunnableOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
     (tid t : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
     (hres : st.getTcb? t = some tcb) :
     ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? t = some tcb' := by
-  by_cases hEq : t = tid
-  · subst hEq
-    -- `tid` resolves to a TCB pre-wake; post-wake it is `{tcb with ipcState := .ready}`.
-    exact ⟨_, enqueueRunnableOnCore_makes_ready st c t tcb hres hInv⟩
-  · -- `t ≠ tid`: framed out, so the lookup is unchanged.
-    rw [enqueueRunnableOnCore_getTcb?_ne st c tid t hInv hEq]
-    exact ⟨tcb, hres⟩
+  cases hFresh : runnableOnSomeCore st tid with
+  | true =>
+      -- Single-placement reject: the wake is the identity, so the lookup is `st`'s.
+      rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact ⟨tcb, hres⟩
+  | false =>
+      by_cases hEq : t = tid
+      · subst hEq
+        -- `tid` resolves to a TCB pre-wake; post-wake it is `{tcb with ipcState := .ready}`.
+        exact ⟨_, enqueueRunnableOnCore_makes_ready st c t tcb hres hInv hFresh⟩
+      · -- `t ≠ tid`: framed out, so the lookup is unchanged.
+        rw [enqueueRunnableOnCore_getTcb?_ne st c tid t hInv hEq]
+        exact ⟨tcb, hres⟩
 
 /-- WS-SM SM5.C.1 (preservation, SM4.C `currentThreadValidOnCore`): a wake
 preserves current-thread validity on **every** core `c'`.  The wake never writes
@@ -1064,16 +1120,21 @@ theorem enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
           -- No-op wake: run queue unchanged.
           rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact hcons
       | some tcb =>
-          simp only [enqueueRunnableOnCore, hTcb,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
-          -- Goal: `cur ∉ ((rq).insert tid prio).toList`.  Reduce both the goal
-          -- and `hcons` to `RunQueue`-membership and use `mem_insert`.
-          rw [RunQueue.mem_toList_iff_mem] at hcons
-          rw [RunQueue.mem_toList_iff_mem]
-          intro hmem
-          rcases (RunQueue.mem_insert _ tid _ cur).mp hmem with hOld | hEqTid
-          · exact hcons hOld
-          · exact hCurNeTid hEqTid
+          cases hFresh : runnableOnSomeCore st tid with
+          | true =>
+              -- Single-placement reject: the wake is the identity, run queue unchanged.
+              rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hcons
+          | false =>
+              simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+              -- Goal: `cur ∉ ((rq).insert tid prio).toList`.  Reduce both the goal
+              -- and `hcons` to `RunQueue`-membership and use `mem_insert`.
+              rw [RunQueue.mem_toList_iff_mem] at hcons
+              rw [RunQueue.mem_toList_iff_mem]
+              intro hmem
+              rcases (RunQueue.mem_insert _ tid _ cur).mp hmem with hOld | hEqTid
+              · exact hcons hOld
+              · exact hCurNeTid hEqTid
 
 -- ── §10b  IPC↔scheduler-contract preservation (the gap-(b) soundness result) ──
 --
@@ -1114,37 +1175,42 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadIpcReady (st : SystemState
     (c : CoreId) (wtid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
     (hpre : runnableThreadIpcReady_perCore st c) :
     runnableThreadIpcReady_perCore (enqueueRunnableOnCore st c wtid) c := by
-  unfold runnableThreadIpcReady_perCore at hpre ⊢
-  intro t tcb hTcb hMem
-  by_cases hEq : t = wtid
-  · -- The woken thread: its post-state TCB is `{orig with ipcState := .ready}`.
-    subst hEq
-    cases hOrig : st.getTcb? t with
-    | none =>
-        -- No-op wake: `getTcb? t` post = pre = none, contradicting `hTcb`.
-        rw [enqueueRunnableOnCore_no_tcb_noop st c t hOrig] at hTcb
-        rw [hOrig] at hTcb; exact absurd hTcb (by simp)
-    | some origTcb =>
-        have hReady := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv
-        rw [hTcb] at hReady
-        -- `some tcb = some {origTcb with ipcState := .ready}` ⇒ tcb.ipcState = .ready.
-        injection hReady with hEqTcb
-        rw [hEqTcb]
-  · -- A non-woken thread: framed TCB + membership came from the pre-queue.
-    rw [enqueueRunnableOnCore_getTcb?_ne st c wtid t hInv hEq] at hTcb
-    -- Reduce post-queue membership to pre-queue membership (drop the `= wtid` arm).
-    have hMemPre : t ∈ (st.scheduler.runQueueOnCore c).toList := by
-      cases hOrig : st.getTcb? wtid with
+  cases hFresh : runnableOnSomeCore st wtid with
+  | true =>
+      -- Single-placement reject: the wake is the identity, so the predicate carries over.
+      rw [enqueueRunnableOnCore_eq_self_of_runnable st c wtid hFresh]; exact hpre
+  | false =>
+    unfold runnableThreadIpcReady_perCore at hpre ⊢
+    intro t tcb hTcb hMem
+    by_cases hEq : t = wtid
+    · -- The woken thread: its post-state TCB is `{orig with ipcState := .ready}`.
+      subst hEq
+      cases hOrig : st.getTcb? t with
       | none =>
-          rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
+          -- No-op wake: `getTcb? t` post = pre = none, contradicting `hTcb`.
+          rw [enqueueRunnableOnCore_no_tcb_noop st c t hOrig] at hTcb
+          rw [hOrig] at hTcb; exact absurd hTcb (by simp)
       | some origTcb =>
-          simp only [enqueueRunnableOnCore, hOrig,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
-          rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
-          rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
-          · exact hOld
-          · exact absurd hEqW hEq
-    exact hpre t tcb hTcb hMemPre
+          have hReady := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv hFresh
+          rw [hTcb] at hReady
+          -- `some tcb = some {origTcb with ipcState := .ready}` ⇒ tcb.ipcState = .ready.
+          injection hReady with hEqTcb
+          rw [hEqTcb]
+    · -- A non-woken thread: framed TCB + membership came from the pre-queue.
+      rw [enqueueRunnableOnCore_getTcb?_ne st c wtid t hInv hEq] at hTcb
+      -- Reduce post-queue membership to pre-queue membership (drop the `= wtid` arm).
+      have hMemPre : t ∈ (st.scheduler.runQueueOnCore c).toList := by
+        cases hOrig : st.getTcb? wtid with
+        | none =>
+            rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
+        | some origTcb =>
+            simp only [enqueueRunnableOnCore, hOrig, hFresh, Bool.false_eq_true, if_false,
+              SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
+            rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
+            rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
+            · exact hOld
+            · exact absurd hEqW hEq
+      exact hpre t tcb hTcb hMemPre
 
 /-- WS-SM SM5.C.1 (SM4.D `blockedOn*NotRunnable_perCore` preservation, generic
 form): a thread that is `blockedOn*` after the wake is not in core `c`'s run
@@ -1163,33 +1229,38 @@ private theorem enqueueRunnableOnCore_preserves_blockedNotRunnable_aux
     ∀ (t : SeLe4n.ThreadId) (tcb : TCB),
       (enqueueRunnableOnCore st c wtid).getTcb? t = some tcb → P tcb →
       t ∉ ((enqueueRunnableOnCore st c wtid).scheduler.runQueueOnCore c).toList := by
-  intro t tcb hTcb hP hMem
-  by_cases hEq : t = wtid
-  · -- The woken thread is `.ready`, so it cannot satisfy a `blockedOn*` predicate.
-    subst hEq
-    cases hOrig : st.getTcb? t with
-    | none =>
-        rw [enqueueRunnableOnCore_no_tcb_noop st c t hOrig] at hTcb
-        rw [hOrig] at hTcb; exact absurd hTcb (by simp)
-    | some origTcb =>
-        have hReady := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv
-        rw [hTcb] at hReady
-        injection hReady with hEqTcb
-        exact hPnotReady tcb hP (by rw [hEqTcb])
-  · -- Non-woken thread: framed TCB + run-queue membership; reduce to the pre-state.
-    rw [enqueueRunnableOnCore_getTcb?_ne st c wtid t hInv hEq] at hTcb
-    have hMemPre : t ∈ (st.scheduler.runQueueOnCore c).toList := by
-      cases hOrig : st.getTcb? wtid with
+  cases hFresh : runnableOnSomeCore st wtid with
+  | true =>
+      -- Single-placement reject: the wake is the identity; the predicate carries over.
+      rw [enqueueRunnableOnCore_eq_self_of_runnable st c wtid hFresh]; exact hpre
+  | false =>
+    intro t tcb hTcb hP hMem
+    by_cases hEq : t = wtid
+    · -- The woken thread is `.ready`, so it cannot satisfy a `blockedOn*` predicate.
+      subst hEq
+      cases hOrig : st.getTcb? t with
       | none =>
-          rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
+          rw [enqueueRunnableOnCore_no_tcb_noop st c t hOrig] at hTcb
+          rw [hOrig] at hTcb; exact absurd hTcb (by simp)
       | some origTcb =>
-          simp only [enqueueRunnableOnCore, hOrig,
-            SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
-          rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
-          rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
-          · exact hOld
-          · exact absurd hEqW hEq
-    exact hpre t tcb hTcb hP hMemPre
+          have hReady := enqueueRunnableOnCore_makes_ready st c t origTcb hOrig hInv hFresh
+          rw [hTcb] at hReady
+          injection hReady with hEqTcb
+          exact hPnotReady tcb hP (by rw [hEqTcb])
+    · -- Non-woken thread: framed TCB + run-queue membership; reduce to the pre-state.
+      rw [enqueueRunnableOnCore_getTcb?_ne st c wtid t hInv hEq] at hTcb
+      have hMemPre : t ∈ (st.scheduler.runQueueOnCore c).toList := by
+        cases hOrig : st.getTcb? wtid with
+        | none =>
+            rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
+        | some origTcb =>
+            simp only [enqueueRunnableOnCore, hOrig, hFresh, Bool.false_eq_true, if_false,
+              SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
+            rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
+            rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
+            · exact hOld
+            · exact absurd hEqW hEq
+      exact hpre t tcb hTcb hP hMemPre
 
 /-- WS-SM SM5.C.1: `blockedOnSendNotRunnable_perCore` preservation. -/
 theorem enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable (st : SystemState)

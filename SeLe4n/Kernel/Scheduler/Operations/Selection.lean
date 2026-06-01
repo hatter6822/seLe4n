@@ -921,6 +921,15 @@ def switchToThreadOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
 -- `Scheduler.Operations.PerCoreWake`.  SM5.D's per-core timer tick is the first
 -- runtime exerciser (the cross-core CBS-replenish wake at §3.4 calls `wakeThread`).
 
+/-- WS-SM SM5.C.1 (audit-pass-3 / Codex-P2): is `tid` already runnable on *some*
+core's run queue?  The global single-placement test the cross-core wake uses to
+avoid a second placement of the same thread (which two SGI handlers could
+otherwise dispatch concurrently).  Reads every per-core run queue via
+`RunQueue.contains` over `Concurrency.allCores`. -/
+def runnableOnSomeCore (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  (SeLe4n.Kernel.Concurrency.allCores).any
+    (fun c => (st.scheduler.runQueueOnCore c).contains tid)
+
 /-- WS-SM SM5.C.1 (plan §3.3): enqueue `tid` as a runnable thread on core `c`.
 
 The per-core "make `tid` runnable on core `c`" primitive — the per-core
@@ -937,23 +946,35 @@ invariant, so it is left unchanged); and (b) inserts `tid` into core `c`'s run
 queue at its effective priority (`effectiveRunQueuePriority`, i.e.
 `max(base, pipBoost)` — the priority every other re-enqueue site uses).
 
-`RunQueue.insert` is idempotent (a no-op when `tid` is already present), so
-re-waking an already-runnable thread is safe.  Fail-closed: a `tid` that does
-not resolve to a TCB is a no-op (identity) — a corrupted run-queue entry is
-never invented, mirroring `IPC.ensureRunnable`'s `none => st` discipline.
+**Single-placement guard (SM5.C.1 audit-pass-3 / Codex-P2).**  Before inserting,
+the wake checks `runnableOnSomeCore`: if `tid` is ALREADY runnable on *some*
+core's run queue, the wake is a no-op (identity).  This extends `RunQueue.insert`'s
+per-core idempotency (its internal `contains` guard) to a *global* single-
+placement invariant — a thread is runnable on at most one core — so a stale
+placement (e.g. after an affinity change whose run-queue migration is deferred to
+SM5.H.4) cannot leave the same TCB eligible on two cores, which two SGI handlers
+could otherwise dispatch concurrently (the same thread running on two cores).
+Fail-closed: a `tid` that does not resolve to a TCB is a no-op (identity),
+mirroring `IPC.ensureRunnable`'s `none => st` discipline.
 
-Only core `c`'s run-queue slot and `tid`'s TCB are written; every other core's
-scheduler slot and every other thread's TCB are framed out (the
-cross-core-independence + per-thread frame lemmas proved in `PerCoreWake`). -/
+Footprint: WRITES core `c`'s run-queue slot and `tid`'s TCB; the single-placement
+guard additionally READS every per-core run queue.  `wakeThreadLockSet` declares
+the write footprint; the guard's all-core read coverage is formalised when the
+wake is wired under `withLockSet` at SM5.D (the lock set's runtime consumption is
+SM5.D+).  Every other thread's TCB and every other core's `current` slot are
+framed out (the cross-core-independence + per-thread frame lemmas in
+`PerCoreWake`). -/
 def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
   match st.getTcb? tid with
   | some tcb =>
-      let readyTcb : KernelObject := .tcb { tcb with ipcState := .ready }
-      { st with
-          objects := st.objects.insert tid.toObjId readyTcb,
-          scheduler := st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) }
+      if runnableOnSomeCore st tid then st
+      else
+        let readyTcb : KernelObject := .tcb { tcb with ipcState := .ready }
+        { st with
+            objects := st.objects.insert tid.toObjId readyTcb,
+            scheduler := st.scheduler.setRunQueueOnCore c
+              ((st.scheduler.runQueueOnCore c).insert tid (effectiveRunQueuePriority tcb)) }
   | none => st
 
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
@@ -1015,32 +1036,72 @@ def wakeThread (st : SystemState) (tid : SeLe4n.ThreadId)
     | some _ => if target == executingCore then none else some (target, SgiKind.reschedule)
   (st', sgi)
 
+/-- WS-SM SM5.C.5 (audit-pass-3): does the budget-eligible candidate `tid`
+strictly outrank core `c`'s current thread by *effective* run-queue priority
+(`max(base, pipBoost)`)?
+
+- `true` when the core is idle (`currentOnCore c = none`) — no running thread to
+  protect, so the candidate dispatches.
+- `true` when the candidate's effective priority is *strictly greater* than the
+  current thread's — fixed-priority preemption fires.
+- `false` when the current thread's effective priority is `≥` the candidate's —
+  no gratuitous preemption (the running thread keeps the core; the candidate
+  waits in the run queue for the next scheduling point).
+
+The `_, _ => true` arm (current TID does not resolve to a TCB) is unreachable
+under `currentThreadValidOnCore`; it dispatches the run-queue-validated
+candidate as a making-progress recovery rather than keeping a corrupt current. -/
+def candidateOutranksCurrentOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : Bool :=
+  match st.scheduler.currentOnCore c with
+  | none => true
+  | some curTid =>
+      match st.getTcb? curTid, st.getTcb? tid with
+      | some curTcb, some tidTcb =>
+          (effectiveRunQueuePriority curTcb).val < (effectiveRunQueuePriority tidTcb).val
+      | _, _ => true
+
 /-- WS-SM SM5.C.5 (plan §4.4): the target core's `.reschedule` SGI handler.
 
 When core `c` takes a `.reschedule` SGI (sent by a remote wake), it re-runs its
-own scheduler: re-choose the highest-priority runnable thread in its run queue
-(`chooseThreadOnCore`, SM5.A) and switch to it (`switchToThreadOnCore`, SM5.B).
-This "drains" the effect of any wakes that landed in core `c`'s run queue since
-its last scheduling decision and dispatches the now-highest-priority thread.
+own scheduler: re-choose the highest-priority *budget-eligible* runnable thread
+in its run queue (`chooseThreadEffectiveOnCore`, SM5.A §6 — the CBS/SchedContext
+selector the production timer path uses, so a reschedule cannot dispatch a
+budget-exhausted thread) and, **only if that candidate strictly outranks the
+current thread** (`candidateOutranksCurrentOnCore`), switch to it
+(`switchToThreadOnCore`, SM5.B).
 
-- `chooseThreadOnCore` errors (corrupted run queue) → propagate the error.
-- `chooseThreadOnCore` returns `none` (no eligible thread) → no switch; core `c`
-  keeps running whatever it was (or idles).  The handler is a no-op in this case
-  (returns `st` unchanged), never inventing a dispatch.
-- `chooseThreadOnCore` returns `some tid` → switch to `tid`
-  (`switchToThreadOnCore`), which preempts core `c`'s current thread back into
-  its run queue and dispatches `tid`.
+- `chooseThreadEffectiveOnCore` errors (corrupted run queue) → propagate.
+- returns `none` (no budget-eligible thread) → no switch; core `c` keeps running
+  (or idles).  Identity (`.ok st`); never invents a dispatch.
+- returns `some tid` and `tid` outranks current (or core idle) → switch to `tid`
+  (`switchToThreadOnCore` preempts the old current back into the run queue and
+  dispatches `tid`).
+- returns `some tid` but current still outranks `tid` → **keep current**
+  (`.ok st`).  This is the audit-pass-3 / Codex-P1 fix: a *lower*-priority
+  cross-core wake must NOT preempt a higher-priority running thread (fixed-
+  priority preemptive policy).  Because the current thread is not in the run
+  queue (dequeue-on-dispatch), the candidate is compared against it explicitly
+  rather than competing inside `chooseThreadEffectiveOnCore`.
 
-Composes the SM5.A selection and SM5.B switch, so it inherits both their
-read / write footprints; its lock-set (`handleRescheduleSgiOnCoreLockSet`) is
-the switch's (object-store + run-queue write locks), which subsumes the
-selection's (read locks on the same two domains). -/
+Two audit-pass-3 / Codex-P1 fixes land here: (1) **budget-awareness** — the
+selector is `chooseThreadEffectiveOnCore`, not the budget-skipping
+`chooseThreadOnCore`, matching the production CBS timer path; (2) **preemption
+policy** — the explicit `candidateOutranksCurrentOnCore` gate.
+
+Composes the SM5.A selection and SM5.B switch.  Its lock-set
+(`handleRescheduleSgiOnCoreLockSet`) is the switch's (object-store + run-queue
+write locks), which subsumes both the selection's reads and the
+`candidateOutranksCurrentOnCore` priority-comparison reads on the same two
+domains. -/
 def handleRescheduleSgiOnCore (st : SystemState) (c : CoreId) :
     Except KernelError SystemState :=
-  match chooseThreadOnCore st c with
+  match chooseThreadEffectiveOnCore st c with
   | .error e => .error e
   | .ok none => .ok st
-  | .ok (some tid) => switchToThreadOnCore st c tid
+  | .ok (some tid) =>
+      if candidateOutranksCurrentOnCore st c tid then switchToThreadOnCore st c tid
+      else .ok st
 
 /-- WS-SM SM5.C.8 (plan §3.3, §4.1): set a thread's CPU affinity.
 
