@@ -1055,6 +1055,21 @@ Looks the target TCB up via the typed `getTcb?` accessor; writes the new
 a TCB (mirroring `setPriorityOp`'s missing-target discipline).  Only the target
 TCB is written — the scheduler state (run queues, current threads) is untouched.
 
+**Authority (security contract).**  This transition performs **no** in-op
+authority check — any caller reaching it can rebind any thread's affinity.
+Unlike `setPriorityOp`, whose authority (the caller's maximum controlled
+priority) is an intrinsic TCB field and is therefore validated in-op, CPU-
+affinity authority is a *capability* (scheduler control), so the gate belongs at
+the syscall-dispatch layer, not in this primitive: the future `tcbSetAffinity`
+syscall MUST resolve and verify a scheduler-control capability (via
+`syscallLookupCap`) *before* invoking `setThreadCpuAffinity`, exactly as every
+other capability-gated transition is reached only past its dispatch check.  At
+SM5.C the primitive is deliberately unwired — there is no `SyscallId` variant
+and no `API` entry, so no dispatch path reaches it yet — and wiring it without
+that capability gate would be a privilege-escalation (unauthorized thread-
+placement / denial-of-service) regression.  Tracked as the SM5.C.8 dispatch
+obligation for the SM5.D+ syscall surface.
+
 **Migration note (SM5.H.4).**  Re-binding a thread that is *currently enqueued*
 on a different core does not itself move it between run queues; the
 SchedContext / run-queue migration on an affinity change is SM5.H.4.  At SM5.C

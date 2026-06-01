@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/brave-hawking-ueuMe",
-      "commit_sha": "67372159282ed1a91b8ab5c1d4c6d0d521b2c292",
-      "tree_sha": "fee42bc890c88e518600cbb666c54c78f640b408",
-      "committed_at_utc": "2026-05-31T21:55:16+00:00"
+      "commit_sha": "f50b7982a901a452ab9c40dd3e891aa8765265c5",
+      "tree_sha": "356a5a7da3fec9844a2e5ecd56aec2e30628a4ff",
+      "committed_at_utc": "2026-06-01T01:22:46+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d709d74a1a33834dfe72419fc70e05597063f29b092331b37e74793aeba5a783"
+    "source_digest": "5eca53298c4d38f32878f7e013d03a00324d31f56be80772c922618589643f1f"
   },
   "summary": {
     "module_count": 263,
@@ -27,9 +27,9 @@
     "version": "0.31.40",
     "lean_toolchain": "v4.28.0",
     "production_files": 213,
-    "production_loc": 151315,
+    "production_loc": 151330,
     "test_files": 50,
-    "test_loc": 33377,
+    "test_loc": 33394,
     "proved_theorem_lemma_decls": 4819,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -72274,7 +72274,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinity",
-          "line": 1064,
+          "line": 1079,
           "called": [
             "CoreId",
             "KernelError",
@@ -122461,21 +122461,24 @@
             "bootCoreId",
             "core1",
             "enqueueRunnableOnCore",
+            "filter",
             "getTcb",
             "isEmpty",
+            "length",
             "none",
             "rqHas",
             "runQueueOnCore",
             "stWake",
             "tidGhost",
             "tidU",
-            "tidW"
+            "tidW",
+            "toList"
           ]
         },
         {
           "kind": "def",
           "name": "runWakeSgiChecks",
-          "line": 388,
+          "line": 405,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -122494,7 +122497,7 @@
         {
           "kind": "def",
           "name": "runRoundTripChecks",
-          "line": 410,
+          "line": 427,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -122514,7 +122517,7 @@
         {
           "kind": "def",
           "name": "runAffinityOpChecks",
-          "line": 432,
+          "line": 449,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -122533,7 +122536,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 454,
+          "line": 471,
           "called": [
             "RunQueueLockId",
             "all",
@@ -122549,7 +122552,7 @@
         {
           "kind": "def",
           "name": "runLatencyChecks",
-          "line": 474,
+          "line": 491,
           "called": [
             "all",
             "assertBool",
@@ -122568,7 +122571,7 @@
         {
           "kind": "def",
           "name": "tidB",
-          "line": 495,
+          "line": 512,
           "called": [
             "ThreadId",
             "ofNat"
@@ -122577,7 +122580,7 @@
         {
           "kind": "def",
           "name": "stBlocked",
-          "line": 497,
+          "line": 514,
           "called": [
             "SystemState",
             "build",
@@ -122590,7 +122593,7 @@
         {
           "kind": "def",
           "name": "runAuditPass1Checks",
-          "line": 502,
+          "line": 519,
           "called": [
             "affinityAdmitsCore",
             "all",
@@ -122626,7 +122629,7 @@
         {
           "kind": "def",
           "name": "runSmpWakeChecks",
-          "line": 594,
+          "line": 611,
           "called": [
             "runAffinityOpChecks",
             "runAuditPass1Checks",
@@ -122641,7 +122644,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 610,
+          "line": 627,
           "called": [
             "runSmpWakeChecks"
           ]

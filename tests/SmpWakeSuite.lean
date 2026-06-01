@@ -383,6 +383,23 @@ private def runEnqueueChecks : IO Unit := do
     (!rqHas (enqueueRunnableOnCore stWake core1 tidW) bootCoreId tidW)
   assertBool "enqueue of a non-TCB ghost is a no-op (boot run queue stays empty)"
     (((enqueueRunnableOnCore stWake bootCoreId tidGhost).scheduler.runQueueOnCore bootCoreId).toList.isEmpty)
+  -- audit-pass-3: double-wake idempotency.  `enqueueRunnableOnCore` (unlike the
+  -- single-core `IPC.ensureRunnable`, which has an external `if tid ∈ runQueue`
+  -- dedup guard) relies entirely on `RunQueue.insert`'s *internal* `if contains
+  -- tid then rq` guard.  A second wake of an already-runnable thread must NOT
+  -- create a duplicate run-queue entry (that would violate `runQueueUnique` and
+  -- let the scheduler double-dispatch the same thread).  These two assertions
+  -- pin that property directly — a future refactor that drops the internal guard
+  -- is caught here, not only by the (more indirect) wellFormed-preservation proof.
+  assertBool "double-wake keeps tidU in the boot run queue exactly once (no duplicate)"
+    (let st1 := enqueueRunnableOnCore stWake bootCoreId tidU
+     let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
+     ((st2.scheduler.runQueueOnCore bootCoreId).toList.filter (· == tidU)).length == 1)
+  assertBool "double-wake run queue identical to single-wake (enqueue idempotent)"
+    (let st1 := enqueueRunnableOnCore stWake bootCoreId tidU
+     let st2 := enqueueRunnableOnCore st1 bootCoreId tidU
+     (st2.scheduler.runQueueOnCore bootCoreId).toList
+       == (st1.scheduler.runQueueOnCore bootCoreId).toList)
 
 /-- §3.3 SM5.C.2/.4: local vs remote wake (SGI emission). -/
 private def runWakeSgiChecks : IO Unit := do

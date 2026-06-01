@@ -5010,6 +5010,41 @@ documentation lives under `docs/` and `docs/gitbook/`.
     staged-only modules.  Items deferred past v1.0.0 with correctness impact:
     NONE.
 
+  **WS-SM SM5.C audit-pass-3 (deepest code-first re-audit; also in v0.31.40)**:
+  read the SM5.C *implementation* against the plan §3.3/§4.4 spec (not its
+  docstrings), asking whether any shortcut made the cross-core wake path less
+  secure and whether all 12 sub-tasks are complete + optimal.  **Verdict: no bugs
+  and no security shortcuts.**  Verified — and made the implicit explicit:
+  - **`enqueueRunnableOnCore` faithfully mirrors the trusted `IPC.ensureRunnable`**:
+    both gate run-queue membership on `ipcState` (not `threadState`), so there is no
+    "wake a suspended thread" shortcut (thread-state gating is the caller's, as for
+    `ensureRunnable`; suspend removes a thread from its IPC queues).  It *improves*
+    on `ensureRunnable` by bundling the `ipcState := .ready` clear (cannot create a
+    runnable-but-not-ready thread).
+  - **Wake-path idempotency** rests on `RunQueue.insert`'s internal
+    `if rq.contains tid then rq` guard (a double-wake cannot duplicate a run-queue
+    entry → no `runQueueUnique` violation).  Pinned now by two direct runtime
+    assertions in `tests/SmpWakeSuite.lean` (59 → **61**).
+  - **No priority inversion**: `effectiveRunQueuePriority` (Scheduler, used by
+    `enqueueRunnableOnCore`) and `ipcEffectiveRunQueuePriority` (IPC) are
+    byte-identical (`Nat.max base pipBoost`), so the wake honors PIP boost; the
+    Scheduler-layer function is the correct layering choice.
+  - **Two plan-deviations are both *safer*** (implementation > plan sketch): the
+    wake lock-set uses the SM3.A.10 object-store **table** write lock (the plan's
+    per-TCB lock would under-lock an RHTable slot relocation), and `wakeThread`
+    takes `executingCore` as an explicit parameter (pure transition vs inline FFI).
+  - **Security-contract hardening — `setThreadCpuAffinity` (SM5.C.8)**: unlike
+    `setPriorityOp` (whose MCP authority is an intrinsic TCB field validated in-op),
+    affinity authority is a *capability* (scheduler control).  The primitive does
+    **no** in-op check; its docstring now states the capability gate belongs at the
+    syscall-dispatch layer when wired.  The op is deliberately unwired at SM5.C (no
+    `SyscallId` variant, no `API` entry) so there is **no live gap**; the note
+    prevents a future privilege-escalation from naive wiring.
+  No code-behaviour change (a production docstring + two test assertions);
+  `smp_wake_suite` 61/61 PASS, warning-clean; SM5.C theorems remain axiom-clean;
+  trace byte-identical; Tier 0–3 green.  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

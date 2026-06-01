@@ -197,6 +197,59 @@ fully-passing state.
   staged-only modules; all new theorems axiom-clean (`propext` / `Quot.sound`).
   Items deferred past v1.0.0 with correctness impact: NONE.
 
+### Audit-pass-3 refinements (deepest code-first re-audit; also in v0.31.40)
+
+A third, deepest audit read the SM5.C *implementation* against the plan §3.3/§4.4
+spec (not its docstrings), with two questions in mind: did any shortcut make the
+cross-core wake path less secure, and is every one of the 12 sub-tasks complete +
+optimal.  **Verdict: no bugs and no security shortcuts — the surface is complete
+and sound.**  The audit verified, and where it relied on an implicit property it
+made that property explicit:
+
+- **`enqueueRunnableOnCore` faithfully mirrors the trusted `IPC.ensureRunnable`.**
+  Both gate run-queue membership on `ipcState` (set `.ready`), *not* `threadState` —
+  so the cross-core primitive introduces no "wake a suspended thread" shortcut
+  (the thread-state gating is the caller's, exactly as for `ensureRunnable`; suspend
+  removes a thread from its IPC queues so no wake targets it).  It *improves* on
+  `ensureRunnable` by bundling the `ipcState := .ready` clear, so it cannot create a
+  runnable-but-not-ready thread (maintaining `runnableThreadIpcReady`).
+- **Wake-path idempotency** rests on `RunQueue.insert`'s internal
+  `if rq.contains tid then rq` guard (a double-wake cannot create a duplicate
+  run-queue entry → no `runQueueUnique` violation, no double-dispatch).  Pinned now
+  by two **direct runtime assertions** (`tests/SmpWakeSuite.lean`, 59 → 61): a
+  double-wake keeps the thread in the run queue exactly once, and the double-wake
+  run queue is identical to the single-wake run queue.
+- **No priority inversion on the wake path.**  `effectiveRunQueuePriority` (Scheduler)
+  and `ipcEffectiveRunQueuePriority` (IPC) are byte-identical (`Nat.max base
+  pipBoost`), so `enqueueRunnableOnCore` honors PIP boost exactly like the IPC wake
+  path.  Using the Scheduler-layer function in `Selection.lean` is the correct
+  layering (importing the IPC one would invert the dependency).
+- **Two deliberate deviations from the plan §3.3 sketch are both *safer*** (the
+  implementation, not the plan, is the superior artefact): the wake lock-set uses the
+  SM3.A.10 object-store **table** write lock (`schedObjStoreLockId`) — the plan's
+  per-TCB `LockId.tcb tid` would under-lock an RHTable slot relocation — and
+  `wakeThread` takes `executingCore` as an **explicit parameter** (keeping the
+  transition pure) rather than reading `currentCoreId` via FFI inline.
+- **Security-contract hardening — `setThreadCpuAffinity` (SM5.C.8).**  Unlike
+  `setPriorityOp`, whose authority (the caller's maximum controlled priority) is an
+  intrinsic TCB field validated in-op, CPU-affinity authority is a *capability*
+  (scheduler control).  The primitive performs **no** in-op authority check; its
+  docstring now states explicitly that the capability gate belongs at the
+  syscall-dispatch layer (`syscallLookupCap`) when the op is wired.  At SM5.C the
+  primitive is deliberately unwired — no `SyscallId` variant, no `API` entry, no
+  caller reaches it — so there is **no live gap**; the note prevents a future
+  privilege-escalation regression from naive wiring (tracked as the SM5.C.8 dispatch
+  obligation).
+- **FFI emission** (`coreIdTargetMask` / `sendSgiToCore` / `emitWakeSgi`) confirmed
+  sound: the GICv2 8-bit CPU-target-list width (`numCores ≤ 8`) is documented, the
+  `dsb ish`-before-`GICD_SGIR` BKL ordering is honest, and the SGI is emitted by the
+  caller *after* the state write is committed.
+
+No code-behaviour change (the two edits are a production docstring + two test
+assertions); `smp_wake_suite` 61/61 PASS, warning-clean; all SM5.C theorems remain
+axiom-clean; trace fixture byte-identical; Tier 0–3 green.  Items deferred past
+v1.0.0 with correctness impact: NONE.
+
 ## v0.31.39 — WS-SM SM5.B: per-core `switchToThread` (context switch, preempt-previous, reject-remote, cross-core independence, FFI seam)
 
 WS-SM Phase SM5 (per-core scheduler) continues with SM5.B — the per-core

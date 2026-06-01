@@ -2542,6 +2542,44 @@ audit-pass-1 introduced and added two missing security theorems.
   `smp_wake_suite` 59/59 PASS; partition gate 45 staged-only modules.  Items
   deferred past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.C audit-pass-3 (deepest code-first re-audit; also in v0.31.40)**: read
+the SM5.C *implementation* against the plan §3.3/§4.4 spec (not its docstrings),
+asking whether any shortcut made the cross-core wake path less secure and whether
+all 12 sub-tasks are complete + optimal.  **Verdict: no bugs and no security
+shortcuts.**
+
+- **`enqueueRunnableOnCore` faithfully mirrors the trusted `IPC.ensureRunnable`**:
+  both gate run-queue membership on `ipcState` (not `threadState`), so there is no
+  "wake a suspended thread" shortcut (the thread-state gating is the caller's, as for
+  `ensureRunnable`; `suspendThread`/`cancelIpcBlocking` removes a thread from its IPC
+  object queues so no wake targets it).  It *improves* on `ensureRunnable` by bundling
+  the `ipcState := .ready` clear — it cannot create a runnable-but-not-ready thread.
+- **Wake-path idempotency** rests on `RunQueue.insert`'s internal `if rq.contains tid
+  then rq` guard: a double-wake cannot create a duplicate run-queue entry (no
+  `runQueueUnique` violation, no double-dispatch).  Pinned now by two direct runtime
+  assertions in `tests/SmpWakeSuite.lean` (59 → 61).
+- **No priority inversion**: `effectiveRunQueuePriority` (Scheduler) and
+  `ipcEffectiveRunQueuePriority` (IPC) are byte-identical (`Nat.max base pipBoost`),
+  so `enqueueRunnableOnCore` honors PIP boost exactly like the IPC wake path.
+- **Two plan-deviations are both *safer*** (implementation > plan §3.3 sketch): the
+  wake lock-set uses the SM3.A.10 object-store **table** write lock
+  (`schedObjStoreLockId`) — the plan's per-TCB `LockId.tcb tid` would under-lock an
+  RHTable slot relocation — and `wakeThread` takes `executingCore` as an explicit
+  parameter (pure transition) rather than reading `currentCoreId` via FFI inline.
+- **Security-contract hardening — `setThreadCpuAffinity` (SM5.C.8)**: unlike
+  `setPriorityOp` (whose MCP authority is an intrinsic TCB field validated in-op),
+  CPU-affinity authority is a *capability* (scheduler control).  The primitive does
+  **no** in-op authority check; its docstring now states explicitly that the
+  capability gate belongs at the syscall-dispatch layer (`syscallLookupCap`) when the
+  op is wired.  At SM5.C the op is deliberately unwired (no `SyscallId` variant, no
+  `API` entry, no caller) so there is **no live gap**; the note prevents a future
+  privilege-escalation regression from naive wiring (the SM5.C.8 dispatch obligation).
+
+No code-behaviour change (a production docstring + two test assertions);
+`smp_wake_suite` 61/61 PASS, warning-clean; all SM5.C theorems remain axiom-clean;
+trace fixture byte-identical; Tier 0–3 green.  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the
