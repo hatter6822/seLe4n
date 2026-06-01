@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.44"
+version = "0.31.45"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -402,3 +402,13 @@ root = "tests.SmpWakeSuite"
 [[lean_exe]]
 name = "smp_timer_suite"
 root = "tests.SmpTimerSuite"
+
+# WS-SM SM5.E — Per-core idle thread test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM5.E scenarios (SM5.E.5 idle priority-0 / no starvation, SM5.E.6
+# chooseThreadOnCore_always_succeeds via enqueueIdleThreadOnCore, SM5.E.4
+# per-core idle locality (frame + affinity + cross-core), SM5.E.1/.2 idle field
+# facts, and the SM5.E inventory partition counts).  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_idle_suite"
+root = "tests.SmpIdleSuite"

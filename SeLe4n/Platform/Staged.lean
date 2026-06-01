@@ -241,6 +241,22 @@ import SeLe4n.Kernel.PerCoreTimerEntry
 -- Nodup witnesses; mirrors `CrossCoreWakeInventory`.  A renamed/removed SM5.D theorem fails
 -- this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
+-- WS-SM SM5.E: the per-core idle-thread theorem surface — SM5.E.5
+-- `idleThread_priority_zero` + field lemmas, the SM5.E.3 `enqueueIdleThreadOnCore`
+-- run-queue primitive (frame / membership / `invExt` + run-queue-wellFormed +
+-- runnable-are-TCBs preservation), the SM5.E.6 keystone
+-- `chooseThreadOnCore_always_succeeds` (+ the `idleThreadEnqueuedOnCore` discharge
+-- predicate, its constructive establishment, and the end-to-end non-vacuity
+-- witness), and the SM5.E.4 `idleThread_core_locality` (affinity-based + frame
+-- companion).  The idle *definitions* live in `Platform.Boot` (SM4.G); SM5.I's
+-- per-core dispatch loop is the first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
+-- WS-SM SM5.E: the 26-entry per-core-idle theorem inventory (4 categories:
+-- field/enqueue/alwaysSucceeds/locality) with the `pcit!` compile-time
+-- identifier-validation macro + per-category count + partition-sum + Nodup
+-- witnesses; mirrors `PerCoreTimerInventory`.  A renamed/removed SM5.E theorem
+-- fails this module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

@@ -3413,4 +3413,58 @@ lake env lean /tmp/sm5d_surface.lean'
 # renamed / removed SM5.D theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory'
 
+# WS-SM SM5.E — per-core idle thread surface anchors.  Covers the SM5.E.5
+# idleThread_priority_zero + field lemmas, the SM5.E.3 enqueueIdleThreadOnCore
+# run-queue primitive (frame / membership / preservation), the SM5.E.6 keystone
+# chooseThreadOnCore_always_succeeds (+ idleThreadEnqueuedOnCore discharge +
+# enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds non-vacuity witness), and the
+# SM5.E.4 idleThread_core_locality (affinity-based + frame companion).  The idle
+# definitions live in Platform.Boot (SM4.G).  A rename / removal of any SM5.E
+# symbol fails here at elaboration time before the test suite.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5e_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
+open SeLe4n.Kernel
+open SeLe4n.Platform.Boot (idleThreadId createIdleThread)
+-- SM5.E.1/.2/.5 idle definitions + field lemmas.
+#check @idleThreadId
+#check @createIdleThread
+#check @idleThread_priority_zero
+#check @createIdleThread_domain_zero
+#check @createIdleThread_cpuAffinity
+#check @createIdleThread_tid
+-- SM5.E.3 enqueue op + frame / membership / preservation.
+#check @enqueueIdleThreadOnCore
+#check @enqueueIdleThreadOnCore_objects
+#check @enqueueIdleThreadOnCore_scheduler
+#check @enqueueIdleThreadOnCore_runQueueOnCore_self
+#check @enqueueIdleThreadOnCore_runQueueOnCore_ne
+#check @enqueueIdleThreadOnCore_activeDomainOnCore
+#check @enqueueIdleThreadOnCore_currentOnCore
+#check @enqueueIdleThreadOnCore_mem_runQueueOnCore_self
+#check @enqueueIdleThreadOnCore_getTcb?_self
+#check @enqueueIdleThreadOnCore_getTcb?_ne
+#check @enqueueIdleThreadOnCore_preserves_objects_invExt
+#check @enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed
+#check @enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore
+-- SM5.E.6 chooseThreadOnCore_always_succeeds.
+#check @idleThreadEnqueuedOnCore
+#check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
+#check @chooseThreadOnCore_always_succeeds
+#check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
+-- SM5.E.4 core locality.
+#check @runQueueAffinityConsistentOnCore
+#check @idleThread_core_locality
+#check @idleThread_core_locality_of_enqueue
+-- SM5.E inventory witnesses.
+#check @perCoreIdleTheorems_count
+#check @perCoreIdleTheorems_partition_sum
+#check @perCoreIdleTheorems_identifiers_nodup
+EOF
+lake env lean /tmp/sm5e_surface.lean'
+# WS-SM SM5.E: build the 26-entry SM5.E theorem inventory so a renamed / removed
+# SM5.E theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory'
+
 finalize_report

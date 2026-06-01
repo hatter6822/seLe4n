@@ -1829,19 +1829,30 @@ theorem bootFromPlatform_smp_witness
 -- WS-SM SM4.G: per-core idle-thread bootstrap (plan §3.7)
 -- ============================================================================
 
-/-- **WS-SM SM4.G** (plan §3.7): the per-core idle thread control block.
+/-- **WS-SM SM4.G** (plan §3.7) / **WS-SM SM5.E.2** (plan §3.5): the per-core
+    idle thread control block.
 
     Idle threads are the lowest-priority threads each core runs when nothing
-    else is runnable.  Fields: `priority := ⟨0⟩` (lowest), `domain := ⟨0⟩`
-    (the boot active domain, so `currentThreadInActiveDomain` holds when the
-    idle thread is current), `threadState := .Running` (it is the running
-    thread when scheduled), `tid := idleThreadId c` (the per-core identity —
-    seLe4n's `TCB` has no `cpuAffinity` field, so the core binding is carried
-    by the identity, not a separate affinity field).  `cspaceRoot` /
-    `vspaceRoot` are `ObjId.sentinel`: an idle thread runs in kernel context
-    and holds no capabilities, so it has no CSpace/VSpace root (this is
-    semantically faithful, and the scheduler invariants never read these
-    fields).  All other fields take their structure defaults. -/
+    else is runnable.  Fields: `priority := ⟨0⟩` (lowest, so any runnable user
+    thread always outranks idle — idle never starves a higher-priority thread),
+    `domain := ⟨0⟩` (the boot active domain, so `currentThreadInActiveDomain`
+    holds when the idle thread is current), `threadState := .Running` (it is the
+    running thread when scheduled), `tid := idleThreadId c` (the per-core
+    identity), and — **SM5.E.2** — `cpuAffinity := some c`: the idle thread is
+    **pinned to its own core**.
+
+    The affinity binding is the SM5.E.2 improvement.  `createIdleThread`
+    predates `TCB.cpuAffinity` (which landed at SM5.B.4); now that the field
+    exists, binding the idle thread to `some c` is what makes
+    `idleThread_core_locality`
+    (`Scheduler/Operations/PerCoreIdle.lean`) a *substantive* theorem rather
+    than a frame fact: a thread bound to `some c` is not admitted onto any other
+    core `c' ≠ c` (`affinityAdmitsCore`), so core `c`'s idle thread can never
+    appear on core `c'`'s run queue.  `cspaceRoot` / `vspaceRoot` are
+    `ObjId.sentinel`: an idle thread runs in kernel context and holds no
+    capabilities, so it has no CSpace/VSpace root (this is semantically
+    faithful, and the scheduler invariants never read these fields).  All other
+    fields take their structure defaults. -/
 def createIdleThread (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
   { tid          := idleThreadId c
     priority     := ⟨0⟩
@@ -1849,7 +1860,8 @@ def createIdleThread (c : SeLe4n.Kernel.Concurrency.CoreId) : TCB :=
     cspaceRoot   := SeLe4n.ObjId.sentinel
     vspaceRoot   := SeLe4n.ObjId.sentinel
     ipcBuffer    := default
-    threadState  := .Running }
+    threadState  := .Running
+    cpuAffinity  := some c }
 
 /-- **WS-SM SM4.G** (plan §3.7): install core `c`'s idle thread into a boot
     `IntermediateState` — create the idle TCB in the object store (via the

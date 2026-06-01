@@ -2749,6 +2749,49 @@ implement-the-improvement rule).
   Tier 0+1+2+3 green; trace byte-identical.  Items deferred past v1.0.0 with
   correctness impact: NONE.
 
+**WS-SM SM5.E LANDED at v0.31.45** (per-core idle threads; plan §3.5 / §4.3 /
+§5).  All six sub-tasks landed in one cut.  Each core has a dedicated idle TCB —
+the lowest-priority thread it runs when nothing else is runnable — pinned to its
+own core and never migrating.  Builds on the SM4.G idle-thread bootstrap
+(`idleThreadId` / `createIdleThread` / `bootFromPlatformWithIdleThreads` in
+`Platform/Boot.lean`) and the SM5.A `chooseThreadOnCore` selection theorems.
+Axiom-clean (only the foundational `propext` / `Quot.sound` / `Classical.choice`);
+default build green; trace byte-identical.
+
+- **SM5.E.2** (production change, `Boot.lean`): `createIdleThread` now sets
+  `cpuAffinity := some c` — the idle thread is pinned to its own core.  The field
+  predates this use (SM5.B.4 added `TCB.cpuAffinity`); binding the idle thread is
+  what makes `idleThread_core_locality` a *substantive* theorem rather than a
+  frame fact.  The stale "TCB has no cpuAffinity field" docstring is corrected
+  (implement-the-improvement); all SM4.G boot proofs rebuild unchanged.
+- **New staged module `Scheduler/Operations/PerCoreIdle.lean`** (21 theorems + 3
+  defs): **SM5.E.5** `idleThread_priority_zero` (idle priority `⟨0⟩` ⇒ a runnable
+  user thread always outranks it; no starvation) + field lemmas; **SM5.E.3**
+  `enqueueIdleThreadOnCore` (makes idle a run-queue *member* — the boot installer
+  makes it *current*, `chooseThreadOnCore` reads the run queue — with full frame /
+  membership / `invExt` + run-queue-wellFormed + runnable-are-TCBs preservation
+  mirroring SM5.C's `enqueueRunnableOnCore`); **SM5.E.6**
+  `chooseThreadOnCore_always_succeeds` (selection returns `some` when idle is
+  enqueued + in-domain, the `idleThreadEnqueuedOnCore` discharge predicate;
+  discharges the conditional SM5.A `chooseThreadOnCore_some_of_eligible` with the
+  always-present idle candidate, `enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore`
+  + `_chooseThreadOnCore_succeeds` are the non-vacuity witnesses); **SM5.E.4**
+  `idleThread_core_locality` (idle `c` never on another core's run queue —
+  substantive via the affinity binding, + the `idleThread_core_locality_of_enqueue`
+  frame companion).
+- **New inventory `PerCoreIdleInventory.lean`**: a 26-entry typed inventory (4
+  categories field/enqueue/alwaysSucceeds/locality) with the `pcit!` compile-time
+  identifier-validation macro + per-category counts + partition-sum + kernel-sound
+  `Nodup` witnesses; mirrors `PerCoreTimerInventory`.
+- **Tests**: `tests/SmpIdleSuite.lean` (`smp_idle_suite`) — 27 surface anchors, 9
+  elaboration-time examples, 24 runtime `assertBool` assertions (idle field facts;
+  empty-core ⇒ idle-fallback / after-enqueue ⇒ idle-selected; priority-0
+  no-starvation; per-core locality; inventory counts).  Tier-2 + Tier-3 wired.
+- **Verification:** both modules staged via `Platform/Staged.lean` (partition gate
+  50 staged-only modules, was 48); Tier 0+1+2+3 green; trace byte-identical.  Items
+  deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.F (per-core
+  PIP), SM5.G/H/I/J/K per the master overview.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

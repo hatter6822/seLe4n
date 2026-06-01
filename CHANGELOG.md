@@ -1,3 +1,76 @@
+## v0.31.45 — WS-SM SM5.E: per-core idle threads
+
+Lands WS-SM Phase **SM5.E** "Per-core idle threads" (plan
+`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.5 / §4.3 / §5, all 6
+sub-tasks).  Each core has a dedicated idle TCB — the lowest-priority thread it
+runs when nothing else is runnable — pinned to its own core and never migrating.
+Builds on the SM4.G idle-thread bootstrap (`idleThreadId` / `createIdleThread` /
+`bootFromPlatformWithIdleThreads` in `SeLe4n/Platform/Boot.lean`) and the SM5.A
+`chooseThreadOnCore` selection theorems.
+
+- **SM5.E.2 (production change)**: `createIdleThread` now sets
+  `cpuAffinity := some c` — the idle thread is **pinned to its own core**.  The
+  field predates this use (it landed at SM5.B.4); now that it exists, binding the
+  idle thread is what makes `idleThread_core_locality` a *substantive* theorem
+  rather than a frame fact.  The stale docstring claiming "TCB has no cpuAffinity
+  field" is corrected (implement-the-improvement).  All SM4.G boot proofs are
+  unchanged (the change touches only the affinity field; `Platform.Boot` rebuilds
+  green).
+
+- **New staged module `SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean`**
+  (21 theorems + 3 defs, axiom-clean — only the foundational `propext` /
+  `Quot.sound` / `Classical.choice`, no `sorry` / `native_decide`):
+  - **SM5.E.5** `idleThread_priority_zero` (idle is priority `⟨0⟩`, so a runnable
+    user thread always outranks it — idle never starves a higher-priority thread)
+    + the companion field lemmas (`createIdleThread_domain_zero` / `_cpuAffinity`
+    / `_tid`).
+  - **SM5.E.3 (run-queue form)** `enqueueIdleThreadOnCore` — the primitive that
+    makes core `c`'s idle thread *available in its run queue* (the SM4.G boot
+    installer makes it *current*; `chooseThreadOnCore` reads the run queue, so
+    idle must be a member to be a fallback).  Full frame / membership / resolution
+    / preservation surface (`_runQueueOnCore_self` / `_ne`, `_activeDomainOnCore`,
+    `_currentOnCore`, `_mem_runQueueOnCore_self`, `_getTcb?_self` / `_ne`,
+    `_preserves_objects_invExt` / `_runQueueOnCore_wellFormed` /
+    `_runnableThreadsAreTCBsOnCore`), mirroring the SM5.C `enqueueRunnableOnCore`
+    shape.
+  - **SM5.E.6** `chooseThreadOnCore_always_succeeds` — when core `c`'s idle thread
+    is enqueued and in its active domain (the `idleThreadEnqueuedOnCore` discharge
+    predicate), `chooseThreadOnCore` returns `some`; it discharges the conditional
+    SM5.A `chooseThreadOnCore_some_of_eligible` with the always-present idle
+    candidate.  `enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore` +
+    `enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds` demonstrate the discharge
+    predicate is satisfiable by a real operation on any well-formed boot-domain
+    state (non-vacuity).
+  - **SM5.E.4** `idleThread_core_locality` — core `c`'s idle thread never appears
+    on another core `c' ≠ c`'s run queue.  The substantive form is *affinity*-
+    based (idle `c` is bound to `some c`, so it is not admitted on `c'` by
+    `affinityAdmitsCore`); the operational companion
+    `idleThread_core_locality_of_enqueue` shows the enqueue is core-local.
+
+- **New inventory `PerCoreIdleInventory.lean`**: a 26-entry typed theorem
+  inventory (4 categories: `field` / `enqueue` / `alwaysSucceeds` / `locality`)
+  with the `pcit!` compile-time identifier-validation macro + per-category counts
+  + partition-sum + kernel-sound `Nodup` witnesses; mirrors
+  `PerCoreTimerInventory`.
+
+- **Tests**: `tests/SmpIdleSuite.lean` (`lake exe smp_idle_suite`) — 27 surface
+  anchors, 9 elaboration-time theorem-application examples, and 24 runtime
+  `assertBool` assertions across five sections (idle field facts; the empty-core
+  ⇒ idle-fallback / after-enqueue ⇒ idle-selected scenario; priority-0
+  no-starvation against a higher-priority user thread; per-core locality (frame +
+  affinity + cross-core); inventory partition counts).  Tier-2 (negative) +
+  Tier-3 (invariant surface) wired.
+
+Both new modules are staged via `SeLe4n/Platform/Staged.lean` (production/staged
+partition gate now 50 staged-only modules, was 48); SM5.I's per-core dispatch
+loop is the first runtime exerciser.  The trace fixture is byte-identical (SM5.E
+is additive at the proof surface; the idle definitions' `cpuAffinity` change does
+not affect the single-core boot trace).  Items deferred past v1.0.0 with
+correctness impact: NONE.  Follow-on: SM5.F (per-core PIP), SM5.G/H/I/J/K per the
+master overview.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §SM5.E
+
 ## v0.31.44 — WS-SM SM5.D audit-pass-3 (PR #809 review closure): cross-core double-placement fix + phase-coded inventory renames + timeout-SGI tracked debt
 
 Review-comment closure for PR #809 (the SM5.D audit-pass-2 landing).  Three valid

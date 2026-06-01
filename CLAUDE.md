@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.44.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.45.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5321,6 +5321,69 @@ documentation lives under `docs/` and `docs/gitbook/`.
     AK7 `RAW_LOOKUP_TID` unchanged; `SmpTimerSuite` + tier-3 anchors updated; trace
     fixture byte-identical (the tick has no single-core caller).  Items deferred past
     v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.E LANDED at v0.31.45 on branch
+  `claude/amazing-johnson-eE3W3`** (per-core idle threads; plan §3.5 / §4.3 / §5).
+  All six sub-tasks landed in one cut.  Each core has a dedicated idle TCB — the
+  lowest-priority thread it runs when nothing else is runnable — pinned to its own
+  core and never migrating.  Builds on the SM4.G idle-thread bootstrap
+  (`idleThreadId` / `createIdleThread` / `bootFromPlatformWithIdleThreads` in
+  `SeLe4n/Platform/Boot.lean`) and the SM5.A `chooseThreadOnCore` selection
+  theorems.  Every new theorem is axiom-clean (only the foundational `propext` /
+  `Quot.sound` / `Classical.choice`); default build green; trace fixture
+  byte-identical (SM5.E is additive at the proof surface; the `cpuAffinity` change
+  does not affect the single-core boot trace).
+
+  - **SM5.E.2 (production change, `Boot.lean`)**: `createIdleThread` now sets
+    `cpuAffinity := some c` — the idle thread is **pinned to its own core**.  The
+    field predates this use (SM5.B.4 added `TCB.cpuAffinity`); binding the idle
+    thread is what makes `idleThread_core_locality` a *substantive* theorem rather
+    than a frame fact.  The stale docstring claiming "TCB has no cpuAffinity field"
+    is corrected (implement-the-improvement); all SM4.G boot proofs rebuild
+    unchanged.
+  - **New staged module `SeLe4n/Kernel/Scheduler/Operations/PerCoreIdle.lean`**
+    (21 theorems + 3 defs):
+    - **SM5.E.5** `idleThread_priority_zero` (idle is priority `⟨0⟩`, so a runnable
+      user thread always outranks it — idle never starves a higher-priority
+      thread) + the companion field lemmas (`createIdleThread_domain_zero` /
+      `_cpuAffinity` / `_tid`).
+    - **SM5.E.3 (run-queue form)** `enqueueIdleThreadOnCore` — the primitive that
+      makes core `c`'s idle thread *available in its run queue* (the SM4.G boot
+      installer makes it *current*; `chooseThreadOnCore` reads the run queue, so
+      idle must be a member to be a fallback).  Full frame / membership /
+      resolution / preservation surface (`_runQueueOnCore_self` / `_ne`,
+      `_activeDomainOnCore`, `_currentOnCore`, `_mem_runQueueOnCore_self`,
+      `_getTcb?_self` / `_ne`, `_preserves_objects_invExt` /
+      `_runQueueOnCore_wellFormed` / `_runnableThreadsAreTCBsOnCore`), mirroring
+      SM5.C's `enqueueRunnableOnCore`.
+    - **SM5.E.6** `chooseThreadOnCore_always_succeeds` — selection returns `some`
+      when the idle thread is enqueued + in its active domain (the
+      `idleThreadEnqueuedOnCore` discharge predicate); discharges the conditional
+      SM5.A `chooseThreadOnCore_some_of_eligible` with the always-present idle
+      candidate.  `enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore` +
+      `enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds` demonstrate the
+      discharge predicate is satisfiable by a real operation on any well-formed
+      boot-domain state (non-vacuity).
+    - **SM5.E.4** `idleThread_core_locality` — core `c`'s idle thread never appears
+      on another core `c' ≠ c`'s run queue; *substantive* via the affinity binding
+      (`affinityAdmitsCore (createIdleThread c) c' = (c == c')`), with the
+      operational `idleThread_core_locality_of_enqueue` frame companion.
+  - **New inventory `PerCoreIdleInventory.lean`**: a 26-entry typed theorem
+    inventory (4 categories field/enqueue/alwaysSucceeds/locality) with the `pcit!`
+    compile-time identifier-validation macro + per-category counts + partition-sum
+    + kernel-sound `Nodup` witnesses; mirrors `PerCoreTimerInventory`.
+  - **Tests**: `tests/SmpIdleSuite.lean` (`lake exe smp_idle_suite`) — 27 surface
+    anchors, 9 elaboration-time theorem-application examples, 24 runtime
+    `assertBool` assertions across five sections (idle field facts; empty-core ⇒
+    idle-fallback / after-enqueue ⇒ idle-selected; priority-0 no-starvation against
+    a higher-priority user thread; per-core locality (frame + affinity +
+    cross-core); inventory partition counts).  Tier-2 + Tier-3 wired.
+
+  Both new modules are staged via `Platform/Staged.lean` (production/staged
+  partition gate now 50 staged-only modules, was 48); SM5.I's per-core dispatch
+  loop is the first runtime exerciser.  Items deferred past v1.0.0 with correctness
+  impact: NONE.  Follow-on: SM5.F (per-core PIP), SM5.G/H/I/J/K per the master
+  overview.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
