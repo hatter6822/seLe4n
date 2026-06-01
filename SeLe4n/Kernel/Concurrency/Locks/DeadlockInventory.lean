@@ -17,7 +17,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Deadlock
 Aggregates the SM3.D substantive definitions and theorems into a single
 typed inventory with size and per-category witnesses.  Mirrors the SM3.A
 `PerObjectLockInventory.lean`, SM3.B `LockSetInventory.lean`, and SM3.C
-`Sm3CInventory.lean` patterns.
+`WithLockSetInventory.lean` patterns.
 
 Nine categories matching the plan §5.4 sub-tasks and the audit-pass
 expansion:

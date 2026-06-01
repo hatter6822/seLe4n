@@ -8,7 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
-import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
+import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Testing.StateBuilder
 
@@ -180,10 +180,10 @@ open SeLe4n.Testing
 #check @SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore
 
 -- audit-pass-1 (gap m): the SM5.C theorem inventory.
-#check @sm5CTheorems
-#check @sm5CTheorems_count
-#check @sm5CTheorems_partition_sum
-#check @sm5CTheorems_identifiers_nodup
+#check @crossCoreWakeTheorems
+#check @crossCoreWakeTheorems_count
+#check @crossCoreWakeTheorems_partition_sum
+#check @crossCoreWakeTheorems_identifiers_nodup
 
 -- ============================================================================
 -- §2  Elaboration-time examples: apply each headline theorem to verified inputs
@@ -615,24 +615,24 @@ private def runAuditPass1Checks : IO Unit := do
       (fun st' => (st'.scheduler.runQueueOnCore ⟨3, by decide⟩).toList.isEmpty))
   -- gap (m): the inventory size + partition witnesses are decidably consistent.
   assertBool "SM5.C inventory has 83 entries"
-    (decide (sm5CTheorems.length = 83))
+    (decide (crossCoreWakeTheorems.length = 83))
   assertBool "SM5.C inventory per-category counts partition the total"
-    (decide ((sm5CTheorems.filter (fun t => t.category == .lockSet)).length +
-             (sm5CTheorems.filter (fun t => t.category == .target)).length +
-             (sm5CTheorems.filter (fun t => t.category == .enqueue)).length +
-             (sm5CTheorems.filter (fun t => t.category == .wake)).length +
-             (sm5CTheorems.filter (fun t => t.category == .handler)).length +
-             (sm5CTheorems.filter (fun t => t.category == .preservation)).length +
-             (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length
-             = sm5CTheorems.length))
+    (decide ((crossCoreWakeTheorems.filter (fun t => t.category == .lockSet)).length +
+             (crossCoreWakeTheorems.filter (fun t => t.category == .target)).length +
+             (crossCoreWakeTheorems.filter (fun t => t.category == .enqueue)).length +
+             (crossCoreWakeTheorems.filter (fun t => t.category == .wake)).length +
+             (crossCoreWakeTheorems.filter (fun t => t.category == .handler)).length +
+             (crossCoreWakeTheorems.filter (fun t => t.category == .preservation)).length +
+             (crossCoreWakeTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length
+             = crossCoreWakeTheorems.length))
   -- audit-pass-2: a runtime Nodup guard mirrors the kernel-`decide` inventory
-  -- witnesses (`sm5CTheorems_identifiers_nodup`).  Compiled `decide` is cheap at
+  -- witnesses (`crossCoreWakeTheorems_identifiers_nodup`).  Compiled `decide` is cheap at
   -- runtime, so this catches a copy-pasted duplicate identifier in CI even before
   -- the (slower) kernel-`decide` build-time proof is reached.
   assertBool "SM5.C inventory identifiers are duplicate-free (Nodup)"
-    (decide (sm5CTheorems.map (·.identifier)).Nodup)
+    (decide (crossCoreWakeTheorems.map (·.identifier)).Nodup)
   assertBool "SM5.C inventory descriptions are duplicate-free (Nodup)"
-    (decide (sm5CTheorems.map (·.description)).Nodup)
+    (decide (crossCoreWakeTheorems.map (·.description)).Nodup)
 
 def runSmpWakeChecks : IO Unit := do
   IO.println "WS-SM SM5.C — Cross-core wake via SGI suite"

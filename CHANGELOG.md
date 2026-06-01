@@ -1,3 +1,71 @@
+## v0.31.44 — WS-SM SM5.D audit-pass-3 (PR #809 review closure): cross-core double-placement fix + phase-coded inventory renames + timeout-SGI tracked debt
+
+Review-comment closure for PR #809 (the SM5.D audit-pass-2 landing).  Three valid
+findings from the automated reviewer, all in SM5.D's scope, closed per the
+implement-the-improvement rule.  No correctness defect in the proven surface; the
+substantive fix is a cross-core scheduling-correctness hardening in the
+CBS-replenishment wake path.
+
+**P2 (cross-core double-placement) — `processOneReplenishmentOnCore` now guards on
+the *running* set, not the *runnable* set.**  The per-core timer's
+CBS-replenishment branch re-wakes a refilled thread via `wakeThread`, guarded by a
+"don't re-wake if already placed" check.  The pre-fix guard used
+`runnableOnSomeCore` (run-queue membership across all cores), but a thread that is
+**current** (running) on some core is — by dequeue-on-dispatch — *not* in any run
+queue, so `runnableOnSomeCore` returned `false` for it and the replenishment would
+`wakeThread` it onto its `determineTargetCore` target.  If that target differed from
+the core it was running on, the same TCB became simultaneously *current* on core A
+and *runnable* on core B, where core B's reschedule-SGI handler could dispatch it —
+a thread running on two cores.  Fixed by the new `runningOnSomeCore` predicate
+(checks `currentOnCore c == some tid` across `allCores`); the replenishment guard is
+now `if runningOnSomeCore refilled tid then (refilled, none) else wakeThread …`, so a
+thread that is currently running is left running (its budget refill takes effect
+in-place; no spurious second placement).  `runningOnSomeCore` sits beside
+`runnableOnSomeCore` in `Selection.lean`; `cbsReplenish_can_wake_remote_core`'s
+hypothesis is updated from `hNotCur` to `hNotRunning : runningOnSomeCore … = false`.
+
+**P2 (naming hygiene) — five phase-coded theorem-inventory modules renamed to
+semantic names** per the CLAUDE.md internal-first naming rule (phase codes
+`SM*`/`WS-*` must not appear in identifiers or file names).  The inventories are
+touched by this workstream, so they are renamed in the same commit (the rule's
+"renamed by a workstream that can rename them" provision):
+- `Sm5DInventory.lean` → `PerCoreTimerInventory.lean` (`Sm5DCategory`→
+  `PerCoreTimerCategory`, `Sm5DTheorem`→`PerCoreTimerTheorem`, `sm5DTheorems`→
+  `perCoreTimerTheorems`, macro `s5dt!`→`pctt!`); the new `runningOnSomeCore` adds a
+  101st entry (replenish category 11→12).
+- `Sm5CInventory.lean` → `CrossCoreWakeInventory.lean` (`sm5CTheorems`→
+  `crossCoreWakeTheorems`, …, macro `s5ct!`→`ccwt!`).
+- `Sm3CInventory.lean` → `WithLockSetInventory.lean`, `Sm3DInventory.lean` →
+  `DeadlockInventory.lean`, `Sm3EInventory.lean` → `SerializabilityInventory.lean`
+  (these three already carried semantic *identifiers* — `withLockSetTheorems` /
+  `deadlockTheorems` / `serializabilityTheorems` — so only the file name + module
+  path changed).
+Module-path references updated in `Platform/Staged.lean`, `Concurrency/LockSet.lean`,
+`staged_module_allowlist.txt`, `test_tier3_invariant_surface.sh`, and the four
+affected test suites.  Phase-code references in *prose* (docstrings, allowlist
+rationale comments) are retained per the rule (legitimate in comments/commit
+messages/CHANGELOG).
+
+**P2 (timeout cross-core wake) — tracked debt documented precisely, deferred to
+SM5.F.**  The reviewer noted that `timeoutBlockedThreads` (the bound-budget-exhausted
+branch) re-enqueues onto the boot core via `ensureRunnable` and emits no cross-core
+`.reschedule` SGI, so a thread timed out on a non-boot core's tick can sit
+undispatched until the boot core independently reschedules.  This is a *latency* gap
+(bounded by the boot core's tick period), not a safety violation — no thread is lost,
+no thread runs on two cores, and the object-store invariant is unaffected.  Per the
+maintainer decision it is deferred to SM5.F (per-core PIP migration, which makes the
+timeout wake target-core-aware and routes it through `wakeThread` so a remote target
+receives the SGI exactly as the CBS-replenishment path now does).  The
+`PerCoreTimerTick.lean` §4 tracked-debt note is rewritten to call out both facets
+(run-queue placement + missing SGI) precisely.
+
+**Verification:** all SM5.D theorems re-confirmed axiom-clean (`propext` /
+`Quot.sound` / `Classical.choice`); `PerCoreTimerTick` + the five renamed inventories
+build clean; partition gate 48 staged-only modules; AK7 `RAW_LOOKUP_TID` unchanged;
+`SmpTimerSuite` + tier-3 anchors updated; trace fixture byte-identical (the tick has
+no single-core caller).  Items deferred past v1.0.0 with correctness impact: NONE.
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.4 / §5 (SM5.D); PR #809.
+
 ## v0.31.43 — WS-SM SM5.D audit-pass-2: domain-rotation faithfulness fix (currentThreadInActiveDomain) + CNTP doc/Rust hardening
 
 Deep code-first audit (not trusting docstrings) of the full SM5.D workstream.  The

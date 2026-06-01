@@ -1145,8 +1145,13 @@ def processOneReplenishmentOnCore (st : SystemState) (execCore : CoreId)
   let refilled := refillSchedContext st scId now
   match replenishWakeTarget st refilled scId with
   | some tid =>
-      if (refilled.scheduler.currentOnCore (determineTargetCore refilled tid)) == some tid then
-        -- the refilled thread is already running on its target core: skip.
+      if runningOnSomeCore refilled tid then
+        -- the refilled thread is already running on *some* core (audit-pass-2 /
+        -- Codex-P2): skip.  Re-enqueuing a running thread would violate
+        -- dequeue-on-dispatch; checking only the *target* core (the pre-fix guard)
+        -- missed a thread current on a *different* core than its
+        -- `determineTargetCore` (deferred-affinity-migration case), which would
+        -- leave the same TCB current on one core and runnable on another.
         (refilled, none)
       else
         -- wake it on its target core (local enqueue, or remote + SGI).

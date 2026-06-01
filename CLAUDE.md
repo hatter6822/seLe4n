@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.43.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.44.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,8 +182,8 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~22653 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7623 lines)
+- `CHANGELOG.md` (~23349 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~7956 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -215,6 +215,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `tests/ModelIntegritySuite.lean` (~2052 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~2037 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Prelude.lean` (~1992 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1985 lines)
@@ -239,16 +240,18 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1652 lines)
 - `tests/InformationFlowSuite.lean` (~1622 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1619 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1544 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1538 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1529 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1403 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
@@ -266,6 +269,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1181 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1172 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1161 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
@@ -276,7 +280,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1034 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1027 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1023 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1000 lines)
@@ -291,12 +294,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~907 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~848 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~827 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~821 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `tests/TwoPhaseArchSuite.lean` (~812 lines)
 - `tests/WithLockSetSuite.lean` (~809 lines)
@@ -5266,6 +5269,58 @@ documentation lives under `docs/` and `docs/gitbook/`.
     + tier-3 updated; Tier 0+1+2 smoke green (722 Rust HAL tests, zero clippy); trace
     fixture byte-identical (single-domain path unchanged).  Items deferred past v1.0.0
     with correctness impact: NONE.
+
+  **WS-SM SM5.D audit-pass-3 LANDED at v0.31.44** (PR #809 automated-review
+  closure; three valid P2 findings, all in SM5.D's scope, closed per the
+  implement-the-improvement rule — no defect in the proven surface, one
+  substantive cross-core scheduling-correctness hardening):
+  - **P2 (cross-core double-placement) — the CBS-replenishment wake now guards
+    on the *running* set, not the *runnable* set.**  `processOneReplenishmentOnCore`
+    re-wakes a refilled thread via `wakeThread`, guarded by a "don't re-wake if
+    already placed" check.  The pre-fix guard used `runnableOnSomeCore` (run-queue
+    membership across all cores), but a thread that is **current** (running) on a
+    core is — by dequeue-on-dispatch — *not* in any run queue, so the guard returned
+    `false` and the replenishment would `wakeThread` it onto its
+    `determineTargetCore` target.  If that target differed from the core it was
+    running on, the same TCB became simultaneously *current* on core A and
+    *runnable* on core B (core B's reschedule-SGI handler could then dispatch it —
+    a thread on two cores).  Fixed by the new `runningOnSomeCore` predicate
+    (`(allCores).any (fun c => currentOnCore c == some tid)`, beside
+    `runnableOnSomeCore` in `Selection.lean`); the guard is now `if runningOnSomeCore
+    refilled tid then (refilled, none) else wakeThread …`, so a currently-running
+    thread's refill takes effect in place with no second placement.
+    `cbsReplenish_can_wake_remote_core`'s hypothesis updates `hNotCur` →
+    `hNotRunning : runningOnSomeCore … = false`.
+  - **P2 (naming hygiene) — five phase-coded theorem-inventory modules renamed to
+    semantic names** per the internal-first naming rule (`SM*`/`WS-*` codes must not
+    appear in identifiers or file names; the inventories are touched by this
+    workstream, so they are renamed in the same commit): `Sm5DInventory.lean` →
+    `PerCoreTimerInventory.lean` (types `PerCoreTimerCategory` / `PerCoreTimerTheorem`,
+    def `perCoreTimerTheorems`, macro `pctt!`; `runningOnSomeCore` adds a 101st entry,
+    replenish 11→12); `Sm5CInventory.lean` → `CrossCoreWakeInventory.lean`
+    (`crossCoreWakeTheorems`, macro `ccwt!`); `Sm3CInventory.lean` →
+    `WithLockSetInventory.lean`, `Sm3DInventory.lean` → `DeadlockInventory.lean`,
+    `Sm3EInventory.lean` → `SerializabilityInventory.lean` (these three already had
+    semantic *identifiers* — only file name + module path changed).  Module-path
+    references updated in `Platform/Staged.lean`, `Concurrency/LockSet.lean`,
+    `staged_module_allowlist.txt`, `test_tier3_invariant_surface.sh`, and the four
+    affected test suites; phase-code references in *prose* are retained per the rule.
+  - **P2 (timeout cross-core wake) — tracked debt documented precisely, deferred to
+    SM5.F.**  `timeoutBlockedThreads` (the bound-budget-exhausted branch) re-enqueues
+    onto the boot core via `ensureRunnable` and emits no cross-core `.reschedule` SGI,
+    so a thread timed out on a non-boot core's tick can sit undispatched until the boot
+    core independently reschedules.  This is a *latency* gap (bounded by the boot
+    core's tick period), not a safety violation (no thread lost, none on two cores,
+    object-store invariant unaffected).  Deferred to SM5.F (per-core PIP migration,
+    which routes the timeout wake through `wakeThread` with a `determineTargetCore`
+    target so a remote target receives the SGI, exactly as the CBS-replenishment path
+    now does).  The `PerCoreTimerTick.lean` §4 tracked-debt note is rewritten to call
+    out both facets (run-queue placement + missing SGI) precisely.
+  - **Verification:** all SM5.D theorems re-confirmed axiom-clean; `PerCoreTimerTick`
+    + the five renamed inventories build clean; partition gate 48 staged-only modules;
+    AK7 `RAW_LOOKUP_TID` unchanged; `SmpTimerSuite` + tier-3 anchors updated; trace
+    fixture byte-identical (the tick has no single-core caller).  Items deferred past
+    v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

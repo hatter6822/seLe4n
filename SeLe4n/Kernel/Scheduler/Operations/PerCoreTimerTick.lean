@@ -606,15 +606,14 @@ theorem cbsReplenish_can_wake_remote_core (st : SystemState) (execCore : CoreId)
     (scId : SeLe4n.SchedContextId) (now : Nat) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTarget : replenishWakeTarget st (refillSchedContext st scId now) scId = some tid)
     (hTcb : (refillSchedContext st scId now).getTcb? tid = some tcb)
-    (hNotCur : (refillSchedContext st scId now).scheduler.currentOnCore
-        (determineTargetCore (refillSchedContext st scId now) tid) ≠ some tid)
+    (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false)
     (hRemote : determineTargetCore (refillSchedContext st scId now) tid ≠ execCore) :
     (processOneReplenishmentOnCore st execCore scId now).2
       = some (determineTargetCore (refillSchedContext st scId now) tid, SgiKind.reschedule) := by
-  have hcond : ((refillSchedContext st scId now).scheduler.currentOnCore
-      (determineTargetCore (refillSchedContext st scId now) tid) == some tid) = false :=
-    beq_eq_false_iff_ne.mpr hNotCur
-  simp only [processOneReplenishmentOnCore, hTarget, hcond, Bool.false_eq_true, if_false]
+  -- Audit-pass-2 / Codex-P2: the wake fires only when `tid` is not running on ANY
+  -- core (the strengthened guard), so a thread current on a different core than its
+  -- target is never double-placed.
+  simp only [processOneReplenishmentOnCore, hTarget, hNotRunning, Bool.false_eq_true, if_false]
   exact wakeThread_emits_sgi_if_remote (refillSchedContext st scId now) tid execCore tcb hTcb hRemote
 
 -- ============================================================================
@@ -631,11 +630,38 @@ theorem cbsReplenish_can_wake_remote_core (st : SystemState) (execCore : CoreId)
 -- `timeoutThread` → `timeoutBlockedThreads`.  Each step's only object writes are
 -- `RHTable.insert`s (TCB / endpoint / SchedContext), all `invExt`-preserving.
 --
--- (Note: `timeoutBlockedThreads` re-enqueues timed-out threads on the **boot
--- core**'s run queue — the IPC-timeout interaction is not yet per-core, an
--- artefact closed by SM5.F per-core PIP.  This does not affect the object-store
--- invariant proven here; the full per-core run-queue interaction of the timeout
--- path is SM5.F / the SM5.I.8 cross-subsystem preservation suite.)
+-- ────────────────────────────────────────────────────────────────────────
+-- TRACKED DEBT (closure target: SM5.F per-core PIP migration).  The
+-- bound-budget-exhausted branch of `timerTickBudgetOnCore` invokes
+-- `timeoutBlockedThreads`, whose re-enqueue path routes through the still
+-- bootCoreId-pinned `ensureRunnable`.  Two facets of that pinning are open;
+-- NEITHER affects the object-store `invExt` invariant proven in this section
+-- (the writes are `invExt`-preserving `RHTable.insert`s regardless of which
+-- core's run queue receives the re-enqueue):
+--
+--   1. Run-queue placement.  A timed-out thread on a **non-boot** core's tick
+--      is re-enqueued onto the **boot core**'s run queue, not the core that was
+--      executing the tick.  Cross-core run-queue coherence for the timeout path
+--      is the SM5.I.8 cross-subsystem preservation suite's obligation.
+--
+--   2. Missing cross-core wake SGI (the security-relevant facet).  Unlike the
+--      CBS-replenishment wake above — which routes through `wakeThread` and
+--      therefore emits a `.reschedule` SGI (`SgiKind.reschedule`, INTID 0) to a
+--      remote target via `wakeThread_emits_sgi_if_remote` — the IPC-timeout
+--      re-enqueue calls `ensureRunnable` directly and emits **no** SGI.  When a
+--      non-boot core's tick times a thread out, the thread lands runnable on the
+--      boot core but the boot core is never poked, so it can sit undispatched
+--      until the boot core independently reschedules (e.g. on its own next
+--      tick).  This is a latency gap (bounded by the boot core's tick period),
+--      not a safety violation: no thread is lost (`wakeThread_lossless`'s
+--      analogue holds — the thread is on a run queue), no thread runs on two
+--      cores (the re-enqueue does not set `current`), and the proven invariants
+--      are unaffected.  The proper fix is SM5.F's target-core-aware timeout
+--      wake: route the timeout re-enqueue through `wakeThread` (resolving the
+--      thread's `cpuAffinity` target via `determineTargetCore`) so a remote
+--      target receives the `.reschedule` SGI, exactly as the CBS-replenishment
+--      path already does.  Tracked against SM5.F per-core PIP.
+-- ────────────────────────────────────────────────────────────────────────
 
 /-- WS-SM SM5.D.5 (local helper): `ensureRunnable` writes only the run queue, so
 the object store is unchanged.  (The codebase's `ensureRunnable_objects_eq` lives

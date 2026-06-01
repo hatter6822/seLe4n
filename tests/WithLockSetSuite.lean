@@ -12,7 +12,7 @@ import SeLe4n.Kernel.Concurrency.Locks.WithLockSet
 import SeLe4n.Kernel.Concurrency.Locks.LockSetHeld
 import SeLe4n.Kernel.Concurrency.Locks.LockSet2PL
 import SeLe4n.Kernel.Concurrency.Locks.DynamicChainExtension
-import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
+import SeLe4n.Kernel.Concurrency.Locks.WithLockSetInventory
 
 /-!
 # WS-SM SM3.C — `withLockSet` 2PL discipline regression suite
@@ -20,7 +20,7 @@ import SeLe4n.Kernel.Concurrency.Locks.Sm3CInventory
 Tier-2 / Tier-3 surface anchors + decidable examples + runtime
 structural assertions for every public symbol introduced by SM3.C
 (WithLockSet / LockSetHeld / LockSet2PL / DynamicChainExtension /
-Sm3CInventory).
+WithLockSetInventory).
 
 The suite exercises four families of checks:
 

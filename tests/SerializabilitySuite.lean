@@ -9,14 +9,14 @@
 
 import SeLe4n.Kernel.Concurrency.LockSet
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
-import SeLe4n.Kernel.Concurrency.Locks.Sm3EInventory
+import SeLe4n.Kernel.Concurrency.Locks.SerializabilityInventory
 
 /-!
 # WS-SM SM3.E — Serializability regression suite
 
 Tier-2 / Tier-3 surface anchors + decidable examples + theorem-application
 witnesses + runtime structural assertions for every public symbol introduced by
-SM3.E (`Serializability` / `Sm3EInventory`).
+SM3.E (`Serializability` / `SerializabilityInventory`).
 
 Four families of checks (mirroring `DeadlockFreedomSuite`):
 

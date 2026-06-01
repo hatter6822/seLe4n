@@ -2716,6 +2716,39 @@ substantive correctness divergence** + three LOW Rust/doc findings.
   tests, zero clippy); trace byte-identical.  Items deferred past v1.0.0 with
   correctness impact: NONE.
 
+**WS-SM SM5.D audit-pass-3 LANDED at v0.31.44** (PR #809 automated-review closure;
+three valid P2 findings, all in SM5.D's scope, closed per the
+implement-the-improvement rule).
+
+- **P2 (cross-core double-placement):** `processOneReplenishmentOnCore`'s CBS-wake
+  guard used `runnableOnSomeCore` (run-queue membership), but a thread that is
+  **current** on a core is dequeued from every run queue, so the guard missed it and
+  could `wakeThread` it onto its `determineTargetCore` target — the same TCB then
+  *current* on core A and *runnable* on core B (a thread on two cores).  Fixed by the
+  new `runningOnSomeCore` predicate (`currentOnCore` across `allCores`); the guard is
+  now `if runningOnSomeCore … then (refilled, none) else wakeThread …`.
+  `cbsReplenish_can_wake_remote_core`'s hypothesis updates `hNotCur` →
+  `hNotRunning`.
+- **P2 (naming hygiene):** the five phase-coded theorem-inventory modules renamed to
+  semantic names per the internal-first naming rule — `Sm5DInventory` →
+  `PerCoreTimerInventory` (`perCoreTimerTheorems`, macro `pctt!`; +`runningOnSomeCore`
+  → 101 entries), `Sm5CInventory` → `CrossCoreWakeInventory` (`crossCoreWakeTheorems`,
+  macro `ccwt!`), `Sm3CInventory` → `WithLockSetInventory`, `Sm3DInventory` →
+  `DeadlockInventory`, `Sm3EInventory` → `SerializabilityInventory` (the last three
+  already had semantic identifiers — file/module-path only).  Consumer references
+  updated in `Staged.lean`, `Concurrency/LockSet.lean`, the staged allowlist, the
+  tier-3 surface script, and the four affected suites.
+- **P2 (timeout cross-core wake):** the bound-budget-exhausted timeout re-enqueues
+  onto the boot core via `ensureRunnable` and emits no `.reschedule` SGI — a latency
+  gap (no safety violation: no thread lost, none on two cores, object-store invariant
+  unaffected), deferred to SM5.F (per-core PIP) and documented precisely in the
+  `PerCoreTimerTick.lean` §4 tracked-debt note (both facets: run-queue placement +
+  missing SGI).
+- **Verification:** axiom-clean; partition gate 48 staged-only modules; AK7
+  `RAW_LOOKUP_TID` unchanged; the five renamed suites + `SmpTimerSuite` PASS;
+  Tier 0+1+2+3 green; trace byte-identical.  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

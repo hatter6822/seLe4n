@@ -66,6 +66,7 @@ open SeLe4n.Testing
 
 -- SM5.D.4 CBS replenishment + cross-core wake.
 #check @cbsReplenish_can_wake_remote_core
+#check @runningOnSomeCore
 #check @processOneReplenishmentOnCore_local_no_sgi
 #check @processOneReplenishmentOnCore_no_sgi_if_no_target
 #check @processOneReplenishmentOnCore_preserves_objects_invExt
@@ -145,17 +146,17 @@ example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId
     (hStep : timerTickOnCore st c = .ok (st', sgis)) : st'.machine = st.machine :=
   timerTickOnCore_advances_per_core st c st' sgis hCur hStep
 
-/-- SM5.D.4 / plan §6.1: a remote-targeted CBS replenish emits a cross-core SGI. -/
+/-- SM5.D.4 / plan §6.1: a remote-targeted CBS replenish (of a thread not running
+on any core — audit-pass-2 / Codex-P2 guard) emits a cross-core SGI. -/
 example (st : SystemState) (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
     (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTarget : replenishWakeTarget st (refillSchedContext st scId now) scId = some tid)
     (hTcb : (refillSchedContext st scId now).getTcb? tid = some tcb)
-    (hNotCur : (refillSchedContext st scId now).scheduler.currentOnCore
-        (determineTargetCore (refillSchedContext st scId now) tid) ≠ some tid)
+    (hNotRunning : runningOnSomeCore (refillSchedContext st scId now) tid = false)
     (hRemote : determineTargetCore (refillSchedContext st scId now) tid ≠ execCore) :
     (processOneReplenishmentOnCore st execCore scId now).2
       = some (determineTargetCore (refillSchedContext st scId now) tid, SgiKind.reschedule) :=
-  cbsReplenish_can_wake_remote_core st execCore scId now tid tcb hTarget hTcb hNotCur hRemote
+  cbsReplenish_can_wake_remote_core st execCore scId now tid tcb hTarget hTcb hNotRunning hRemote
 
 /-- SM5.D.5 / plan §6.1: budget-tick preemption re-dispatches via the budget-aware
 reschedule. -/
