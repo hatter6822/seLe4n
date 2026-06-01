@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.39"
+version = "0.31.40"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -381,3 +381,14 @@ root = "tests.SmpSchedulerSelectionSuite"
 [[lean_exe]]
 name = "smp_switch_to_thread_suite"
 root = "tests.SmpSwitchToThreadSuite"
+
+# WS-SM SM5.C — Cross-core wake via SGI test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM5.C.12 cross-core wake round-trip scenarios (determine-target affinity
+# routing, enqueue + make-ready, local vs remote wake SGI emission, cross-core
+# independence, the full wake→SGI→handle round-trip, the affinity-control op),
+# the SM5.C.3 lock-set witnesses, and the SM5.C.11 SGI-delivery latency bound.
+# Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_wake_suite"
+root = "tests.SmpWakeSuite"

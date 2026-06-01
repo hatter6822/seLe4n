@@ -246,4 +246,12 @@ run_check_with_timeout "TRACE" lake exe smp_scheduler_selection_suite
 # affinity-admits algebra.
 run_check_with_timeout "TRACE" lake exe smp_switch_to_thread_suite
 
+# WS-SM SM5.C — Cross-core wake via SGI.  Exercises the real `wakeThread` /
+# `enqueueRunnableOnCore` / `handleRescheduleSgiOnCore` / `setThreadCpuAffinity`
+# computations: determine-target affinity routing, enqueue + make-ready, local
+# vs remote wake (SGI emission), the full wake→SGI→handle round-trip, the
+# affinity-control op, the SM5.C.3 lock-set witnesses, and the SM5.C.11
+# SGI-delivery latency bound.
+run_check_with_timeout "TRACE" lake exe smp_wake_suite
+
 finalize_report

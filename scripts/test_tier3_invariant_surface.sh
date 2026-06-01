@@ -3124,4 +3124,174 @@ open SeLe4n.Kernel.Concurrency
 #check @switchToThreadHw_rejects_unencodable
 EOF'
 
+# WS-SM SM5.C — cross-core wake via SGI surface anchors.  Covers the SM5.C
+# production transitions (`enqueueRunnableOnCore` / `determineTargetCore` /
+# `wakeThread` / `handleRescheduleSgiOnCore` / `setThreadCpuAffinity`), the
+# SM5.C.3 cross-domain lock-sets, the SM5.C.9 determine-target routing, the
+# SM5.C.1 enqueue lemmas, the SM5.C.2/.4/.10 wake-semantics theorems, the
+# SM5.C.6 losslessness (`SchedStep` / `SchedReachable` / `wakeThread_lossless`),
+# the SM5.C.5 SGI-handler theorems, the SM5.C.11 latency bound, the SM5.C.8
+# affinity-control op, the decidability witnesses, and the SM5.C.4 SGI-emission
+# typed wrappers.  A rename / removal of any SM5.C symbol fails here at
+# elaboration time, before SM5.D's per-core timer tick consumes them.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreWake'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
+import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
+import SeLe4n.Kernel.Concurrency.Runtime
+open SeLe4n.Model
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency
+
+-- SM5.C.1/.2/.5/.8/.9 production transitions (Scheduler.Operations.Selection).
+#check @enqueueRunnableOnCore
+#check @determineTargetCore
+#check @wakeThread
+#check @handleRescheduleSgiOnCore
+#check @setThreadCpuAffinity
+
+-- SM5.C.3 cross-domain lock-sets.
+#check @wakeThreadLockSet
+#check @wakeThreadLockSet_length
+#check @wakeThreadLockSet_write_only
+#check @wakeThreadLockSet_contains_objStore_write
+#check @wakeThreadLockSet_contains_runQueue_write
+#check @wakeThreadLockSet_object_before_runQueue
+#check @wakeThreadLockSet_keys_nodup
+#check @wakeThreadLockSet_pairwise_le
+#check @handleRescheduleSgiOnCoreLockSet
+#check @handleRescheduleSgiOnCoreLockSet_eq
+
+-- SM5.C.9 determine-target routing.
+#check @determineTargetCore_bound_eq_affinity
+#check @determineTargetCore_unbound_eq_bootCore
+#check @determineTargetCore_no_tcb_eq_bootCore
+#check @determineTargetCore_in_range
+#check @determineTargetCore_admits_thread
+
+-- SM5.C.1 enqueueRunnableOnCore lemmas.
+#check @enqueueRunnableOnCore_preserves_objects_invExt
+#check @enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed
+#check @enqueueRunnableOnCore_mem_runQueueOnCore
+#check @enqueueRunnableOnCore_makes_ready
+#check @enqueueRunnableOnCore_preserves_woken_thread_fields
+#check @enqueueRunnableOnCore_runQueueOnCore_ne
+#check @enqueueRunnableOnCore_currentOnCore
+#check @enqueueRunnableOnCore_getTcb?_ne
+#check @enqueueRunnableOnCore_no_tcb_noop
+#check @enqueueRunnableOnCore_eq_self_of_runnable
+#check @runnableOnSomeCore
+
+-- SM5.C.2/.4/.10 wake-semantics theorems.
+#check @wakeThread_state_eq_enqueue
+#check @wakeThread_emits_sgi_if_remote
+#check @wakeThread_no_sgi_if_local
+#check @wakeThread_sgi_is_reschedule
+#check @wakeThread_target_runQueue_contains
+#check @wakeThread_target_admits_thread
+#check @wakeThread_preserves_objects_invExt
+#check @wakeThread_preserves_target_runQueue_wellFormed
+#check @wakeThread_independent_of_other_core
+
+-- SM5.C.6 losslessness.
+#check @SchedStep
+#check @SchedReachable
+#check @SchedReachable.of_enqueue
+#check @SchedReachable.trans
+#check @wakeThread_lossless
+
+-- SM5.C.5 SGI-handler theorems.
+#check @handleRescheduleSgiOnCore_idle_when_none
+#check @handleRescheduleSgiOnCore_eq_switch_of_choose_some
+#check @handleRescheduleSgiOnCore_switches_current
+#check @handleRescheduleSgiOnCore_preserves_objects_invExt
+#check @handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed
+#check @handleRescheduleSgiOnCore_independent_of_other_core
+#check @handleRescheduleSgiOnCore_keeps_current_when_outranked
+#check @candidateOutranksCurrentOnCore
+
+-- SM5.C.11 SGI delivery latency bound.
+#check @wakeSgiCount
+#check @wakeThread_emits_at_most_one_sgi
+#check @rescheduleSgi_intid_eq_zero
+#check @rescheduleSgi_lowest_intid
+#check @sgiDeliveryLatencyBound
+#check @sgiDeliveryLatencyBound_eq_zero
+
+-- SM5.C.8 affinity-control op.
+#check @setThreadCpuAffinity_ok_of_tcb
+#check @setThreadCpuAffinity_error_of_no_tcb
+#check @setThreadCpuAffinity_sets_affinity
+#check @setThreadCpuAffinity_preserves_objects_invExt
+#check @setThreadCpuAffinity_preserves_scheduler
+#check @setThreadCpuAffinity_getTcb?_ne
+#check @setThreadCpuAffinity_affects_determineTargetCore
+
+-- SM5.C decidability witnesses.
+#check @handleRescheduleSgiOnCoreSucceeds
+#check @setThreadCpuAffinitySucceeds
+
+-- SM5.C.4 SGI-emission typed wrappers (Concurrency.Runtime).
+#check @coreIdTargetMask
+#check @sgiIntidU8
+#check @sendSgiToCore
+#check @sendRescheduleSgi
+#check @emitWakeSgi
+#check @sendSgiToCore_eq_ffi
+#check @sendRescheduleSgi_eq
+#check @emitWakeSgi_none
+#check @emitWakeSgi_some
+#check @sgiIntidU8_reschedule
+#check @coreIdTargetMask_bootCore
+
+-- WS-SM SM5.C audit-pass-1: ghost-wake SGI guard (SM5.C.4).
+#check @wakeThread_no_sgi_if_no_tcb
+
+-- WS-SM SM5.C audit-pass-1 §10: invariant preservation (SM5.B-parity coverage).
+#check @enqueueRunnableOnCore_getTcb?_isSome
+#check @enqueueRunnableOnCore_preserves_currentThreadValidOnCore
+#check @enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne
+#check @enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
+#check @enqueueRunnableOnCore_preserves_runnableThreadIpcReady
+#check @enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable
+#check @enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable
+#check @enqueueRunnableOnCore_preserves_ipcSchedulerContract
+#check @wakeThread_preserves_currentThreadValidOnCore
+#check @wakeThread_preserves_ipcSchedulerContract
+#check @wakeThread_preserves_queueCurrentConsistentOnCore
+
+-- WS-SM SM5.C audit-pass-1 §6b: multi-step wake→dispatch liveness.
+#check @wakeThread_then_handle_dispatches_current
+#check @wakeThread_roundtrip_reachable_current
+
+-- WS-SM SM5.C audit-pass-1 SM5.C.11: honest latency-bound scoping.
+#check @sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis
+
+-- WS-SM SM5.C audit-pass-1 §11: memory-model happens-before (BKL ordering).
+#check @SeLe4n.Kernel.Concurrency.wakeReleaseEvent
+#check @SeLe4n.Kernel.Concurrency.wakeAcquireEvent
+#check @SeLe4n.Kernel.Concurrency.wakeOrderingTrace
+#check @SeLe4n.Kernel.Concurrency.wakeOrderingTrace_wellFormed
+#check @SeLe4n.Kernel.Concurrency.wakeOrdering_synchronizesWith
+#check @SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore
+
+-- WS-SM SM5.C audit-pass-1 (gap m): the SM5.C theorem inventory.
+#check @sm5CTheorems
+#check @sm5CTheorems_count
+#check @sm5CTheorems_lockSet_count
+#check @sm5CTheorems_target_count
+#check @sm5CTheorems_enqueue_count
+#check @sm5CTheorems_wake_count
+#check @sm5CTheorems_handler_count
+#check @sm5CTheorems_preservation_count
+#check @sm5CTheorems_latencyAffinityEmit_count
+#check @sm5CTheorems_partition_sum
+#check @sm5CTheorems_identifiers_nodup
+#check @sm5CTheorems_descriptions_nodup
+EOF'
+
 finalize_report

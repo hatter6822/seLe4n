@@ -198,6 +198,26 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreChooseThread
 -- exerciser (wiring `switchToThreadOnCore` + the runtime `withLockSet`
 -- acquisition over `switchToThreadOnCoreLockSet`).
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread
+-- WS-SM SM5.C: cross-core wake via SGI (plan `SMP_PER_CORE_SCHEDULER_PLAN.md`
+-- §3.3, §4.4, §5).  The wake transitions (`enqueueRunnableOnCore`,
+-- `determineTargetCore`, `wakeThread`, `handleRescheduleSgiOnCore`,
+-- `setThreadCpuAffinity`) are production defs in `Scheduler.Operations.Selection`;
+-- this module collects the forward-looking SM5.C theorems: the wake / SGI-handler
+-- cross-domain lock-sets (SM5.C.3), the boot-default `determineTargetCore` routing
+-- (SM5.C.9), the `enqueueRunnableOnCore` preservation/membership/make-ready/frame
+-- lemmas (SM5.C.1), the wake-semantics theorems (`wakeThread_emits_sgi_if_remote`
+-- SM5.C.4, `wakeThread_target_runQueue_contains` SM5.C.10, `wakeThread_lossless`
+-- SM5.C.6), the SGI-handler theorems (SM5.C.5), the SGI delivery latency bound
+-- (SM5.C.11), and the `setThreadCpuAffinity` characterisations (SM5.C.8).
+-- Reachability: staged at SM5.C; SM5.D's per-core timer tick (whose cross-core
+-- CBS-replenish wake calls `wakeThread`) is the first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
+-- WS-SM SM5.C (audit-pass-1): the SM5.C theorem inventory (78-entry typed
+-- aggregator with `s5ct!` compile-time identifier validation + per-category
+-- counts + partition-sum + Nodup witnesses), mirroring the SM3.A/B/C/D/E
+-- inventories.  A renamed / removed SM5.C theorem fails the inventory's
+-- elaboration here.
+import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

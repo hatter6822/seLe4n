@@ -2416,6 +2416,193 @@ zero clippy warnings.
   `switchToThreadOnCoreLockSet` (and wires the runtime `withLockSet` acquisition
   over `SchedLockId`).
 
+**WS-SM SM5.C LANDED at v0.31.40** (cross-core wake via SGI; opens the
+cross-core scheduler-notification phase of SM5).  All 12 sub-tasks landed in
+one cut per `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.3/§4.4/§5 (SM5.C.7, the
+`TCB.cpuAffinity` field, was pulled forward to SM5.B.4).  Production transitions
+in `Scheduler/Operations/Selection.lean`; forward-looking theorems in the new
+staged module `Scheduler/Operations/PerCoreWake.lean`.  Every new theorem is
+axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); default build green
+(322 jobs); trace fixture byte-identical (SM5.C is additive).
+
+- **SM5.C.1** `enqueueRunnableOnCore (st) (c) (tid)` — the per-core "make `tid`
+  runnable on core `c`" primitive (per-core analogue of `IPC.ensureRunnable`):
+  sets `ipcState := .ready` (the field the per-core IPC↔scheduler invariants
+  gate run-queue membership on) + inserts at `effectiveRunQueuePriority`;
+  idempotent; fail-closed on a non-TCB.  Lemmas: object-store-`invExt` +
+  run-queue-`wellFormed` preservation, membership, make-ready, cross-core
+  run-queue/current frames, AK7-clean per-thread `getTcb?` frame, no-TCB no-op.
+- **SM5.C.2** `wakeThread (st) (tid) (executingCore) : SystemState × Option
+  (CoreId × SgiKind)` (Thm 3.3.1) — determine target (`determineTargetCore`) →
+  make runnable → emit a `.reschedule` SGI iff the target is remote
+  (`wakeThread_emits_sgi_if_remote` / `_no_sgi_if_local` / `_sgi_is_reschedule`).
+- **SM5.C.3** `wakeThreadLockSet` + `handleRescheduleSgiOnCoreLockSet` — the
+  cross-domain object-store + run-queue WRITE footprints over SM5.A's
+  `SchedLockId`, plan §4.4 ascending order (`_pairwise_le`).
+- **SM5.C.4** SGI emission under BKL discipline — the wake SGI-decision theorems
+  + the typed FFI emission wrappers `coreIdTargetMask` / `sgiIntidU8` /
+  `sendSgiToCore` / `sendRescheduleSgi` / `emitWakeSgi` (`Concurrency/Runtime.lean`)
+  routing to `Platform.FFI.ffiSendSgi` (`dsb ish` before `GICD_SGIR`, SM1.F.8).
+- **SM5.C.5** `handleRescheduleSgiOnCore (st) (c)` — the target core's
+  re-choose (`chooseThreadOnCore`) + switch (`switchToThreadOnCore`), or idle;
+  `_switches_current`, object/run-queue preservation, cross-core independence.
+- **SM5.C.6** `wakeThread_lossless` (Thm 3.3.2) — the woken thread is recoverable
+  (scheduler-reachable to current-on / enqueued-on its target, via the genuine
+  `SchedStep` / `SchedReachable` RT-closure); non-vacuous via
+  `wakeThread_target_runQueue_contains` (SM5.C.10).
+- **SM5.C.8** `setThreadCpuAffinity (st) (targetTid) (affinity)` — the
+  affinity-control op (bind/unbind), modelled on `setPriorityOp`; fail-closed
+  `.invalidArgument`; sets-affinity, scheduler/`invExt` preservation, per-thread
+  frame, `_affects_determineTargetCore`.
+- **SM5.C.9** `determineTargetCore` — bound thread → affinity core; unbound
+  (`cpuAffinity = none`) → `bootCoreId` (the boot-default-target rule).
+- **SM5.C.11** SGI delivery latency bound — `wakeThread_emits_at_most_one_sgi`
+  + `rescheduleSgi_lowest_intid` (INTID 0 = highest GIC priority) +
+  `sgiDeliveryLatencyBound = 0`.
+- **SM5.C.12** `tests/SmpWakeSuite.lean` (`lake exe smp_wake_suite`) — 80+
+  surface anchors, 9 elaboration-time examples, 41 runtime assertions across
+  seven sections (determine-target, enqueue + make-ready, local/remote wake SGI
+  emission, the full wake→SGI→handle round-trip, the affinity op, lock-sets,
+  latency bound).  Tier-2 + Tier-3 wired.
+
+  `Concurrency.Sgi` is promoted production-reached (production `Selection`
+  imports it for `SgiKind`); its `STATUS: staged` marker is dropped and it
+  leaves the staged allowlist, which gains `Scheduler.Operations.PerCoreWake`
+  (44 staged-only modules at the initial landing).  Items deferred past v1.0.0
+  with correctness impact: NONE.  Follow-on: SM5.D (per-core timer tick), SM5.E
+  (per-core idle threads), SM5.F..SM5.K + SM6..SM9.
+
+**WS-SM SM5.C audit-pass-1 (deep self-audit; also in v0.31.40)**: a deep
+self-audit closed seven optimality gaps in the SM5.C landing — most importantly
+the soundness-adjacent invariant-preservation gap (the wake had shipped with
+strictly weaker invariant coverage than SM5.B's switch).  Every new theorem is
+axiom-clean; default build green (322 jobs); trace byte-identical; Rust 718 HAL
+tests green; zero clippy warnings; Tier 0–3 green.
+
+- **§10 invariant preservation (the SM5.B-parity coverage)** — the wake now
+  preserves SM4.C `currentThreadValidOnCore` (every core, unconditional) and
+  `queueCurrentConsistentOnCore` (under the seL4-faithful
+  "don't-wake-the-running-thread" precondition, stated explicitly not via a
+  never-taken runtime guard), plus the full SM4.D
+  `ipcSchedulerContractPredicates_perCore` IPC↔scheduler-coherence bundle
+  (`wakeThread_preserves_ipcSchedulerContract`).  The pivotal soundness result:
+  enqueuing a freshly-woken thread is coherent *because* the wake sets
+  `ipcState := .ready` — it can never create a runnable-but-blocked thread (a
+  generic `enqueueRunnableOnCore_preserves_blockedNotRunnable_aux` discharges all
+  five blocked-state conjuncts).  Corrects the original "deferred: NONE" by
+  *proving* the safety obligation rather than folding it into SM5.I.
+- **Ghost-wake SGI guard (gap d)** — `wakeThread` emits the cross-core
+  `.reschedule` SGI only when `tid` resolves to a TCB
+  (`wakeThread_no_sgi_if_no_tcb`); the SGI decision is now consistent with the
+  state effect.  `wakeThread_emits_sgi_if_remote` gains the `hTcb` hypothesis.
+- **§6b multi-step liveness (gap c)** —
+  `wakeThread_then_handle_dispatches_current` / `_roundtrip_reachable_current`
+  prove the wake → reschedule-SGI-handler round-trip dispatches the woken thread
+  to *current* in two real scheduler steps, walking the `SchedReachable`
+  `.tail`/`.switch` closure that `wakeThread_lossless` (reflexive) left unused.
+- **§11 memory-model happens-before (gap e)** — `wakeOrdering_happensBefore`
+  models the wake's BKL ordering in SM2.A's operational memory model (the
+  executing core's release-store synchronizes-with the target core's
+  acquire-load); the prose ordering is now a theorem.
+- **Honest latency-bound scoping (gap f)**, the **78-entry `Sm5CInventory.lean`**
+  (gap m, `s5ct!` macro + counts + partition-sum + Nodup), and the
+  **`test_qemu_smp_wake.sh`** tier-4 SKIP-stub (gap h, mirroring SM1.H / SM3.D).
+  `tests/SmpWakeSuite.lean` grows to 59 runtime assertions across audit-pass-1 +
+  audit-pass-2 (IPC-ready preservation on a real send-blocked thread, the
+  ghost-SGI guard, the multi-step round-trip, the full `1 <<< c` GIC mask on every
+  core (gaps k/l), the memory-model-HB well-formed trace, the inventory partition,
+  and the dual identifier+description `Nodup` runtime guards).
+  `Sm5CInventory` staged (45 staged-only modules); Rust suite confirmed
+  unaffected (gap j).
+
+**WS-SM SM5.C audit-pass-2 (independent deep re-audit; also in v0.31.40)**: a
+second deep audit verifying the *code* (not its docstrings) caught a real defect
+audit-pass-1 introduced and added two missing security theorems.
+
+- **Inventory duplicate-identifier bug — FOUND AND FIXED**: `Sm5CInventory.lean`'s
+  `.enqueue` section referenced `determineTargetCore_in_range` under an
+  `enqueueRunnableOnCore` description — a duplicate identifier that made the
+  `Nodup` proposition genuinely false, which `native_decide` nonetheless "proved"
+  (it trusts `Lean.ofReduceBool`, which disagreed with the kernel).  Fixed the
+  entry; switched both Nodup proofs to kernel-sound `decide` under an elevated
+  `maxRecDepth` (the 81-entry list's `Nodup` reduction recurses past the default
+  512; the elevated cap adds no work and no axioms, so the proof stays a
+  kernel-checked `of_decide_eq_true` with no `Lean.ofReduceBool` — strictly
+  stronger than the SM3 inventories); added two runtime `Nodup` assertions
+  (identifiers + descriptions) as a second, compiled-`decide` guard.
+- **Two new security theorems**: `determineTargetCore_admits_thread` /
+  `wakeThread_target_admits_thread` (no-liveness-stranding — the wake target
+  always admits the woken thread, so a wake never strands a thread on a core whose
+  dispatch gate would reject it) and
+  `enqueueRunnableOnCore_preserves_woken_thread_fields` (field frame — the wake
+  changes only `ipcState`; priority/domain/cpuAffinity/threadState preserved).
+- **Doc accuracy**: §10b `ensureRunnable` comparison made precise; inventory now
+  81 entries; suite 59 runtime assertions / 103 anchors / 17 examples.  All new
+  theorems axiom-clean and the two SM5.C modules build warning-clean;
+  `smp_wake_suite` 59/59 PASS; partition gate 45 staged-only modules.  Items
+  deferred past v1.0.0 with correctness impact: NONE.
+
+**WS-SM SM5.C audit-pass-3 (deepest code-first re-audit; also in v0.31.40)**: read
+the SM5.C *implementation* against the plan §3.3/§4.4 spec (not its docstrings),
+asking whether any shortcut made the cross-core wake path less secure and whether
+all 12 sub-tasks are complete + optimal.  **Verdict: no shortcuts that made the
+path *less* secure than its single-core analogue** — though the Codex PR #806
+review (closure below) then found three real completeness/optimality gaps this
+self-audit missed, now fixed.
+
+- **`enqueueRunnableOnCore` faithfully mirrors the trusted `IPC.ensureRunnable`**:
+  both gate run-queue membership on `ipcState` (not `threadState`), so there is no
+  "wake a suspended thread" shortcut (the thread-state gating is the caller's, as for
+  `ensureRunnable`; `suspendThread`/`cancelIpcBlocking` removes a thread from its IPC
+  object queues so no wake targets it).  It *improves* on `ensureRunnable` by bundling
+  the `ipcState := .ready` clear — it cannot create a runnable-but-not-ready thread.
+- **Wake-path idempotency** rests on `RunQueue.insert`'s internal `if rq.contains tid
+  then rq` guard: a double-wake cannot create a duplicate run-queue entry (no
+  `runQueueUnique` violation, no double-dispatch).  Pinned now by two direct runtime
+  assertions in `tests/SmpWakeSuite.lean` (59 → 61).
+- **No priority inversion**: `effectiveRunQueuePriority` (Scheduler) and
+  `ipcEffectiveRunQueuePriority` (IPC) are byte-identical (`Nat.max base pipBoost`),
+  so `enqueueRunnableOnCore` honors PIP boost exactly like the IPC wake path.
+- **Two plan-deviations are both *safer*** (implementation > plan §3.3 sketch): the
+  wake lock-set uses the SM3.A.10 object-store **table** write lock
+  (`schedObjStoreLockId`) — the plan's per-TCB `LockId.tcb tid` would under-lock an
+  RHTable slot relocation — and `wakeThread` takes `executingCore` as an explicit
+  parameter (pure transition) rather than reading `currentCoreId` via FFI inline.
+- **Security-contract hardening — `setThreadCpuAffinity` (SM5.C.8)**: unlike
+  `setPriorityOp` (whose MCP authority is an intrinsic TCB field validated in-op),
+  CPU-affinity authority is a *capability* (scheduler control).  The primitive does
+  **no** in-op authority check; its docstring now states explicitly that the
+  capability gate belongs at the syscall-dispatch layer (`syscallLookupCap`) when the
+  op is wired.  At SM5.C the op is deliberately unwired (no `SyscallId` variant, no
+  `API` entry, no caller) so there is **no live gap**; the note prevents a future
+  privilege-escalation regression from naive wiring (the SM5.C.8 dispatch obligation).
+
+No code-behaviour change in this self-audit (a production docstring + two test
+assertions); `smp_wake_suite` 61/61 PASS, warning-clean; all SM5.C theorems remain
+axiom-clean; trace fixture byte-identical; Tier 0–3 green.
+
+**WS-SM SM5.C audit-pass-3 Codex PR #806 closure (also in v0.31.40)**: the
+automated Codex review of PR #806 found three real cross-core
+scheduling-correctness gaps the code-first self-audit missed (validated against
+the single-core semantics, fixed with axiom-clean proofs; maintainer-directed
+"fix all three now"): **(P1)** `handleRescheduleSgiOnCore` `switchToThreadOnCore`'d
+whatever `chooseThreadOnCore` returned, demoting a higher-priority running thread
+to a lower-priority cross-core wake — fixed by the explicit preemption gate
+`candidateOutranksCurrentOnCore` (+ theorem
+`handleRescheduleSgiOnCore_keeps_current_when_outranked`); **(P1)** it used the
+budget-skipping `chooseThreadOnCore` while the production CBS timer path uses
+`chooseThreadEffective` — fixed by `chooseThreadEffectiveOnCore`; **(P2)**
+`enqueueRunnableOnCore` per-core idempotency let a thread be runnable on two cores
+(an affinity change without the SM5.H.4 migration) — fixed by the global
+single-placement reject `runnableOnSomeCore` (+ theorem
+`enqueueRunnableOnCore_eq_self_of_runnable`).  The membership/ready lemmas gain a
+`runnableOnSomeCore … = false` precondition; the §10 IPC-contract preservation
+lemmas discharge the reject branch internally, so the `wakeThread_preserves_*`
+composers are unchanged.  Inventory 81 → 83; `SmpWakeSuite` 64 runtime assertions /
+107 anchors / 17 examples; `smp_wake_suite` 64/64 PASS; all SM5.C theorems
+axiom-clean; Tier 0–3 green; trace byte-identical.  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the
