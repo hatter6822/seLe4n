@@ -856,7 +856,7 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
     }
 
     // Check 5: WS-SM SM5.D.1 — the timer branch drives the verified Lean
-    // per-core scheduler timer tick via the per-core CNTV ISR seam.  A refactor
+    // per-core scheduler timer tick via the per-core CNTP ISR seam.  A refactor
     // that drops this call (reverting the timer branch to a bare comparator
     // re-arm) would silently disconnect the per-core scheduler from its timer.
     if !body.contains("crate::timer::per_core_timer_tick_isr") {

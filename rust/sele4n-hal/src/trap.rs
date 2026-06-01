@@ -397,7 +397,7 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
         // count actual dispatched IRQs.
         let _ = crate::per_cpu_stats::record_irq_dispatch();
         if intid == crate::gic::TIMER_PPI_ID {
-            // WS-SM SM5.D.1: the per-core CNTV timer ISR.  Records the
+            // WS-SM SM5.D.1: the per-core CNTP timer ISR.  Records the
             // per-core tick, re-arms the per-core comparator, and drives the
             // verified Lean per-core scheduler timer tick
             // (`Kernel.timerTickOnCore` via `lean_per_core_timer_tick(core_id)`)

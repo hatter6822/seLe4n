@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.42.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.43.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5222,6 +5222,50 @@ documentation lives under `docs/` and `docs/gitbook/`.
     elaboration examples, and a §3.9 runtime section (5 assertions) exercising the
     domain re-dispatch; tier-3 adds the §4b/§7 anchors + the `Sm5DInventory` build.
     Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.D audit-pass-2 LANDED at v0.31.43** (deep code-first audit — not
+  trusting docstrings — of the full SM5.D workstream; closed **one substantive
+  correctness divergence** + three LOW Rust/doc findings):
+  - **CRITICAL FIX — `timerTickOnCore` no longer breaks `currentThreadInActiveDomain`.**
+    The pre-fix tick folded an in-tick domain *rotation* (`decrementDomainTimeOnCore`,
+    advancing `activeDomainOnCore` on expiry) into the tick **without** the coupled
+    re-dispatch, leaving (on the not-preempted, multi-domain path) `currentOnCore c =
+    tid` whose `tcb.domain` (old) ≠ `activeDomainOnCore c` (rotated) — a violation of
+    the maintained `currentThreadInActiveDomain` invariant (a domain-separation /
+    temporal-isolation property).  This diverged from the single-core model where
+    **neither** `timerTick` nor `timerTickWithBudget` touches domain time — rotation
+    lives only in the separate `scheduleDomain`, which *atomically* couples it with
+    re-dispatch (`switchDomain` re-enqueues, then `schedule`).  (Latent: unreachable
+    on the single-domain RPi5 v1.0.0 target where `domainSchedule = []`.)  Fix:
+    `timerTickOnCore` is now a **pure budget tick** (clear → replenish → budget/
+    preempt) mirroring `timerTickWithBudget`; per-core rotation is the **separate
+    atomic** `scheduleDomainOnCore` (`switchDomainOnCore` + `scheduleEffectiveOnCore`),
+    exactly the single-core split.  `decrementDomainTimeOnCore` becomes the **pure
+    non-boundary decrement** (no rotation) wired into `scheduleDomainOnCore`'s
+    `else`-branch (not orphaned).  The retired `timerTickOnCore_rotates_domain` + 5
+    obsolete in-tick rotation theorems are removed; `switchDomainOnCore_rotates` is the
+    rotation witness.
+  - **Capstone (§7f) — the fix is *proved*, not asserted:**
+    `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` (parameterized by the
+    replenishment's domain-preservation, discharged on the clean path), built on
+    `scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore` (the
+    dispatch checks `tcb.domain = activeDomain` before committing) +
+    `scheduleEffectiveOnCore_getTcb?_domain` + `saveOutgoingContextOnCore_getTcb?_domain`
+    + `timerTickBudgetOnCore_notPreempted_getTcb?_domain`.
+  - **Rust HAL (LOW), fixed:** **Finding 3** — every SM5.D doc called the per-core
+    timer "CNTV" (virtual), but the EL1 kernel uses the **CNTP** (physical) timer
+    (`cntp_*`, PPI 30); corrected to "CNTP" across all SM5.D files (CNTP is correct —
+    CNTV is for EL2-hosted guests).  **Finding 1** — `per_core_timer_tick_isr(core_id)`
+    forwards `core_id` to Lean but the per-CPU stat slot is chosen by re-reading
+    `TPIDR_EL1`; added a hw-only `debug_assert_eq!(core_id, current_core_id_from_tpidr())`
+    pinning the invariant.  **Finding 5** — `reprogram_timer`'s `now + interval` →
+    `now.wrapping_add(interval)` (defense-in-depth at the u64 boundary).
+  - **Verification:** every SM5.D theorem re-confirmed axiom-clean; AK7
+    `RAW_LOOKUP_TID` unchanged (§7f uses the `.get?` method form); `Sm5DInventory`
+    updated to **100** entries (domain 10 / tick 18 / preservation 25); `SmpTimerSuite`
+    + tier-3 updated; Tier 0+1+2 smoke green (722 Rust HAL tests, zero clippy); trace
+    fixture byte-identical (single-domain path unchanged).  Items deferred past v1.0.0
+    with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

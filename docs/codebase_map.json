@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/intelligent-goldberg-K7p4I",
-      "commit_sha": "35aa310a4e042903c8211a3adff3141c8dcfdd3e",
-      "tree_sha": "1a3bf7a3b3e8794538b036bb93a708333d5f0c92",
-      "committed_at_utc": "2026-06-01T06:38:16+00:00"
+      "commit_sha": "fd6499c3a21aa6a1d4dfe284e499b11c6af73c17",
+      "tree_sha": "971ba1ba985ad09961a1a415e203c1cf1de6a24c",
+      "committed_at_utc": "2026-06-01T08:38:40+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "b02f36ff691e407618bfcbc8fd86adcfa1f50cb0ac2005802f393d3d1eab123a"
+    "source_digest": "1b2b06479d3ff06371793ed4c6b4fb3339be6e212454d47b394c452d8b306e58"
   },
   "summary": {
     "module_count": 267,
-    "declaration_count": 9744
+    "declaration_count": 9746
   },
   "readme_sync": {
-    "version": "0.31.42",
+    "version": "0.31.43",
     "lean_toolchain": "v4.28.0",
     "production_files": 216,
-    "production_loc": 154333,
+    "production_loc": 154404,
     "test_files": 51,
-    "test_loc": 33862,
-    "proved_theorem_lemma_decls": 4941,
+    "test_loc": 33886,
+    "proved_theorem_lemma_decls": 4942,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -66507,19 +66507,14 @@
           "called": [
             "CoreId",
             "SystemState",
-            "domainScheduleIndexOnCore",
             "domainTimeRemainingOnCore",
-            "length",
-            "none",
-            "setActiveDomainOnCore",
-            "setDomainScheduleIndexOnCore",
             "setDomainTimeRemainingOnCore"
           ]
         },
         {
           "kind": "def",
           "name": "saveOutgoingContextOnCore",
-          "line": 1063,
+          "line": 1051,
           "called": [
             "CoreId",
             "KernelObject",
@@ -66534,7 +66529,7 @@
         {
           "kind": "def",
           "name": "scheduleEffectiveOnCore",
-          "line": 1091,
+          "line": 1079,
           "called": [
             "CoreId",
             "KernelError",
@@ -66554,7 +66549,7 @@
         {
           "kind": "def",
           "name": "replenishWakeTarget",
-          "line": 1124,
+          "line": 1112,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -66569,7 +66564,7 @@
         {
           "kind": "def",
           "name": "processOneReplenishmentOnCore",
-          "line": 1154,
+          "line": 1142,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -66587,7 +66582,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDueOnCore",
-          "line": 1180,
+          "line": 1168,
           "called": [
             "CoreId",
             "SgiKind",
@@ -66603,7 +66598,7 @@
         {
           "kind": "def",
           "name": "timerTickBudgetOnCore",
-          "line": 1211,
+          "line": 1199,
           "called": [
             "Budget",
             "CoreId",
@@ -66631,14 +66626,13 @@
         {
           "kind": "def",
           "name": "timerTickOnCore",
-          "line": 1277,
+          "line": 1265,
           "called": [
             "CoreId",
             "KernelError",
             "SgiKind",
             "SystemState",
             "currentOnCore",
-            "decrementDomainTimeOnCore",
             "getTcb",
             "none",
             "processReplenishmentsDueOnCore",
@@ -66650,7 +66644,7 @@
         {
           "kind": "def",
           "name": "switchDomainOnCore",
-          "line": 1317,
+          "line": 1318,
           "called": [
             "CoreId",
             "KernelError",
@@ -66674,21 +66668,21 @@
         {
           "kind": "def",
           "name": "scheduleDomainOnCore",
-          "line": 1344,
+          "line": 1345,
           "called": [
             "CoreId",
             "KernelError",
             "SystemState",
+            "decrementDomainTimeOnCore",
             "domainTimeRemainingOnCore",
             "scheduleEffectiveOnCore",
-            "setDomainTimeRemainingOnCore",
             "switchDomainOnCore"
           ]
         },
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 1364,
+          "line": 1365,
           "called": [
             "SystemState",
             "TCB",
@@ -66702,7 +66696,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 1379,
+          "line": 1380,
           "called": [
             "SystemState",
             "fold",
@@ -66714,7 +66708,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 1391,
+          "line": 1392,
           "called": [
             "Kernel",
             "ObjId",
@@ -68682,7 +68676,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean",
-      "declaration_count": 111,
+      "declaration_count": 112,
       "declarations": [
         {
           "kind": "namespace",
@@ -68903,7 +68897,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_objects_eq",
-          "line": 372,
+          "line": 379,
           "called": [
             "CoreId",
             "SystemState",
@@ -68913,7 +68907,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_machine_eq",
-          "line": 383,
+          "line": 384,
           "called": [
             "CoreId",
             "SystemState",
@@ -68923,7 +68917,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_runQueueOnCore",
-          "line": 394,
+          "line": 389,
           "called": [
             "CoreId",
             "SystemState",
@@ -68934,7 +68928,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_currentOnCore",
-          "line": 405,
+          "line": 395,
           "called": [
             "CoreId",
             "SystemState",
@@ -68945,7 +68939,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_replenishQueueOnCore",
-          "line": 416,
+          "line": 401,
           "called": [
             "CoreId",
             "SystemState",
@@ -68955,104 +68949,57 @@
         },
         {
           "kind": "theorem",
-          "name": "decrementDomainTimeOnCore_activeDomainOnCore_ne",
-          "line": 429,
+          "name": "decrementDomainTimeOnCore_activeDomainOnCore",
+          "line": 409,
           "called": [
             "CoreId",
             "SystemState",
             "activeDomainOnCore",
             "decrementDomainTimeOnCore",
-            "setActiveDomainOnCore_activeDomainOnCore_ne",
-            "setDomainScheduleIndexOnCore_activeDomainOnCore",
             "setDomainTimeRemainingOnCore_activeDomainOnCore"
           ]
         },
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_decrements",
-          "line": 447,
+          "line": 417,
           "called": [
             "CoreId",
             "SystemState",
-            "decrementDomainTimeOnCore",
-            "domainTimeRemainingOnCore"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "decrementDomainTimeOnCore_preserves_activeDomain_of_not_expired",
-          "line": 457,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "activeDomainOnCore",
             "decrementDomainTimeOnCore",
             "domainTimeRemainingOnCore",
-            "setDomainTimeRemainingOnCore_activeDomainOnCore"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "decrementDomainTimeOnCore_singleDomain_noop",
-          "line": 469,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "decrementDomainTimeOnCore",
-            "domainTimeRemainingOnCore"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "decrementDomainTimeOnCore_rotates",
-          "line": 481,
-          "called": [
-            "CoreId",
-            "DomainScheduleEntry",
-            "SystemState",
-            "activeDomainOnCore",
-            "decrementDomainTimeOnCore",
-            "domainScheduleIndexOnCore",
-            "domainTimeRemainingOnCore",
-            "length",
-            "setActiveDomainOnCore_activeDomainOnCore_self",
-            "setDomainScheduleIndexOnCore_activeDomainOnCore",
-            "setDomainTimeRemainingOnCore_activeDomainOnCore"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "decrementDomainTimeOnCore_rotates_nonempty",
-          "line": 510,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "activeDomainOnCore",
-            "decrementDomainTimeOnCore",
-            "decrementDomainTimeOnCore_rotates",
-            "domainScheduleIndexOnCore",
-            "domainTimeRemainingOnCore",
-            "switchDomain_index_lookup_isSome"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore",
-          "line": 528,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "decrementDomainTimeOnCore",
-            "domainScheduleEntriesPositive",
-            "domainTimeRemainingPositiveOnCore",
-            "setDomainScheduleIndexOnCore_domainTimeRemainingOnCore",
             "setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self"
           ]
         },
         {
           "kind": "theorem",
+          "name": "decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne",
+          "line": 424,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "decrementDomainTimeOnCore",
+            "domainTimeRemainingOnCore",
+            "setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore",
+          "line": 437,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "decrementDomainTimeOnCore",
+            "decrementDomainTimeOnCore_decrements",
+            "domainTimeRemainingOnCore",
+            "domainTimeRemainingPositiveOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "refillSchedContext_preserves_objects_invExt",
-          "line": 557,
+          "line": 453,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SchedContextId",
@@ -69065,7 +69012,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed_anyCore",
-          "line": 570,
+          "line": 466,
           "called": [
             "CoreId",
             "SystemState",
@@ -69080,7 +69027,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_runQueueOnCore_wellFormed_anyCore",
-          "line": 581,
+          "line": 477,
           "called": [
             "CoreId",
             "SystemState",
@@ -69096,7 +69043,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_objects_invExt",
-          "line": 592,
+          "line": 488,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69112,7 +69059,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 609,
+          "line": 505,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69128,7 +69075,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_objects_invExt",
-          "line": 630,
+          "line": 526,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69145,7 +69092,7 @@
         {
           "kind": "theorem",
           "name": "foldl_processOneReplenishment_preserves_runQueueOnCore_wellFormed",
-          "line": 644,
+          "line": 540,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69163,7 +69110,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_objects_invExt",
-          "line": 660,
+          "line": 556,
           "called": [
             "CoreId",
             "SystemState",
@@ -69175,7 +69122,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 668,
+          "line": 564,
           "called": [
             "CoreId",
             "SystemState",
@@ -69188,7 +69135,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_no_sgi_if_no_target",
-          "line": 680,
+          "line": 576,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69203,7 +69150,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_local_no_sgi",
-          "line": 688,
+          "line": 584,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69221,7 +69168,7 @@
         {
           "kind": "theorem",
           "name": "cbsReplenish_can_wake_remote_core",
-          "line": 709,
+          "line": 605,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69241,7 +69188,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_objects_eq_local",
-          "line": 748,
+          "line": 644,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69251,7 +69198,7 @@
         {
           "kind": "theorem",
           "name": "revertPriorityInheritance_preserves_objects_invExt",
-          "line": 757,
+          "line": 653,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69264,7 +69211,7 @@
         {
           "kind": "theorem",
           "name": "timeoutThread_preserves_objects_invExt",
-          "line": 772,
+          "line": 668,
           "called": [
             "ObjId",
             "RHTable_insert_preserves_invExt",
@@ -69281,7 +69228,7 @@
         {
           "kind": "theorem",
           "name": "timeoutBlockedThreads_preserves_objects_invExt",
-          "line": 797,
+          "line": 693,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -69298,7 +69245,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_preserves_objects_invExt",
-          "line": 825,
+          "line": 721,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -69313,7 +69260,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_unbound_not_preempted",
-          "line": 851,
+          "line": 747,
           "called": [
             "CoreId",
             "SystemState",
@@ -69325,7 +69272,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_unbound_preempts",
-          "line": 862,
+          "line": 758,
           "called": [
             "CoreId",
             "SystemState",
@@ -69337,7 +69284,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_bound_preempts",
-          "line": 873,
+          "line": 769,
           "called": [
             "CoreId",
             "SchedContext",
@@ -69353,7 +69300,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_bound_not_preempted",
-          "line": 886,
+          "line": 782,
           "called": [
             "CoreId",
             "SchedContext",
@@ -69369,7 +69316,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_donated_preempts",
-          "line": 899,
+          "line": 795,
           "called": [
             "CoreId",
             "SchedContext",
@@ -69385,7 +69332,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_preserves_objects_invExt",
-          "line": 911,
+          "line": 807,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -69397,7 +69344,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_objects_eq",
-          "line": 922,
+          "line": 818,
           "called": [
             "SystemState",
             "ThreadId",
@@ -69407,7 +69354,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_objects_invExt",
-          "line": 929,
+          "line": 825,
           "called": [
             "CoreId",
             "SystemState",
@@ -69420,7 +69367,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_singleDomain_noop",
-          "line": 955,
+          "line": 851,
           "called": [
             "CoreId",
             "SystemState",
@@ -69430,7 +69377,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_preserves_objects_invExt",
-          "line": 964,
+          "line": 860,
           "called": [
             "CoreId",
             "SystemState",
@@ -69443,7 +69390,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_sets_currentOnCore_none",
-          "line": 980,
+          "line": 876,
           "called": [
             "CoreId",
             "SystemState",
@@ -69460,7 +69407,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_rotates",
-          "line": 1000,
+          "line": 896,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
@@ -69478,20 +69425,20 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_decrements",
-          "line": 1024,
+          "line": 920,
           "called": [
             "CoreId",
             "SystemState",
+            "decrementDomainTimeOnCore",
+            "decrementDomainTimeOnCore_decrements",
             "domainTimeRemainingOnCore",
-            "scheduleDomainOnCore",
-            "setDomainTimeRemainingOnCore",
-            "setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self"
+            "scheduleDomainOnCore"
           ]
         },
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_preserves_objects_invExt",
-          "line": 1037,
+          "line": 932,
           "called": [
             "CoreId",
             "SystemState",
@@ -69504,7 +69451,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_scheduler_eq",
-          "line": 1060,
+          "line": 955,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -69515,7 +69462,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_machine_eq",
-          "line": 1066,
+          "line": 961,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -69526,7 +69473,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_machine_eq",
-          "line": 1073,
+          "line": 968,
           "called": [
             "CoreId",
             "SystemState",
@@ -69537,7 +69484,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_lastTimeoutErrorsOnCore",
-          "line": 1081,
+          "line": 976,
           "called": [
             "CoreId",
             "SystemState",
@@ -69550,7 +69497,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_machine_eq",
-          "line": 1092,
+          "line": 987,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69565,7 +69512,7 @@
         {
           "kind": "theorem",
           "name": "processOneReplenishmentOnCore_lastTimeoutErrorsOnCore_eq",
-          "line": 1104,
+          "line": 999,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -69581,7 +69528,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_machine_eq",
-          "line": 1119,
+          "line": 1014,
           "called": [
             "CoreId",
             "SgiKind",
@@ -69599,7 +69546,7 @@
         {
           "kind": "theorem",
           "name": "processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq",
-          "line": 1136,
+          "line": 1031,
           "called": [
             "CoreId",
             "SgiKind",
@@ -69619,18 +69566,19 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_lastTimeoutErrorsOnCore",
-          "line": 1157,
+          "line": 1052,
           "called": [
             "CoreId",
             "SystemState",
             "decrementDomainTimeOnCore",
-            "lastTimeoutErrorsOnCore"
+            "lastTimeoutErrorsOnCore",
+            "setDomainTimeRemainingOnCore_lastTimeoutErrorsOnCore"
           ]
         },
         {
           "kind": "def",
           "name": "timerTickOnCorePreDomain",
-          "line": 1172,
+          "line": 1062,
           "called": [
             "CoreId",
             "SystemState",
@@ -69641,12 +69589,11 @@
         {
           "kind": "def",
           "name": "timerTickOnCorePrepared",
-          "line": 1181,
+          "line": 1072,
           "called": [
             "CoreId",
             "SgiKind",
             "SystemState",
-            "decrementDomainTimeOnCore",
             "processReplenishmentsDueOnCore",
             "setLastTimeoutErrorsOnCore"
           ]
@@ -69654,11 +69601,10 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_fst_eq",
-          "line": 1189,
+          "line": 1079,
           "called": [
             "CoreId",
             "SystemState",
-            "decrementDomainTimeOnCore",
             "timerTickOnCorePreDomain",
             "timerTickOnCorePrepared"
           ]
@@ -69666,7 +69612,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_eq_prepared",
-          "line": 1196,
+          "line": 1085,
           "called": [
             "CoreId",
             "SystemState",
@@ -69682,11 +69628,10 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_machine_eq",
-          "line": 1215,
+          "line": 1104,
           "called": [
             "CoreId",
             "SystemState",
-            "decrementDomainTimeOnCore_machine_eq",
             "processReplenishmentsDueOnCore_machine_eq",
             "timerTickOnCorePrepared"
           ]
@@ -69694,11 +69639,10 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_lastTimeoutErrors_eq",
-          "line": 1223,
+          "line": 1112,
           "called": [
             "CoreId",
             "SystemState",
-            "decrementDomainTimeOnCore_lastTimeoutErrorsOnCore",
             "lastTimeoutErrorsOnCore",
             "processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq",
             "setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self",
@@ -69708,11 +69652,10 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_objects_invExt",
-          "line": 1233,
+          "line": 1120,
           "called": [
             "CoreId",
             "SystemState",
-            "decrementDomainTimeOnCore_objects_eq",
             "invExt",
             "processReplenishmentsDueOnCore_preserves_objects_invExt",
             "timerTickOnCorePrepared"
@@ -69721,7 +69664,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_idle",
-          "line": 1245,
+          "line": 1131,
           "called": [
             "CoreId",
             "SystemState",
@@ -69735,7 +69678,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_advances_per_core",
-          "line": 1259,
+          "line": 1145,
           "called": [
             "CoreId",
             "SgiKind",
@@ -69751,7 +69694,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_clears_lastTimeoutErrors",
-          "line": 1270,
+          "line": 1156,
           "called": [
             "CoreId",
             "SgiKind",
@@ -69767,31 +69710,8 @@
         },
         {
           "kind": "theorem",
-          "name": "timerTickOnCore_rotates_domain",
-          "line": 1284,
-          "called": [
-            "CoreId",
-            "DomainScheduleEntry",
-            "SgiKind",
-            "SystemState",
-            "activeDomainOnCore",
-            "currentOnCore",
-            "decrementDomainTimeOnCore_rotates",
-            "domainScheduleIndexOnCore",
-            "domainTimeRemainingOnCore",
-            "length",
-            "none",
-            "timerTickOnCore",
-            "timerTickOnCorePreDomain",
-            "timerTickOnCorePrepared",
-            "timerTickOnCorePrepared_fst_eq",
-            "timerTickOnCore_idle"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "timerTickOnCore_preempts_local",
-          "line": 1304,
+          "line": 1179,
           "called": [
             "CoreId",
             "SystemState",
@@ -69809,7 +69729,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_objects_invExt",
-          "line": 1320,
+          "line": 1195,
           "called": [
             "CoreId",
             "SgiKind",
@@ -69826,7 +69746,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCoreSucceeds",
-          "line": 1360,
+          "line": 1235,
           "called": [
             "CoreId",
             "SystemState",
@@ -69835,8 +69755,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1365>",
-          "line": 1365,
+          "name": "<anonymous:instance:1240>",
+          "line": 1240,
           "called": [
             "CoreId",
             "SystemState",
@@ -69847,7 +69767,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCoreEmitsSgi",
-          "line": 1371,
+          "line": 1246,
           "called": [
             "CoreId",
             "SystemState",
@@ -69856,8 +69776,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1376>",
-          "line": 1376,
+          "name": "<anonymous:instance:1251>",
+          "line": 1251,
           "called": [
             "CoreId",
             "SystemState",
@@ -69868,7 +69788,7 @@
         {
           "kind": "def",
           "name": "timerTickBudgetOnCorePreempts",
-          "line": 1384,
+          "line": 1259,
           "called": [
             "CoreId",
             "SystemState",
@@ -69879,8 +69799,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1390>",
-          "line": 1390,
+          "name": "<anonymous:instance:1265>",
+          "line": 1265,
           "called": [
             "CoreId",
             "SystemState",
@@ -69893,7 +69813,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_currentThreadValidOnCore",
-          "line": 1418,
+          "line": 1293,
           "called": [
             "CoreId",
             "SystemState",
@@ -69907,7 +69827,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 1428,
+          "line": 1303,
           "called": [
             "CoreId",
             "SystemState",
@@ -69920,7 +69840,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 1437,
+          "line": 1312,
           "called": [
             "CoreId",
             "SystemState",
@@ -69934,7 +69854,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 1447,
+          "line": 1322,
           "called": [
             "CoreId",
             "SystemState",
@@ -69946,7 +69866,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_scheduler_eq",
-          "line": 1458,
+          "line": 1333,
           "called": [
             "CoreId",
             "SystemState",
@@ -69956,7 +69876,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextOnCore_getTcb",
-          "line": 1469,
+          "line": 1344,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -69975,7 +69895,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_objects_eq",
-          "line": 1502,
+          "line": 1377,
           "called": [
             "CoreId",
             "SystemState",
@@ -69990,7 +69910,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_getTcb",
-          "line": 1524,
+          "line": 1399,
           "called": [
             "CoreId",
             "SystemState",
@@ -70006,7 +69926,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 1536,
+          "line": 1411,
           "called": [
             "CoreId",
             "SystemState",
@@ -70026,7 +69946,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_establishes_currentThreadValidOnCore",
-          "line": 1567,
+          "line": 1442,
           "called": [
             "CoreId",
             "SystemState",
@@ -70043,7 +69963,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore",
-          "line": 1598,
+          "line": 1473,
           "called": [
             "CoreId",
             "SystemState",
@@ -70063,7 +69983,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_runQueue_toList_subset",
-          "line": 1629,
+          "line": 1504,
           "called": [
             "CoreId",
             "SystemState",
@@ -70085,7 +70005,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 1660,
+          "line": 1535,
           "called": [
             "CoreId",
             "SystemState",
@@ -70099,7 +70019,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_scheduler_eq",
-          "line": 1674,
+          "line": 1549,
           "called": [
             "CoreId",
             "SystemState",
@@ -70114,7 +70034,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_getTcb",
-          "line": 1708,
+          "line": 1583,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -70136,7 +70056,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_currentThreadValidOnCore",
-          "line": 1774,
+          "line": 1649,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70161,11 +70081,10 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCorePrepared_runQueueOnCore_wellFormed",
-          "line": 1822,
+          "line": 1697,
           "called": [
             "CoreId",
             "SystemState",
-            "decrementDomainTimeOnCore_runQueueOnCore",
             "processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed",
             "runQueueOnCore",
             "setLastTimeoutErrorsOnCore_runQueueOnCore",
@@ -70176,7 +70095,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCoreWellFormed",
-          "line": 1836,
+          "line": 1711,
           "called": [
             "CoreId",
             "SystemState",
@@ -70191,7 +70110,7 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 1854,
+          "line": 1729,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70213,10 +70132,9 @@
         {
           "kind": "theorem",
           "name": "timerTickOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 1907,
+          "line": 1782,
           "called": [
             "CoreId",
-            "Kernel",
             "SgiKind",
             "SystemState",
             "currentOnCore",
@@ -70229,6 +70147,114 @@
             "timerTickBudgetOnCore_notPreempted_scheduler_eq",
             "timerTickOnCore",
             "timerTickOnCorePrepared",
+            "timerTickOnCore_eq_prepared"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveOutgoingContextOnCore_getTcb",
+          "line": 1834,
+          "called": [
+            "CoreId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "currentOnCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "saveOutgoingContextOnCore",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleEffectiveOnCore_getTcb",
+          "line": 1861,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "saveOutgoingContextOnCore",
+            "saveOutgoingContextOnCore_getTcb",
+            "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_objects_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore",
+          "line": 1872,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore",
+            "chooseThreadEffectiveOnCore",
+            "currentOnCore",
+            "currentThreadInActiveDomainOnCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "restoreIncomingContext_scheduler",
+            "saveOutgoingContextOnCore_scheduler_eq",
+            "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_getTcb",
+            "setCurrentOnCore_activeDomainOnCore",
+            "setCurrentOnCore_currentOnCore_self",
+            "setRunQueueOnCore_activeDomainOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickBudgetOnCore_notPreempted_getTcb",
+          "line": 1909,
+          "called": [
+            "CoreId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "invExt",
+            "none",
+            "scId",
+            "timerTickBudgetOnCore",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore",
+          "line": 1963,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SgiKind",
+            "SystemState",
+            "currentOnCore",
+            "currentThreadInActiveDomainOnCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore",
+            "timerTickBudgetOnCore",
+            "timerTickBudgetOnCore_notPreempted_getTcb",
+            "timerTickBudgetOnCore_notPreempted_scheduler_eq",
+            "timerTickBudgetOnCore_preserves_objects_invExt",
+            "timerTickOnCore",
+            "timerTickOnCorePrepared",
+            "timerTickOnCorePrepared_objects_invExt",
             "timerTickOnCore_eq_prepared"
           ]
         }
@@ -74547,18 +74573,15 @@
           "called": [
             "Sm5DTheorem",
             "cbsReplenish_can_wake_remote_core",
-            "decrementDomainTimeOnCore_activeDomainOnCore_ne",
+            "decrementDomainTimeOnCore_activeDomainOnCore",
             "decrementDomainTimeOnCore_decrements",
+            "decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne",
             "decrementDomainTimeOnCore_lastTimeoutErrorsOnCore",
-            "decrementDomainTimeOnCore_preserves_activeDomain_of_not_expired",
             "decrementDomainTimeOnCore_preserves_currentThreadValidOnCore",
             "decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore",
             "decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore",
             "decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed",
             "decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore",
-            "decrementDomainTimeOnCore_rotates",
-            "decrementDomainTimeOnCore_rotates_nonempty",
-            "decrementDomainTimeOnCore_singleDomain_noop",
             "enqueueRunnableOnCore_lastTimeoutErrorsOnCore",
             "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed_anyCore",
             "object_lt_replenishQueue",
@@ -74583,6 +74606,7 @@
             "saveOutgoingContextOnCore_scheduler_eq",
             "scheduleDomainOnCore_decrements",
             "scheduleDomainOnCore_preserves_objects_invExt",
+            "scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore",
             "scheduleEffectiveOnCore_establishes_currentThreadValidOnCore",
             "scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore",
             "scheduleEffectiveOnCore_getTcb",
@@ -74640,18 +74664,18 @@
             "timerTickOnCore_eq_prepared",
             "timerTickOnCore_idle",
             "timerTickOnCore_preempts_local",
+            "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore",
             "timerTickOnCore_preserves_currentThreadValidOnCore",
             "timerTickOnCore_preserves_objects_invExt",
             "timerTickOnCore_preserves_queueCurrentConsistentOnCore",
             "timerTickOnCore_preserves_runQueueOnCoreWellFormed",
-            "timerTickOnCore_rotates_domain",
             "wakeThread_preserves_runQueueOnCore_wellFormed_anyCore"
           ]
         },
         {
           "kind": "theorem",
           "name": "sm5DTheorems_count",
-          "line": 301,
+          "line": 305,
           "called": [
             "length"
           ]
@@ -74659,7 +74683,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_lockSet_count",
-          "line": 303,
+          "line": 307,
           "called": [
             "filter",
             "length"
@@ -74668,7 +74692,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_domain_count",
-          "line": 306,
+          "line": 310,
           "called": [
             "filter",
             "length"
@@ -74677,7 +74701,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_replenish_count",
-          "line": 309,
+          "line": 313,
           "called": [
             "filter",
             "length"
@@ -74686,7 +74710,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_budget_count",
-          "line": 312,
+          "line": 316,
           "called": [
             "filter",
             "length"
@@ -74695,7 +74719,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_tick_count",
-          "line": 315,
+          "line": 319,
           "called": [
             "filter",
             "length",
@@ -74705,7 +74729,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_preservation_count",
-          "line": 318,
+          "line": 322,
           "called": [
             "filter",
             "length"
@@ -74714,7 +74738,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_decidability_count",
-          "line": 321,
+          "line": 325,
           "called": [
             "filter",
             "length"
@@ -74723,7 +74747,7 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_partition_sum",
-          "line": 325,
+          "line": 329,
           "called": [
             "filter",
             "length",
@@ -74733,13 +74757,13 @@
         {
           "kind": "theorem",
           "name": "sm5DTheorems_identifiers_nodup",
-          "line": 339,
+          "line": 343,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "sm5DTheorems_descriptions_nodup",
-          "line": 344,
+          "line": 348,
           "called": [
             "Kernel"
           ]
@@ -124211,7 +124235,7 @@
     {
       "module": "tests.SmpTimerSuite",
       "path": "tests/SmpTimerSuite.lean",
-      "declaration_count": 33,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -124221,14 +124245,14 @@
             "ReplenishQueueLockId",
             "cbsReplenish_can_wake_remote_core",
             "decrementDomainTimeOnCore",
-            "decrementDomainTimeOnCore_activeDomainOnCore_ne",
+            "decrementDomainTimeOnCore_activeDomainOnCore",
             "decrementDomainTimeOnCore_decrements",
+            "decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne",
             "decrementDomainTimeOnCore_preserves_currentThreadValidOnCore",
+            "decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore",
             "decrementDomainTimeOnCore_preserves_queueCurrentConsistentOnCore",
             "decrementDomainTimeOnCore_preserves_runQueueOnCoreWellFormed",
             "decrementDomainTimeOnCore_preserves_runnableThreadsAreTCBsOnCore",
-            "decrementDomainTimeOnCore_rotates",
-            "decrementDomainTimeOnCore_singleDomain_noop",
             "object_lt_replenishQueue",
             "perCoreTimerTickEntry",
             "perCoreTimerTickEntry_returns_unit_marker",
@@ -124251,6 +124275,7 @@
             "scheduleDomainOnCore_decrements",
             "scheduleDomainOnCore_preserves_objects_invExt",
             "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore",
             "scheduleEffectiveOnCore_establishes_currentThreadValidOnCore",
             "scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore",
             "scheduleEffectiveOnCore_getTcb",
@@ -124294,17 +124319,17 @@
             "timerTickOnCore_eq_prepared",
             "timerTickOnCore_idle",
             "timerTickOnCore_preempts_local",
+            "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore",
             "timerTickOnCore_preserves_currentThreadValidOnCore",
             "timerTickOnCore_preserves_objects_invExt",
             "timerTickOnCore_preserves_queueCurrentConsistentOnCore",
-            "timerTickOnCore_preserves_runQueueOnCoreWellFormed",
-            "timerTickOnCore_rotates_domain"
+            "timerTickOnCore_preserves_runQueueOnCoreWellFormed"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:140>",
-          "line": 140,
+          "name": "<anonymous:example:143>",
+          "line": 143,
           "called": [
             "CoreId",
             "SgiKind",
@@ -124318,8 +124343,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:146>",
-          "line": 146,
+          "name": "<anonymous:example:149>",
+          "line": 149,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -124338,8 +124363,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:159>",
-          "line": 159,
+          "name": "<anonymous:example:162>",
+          "line": 162,
           "called": [
             "CoreId",
             "SystemState",
@@ -124356,29 +124381,38 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:168>",
-          "line": 168,
+          "name": "<anonymous:example:173>",
+          "line": 173,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
-            "SgiKind",
             "SystemState",
             "activeDomainOnCore",
-            "currentOnCore",
             "domainScheduleIndexOnCore",
-            "domainTimeRemainingOnCore",
             "length",
-            "none",
-            "timerTickOnCore",
-            "timerTickOnCorePreDomain",
-            "timerTickOnCorePrepared",
-            "timerTickOnCore_rotates_domain"
+            "switchDomainOnCore",
+            "switchDomainOnCore_rotates"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:181>",
-          "line": 181,
+          "name": "<anonymous:example:184>",
+          "line": 184,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "currentThreadInActiveDomainOnCore",
+            "invExt",
+            "timerTickOnCore",
+            "timerTickOnCorePrepared",
+            "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:192>",
+          "line": 192,
           "called": [
             "CoreId",
             "SgiKind",
@@ -124390,8 +124424,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:187>",
-          "line": 187,
+          "name": "<anonymous:example:198>",
+          "line": 198,
           "called": [
             "CoreId",
             "ReplenishQueueLockId",
@@ -124401,8 +124435,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:194>",
-          "line": 194,
+          "name": "<anonymous:example:205>",
+          "line": 205,
           "called": [
             "CoreId",
             "SgiKind",
@@ -124415,8 +124449,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
+          "name": "<anonymous:example:214>",
+          "line": 214,
           "called": [
             "CoreId",
             "SgiKind",
@@ -124433,8 +124467,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
+          "name": "<anonymous:example:227>",
+          "line": 227,
           "called": [
             "CoreId",
             "SystemState",
@@ -124447,7 +124481,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 227,
+          "line": 238,
           "called": [
             "TCB",
             "ofNat"
@@ -124456,7 +124490,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 232,
+          "line": 243,
           "called": [
             "CoreId"
           ]
@@ -124464,7 +124498,7 @@
         {
           "kind": "def",
           "name": "mkUnboundTcb",
-          "line": 235,
+          "line": 246,
           "called": [
             "TCB",
             "mkTcb"
@@ -124473,7 +124507,7 @@
         {
           "kind": "def",
           "name": "stIdle",
-          "line": 240,
+          "line": 251,
           "called": [
             "SystemState",
             "build"
@@ -124482,7 +124516,7 @@
         {
           "kind": "def",
           "name": "dom0",
-          "line": 243,
+          "line": 254,
           "called": [
             "DomainScheduleEntry",
             "length"
@@ -124491,7 +124525,7 @@
         {
           "kind": "def",
           "name": "dom1",
-          "line": 244,
+          "line": 255,
           "called": [
             "DomainScheduleEntry",
             "length"
@@ -124500,7 +124534,7 @@
         {
           "kind": "def",
           "name": "stDomain",
-          "line": 248,
+          "line": 259,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -124513,7 +124547,7 @@
         {
           "kind": "def",
           "name": "budgetPreempts",
-          "line": 253,
+          "line": 264,
           "called": [
             "CoreId",
             "SystemState",
@@ -124525,7 +124559,7 @@
         {
           "kind": "def",
           "name": "tickOk",
-          "line": 258,
+          "line": 269,
           "called": [
             "CoreId",
             "SystemState",
@@ -124535,7 +124569,7 @@
         {
           "kind": "def",
           "name": "tickMachineTimer",
-          "line": 263,
+          "line": 274,
           "called": [
             "CoreId",
             "SystemState",
@@ -124546,7 +124580,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 268,
+          "line": 279,
           "called": [
             "throw"
           ]
@@ -124554,7 +124588,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 277,
+          "line": 288,
           "called": [
             "all",
             "assertBool",
@@ -124568,7 +124602,7 @@
         {
           "kind": "def",
           "name": "runWcrtChecks",
-          "line": 293,
+          "line": 304,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -124581,7 +124615,7 @@
         {
           "kind": "def",
           "name": "runDomainDecrementChecks",
-          "line": 301,
+          "line": 312,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -124594,7 +124628,7 @@
         {
           "kind": "def",
           "name": "runDomainRotateChecks",
-          "line": 313,
+          "line": 326,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -124603,13 +124637,14 @@
             "decrementDomainTimeOnCore",
             "domainScheduleIndexOnCore",
             "domainTimeRemainingOnCore",
-            "stDomain"
+            "stDomain",
+            "switchDomainOnCore"
           ]
         },
         {
           "kind": "def",
           "name": "runBudgetPreemptChecks",
-          "line": 329,
+          "line": 353,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -124624,7 +124659,7 @@
         {
           "kind": "def",
           "name": "runIdleTickChecks",
-          "line": 349,
+          "line": 373,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -124642,7 +124677,7 @@
         {
           "kind": "def",
           "name": "runReplenishChecks",
-          "line": 367,
+          "line": 391,
           "called": [
             "SchedContextId",
             "assertBool",
@@ -124661,7 +124696,7 @@
         {
           "kind": "def",
           "name": "runEntrySeamChecks",
-          "line": 384,
+          "line": 408,
           "called": [
             "assertBool",
             "perCoreTimerTickEntry"
@@ -124670,7 +124705,7 @@
         {
           "kind": "def",
           "name": "stSingleDomain",
-          "line": 392,
+          "line": 416,
           "called": [
             "SystemState",
             "build"
@@ -124679,7 +124714,7 @@
         {
           "kind": "def",
           "name": "runDomainRedispatchChecks",
-          "line": 398,
+          "line": 422,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -124697,7 +124732,7 @@
         {
           "kind": "def",
           "name": "runAll",
-          "line": 427,
+          "line": 451,
           "called": [
             "runBudgetPreemptChecks",
             "runDomainDecrementChecks",
@@ -124713,7 +124748,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 442,
+          "line": 466,
           "called": [
             "runAll"
           ]

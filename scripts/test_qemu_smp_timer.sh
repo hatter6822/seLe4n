@@ -8,7 +8,7 @@
 # WS-SM SM5.D (plan §6 Tier-4) — Per-core timer-tick boot test.
 #
 # Boots QEMU `-smp 4` with seLe4n and exercises the per-core ARM Generic Timer:
-# each core's CNTV fires independently, its ISR (`timer::per_core_timer_tick_isr`)
+# each core's CNTP fires independently, its ISR (`timer::per_core_timer_tick_isr`)
 # records the per-core tick, re-arms the per-core comparator, and drives the Lean
 # per-core tick (`lean_per_core_timer_tick` → `perCoreTimerTickEntry`, SM5.D.1).
 # The runtime witness for SM5.D's defining SMP property: every core advances its
@@ -19,8 +19,10 @@
 #   * `timerTickOnCore_advances_per_core` — the tick advances core c's local
 #     accounting WITHOUT advancing the global `machine.timer` (SM5.D.2 headline:
 #     the global tick counter is primary-owned, mirroring the Rust HAL TICK_COUNT).
-#   * `timerTickOnCore_rotates_domain` — a domain-boundary tick rotates core c's
-#     active domain to the next schedule entry (SM5.D.6).
+#   * `switchDomainOnCore_rotates` — the separate atomic domain transition rotates
+#     core c's active domain to the next schedule entry (SM5.D.6; audit-pass-2: the
+#     tick itself does NOT rotate, and `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore`
+#     proves the budget-only tick keeps the running thread in its domain).
 #   * `timerTickOnCore_preempts_local` — budget / time-slice exhaustion re-selects
 #     and dispatches core c's highest-priority budget-eligible thread (SM5.D.5).
 #   * `cbsReplenish_can_wake_remote_core` — a CBS replenishment whose refilled
@@ -43,7 +45,7 @@
 #
 # At v0.31.41 (this script's landing) `perCoreTimerTickEntry` is a deliberate
 # `pure ()` placeholder; the per-core scheduler-tick wiring that lets a real
-# core's CNTV advance live per-core state lands at SM5.I.  This script therefore
+# core's CNTP advance live per-core state lands at SM5.I.  This script therefore
 # SKIPs with a documentation banner until that wiring exists.
 #
 # Skip / pass / fail conditions:
@@ -98,7 +100,8 @@ if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*per-core-timer";
   echo "          tick correctness guarantee is established FORMALLY (and for ALL"
   echo "          executions) by:"
   echo "            timerTickOnCore_advances_per_core      (no global advance; D.2)"
-  echo "            timerTickOnCore_rotates_domain         (domain rotation; D.6)"
+  echo "            switchDomainOnCore_rotates             (domain rotation; D.6)"
+  echo "            timerTickOnCore_preserves_currentThreadInActiveDomainOnCore (D.6 capstone)"
   echo "            timerTickOnCore_preempts_local         (budget preempt; D.5)"
   echo "            cbsReplenish_can_wake_remote_core      (cross-core wake; D.4)"
   echo "            timerTickOnCore_preserves_currentThreadValidOnCore (B1; §7)"
@@ -106,7 +109,7 @@ if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*per-core-timer";
   echo ""
   echo "  When wired (SM5.I), this script will:"
   echo "    1. Boot QEMU virt -smp 4."
-  echo "    2. Let each core's CNTV fire and run timerTickOnCore locally."
+  echo "    2. Let each core's CNTP fire and run timerTickOnCore locally."
   echo "    3. Assert the global monotonic timer is advanced by ONE authority"
   echo "       (no per-core double-advance)."
   echo "    4. Assert '[smp-test] per-core-timer: cores 0-3 ticked locally'."

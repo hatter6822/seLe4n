@@ -12,7 +12,7 @@ import SeLe4n.Platform.FFI
 /-!
 # WS-SM SM5.D.1 — Per-core timer-tick kernel entry
 
-This module provides the Lean-side entry point that the Rust HAL's per-core CNTV
+This module provides the Lean-side entry point that the Rust HAL's per-core CNTP
 timer ISR (`timer::per_core_timer_tick_isr`, see `rust/sele4n-hal/src/timer.rs`)
 calls into on each per-core timer interrupt, after recording the per-core tick and
 re-arming the per-core comparator.
@@ -54,7 +54,7 @@ per-core scheduler-tick driver lands.
 namespace SeLe4n.Kernel
 
 /-- **WS-SM SM5.D.1**: the per-core timer-tick kernel entry.  The C-callable seam
-(`@[export lean_per_core_timer_tick]`) the Rust per-core CNTV ISR
+(`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP ISR
 (`timer::per_core_timer_tick_isr`) invokes on each per-core timer interrupt.
 
 At SM5.D a deliberate `pure ()` placeholder (see the module docstring) — the pure

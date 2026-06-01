@@ -166,7 +166,7 @@ theorem wakeThread_lossless
 
 ### 3.4 Per-core timer tick
 
-Each core has its own ARM Generic Timer (CNTV) firing locally.
+Each core has its own ARM Generic Timer (CNTP) firing locally.
 On each tick, the per-core handler advances `domainTimeRemaining`,
 processes CBS replenishment for SchedContexts bound to this core,
 and emits preemption if a higher-priority thread becomes runnable.
@@ -430,7 +430,7 @@ similar to SM0/SM1 patterns.)
 
 | Sub | Description | Est |
 |-----|-------------|-----|
-| SM5.D.1 | Per-core CNTV timer ISR | M |
+| SM5.D.1 | Per-core CNTP timer ISR | M |
 | SM5.D.2 | `timerTickOnCore (s, c)` body | L |
 | SM5.D.3 | Lock-set per tick | M |
 | SM5.D.4 | Cross-core CBS replenish wakes remote | L |
@@ -481,6 +481,23 @@ similar to SM0/SM1 patterns.)
 > (4) **D4** `scripts/test_qemu_smp_timer.sh` tier-4 SKIP-stub.  C1 (full-path
 > `machine.timer`) folds into the same SM5.F gap.  All axiom-clean; Tier 0–3
 > green; partition gate 48 staged-only; trace byte-identical.
+>
+> **WS-SM SM5.D audit-pass-2 LANDED at v0.31.43** (deep code-first audit; PR #809).
+> **CRITICAL FIX**: the pre-fix `timerTickOnCore` folded an in-tick domain *rotation*
+> (`decrementDomainTimeOnCore`) into the tick **without** the coupled re-dispatch,
+> breaking `currentThreadInActiveDomain` on multi-domain configs (the running thread's
+> domain ≠ the rotated `activeDomainOnCore`).  This diverged from the single-core model
+> (`timerTick` / `timerTickWithBudget` never touch domain time; rotation is the
+> *atomic* `scheduleDomain` = `switchDomain` + `schedule`).  Fix: `timerTickOnCore` is
+> now a **pure budget tick**; the §3.4 pseudocode above (which showed
+> `decrementDomainTimeOnCore` in the tick) is superseded — per-core rotation is the
+> separate atomic `scheduleDomainOnCore`.  `decrementDomainTimeOnCore` is the pure
+> non-boundary decrement, wired into `scheduleDomainOnCore`'s `else`-branch.  Capstone:
+> `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` *proves* the fix.
+> Rust LOW findings fixed: the per-core timer is **CNTP** (EL1 physical, PPI 30) not
+> "CNTV"; `per_core_timer_tick_isr` hw-only `debug_assert_eq!` on `core_id`;
+> `reprogram_timer` `wrapping_add`.  Axiom-clean; `Sm5DInventory` 100 entries; Tier
+> 0+1+2 green (722 Rust HAL tests, zero clippy); trace byte-identical.
 
 ### SM5.E — Per-core idle threads (3 PRs, 6 sub-tasks)
 
@@ -618,7 +635,7 @@ similar to SM0/SM1 patterns.)
 | `wakeThread_lossless` proof has subtle case | MED | HIGH | Eventually-runnable property is structural |
 | Per-core PIP introduces cycles | LOW | CRIT | `blockingAcyclic_perCore` preserved |
 | SchedContext migration races | LOW | HIGH | Migration happens under lock-set; serializable |
-| Per-core timer skew | LOW | MED | Each core has its own CNTV; firmware sync |
+| Per-core timer skew | LOW | MED | Each core has its own CNTP; firmware sync |
 | Idle thread starvation | LOW | LOW | Idle priority 0; never starves higher-pri |
 | WCRT bound too tight in practice | MED | LOW | Empirical measurement on RPi5 |
 

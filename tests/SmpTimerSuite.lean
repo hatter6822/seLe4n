@@ -57,11 +57,12 @@ open SeLe4n.Testing
 #check @timerTickOnCoreLockSet_pairwise_le
 #check @timerTickOnCoreLockSet_size_le_maxLockSetSize
 
--- SM5.D.6 domain rotation.
+-- SM5.D.6 domain accounting (audit-pass-2: pure non-boundary decrement; rotation
+-- is the separate atomic scheduleDomainOnCore).
 #check @decrementDomainTimeOnCore_decrements
-#check @decrementDomainTimeOnCore_rotates
-#check @decrementDomainTimeOnCore_singleDomain_noop
-#check @decrementDomainTimeOnCore_activeDomainOnCore_ne
+#check @decrementDomainTimeOnCore_activeDomainOnCore
+#check @decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne
+#check @decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore
 
 -- SM5.D.4 CBS replenishment + cross-core wake.
 #check @cbsReplenish_can_wake_remote_core
@@ -85,9 +86,11 @@ open SeLe4n.Testing
 #check @timerTickOnCore_idle
 #check @timerTickOnCore_advances_per_core
 #check @timerTickOnCore_clears_lastTimeoutErrors
-#check @timerTickOnCore_rotates_domain
 #check @timerTickOnCore_preempts_local
 #check @timerTickOnCore_preserves_objects_invExt
+-- audit-pass-2 capstone: the budget-only tick preserves currentThreadInActiveDomain.
+#check @timerTickOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore
 #check @timerTickOnCore_eq_prepared
 #check @timerTickOnCorePrepared
 #check @timerTickOnCorePreDomain
@@ -164,18 +167,26 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st3
     timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2) :=
   timerTickOnCore_preempts_local st c tid tcb st3 st' hCur hTcb hBud hSched
 
-/-- SM5.D.6 / plan §6.1: the tick rotates core `c`'s active domain. -/
+/-- SM5.D.6 (audit-pass-2): domain rotation is the separate atomic `scheduleDomainOnCore`
+(via `switchDomainOnCore`), NOT the tick — so a running thread never outlives its
+domain.  `switchDomainOnCore_rotates` is the rotation witness. -/
 example (st : SystemState) (c : CoreId) (entry : DomainScheduleEntry) (st' : SystemState)
-    (sgis : List (CoreId × SgiKind))
-    (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = none)
-    (hStep : timerTickOnCore st c = .ok (st', sgis))
-    (hExpired : (timerTickOnCorePreDomain st c).scheduler.domainTimeRemainingOnCore c ≤ 1)
-    (hSched : (timerTickOnCorePreDomain st c).scheduler.domainSchedule ≠ [])
-    (hEntry : (timerTickOnCorePreDomain st c).scheduler.domainSchedule[
-        ((timerTickOnCorePreDomain st c).scheduler.domainScheduleIndexOnCore c + 1)
-          % (timerTickOnCorePreDomain st c).scheduler.domainSchedule.length]? = some entry) :
+    (hLookup : st.scheduler.domainSchedule[((st.scheduler.domainScheduleIndexOnCore c) + 1) %
+        st.scheduler.domainSchedule.length]? = some entry)
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hStep : switchDomainOnCore st c = .ok st') :
     st'.scheduler.activeDomainOnCore c = DomainScheduleEntry.domain entry :=
-  timerTickOnCore_rotates_domain st c entry st' sgis hCur hStep hExpired hSched hEntry
+  switchDomainOnCore_rotates st c st' entry hLookup hSched hStep
+
+/-- SM5.D.6 (audit-pass-2 capstone): the per-core timer tick PRESERVES
+`currentThreadInActiveDomainOnCore` (it does no in-tick rotation), given the
+replenishment preserves it. -/
+example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hInv : st.objects.invExt)
+    (hPrepDom : currentThreadInActiveDomainOnCore (timerTickOnCorePrepared st c).1 c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    currentThreadInActiveDomainOnCore st' c :=
+  timerTickOnCore_preserves_currentThreadInActiveDomainOnCore st c st' sgis hInv hPrepDom hStep
 
 /-- SM5.D.2 (preservation): the tick preserves the object-store invariant. -/
 example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId × SgiKind))
@@ -244,7 +255,7 @@ private def dom0 : DomainScheduleEntry := { domain := ⟨0⟩, length := 5 }
 private def dom1 : DomainScheduleEntry := { domain := ⟨1⟩, length := 3 }
 
 /-- A state on the boot core's last domain tick (`domainTimeRemaining = 1`) with a
-two-entry domain schedule, so `decrementDomainTimeOnCore` rotates to `dom1`. -/
+two-entry domain schedule, so `switchDomainOnCore` rotates to `dom1`. -/
 private def stDomain : SystemState :=
   let st := BootstrapBuilder.empty.build
   { st with scheduler :=
@@ -309,21 +320,34 @@ private def runDomainDecrementChecks : IO Unit := do
     ((decrementDomainTimeOnCore stIdle bootCoreId).scheduler.activeDomainOnCore bootCoreId
       == stIdle.scheduler.activeDomainOnCore bootCoreId)
 
-/-- §3.4 SM5.D.6: an expired domain time rotates to the next schedule entry. -/
+/-- §3.4 SM5.D.6 (audit-pass-2): an expired domain time rotates to the next schedule
+entry — via the **atomic** `switchDomainOnCore` (rotation + re-dispatch), NOT the
+timer tick.  (`decrementDomainTimeOnCore` is now the pure non-boundary decrement.) -/
 private def runDomainRotateChecks : IO Unit := do
-  IO.println "--- §3.4 SM5.D.6 domain rotation ---"
+  IO.println "--- §3.4 SM5.D.6 domain rotation (switchDomainOnCore) ---"
   assertBool "stDomain boot-core domain time is at its last tick (1)"
     (stDomain.scheduler.domainTimeRemainingOnCore bootCoreId == 1)
-  assertBool "expired domain rotates active domain to dom1 (index 0 → 1)"
-    ((decrementDomainTimeOnCore stDomain bootCoreId).scheduler.activeDomainOnCore bootCoreId == dom1.domain)
+  assertBool "switchDomainOnCore rotates active domain to dom1 (index 0 → 1)"
+    (match switchDomainOnCore stDomain bootCoreId with
+     | .ok st' => st'.scheduler.activeDomainOnCore bootCoreId == dom1.domain
+     | .error _ => false)
   assertBool "rotation resets domain time to dom1.length (3)"
-    ((decrementDomainTimeOnCore stDomain bootCoreId).scheduler.domainTimeRemainingOnCore bootCoreId == 3)
+    (match switchDomainOnCore stDomain bootCoreId with
+     | .ok st' => st'.scheduler.domainTimeRemainingOnCore bootCoreId == 3
+     | .error _ => false)
   assertBool "rotation advances the schedule index to 1"
-    ((decrementDomainTimeOnCore stDomain bootCoreId).scheduler.domainScheduleIndexOnCore bootCoreId == 1)
+    (match switchDomainOnCore stDomain bootCoreId with
+     | .ok st' => st'.scheduler.domainScheduleIndexOnCore bootCoreId == 1
+     | .error _ => false)
   -- a sibling core (core 1) is unaffected by the boot core's rotation.
   assertBool "domain rotation is core-local (core 1 active domain unchanged)"
-    ((decrementDomainTimeOnCore stDomain bootCoreId).scheduler.activeDomainOnCore core1
-      == stDomain.scheduler.activeDomainOnCore core1)
+    (match switchDomainOnCore stDomain bootCoreId with
+     | .ok st' => st'.scheduler.activeDomainOnCore core1 == stDomain.scheduler.activeDomainOnCore core1
+     | .error _ => false)
+  -- audit-pass-2: the pure decrement does NOT rotate (the in-tick domain step was retired).
+  assertBool "decrementDomainTimeOnCore does NOT rotate (active domain unchanged)"
+    ((decrementDomainTimeOnCore stDomain bootCoreId).scheduler.activeDomainOnCore bootCoreId
+      == stDomain.scheduler.activeDomainOnCore bootCoreId)
 
 /-- §3.5 SM5.D.5: per-core budget-tick time-slice preemption. -/
 private def runBudgetPreemptChecks : IO Unit := do

@@ -131,19 +131,13 @@ def sm5DTheorems : List Sm5DTheorem :=
     s5dt! "SchedLockId.runQueue_lt_replenishQueue: SM5.D.3/§4.4 run-queue lock before replenish-queue lock"
       SchedLockId.runQueue_lt_replenishQueue .lockSet,
     -- ── .domain ──
-    s5dt! "decrementDomainTimeOnCore_activeDomainOnCore_ne: cross-core active-domain frame"
-      decrementDomainTimeOnCore_activeDomainOnCore_ne .domain,
-    s5dt! "decrementDomainTimeOnCore_decrements: in-domain tick decrements domain time"
+    s5dt! "decrementDomainTimeOnCore_decrements: non-boundary domain-time decrement (pure, no rotation)"
       decrementDomainTimeOnCore_decrements .domain,
-    s5dt! "decrementDomainTimeOnCore_preserves_activeDomain_of_not_expired: active domain unchanged when not at boundary"
-      decrementDomainTimeOnCore_preserves_activeDomain_of_not_expired .domain,
-    s5dt! "decrementDomainTimeOnCore_singleDomain_noop: single-domain mode is a no-op"
-      decrementDomainTimeOnCore_singleDomain_noop .domain,
-    s5dt! "decrementDomainTimeOnCore_rotates: boundary tick rotates the active domain"
-      decrementDomainTimeOnCore_rotates .domain,
-    s5dt! "decrementDomainTimeOnCore_rotates_nonempty: boundary tick rotates (existential form)"
-      decrementDomainTimeOnCore_rotates_nonempty .domain,
-    s5dt! "decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore: B3 domain-time positivity preserved"
+    s5dt! "decrementDomainTimeOnCore_activeDomainOnCore: the pure decrement never rotates the active domain"
+      decrementDomainTimeOnCore_activeDomainOnCore .domain,
+    s5dt! "decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne: cross-core domain-time frame"
+      decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne .domain,
+    s5dt! "decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore: B3 domain-time positivity preserved (under >1)"
       decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore .domain,
     s5dt! "switchDomainOnCore_singleDomain_noop: SM5.D.6 full domain switch no-op (empty schedule)"
       switchDomainOnCore_singleDomain_noop .domain,
@@ -224,8 +218,6 @@ def sm5DTheorems : List Sm5DTheorem :=
       timerTickOnCore_advances_per_core .tick,
     s5dt! "timerTickOnCore_clears_lastTimeoutErrors: SM5.D.9 tick clears lastTimeoutErrors"
       timerTickOnCore_clears_lastTimeoutErrors .tick,
-    s5dt! "timerTickOnCore_rotates_domain: SM5.D.6 headline: tick rotates the active domain"
-      timerTickOnCore_rotates_domain .tick,
     s5dt! "timerTickOnCore_preempts_local: SM5.D.5 headline: budget exhaustion re-dispatches locally"
       timerTickOnCore_preempts_local .tick,
     s5dt! "timerTickOnCore_preserves_objects_invExt: SM5.D.2 tick preserves object-store invariant"
@@ -283,6 +275,16 @@ def sm5DTheorems : List Sm5DTheorem :=
       timerTickOnCore_preserves_runQueueOnCoreWellFormed .preservation,
     s5dt! "timerTickOnCore_preserves_queueCurrentConsistentOnCore: the tick preserves dequeue-on-dispatch consistency (parameterized)"
       timerTickOnCore_preserves_queueCurrentConsistentOnCore .preservation,
+    s5dt! "saveOutgoingContextOnCore_getTcb?_domain: context save preserves a thread's domain"
+      saveOutgoingContextOnCore_getTcb?_domain .preservation,
+    s5dt! "scheduleEffectiveOnCore_getTcb?_domain: reschedule preserves a thread's domain"
+      scheduleEffectiveOnCore_getTcb?_domain .preservation,
+    s5dt! "scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore: reschedule dispatches in the active domain"
+      scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore .preservation,
+    s5dt! "timerTickBudgetOnCore_notPreempted_getTcb?_domain: not-preempted budget tick preserves the charged thread's domain"
+      timerTickBudgetOnCore_notPreempted_getTcb?_domain .preservation,
+    s5dt! "timerTickOnCore_preserves_currentThreadInActiveDomainOnCore: audit-pass-2 capstone — the tick keeps current in its active domain"
+      timerTickOnCore_preserves_currentThreadInActiveDomainOnCore .preservation,
     -- ── .decidability ──
     s5dt! "timerTickOnCoreSucceeds: SM5.D.8 tick-succeeds decidable predicate"
       timerTickOnCoreSucceeds .decidability,
@@ -295,16 +297,18 @@ def sm5DTheorems : List Sm5DTheorem :=
     s5dt! "perCoreTimerTickEntry_returns_unit_marker: SM5.D.1 entry-seam placeholder marker"
       perCoreTimerTickEntry_returns_unit_marker .decidability  ]
 
-/-- WS-SM SM5.D: the inventory has 99 substantive entries.  A regression that adds
-a new SM5.D theorem without registering it fails this count witness at the Tier-3
-surface check. -/
-theorem sm5DTheorems_count : sm5DTheorems.length = 99 := by decide
+/-- WS-SM SM5.D: the inventory has 100 substantive entries (audit-pass-2: removed
+5 obsolete in-tick domain-rotation theorems + the retired `timerTickOnCore_rotates_domain`;
+added 2 pure-decrement frames + 5 `currentThreadInActiveDomain` preservation theorems).
+A regression that adds a new SM5.D theorem without registering it fails this count
+witness at the Tier-3 surface check. -/
+theorem sm5DTheorems_count : sm5DTheorems.length = 100 := by decide
 
 theorem sm5DTheorems_lockSet_count :
     (sm5DTheorems.filter (fun t => t.category == .lockSet)).length = 20 := by decide
 
 theorem sm5DTheorems_domain_count :
-    (sm5DTheorems.filter (fun t => t.category == .domain)).length = 13 := by decide
+    (sm5DTheorems.filter (fun t => t.category == .domain)).length = 10 := by decide
 
 theorem sm5DTheorems_replenish_count :
     (sm5DTheorems.filter (fun t => t.category == .replenish)).length = 10 := by decide
@@ -313,10 +317,10 @@ theorem sm5DTheorems_budget_count :
     (sm5DTheorems.filter (fun t => t.category == .budget)).length = 12 := by decide
 
 theorem sm5DTheorems_tick_count :
-    (sm5DTheorems.filter (fun t => t.category == .tick)).length = 19 := by decide
+    (sm5DTheorems.filter (fun t => t.category == .tick)).length = 18 := by decide
 
 theorem sm5DTheorems_preservation_count :
-    (sm5DTheorems.filter (fun t => t.category == .preservation)).length = 20 := by decide
+    (sm5DTheorems.filter (fun t => t.category == .preservation)).length = 25 := by decide
 
 theorem sm5DTheorems_decidability_count :
     (sm5DTheorems.filter (fun t => t.category == .decidability)).length = 5 := by decide

@@ -305,8 +305,12 @@ pub fn reprogram_timer() {
 
     // Counter-relative advancement: read current counter, add interval.
     // On non-aarch64, read_counter returns 0 and set_comparator is a no-op.
+    // `wrapping_add` is defense-in-depth: a u64 CNTPCT at 54 MHz cannot overflow
+    // within ~10,800 years, but the wrapping form has defined behaviour at every
+    // input (avoids a debug-build overflow panic at the boundary) — matching the
+    // crate's `wrapping_add` discipline elsewhere (e.g. `per_cpu_stats`).
     let now = read_counter();
-    set_comparator(now + interval);
+    set_comparator(now.wrapping_add(interval));
 }
 
 /// Increment the tick counter. Called from the timer interrupt handler.
@@ -327,14 +331,14 @@ pub fn get_tick_count() -> u64 {
 }
 
 // ============================================================================
-// WS-SM SM5.D.1 — Per-core CNTV timer ISR
+// WS-SM SM5.D.1 — Per-core CNTP timer ISR
 // ============================================================================
 
-/// WS-SM SM5.D.1: the per-core ARM Generic Timer (CNTV) interrupt service
+/// WS-SM SM5.D.1: the per-core ARM Generic Timer (CNTP) interrupt service
 /// routine — the seam that drives the verified Lean per-core scheduler timer
 /// tick (`Kernel.timerTickOnCore`, plan §3.4).
 ///
-/// Each core's CNTV fires **independently** (the comparator / control registers
+/// Each core's CNTP fires **independently** (the comparator / control registers
 /// are per-core, banked at the hardware level — see [`init_timer_secondary`]).
 /// On each tick of core `core_id` this routine:
 ///
@@ -353,7 +357,7 @@ pub fn get_tick_count() -> u64 {
 /// **Global-timer ownership.** This routine does **not** touch the primary-owned
 /// global `TICK_COUNT` (that is advanced once per global tick by the boot core
 /// via `ffi_timer_reprogram`), mirroring the Lean model where `timerTickOnCore`
-/// reads but never advances `machine.timer` — each core's CNTV is local, the
+/// reads but never advances `machine.timer` — each core's CNTP is local, the
 /// global monotonic count is owned by a single authority.  See the SM5.D section
 /// header of `SeLe4n/Kernel/Scheduler/Operations/Core.lean`.
 ///
@@ -361,6 +365,19 @@ pub fn get_tick_count() -> u64 {
 /// CPU-interface running-priority mask holds INTID 30 off until `PSTATE.I` clears
 /// on exception return, so the comparator re-arm cannot itself re-trigger.
 pub fn per_core_timer_tick_isr(core_id: u64) {
+    // Pin the consistency invariant the per-core stat recording relies on: step 1
+    // (`record_timer_tick`) selects the per-CPU slot by re-reading `TPIDR_EL1`, so
+    // the `core_id` argument MUST equal the executing core's id, else the tick is
+    // recorded to one slot while Lean is told about another.  On hardware both
+    // derive from the same boot-set `TPIDR_EL1`, so this never fires; the assert
+    // catches a future caller that passes a mismatched id.  hw-only: on the host
+    // `current_core_id_from_tpidr()` is a constant 0 (no real per-core TPIDR).
+    #[cfg(feature = "hw_target")]
+    debug_assert_eq!(
+        core_id,
+        crate::per_cpu::current_core_id_from_tpidr(),
+        "per_core_timer_tick_isr: core_id must match the executing core's TPIDR_EL1"
+    );
     // 1. Per-core tick accounting (SMP-localised diagnostic).
     let _ = crate::per_cpu_stats::record_timer_tick();
     // 2. Re-arm the per-core comparator for the next tick.
@@ -713,7 +730,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------------
-    // WS-SM SM5.D.1 — per-core CNTV timer ISR
+    // WS-SM SM5.D.1 — per-core CNTP timer ISR
     // ------------------------------------------------------------------------
 
     /// SM5.D.1: the per-core timer ISR is callable on the host (the

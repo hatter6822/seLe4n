@@ -1,3 +1,71 @@
+## v0.31.43 — WS-SM SM5.D audit-pass-2: domain-rotation faithfulness fix (currentThreadInActiveDomain) + CNTP doc/Rust hardening
+
+Deep code-first audit (not trusting docstrings) of the full SM5.D workstream.  The
+audit confirmed the SM5.D production transitions, the §4b/§7 theorems, and the Rust
+HAL ISR are sound and axiom-clean, with **one substantive correctness divergence**
+(plus three LOW Rust/doc findings), all fixed here.
+
+**CRITICAL FIX — `timerTickOnCore` no longer breaks `currentThreadInActiveDomain`.**
+The pre-audit-pass-2 tick folded an in-tick domain *rotation*
+(`decrementDomainTimeOnCore`, which advanced `activeDomainOnCore` on expiry) into
+the timer tick **without** the coupled re-dispatch.  On a multi-domain config, the
+not-preempted path then returned with `currentOnCore c = tid` whose `tcb.domain` was
+the *old* domain while `activeDomainOnCore c` was the *new* one — violating the
+maintained `currentThreadInActiveDomain` invariant (a temporal-isolation / domain-
+separation property).  This diverged from the single-core model, where **neither**
+`timerTick` nor `timerTickWithBudget` touches domain time: rotation lives only in the
+separate `scheduleDomain`, which *atomically* couples it with re-dispatch
+(`switchDomain` re-enqueues the outgoing thread, then `schedule` dispatches in the
+new domain).  (Not reachable on the single-domain RPi5 v1.0.0 target, where
+`domainSchedule = []` made the in-tick step a no-op — a latent multi-domain gap.)
+
+Fix (faithful to the single-core split): `timerTickOnCore` is now a **pure per-core
+budget tick** (SM5.D.9 clear → SM5.D.4 replenishment → SM5.D.5 budget/preemption),
+mirroring `timerTickWithBudget`.  Per-core domain rotation is the **separate, atomic**
+`scheduleDomainOnCore` (its boundary branch is `switchDomainOnCore` +
+`scheduleEffectiveOnCore`), exactly as the single-core run loop invokes
+`timerTickWithBudget` then `scheduleDomain`.  `decrementDomainTimeOnCore` is rewritten
+as the **pure non-boundary decrement** (no rotation) and wired into
+`scheduleDomainOnCore`'s `else`-branch (so it is not orphaned).  The retired in-tick
+`timerTickOnCore_rotates_domain` headline and the 5 obsolete in-tick rotation theorems
+are removed; `switchDomainOnCore_rotates` (§4b) is the rotation witness.
+
+**Capstone proof (§7f) — the fix is verified, not just asserted.** New theorems prove
+the budget-only tick *preserves* `currentThreadInActiveDomainOnCore`:
+`timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` (parameterized by the
+replenishment's domain-preservation, discharged on the clean path; the wake never
+touches `current`/domains), built on
+`scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore` (the dispatch
+checks `tcb.domain = activeDomain` before committing),
+`scheduleEffectiveOnCore_getTcb?_domain`, `saveOutgoingContextOnCore_getTcb?_domain`,
+and `timerTickBudgetOnCore_notPreempted_getTcb?_domain`.  The pre-fix tick could not
+satisfy this — the missing theorem was the tell.
+
+**Rust HAL findings (LOW), fixed:**
+- **Finding 3 (doc accuracy):** every SM5.D doc/comment called the per-core timer
+  "CNTV" (virtual), but the kernel runs at EL1 and the code consistently uses the
+  **CNTP** (EL1 physical) timer — `cntpct_el0` / `cntp_cval_el0` / `cntp_ctl_el0`,
+  PPI 30 (CNTV/virtual is PPI 27).  CNTP is the correct choice (CNTV is for EL2-hosted
+  guests); the prose is corrected to "CNTP" across all SM5.D files.
+- **Finding 1 (latent consistency):** `per_core_timer_tick_isr(core_id)` forwards
+  `core_id` to Lean but step 1's `record_timer_tick()` selects the per-CPU slot by
+  re-reading `TPIDR_EL1`.  Added a hw-only `debug_assert_eq!(core_id,
+  current_core_id_from_tpidr())` pinning the invariant (catches a future mismatched
+  caller; on hardware both derive from the same boot-set TPIDR).
+- **Finding 5 (defense-in-depth):** `reprogram_timer`'s `now + interval` →
+  `now.wrapping_add(interval)` (defined behaviour at the u64 boundary; unreachable in
+  ~10,800 years but matches the crate's `wrapping_add` discipline).
+
+**Verification:** every SM5.D theorem re-confirmed axiom-clean (`#print axioms`:
+`propext` / `Quot.sound` / `Classical.choice` only; zero `sorry` / `native_decide`);
+AK7 `RAW_LOOKUP_TID` unchanged (§7f routes through the `.get?` method form);
+`Sm5DInventory` updated to **100** entries (−5 obsolete rotation +2 pure-decrement
+frames +5 domain-preservation; domain 10 / tick 18 / preservation 25); `SmpTimerSuite`
++ tier-3 anchors updated; full Tier 0+1+2 smoke green (Lean build, 722 Rust HAL tests,
+zero clippy); trace fixture byte-identical (the tick has no single-core caller; the
+single-domain path is unchanged).  Items deferred past v1.0.0 with correctness impact:
+NONE.  Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.4 / §5 (SM5.D); PR #809.
+
 ## v0.31.42 — WS-SM SM5.D audit-pass-1: per-core invariant preservation + domain re-dispatch + theorem inventory
 
 Deep self-audit of the v0.31.41 SM5.D landing, closing the verification-completeness

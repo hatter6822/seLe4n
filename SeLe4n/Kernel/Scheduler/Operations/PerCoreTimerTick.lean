@@ -27,9 +27,9 @@ invariant suite will consume:
   over SM5.A's `SchedLockId` extended with the SM5.D.3 replenish-queue domain:
   object-store + run-queue + replenish-queue *write* locks, plan §3.4 / §4.4
   ascending order) + the WCRT-bounding size witness (SM5.D.7).
-* **§2 — SM5.D.6** per-core domain rotation: `decrementDomainTimeOnCore`
-  decrement / rotate / single-domain-noop + frame lemmas + the headline
-  `timerTickOnCore_rotates_domain`.
+* **§2 — SM5.D.6** per-core non-boundary domain decrement: `decrementDomainTimeOnCore`
+  (audit-pass-2: pure decrement, no rotation) + frame lemmas.  Domain *rotation* is
+  the separate atomic `scheduleDomainOnCore` / `switchDomainOnCore` (§4b).
 * **§3 — SM5.D.4** per-core CBS replenishment + cross-core wake:
   `processOneReplenishmentOnCore` / `processReplenishmentsDueOnCore` semantics +
   preservation + the headline `cbsReplenish_can_wake_remote_core`.
@@ -364,187 +364,83 @@ theorem timerTickOnCoreCompleteLockSet_size_le_maxLockSetSize (c : CoreId) :
   · rw [if_neg h]; simp only [List.length_cons, List.length_nil]; omega
 
 -- ============================================================================
--- §2  SM5.D.6 — Per-core domain rotation (`decrementDomainTimeOnCore`)
+-- §2  SM5.D.6 — Per-core non-boundary domain decrement (`decrementDomainTimeOnCore`)
+--
+--   Audit-pass-2: `decrementDomainTimeOnCore` is now a **pure** domain-time
+--   decrement (it writes only core `c`'s `domainTimeRemainingOnCore` slot, never
+--   the active domain) — the `else`-branch helper of `scheduleDomainOnCore`.
+--   Domain *rotation* + re-dispatch is `switchDomainOnCore` / `scheduleDomainOnCore`
+--   (§4b), kept atomic.  The timer tick does NOT call this (domain accounting is
+--   the separate `scheduleDomainOnCore`), so the tick can never leave a running
+--   thread outside its domain — the `currentThreadInActiveDomain` faithfulness fix.
 -- ============================================================================
 
-/-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` never touches the object store
-(both branches mutate only scheduler domain slots). -/
+/-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` never touches the object store. -/
 @[simp] theorem decrementDomainTimeOnCore_objects_eq (st : SystemState) (c : CoreId) :
-    (decrementDomainTimeOnCore st c).objects = st.objects := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split <;> rfl
-  · rfl
+    (decrementDomainTimeOnCore st c).objects = st.objects := rfl
 
 /-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` never touches the machine state
-(the per-core domain accounting reads but does not advance the global timer). -/
+(reads but does not advance the global timer). -/
 @[simp] theorem decrementDomainTimeOnCore_machine_eq (st : SystemState) (c : CoreId) :
-    (decrementDomainTimeOnCore st c).machine = st.machine := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split <;> rfl
-  · rfl
+    (decrementDomainTimeOnCore st c).machine = st.machine := rfl
 
 /-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` leaves every core's run queue
-unchanged — it writes only the domain slots, never the run-queue slot. -/
+unchanged — it writes only the domain-time slot. -/
 @[simp] theorem decrementDomainTimeOnCore_runQueueOnCore (st : SystemState) (c c' : CoreId) :
     (decrementDomainTimeOnCore st c).scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split <;> simp
-  · simp
+  simp [decrementDomainTimeOnCore]
 
 /-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` leaves every core's current thread
 unchanged. -/
 @[simp] theorem decrementDomainTimeOnCore_currentOnCore (st : SystemState) (c c' : CoreId) :
     (decrementDomainTimeOnCore st c).scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split <;> simp
-  · simp
+  simp [decrementDomainTimeOnCore]
 
 /-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` leaves every core's replenish queue
 unchanged. -/
 @[simp] theorem decrementDomainTimeOnCore_replenishQueueOnCore (st : SystemState) (c c' : CoreId) :
     (decrementDomainTimeOnCore st c).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split <;> simp
-  · simp
+  simp [decrementDomainTimeOnCore]
 
-/-- WS-SM SM5.D.6 (per-core independence): for a sibling core `c' ≠ c`,
-`decrementDomainTimeOnCore st c` leaves core `c'`'s active-domain slot
-unchanged — the domain rotation is core-`c`-local. -/
-theorem decrementDomainTimeOnCore_activeDomainOnCore_ne (st : SystemState) (c c' : CoreId)
-    (h : c ≠ c') :
+/-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` leaves **every** core's active
+domain unchanged — the pure decrement never rotates (rotation is
+`scheduleDomainOnCore`'s atomic boundary branch). -/
+@[simp] theorem decrementDomainTimeOnCore_activeDomainOnCore (st : SystemState) (c c' : CoreId) :
     (decrementDomainTimeOnCore st c).scheduler.activeDomainOnCore c'
       = st.scheduler.activeDomainOnCore c' := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split
-      · rfl
-      · simp [SchedulerState.setActiveDomainOnCore_activeDomainOnCore_ne _ c c' _ h,
-          SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore,
-          SchedulerState.setDomainScheduleIndexOnCore_activeDomainOnCore]
-  · simp [SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore]
+  simp [decrementDomainTimeOnCore, SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore]
 
-/-- WS-SM SM5.D.6: when core `c`'s domain has *not* reached its last tick
-(`domainTimeRemainingOnCore c > 1`), `decrementDomainTimeOnCore` decrements it by
-one — the common-case per-core domain accounting advance. -/
-theorem decrementDomainTimeOnCore_decrements (st : SystemState) (c : CoreId)
-    (h : 1 < st.scheduler.domainTimeRemainingOnCore c) :
+/-- WS-SM SM5.D.6: `decrementDomainTimeOnCore` decrements core `c`'s domain time by
+one (unconditionally — the pure non-boundary accounting advance; `scheduleDomainOnCore`
+invokes it only when `domainTimeRemainingOnCore c > 1`, so the result stays `≥ 1`). -/
+theorem decrementDomainTimeOnCore_decrements (st : SystemState) (c : CoreId) :
     (decrementDomainTimeOnCore st c).scheduler.domainTimeRemainingOnCore c
       = st.scheduler.domainTimeRemainingOnCore c - 1 := by
-  simp only [decrementDomainTimeOnCore]
-  rw [if_neg (by omega)]
-  simp
+  simp [decrementDomainTimeOnCore, SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
 
-/-- WS-SM SM5.D.6: when core `c`'s domain has *not* reached its last tick, the
-active domain is unchanged (only the time-remaining counter moves). -/
-theorem decrementDomainTimeOnCore_preserves_activeDomain_of_not_expired
-    (st : SystemState) (c : CoreId)
-    (h : 1 < st.scheduler.domainTimeRemainingOnCore c) :
-    (decrementDomainTimeOnCore st c).scheduler.activeDomainOnCore c
-      = st.scheduler.activeDomainOnCore c := by
-  simp only [decrementDomainTimeOnCore]
-  rw [if_neg (by omega)]
-  simp [SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore]
-
-/-- WS-SM SM5.D.6: in single-domain mode (`domainSchedule = []`), reaching the
-domain's last tick (`domainTimeRemainingOnCore c ≤ 1`) is a no-op — no rotation
-target exists, so the state is returned unchanged. -/
-theorem decrementDomainTimeOnCore_singleDomain_noop (st : SystemState) (c : CoreId)
-    (hSched : st.scheduler.domainSchedule = [])
-    (hExpired : st.scheduler.domainTimeRemainingOnCore c ≤ 1) :
-    decrementDomainTimeOnCore st c = st := by
-  simp only [decrementDomainTimeOnCore]
-  rw [if_pos hExpired, hSched]
-
-/-- WS-SM SM5.D.6 (the headline rotation theorem, plan §6.1
-`timerTickOnCore_rotates_domain`): when core `c`'s domain reaches its last tick
-(`domainTimeRemainingOnCore c ≤ 1`) and the (non-empty) domain schedule's next
-entry is `entry`, `decrementDomainTimeOnCore` rotates core `c`'s active domain to
-`entry`'s domain. -/
-theorem decrementDomainTimeOnCore_rotates (st : SystemState) (c : CoreId)
-    (entry : DomainScheduleEntry)
-    (hExpired : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
-    (hSched : st.scheduler.domainSchedule ≠ [])
-    (hEntry : st.scheduler.domainSchedule[((st.scheduler.domainScheduleIndexOnCore c) + 1)
-        % st.scheduler.domainSchedule.length]? = some entry) :
-    (decrementDomainTimeOnCore st c).scheduler.activeDomainOnCore c
-      = DomainScheduleEntry.domain entry := by
-  -- The equational `rw` (not `simp only`) keeps the `have nextIdx`, so `split`
-  -- targets the outer `match domainSchedule` correctly; `dsimp only` then
-  -- zeta-reduces the `have` so `rw [hEntry]` can fire on the inner match.
-  rw [decrementDomainTimeOnCore, if_pos hExpired]
-  split
-  · -- domainSchedule = [] : contradicts hSched
-    next heq => exact absurd heq hSched
-  · -- non-empty: reduce the inner `[nextIdx]?` match via hEntry
-    dsimp only
-    rw [hEntry]
-    simp [SchedulerState.setDomainScheduleIndexOnCore_activeDomainOnCore,
-      SchedulerState.setDomainTimeRemainingOnCore_activeDomainOnCore,
-      SchedulerState.setActiveDomainOnCore_activeDomainOnCore_self]
-
-/-- WS-SM SM5.D.6 (the C4 rotation form, lookup discharged): when core `c`'s domain
-reaches its last tick and the domain schedule is non-empty, the active domain
-rotates to *some* schedule entry's domain — the entry's existence (and
-schedule-membership) is derived internally from non-emptiness via
-`switchDomain_index_lookup_isSome`, so the caller need not supply the lookup.
-This is the clean SM5.D.6 rotation witness (the `hEntry`-parameterised
-`decrementDomainTimeOnCore_rotates` above is the precise form). -/
-theorem decrementDomainTimeOnCore_rotates_nonempty (st : SystemState) (c : CoreId)
-    (hExpired : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
-    (hSched : st.scheduler.domainSchedule ≠ []) :
-    ∃ entry, (decrementDomainTimeOnCore st c).scheduler.activeDomainOnCore c
-        = DomainScheduleEntry.domain entry ∧ entry ∈ st.scheduler.domainSchedule := by
-  have hsome := switchDomain_index_lookup_isSome st.scheduler.domainSchedule
-    (st.scheduler.domainScheduleIndexOnCore c) hSched
-  obtain ⟨entry, hentry⟩ := Option.isSome_iff_exists.mp hsome
-  exact ⟨entry, decrementDomainTimeOnCore_rotates st c entry hExpired hSched hentry,
-    List.mem_of_getElem? hentry⟩
+/-- WS-SM SM5.D.6 (per-core independence): for a sibling core `c' ≠ c`,
+`decrementDomainTimeOnCore st c` leaves core `c'`'s domain-time slot unchanged. -/
+theorem decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne (st : SystemState) (c c' : CoreId)
+    (h : c ≠ c') :
+    (decrementDomainTimeOnCore st c).scheduler.domainTimeRemainingOnCore c'
+      = st.scheduler.domainTimeRemainingOnCore c' := by
+  simp [decrementDomainTimeOnCore,
+    SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_ne _ c c' _ h]
 
 /-- WS-SM SM5.D.6 / B3 (preservation): `decrementDomainTimeOnCore` preserves
-`domainTimeRemainingPositiveOnCore` — under `domainScheduleEntriesPositive` (every
-schedule entry has positive length).  The decrement branch leaves
-`old − 1 ≥ 1 > 0` (it fires only when `old > 1`); the rotation branch resets to the
-next entry's length (`> 0` by `domainScheduleEntriesPositive`); the single-domain /
-unreachable branches are no-ops.  So the per-core timer never zeroes the domain
-timer — the SM5.D.6 conjunct of `schedulerInvariant_perCore`. -/
+`domainTimeRemainingPositiveOnCore` when core `c`'s domain has more than one tick
+left (`domainTimeRemainingOnCore c > 1`) — the decrement leaves `old − 1 ≥ 1 > 0`.
+`scheduleDomainOnCore` invokes it exactly under that guard, so the per-core domain
+timer is never zeroed by the non-boundary path (rotation resets it to a positive
+entry length). -/
 theorem decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore
     (st : SystemState) (c : CoreId)
-    (hPos : domainTimeRemainingPositiveOnCore st c)
-    (hEntries : domainScheduleEntriesPositive st) :
+    (h : 1 < st.scheduler.domainTimeRemainingOnCore c) :
     domainTimeRemainingPositiveOnCore (decrementDomainTimeOnCore st c) c := by
-  unfold domainTimeRemainingPositiveOnCore at *
-  unfold domainScheduleEntriesPositive at hEntries
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · exact hPos
-    · split
-      · exact hPos
-      · next entry hlookup =>
-          simp only [SchedulerState.setDomainScheduleIndexOnCore_domainTimeRemainingOnCore,
-            SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
-          exact hEntries entry (List.mem_of_getElem? hlookup)
-  · next hgt =>
-      simp only [SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
-      omega
+  unfold domainTimeRemainingPositiveOnCore
+  rw [decrementDomainTimeOnCore_decrements]
+  omega
 
 -- ============================================================================
 -- §3  SM5.D.4 — Per-core CBS replenishment + cross-core wake
@@ -1025,10 +921,9 @@ theorem scheduleDomainOnCore_decrements (st : SystemState) (c : CoreId)
     (hle : st.scheduler.domainTimeRemainingOnCore c > 1) :
     ∃ st', scheduleDomainOnCore st c = .ok st' ∧
       st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c - 1 := by
-  let dtr := st.scheduler.domainTimeRemainingOnCore c - 1
-  refine ⟨{ st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }, ?_, ?_⟩
+  refine ⟨decrementDomainTimeOnCore st c, ?_, ?_⟩
   · unfold scheduleDomainOnCore; rw [if_neg (by omega)]
-  · simp [dtr, SchedulerState.setDomainTimeRemainingOnCore_domainTimeRemainingOnCore_self]
+  · exact decrementDomainTimeOnCore_decrements st c
 
 /-- WS-SM SM5.D.6 (preservation): `scheduleDomainOnCore` preserves the RobinHood
 object-store invariant.  On a domain boundary it composes `switchDomainOnCore`
@@ -1157,12 +1052,7 @@ theorem processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq (st : SystemSt
 theorem decrementDomainTimeOnCore_lastTimeoutErrorsOnCore (st : SystemState) (c c' : CoreId) :
     (decrementDomainTimeOnCore st c).scheduler.lastTimeoutErrorsOnCore c'
       = st.scheduler.lastTimeoutErrorsOnCore c' := by
-  simp only [decrementDomainTimeOnCore]
-  split
-  · split
-    · rfl
-    · split <;> simp
-  · simp
+  simp [decrementDomainTimeOnCore, SchedulerState.setDomainTimeRemainingOnCore_lastTimeoutErrorsOnCore]
 
 -- ── the prepared state + the `timerTickOnCore` characterisation ──
 
@@ -1174,24 +1064,23 @@ def timerTickOnCorePreDomain (st : SystemState) (c : CoreId) : SystemState :=
   (processReplenishmentsDueOnCore st0 c st0.machine.timer).1
 
 /-- WS-SM SM5.D.2: the state-plus-SGIs `timerTickOnCore` reaches after the SM5.D.9
-clear + SM5.D.4 replenishment + SM5.D.6 domain accounting, **before** the SM5.D.5
-budget tick / preemption.  Naming the "prepared" state lets the SM5.D headline
-theorems characterise `timerTickOnCore`'s behaviour without restating its internal
-`let`-chain. -/
+clear + SM5.D.4 replenishment, **before** the SM5.D.5 budget tick / preemption.
+Audit-pass-2: the tick does **no** in-tick domain accounting (rotation is the
+separate `scheduleDomainOnCore`), so the prepared state is exactly the
+post-replenishment state.  Naming it lets the SM5.D headline theorems characterise
+`timerTickOnCore`'s behaviour without restating its internal `let`-chain. -/
 def timerTickOnCorePrepared (st : SystemState) (c : CoreId) :
     SystemState × List (CoreId × SgiKind) :=
   let st0 := { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore c [] }
-  let (st1, sgis) := processReplenishmentsDueOnCore st0 c st0.machine.timer
-  (decrementDomainTimeOnCore st1 c, sgis)
+  processReplenishmentsDueOnCore st0 c st0.machine.timer
 
-/-- WS-SM SM5.D.2: `timerTickOnCorePrepared`'s state is the domain-decrement of the
-pre-domain state (the SM5.D.5 budget step operates on this). -/
+/-- WS-SM SM5.D.2: `timerTickOnCorePrepared`'s state is the post-replenishment
+(pre-domain) state — the SM5.D.5 budget step operates on this. -/
 theorem timerTickOnCorePrepared_fst_eq (st : SystemState) (c : CoreId) :
-    (timerTickOnCorePrepared st c).1
-      = decrementDomainTimeOnCore (timerTickOnCorePreDomain st c) c := rfl
+    (timerTickOnCorePrepared st c).1 = timerTickOnCorePreDomain st c := rfl
 
 /-- WS-SM SM5.D.2: `timerTickOnCore` is the SM5.D.5 budget tick / preemption
-dispatched on the SM5.D.2/.4/.6 prepared state.  `rfl` — the production `let`-chain
+dispatched on the SM5.D.2/.4 prepared state.  `rfl` — the production `let`-chain
 *is* this composition.  Every SM5.D.2 headline below is a corollary. -/
 theorem timerTickOnCore_eq_prepared (st : SystemState) (c : CoreId) :
     timerTickOnCore st c =
@@ -1215,25 +1104,22 @@ reads `machine.timer` but never advances the global timer. -/
 theorem timerTickOnCorePrepared_machine_eq (st : SystemState) (c : CoreId) :
     (timerTickOnCorePrepared st c).1.machine = st.machine := by
   simp only [timerTickOnCorePrepared]
-  rw [decrementDomainTimeOnCore_machine_eq, processReplenishmentsDueOnCore_machine_eq]
+  rw [processReplenishmentsDueOnCore_machine_eq]
 
 /-- WS-SM SM5.D.9: the prepared state has core `c`'s `lastTimeoutErrors` cleared —
-the tick clears core `c`'s diagnostic at entry, and the replenishment / domain
-steps never re-set it. -/
+the tick clears core `c`'s diagnostic at entry, and the replenishment step never
+re-sets it. -/
 theorem timerTickOnCorePrepared_lastTimeoutErrors_eq (st : SystemState) (c : CoreId) :
     (timerTickOnCorePrepared st c).1.scheduler.lastTimeoutErrorsOnCore c = [] := by
   simp only [timerTickOnCorePrepared]
-  rw [decrementDomainTimeOnCore_lastTimeoutErrorsOnCore,
-    processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq]
+  rw [processReplenishmentsDueOnCore_lastTimeoutErrorsOnCore_eq]
   simp [SchedulerState.setLastTimeoutErrorsOnCore_lastTimeoutErrorsOnCore_self]
 
 /-- WS-SM SM5.D.2 (preservation): the prepared state preserves the object-store
-invariant (the SM5.D.4 replenishment preserves it; the SM5.D.6 domain decrement is
-object-neutral). -/
+invariant (the SM5.D.4 replenishment preserves it). -/
 theorem timerTickOnCorePrepared_objects_invExt (st : SystemState) (c : CoreId)
     (hInv : st.objects.invExt) : (timerTickOnCorePrepared st c).1.objects.invExt := by
   simp only [timerTickOnCorePrepared]
-  rw [decrementDomainTimeOnCore_objects_eq]
   exact processReplenishmentsDueOnCore_preserves_objects_invExt _ c _ hInv
 
 -- ── SM5.D.2 headline theorems ──
@@ -1250,7 +1136,7 @@ theorem timerTickOnCore_idle (st : SystemState) (c : CoreId)
 /-- WS-SM SM5.D.2 (the headline `timerTickOnCore_advances_per_core`, plan §6.1): the
 per-core tick **advances core `c`'s local accounting without advancing the global
 timer** — `st'.machine = st.machine`.  This is the defining SMP property: each
-core's CNTV fires and the tick processes that core's state locally, but the global
+core's CNTP fires and the tick processes that core's state locally, but the global
 monotonic tick counter (`machine.timer`) is owned by a single authority (the boot
 core / the FFI `ffi_timer_reprogram`), mirroring the Rust HAL's primary-owned
 `TICK_COUNT`.  Stated on the idle path (where the tick makes no register-context
@@ -1276,25 +1162,14 @@ theorem timerTickOnCore_clears_lastTimeoutErrors (st : SystemState) (c : CoreId)
   have hst : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
   rw [← hst, timerTickOnCorePrepared_lastTimeoutErrors_eq]
 
-/-- WS-SM SM5.D.6 (the headline `timerTickOnCore_rotates_domain`, plan §6.1): when
-core `c`'s domain reaches its last tick in the prepared (pre-domain) state and the
-non-empty domain schedule's next entry is `entry`, the tick rotates core `c`'s
-active domain to `entry`'s domain.  Lifts the SM5.D.6 helper
-`decrementDomainTimeOnCore_rotates` through the idle path. -/
-theorem timerTickOnCore_rotates_domain (st : SystemState) (c : CoreId)
-    (entry : DomainScheduleEntry) (st' : SystemState) (sgis : List (CoreId × SgiKind))
-    (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = none)
-    (hStep : timerTickOnCore st c = .ok (st', sgis))
-    (hExpired : (timerTickOnCorePreDomain st c).scheduler.domainTimeRemainingOnCore c ≤ 1)
-    (hSched : (timerTickOnCorePreDomain st c).scheduler.domainSchedule ≠ [])
-    (hEntry : (timerTickOnCorePreDomain st c).scheduler.domainSchedule[
-        ((timerTickOnCorePreDomain st c).scheduler.domainScheduleIndexOnCore c + 1)
-          % (timerTickOnCorePreDomain st c).scheduler.domainSchedule.length]? = some entry) :
-    st'.scheduler.activeDomainOnCore c = DomainScheduleEntry.domain entry := by
-  rw [timerTickOnCore_idle st c hCur, Except.ok.injEq] at hStep
-  have hst : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
-  rw [← hst, timerTickOnCorePrepared_fst_eq]
-  exact decrementDomainTimeOnCore_rotates (timerTickOnCorePreDomain st c) c entry hExpired hSched hEntry
+-- WS-SM SM5.D.6 (audit-pass-2): the per-core *timer tick* deliberately does **no**
+-- in-tick domain rotation (the pre-audit-pass-2 `timerTickOnCore_rotates_domain`
+-- headline is retired).  Domain rotation is the separate, atomic
+-- `scheduleDomainOnCore` transition (its boundary branch is `switchDomainOnCore` +
+-- `scheduleEffectiveOnCore`); `switchDomainOnCore_rotates` (§4b) is the rotation
+-- witness.  This is exactly the single-core split (`timerTickWithBudget` never
+-- rotates; `scheduleDomain` does), and it is what keeps a running thread from
+-- outliving its domain (`currentThreadInActiveDomain` faithfulness).
 
 /-- WS-SM SM5.D.5 (the headline `timerTickOnCore_preempts_local`, plan §6.1): when
 core `c`'s current thread `tid` (in the prepared state) is preempted by the budget
@@ -1817,12 +1692,12 @@ theorem timerTickOnCore_preserves_currentThreadValidOnCore (st : SystemState) (c
             timerTickBudgetOnCore_notPreempted_scheduler_eq (timerTickOnCorePrepared st c).1 c tid tcb st3 hbud, hCur]
           exact timerTickBudgetOnCore_notPreempted_getTcb?_tid (timerTickOnCorePrepared st c).1 c tid tcb st3 hPrepInv hTcb hbud
 /-- WS-SM SM5.D.2 (B2 helper): the prepared state preserves per-core run-queue
-well-formedness — the SM5.D.4 replenishment preserves it (wakes `insert`) and the
-SM5.D.6 domain decrement frames the run queue. -/
+well-formedness — the SM5.D.4 replenishment preserves it (wakes `insert`); the tick
+does no in-tick domain step (audit-pass-2). -/
 theorem timerTickOnCorePrepared_runQueueOnCore_wellFormed (st : SystemState) (c : CoreId)
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
     ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).wellFormed := by
-  simp only [timerTickOnCorePrepared, decrementDomainTimeOnCore_runQueueOnCore]
+  simp only [timerTickOnCorePrepared]
   apply processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
   simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hwf
 
@@ -1941,5 +1816,196 @@ theorem timerTickOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState
           obtain ⟨h1, _⟩ := hStep
           rw [← h1, timerTickBudgetOnCore_notPreempted_scheduler_eq (timerTickOnCorePrepared st c).1 c tid tcb st3 hbud]
           exact hPrepQcc
+
+-- ── §7f  Per-core domain-invariant preservation (audit-pass-2 capstone) ──
+--
+--   The audit-pass-2 fix makes `timerTickOnCore` a pure budget tick (no in-tick
+--   domain rotation), so it preserves the SM4.C `currentThreadInActiveDomainOnCore`
+--   invariant.  This section *proves* it: `scheduleEffectiveOnCore` dispatches a
+--   thread that is in core `c`'s active domain (it checks `tcb.domain = activeDomain`
+--   before dispatching); the not-preempted budget tick leaves the scheduler and the
+--   charged thread's domain unchanged.  The pre-audit-pass-2 tick (which rotated the
+--   domain without re-dispatch) could NOT satisfy this — the missing theorem was the
+--   tell.  `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` is
+--   parameterized by `hPrepDom` (the replenishment preserves the domain invariant),
+--   discharged on the clean path; the SM5.D.4 wake never touches `current`/domains.
+
+-- saveOutgoing preserves the domain of any resolvable thread.
+theorem saveOutgoingContextOnCore_getTcb?_domain (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hInv : st.objects.invExt) (hCur : st.getTcb? tid = some tcb) :
+    ∃ tcb', (saveOutgoingContextOnCore st c).getTcb? tid = some tcb' ∧ tcb'.domain = tcb.domain := by
+  cases hc : st.scheduler.currentOnCore c with
+  | none => exact ⟨tcb, by rw [show saveOutgoingContextOnCore st c = st from by
+      simp only [saveOutgoingContextOnCore, hc]]; exact hCur, rfl⟩
+  | some outTid =>
+    cases ho : st.getTcb? outTid with
+    | none => exact ⟨tcb, by rw [show saveOutgoingContextOnCore st c = st from by
+        simp only [saveOutgoingContextOnCore, hc, ho]]; exact hCur, rfl⟩
+    | some outTcb =>
+      by_cases heq : tid = outTid
+      · subst heq
+        refine ⟨{ outTcb with registerContext := st.machine.regs }, ?_, ?_⟩
+        · simp only [saveOutgoingContextOnCore, hc, ho]
+          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+          rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+        · rw [hCur] at ho; have he : tcb = outTcb := Option.some.inj ho; rw [he]
+      · have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
+          heq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
+        refine ⟨tcb, ?_, rfl⟩
+        simp only [saveOutgoingContextOnCore, hc, ho]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId _ hNeO hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hCur
+
+
+theorem scheduleEffectiveOnCore_getTcb?_domain (st : SystemState) (c : CoreId) (st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') (hres : st.getTcb? tid = some tcb) :
+    ∃ tcb', st'.getTcb? tid = some tcb' ∧ tcb'.domain = tcb.domain := by
+  have hobj := scheduleEffectiveOnCore_objects_eq st c st' hStep
+  obtain ⟨tcb', hg, hdom⟩ := saveOutgoingContextOnCore_getTcb?_domain st c tid tcb hInv hres
+  refine ⟨tcb', ?_, hdom⟩
+  have hgt : st'.getTcb? tid = (saveOutgoingContextOnCore st c).getTcb? tid := by
+    simp only [SystemState.getTcb?, hobj]
+  rw [hgt, hg]
+
+theorem scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore (st : SystemState) (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    currentThreadInActiveDomainOnCore st' c := by
+  have hCopy := hStep
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep
+      have hcur : st'.scheduler.currentOnCore c = none := by
+        rw [← hStep]; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]
+      simp only [currentThreadInActiveDomainOnCore, hcur]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · rename_i hcond
+          simp only [Except.ok.injEq] at hStep
+          have hcur : st'.scheduler.currentOnCore c = some tid := by
+            rw [← hStep]; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]
+          have hact : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c := by
+            rw [← hStep]
+            simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContext_scheduler,
+              SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+            rw [saveOutgoingContextOnCore_scheduler_eq]
+          obtain ⟨tcb', hg, hdom⟩ := scheduleEffectiveOnCore_getTcb?_domain st c st' tid tcb hInv hCopy hTcb
+          simp only [currentThreadInActiveDomainOnCore, hcur, hg, hact, hdom]
+          exact hcond.2
+        · simp at hStep
+
+
+-- not-preempted budget tick preserves the charged thread's domain.
+theorem timerTickBudgetOnCore_notPreempted_getTcb?_domain (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st' : SystemState) (hInv : st.objects.invExt) (hCur : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    ∃ t, st'.getTcb? tid = some t ∧ t.domain = tcb.domain := by
+  have hDisj : ∀ scId : SeLe4n.SchedContextId, (∃ s, st.getSchedContext? scId = some s) →
+      ¬ (scId.toObjId == tid.toObjId) = true := by
+    rintro scId ⟨s, hSc⟩ he
+    have he' : scId.toObjId = tid.toObjId := by simpa using he
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?] at hCur
+    simp only [SystemState.getSchedContext?, RHTable_getElem?_eq_get?] at hSc
+    rw [he'] at hSc
+    revert hCur hSc; cases st.objects.get? tid.toObjId with
+    | none => simp
+    | some o => cases o <;> simp
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?,
+        RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      exact ⟨_, rfl, rfl⟩
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_, rfl⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hCur
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_, rfl⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hCur
+
+-- composed: the tick preserves currentThreadInActiveDomain, parameterized by hPrepDom.
+theorem timerTickOnCore_preserves_currentThreadInActiveDomainOnCore (st : SystemState) (c : CoreId) (st' : SystemState)
+    (sgis : List (CoreId × SgiKind)) (hInv : st.objects.invExt)
+    (hPrepDom : currentThreadInActiveDomainOnCore (timerTickOnCorePrepared st c).1 c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    currentThreadInActiveDomainOnCore st' c := by
+  have hPrepInv : (timerTickOnCorePrepared st c).1.objects.invExt :=
+    timerTickOnCorePrepared_objects_invExt st c hInv
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepDom
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore st3 c st4
+              (timerTickBudgetOnCore_preserves_objects_invExt (timerTickOnCorePrepared st c).1 c tid
+                tcb st3 preempted hPrepInv hbud) hsch
+        · rename_i hpre
+          have hpf : preempted = false := Bool.not_eq_true _ |>.mp hpre
+          subst hpf
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]
+          -- not-preempted: scheduler unchanged, current = tid, domain of tid preserved
+          obtain ⟨t', hg, hdom⟩ := timerTickBudgetOnCore_notPreempted_getTcb?_domain (timerTickOnCorePrepared st c).1 c tid tcb st3 hPrepInv hTcb hbud
+          unfold currentThreadInActiveDomainOnCore at hPrepDom ⊢
+          simp only [hCur, hTcb] at hPrepDom
+          rw [timerTickBudgetOnCore_notPreempted_scheduler_eq (timerTickOnCorePrepared st c).1 c tid tcb st3 hbud]
+          simp only [hCur, hg, hdom]
+          exact hPrepDom
 
 end SeLe4n.Kernel

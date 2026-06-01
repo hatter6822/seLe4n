@@ -229,7 +229,7 @@ import SeLe4n.Kernel.Scheduler.Operations.Sm5CInventory
 -- scheduler-tick driver is the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 -- WS-SM SM5.D.1: the per-core timer-tick kernel entry seam
--- (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTV ISR
+-- (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP ISR
 -- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I moves it
 -- production-reached when the per-core scheduler-tick driver lands.
 import SeLe4n.Kernel.PerCoreTimerEntry

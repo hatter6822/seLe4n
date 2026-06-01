@@ -991,7 +991,7 @@ def scheduleDomain : Kernel Unit :=
 -- WS-SM SM5.D — Per-core timer tick (production transitions)
 -- ============================================================================
 --
--- The per-core timer tick (plan §3.4): each core's ARM Generic Timer (CNTV)
+-- The per-core timer tick (plan §3.4): each core's ARM Generic Timer (CNTP)
 -- fires locally; the handler advances *that core's* domain accounting, processes
 -- CBS replenishment for its replenish queue (cross-core-waking refilled threads
 -- onto their target core via SM5.C's `wakeThread`), and emits a local preemption
@@ -1005,7 +1005,7 @@ def scheduleDomain : Kernel Unit :=
 -- **Global-timer ownership (SMP per-core decision).**  Unlike the single-core
 -- `timerTickWithBudget`, the per-core tick does **not** advance the shared
 -- `machine.timer` (the abstract global tick counter).  On real hardware each
--- core's CNTV is independent, but the *global* monotonic tick count is
+-- core's CNTP is independent, but the *global* monotonic tick count is
 -- maintained by a single authority — exactly mirroring the Rust HAL, where
 -- `TICK_COUNT` is "primary-owned" and `init_timer_secondary` deliberately does
 -- **not** reset or advance it (SM1.C.4).  A per-core tick that advanced
@@ -1024,35 +1024,23 @@ c` has reached its last tick (`≤ 1`), rotate to the next entry of the
 `domainScheduleIndexOnCore` slots; otherwise decrement core `c`'s
 `domainTimeRemainingOnCore`.
 
-This is the *pure domain-accounting* advance (plan §3.7 `advanceDomainOnCore`):
-it writes **only** core `c`'s three domain slots and touches neither `current`
-nor any run queue.  Domain enforcement in seLe4n is at *selection* time
-(`chooseThreadOnCore` filters by `activeDomainOnCore c`), so a currently-running
-thread keeps running past a rotated domain boundary until the next scheduling
-decision — exactly as the single-core model, where `scheduleDomain` (the full
-domain-boundary re-dispatch) is a *separate* transition from `timerTickWithBudget`.
-The per-core re-dispatch counterpart is `scheduleDomainOnCore` (below); both
-together discharge SM5.D.6.
-
-Single-domain mode (`domainSchedule = []`) and the unreachable out-of-bounds
-index (`nextIdx < domainSchedule.length` for a non-empty schedule, by
-`switchDomain_index_in_bounds`) are no-ops — the canonical RPi5 config runs
-single-domain, so the tick's domain step is a no-op there. -/
+This is the **non-boundary** domain-time decrement: it writes **only** core `c`'s
+`domainTimeRemainingOnCore` slot and touches neither `current`, any run queue, nor
+the active domain.  It is the `else`-branch helper of `scheduleDomainOnCore`
+(below), invoked only when `domainTimeRemainingOnCore c > 1`, so the saturating
+`- 1` stays `≥ 1` (preserving `domainTimeRemainingPositive`).  Domain *rotation*
+(`activeDomainOnCore` advance) is **not** done here — it is coupled atomically
+with re-dispatch in `scheduleDomainOnCore`'s boundary branch
+(`switchDomainOnCore` + `scheduleEffectiveOnCore`), exactly as the single-core
+`scheduleDomain` couples `switchDomain` with `schedule`.  Crucially the per-core
+*timer tick* (`timerTickOnCore`) does **not** call this (nor any domain step):
+domain accounting is the separate `scheduleDomainOnCore` transition, mirroring the
+single-core split where `timerTickWithBudget` never touches `domainTimeRemaining`.
+This decoupling is what keeps a running thread from ever outliving its domain (the
+audit-pass-2 `currentThreadInActiveDomain` faithfulness fix). -/
 def decrementDomainTimeOnCore (st : SystemState) (c : CoreId) : SystemState :=
-  if (st.scheduler.domainTimeRemainingOnCore c) ≤ 1 then
-    match st.scheduler.domainSchedule with
-    | [] => st  -- single-domain mode: no rotation
-    | _ =>
-        let nextIdx := ((st.scheduler.domainScheduleIndexOnCore c) + 1) % st.scheduler.domainSchedule.length
-        match st.scheduler.domainSchedule[nextIdx]? with
-        | none => st  -- unreachable: nextIdx < length for a non-empty schedule
-        | some entry =>
-            { st with scheduler :=
-                (((st.scheduler.setActiveDomainOnCore c (DomainScheduleEntry.domain entry)).setDomainTimeRemainingOnCore
-                    c (DomainScheduleEntry.length entry)).setDomainScheduleIndexOnCore c nextIdx) }
-  else
-    let dtr := (st.scheduler.domainTimeRemainingOnCore c) - 1
-    { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }
+  let dtr := (st.scheduler.domainTimeRemainingOnCore c) - 1
+  { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }
 
 /-- WS-SM SM5.D (per-core context save): save core `c`'s current thread's machine
 registers into its TCB `registerContext`.  The per-core analogue of
@@ -1281,23 +1269,36 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
   let now := st0.machine.timer
   -- SM5.D.4: process core c's due CBS replenishments (+ cross-core wakes).
   let (st1, replenishSgis) := processReplenishmentsDueOnCore st0 c now
-  -- SM5.D.6: per-core domain-time decrement + rotation (pure accounting).
-  let st2 := decrementDomainTimeOnCore st1 c
   -- SM5.D.5: per-core budget/time-slice tick + local preemption.
-  match st2.scheduler.currentOnCore c with
-  | none => .ok (st2, replenishSgis)   -- idle core: nothing to charge
+  --
+  -- Audit-pass-2 (domain-rotation faithfulness): the tick does **budget
+  -- accounting only**, exactly mirroring the single-core `timerTickWithBudget`
+  -- (which never touches `domainTimeRemaining`).  Per-core *domain* accounting is
+  -- the **separate** `scheduleDomainOnCore` transition (below), which — like the
+  -- single-core `scheduleDomain` — *atomically* couples rotation with
+  -- re-dispatch (`switchDomainOnCore` re-enqueues + clears the outgoing thread,
+  -- then `scheduleEffectiveOnCore` dispatches in the new domain).  Folding a
+  -- rotation *without* re-dispatch into the tick (the pre-audit-pass-2 form)
+  -- left a running thread whose `tcb.domain` no longer matched the rotated
+  -- `activeDomainOnCore c`, breaking the maintained `currentThreadInActiveDomain`
+  -- invariant; the single-core model never produces that state because rotation
+  -- lives only in `scheduleDomain`, never in the tick.  The SM5.I run loop
+  -- invokes `timerTickOnCore` then `scheduleDomainOnCore`, exactly as the
+  -- single-core run loop invokes `timerTickWithBudget` then `scheduleDomain`.
+  match st1.scheduler.currentOnCore c with
+  | none => .ok (st1, replenishSgis)   -- idle core: nothing to charge
   | some tid =>
-      match st2.getTcb? tid with
+      match st1.getTcb? tid with
       | some tcb =>
-          match timerTickBudgetOnCore st2 c tid tcb with
+          match timerTickBudgetOnCore st1 c tid tcb with
           | .error e => .error e
-          | .ok (st3, preempted) =>
+          | .ok (st2, preempted) =>
               if preempted then
-                match scheduleEffectiveOnCore st3 c with
+                match scheduleEffectiveOnCore st2 c with
                 | .error e => .error e
-                | .ok st4 => .ok (st4, replenishSgis)
+                | .ok st3 => .ok (st3, replenishSgis)
               else
-                .ok (st3, replenishSgis)
+                .ok (st2, replenishSgis)
       | none => .error .schedulerInvariantViolation
 
 -- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the
@@ -1348,8 +1349,8 @@ def scheduleDomainOnCore (st : SystemState) (c : CoreId) :
     | .error e => .error e
     | .ok st' => scheduleEffectiveOnCore st' c
   else
-    let dtr := (st.scheduler.domainTimeRemainingOnCore c) - 1
-    .ok { st with scheduler := st.scheduler.setDomainTimeRemainingOnCore c dtr }
+    -- non-boundary: decrement core `c`'s domain time (`> 1`, so stays `≥ 1`).
+    .ok (decrementDomainTimeOnCore st c)
 
 -- ============================================================================
 -- V8-G3: ThreadState synchronization

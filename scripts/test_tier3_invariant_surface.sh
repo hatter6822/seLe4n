@@ -3338,11 +3338,11 @@ open SeLe4n.Kernel
 #check @timerTickOnCoreLockSet_keys_nodup
 #check @timerTickOnCoreLockSet_pairwise_le
 #check @timerTickOnCoreLockSet_size_le_maxLockSetSize
--- SM5.D.6 domain rotation.
+-- SM5.D.6 domain accounting (audit-pass-2: pure non-boundary decrement).
 #check @decrementDomainTimeOnCore_decrements
-#check @decrementDomainTimeOnCore_rotates
-#check @decrementDomainTimeOnCore_singleDomain_noop
-#check @decrementDomainTimeOnCore_activeDomainOnCore_ne
+#check @decrementDomainTimeOnCore_activeDomainOnCore
+#check @decrementDomainTimeOnCore_domainTimeRemainingOnCore_ne
+#check @decrementDomainTimeOnCore_preserves_domainTimeRemainingPositiveOnCore
 #check @decrementDomainTimeOnCore_objects_eq
 -- SM5.D.4 CBS replenishment + cross-core wake.
 #check @cbsReplenish_can_wake_remote_core
@@ -3367,9 +3367,13 @@ open SeLe4n.Kernel
 #check @timerTickOnCore_idle
 #check @timerTickOnCore_advances_per_core
 #check @timerTickOnCore_clears_lastTimeoutErrors
-#check @timerTickOnCore_rotates_domain
 #check @timerTickOnCore_preempts_local
 #check @timerTickOnCore_preserves_objects_invExt
+-- SM5.D.6 audit-pass-2 capstone: the budget-only tick preserves currentThreadInActiveDomain.
+#check @timerTickOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore
+#check @scheduleEffectiveOnCore_getTcb?_domain
+#check @timerTickBudgetOnCore_notPreempted_getTcb?_domain
 -- SM5.D.8 decidability.
 #check @timerTickOnCoreSucceeds
 #check @timerTickOnCoreEmitsSgi

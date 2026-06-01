@@ -2681,6 +2681,41 @@ assertions); tier-3 adds the §4b/§7 anchors + the `Sm5DInventory` build.  All 
 theorems axiom-clean; Tier 0–3 green; default build 322 jobs; trace byte-identical.
 Items deferred past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.D audit-pass-2 LANDED at v0.31.43** (deep code-first audit of the full
+SM5.D workstream — reading the code, not the docstrings; PR #809).  Closed **one
+substantive correctness divergence** + three LOW Rust/doc findings.
+
+- **CRITICAL FIX — `timerTickOnCore` no longer breaks `currentThreadInActiveDomain`.**
+  The pre-fix tick folded an in-tick domain *rotation* (`decrementDomainTimeOnCore`
+  advancing `activeDomainOnCore` on expiry) into the tick **without** the coupled
+  re-dispatch, so on a multi-domain config the not-preempted path returned with the
+  running thread's `tcb.domain` (old) ≠ the rotated `activeDomainOnCore c` —
+  violating the maintained `currentThreadInActiveDomain` invariant (a
+  domain-separation / temporal-isolation property).  The single-core model never
+  produces this: **neither** `timerTick` nor `timerTickWithBudget` touches domain
+  time; rotation lives only in `scheduleDomain`, which *atomically* couples it with
+  re-dispatch (`switchDomain` re-enqueues, then `schedule`).  (Latent — unreachable
+  on the single-domain RPi5 v1.0.0 target.)  Fix: `timerTickOnCore` is now a **pure
+  per-core budget tick** mirroring `timerTickWithBudget`; rotation is the separate,
+  atomic `scheduleDomainOnCore`.  `decrementDomainTimeOnCore` is rewritten as the
+  pure non-boundary decrement and wired into `scheduleDomainOnCore`'s `else`-branch
+  (not orphaned).  Retired `timerTickOnCore_rotates_domain` + 5 obsolete in-tick
+  rotation theorems; `switchDomainOnCore_rotates` is the rotation witness.
+- **Capstone (§7f):** the fix is *proved* —
+  `timerTickOnCore_preserves_currentThreadInActiveDomainOnCore` (parameterized by the
+  replenishment's domain-preservation), built on
+  `scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore` (the
+  dispatch checks `tcb.domain = activeDomain`) + three domain-frame helpers.
+- **Rust HAL (LOW):** Finding 3 — the per-core timer is **CNTP** (EL1 physical;
+  `cntp_*`, PPI 30), not "CNTV"; corrected across all SM5.D docs.  Finding 1 — added a
+  hw-only `debug_assert_eq!(core_id, current_core_id_from_tpidr())` in
+  `per_core_timer_tick_isr` (the stat slot is TPIDR-selected).  Finding 5 —
+  `reprogram_timer` uses `wrapping_add`.
+- **Verification:** axiom-clean; AK7 `RAW_LOOKUP_TID` unchanged; `Sm5DInventory`
+  100 entries (domain 10 / tick 18 / preservation 25); Tier 0+1+2 green (722 Rust HAL
+  tests, zero clippy); trace byte-identical.  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the
