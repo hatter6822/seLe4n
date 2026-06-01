@@ -125,9 +125,13 @@ def sm5CTheorems : List Sm5CTheorem :=
       determineTargetCore_no_tcb_eq_bootCore .target,
     s5ct! "determineTargetCore_in_range: the wake target is always a valid core"
       determineTargetCore_in_range .target,
+    s5ct! "determineTargetCore_admits_thread: the wake target always admits the woken thread (no liveness-stranding)"
+      determineTargetCore_admits_thread .target,
     -- ── SM5.C.1 enqueueRunnableOnCore (.enqueue) ──
     s5ct! "enqueueRunnableOnCore: the per-core make-runnable primitive"
       enqueueRunnableOnCore .enqueue,
+    s5ct! "enqueueRunnableOnCore_preserves_woken_thread_fields: only ipcState changes on the woken thread"
+      enqueueRunnableOnCore_preserves_woken_thread_fields .enqueue,
     s5ct! "enqueueRunnableOnCore_preserves_objects_invExt: preserves object-store invariant"
       enqueueRunnableOnCore_preserves_objects_invExt .enqueue,
     s5ct! "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed: preserves run-queue well-formedness"
@@ -161,6 +165,8 @@ def sm5CTheorems : List Sm5CTheorem :=
       wakeThread_sgi_is_reschedule .wake,
     s5ct! "wakeThread_target_runQueue_contains: the woken thread is in the target run queue (SM5.C.10)"
       wakeThread_target_runQueue_contains .wake,
+    s5ct! "wakeThread_target_admits_thread: the wake target admits the woken thread (no liveness-stranding)"
+      wakeThread_target_admits_thread .wake,
     s5ct! "wakeThread_preserves_objects_invExt: the wake preserves the object-store invariant"
       wakeThread_preserves_objects_invExt .wake,
     s5ct! "wakeThread_preserves_target_runQueue_wellFormed: preserves the target run-queue well-formedness"
@@ -259,26 +265,26 @@ def sm5CTheorems : List Sm5CTheorem :=
     s5ct! "Concurrency.wakeOrderingTrace_wellFormed: the wake's ordering trace is well-formed"
       SeLe4n.Kernel.Concurrency.wakeOrderingTrace_wellFormed .latencyAffinityEmit]
 
-/-- WS-SM SM5.C: the inventory has 78 substantive entries.  A regression that
+/-- WS-SM SM5.C: the inventory has 81 substantive entries.  A regression that
 adds a new SM5.C theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem sm5CTheorems_count : sm5CTheorems.length = 78 := by decide
+theorem sm5CTheorems_count : sm5CTheorems.length = 81 := by decide
 
 /-- WS-SM SM5.C: 9 entries in the `lockSet` category (SM5.C.3). -/
 theorem sm5CTheorems_lockSet_count :
     (sm5CTheorems.filter (fun t => t.category == .lockSet)).length = 9 := by decide
 
-/-- WS-SM SM5.C: 5 entries in the `target` category (SM5.C.9). -/
+/-- WS-SM SM5.C: 6 entries in the `target` category (SM5.C.9). -/
 theorem sm5CTheorems_target_count :
-    (sm5CTheorems.filter (fun t => t.category == .target)).length = 5 := by decide
+    (sm5CTheorems.filter (fun t => t.category == .target)).length = 6 := by decide
 
-/-- WS-SM SM5.C: 10 entries in the `enqueue` category (SM5.C.1). -/
+/-- WS-SM SM5.C: 11 entries in the `enqueue` category (SM5.C.1). -/
 theorem sm5CTheorems_enqueue_count :
-    (sm5CTheorems.filter (fun t => t.category == .enqueue)).length = 10 := by decide
+    (sm5CTheorems.filter (fun t => t.category == .enqueue)).length = 11 := by decide
 
-/-- WS-SM SM5.C: 17 entries in the `wake` category (SM5.C.2 / C.4 / C.10 / C.6). -/
+/-- WS-SM SM5.C: 18 entries in the `wake` category (SM5.C.2 / C.4 / C.10 / C.6). -/
 theorem sm5CTheorems_wake_count :
-    (sm5CTheorems.filter (fun t => t.category == .wake)).length = 17 := by decide
+    (sm5CTheorems.filter (fun t => t.category == .wake)).length = 18 := by decide
 
 /-- WS-SM SM5.C: 7 entries in the `handler` category (SM5.C.5). -/
 theorem sm5CTheorems_handler_count :
@@ -288,7 +294,7 @@ theorem sm5CTheorems_handler_count :
 theorem sm5CTheorems_preservation_count :
     (sm5CTheorems.filter (fun t => t.category == .preservation)).length = 13 := by decide
 
-/-- WS-SM SM5.C: 16 entries in the `latencyAffinityEmit` category
+/-- WS-SM SM5.C: 17 entries in the `latencyAffinityEmit` category
 (SM5.C.11 latency + SM5.C.8 affinity + SM5.C.4 FFI emit + §11 memory model). -/
 theorem sm5CTheorems_latencyAffinityEmit_count :
     (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length = 17 := by decide
@@ -304,12 +310,33 @@ theorem sm5CTheorems_partition_sum :
     (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length =
     sm5CTheorems.length := by decide
 
-/-- WS-SM SM5.C: every inventory identifier is unique. -/
-theorem sm5CTheorems_identifiers_nodup :
-    (sm5CTheorems.map (·.identifier)).Nodup := by native_decide
+set_option maxRecDepth 10000 in
+/-- WS-SM SM5.C: every inventory identifier is unique.
 
-/-- WS-SM SM5.C: every inventory description is unique. -/
+    Audit-pass-2: proved by the **kernel-sound `decide`**, not `native_decide`.
+    The SM3 inventories use `native_decide` here, but `native_decide` trusts the
+    compiled `Decidable` evaluation (`Lean.ofReduceBool`), which — as this audit
+    found — can "prove" a *false* `Nodup` when the data accidentally contains a
+    duplicate (the audit caught a copy-pasted duplicate identifier that
+    `native_decide` masked).  Kernel `decide` refuses a false proposition, so it
+    is the correct tool: a duplicate identifier now fails the build at this
+    theorem.
+
+    Audit-pass-2 (maxRecDepth): the 81-entry list's `Nodup` decision procedure
+    recurses past the default `maxRecDepth` of 512 when reducing in the kernel
+    (the longer `description` strings in `sm5CTheorems_descriptions_nodup`
+    overflow it first).  Both Nodup witnesses therefore run under an elevated
+    `set_option maxRecDepth 10000`, which only raises the recursion *limit* (it
+    adds no work and no axioms — the proof remains a kernel-checked
+    `of_decide_eq_true`, not a `native_decide`). -/
+theorem sm5CTheorems_identifiers_nodup :
+    (sm5CTheorems.map (·.identifier)).Nodup := by decide
+
+set_option maxRecDepth 10000 in
+/-- WS-SM SM5.C: every inventory description is unique.  Kernel-sound `decide`
+    under an elevated `maxRecDepth` (see `sm5CTheorems_identifiers_nodup` for why
+    not `native_decide`, and why the depth is raised). -/
 theorem sm5CTheorems_descriptions_nodup :
-    (sm5CTheorems.map (·.description)).Nodup := by native_decide
+    (sm5CTheorems.map (·.description)).Nodup := by decide
 
 end SeLe4n.Kernel

@@ -68,9 +68,11 @@ open SeLe4n.Testing
 #check @determineTargetCore_unbound_eq_bootCore
 #check @determineTargetCore_no_tcb_eq_bootCore
 #check @determineTargetCore_in_range
+#check @determineTargetCore_admits_thread
 
 -- SM5.C.1 enqueueRunnableOnCore:
 #check @enqueueRunnableOnCore_preserves_objects_invExt
+#check @enqueueRunnableOnCore_preserves_woken_thread_fields
 #check @enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed
 #check @enqueueRunnableOnCore_mem_runQueueOnCore
 #check @enqueueRunnableOnCore_makes_ready
@@ -85,6 +87,7 @@ open SeLe4n.Testing
 #check @wakeThread_no_sgi_if_local
 #check @wakeThread_sgi_is_reschedule
 #check @wakeThread_target_runQueue_contains
+#check @wakeThread_target_admits_thread
 #check @wakeThread_preserves_objects_invExt
 #check @wakeThread_preserves_target_runQueue_wellFormed
 #check @wakeThread_independent_of_other_core
@@ -217,6 +220,23 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hAff : tcb.cpuAffinity = none) :
     determineTargetCore st tid = bootCoreId :=
   determineTargetCore_unbound_eq_bootCore st tid tcb hTcb hAff
+
+/-- SM5.C.9 (audit-pass-2): the wake target always admits the woken thread —
+    no wake strands a thread on a core whose dispatch gate would reject it. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) :
+    affinityAdmitsCore tcb (determineTargetCore st tid) = true :=
+  determineTargetCore_admits_thread st tid tcb hTcb
+
+/-- SM5.C.1 (audit-pass-2): `enqueueRunnableOnCore` preserves the woken thread's
+    security-relevant fields (`priority` / `domain` / `cpuAffinity` /
+    `threadState`); only `ipcState` changes. -/
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
+      tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
+      tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
+  enqueueRunnableOnCore_preserves_woken_thread_fields st c tid tcb hTcb hInv
 
 /-- SM5.C.5: a successful SGI-handler dispatch sets the chosen thread current. -/
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
@@ -502,6 +522,28 @@ private def runAuditPass1Checks : IO Unit := do
     (match handleRescheduleSgiOnCore stPostWake core1 with
      | .ok st2 => st2.scheduler.currentOnCore core1 == some tidW
      | .error _ => false)
+  -- audit-pass-2 (security / no-liveness-stranding): the wake target ALWAYS
+  -- admits the woken thread — an unbound thread wakes to bootCoreId (admitted
+  -- everywhere) and a core1-bound thread wakes to core1 (admitted there).  So a
+  -- woken thread is never stranded on a core whose dispatch gate rejects it.
+  assertBool "unbound tidU: wake target (bootCoreId) admits it"
+    (match stWake.getTcb? tidU with
+     | some tcb => affinityAdmitsCore tcb (determineTargetCore stWake tidU)
+     | none => false)
+  assertBool "core1-bound tidW: wake target (core1) admits it"
+    (match stWake.getTcb? tidW with
+     | some tcb => affinityAdmitsCore tcb (determineTargetCore stWake tidW)
+     | none => false)
+  -- audit-pass-2 (field frame): the wake changes ONLY ipcState on the woken
+  -- thread — priority / domain / cpuAffinity / threadState are all preserved (no
+  -- silent thread-state corruption / placement leak).
+  assertBool "wake preserves the woken thread's priority/domain/cpuAffinity/threadState (only ipcState changes)"
+    (match stWake.getTcb? tidW, (enqueueRunnableOnCore stWake core1 tidW).getTcb? tidW with
+     | some pre, some post =>
+         post.priority == pre.priority && post.domain == pre.domain &&
+         post.cpuAffinity == pre.cpuAffinity && post.threadState == pre.threadState &&
+         decide (post.ipcState = .ready)
+     | _, _ => false)
   -- gap (k): the full per-core GIC target-mask convention (1 <<< c) on EVERY core.
   assertBool "coreIdTargetMask c = (1 <<< c) on every core (full mask check)"
     (allCores.all (fun c => coreIdTargetMask c == UInt8.ofNat (1 <<< c.val)))
@@ -529,8 +571,8 @@ private def runAuditPass1Checks : IO Unit := do
     (wakeStateAnd stWake tidW bootCoreId
       (fun st' => (st'.scheduler.runQueueOnCore ⟨3, by decide⟩).toList.isEmpty))
   -- gap (m): the inventory size + partition witnesses are decidably consistent.
-  assertBool "SM5.C inventory has 78 entries"
-    (decide (sm5CTheorems.length = 78))
+  assertBool "SM5.C inventory has 81 entries"
+    (decide (sm5CTheorems.length = 81))
   assertBool "SM5.C inventory per-category counts partition the total"
     (decide ((sm5CTheorems.filter (fun t => t.category == .lockSet)).length +
              (sm5CTheorems.filter (fun t => t.category == .target)).length +
@@ -540,6 +582,14 @@ private def runAuditPass1Checks : IO Unit := do
              (sm5CTheorems.filter (fun t => t.category == .preservation)).length +
              (sm5CTheorems.filter (fun t => t.category == .latencyAffinityEmit)).length
              = sm5CTheorems.length))
+  -- audit-pass-2: a runtime Nodup guard mirrors the kernel-`decide` inventory
+  -- witnesses (`sm5CTheorems_identifiers_nodup`).  Compiled `decide` is cheap at
+  -- runtime, so this catches a copy-pasted duplicate identifier in CI even before
+  -- the (slower) kernel-`decide` build-time proof is reached.
+  assertBool "SM5.C inventory identifiers are duplicate-free (Nodup)"
+    (decide (sm5CTheorems.map (·.identifier)).Nodup)
+  assertBool "SM5.C inventory descriptions are duplicate-free (Nodup)"
+    (decide (sm5CTheorems.map (·.description)).Nodup)
 
 def runSmpWakeChecks : IO Unit := do
   IO.println "WS-SM SM5.C — Cross-core wake via SGI suite"

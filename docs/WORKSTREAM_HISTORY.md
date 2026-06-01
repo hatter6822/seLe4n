@@ -2507,12 +2507,40 @@ tests green; zero clippy warnings; Tier 0–3 green.
 - **Honest latency-bound scoping (gap f)**, the **78-entry `Sm5CInventory.lean`**
   (gap m, `s5ct!` macro + counts + partition-sum + Nodup), and the
   **`test_qemu_smp_wake.sh`** tier-4 SKIP-stub (gap h, mirroring SM1.H / SM3.D).
-  `tests/SmpWakeSuite.lean` grows to 54 runtime assertions (+13: IPC-ready
-  preservation on a real send-blocked thread, the ghost-SGI guard, the multi-step
-  round-trip, the full `1 <<< c` GIC mask on every core (gaps k/l), the
-  memory-model-HB well-formed trace, and the inventory partition).
+  `tests/SmpWakeSuite.lean` grows to 59 runtime assertions across audit-pass-1 +
+  audit-pass-2 (IPC-ready preservation on a real send-blocked thread, the
+  ghost-SGI guard, the multi-step round-trip, the full `1 <<< c` GIC mask on every
+  core (gaps k/l), the memory-model-HB well-formed trace, the inventory partition,
+  and the dual identifier+description `Nodup` runtime guards).
   `Sm5CInventory` staged (45 staged-only modules); Rust suite confirmed
   unaffected (gap j).
+
+**WS-SM SM5.C audit-pass-2 (independent deep re-audit; also in v0.31.40)**: a
+second deep audit verifying the *code* (not its docstrings) caught a real defect
+audit-pass-1 introduced and added two missing security theorems.
+
+- **Inventory duplicate-identifier bug — FOUND AND FIXED**: `Sm5CInventory.lean`'s
+  `.enqueue` section referenced `determineTargetCore_in_range` under an
+  `enqueueRunnableOnCore` description — a duplicate identifier that made the
+  `Nodup` proposition genuinely false, which `native_decide` nonetheless "proved"
+  (it trusts `Lean.ofReduceBool`, which disagreed with the kernel).  Fixed the
+  entry; switched both Nodup proofs to kernel-sound `decide` under an elevated
+  `maxRecDepth` (the 81-entry list's `Nodup` reduction recurses past the default
+  512; the elevated cap adds no work and no axioms, so the proof stays a
+  kernel-checked `of_decide_eq_true` with no `Lean.ofReduceBool` — strictly
+  stronger than the SM3 inventories); added two runtime `Nodup` assertions
+  (identifiers + descriptions) as a second, compiled-`decide` guard.
+- **Two new security theorems**: `determineTargetCore_admits_thread` /
+  `wakeThread_target_admits_thread` (no-liveness-stranding — the wake target
+  always admits the woken thread, so a wake never strands a thread on a core whose
+  dispatch gate would reject it) and
+  `enqueueRunnableOnCore_preserves_woken_thread_fields` (field frame — the wake
+  changes only `ipcState`; priority/domain/cpuAffinity/threadState preserved).
+- **Doc accuracy**: §10b `ensureRunnable` comparison made precise; inventory now
+  81 entries; suite 59 runtime assertions / 103 anchors / 17 examples.  All new
+  theorems axiom-clean and the two SM5.C modules build warning-clean;
+  `smp_wake_suite` 59/59 PASS; partition gate 45 staged-only modules.  Items
+  deferred past v1.0.0 with correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

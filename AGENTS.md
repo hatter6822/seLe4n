@@ -4966,6 +4966,50 @@ documentation lives under `docs/` and `docs/gitbook/`.
     SKIP-stub wired into tier-4 (mirroring SM1.H / SM3.D); `Sm5CInventory` staged
     (45 staged-only modules); Rust suite confirmed unaffected (gap j).
 
+  **WS-SM SM5.C audit-pass-2 (independent deep re-audit; also in v0.31.40)**: a
+  second, independent deep audit verifying the *code* directly (not its
+  docstrings) caught a real defect audit-pass-1 introduced, added two missing
+  security theorems, and corrected documented counts.
+
+  - **Inventory duplicate-identifier bug — FOUND AND FIXED.**
+    `Sm5CInventory.lean`'s `.enqueue` section had a copy-paste error: an entry
+    described as `enqueueRunnableOnCore` actually referenced
+    `determineTargetCore_in_range` again — a duplicate identifier making
+    `(sm5CTheorems.map (·.identifier)).Nodup` genuinely **false**, which
+    `sm5CTheorems_identifiers_nodup := by native_decide` nonetheless "proved"
+    (`native_decide` trusts the compiled `Lean.ofReduceBool` eval, which here
+    disagreed with the kernel; kernel `decide` correctly rejects it).  Fixed the
+    entry; switched both `_identifiers_nodup` / `_descriptions_nodup` from
+    `native_decide` to **kernel-sound `decide`** under an elevated
+    `set_option maxRecDepth 10000` (the 81-entry list's `Nodup` reduction
+    recurses past the default `maxRecDepth` of 512 — the longer `description`
+    strings overflow it first; the elevated limit only raises the recursion
+    *cap*, adding no work and no axioms, so the proof stays a kernel-checked
+    `of_decide_eq_true` with NO `Lean.ofReduceBool`, strictly stronger than the
+    SM3 `native_decide` precedent); added two runtime `Nodup` assertions
+    (identifiers + descriptions) to `SmpWakeSuite` as a second, compiled-`decide`
+    guard.
+  - **Two new security theorems** (implement-the-improvement):
+    `determineTargetCore_admits_thread` / `wakeThread_target_admits_thread` (the
+    no-liveness-stranding property — the wake target always admits the woken
+    thread, so a wake never strands a thread on a core whose dispatch gate would
+    reject it), and `enqueueRunnableOnCore_preserves_woken_thread_fields` (the
+    field frame — the wake changes only `ipcState`; `priority` / `domain` /
+    `cpuAffinity` / `threadState` preserved, so no silent thread-state corruption
+    or placement leak).
+  - **Documentation accuracy**: the §10b `IPC.ensureRunnable` comparison is made
+    precise (`ensureRunnable` does not itself clear `ipcState`; `enqueueRunnableOnCore`
+    bundles the clear; the IPC-dequeue is the caller's job for both).  Corrected
+    counts: inventory is **81 entries** (was 78; +3 — the two new security
+    theorems plus `enqueueRunnableOnCore_preserves_woken_thread_fields`);
+    `SmpWakeSuite` has **59 runtime assertions / 103 surface anchors / 17
+    examples** (over the audit-pass-1 baseline: +2 `assertBool` for the dual
+    `Nodup` guards, +2 `#check` and +2 `example` for the three new theorems).
+    All new theorems are axiom-clean and the two SM5.C modules build
+    warning-clean; `smp_wake_suite` reports **59/59 PASS**; partition gate 45
+    staged-only modules.  Items deferred past v1.0.0 with correctness impact:
+    NONE.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

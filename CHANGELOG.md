@@ -155,6 +155,48 @@ green, zero clippy warnings.
 
 Items deferred past v1.0.0 with correctness impact: NONE.
 
+### Audit-pass-2 refinements (independent deep re-audit verifying code not docstrings; also in v0.31.40)
+
+A second, independent audit read the SM5.C code directly (not its docstrings). It
+caught a real defect audit-pass-1 introduced, added the missing security
+theorems, and brought the two SM5.C modules + the suite to a warning-clean,
+fully-passing state.
+
+- **Inventory duplicate-identifier bug — FOUND AND FIXED.**
+  `Sm5CInventory.lean`'s `.enqueue` section had a copy-paste error: an entry
+  described as `enqueueRunnableOnCore` actually referenced
+  `determineTargetCore_in_range` a second time — a duplicate identifier that made
+  `(sm5CTheorems.map (·.identifier)).Nodup` genuinely **false**, which
+  `sm5CTheorems_identifiers_nodup := by native_decide` nonetheless "proved"
+  (`native_decide` trusts the compiled `Lean.ofReduceBool` evaluation, which here
+  disagreed with the kernel — kernel `decide` correctly rejects it). Fixed the
+  entry; switched both `_identifiers_nodup` / `_descriptions_nodup` from
+  `native_decide` to **kernel-sound `decide`** under an elevated
+  `set_option maxRecDepth 10000` (the 81-entry list's `Nodup` reduction recurses
+  past the default `maxRecDepth` of 512 — the longer `description` strings
+  overflow it first; the elevated cap adds no work and no axioms, so the proof
+  stays a kernel-checked `of_decide_eq_true` with **no** `Lean.ofReduceBool`,
+  strictly stronger than the SM3 inventories' `native_decide`). Added two runtime
+  `Nodup` assertions (identifiers + descriptions) to `SmpWakeSuite` as a second,
+  compiled-`decide` guard.
+- **Two new security theorems** (implement-the-improvement):
+  `determineTargetCore_admits_thread` / `wakeThread_target_admits_thread` (the
+  no-liveness-stranding property — the wake target always admits the woken thread,
+  so a wake never strands a thread on a core whose dispatch gate would reject it),
+  and `enqueueRunnableOnCore_preserves_woken_thread_fields` (the field frame — the
+  wake changes only `ipcState`; `priority` / `domain` / `cpuAffinity` /
+  `threadState` are preserved, so no silent thread-state corruption or placement
+  leak). All three are surface-anchored (suite `#check` + tier-3) and exercised by
+  runtime assertions; the two `admits` theorems also carry theorem-application
+  `example`s.
+- **Counts (verified)**: the `Sm5CInventory` inventory is **81 entries** (was 78;
+  +3); `SmpWakeSuite` has **59 runtime assertions / 103 surface anchors / 17
+  examples** (+2 `assertBool` for the dual `Nodup` guards, +2 `#check` and +2
+  `example` for the new theorems). `lake build` of the two SM5.C modules is
+  warning-clean; `smp_wake_suite` reports **59/59 PASS**; partition gate 45
+  staged-only modules; all new theorems axiom-clean (`propext` / `Quot.sound`).
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.39 — WS-SM SM5.B: per-core `switchToThread` (context switch, preempt-previous, reject-remote, cross-core independence, FFI seam)
 
 WS-SM Phase SM5 (per-core scheduler) continues with SM5.B — the per-core

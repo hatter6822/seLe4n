@@ -233,6 +233,31 @@ theorem determineTargetCore_in_range (st : SystemState) (tid : SeLe4n.ThreadId) 
     (determineTargetCore st tid).val < numCores :=
   (determineTargetCore st tid).isLt
 
+/-- WS-SM SM5.C.9 (audit-pass-2, security / no-liveness-stranding): the wake
+**target always admits the woken thread** — `affinityAdmitsCore tcb
+(determineTargetCore st tid) = true`.
+
+This is the consistency keystone between `determineTargetCore` (where a thread is
+woken to) and `affinityAdmitsCore` (which cores will *dispatch* it,
+`switchToThreadOnCore` / `handleRescheduleSgiOnCore`): a bound thread wakes onto
+its affinity core, which admits exactly that core; an unbound thread wakes onto
+`bootCoreId`, and an unbound thread is admitted on *every* core.  Either way the
+target admits it.
+
+Without this, a wake could strand a thread on a run queue of a core whose
+dispatch gate rejects it (`.threadOnDifferentCore`) — the thread would be
+enqueued but never runnable there, a silent liveness hole.  This theorem proves
+that hole cannot exist: every wake lands the thread on a core that will dispatch
+it. -/
+theorem determineTargetCore_admits_thread (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) :
+    affinityAdmitsCore tcb (determineTargetCore st tid) = true := by
+  unfold determineTargetCore affinityAdmitsCore
+  rw [hTcb]
+  cases h : tcb.cpuAffinity with
+  | none => simp
+  | some c' => simp [h]
+
 
 -- ============================================================================
 -- §3  SM5.C.1 — `enqueueRunnableOnCore` (preservation, membership, frame)
@@ -289,6 +314,29 @@ theorem enqueueRunnableOnCore_makes_ready (st : SystemState) (c : CoreId)
   simp only [enqueueRunnableOnCore, hTcb, SystemState.getTcb?_eq_some_iff,
     RHTable_getElem?_eq_get?]
   exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
+
+/-- WS-SM SM5.C.1 (audit-pass-2, woken-thread field frame): `enqueueRunnableOnCore`
+changes **only** the `ipcState` field of the woken thread — every other field
+(`priority`, `domain`, `cpuAffinity`, `threadState`, `registerContext`,
+`schedContextBinding`, `pipBoost`, …) is preserved.  The post-state TCB is
+exactly `{ tcb with ipcState := .ready }`, which differs from the pre-state TCB
+in `ipcState` alone (a record-update of a single field).
+
+This is the "the wake does not silently corrupt thread state" guarantee: the
+only mutation the wake makes to the woken thread is clearing its scheduler-visible
+IPC block — it cannot, e.g., change the thread's CPU affinity (which would be a
+placement leak) or its priority (which would be a scheduling exploit).  Stated as
+the four security-relevant projections that callers / NI-reasoning depend on
+(`priority` / `domain` / `cpuAffinity` / `threadState`); the full record equality
+to `{ tcb with ipcState := .ready }` is `enqueueRunnableOnCore_makes_ready`. -/
+theorem enqueueRunnableOnCore_preserves_woken_thread_fields (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? tid = some tcb' ∧
+      tcb'.priority = tcb.priority ∧ tcb'.domain = tcb.domain ∧
+      tcb'.cpuAffinity = tcb.cpuAffinity ∧ tcb'.threadState = tcb.threadState :=
+  ⟨{ tcb with ipcState := .ready },
+    enqueueRunnableOnCore_makes_ready st c tid tcb hTcb hInv, rfl, rfl, rfl, rfl⟩
 
 /-- WS-SM SM5.C.1 (cross-core frame): `enqueueRunnableOnCore` on core `c` leaves
 every *other* core's run-queue slot (`c' ≠ c`) untouched — it writes only core
@@ -433,6 +481,19 @@ theorem wakeThread_target_runQueue_contains (st : SystemState)
             (determineTargetCore st tid)).toList := by
   rw [wakeThread_state_eq_enqueue]
   exact enqueueRunnableOnCore_mem_runQueueOnCore st (determineTargetCore st tid) tid tcb hTcb
+
+/-- WS-SM SM5.C.2 (audit-pass-2, no-liveness-stranding at the wake level): the
+target core a wake lands `tid` on **admits** `tid` — so the woken thread, sitting
+in the target run queue (`wakeThread_target_runQueue_contains`), is genuinely
+dispatchable there (`switchToThreadOnCore` / `handleRescheduleSgiOnCore` will not
+reject it with `.threadOnDifferentCore`).  The composition of
+`determineTargetCore_admits_thread` with the wake's `determineTargetCore` target:
+a wake never strands a thread on a core that cannot run it. -/
+theorem wakeThread_target_admits_thread (st : SystemState)
+    (tid : SeLe4n.ThreadId) (_executingCore : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) :
+    affinityAdmitsCore tcb (determineTargetCore st tid) = true :=
+  determineTargetCore_admits_thread st tid tcb hTcb
 
 /-- WS-SM SM5.C.2 (preservation): a wake preserves the RobinHood object-store
 invariant. -/
@@ -1024,12 +1085,22 @@ theorem enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
 -- discharge the SM4.D per-core IPC↔scheduler coherence conjuncts.
 --
 -- (Caller obligation, documented not proved here: the *structural* IPC side —
--- removing `tid` from any endpoint/notification queue it was blocked on — is the
--- caller's job, exactly as for `IPC.ensureRunnable`.  `enqueueRunnableOnCore`
--- clears the scheduler-visible block (`ipcState`); the IPC operation that calls
--- the wake is responsible for the dequeue from IPC structures.  The
--- `currentNot*` / queue-structural conjuncts are not run-queue-membership
--- predicates and are outside the wake's footprint.)
+-- removing `tid` from any endpoint `sendQ`/`receiveQ` or notification
+-- `waitingThreads` list it was blocked on — is the caller's job.  The
+-- `queueHeadBlockedConsistent` / `ipcStateQueueMembershipConsistent` /
+-- `notificationWaiterConsistent` invariants (IPC/Invariant/Defs.lean) require an
+-- endpoint/notification-queue member to carry a matching `blockedOn*` ipcState;
+-- since `enqueueRunnableOnCore` sets `ipcState := .ready`, the IPC operation that
+-- calls the wake must have *already dequeued* `tid` from those IPC structures
+-- (otherwise it would leave a `.ready` thread sitting in a wait queue).  This is
+-- the same dequeue-then-wake discipline `IPC.ensureRunnable`'s callers follow —
+-- with one honest difference: `ensureRunnable` itself does *not* touch `ipcState`
+-- (its callers clear it separately via `storeTcbIpcStateAndMessage` after the
+-- dequeue), whereas `enqueueRunnableOnCore` bundles the `ipcState := .ready`
+-- clear into the wake.  Either way the dequeue-from-IPC-structures step is the
+-- caller's responsibility and is outside this run-queue-membership footprint; the
+-- `currentNot*` / queue-structural conjuncts are likewise not
+-- run-queue-membership predicates and are outside the wake's footprint.)
 
 /-- WS-SM SM5.C.1 (SM4.D `runnableThreadIpcReady_perCore` preservation): every
 TCB in core `c`'s run queue after the wake has `ipcState = .ready`.

@@ -3168,12 +3168,14 @@ open SeLe4n.Kernel.Concurrency
 #check @determineTargetCore_unbound_eq_bootCore
 #check @determineTargetCore_no_tcb_eq_bootCore
 #check @determineTargetCore_in_range
+#check @determineTargetCore_admits_thread
 
 -- SM5.C.1 enqueueRunnableOnCore lemmas.
 #check @enqueueRunnableOnCore_preserves_objects_invExt
 #check @enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed
 #check @enqueueRunnableOnCore_mem_runQueueOnCore
 #check @enqueueRunnableOnCore_makes_ready
+#check @enqueueRunnableOnCore_preserves_woken_thread_fields
 #check @enqueueRunnableOnCore_runQueueOnCore_ne
 #check @enqueueRunnableOnCore_currentOnCore
 #check @enqueueRunnableOnCore_getTcb?_ne
@@ -3185,6 +3187,7 @@ open SeLe4n.Kernel.Concurrency
 #check @wakeThread_no_sgi_if_local
 #check @wakeThread_sgi_is_reschedule
 #check @wakeThread_target_runQueue_contains
+#check @wakeThread_target_admits_thread
 #check @wakeThread_preserves_objects_invExt
 #check @wakeThread_preserves_target_runQueue_wellFormed
 #check @wakeThread_independent_of_other_core
