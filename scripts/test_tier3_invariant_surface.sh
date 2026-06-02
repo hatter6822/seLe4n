@@ -1261,7 +1261,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
 -- SM4.G — per-core idle-thread bootstrap
--- WS-SM SM5.E: `idleThreadId` (+ injectivity) moved to `SeLe4n.Kernel.Scheduler.IdleThread`.
+-- WS-SM SM5.E: idleThreadId (+ injectivity) moved to SeLe4n.Kernel.Scheduler.IdleThread.
 #check @SeLe4n.Kernel.idleThreadId_injective
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
