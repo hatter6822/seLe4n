@@ -407,6 +407,14 @@ private def stNoRq : SystemState :=
   ((BootstrapBuilder.empty.withObject srv.toObjId (.tcb (mkServerTcb 200 5 core1))).withObject
     cli.toObjId (.tcb (mkWaiterTcb 201 10 200))).build
 
+/-- An all-unbound variant (server NOT bound to a remote core) — the single-core
+deployment in which every thread homes to the boot core.  Exercises the single-core
+bridges (`propagatePipChainCrossCore_singleCore_no_sgis`). -/
+private def stUnbound : SystemState :=
+  ((BootstrapBuilder.empty.withObject srv.toObjId
+      (.tcb { mkServerTcb 200 5 core1 with cpuAffinity := none })).withObject
+    cli.toObjId (.tcb (mkWaiterTcb 201 10 200))).build
+
 /-- §3.6: WS-SM SM5.F.4 C9 — the runnability gate on the cross-core boost SGI. -/
 private def runC9Checks : IO Unit := do
   IO.println "--- §3.6 SM5.F.4 C9 runnability gate ---"
@@ -460,6 +468,39 @@ private def runDispatchChecks : IO Unit := do
   assertBool "every dispatched SGI is a .reschedule"
     (decide ((computeCrossCoreSgis st post core0).all (fun p => p.2 == SgiKind.reschedule)))
 
+/-- §3.10: completion-pass non-vacuity — B6 dominance, B7 home-core stability,
+F13 complete resume, and the single-core bridge, exercised on concrete states. -/
+private def runCompletionNonVacuityChecks : IO Unit := do
+  IO.println "--- §3.10 completion-pass non-vacuity (B6/B7/F13/single-core) ---"
+  -- B7: a boost never changes any thread's home core (cpuAffinity untouched).
+  assertBool "B7 home-core stability: the boost leaves srv's home core unchanged"
+    (decide (determineTargetCore (pipBoostWithWake st srv core0).1 srv = determineTargetCore st srv))
+  assertBool "B7 home-core stability: the boost leaves cli's home core unchanged"
+    (decide (determineTargetCore (pipBoostWithWake st srv core0).1 cli = determineTargetCore st cli))
+  -- B6: post-boost the holder's effective priority is the waiter's (10) — it
+  -- dominates core 0's pre-state waiter slice (10).
+  assertBool "B6 dominance: the boosted holder's effective priority is 10 (dominates the slice)"
+    (decide ((((pipBoostWithWake st srv core0).1.getTcb? srv).map
+      (fun t => (effectiveSchedParams (pipBoostWithWake st srv core0).1 t).1.val)).getD 0 = 10))
+  -- F13: the complete per-core resume of an Inactive thread (stNoRq, srv Inactive +
+  -- not enqueued) sets threadState := .Ready AND returns the remote .reschedule SGI.
+  -- (The match returns a Bool directly — SystemState has no DecidableEq, so we do not
+  -- `decide` over the Except result; we project the observable Bool facts.)
+  assertBool "F13 resumeThreadOnCore: Inactive→Ready + remote (core1, .reschedule) SGI"
+    (match resumeThreadOnCore stNoRq ((ThreadId.ofNat 200).toValid (by decide)) core0 with
+     | .ok (st', sgi) =>
+       (sgi == some (core1, SgiKind.reschedule)) &&
+       ((st'.getTcb? srv).map (·.threadState) == some ThreadState.Ready)
+     | .error _ => false)
+  -- F13: resume of a non-existent (non-TCB) target → invalidArgument (rejection path).
+  assertBool "F13 resumeThreadOnCore: a non-TCB target → invalidArgument"
+    (match resumeThreadOnCore stNoRq ((ThreadId.ofNat 999).toValid (by decide)) core0 with
+     | .error .invalidArgument => true
+     | _ => false)
+  -- Single-core bridge: on the all-unbound state the chain walk fires NO cross-core SGI.
+  assertBool "single-core (all-unbound) chain walk fires no cross-core SGI"
+    (decide ((propagatePipChainCrossCore stUnbound cli bootCoreId 3).2 = []))
+
 def runSmpPipChecks : IO Unit := do
   IO.println "WS-SM SM5.F — Per-core PIP suite"
   IO.println "===================================="
@@ -471,6 +512,7 @@ def runSmpPipChecks : IO Unit := do
   runDecompositionChecks
   runChainChecks
   runDispatchChecks
+  runCompletionNonVacuityChecks
   runInventoryChecks
   IO.println "===================================="
   IO.println "All SM5.F per-core PIP checks PASS."

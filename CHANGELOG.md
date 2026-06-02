@@ -69,9 +69,13 @@ self-audit identified.  All additions axiom-clean (`propext` / `Quot.sound` /
   substitution (routing the `@[export]` bodies through the dispatch) remains the
   bounded SM5.I FFI-seam step.
 - **Inventory** grew 61 → 95 entries (+ `memoryModel` / `dispatch` categories);
-  `tests/SmpPipSuite.lean` adds §3.6–§3.9 runtime sections (C9 gate, exact
-  decomposition, chain completeness, dispatch firing); the tier-4 QEMU cross-core PIP
-  stub `scripts/test_qemu_smp_pip.sh` reserves the plan §6 slot.
+  `tests/SmpPipSuite.lean` adds §3.6–§3.10 runtime sections (C9 gate, exact
+  decomposition, chain completeness, dispatch firing, and §3.10 completion-pass
+  non-vacuity — B6 dominance, B7 home-core stability, the F13 `resumeThreadOnCore`
+  Inactive→Ready + remote-SGI round-trip, and the single-core all-unbound bridge —
+  44 runtime assertions, all genuine `decide`/match-projected, no dead-weight); the
+  tier-4 QEMU cross-core PIP stub `scripts/test_qemu_smp_pip.sh` reserves the plan
+  §6 slot.
 - **AK7**: `resumeThreadOnCore` reads through the typed `getTcb?` accessor and the
   home-core-stability frame uses the `.get?` method form, so `RAW_LOOKUP_TID` stays at
   the 814 floor; `RAW_MATCH_TOTAL` re-anchors 124 → 125 for `crossCoreSgiBody`'s single

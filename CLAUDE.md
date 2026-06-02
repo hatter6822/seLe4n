@@ -5668,7 +5668,10 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `smp_pip_suite` demonstrates it genuinely **fires** `[(core1, .reschedule)]` for a
     cross-core boost diff.
   - Inventory grew 61 → 95 entries (+ `memoryModel` / `dispatch` categories);
-    `tests/SmpPipSuite.lean` adds §3.6–§3.9 runtime sections; tier-4 QEMU stub
+    `tests/SmpPipSuite.lean` adds §3.6–§3.10 runtime sections (incl. §3.10
+    completion-pass non-vacuity: B6 dominance, B7 home-core stability, the F13
+    `resumeThreadOnCore` Inactive→Ready + remote-SGI round-trip, and the single-core
+    all-unbound bridge — 44 runtime assertions); tier-4 QEMU stub
     `scripts/test_qemu_smp_pip.sh` reserves the plan §6 slot.  AK7: `RAW_LOOKUP_TID`
     stays at the 814 floor (typed-accessor refactor); `RAW_MATCH_TOTAL` re-anchors
     124 → 125 for `crossCoreSgiBody`'s single object-store iteration (the diff-based
