@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/amazing-johnson-eE3W3",
-      "commit_sha": "0b083cad761dcfcebc0dfff9219025e964fb2e01",
-      "tree_sha": "82b176f556d53c8df228f56452ea6808ecd2be24",
-      "committed_at_utc": "2026-06-02T04:02:33+00:00"
+      "commit_sha": "7cbc78f61ffe59219a30121167f047fab8a8f920",
+      "tree_sha": "c4b2625c8175a61ca59f1fd2bc9b0f96b4773bee",
+      "committed_at_utc": "2026-06-02T05:24:20+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "171174ed732122655a49b7a2919567326e2e91f7974591e7e6e76372e02cd79c"
+    "source_digest": "b56de0d4dc1cda6633c163e7f08f90e50fa8c14ff638f0b875a48e22c5639c96"
   },
   "summary": {
     "module_count": 272,
@@ -27,7 +27,7 @@
     "version": "0.31.49",
     "lean_toolchain": "v4.28.0",
     "production_files": 220,
-    "production_loc": 155916,
+    "production_loc": 155926,
     "test_files": 52,
     "test_loc": 34312,
     "proved_theorem_lemma_decls": 5014,
@@ -68671,13 +68671,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 32,
+          "line": 42,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_runs_idle",
-          "line": 55,
+          "line": 65,
           "called": [
             "CoreId",
             "SystemState",
@@ -68696,7 +68696,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_preserves_objects_invExt",
-          "line": 81,
+          "line": 91,
           "called": [
             "CoreId",
             "SystemState",
@@ -68708,7 +68708,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_establishes_currentThreadValidOnCore",
-          "line": 88,
+          "line": 98,
           "called": [
             "CoreId",
             "SystemState",
@@ -68721,7 +68721,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore",
-          "line": 96,
+          "line": 106,
           "called": [
             "CoreId",
             "SystemState",
@@ -68733,7 +68733,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed",
-          "line": 103,
+          "line": 113,
           "called": [
             "CoreId",
             "SystemState",
@@ -68746,7 +68746,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore",
-          "line": 114,
+          "line": 124,
           "called": [
             "CoreId",
             "SystemState",
@@ -68759,7 +68759,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 123,
+          "line": 133,
           "called": [
             "CoreId",
             "SystemState",
@@ -68772,7 +68772,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone",
-          "line": 139,
+          "line": 149,
           "called": [
             "CoreId",
             "SystemState",
@@ -68786,7 +68786,7 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_idle_starves_no_eligible_thread",
-          "line": 175,
+          "line": 185,
           "called": [
             "CoreId",
             "SystemState",
@@ -68804,7 +68804,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_runs_idle",
-          "line": 195,
+          "line": 205,
           "called": [
             "CoreId",
             "Kernel",
