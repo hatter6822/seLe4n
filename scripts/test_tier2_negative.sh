@@ -270,4 +270,13 @@ run_check_with_timeout "TRACE" lake exe smp_timer_suite
 # theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_idle_suite
 
+# WS-SM SM5.F — per-core priority inheritance.  Runtime assertions on a concrete
+# cross-core blocking scenario (a server bound to a remote core with a
+# high-priority waiter on the boot core): SM5.F.1 per-core ≤ global decomposition
+# (computeMaxWaiterPriorityOnCore), SM5.F.2 cross-core PIP wake SGI emission
+# (pipBoostWithWake — remote material vs local), SM5.F.7 per-core blocking-graph
+# slice + consistency (blockingServerOnCore), SM5.F.6 cross-core resume wake
+# (restoreToReadyWithWake), and the SM5.F theorem-inventory partition counts.
+run_check_with_timeout "TRACE" lake exe smp_pip_suite
+
 finalize_report

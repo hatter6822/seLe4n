@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.49.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.50.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5541,6 +5541,81 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `chooseThreadOnCore_always_succeeds`, per-(core,domain) idle for multi-domain
   configs, and wiring `scheduleOrIdleOnCore` into the legacy single-core `schedule`.
   Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.F LANDED at v0.31.50 on branch
+  `claude/eager-faraday-sokpy`** (per-core priority inheritance protocol; plan
+  §3.6 / §5).  All ten sub-tasks landed in one cut.  Under SMP a thread `t` on
+  core `c` blocked on a resource held by a thread `t'` on core `c'` boosts `t'`
+  to `t`'s priority; if `c' ≠ c`, the boost emits a `.reschedule` SGI to `c'`.
+
+  **Correctness keystone — the boost VALUE stays global.**
+  `computeMaxWaiterPriority` (the max over *every* waiter, cross-core) is the
+  value `updatePipBoostOnCore` applies; the per-core aspect is purely (1) which
+  core's run queue the boosted holder's bucket migrates on (its home core, not
+  always `bootCoreId`) and (2) whether a remote core must be poked with a
+  `.reschedule` SGI.  Taking only a per-core slice would *under-boost* and
+  re-introduce priority inversion.
+
+  - **SM5.F.1** `computeMaxWaiterPriorityOnCore` (`Compute.lean`, production) —
+    the per-core analytic *slice* of the global max-waiter priority (waiters
+    whose home core is `c`), plus `optPriorityVal`,
+    `computeMaxWaiterPriorityOnCore_le_global` (the substantive **per-core ≤
+    global decomposition**), and `_frame`.
+  - **SM5.F.2** `updatePipBoostOnCore` + `pipBoostWithWake` (`Propagate.lean`,
+    production).  `updatePipBoostOnCore` is `updatePipBoost` with the run-queue
+    bucket migration generalised from `bootCoreId` to an explicit home core `c`;
+    the single-core form is recovered at `c = bootCoreId`
+    (`updatePipBoost_eq_updatePipBoostOnCore_bootCore`, an `rfl`), preserving the
+    existing single-core PIP proof base verbatim.  `pipBoostWithWake` is the
+    cross-core PIP wake: boost the holder on its home core, emit a `.reschedule`
+    SGI iff *remote* (home ≠ executing core) AND *material* (the holder's
+    `pipBoost` actually changed) — a no-op / local boost pokes no core (avoids
+    spurious cross-core IPIs).
+  - **SM5.F.3** `pipBoost_perCore_consistent` (Thm 3.6.1) — a PIP-consistent
+    holder's per-core waiter slice is bounded by its effective priority
+    (per-core ≤ global boost ≤ effective).
+  - **SM5.F.4** `propagatePipChainCrossCore` (`Propagate.lean`, production) —
+    donation chain across cores: walks the cross-core blocking chain boosting
+    each holder on **its own** home core and collecting the `.reschedule` SGIs
+    for remote holders; `invExt` + blocking-acyclicity preservation.
+  - **SM5.F.5 / SM5.F.6** `restoreToReadyOnCore` / `restoreToReadyWithWake`
+    (`Lifecycle/Suspend.lean`, production) — per-core resume re-ready (restore
+    IPC clear → **recompute `pipBoost` from the GLOBAL blocking graph** →
+    per-core enqueue) + cross-core resume wake (emits a `.reschedule` SGI when
+    the resumed thread lands on a remote core).
+  - **SM5.F.7** `blockingServerOnCore` + `blockingGraphOnCore_consistent` — the
+    per-core blocking-graph slice + the proof that the global graph is the union
+    of the per-core slices (consistency).
+  - **SM5.F.8** `blockingAcyclic_perCore` — the per-core blocking slice is
+    acyclic (`blockingChainOnCore` is a sub-walk of the acyclic global
+    `blockingChain`); no new PIP cycle from the per-core decomposition.
+  - **SM5.F.9** `priorityInheritance_perCore_witness` — aggregate soundness: the
+    cross-core PIP wake preserves the global acyclic invariant, every core's
+    slice is acyclic, and every slice is a consistent subgraph.
+  - **SM5.F.10** `tests/SmpPipSuite.lean` (`lake exe smp_pip_suite`) — 60+
+    surface anchors + 9 elaboration examples + 24 runtime assertions on a
+    concrete cross-core blocking fixture (a server bound to a remote core with a
+    high-priority waiter on the boot core).
+
+  Theorem surface + 61-entry `ppit!` inventory in the new staged modules
+  `Scheduler/PriorityInheritance/PerCore.lean` + `PerCoreInventory.lean` (8
+  categories: compute / updateBoost / consistent / wake / chain / resume /
+  blockingGraph / witness); the per-core PIP *transition* defs are
+  production-reached.  Two private `blockingServer_*` helpers in `Propagate.lean`
+  de-privatised for reuse.  **AK7 baseline re-anchored** (`raw_match_total` 122 →
+  126, `raw_lookup_tid` 810 → 814): the per-core PIP transitions necessarily
+  mirror the raw-based D4-era single-core PIP (the `rfl` bridges + decomposition
+  require identical raw object reads), so the raw floor legitimately rises by the
+  structural minimum; staged proof helpers use the `.get?` method form where the
+  math allows.  All axiom-clean (`propext` / `Quot.sound` / `Classical.choice`);
+  trace byte-identical; partition gate 53 staged-only modules; Tier 0–3 green;
+  `smp_pip_suite` 24/24.  **Tracked debt (SM5.I)**: wiring `pipBoostWithWake` /
+  `restoreToReadyWithWake` into the live IPC donation / timeout / resume paths so
+  a remote boost fires its SGI (this also closes the SM5.D timeout-path latency
+  gap — route the timeout re-enqueue through `wakeThread` so a remote target
+  receives the `.reschedule` SGI); SM5.F lands the verified *mechanism*, SM5.I
+  performs the production wiring + cross-subsystem preservation.  Items deferred
+  past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

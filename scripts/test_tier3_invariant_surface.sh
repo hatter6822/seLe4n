@@ -3508,4 +3508,96 @@ lake env lean /tmp/sm5e_surface.lean'
 # SM5.E theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory'
 
+# WS-SM SM5.F — per-core PIP surface anchors.  Covers the SM5.F.1
+# computeMaxWaiterPriorityOnCore per-core slice + per-core <= global decomposition,
+# SM5.F.2 updatePipBoostOnCore (per-core bucket migration) + pipBoostWithWake
+# cross-core PIP wake, SM5.F.3 pipBoost_perCore_consistent, SM5.F.4
+# propagatePipChainCrossCore donation chain across cores, SM5.F.5/.6
+# restoreToReadyOnCore / restoreToReadyWithWake, SM5.F.7 blockingGraphOnCore_consistent
+# + SM5.F.8 blockingAcyclic_perCore, and SM5.F.9 priorityInheritance_perCore_witness.
+# The per-core PIP transition defs are production-reached.  A rename / removal of
+# any SM5.F symbol fails here at elaboration time before the test suite.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5f_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory
+open SeLe4n.Kernel.PriorityInheritance
+open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWake)
+-- SM5.F.1 computeMaxWaiterPriorityOnCore + decomposition + frame.
+#check @computeMaxWaiterPriorityOnCore
+#check @optPriorityVal
+#check @computeMaxWaiterPriorityOnCore_no_waiters
+#check @computeMaxWaiterPriorityOnCore_le_global
+#check @computeMaxWaiterPriorityOnCore_frame
+-- SM5.F.2 updatePipBoostOnCore + bridge / frame / preservation.
+#check @updatePipBoostOnCore
+#check @updatePipBoost_eq_updatePipBoostOnCore_bootCore
+#check @updatePipBoostOnCore_preserves_objects_invExt
+#check @updatePipBoostOnCore_objects_ne
+#check @updatePipBoostOnCore_preserves_objectIndex
+#check @updatePipBoostOnCore_preserves_blockingServer
+#check @updatePipBoostOnCore_preserves_blockingAcyclic
+#check @updatePipBoostOnCore_runQueueOnCore_ne
+#check @updatePipBoostOnCore_currentOnCore
+#check @updatePipBoostOnCore_getTcb?_pipBoost
+-- SM5.F.3 pipBoost_perCore_consistent.
+#check @optPriorityVal_pipBoost_le_effectiveSchedParams
+#check @pipBoost_perCore_consistent
+-- SM5.F.2 pipBoostWithWake (cross-core PIP wake).
+#check @pipBoostWithWake
+#check @pipBoostWithWake_state
+#check @pipBoostWithWake_no_sgi_if_local
+#check @pipBoostWithWake_emits_sgi_if_remote
+#check @pipBoostWithWake_no_sgi_if_noop
+#check @pipBoostWithWake_sgi_is_reschedule
+#check @pipBoostWithWake_emits_at_most_one_sgi
+#check @pipBoostWithWake_preserves_objects_invExt
+#check @pipBoostWithWake_preserves_blockingAcyclic
+#check @pipBoostWithWake_bootCore_unbound
+-- SM5.F.4 propagatePipChainCrossCore (donation chain across cores).
+#check @propagatePipChainCrossCore
+#check @propagatePipChainCrossCore_zero
+#check @propagatePipChainCrossCore_step
+#check @propagatePipChainCrossCoreState
+#check @propagatePipChainCrossCoreState_step
+#check @propagatePipChainCrossCore_preserves_objects_invExt
+#check @propagatePipChainCrossCore_preserves_blockingAcyclic
+#check @propagatePipChainCrossCore_zero_sgis
+#check @propagatePipChainCrossCore_no_sgis_head_terminal
+#check @propagatePipChainCrossCore_head_sgi_remote
+-- SM5.F.5/.6 restoreToReadyOnCore / restoreToReadyWithWake.
+#check @restoreToReadyOnCore
+#check @restoreToReadyWithWake
+#check @restoreToReady_objects_invExt
+#check @restoreToReadyOnCore_preserves_objects_invExt
+#check @restoreToReadyOnCore_currentOnCore
+#check @restoreToReadyOnCore_runQueueOnCore_ne
+#check @restoreToReadyOnCore_pipBoost_recomputed
+#check @restoreToReadyWithWake_state
+#check @restoreToReadyWithWake_no_sgi_if_local
+#check @restoreToReadyWithWake_emits_sgi_if_remote
+#check @restoreToReadyWithWake_sgi_is_reschedule
+#check @restoreToReadyWithWake_preserves_objects_invExt
+-- SM5.F.7/.8 per-core blocking graph.
+#check @blockingServerOnCore
+#check @blockingServerOnCore_eq_global_of_onCore
+#check @blockingServerOnCore_none_of_offCore
+#check @blockingServerOnCore_implies_global
+#check @blockingServerOnCore_subgraph
+#check @blockingGraphOnCore_consistent
+#check @blockingChainOnCore
+#check @blockingChainOnCore_subset
+#check @blockingAcyclicOnCore
+#check @blockingAcyclic_perCore
+-- SM5.F.9 aggregate witness + inventory witnesses.
+#check @priorityInheritance_perCore_witness
+#check @perCorePipTheorems_count
+#check @perCorePipTheorems_partition_sum
+#check @perCorePipTheorems_identifiers_nodup
+EOF
+lake env lean /tmp/sm5f_surface.lean'
+# WS-SM SM5.F: build the SM5.F theorem inventory so a renamed / removed
+# SM5.F theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory'
+
 finalize_report
