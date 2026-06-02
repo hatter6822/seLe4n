@@ -1,3 +1,90 @@
+## v0.31.46 — WS-SM SM5.E completion: production idle-aware dispatcher + full preservation surface
+
+Completes WS-SM Phase **SM5.E** to the optimal bar, closing every in-scope gap
+flagged after the v0.31.45 first cut and — per maintainer directive — pulling the
+SM5.I per-core *idle-aware dispatcher* forward so idle threads are **live in the
+running kernel**, demonstrated in the trace.
+
+- **Refactor (prerequisite)**: the idle-thread *identities* (`idleThreadIdBase`,
+  `idleThreadId`, and the injectivity witnesses) moved from `Platform.Boot` to a
+  new low module `SeLe4n/Kernel/Scheduler/IdleThread.lean` (namespace
+  `SeLe4n.Kernel`) so the in-`Scheduler/Operations/Core.lean` dispatcher (upstream
+  of `Platform.Boot`) can reference them.  `createIdleThread` + the boot installers
+  stay in `Boot`.  All references (Boot, `Assumptions.lean`, tests, `PerCoreIdle`)
+  updated; Boot rebuilds unchanged.
+
+- **Production idle-aware dispatcher — the SM5.I seed (`Scheduler/Operations/Core.lean`)**:
+  `idleDispatchableOnCore` (idle installed + in-domain), `dispatchIdleOnCore` (the
+  idle-dispatch state: dequeue-on-dispatch + context-restore + set-current), and
+  `scheduleOrIdleOnCore` — the per-core dispatcher that **runs core `c`'s idle
+  thread** when the budget-aware selector (`scheduleEffectiveOnCore`) finds nothing
+  runnable, instead of leaving the core at `current = none`.  Conditional-fallback
+  (idle-if-installed-else-`none`) keeps it sound (`currentThreadValid` never breaks)
+  and backward-compatible (states without idle threads — most fixtures, the
+  single-core boot trace — are unchanged).  It *layers on* `scheduleEffectiveOnCore`
+  (rather than modifying its `none` branch in place), so the mature SM5.D / SM4.C /
+  `timerTickOnCore` proof base is untouched.
+
+- **New staged module `Scheduler/Operations/PerCoreDispatch.lean`** (establishment
+  theorems): the headline **`scheduleOrIdleOnCore_runs_idle`** (idle is dispatched
+  in a production transition — `current = some (idleThreadId c)` — when nothing else
+  is runnable), the `dispatchIdleOnCore` frame lemmas (`currentOnCore` / `objects` /
+  `runQueueOnCore` / `activeDomainOnCore` / `getTcb?`), and the soundness surface
+  (`scheduleOrIdleOnCore_preserves_objects_invExt` /
+  `_establishes_currentThreadValidOnCore` /
+  `_establishes_queueCurrentConsistentOnCore` /
+  `_preserves_runQueueOnCoreWellFormed`), composing `scheduleEffectiveOnCore`'s
+  establishment surface with the idle-dispatch case.
+
+- **Trace demo (`MainTraceHarness`)**: a new `runPerCoreIdleDispatchTrace` scenario
+  appends six `[IDLE-…]` lines showing the legacy single-core `schedule` going to
+  `current = none` vs. the idle-aware dispatcher running the idle thread
+  (`current = some 65536`), with dequeue-on-dispatch.  The fixture
+  (`main_trace_smoke.expected`) grows by exactly these six lines — every prior line
+  is byte-identical.
+
+- **`PerCoreIdle.lean` completion** (closing the v0.31.45 gaps):
+  - **Per-core invariant preservation** (the SM5.I consumption surface):
+    `enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore` (unconditional);
+    the soundness-critical `_preserves_queueCurrentConsistentOnCore` and
+    `_preserves_currentThreadInActiveDomainOnCore` under the documented precondition
+    `currentOnCore c ≠ some (idleThreadId c)` (enqueuing the *running* idle thread
+    would make it both current and queued — the precondition SM5.I honours);
+    `_mem_idempotent`; and `_preserves_runQueueAffinityConsistentOnCore_self` (idle
+    is admitted on its own core, connecting the locality hypothesis to a reachable
+    property).
+  - **Lock-set** `enqueueIdleThreadOnCoreLockSet` (cross-domain object-store +
+    run-queue WRITE footprint over SM5.A's `SchedLockId`, plan §4.4 order) + the 7
+    witnesses (`_write_only` / `_contains_*` / `_object_before_runQueue` /
+    `_keys_nodup` / `_pairwise_le`) — SM5.A–D parity.
+  - **No-starvation** `idleThread_no_starvation` (idle, priority `⟨0⟩`, is selected
+    only when not outranked in the top bucket — a SM5.A selection-optimality lift).
+  - **Decidable companion** `idleAvailableOnCoreB` (Bool) +
+    `chooseThreadOnCore_always_succeeds_of_idleAvailableB` + the
+    `idleThreadEnqueuedOnCore → idleAvailableOnCoreB` bridge (the discharge predicate
+    is undecidable on the exact-TCB conjunct; the Bool companion checks only the
+    domain, so concrete states can `decide` it).
+  - **Locality `∀c` aggregate** `idleThread_core_locality_forall` + the cross-core
+    selection-inputs frame `enqueueIdleThreadOnCore_selection_inputs_framed`.
+
+- **Inventory**: `PerCoreIdleInventory` grows 26 → **58** entries across 7 categories
+  (field/enqueue/preservation/lockSet/alwaysSucceeds/locality/dispatch), kernel-sound
+  `Nodup`.  **Tests**: `tests/SmpIdleSuite.lean` gains the §3.6 dispatcher (idle
+  dispatched vs. legacy `none`; fallback when no idle installed; dequeue-on-dispatch),
+  §3.7 lock-set, and the 58-entry inventory checks.
+
+Both new staged modules (`PerCoreDispatch`, `IdleThread` is production-reached)
+registered; partition gate **51** staged-only modules.  All new theorems axiom-clean
+(only the foundational `propext` / `Quot.sound` / `Classical.choice`); no `sorry`;
+default build green; trace fixture additive-only (+6 lines).  **Tracked debt (SM5.I /
+SM5.H / post-1.0)**: folding the idle dispatch *into* `scheduleEffectiveOnCore` in
+place; the unconditional invariant-backed `chooseThreadOnCore_always_succeeds` (needs
+idle-always-enqueued maintained across every transition); per-(core,domain) idle for
+multi-domain configs; and wiring `scheduleOrIdleOnCore` into the legacy single-core
+`schedule`.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §SM5.E
+
 ## v0.31.45 — WS-SM SM5.E: per-core idle threads
 
 Lands WS-SM Phase **SM5.E** "Per-core idle threads" (plan

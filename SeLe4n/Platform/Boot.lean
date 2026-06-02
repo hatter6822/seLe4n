@@ -10,6 +10,10 @@
 import SeLe4n.Model.Builder
 import SeLe4n.Model.FreezeProofs
 import SeLe4n.Kernel.API
+-- WS-SM SM5.E: idle-thread identities (`idleThreadId` etc.) moved upstream so
+-- the per-core dispatcher can reference them; the boot installers below consume
+-- them.  Explicit import (also reachable transitively via `Kernel.API`).
+import SeLe4n.Kernel.Scheduler.IdleThread
 -- WS-RC R3 (DEEP-BOOT-01): boot-VSpaceRoot threading reaches into the
 -- canonical RPi5 boot root + boot-safety predicate so that
 -- `bootSafeObjectCheck` can admit a well-formed boot VSpaceRoot.
@@ -1703,61 +1707,16 @@ theorem bootFromPlatform_scheduler_eq (config : PlatformConfig) :
 -- ============================================================================
 -- WS-SM SM4.G: per-core idle-thread identities (plan §3.7)
 -- ============================================================================
-
-/-- **WS-SM SM4.G** (plan §3.7): reserved base ObjId for per-core idle
-    threads.  The idle thread for core `c` lives at the `ObjId`
-    `idleThreadIdBase + c.val`.  The value sits above the 16-bit ObjId space
-    (`0x1_0000 = 65536`) that platform configs assign their objects from, so
-    on the canonical platforms the per-core idle range
-    `[idleThreadIdBase, idleThreadIdBase + numCores)` is disjoint from the
-    config objects.
-
-    The boot-install theorems (`bootFromPlatformWithIdleThreads_all_cores_have_idle`
-    and the scheduler-bundle theorems) hold **unconditionally** — the idle TCB
-    is installed regardless of the base config, because `createObject`'s insert
-    is overwriting.  The disjointness is what guarantees the install does not
-    *clobber* a config object: `idleSlotsFreshAt` is the freshness precondition,
-    `bootFromPlatformWithIdleThreads_preserves_platform_objects` proves the
-    install is purely additive under it, and
-    `idleSlotsFreshAt_of_initialObjects_below_base` discharges freshness for any
-    config whose objects live below `idleThreadIdBase` (the canonical case).
-    The bound is **not** assumed for arbitrary configs. -/
-def idleThreadIdBase : Nat := 0x1_0000
-
-/-- **WS-SM SM4.G** (plan §3.7): the per-core idle thread's `ThreadId`.  Idle
-    threads are injective in the core (`idleThreadId_injective`), so the
-    per-core idle objects never alias one another. -/
-def idleThreadId (c : SeLe4n.Kernel.Concurrency.CoreId) : SeLe4n.ThreadId :=
-  SeLe4n.ThreadId.ofNat (idleThreadIdBase + c.val)
-
-/-- **WS-SM SM4.G**: `idleThreadId` is injective in the core. -/
-theorem idleThreadId_injective {c₁ c₂ : SeLe4n.Kernel.Concurrency.CoreId}
-    (h : idleThreadId c₁ = idleThreadId c₂) : c₁ = c₂ := by
-  unfold idleThreadId at h
-  have hv : idleThreadIdBase + c₁.val = idleThreadIdBase + c₂.val :=
-    SeLe4n.ThreadId.ofNat_injective h
-  exact Fin.ext (Nat.add_left_cancel hv)
-
-/-- **WS-SM SM4.G**: distinct cores get distinct idle-thread ids. -/
-theorem idleThreadId_ne {c₁ c₂ : SeLe4n.Kernel.Concurrency.CoreId}
-    (h : c₁ ≠ c₂) : idleThreadId c₁ ≠ idleThreadId c₂ :=
-  fun hEq => h (idleThreadId_injective hEq)
-
-/-- **WS-SM SM4.G**: distinct cores get distinct idle-thread `ObjId`s
-    (the object-store key form of `idleThreadId_ne`). -/
-theorem idleThreadId_toObjId_ne {c₁ c₂ : SeLe4n.Kernel.Concurrency.CoreId}
-    (h : c₁ ≠ c₂) : (idleThreadId c₁).toObjId ≠ (idleThreadId c₂).toObjId := by
-  intro hEq
-  apply idleThreadId_ne h
-  -- toObjId is `ObjId.ofNat ∘ toNat`; recover the ThreadId equality.
-  have : (idleThreadId c₁).toNat = (idleThreadId c₂).toNat := by
-    have h1 : (idleThreadId c₁).toObjId.val = (idleThreadId c₁).toNat := rfl
-    have h2 : (idleThreadId c₂).toObjId.val = (idleThreadId c₂).toNat := rfl
-    rw [← h1, ← h2, hEq]
-  calc idleThreadId c₁ = SeLe4n.ThreadId.ofNat (idleThreadId c₁).toNat :=
-          (SeLe4n.ThreadId.ofNat_toNat _).symm
-    _ = SeLe4n.ThreadId.ofNat (idleThreadId c₂).toNat := by rw [this]
-    _ = idleThreadId c₂ := SeLe4n.ThreadId.ofNat_toNat _
+--
+-- WS-SM SM5.E: the idle-thread *identities* (`idleThreadIdBase`, `idleThreadId`,
+-- and the injectivity witnesses `idleThreadId_injective` / `_ne` /
+-- `_toObjId_ne`) were moved upstream to `SeLe4n.Kernel.Scheduler.IdleThread`
+-- (namespace `SeLe4n.Kernel`) so the per-core dispatcher `scheduleEffectiveOnCore`
+-- (`Scheduler/Operations/Core.lean`, upstream of `Platform.Boot`) can run a
+-- core's idle thread.  They resolve unqualified here via `open SeLe4n.Kernel`.
+-- The idle *TCB constructor* (`createIdleThread`) and the boot *installers*
+-- (`installIdleThread`, `bootFromPlatformWithIdleThreads`) stay below — they
+-- need the `IntermediateState` / `Builder` machinery.
 
 -- ============================================================================
 -- WS-SM SM4.E.2: SMP-shape boot witness (replaces the retired

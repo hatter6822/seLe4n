@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.45.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.46.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5384,6 +5384,53 @@ documentation lives under `docs/` and `docs/gitbook/`.
   loop is the first runtime exerciser.  Items deferred past v1.0.0 with correctness
   impact: NONE.  Follow-on: SM5.F (per-core PIP), SM5.G/H/I/J/K per the master
   overview.
+
+  **WS-SM SM5.E completion LANDED at v0.31.46 on branch
+  `claude/amazing-johnson-eE3W3`** (production idle-aware dispatcher + full
+  preservation surface; closes every in-scope SM5.E gap flagged after the v0.31.45
+  first cut and — per maintainer directive — pulls the SM5.I per-core idle-aware
+  dispatcher forward so idle threads are **live in the running kernel**,
+  demonstrated in the trace).
+
+  - **Refactor**: idle-thread *identities* (`idleThreadIdBase`, `idleThreadId`, the
+    injectivity witnesses) moved `Platform.Boot` → `Scheduler/IdleThread.lean`
+    (namespace `SeLe4n.Kernel`) so the in-`Core.lean` dispatcher can reference them;
+    `createIdleThread` + boot installers stay in `Boot`; all references updated; Boot
+    rebuilds unchanged.
+  - **Production dispatcher (`Scheduler/Operations/Core.lean`, the SM5.I seed)**:
+    `idleDispatchableOnCore` + `dispatchIdleOnCore` + `scheduleOrIdleOnCore` — runs
+    core `c`'s idle thread when `scheduleEffectiveOnCore` finds nothing runnable,
+    instead of `current = none`.  Conditional-fallback (idle-if-installed-else-`none`,
+    sound + backward-compatible); *layered on* `scheduleEffectiveOnCore` so the SM5.D
+    / `timerTickOnCore` proof base is untouched.
+  - **Staged `PerCoreDispatch.lean`**: the headline `scheduleOrIdleOnCore_runs_idle`
+    (idle dispatched in a production transition) + the `dispatchIdleOnCore` frame
+    lemmas + the soundness surface (objects-`invExt` / `currentThreadValid` /
+    `queueCurrentConsistent` / `runQueueWellFormed`), composing
+    `scheduleEffectiveOnCore`'s establishment surface with the idle-dispatch case.
+  - **Trace demo**: a `MainTraceHarness` `[IDLE-…]` scenario shows the legacy
+    single-core `schedule` → `current = none` vs. idle-aware → `current = some
+    65536`; the fixture grows by 6 additive lines (every prior line byte-identical).
+  - **`PerCoreIdle` completion**: the per-core invariant-preservation surface for
+    `enqueueIdleThreadOnCore` (currentThreadValid unconditional; the
+    soundness-critical `queueCurrentConsistent` + `currentThreadInActiveDomain` under
+    the documented `currentOnCore c ≠ some (idleThreadId c)` precondition;
+    idempotency; affinity-consistency-self); the `enqueueIdleThreadOnCoreLockSet`
+    cross-domain footprint (SM5.A–D parity); `idleThread_no_starvation`; the
+    decidable `idleAvailableOnCoreB` companion; the `idleThread_core_locality_forall`
+    `∀c` aggregate.
+  - **Inventory** 26 → 58 entries (7 categories field/enqueue/preservation/lockSet/
+    alwaysSucceeds/locality/dispatch); **tests** `SmpIdleSuite` gains the dispatcher
+    / lock-set / 58-entry sections.  Partition gate 51 staged-only modules;
+    axiom-clean (only `propext` / `Quot.sound` / `Classical.choice`); trace
+    additive-only.
+
+  **Tracked debt (SM5.I / SM5.H / post-1.0)**: folding the idle dispatch *into*
+  `scheduleEffectiveOnCore` in place; the unconditional invariant-backed
+  `chooseThreadOnCore_always_succeeds` (needs idle-always-enqueued maintained across
+  every transition); per-(core,domain) idle for multi-domain configs; wiring
+  `scheduleOrIdleOnCore` into the legacy single-core `schedule`.  Items deferred past
+  v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

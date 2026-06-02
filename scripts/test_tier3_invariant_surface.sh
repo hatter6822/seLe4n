@@ -1261,7 +1261,8 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
 -- SM4.G — per-core idle-thread bootstrap
-#check @SeLe4n.Platform.Boot.idleThreadId_injective
+-- WS-SM SM5.E: `idleThreadId` (+ injectivity) moved to `SeLe4n.Kernel.Scheduler.IdleThread`.
+#check @SeLe4n.Kernel.idleThreadId_injective
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull
@@ -3422,11 +3423,13 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.S
 # definitions live in Platform.Boot (SM4.G).  A rename / removal of any SM5.E
 # symbol fails here at elaboration time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5e_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 open SeLe4n.Kernel
-open SeLe4n.Platform.Boot (idleThreadId createIdleThread)
+open SeLe4n.Platform.Boot (createIdleThread)
 -- SM5.E.1/.2/.5 idle definitions + field lemmas.
 #check @idleThreadId
 #check @createIdleThread
@@ -3453,17 +3456,47 @@ open SeLe4n.Platform.Boot (idleThreadId createIdleThread)
 #check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
 #check @chooseThreadOnCore_always_succeeds
 #check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
--- SM5.E.4 core locality.
+-- SM5.E.4 core locality + no-starvation.
 #check @runQueueAffinityConsistentOnCore
 #check @idleThread_core_locality
 #check @idleThread_core_locality_of_enqueue
+#check @idleThread_core_locality_forall
+#check @enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self
+#check @enqueueIdleThreadOnCore_selection_inputs_framed
+#check @idleThread_no_starvation
+-- SM5.E.3 per-core invariant preservation (SM5.I consumption surface).
+#check @enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore
+#check @enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore
+#check @enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @enqueueIdleThreadOnCore_mem_idempotent
+-- SM5.E.3 lock-set footprint.
+#check @enqueueIdleThreadOnCoreLockSet
+#check @enqueueIdleThreadOnCoreLockSet_write_only
+#check @enqueueIdleThreadOnCoreLockSet_object_before_runQueue
+#check @enqueueIdleThreadOnCoreLockSet_pairwise_le
+-- SM5.E.6 decidable companion.
+#check @idleAvailableOnCoreB
+#check @chooseThreadOnCore_always_succeeds_of_idleAvailableB
+#check @idleThreadEnqueuedOnCore_idleAvailableOnCoreB
+-- SM5.E idle-aware dispatcher (SM5.I seed): production defs + establishment.
+#check @idleDispatchableOnCore
+#check @dispatchIdleOnCore
+#check @scheduleOrIdleOnCore
+#check @scheduleOrIdleOnCore_runs_idle
+#check @scheduleOrIdleOnCore_preserves_objects_invExt
+#check @scheduleOrIdleOnCore_establishes_currentThreadValidOnCore
+#check @scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore
+#check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
+#check @dispatchIdleOnCore_currentOnCore
+#check @dispatchIdleOnCore_objects
+#check @dispatchIdleOnCore_runQueueOnCore
 -- SM5.E inventory witnesses.
 #check @perCoreIdleTheorems_count
 #check @perCoreIdleTheorems_partition_sum
 #check @perCoreIdleTheorems_identifiers_nodup
 EOF
 lake env lean /tmp/sm5e_surface.lean'
-# WS-SM SM5.E: build the 26-entry SM5.E theorem inventory so a renamed / removed
+# WS-SM SM5.E: build the SM5.E theorem inventory so a renamed / removed
 # SM5.E theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory'
 

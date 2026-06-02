@@ -1592,7 +1592,7 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
   let _smpWitness :
       ∀ c : SeLe4n.Kernel.Concurrency.CoreId,
         booted.currentOnCore c = none ∨
-        booted.currentOnCore c = some (SeLe4n.Platform.Boot.idleThreadId c) :=
+        booted.currentOnCore c = some (SeLe4n.Kernel.idleThreadId c) :=
     fun c => SeLe4n.Platform.Boot.bootFromPlatform_smp_witness config c
   -- ∀ config generality: boot a config with BOTH a non-empty IRQ table
   -- (exercising `foldIrqs`) AND a non-empty object list (exercising
@@ -1618,10 +1618,10 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
   let bootedIdle := (SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads config).state
   expect "SM4.G: idle boot path sets boot-core current to its idle thread"
     (bootedIdle.scheduler.currentOnCore bootCoreId ==
-      some (SeLe4n.Platform.Boot.idleThreadId bootCoreId))
+      some (SeLe4n.Kernel.idleThreadId bootCoreId))
   expect "SM4.G: idle TCB present in the object store on EVERY core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      (bootedIdle.objects[(SeLe4n.Platform.Boot.idleThreadId c).toObjId]?).isSome))
+      (bootedIdle.objects[(SeLe4n.Kernel.idleThreadId c).toObjId]?).isSome))
   expect "SM4.G: idle boot path leaves the run queue empty (dequeue-on-dispatch)"
     (bootedIdle.scheduler.runnable.isEmpty)
   -- SM4.G soundness: the installed idle-thread state satisfies the FULL
@@ -1640,8 +1640,8 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
       bootedIdle.scheduler.activeDomainOnCore bootCoreId)
   -- The idle threads are per-core-distinct (no aliasing across cores).
   expect "SM4.G: idle thread ids are distinct across cores"
-    (decide (SeLe4n.Platform.Boot.idleThreadId bootCoreId ≠
-      SeLe4n.Platform.Boot.idleThreadId ⟨1, by decide⟩))
+    (decide (SeLe4n.Kernel.idleThreadId bootCoreId ≠
+      SeLe4n.Kernel.idleThreadId ⟨1, by decide⟩))
   -- SM4.G freshness/preservation: `cfgNonEmpty`'s platform object (ObjId 5,
   -- below `idleThreadIdBase`) SURVIVES the idle-thread install fold — the
   -- install is purely additive, not clobbering.  Runtime mirror of
@@ -1652,7 +1652,7 @@ def bootFromPlatform_smp_witness_reachable : IO Unit := do
     ((bootedNonEmptyIdle.objects[SeLe4n.ObjId.ofNat 5]?).isSome)
   expect "SM4.G: idle threads are additively installed alongside the platform object"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
-      (bootedNonEmptyIdle.objects[(SeLe4n.Platform.Boot.idleThreadId c).toObjId]?).isSome))
+      (bootedNonEmptyIdle.objects[(SeLe4n.Kernel.idleThreadId c).toObjId]?).isSome))
 
 /-- AN6-F (CX-M04): The `InterruptsEnabledPreservationBundle` structure
     packages the eight individual `_preserves_interruptsEnabled`

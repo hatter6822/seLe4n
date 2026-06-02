@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Concurrency.Sgi
+import SeLe4n.Kernel.Scheduler.IdleThread
 
 namespace SeLe4n.Kernel
 

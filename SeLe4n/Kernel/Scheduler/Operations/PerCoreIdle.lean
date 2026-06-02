@@ -64,8 +64,10 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
-open SeLe4n.Platform.Boot (idleThreadId createIdleThread idleThreadIdBase idleThreadId_ne
-  idleThreadId_toObjId_ne)
+-- WS-SM SM5.E: `idleThreadId` + injectivity witnesses now live in
+-- `SeLe4n.Kernel.Scheduler.IdleThread` (namespace `SeLe4n.Kernel`), so they
+-- resolve unqualified here; only the idle TCB constructor still lives in `Boot`.
+open SeLe4n.Platform.Boot (createIdleThread)
 
 -- ============================================================================
 -- §1  Idle-thread field lemmas (SM5.E.5 + companions)
@@ -241,6 +243,89 @@ theorem enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore (st : Sys
     exact ⟨tcb, by rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq]; exact htcb⟩
 
 -- ============================================================================
+-- §3b  Per-core scheduler-invariant preservation (SM5.I consumption surface)
+-- ============================================================================
+--
+-- The structural per-core invariants the SM5.I dispatch loop threads through an
+-- idle enqueue.  `currentThreadValidOnCore` is preserved **unconditionally** (the
+-- idle thread always resolves after the enqueue).  `queueCurrentConsistentOnCore`
+-- and `currentThreadInActiveDomainOnCore` are preserved under the realistic
+-- precondition that the idle thread is **not already the running thread** on core
+-- `c` (`currentOnCore c ≠ some (idleThreadId c)`) — enqueuing a thread that is
+-- currently running would put it both current *and* in the run queue, breaking
+-- dequeue-on-dispatch.  This is the precondition SM5.E.3's consumers must honour;
+-- it holds whenever idle is installed as a run-queue *fallback* (not as current).
+
+/-- WS-SM SM5.E.3 (preservation): the enqueue preserves core `c`'s
+current-thread validity **unconditionally** — the idle thread always resolves to
+a TCB after the enqueue (whether or not the current thread happens to be it), and
+every other thread's resolution is framed.  Requires the object-store invariant
+(for the insert-lookup exactness). -/
+theorem enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt) (hVal : currentThreadValidOnCore st c) :
+    currentThreadValidOnCore (enqueueIdleThreadOnCore st c) c := by
+  unfold currentThreadValidOnCore at *
+  rw [enqueueIdleThreadOnCore_currentOnCore]
+  cases hcur : st.scheduler.currentOnCore c with
+  | none => trivial
+  | some t =>
+    rw [hcur] at hVal
+    obtain ⟨tcb, htcb⟩ := hVal
+    by_cases hEq : t = idleThreadId c
+    · subst hEq
+      exact ⟨createIdleThread c, enqueueIdleThreadOnCore_getTcb?_self st c hInv⟩
+    · exact ⟨tcb, by rw [enqueueIdleThreadOnCore_getTcb?_ne st c t hInv hEq]; exact htcb⟩
+
+/-- WS-SM SM5.E.3 (preservation, the soundness-critical one): the enqueue
+preserves dequeue-on-dispatch consistency **provided the idle thread is not the
+running thread** on core `c`.  Without that precondition the property genuinely
+fails — enqueuing the *current* idle thread would make it both current and a
+run-queue member.  This is the precondition the SM5.E.3 docstring records and
+that SM5.I's dispatch loop honours (idle is enqueued as a fallback, never while
+it is the running thread). -/
+theorem enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (hNotCur : st.scheduler.currentOnCore c ≠ some (idleThreadId c))
+    (hQC : queueCurrentConsistentOnCore st.scheduler c) :
+    queueCurrentConsistentOnCore (enqueueIdleThreadOnCore st c).scheduler c := by
+  unfold queueCurrentConsistentOnCore at *
+  rw [enqueueIdleThreadOnCore_currentOnCore]
+  cases hcur : st.scheduler.currentOnCore c with
+  | none => trivial
+  | some t =>
+    rw [hcur] at hQC hNotCur
+    simp only [enqueueIdleThreadOnCore_runQueueOnCore_self, RunQueue.mem_toList_iff_mem,
+      RunQueue.mem_insert, not_or] at hQC ⊢
+    exact ⟨hQC, fun hEqIdle => hNotCur (congrArg some hEqIdle)⟩
+
+/-- WS-SM SM5.E.3 (preservation): the enqueue preserves current-in-active-domain
+under the same not-the-running-idle precondition — when `current ≠ idle`, the
+current thread's TCB resolution (and core `c`'s active domain) are framed, so the
+domain match is unchanged. -/
+theorem enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore c ≠ some (idleThreadId c))
+    (hDom : currentThreadInActiveDomainOnCore st c) :
+    currentThreadInActiveDomainOnCore (enqueueIdleThreadOnCore st c) c := by
+  unfold currentThreadInActiveDomainOnCore at *
+  rw [enqueueIdleThreadOnCore_currentOnCore, enqueueIdleThreadOnCore_activeDomainOnCore]
+  cases hcur : st.scheduler.currentOnCore c with
+  | none => trivial
+  | some t =>
+    rw [hcur] at hDom hNotCur
+    have hNe : t ≠ idleThreadId c := fun heq => hNotCur (congrArg some heq)
+    simp only [enqueueIdleThreadOnCore_getTcb?_ne st c t hInv hNe]
+    exact hDom
+
+/-- WS-SM SM5.E.3 (idempotency): the run-queue membership effect of enqueuing the
+idle thread is idempotent — after one enqueue the idle thread is already a member,
+and `RunQueue.insert`'s internal `contains` guard makes a second enqueue add no
+duplicate.  So a dispatch loop may call it repeatedly without growing the queue. -/
+theorem enqueueIdleThreadOnCore_mem_idempotent (st : SystemState) (c : CoreId) :
+    idleThreadId c ∈
+      ((enqueueIdleThreadOnCore (enqueueIdleThreadOnCore st c) c).scheduler.runQueueOnCore c).toList := by
+  exact enqueueIdleThreadOnCore_mem_runQueueOnCore_self (enqueueIdleThreadOnCore st c) c
+
+-- ============================================================================
 -- §4  `chooseThreadOnCore_always_succeeds` (SM5.E.6)
 -- ============================================================================
 
@@ -354,5 +439,203 @@ theorem idleThread_core_locality_of_enqueue (st : SystemState) (c c' : CoreId) (
     idleThreadId c ∉ ((enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c').toList := by
   rw [enqueueIdleThreadOnCore_runQueueOnCore_ne st c c' h]
   exact hAbsent
+
+/-- WS-SM SM5.E.4 (affinity-consistency preservation, connecting the locality
+hypothesis to a maintained property): enqueuing core `c`'s idle thread preserves
+`runQueueAffinityConsistentOnCore` on core `c` — the new member (idle,
+`cpuAffinity = some c`) is admitted on `c`
+(`affinityAdmitsCore (createIdleThread c) c = (c == c) = true`), and every old
+member's resolution + affinity is framed.  So the affinity-consistency that
+`idleThread_core_locality` consumes on a *different* core is *established* on the
+enqueue's own core, not merely assumed — connecting the locality hypothesis to a
+reachable state.  (Cross-core preservation additionally requires
+`idleThread_core_locality`'s own conclusion — idle `c ∉` core `c'`'s queue — so
+the natural carrier is the per-core fold, not a standalone `c' ≠ c` lemma.) -/
+theorem enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self
+    (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hAff : runQueueAffinityConsistentOnCore st c) :
+    runQueueAffinityConsistentOnCore (enqueueIdleThreadOnCore st c) c := by
+  intro tid htid tcb htcb
+  rw [enqueueIdleThreadOnCore_runQueueOnCore_self, RunQueue.mem_toList_iff_mem,
+    RunQueue.mem_insert] at htid
+  by_cases hEq : tid = idleThreadId c
+  · subst hEq
+    rw [enqueueIdleThreadOnCore_getTcb?_self st c hInv] at htcb
+    cases htcb
+    simp [affinityAdmitsCore, createIdleThread_cpuAffinity]
+  · have hMemOld : tid ∈ st.scheduler.runQueueOnCore c := htid.resolve_right hEq
+    rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq] at htcb
+    exact hAff tid ((RunQueue.mem_toList_iff_mem _ _).mpr hMemOld) tcb htcb
+
+/-- WS-SM SM5.E.4 (`∀ c` aggregate, plan §3.5 form): core `c`'s idle thread is
+absent from *every other* core's run queue, simultaneously — the SMP locality
+statement.  Each core's queue is affinity-consistent (`hAff`), and each core's
+idle slot holds its idle TCB (`hIdle`). -/
+theorem idleThread_core_locality_forall (st : SystemState)
+    (hIdle : ∀ c, st.getTcb? (idleThreadId c) = some (createIdleThread c))
+    (hAff : ∀ c, runQueueAffinityConsistentOnCore st c) :
+    ∀ c c', c ≠ c' → idleThreadId c ∉ (st.scheduler.runQueueOnCore c').toList :=
+  fun c c' h => idleThread_core_locality st c c' h (hIdle c) (hAff c')
+
+-- ============================================================================
+-- §6  Lock-set footprint (`enqueueIdleThreadOnCoreLockSet`, SM5.A–D parity)
+-- ============================================================================
+
+/-- WS-SM SM5.E.3 (plan §4.4): the cross-domain lock-set footprint of
+`enqueueIdleThreadOnCore` — it WRITES the object store (the idle TCB insert) and
+core `c`'s run queue (the idle insert), so both are **write** locks over SM5.A's
+unified `SchedLockId` (object-store table lock before run-queue lock, the §4.4
+ascending order).  Mirrors SM5.C's `wakeThreadLockSet`. -/
+def enqueueIdleThreadOnCoreLockSet (c : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.object schedObjStoreLockId, .write)
+  , (SchedLockId.runQueue ⟨c⟩, .write) ]
+
+@[simp] theorem enqueueIdleThreadOnCoreLockSet_length (c : CoreId) :
+    (enqueueIdleThreadOnCoreLockSet c).length = 2 := rfl
+
+/-- WS-SM SM5.E.3: every lock in the idle-enqueue footprint is **write** mode. -/
+theorem enqueueIdleThreadOnCoreLockSet_write_only (c : CoreId) :
+    ∀ p ∈ enqueueIdleThreadOnCoreLockSet c, p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [enqueueIdleThreadOnCoreLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h <;> subst h <;> rfl
+
+/-- WS-SM SM5.E.3: the object-store write lock is in the idle-enqueue footprint
+(it guards the idle TCB insert). -/
+theorem enqueueIdleThreadOnCoreLockSet_contains_objStore_write (c : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+      ∈ enqueueIdleThreadOnCoreLockSet c := by
+  simp [enqueueIdleThreadOnCoreLockSet]
+
+/-- WS-SM SM5.E.3: core `c`'s run-queue write lock is in the idle-enqueue
+footprint (it guards the idle insert). -/
+theorem enqueueIdleThreadOnCoreLockSet_contains_runQueue_write (c : CoreId) :
+    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∈ enqueueIdleThreadOnCoreLockSet c := by
+  simp [enqueueIdleThreadOnCoreLockSet]
+
+/-- WS-SM SM5.E.3 (plan §4.4): the object-store lock is acquired *before* the
+run-queue lock — the cross-domain ascending order. -/
+theorem enqueueIdleThreadOnCoreLockSet_object_before_runQueue (c : CoreId) :
+    SchedLockId.object schedObjStoreLockId
+      < SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+  SchedLockId.object_lt_runQueue _ _
+
+/-- WS-SM SM5.E.3: the idle-enqueue footprint's projected keys are
+duplicate-free. -/
+theorem enqueueIdleThreadOnCoreLockSet_keys_nodup (c : CoreId) :
+    ((enqueueIdleThreadOnCoreLockSet c).map (·.1)).Nodup := by
+  simp [enqueueIdleThreadOnCoreLockSet]
+
+/-- WS-SM SM5.E.3 (plan §4.4): the footprint's keys form a `SchedLockId`-ascending
+acquisition sequence (`Pairwise (· ≤ ·)`), so the canonical `withLockSet`
+acquisition is the list itself — the idle-enqueue's contribution to the SM3.D
+deadlock-freedom ladder. -/
+theorem enqueueIdleThreadOnCoreLockSet_pairwise_le (c : CoreId) :
+    ((enqueueIdleThreadOnCoreLockSet c).map (·.1)).Pairwise (· ≤ ·) := by
+  have hle : SchedLockId.object schedObjStoreLockId
+      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
+    (SchedLockId.object_lt_runQueue _ _).1
+  simp only [enqueueIdleThreadOnCoreLockSet, List.map_cons, List.map_nil]
+  exact List.Pairwise.cons
+    (fun a ha => by rcases List.mem_singleton.mp ha with rfl; exact hle)
+    (List.Pairwise.cons (fun a ha => by simp at ha) List.Pairwise.nil)
+
+-- ============================================================================
+-- §7  No-starvation (idle never displaces a higher-priority thread)
+-- ============================================================================
+
+/-- WS-SM SM5.E.5 (no-starvation, the general theorem behind `idleThread_priority_zero`):
+the idle thread is selected only when it is **not outranked** in core `c`'s
+maximum-priority bucket — i.e. no in-domain runnable thread in the top bucket is a
+better candidate (`isBetterCandidate`) than idle.  Since idle is priority `⟨0⟩`,
+this means a runnable in-domain thread of higher priority is always preferred:
+idle never starves a higher-priority thread.  An instantiation of the SM5.A
+selection-optimality theorem `chooseThreadOnCore_selects_highest` with the idle
+thread as the selected candidate. -/
+theorem idleThread_no_starvation (st : SystemState) (c : CoreId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hr : runnableThreadsAreTCBsOnCore st c)
+    (hSel : chooseThreadOnCore st c = .ok (some (idleThreadId c)))
+    (hIdleTcb : st.getTcb? (idleThreadId c) = some (createIdleThread c)) :
+    ∀ t ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket, ∀ tcb : TCB,
+      st.getTcb? t = some tcb → tcb.domain = st.scheduler.activeDomainOnCore c →
+        isBetterCandidate (createIdleThread c).priority (createIdleThread c).deadline
+          tcb.priority tcb.deadline = false :=
+  chooseThreadOnCore_selects_highest st c (idleThreadId c) (createIdleThread c) hwf hr hSel hIdleTcb
+
+-- ============================================================================
+-- §8  Decidable companion + cross-core selection independence
+-- ============================================================================
+
+/-- WS-SM SM5.E.6 (decidable companion to `idleThreadEnqueuedOnCore`): a `Bool`
+predicate testing whether core `c`'s idle thread is an *available in-domain
+candidate* — it is a run-queue member, it resolves to a TCB, and that TCB's
+domain matches core `c`'s active domain.  Unlike `idleThreadEnqueuedOnCore` (whose
+`getTcb? = some (createIdleThread c)` conjunct is undecidable because `TCB` has no
+`DecidableEq`), this checks only the *domain* of the resolved idle TCB, so it is
+decidable and concrete states can `decide` it.  It is the form the
+selection-success theorem actually needs (the selected-thread identity does not
+require pinning the full idle TCB). -/
+def idleAvailableOnCoreB (st : SystemState) (c : CoreId) : Bool :=
+  (st.scheduler.runQueueOnCore c).contains (idleThreadId c) &&
+  (match st.getTcb? (idleThreadId c) with
+   | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c
+   | none => false)
+
+/-- WS-SM SM5.E.6 (the decidable always-succeeds): when the decidable
+`idleAvailableOnCoreB` holds (idle is an in-domain run-queue candidate), the
+per-core selection returns `some`.  Discharges `chooseThreadOnCore_some_of_eligible`
+with the *resolved* idle TCB (whatever it is) rather than `createIdleThread c`, so
+it needs no undecidable full-TCB equality. -/
+theorem chooseThreadOnCore_always_succeeds_of_idleAvailableB (st : SystemState) (c : CoreId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hRunnable : runnableThreadsAreTCBsOnCore st c)
+    (hB : idleAvailableOnCoreB st c = true) :
+    ∃ tid, chooseThreadOnCore st c = .ok (some tid) := by
+  unfold idleAvailableOnCoreB at hB
+  rw [Bool.and_eq_true] at hB
+  obtain ⟨hMemB, hDomB⟩ := hB
+  have hMem : idleThreadId c ∈ (st.scheduler.runQueueOnCore c).toList :=
+    (RunQueue.mem_toList_iff_mem _ _).mpr (by rwa [RunQueue.mem_iff_contains])
+  cases hres : st.getTcb? (idleThreadId c) with
+  | none => rw [hres] at hDomB; exact absurd hDomB (by simp)
+  | some idleTcb =>
+      rw [hres] at hDomB
+      exact chooseThreadOnCore_some_of_eligible st c hwf hRunnable
+        (idleThreadId c) idleTcb hMem hres (by simpa using hDomB)
+
+/-- WS-SM SM5.E.6: the `Prop` discharge predicate `idleThreadEnqueuedOnCore`
+implies its decidable companion `idleAvailableOnCoreB` — so any state satisfying
+the (stronger, exact-TCB) `Prop` form can be `decide`d through the `Bool`
+companion. -/
+theorem idleThreadEnqueuedOnCore_idleAvailableOnCoreB (st : SystemState) (c : CoreId)
+    (h : idleThreadEnqueuedOnCore st c) : idleAvailableOnCoreB st c = true := by
+  obtain ⟨hMem, hTcb, hDom⟩ := h
+  unfold idleAvailableOnCoreB
+  rw [Bool.and_eq_true]
+  refine ⟨by rw [← RunQueue.mem_iff_contains]; exact (RunQueue.mem_toList_iff_mem _ _).mp hMem, ?_⟩
+  rw [hTcb]
+  exact beq_iff_eq.mpr hDom
+
+/-- WS-SM SM5.E (cross-core selection-frame, honest scope): enqueuing core `c`'s
+idle thread leaves a *different* core `c'`'s run queue and active domain — the
+two per-core inputs to `chooseThreadOnCore c'` — **unchanged**.  The remaining
+input is the shared object store, into which the enqueue writes core `c`'s idle
+TCB; by `idleThread_core_locality` that key is never a member of core `c'`'s run
+queue, so the write is invisible to `c'`'s selection.  Promoting this to a full
+selection *equality* (`chooseThreadOnCore (enqueue …) c' = chooseThreadOnCore … c'`)
+needs a `chooseBestInBucket` object-lookup congruence restricted to the run-queue
+members (chooseThreadOnCore reads the global object store); that finer frame
+lemma is the SM5.A selection layer's to provide and is tracked for SM5.I. -/
+theorem enqueueIdleThreadOnCore_selection_inputs_framed
+    (st : SystemState) (c c' : CoreId) (h : c ≠ c') :
+    (enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c'
+        = st.scheduler.runQueueOnCore c' ∧
+    (enqueueIdleThreadOnCore st c).scheduler.activeDomainOnCore c'
+        = st.scheduler.activeDomainOnCore c' :=
+  ⟨enqueueIdleThreadOnCore_runQueueOnCore_ne st c c' h,
+   enqueueIdleThreadOnCore_activeDomainOnCore st c c'⟩
 
 end SeLe4n.Kernel

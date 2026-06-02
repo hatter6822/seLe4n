@@ -251,11 +251,20 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
 -- companion).  The idle *definitions* live in `Platform.Boot` (SM4.G); SM5.I's
 -- per-core dispatch loop is the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
--- WS-SM SM5.E: the 26-entry per-core-idle theorem inventory (4 categories:
--- field/enqueue/alwaysSucceeds/locality) with the `pcit!` compile-time
--- identifier-validation macro + per-category count + partition-sum + Nodup
--- witnesses; mirrors `PerCoreTimerInventory`.  A renamed/removed SM5.E theorem
--- fails this module's elaboration.
+-- WS-SM SM5.E: the per-core idle-aware dispatcher (`scheduleOrIdleOnCore`, the
+-- SM5.I dispatch-loop seed) establishment theorems — the headline
+-- `scheduleOrIdleOnCore_runs_idle` (idle is dispatched in a production transition
+-- when nothing else is runnable) + the soundness surface (currentThreadValid /
+-- queueCurrentConsistent / objects-invExt / runQueueWellFormed), composing the
+-- SM5.D `scheduleEffectiveOnCore` establishment surface with the idle-dispatch
+-- case.  The production defs (`idleDispatchableOnCore` / `dispatchIdleOnCore` /
+-- `scheduleOrIdleOnCore`) live in `Scheduler.Operations.Core`.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
+-- WS-SM SM5.E: the per-core-idle theorem inventory (categories field / enqueue /
+-- preservation / lockSet / alwaysSucceeds / locality / dispatch) with the `pcit!`
+-- compile-time identifier-validation macro + per-category count + partition-sum +
+-- Nodup witnesses; mirrors `PerCoreTimerInventory`.  A renamed/removed SM5.E
+-- theorem fails this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 
 /-!

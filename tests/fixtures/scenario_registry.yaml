@@ -1241,3 +1241,33 @@ scenarios:
     function: runDonationTrace
     subsystem: SchedContext
     description: "Z7: cleanupPreReceiveDonation — stale donation cleaned up"
+  IDLE-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runPerCoreIdleDispatchTrace
+    subsystem: Scheduler
+    description: "WS-SM SM5.E: boot-core idle thread installed (id 65536)"
+  IDLE-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runPerCoreIdleDispatchTrace
+    subsystem: Scheduler
+    description: "WS-SM SM5.E: pre-dispatch current = none"
+  IDLE-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runPerCoreIdleDispatchTrace
+    subsystem: Scheduler
+    description: "WS-SM SM5.E: idle dispatchable on boot core = true"
+  IDLE-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runPerCoreIdleDispatchTrace
+    subsystem: Scheduler
+    description: "WS-SM SM5.E: legacy single-core schedule current = none (idle not dispatched)"
+  IDLE-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runPerCoreIdleDispatchTrace
+    subsystem: Scheduler
+    description: "WS-SM SM5.E: idle-aware scheduleOrIdleOnCore current = some 65536 (idle runs)"
+  IDLE-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runPerCoreIdleDispatchTrace
+    subsystem: Scheduler
+    description: "WS-SM SM5.E: dispatched idle absent from run queue (dequeue-on-dispatch)"

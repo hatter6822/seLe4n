@@ -2792,6 +2792,41 @@ default build green; trace byte-identical.
   deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.F (per-core
   PIP), SM5.G/H/I/J/K per the master overview.
 
+**WS-SM SM5.E completion LANDED at v0.31.46** (production idle-aware dispatcher +
+full preservation surface; closes every in-scope SM5.E gap flagged after the
+v0.31.45 first cut and — per maintainer directive — pulls the SM5.I per-core
+idle-aware dispatcher forward so idle threads are **live in the running kernel**,
+demonstrated in the trace).
+
+- **Refactor**: idle identities (`idleThreadIdBase` / `idleThreadId` + injectivity)
+  moved `Platform.Boot` → `Scheduler/IdleThread.lean` so the in-`Core.lean`
+  dispatcher can reference them (`createIdleThread` + installers stay in `Boot`).
+- **Production dispatcher** (`Scheduler/Operations/Core.lean`, the SM5.I seed):
+  `idleDispatchableOnCore` + `dispatchIdleOnCore` + `scheduleOrIdleOnCore` run core
+  `c`'s idle thread when `scheduleEffectiveOnCore` finds nothing runnable, instead of
+  `current = none` (conditional-fallback idle-if-installed-else-`none`, sound +
+  backward-compatible; layered on `scheduleEffectiveOnCore` so the SM5.D proof base
+  is untouched).
+- **Staged `PerCoreDispatch.lean`**: the headline `scheduleOrIdleOnCore_runs_idle`
+  + the `dispatchIdleOnCore` frame lemmas + the soundness surface (objects-invExt /
+  currentThreadValid / queueCurrentConsistent / runQueueWellFormed).
+- **Trace demo**: a `MainTraceHarness` `[IDLE-…]` scenario shows legacy `schedule`
+  → `current = none` vs. idle-aware → `current = some 65536`; the fixture grows by 6
+  additive lines (every prior line byte-identical).
+- **`PerCoreIdle` completion**: the `enqueueIdleThreadOnCore` per-core
+  invariant-preservation surface (incl. the soundness-critical conditional
+  `queueCurrentConsistent` under the documented `current ≠ idle` precondition), the
+  `enqueueIdleThreadOnCoreLockSet` cross-domain footprint (SM5.A–D parity),
+  `idleThread_no_starvation`, the decidable `idleAvailableOnCoreB` companion, and the
+  `idleThread_core_locality_forall` `∀c` aggregate.
+- **Verification**: inventory 26 → 58 entries; `SmpIdleSuite` + tier-3 expanded;
+  partition gate 51 staged-only modules; axiom-clean; Tier 0+1+2+3 green; trace
+  additive-only.  Tracked debt (SM5.I / SM5.H / post-1.0): folding the idle dispatch
+  into `scheduleEffectiveOnCore` in place; the unconditional invariant-backed
+  `chooseThreadOnCore_always_succeeds`; per-(core,domain) idle; wiring
+  `scheduleOrIdleOnCore` into the legacy single-core `schedule`.  Items deferred past
+  v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

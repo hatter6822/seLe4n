@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -38,7 +39,9 @@ open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
-open SeLe4n.Platform.Boot (idleThreadId createIdleThread)
+-- WS-SM SM5.E: `idleThreadId` now lives in `SeLe4n.Kernel.Scheduler.IdleThread`
+-- (resolved via `open SeLe4n.Kernel`); only `createIdleThread` is still in `Boot`.
+open SeLe4n.Platform.Boot (createIdleThread)
 
 -- ============================================================================
 -- §1  Surface anchors (Tier-3): every SM5.E public symbol resolves
@@ -242,19 +245,76 @@ private def runLocalityChecks : IO Unit := do
   assertBool "the boot core (empty) still falls back to idle when only core 1 has its idle thread"
     (decide (chooseThreadOnCoreIdleFallback stCore1Idle bootCoreId))
 
-/-- §3.5: the SM5.E theorem inventory partition counts. -/
+/-- A boot state with the boot core's idle thread *installed* (object store) but
+nothing runnable — the idle-aware dispatcher's exercise state. -/
+private def stIdleInstalled : SystemState :=
+  (BootstrapBuilder.empty.withObject (idleThreadId bootCoreId).toObjId
+    (.tcb (createIdleThread bootCoreId))).build
+
+/-- The current thread after the per-core idle-aware dispatcher runs. -/
+private def dispatchedCurrent (st : SystemState) (c : CoreId) : Option SeLe4n.ThreadId :=
+  match SeLe4n.Kernel.scheduleOrIdleOnCore st c with
+  | .ok s => s.scheduler.currentOnCore c
+  | .error _ => none
+
+/-- §3.6: the SM5.E idle-aware dispatcher (`scheduleOrIdleOnCore`) — idle is
+genuinely dispatched in a production transition. -/
+private def runDispatcherChecks : IO Unit := do
+  IO.println "--- §3.6 SM5.E idle-aware dispatcher (scheduleOrIdleOnCore) ---"
+  -- Idle installed + in-domain ⇒ dispatchable; idle absent ⇒ not dispatchable.
+  assertBool "idle is dispatchable on the idle-installed boot state"
+    (decide (idleDispatchableOnCore stIdleInstalled bootCoreId = true))
+  assertBool "idle is NOT dispatchable when no idle thread is installed"
+    (decide (idleDispatchableOnCore stEmpty bootCoreId = false))
+  -- The idle-aware dispatcher runs the idle thread (current = some idleThreadId).
+  assertBool "idle-aware dispatcher runs the idle thread (current = some idleThreadId)"
+    (decide (dispatchedCurrent stIdleInstalled bootCoreId = some (idleThreadId bootCoreId)))
+  -- For the same state the legacy single-core `schedule` goes to current = none.
+  assertBool "legacy single-core schedule leaves current = none (idle not dispatched)"
+    (decide ((match SeLe4n.Kernel.schedule stIdleInstalled with
+              | .ok (_, s) => s.scheduler.currentOnCore bootCoreId
+              | .error _ => some (idleThreadId bootCoreId)) = none))
+  -- Without an idle thread installed the dispatcher falls back to current = none.
+  assertBool "dispatcher falls back to current = none when no idle thread is installed"
+    (decide (dispatchedCurrent stEmpty bootCoreId = none))
+  -- Dequeue-on-dispatch: the dispatched idle thread is not in the run queue.
+  assertBool "dispatched idle is absent from the run queue (dequeue-on-dispatch)"
+    (match SeLe4n.Kernel.scheduleOrIdleOnCore stIdleInstalled bootCoreId with
+     | .ok s => !(s.scheduler.runQueueOnCore bootCoreId).toList.any (· == idleThreadId bootCoreId)
+     | .error _ => false)
+
+/-- §3.7: the SM5.E.3 `enqueueIdleThreadOnCore` lock-set witnesses. -/
+private def runLockSetChecks : IO Unit := do
+  IO.println "--- §3.7 SM5.E.3 enqueueIdleThreadOnCore lock-set ---"
+  assertBool "idle-enqueue footprint has the two cross-domain locks (length 2)"
+    (decide ((enqueueIdleThreadOnCoreLockSet bootCoreId).length = 2))
+  assertBool "idle-enqueue footprint is write-only"
+    (decide ((enqueueIdleThreadOnCoreLockSet bootCoreId).all (fun p => p.2 == AccessMode.write)))
+  assertBool "idle-enqueue footprint contains the object-store write lock"
+    (decide ((SchedLockId.object schedObjStoreLockId, AccessMode.write)
+              ∈ enqueueIdleThreadOnCoreLockSet bootCoreId))
+  assertBool "idle-enqueue footprint acquires object-store before run-queue (§4.4)"
+    (decide (SchedLockId.object schedObjStoreLockId
+              < SchedLockId.runQueue (⟨bootCoreId⟩ : RunQueueLockId)))
+
 private def runInventoryChecks : IO Unit := do
-  IO.println "--- §3.5 SM5.E theorem inventory ---"
-  assertBool "inventory has 26 entries"
-    (decide (perCoreIdleTheorems.length = 26))
+  IO.println "--- §3.8 SM5.E theorem inventory ---"
+  assertBool "inventory has 58 entries"
+    (decide (perCoreIdleTheorems.length = 58))
   assertBool "field category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .field)).length = 6))
   assertBool "enqueue category has 13 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .enqueue)).length = 13))
-  assertBool "alwaysSucceeds category has 4 entries"
-    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length = 4))
-  assertBool "locality category has 3 entries"
-    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 3))
+  assertBool "preservation category has 5 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .preservation)).length = 5))
+  assertBool "lockSet category has 8 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .lockSet)).length = 8))
+  assertBool "alwaysSucceeds category has 7 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length = 7))
+  assertBool "locality category has 6 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6))
+  assertBool "dispatch category has 13 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 13))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 
@@ -265,6 +325,8 @@ def runSmpIdleChecks : IO Unit := do
   runAlwaysSucceedsChecks
   runNoStarvationChecks
   runLocalityChecks
+  runDispatcherChecks
+  runLockSetChecks
   runInventoryChecks
   IO.println "===================================="
   IO.println "All SM5.E per-core idle thread checks PASS."
