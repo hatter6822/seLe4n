@@ -607,17 +607,37 @@ similar to SM0/SM1 patterns.)
 > `pipBoost_perCore_consistent` (Thm 3.6.1), SM5.F.7 `blockingGraphOnCore_consistent`,
 > SM5.F.8 `blockingAcyclic_perCore` (the per-core blocking slice is a sub-walk of the
 > acyclic global chain), SM5.F.9 `priorityInheritance_perCore_witness` (aggregate
-> soundness).  61-entry `ppit!` inventory in `PerCoreInventory.lean`.  Tests:
+> soundness).  95-entry `ppit!` inventory in `PerCoreInventory.lean`.  Tests:
 > `tests/SmpPipSuite.lean` (SM5.F.10).  All axiom-clean; trace byte-identical;
 > partition gate 53 staged-only modules; Tier 0–3 green.  The §3.6 pseudocode's
 > `computeMaxWaiterPriorityOnCore : Priority` is realised as `Option Priority`
 > (faithful to the codebase's `computeMaxWaiterPriority`), and the consistency bound
 > is stated over `optPriorityVal` (the numeric value, `none ↦ 0`).
 >
-> **Tracked debt (SM5.I)**: wiring `pipBoostWithWake` / `restoreToReadyWithWake`
-> into the live IPC donation / timeout / resume paths so a remote boost fires its
-> SGI — this also closes the SM5.D timeout-path latency gap (route the timeout
-> re-enqueue through `wakeThread` so a remote target receives the `.reschedule` SGI).
+> **Completion pass (same v0.31.50 cut)** brings SM5.F to the complete + optimal
+> implementation: B5 exact per-core decomposition
+> (`computeMaxWaiterPriority_eq_sup_perCore` — global boost = sup over per-core
+> slices, the completeness direction); B6 post-boost dominance; B7 home-core
+> stability + cross-core chain SGI completeness (every visited remote link
+> contributes its SGI) + the single-core behaviour-identical bridge to
+> `propagatePriorityInheritance`; B8 full witness; C9 runnability gate
+> (`pipBoostWithWake` fires no SGI for a *blocked* holder — no spurious IPI); D11
+> memory-model happens-before (`pipBoostOrdering_happensBefore`); F13 the complete
+> per-core resume `resumeThreadOnCore` (sets `threadState := .Ready`, closing the
+> `restoreToReadyOnCore` gap); F14 the slice-membership home-core-partition note;
+> and the **SM6 dispatch pulled forward** — the runtime SGI-firing layer
+> `Concurrency.fireCrossCoreSgis` + the diff-based `computeCrossCoreSgis` + the
+> BaseIO combinators, each proven inert (`pure ()`) on single-core and demonstrated
+> to genuinely fire `[(core1, .reschedule)]` for a cross-core boost diff.  D10 tier-4
+> QEMU stub `scripts/test_qemu_smp_pip.sh`.
+>
+> **Tracked debt (SM5.I)**: the cross-core dispatch *mechanism* is built and
+> verified; the remaining step is the production call-site substitution — routing
+> the live IPC donation / timeout / resume `@[export]` bodies through the per-core
+> boost + `fireCrossCoreSgis` (gated on the SM5.I per-core FFI seam, since the Lean
+> test executables do not link `libsele4n_hal.a`).  This also closes the SM5.D
+> timeout-path latency gap (route the timeout re-enqueue through `wakeThread` so a
+> remote target receives the `.reschedule` SGI).
 > SM5.F lands the verified per-core PIP *mechanism*; SM5.I performs the production
 > wiring + cross-subsystem preservation.  Items deferred past v1.0.0 with correctness
 > impact: NONE.

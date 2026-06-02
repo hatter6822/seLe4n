@@ -38,7 +38,8 @@ open SeLe4n.Kernel
 open SeLe4n.Kernel.PriorityInheritance
 open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
-open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restoreToReadyWithWake)
+open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restoreToReadyWithWake
+  resumeThreadOnCore)
 
 -- ============================================================================
 -- §1  Surface anchors (Tier-3): every SM5.F public symbol resolves
@@ -124,6 +125,51 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restor
 #check @perCorePipTheorems_partition_sum
 #check @perCorePipTheorems_identifiers_nodup
 
+-- SM5.F completion pass (B5/B6/B7/B8/C9/D11/F13/dispatch):
+-- SM5.F.1 full decomposition:
+#check @computeMaxWaiterPriority_eq_sup_perCore
+#check @computeMaxWaiterPriority_value
+#check @computeMaxWaiterPriorityOnCore_value
+-- SM5.F.2/3 home-core stability + post-boost dominance:
+#check @updatePipBoostOnCore_getTcb?_cpuAffinity
+#check @updatePipBoostOnCore_eq_self_of_getTcb?_none
+#check @updatePipBoostOnCore_preserves_determineTargetCore
+#check @updatePipBoostOnCore_establishes_perCore_dominance
+-- SM5.F.4 C9 runnability gate:
+#check @pipBoostWithWake_no_sgi_if_not_runnable
+-- SM5.F.4 chain SGI completeness:
+#check @propagatePipChainCrossCore_head_emission_mem
+#check @propagatePipChainCrossCore_tail_sgis_mem
+#check @propagatePipChainCrossCore_sgis_all_reschedule
+#check @propagatePipChainCrossCore_sgi_length_le_fuel
+#check @propagatePipChainCrossCore_second_link_sgi_remote
+#check @propagatePipChainCrossCore_singleCore_no_sgis
+#check @propagatePipChainCrossCoreState_singleCore_eq_propagate
+-- SM5.F.4 memory-model happens-before:
+#check @pipBoostOrdering_synchronizesWith
+#check @pipBoostOrdering_happensBefore
+-- SM5.F.6 complete per-core resume:
+#check @resumeReadyMidState_getTcb?_ready
+#check @resumeReadyMidState_objects_invExt
+#check @resumeThreadOnCore_sets_threadState
+#check @resumeThreadOnCore_preserves_objects_invExt
+#check @resumeThreadOnCore_rejects_non_inactive
+#check @resumeThreadOnCore_rejects_non_tcb
+#check @resumeThreadOnCore_local_no_sgi
+#check @resumeThreadOnCore_remote_sgi
+-- SM5.F.9 full witness:
+#check @priorityInheritance_perCore_witness_full
+-- SM5.F.4 cross-core wake dispatch:
+#check @computeCrossCoreSgis
+#check @computeCrossCoreSgis_all_reschedule
+#check @computeCrossCoreSgis_nil_single_core
+#check @crossCoreWakeDispatch
+#check @crossCoreWakeDispatch_singleCore
+#check @pipChainWakeDispatch
+#check @pipChainWakeDispatch_singleCore
+#check @perCorePipTheorems_memoryModel_count
+#check @perCorePipTheorems_dispatch_count
+
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): apply each headline theorem
 -- ============================================================================
@@ -152,14 +198,16 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
     (pipBoostWithWake st tid ec).2 = none :=
   pipBoostWithWake_no_sgi_if_local st tid ec hLocal
 
--- SM5.F.2: a remote material PIP boost emits a reschedule SGI to the home core.
+-- SM5.F.2: a remote, runnable-on-home, material PIP boost emits a reschedule SGI
+-- to the home core (the WS-SM SM5.F.4 C9 runnability gate is part of the hypotheses).
 example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
+    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : t.pipBoost ≠ t'.pipBoost) :
     (pipBoostWithWake st tid ec).2 = some (determineTargetCore st tid, SgiKind.reschedule) :=
-  pipBoostWithWake_emits_sgi_if_remote st tid ec t t' hRemote hPre hPost hMaterial
+  pipBoostWithWake_emits_sgi_if_remote st tid ec t t' hRemote hRunnable hPre hPost hMaterial
 
 -- SM5.F.4: the cross-core donation chain walk preserves blocking acyclicity.
 example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat)
@@ -193,6 +241,44 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
     (∀ c t, blockingServerOnCore st c t = none ∨ blockingServerOnCore st c t = blockingServer st t) :=
   priorityInheritance_perCore_witness st tid ec hInv hAcyclic
 
+-- SM5.F.1 (B5): the global boost is exactly the sup over every core's slice.
+example (st : SystemState) (tid : SeLe4n.ThreadId) :
+    optPriorityVal (computeMaxWaiterPriority st tid)
+      = allCores.foldl
+          (fun n c => Nat.max n (optPriorityVal (computeMaxWaiterPriorityOnCore st c tid))) 0 :=
+  computeMaxWaiterPriority_eq_sup_perCore st tid
+
+-- SM5.F.4 (C9): a boost of a non-runnable holder fires no SGI.
+example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (hNotRun : tid ∉ st.scheduler.runQueueOnCore (determineTargetCore st tid)) :
+    (pipBoostWithWake st tid ec).2 = none :=
+  pipBoostWithWake_no_sgi_if_not_runnable st tid ec hNotRun
+
+-- SM5.F.4: home-core stability — a boost never changes any thread's home core.
+example (st : SystemState) (c : CoreId) (tid t : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t :=
+  updatePipBoostOnCore_preserves_determineTargetCore st c tid t hInv
+
+-- SM5.F.6 (F13): the complete per-core resume sets threadState := .Ready.
+example (st : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt) :
+    ∃ st' sgi, resumeThreadOnCore st vtid ec = .ok (st', sgi) ∧
+      ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready :=
+  resumeThreadOnCore_sets_threadState st vtid ec tcb hGet hInactive hInv
+
+-- SM5.F.4: the diff-based dispatch is inert on single-core.
+example (pre post : SystemState)
+    (hAllBoot : ∀ t, determineTargetCore post t = bootCoreId) :
+    crossCoreWakeDispatch pre post bootCoreId = pure () :=
+  crossCoreWakeDispatch_singleCore pre post hAllBoot
+
+-- SM5.F.4: memory-model — the boost publication happens-before the home core observes it.
+example (boostCore homeCore : CoreId) (loc : AtomicLocation) (v : Nat) :
+    happensBefore (wakeOrderingTrace boostCore homeCore loc v)
+      (wakeReleaseEvent boostCore loc v) (wakeAcquireEvent homeCore loc v) :=
+  pipBoostOrdering_happensBefore boostCore homeCore loc v
+
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): concrete cross-core blocking scenario
 -- ============================================================================
@@ -220,10 +306,13 @@ private def mkWaiterTcb (tidN : Nat) (prio : Nat) (server : Nat) : TCB :=
 
 /-- The cross-core blocking scenario: a server `srv` bound to the **remote** core
 1, with a high-priority (10) waiter `cli` blocked on reply to it.  `cli` is
-unbound, so it homes to the boot core 0. -/
+unbound, so it homes to the boot core 0.  The server is **runnable on its home
+core 1** (in core 1's run queue at its base priority 5), so a cross-core boost of
+it genuinely warrants poking core 1 (the WS-SM SM5.F.4 C9 runnability gate). -/
 private def st : SystemState :=
-  ((BootstrapBuilder.empty.withObject srv.toObjId (.tcb (mkServerTcb 200 5 core1))).withObject
+  let base := ((BootstrapBuilder.empty.withObject srv.toObjId (.tcb (mkServerTcb 200 5 core1))).withObject
     cli.toObjId (.tcb (mkWaiterTcb 201 10 200))).build
+  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srv, ⟨5⟩)]) }
 
 private def assertBool (name : String) (b : Bool) : IO Unit := do
   if b then
@@ -291,22 +380,85 @@ private def runResumeChecks : IO Unit := do
 /-- §3.5: SM5.F inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.5 SM5.F theorem inventory ---"
-  assertBool "inventory has 61 entries"
-    (decide (perCorePipTheorems.length = 61))
-  assertBool "compute category has 5 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .compute)).length = 5))
-  assertBool "updateBoost category has 10 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .updateBoost)).length = 10))
-  assertBool "wake category has 10 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .wake)).length = 10))
-  assertBool "chain category has 11 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .chain)).length = 11))
-  assertBool "resume category has 12 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .resume)).length = 12))
+  assertBool "inventory has 95 entries"
+    (decide (perCorePipTheorems.length = 95))
+  assertBool "compute category has 8 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .compute)).length = 8))
+  assertBool "updateBoost category has 14 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .updateBoost)).length = 14))
+  assertBool "wake category has 11 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .wake)).length = 11))
+  assertBool "chain category has 18 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .chain)).length = 18))
+  assertBool "resume category has 20 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .resume)).length = 20))
   assertBool "blockingGraph category has 10 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .blockingGraph)).length = 10))
+  assertBool "memoryModel category has 2 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .memoryModel)).length = 2))
+  assertBool "dispatch category has 8 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 8))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCorePipTheorems.map (·.identifier)).Nodup)
+
+/-- The same scenario but with the server NOT runnable on its home core (no run
+queue) — the WS-SM SM5.F.4 C9 negative case. -/
+private def stNoRq : SystemState :=
+  ((BootstrapBuilder.empty.withObject srv.toObjId (.tcb (mkServerTcb 200 5 core1))).withObject
+    cli.toObjId (.tcb (mkWaiterTcb 201 10 200))).build
+
+/-- §3.6: WS-SM SM5.F.4 C9 — the runnability gate on the cross-core boost SGI. -/
+private def runC9Checks : IO Unit := do
+  IO.println "--- §3.6 SM5.F.4 C9 runnability gate ---"
+  -- Server runnable on its home core 1 ⇒ a remote material boost fires the SGI.
+  assertBool "runnable remote holder: boost fires (core1, .reschedule) SGI"
+    (decide ((pipBoostWithWake st srv core0).2 = some (core1, SgiKind.reschedule)))
+  -- Server NOT runnable on core 1 (no run queue) ⇒ no spurious cross-core IPI.
+  assertBool "non-runnable remote holder: boost fires NO SGI (C9 — no spurious IPI)"
+    (decide ((pipBoostWithWake stNoRq srv core0).2 = none))
+  -- The boost VALUE is still set in both cases (only the SGI is gated).
+  assertBool "non-runnable boost still sets the GLOBAL pipBoost (some 10)"
+    (decide (((pipBoostWithWake stNoRq srv core0).1.getTcb? srv).bind (·.pipBoost) = some ⟨10⟩))
+
+/-- §3.7: WS-SM SM5.F.1 — the exact per-core decomposition (global = sup over cores). -/
+private def runDecompositionChecks : IO Unit := do
+  IO.println "--- §3.7 SM5.F.1 exact per-core decomposition ---"
+  assertBool "global boost = sup over allCores of the per-core slices (SM5.F.1 completeness)"
+    (decide (optPriorityVal (computeMaxWaiterPriority st srv)
+      = allCores.foldl (fun n c => Nat.max n (optPriorityVal (computeMaxWaiterPriorityOnCore st c srv))) 0))
+  assertBool "the decomposition value is the waiter's priority (10)"
+    (decide (allCores.foldl
+      (fun n c => Nat.max n (optPriorityVal (computeMaxWaiterPriorityOnCore st c srv))) 0 = 10))
+
+/-- §3.8: WS-SM SM5.F.4 — cross-core donation chain SGI completeness. -/
+private def runChainChecks : IO Unit := do
+  IO.println "--- §3.8 SM5.F.4 cross-core chain SGI completeness ---"
+  -- Walk the chain from the waiter `cli`: cli (local, no-op) → srv (remote, runnable,
+  -- material) — so the chain collects srv's reschedule SGI to core 1.
+  assertBool "chain from cli collects srv's (core1, .reschedule) SGI (head + tail completeness)"
+    (decide ((propagatePipChainCrossCore st cli core0 3).2 = [(core1, SgiKind.reschedule)]))
+  assertBool "every chain SGI is a .reschedule (well-formed)"
+    (decide ((propagatePipChainCrossCore st cli core0 3).2.all (fun p => p.2 == SgiKind.reschedule)))
+  assertBool "the chain SGI list is bounded by fuel (≤ 3, no storm)"
+    (decide ((propagatePipChainCrossCore st cli core0 3).2.length ≤ 3))
+
+/-- §3.9: WS-SM SM5.F.4 — the cross-core wake dispatch (computeCrossCoreSgis). -/
+private def runDispatchChecks : IO Unit := do
+  IO.println "--- §3.9 SM5.F.4 cross-core wake dispatch ---"
+  -- A cross-core boost: pre = st (srv pipBoost none), post = the boosted state.
+  -- The diff-based dispatch detects srv's remote pipBoost change and fires (core1).
+  let post := (pipBoostWithWake st srv core0).1
+  assertBool "diff dispatch FIRES for a cross-core boost: [(core1, .reschedule)]"
+    (decide (computeCrossCoreSgis st post core0 = [(core1, SgiKind.reschedule)]))
+  -- Executing on core 1 (the home core), the same boost diff pokes no remote core.
+  assertBool "diff dispatch is empty when executing on the boosted thread's home core"
+    (decide (computeCrossCoreSgis st post core1 = []))
+  -- No change ⇒ no dispatch (the identity diff).
+  assertBool "diff dispatch of an unchanged state is empty (no spurious poke)"
+    (decide (computeCrossCoreSgis st st core0 = []))
+  -- Every dispatched SGI is a reschedule.
+  assertBool "every dispatched SGI is a .reschedule"
+    (decide ((computeCrossCoreSgis st post core0).all (fun p => p.2 == SgiKind.reschedule)))
 
 def runSmpPipChecks : IO Unit := do
   IO.println "WS-SM SM5.F — Per-core PIP suite"
@@ -315,6 +467,10 @@ def runSmpPipChecks : IO Unit := do
   runWakeChecks
   runBlockingGraphChecks
   runResumeChecks
+  runC9Checks
+  runDecompositionChecks
+  runChainChecks
+  runDispatchChecks
   runInventoryChecks
   IO.println "===================================="
   IO.println "All SM5.F per-core PIP checks PASS."

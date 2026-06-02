@@ -5609,13 +5609,80 @@ documentation lives under `docs/` and `docs/gitbook/`.
   structural minimum; staged proof helpers use the `.get?` method form where the
   math allows.  All axiom-clean (`propext` / `Quot.sound` / `Classical.choice`);
   trace byte-identical; partition gate 53 staged-only modules; Tier 0–3 green;
-  `smp_pip_suite` 24/24.  **Tracked debt (SM5.I)**: wiring `pipBoostWithWake` /
-  `restoreToReadyWithWake` into the live IPC donation / timeout / resume paths so
-  a remote boost fires its SGI (this also closes the SM5.D timeout-path latency
-  gap — route the timeout re-enqueue through `wakeThread` so a remote target
-  receives the `.reschedule` SGI); SM5.F lands the verified *mechanism*, SM5.I
-  performs the production wiring + cross-subsystem preservation.  Items deferred
-  past v1.0.0 with correctness impact: NONE.
+  `smp_pip_suite` 24/24.
+
+  **WS-SM SM5.F completion pass (same v0.31.50 cut)** brings SM5.F from "all 10
+  sub-tasks landed" to the complete + optimal implementation, closing every gap
+  the SM5.F self-audit identified.  All additions axiom-clean (`propext` /
+  `Quot.sound` / `Classical.choice` only); trace byte-identical; Tier 0+1+2+3 green.
+
+  - **B5 — exact per-core decomposition** (`Compute.lean`):
+    `computeMaxWaiterPriority_eq_sup_perCore` proves the global boost equals the
+    supremum over every core's waiter slice (the *completeness* direction
+    complementing `…_le_global`), so the cross-core wake's per-core poke policy
+    provably covers the entire boost.  Plus `computeMaxWaiterPriority_value` /
+    `computeMaxWaiterPriorityOnCore_value` (closed numeric forms).
+  - **B6 — post-boost dominance**:
+    `updatePipBoostOnCore_establishes_perCore_dominance` — after a boost the
+    holder's effective priority bounds *every* core's pre-state waiter slice
+    (premise-free; the boost *establishes* the consistency).
+  - **B7 — home-core stability + chain SGI completeness**:
+    `updatePipBoostOnCore_preserves_determineTargetCore` (a boost never changes any
+    thread's home core); the chain-SGI completeness set
+    (`propagatePipChainCrossCore_head_emission_mem` / `_tail_sgis_mem` /
+    `_sgis_all_reschedule` / `_sgi_length_le_fuel` / `_second_link_sgi_remote` —
+    every visited remote link contributes its SGI; the list is well-formed +
+    bounded); single-core bridges (`…_singleCore_no_sgis` fires no SGI;
+    `propagatePipChainCrossCoreState_singleCore_eq_propagate` — the walk's state
+    effect equals the legacy `propagatePriorityInheritance`, behaviour-identical on
+    single-core).
+  - **B8 — full witness**: `priorityInheritance_perCore_witness_full` folds the
+    exact decomposition into the aggregate soundness witness.
+  - **C9 — runnability gate** (`pipBoostWithWake` production refinement): the
+    cross-core SGI now also gates on the boosted holder being *runnable on its home
+    core* — a boost of a blocked holder (the common PIP case) fires no spurious
+    cross-core IPI (`pipBoostWithWake_no_sgi_if_not_runnable`), aligning the SGI with
+    `updatePipBoostOnCore`'s run-queue bucket migration.
+  - **D11 — memory-model HB**: `pipBoostOrdering_happensBefore` /
+    `…_synchronizesWith` — the boost's run-queue publication happens-before the home
+    core observes it on the SGI (the BKL release-acquire ordering; the PIP-boost
+    analogue of SM5.C's `wakeOrdering_happensBefore`).
+  - **F13 — complete per-core resume**: `resumeThreadOnCore` (the per-core analogue
+    of `resumeThread`) validates `.Inactive`, sets `threadState := .Ready`,
+    recomputes the GLOBAL `pipBoost`, enqueues on the home core, and returns the
+    cross-core SGI for a remote resume — closing the `restoreToReadyOnCore`
+    "doesn't set threadState" gap (`resumeThreadOnCore_sets_threadState` + the
+    rejection/SGI/invariant surface).  Reads through the typed `getTcb?` accessor.
+  - **F14**: documented the `computeMaxWaiterPriorityOnCore` slice-membership
+    deviation from the plan (home-core partition vs. the run-queue sketch — a PIP
+    waiter is *blocked*, hence in no run queue, so the home-core partition is the
+    correct, well-defined one).
+  - **SM6 dispatch pulled forward** (the runtime SGI-firing layer, per maintainer
+    directive): `Concurrency.fireCrossCoreSgis` (BaseIO; coalesces by target core,
+    fires over the FFI) + the pure diff-based `computeCrossCoreSgis` (the dispatch
+    decision for the generic syscall path) + the BaseIO combinators
+    (`crossCoreWakeDispatch` / `pipChainWakeDispatch` / `emitBoostWakeSgi`).  Each is
+    proven **inert on single-core** (`pure ()` — `computeCrossCoreSgis_nil_single_core`
+    / `crossCoreWakeDispatch_singleCore` / `pipChainWakeDispatch_singleCore`), so it
+    is trace-preserving and activates automatically once per-core affinities exist;
+    `smp_pip_suite` demonstrates it genuinely **fires** `[(core1, .reschedule)]` for a
+    cross-core boost diff.
+  - Inventory grew 61 → 95 entries (+ `memoryModel` / `dispatch` categories);
+    `tests/SmpPipSuite.lean` adds §3.6–§3.9 runtime sections; tier-4 QEMU stub
+    `scripts/test_qemu_smp_pip.sh` reserves the plan §6 slot.  AK7: `RAW_LOOKUP_TID`
+    stays at the 814 floor (typed-accessor refactor); `RAW_MATCH_TOTAL` re-anchors
+    124 → 125 for `crossCoreSgiBody`'s single object-store iteration (the diff-based
+    dispatch must scan the store for `pipBoost` changes — structurally identical to
+    `waitersOf`).
+
+  **Tracked debt (SM5.I)**: the cross-core dispatch *mechanism* is now built and
+  verified; the remaining step is the production **call-site substitution** —
+  routing the live IPC donation / timeout / resume `@[export]` bodies through the
+  per-core boost + `fireCrossCoreSgis` (gated on the SM5.I per-core FFI seam, since
+  the Lean test executables do not link `libsele4n_hal.a`).  This also closes the
+  SM5.D timeout-path latency gap (route the timeout re-enqueue through `wakeThread`
+  so a remote target receives the `.reschedule` SGI).  Items deferred past v1.0.0
+  with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

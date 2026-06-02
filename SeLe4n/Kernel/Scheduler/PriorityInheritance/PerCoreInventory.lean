@@ -58,6 +58,10 @@ inductive PerCorePipCategory where
   | blockingGraph
   /-- SM5.F.9 `priorityInheritance_perCore_witness`. -/
   | witness
+  /-- SM5.F.4 memory-model happens-before for the cross-core PIP boost. -/
+  | memoryModel
+  /-- SM5.F.4 cross-core wake dispatch (the SM6 runtime firing layer). -/
+  | dispatch
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM5.F: a theorem entry in the SM5.F inventory.  Records a description,
@@ -98,6 +102,12 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       computeMaxWaiterPriorityOnCore_le_global .compute,
     ppit! "computeMaxWaiterPriorityOnCore_frame: invariant under objects/objectIndex frame"
       computeMaxWaiterPriorityOnCore_frame .compute,
+    ppit! "computeMaxWaiterPriority_eq_sup_perCore: global boost = sup over cores of slices (SM5.F.1 completeness)"
+      computeMaxWaiterPriority_eq_sup_perCore .compute,
+    ppit! "computeMaxWaiterPriority_value: closed numeric form of the global max-waiter priority"
+      computeMaxWaiterPriority_value .compute,
+    ppit! "computeMaxWaiterPriorityOnCore_value: closed numeric form of the per-core slice"
+      computeMaxWaiterPriorityOnCore_value .compute,
     -- ── SM5.F.2 updatePipBoostOnCore (.updateBoost) ──
     ppit! "updatePipBoostOnCore: per-core single-thread PIP boost (bucket migration on core c)"
       updatePipBoostOnCore .updateBoost,
@@ -119,6 +129,14 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       updatePipBoostOnCore_currentOnCore .updateBoost,
     ppit! "updatePipBoostOnCore_getTcb?_pipBoost: post-boost pipBoost is the GLOBAL computeMaxWaiterPriority"
       updatePipBoostOnCore_getTcb?_pipBoost .updateBoost,
+    ppit! "updatePipBoostOnCore_getTcb?_cpuAffinity: a boost leaves cpuAffinity untouched"
+      updatePipBoostOnCore_getTcb?_cpuAffinity .updateBoost,
+    ppit! "updatePipBoostOnCore_eq_self_of_getTcb?_none: a boost of a non-TCB is the identity"
+      updatePipBoostOnCore_eq_self_of_getTcb?_none .updateBoost,
+    ppit! "updatePipBoostOnCore_preserves_determineTargetCore: home-core stability (cpuAffinity unchanged) (SM5.F.4)"
+      updatePipBoostOnCore_preserves_determineTargetCore .updateBoost,
+    ppit! "updatePipBoostOnCore_establishes_perCore_dominance: post-boost holder dominates every core's slice (SM5.F.3)"
+      updatePipBoostOnCore_establishes_perCore_dominance .updateBoost,
     -- ── SM5.F.3 pipBoost_perCore_consistent (.consistent) ──
     ppit! "optPriorityVal_pipBoost_le_effectiveSchedParams: pipBoost ≤ effective priority"
       optPriorityVal_pipBoost_le_effectiveSchedParams .consistent,
@@ -145,6 +163,8 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       pipBoostWithWake_preserves_blockingAcyclic .wake,
     ppit! "pipBoostWithWake_bootCore_unbound: single-core bridge (unbound on boot ⇒ updatePipBoost, no SGI)"
       pipBoostWithWake_bootCore_unbound .wake,
+    ppit! "pipBoostWithWake_no_sgi_if_not_runnable: a boost of a non-runnable holder fires no SGI (C9 precision)"
+      pipBoostWithWake_no_sgi_if_not_runnable .wake,
     -- ── SM5.F.4 propagatePipChainCrossCore (.chain) ──
     ppit! "propagatePipChainCrossCore: donation chain across cores (state + SGI list) (SM5.F.4)"
       propagatePipChainCrossCore .chain,
@@ -168,6 +188,20 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       propagatePipChainCrossCore_no_sgis_head_terminal .chain,
     ppit! "propagatePipChainCrossCore_head_sgi_remote: a remote material chain head contributes its SGI"
       propagatePipChainCrossCore_head_sgi_remote .chain,
+    ppit! "propagatePipChainCrossCore_head_emission_mem: the head's SGI is in the collected list (SM5.F.4)"
+      propagatePipChainCrossCore_head_emission_mem .chain,
+    ppit! "propagatePipChainCrossCore_tail_sgis_mem: every tail SGI lifts to the root list (SM5.F.4)"
+      propagatePipChainCrossCore_tail_sgis_mem .chain,
+    ppit! "propagatePipChainCrossCore_sgis_all_reschedule: every chain SGI is a .reschedule (well-formed)"
+      propagatePipChainCrossCore_sgis_all_reschedule .chain,
+    ppit! "propagatePipChainCrossCore_sgi_length_le_fuel: the SGI list is bounded by fuel (no storm)"
+      propagatePipChainCrossCore_sgi_length_le_fuel .chain,
+    ppit! "propagatePipChainCrossCore_second_link_sgi_remote: a remote second link contributes its SGI (depth-2)"
+      propagatePipChainCrossCore_second_link_sgi_remote .chain,
+    ppit! "propagatePipChainCrossCore_singleCore_no_sgis: single-core walk fires no SGI (no spurious IPI)"
+      propagatePipChainCrossCore_singleCore_no_sgis .chain,
+    ppit! "propagatePipChainCrossCoreState_singleCore_eq_propagate: single-core walk = legacy propagate (behaviour-identical)"
+      propagatePipChainCrossCoreState_singleCore_eq_propagate .chain,
     -- ── SM5.F.5 / SM5.F.6 restoreToReadyOnCore / restoreToReadyWithWake (.resume) ──
     ppit! "restoreToReadyOnCore: per-core resume re-ready + PIP recompute + enqueue (SM5.F.5)"
       SeLe4n.Kernel.Lifecycle.Suspend.restoreToReadyOnCore .resume,
@@ -193,6 +227,22 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       restoreToReadyWithWake_sgi_is_reschedule .resume,
     ppit! "restoreToReadyWithWake_preserves_objects_invExt: cross-core resume preserves invExt"
       restoreToReadyWithWake_preserves_objects_invExt .resume,
+    ppit! "resumeReadyMidState_getTcb?_ready: the resume mid-state's TCB is .Ready (SM5.F.6)"
+      resumeReadyMidState_getTcb?_ready .resume,
+    ppit! "resumeReadyMidState_objects_invExt: the resume mid-state preserves the object-store invariant"
+      resumeReadyMidState_objects_invExt .resume,
+    ppit! "resumeThreadOnCore_sets_threadState: the complete per-core resume sets threadState := .Ready (SM5.F.6)"
+      resumeThreadOnCore_sets_threadState .resume,
+    ppit! "resumeThreadOnCore_preserves_objects_invExt: the complete resume preserves the object-store invariant"
+      resumeThreadOnCore_preserves_objects_invExt .resume,
+    ppit! "resumeThreadOnCore_rejects_non_inactive: resume of a non-Inactive TCB → illegalState"
+      resumeThreadOnCore_rejects_non_inactive .resume,
+    ppit! "resumeThreadOnCore_rejects_non_tcb: resume of a non-TCB → invalidArgument"
+      resumeThreadOnCore_rejects_non_tcb .resume,
+    ppit! "resumeThreadOnCore_local_no_sgi: a local complete resume fires no SGI"
+      resumeThreadOnCore_local_no_sgi .resume,
+    ppit! "resumeThreadOnCore_remote_sgi: a remote complete resume fires a .reschedule SGI to the home core"
+      resumeThreadOnCore_remote_sgi .resume,
     -- ── SM5.F.7 / SM5.F.8 per-core blocking graph (.blockingGraph) ──
     ppit! "blockingServerOnCore: per-core slice of the blocking graph (SM5.F.7)"
       blockingServerOnCore .blockingGraph,
@@ -216,44 +266,78 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       blockingAcyclic_perCore .blockingGraph,
     -- ── SM5.F.9 priorityInheritance_perCore_witness (.witness) ──
     ppit! "priorityInheritance_perCore_witness: aggregate per-core PIP soundness witness (SM5.F.9)"
-      priorityInheritance_perCore_witness .witness]
+      priorityInheritance_perCore_witness .witness,
+    ppit! "priorityInheritance_perCore_witness_full: aggregate witness + exact decomposition (SM5.F.9 completeness)"
+      priorityInheritance_perCore_witness_full .witness,
+    -- ── SM5.F.4 memory-model happens-before (.memoryModel) ──
+    ppit! "pipBoostOrdering_synchronizesWith: the boost release synchronizes-with the home-core acquire (SM5.F.4)"
+      pipBoostOrdering_synchronizesWith .memoryModel,
+    ppit! "pipBoostOrdering_happensBefore: the boost publication happens-before the home core observes it (SM5.F.4)"
+      pipBoostOrdering_happensBefore .memoryModel,
+    -- ── SM5.F.4 cross-core wake dispatch (.dispatch) ──
+    ppit! "computeCrossCoreSgis: diff-based cross-core SGI dispatch decision (SM5.F.4)"
+      computeCrossCoreSgis .dispatch,
+    ppit! "computeCrossCoreSgis_all_reschedule: every dispatched SGI is a .reschedule"
+      computeCrossCoreSgis_all_reschedule .dispatch,
+    ppit! "computeCrossCoreSgis_nil_single_core: the diff dispatch is inert ([]) on single-core"
+      computeCrossCoreSgis_nil_single_core .dispatch,
+    ppit! "crossCoreWakeDispatch: the BaseIO syscall-path cross-core wake dispatch (fires the SGIs)"
+      crossCoreWakeDispatch .dispatch,
+    ppit! "crossCoreWakeDispatch_singleCore: the syscall dispatch is inert (pure ()) on single-core"
+      crossCoreWakeDispatch_singleCore .dispatch,
+    ppit! "pipChainWakeDispatch: the BaseIO chain-boost cross-core wake dispatch (fires the chain SGIs)"
+      pipChainWakeDispatch .dispatch,
+    ppit! "pipChainWakeDispatch_singleCore: the chain dispatch is inert (pure ()) on single-core"
+      pipChainWakeDispatch_singleCore .dispatch,
+    ppit! "emitBoostWakeSgi: the single-SGI boost/resume dispatch (lifts emitWakeSgi)"
+      emitBoostWakeSgi .dispatch]
 
-/-- WS-SM SM5.F: the inventory has 61 substantive entries.  A regression that adds
-a new SM5.F theorem without registering it fails this count witness at the Tier-3
-surface check. -/
-theorem perCorePipTheorems_count : perCorePipTheorems.length = 61 := by decide
+/-- WS-SM SM5.F: the inventory has 95 substantive entries (61 at the SM5.F landing +
+34 from the completion pass: full per-core decomposition, post-boost dominance, chain
+SGI completeness, the runnability-gate, memory-model HB, the complete `resumeThreadOnCore`,
+and the cross-core wake dispatch).  A regression that adds a new SM5.F theorem without
+registering it fails this count witness at the Tier-3 surface check. -/
+theorem perCorePipTheorems_count : perCorePipTheorems.length = 95 := by decide
 
-/-- WS-SM SM5.F: 5 entries in the `compute` category (SM5.F.1). -/
+/-- WS-SM SM5.F: 8 entries in the `compute` category (SM5.F.1). -/
 theorem perCorePipTheorems_compute_count :
-    (perCorePipTheorems.filter (fun t => t.category == .compute)).length = 5 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .compute)).length = 8 := by decide
 
-/-- WS-SM SM5.F: 10 entries in the `updateBoost` category (SM5.F.2). -/
+/-- WS-SM SM5.F: 14 entries in the `updateBoost` category (SM5.F.2). -/
 theorem perCorePipTheorems_updateBoost_count :
-    (perCorePipTheorems.filter (fun t => t.category == .updateBoost)).length = 10 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .updateBoost)).length = 14 := by decide
 
 /-- WS-SM SM5.F: 2 entries in the `consistent` category (SM5.F.3). -/
 theorem perCorePipTheorems_consistent_count :
     (perCorePipTheorems.filter (fun t => t.category == .consistent)).length = 2 := by decide
 
-/-- WS-SM SM5.F: 10 entries in the `wake` category (SM5.F.2). -/
+/-- WS-SM SM5.F: 11 entries in the `wake` category (SM5.F.2). -/
 theorem perCorePipTheorems_wake_count :
-    (perCorePipTheorems.filter (fun t => t.category == .wake)).length = 10 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .wake)).length = 11 := by decide
 
-/-- WS-SM SM5.F: 11 entries in the `chain` category (SM5.F.4). -/
+/-- WS-SM SM5.F: 18 entries in the `chain` category (SM5.F.4). -/
 theorem perCorePipTheorems_chain_count :
-    (perCorePipTheorems.filter (fun t => t.category == .chain)).length = 11 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .chain)).length = 18 := by decide
 
-/-- WS-SM SM5.F: 12 entries in the `resume` category (SM5.F.5 / SM5.F.6). -/
+/-- WS-SM SM5.F: 20 entries in the `resume` category (SM5.F.5 / SM5.F.6). -/
 theorem perCorePipTheorems_resume_count :
-    (perCorePipTheorems.filter (fun t => t.category == .resume)).length = 12 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .resume)).length = 20 := by decide
 
 /-- WS-SM SM5.F: 10 entries in the `blockingGraph` category (SM5.F.7 / SM5.F.8). -/
 theorem perCorePipTheorems_blockingGraph_count :
     (perCorePipTheorems.filter (fun t => t.category == .blockingGraph)).length = 10 := by decide
 
-/-- WS-SM SM5.F: 1 entry in the `witness` category (SM5.F.9). -/
+/-- WS-SM SM5.F: 2 entries in the `witness` category (SM5.F.9). -/
 theorem perCorePipTheorems_witness_count :
-    (perCorePipTheorems.filter (fun t => t.category == .witness)).length = 1 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .witness)).length = 2 := by decide
+
+/-- WS-SM SM5.F: 2 entries in the `memoryModel` category (SM5.F.4 happens-before). -/
+theorem perCorePipTheorems_memoryModel_count :
+    (perCorePipTheorems.filter (fun t => t.category == .memoryModel)).length = 2 := by decide
+
+/-- WS-SM SM5.F: 8 entries in the `dispatch` category (SM5.F.4 cross-core wake firing). -/
+theorem perCorePipTheorems_dispatch_count :
+    (perCorePipTheorems.filter (fun t => t.category == .dispatch)).length = 8 := by decide
 
 /-- WS-SM SM5.F: per-category counts sum to the total. -/
 theorem perCorePipTheorems_partition_sum :
@@ -264,7 +348,9 @@ theorem perCorePipTheorems_partition_sum :
     (perCorePipTheorems.filter (fun t => t.category == .chain)).length +
     (perCorePipTheorems.filter (fun t => t.category == .resume)).length +
     (perCorePipTheorems.filter (fun t => t.category == .blockingGraph)).length +
-    (perCorePipTheorems.filter (fun t => t.category == .witness)).length =
+    (perCorePipTheorems.filter (fun t => t.category == .witness)).length +
+    (perCorePipTheorems.filter (fun t => t.category == .memoryModel)).length +
+    (perCorePipTheorems.filter (fun t => t.category == .dispatch)).length =
     perCorePipTheorems.length := by decide
 
 set_option maxRecDepth 10000 in

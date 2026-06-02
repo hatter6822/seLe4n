@@ -343,13 +343,25 @@ home core needs a cross-core `.reschedule` SGI:
 
 * **local** (home = `executingCore`): no SGI — the executing core will pick up
   the re-bucketed holder on its next scheduling decision.
-* **remote, material**: the boost changed the holder's `pipBoost` (hence its
-  effective run-queue bucket), so the home core's scheduler must re-evaluate —
-  the boosted holder may now outrank that core's current thread.  Emit
-  `(home, .reschedule)`.
+* **remote, not runnable on home** (the holder is not in its home core's run
+  queue — it is itself blocked deeper in the chain, or currently running): no
+  SGI.  Raising the `pipBoost` of a thread that is not competing for its home
+  core's CPU has no immediate scheduling consequence — the new boost is consumed
+  when the thread next becomes runnable there (via the wake that re-enqueues it,
+  SM5.C `wakeThread` / SM5.F `restoreToReadyWithWake`).  Poking the home core now
+  would be a spurious cross-core IPI (SM5.C.11 latency / WS-SM SM5.F.4 C9).
+* **remote, runnable on home, material**: the boost changed the holder's
+  `pipBoost` (hence its effective run-queue bucket) AND the holder is runnable on
+  its home core, so that core's scheduler must re-evaluate — the boosted holder
+  may now outrank that core's current thread.  Emit `(home, .reschedule)`.
 * **remote, no-op** (boost unchanged ⇒ `updatePipBoostOnCore` returned `st`): no
   SGI — there is no scheduling consequence, so poking the remote core would be a
-  spurious cross-core IPI (the SM5.C.11 latency concern).
+  spurious cross-core IPI.
+
+The runnability gate `tid ∈ runQueueOnCore target` aligns the SGI exactly with the
+run-queue *bucket migration* in `updatePipBoostOnCore` (which is itself gated on the
+same membership): an SGI is emitted only when the boost could actually change which
+thread the home core should run next.
 
 Mirrors `wakeThread` (state + optional SGI; the BaseIO form that fires the SGI
 over the FFI is SM5.I's runtime dispatch).  The materiality guard reads the
@@ -360,10 +372,11 @@ def pipBoostWithWake (st : SystemState) (tid : ThreadId) (executingCore : CoreId
   let st' := updatePipBoostOnCore st target tid
   let sgi : Option (CoreId × SgiKind) :=
     if target == executingCore then none
-    else
+    else if tid ∈ (st.scheduler.runQueueOnCore target) then
       match st.getTcb? tid, st'.getTcb? tid with
       | some t, some t' => if t.pipBoost == t'.pipBoost then none else some (target, SgiKind.reschedule)
       | _, _ => none
+    else none
   (st', sgi)
 
 /-- WS-SM SM5.F.4 (plan §3.6, "donation chain across cores"): walk the blocking

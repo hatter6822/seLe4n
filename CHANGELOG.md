@@ -12,6 +12,73 @@ priority inversion.  The per-core aspect is purely (1) which core's run queue th
 boosted holder's bucket migrates on (its home core, not always `bootCoreId`), and
 (2) whether a remote core must be poked with a `.reschedule` SGI.
 
+**Completion pass (same v0.31.50 cut).**  Brings SM5.F from "all 10 sub-tasks
+landed" to the complete + optimal implementation, closing every gap the SM5.F
+self-audit identified.  All additions axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice` only); trace fixture byte-identical; full Tier 0+1+2+3 green.
+
+- **B5 — exact per-core decomposition** (`Compute.lean`):
+  `computeMaxWaiterPriority_eq_sup_perCore` proves the global boost equals the
+  **supremum over every core's waiter slice** (the *completeness* direction
+  complementing `…_le_global`), so the cross-core wake's per-core poke policy
+  provably covers the entire boost.  Plus the closed numeric forms
+  `computeMaxWaiterPriority_value` / `computeMaxWaiterPriorityOnCore_value`.
+- **B6 — post-boost dominance**: `updatePipBoostOnCore_establishes_perCore_dominance`
+  — after a boost the holder's effective priority bounds *every* core's pre-state
+  waiter slice (premise-free; the boost *establishes* the consistency).
+- **B7 — home-core stability + chain SGI completeness**:
+  `updatePipBoostOnCore_preserves_determineTargetCore` (a boost never changes any
+  thread's home core — cpuAffinity is untouched); the chain-SGI completeness set
+  (`propagatePipChainCrossCore_head_emission_mem` / `_tail_sgis_mem` /
+  `_sgis_all_reschedule` / `_sgi_length_le_fuel` / `_second_link_sgi_remote` — every
+  remote link the walk visits contributes its `.reschedule` SGI, the list is
+  well-formed and bounded); and the single-core bridges
+  (`propagatePipChainCrossCore_singleCore_no_sgis` fires no SGI on single-core;
+  `propagatePipChainCrossCoreState_singleCore_eq_propagate` — the walk's state effect
+  equals the legacy `propagatePriorityInheritance`, behaviour-identical on single-core
+  hardware).
+- **B8 — full witness**: `priorityInheritance_perCore_witness_full` folds the exact
+  decomposition into the aggregate soundness witness.
+- **C9 — runnability gate** (`pipBoostWithWake` production refinement): the cross-core
+  SGI now also gates on the boosted holder being *runnable on its home core* — a boost
+  of a blocked holder (the common PIP case) fires no spurious cross-core IPI
+  (`pipBoostWithWake_no_sgi_if_not_runnable`).  Aligns the SGI exactly with the
+  run-queue bucket migration `updatePipBoostOnCore` performs.
+- **D11 — memory-model happens-before**: `pipBoostOrdering_happensBefore` /
+  `…_synchronizesWith` — the boost's run-queue publication happens-before the home
+  core observes it on the `.reschedule` SGI (the BKL release-acquire ordering, the
+  PIP-boost analogue of SM5.C's `wakeOrdering_happensBefore`).
+- **F13 — complete per-core resume**: `resumeThreadOnCore` (the per-core analogue of
+  `resumeThread`) — validates `.Inactive`, sets `threadState := .Ready`, recomputes the
+  GLOBAL `pipBoost`, enqueues on the home core, and returns the cross-core SGI for a
+  remote resume; closes the `restoreToReadyOnCore` "doesn't set threadState" gap
+  (`resumeThreadOnCore_sets_threadState` + the rejection/SGI/invariant surface).
+- **F14**: documented the `computeMaxWaiterPriorityOnCore` slice-membership deviation
+  from the plan (home-core partition vs. the plan's run-queue sketch — a PIP waiter is
+  *blocked*, hence in no run queue, so the home-core partition is the correct one).
+- **SM6 dispatch pulled forward** (the runtime SGI-firing layer):
+  `Concurrency.fireCrossCoreSgis` (BaseIO; coalesces by target core and fires over the
+  FFI) + the pure diff-based `computeCrossCoreSgis` (the dispatch decision for the
+  generic syscall path) + the BaseIO combinators (`crossCoreWakeDispatch`,
+  `pipChainWakeDispatch`, `emitBoostWakeSgi`).  Each is proven **inert on single-core**
+  (`computeCrossCoreSgis_nil_single_core` / `crossCoreWakeDispatch_singleCore` /
+  `pipChainWakeDispatch_singleCore` = `pure ()`), so wiring it into the live IPC
+  donation / timeout / resume paths is trace-preserving and activates automatically
+  once per-core affinities are set; the suite demonstrates it genuinely **fires**
+  `[(core1, .reschedule)]` for a cross-core boost diff.  The production call-site
+  substitution (routing the `@[export]` bodies through the dispatch) remains the
+  bounded SM5.I FFI-seam step.
+- **Inventory** grew 61 → 95 entries (+ `memoryModel` / `dispatch` categories);
+  `tests/SmpPipSuite.lean` adds §3.6–§3.9 runtime sections (C9 gate, exact
+  decomposition, chain completeness, dispatch firing); the tier-4 QEMU cross-core PIP
+  stub `scripts/test_qemu_smp_pip.sh` reserves the plan §6 slot.
+- **AK7**: `resumeThreadOnCore` reads through the typed `getTcb?` accessor and the
+  home-core-stability frame uses the `.get?` method form, so `RAW_LOOKUP_TID` stays at
+  the 814 floor; `RAW_MATCH_TOTAL` re-anchors 124 → 125 for `crossCoreSgiBody`'s single
+  object-store iteration site (the diff-based dispatch must scan the store for
+  `pipBoost` changes — structurally identical to `waitersOf`, no typed all-TCBs
+  accessor exists).
+
 - **SM5.F.1** `computeMaxWaiterPriorityOnCore` (`Compute.lean`, production) — the
   per-core analytic *slice* of the global max-waiter priority (the waiters whose
   home core is `c`), plus `optPriorityVal`, `computeMaxWaiterPriorityOnCore_le_global`

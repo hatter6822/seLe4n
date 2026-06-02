@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.BoundedInversion
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWake
 import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.Concurrency.Runtime
 
 /-!
 # WS-SM SM5.F — Per-core priority inheritance protocol (theorem surface)
@@ -59,7 +60,8 @@ namespace SeLe4n.Kernel.PriorityInheritance
 
 open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
-open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restoreToReadyWithWake)
+open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restoreToReadyWithWake
+  resumeReadyMidState resumeThreadOnCore)
 
 -- ============================================================================
 -- §1  SM5.F.2 — updatePipBoostOnCore: bridge, frame, invariant preservation
@@ -278,14 +280,17 @@ theorem pipBoostWithWake_no_sgi_if_local (st : SystemState) (tid : ThreadId) (ec
     (pipBoostWithWake st tid ec).2 = none := by
   simp [pipBoostWithWake, hLocal]
 
-/-- WS-SM SM5.F.2 (Theorem 3.6.1 emission): a REMOTE, MATERIAL PIP boost emits a
-`.reschedule` SGI to the holder's home core.  "Material" = the boost actually
-changed the holder's `pipBoost` (hence its effective run-queue bucket), so the
-remote core's scheduler must re-evaluate (the boosted holder may now outrank its
-current thread). -/
+/-- WS-SM SM5.F.2 (Theorem 3.6.1 emission): a REMOTE, RUNNABLE-ON-HOME, MATERIAL PIP
+boost emits a `.reschedule` SGI to the holder's home core.  "Material" = the boost
+actually changed the holder's `pipBoost` (hence its effective run-queue bucket);
+"runnable on home" = the holder is in its home core's run queue, so the boost can
+actually change which thread that core runs next — together these are the exact
+condition under which the remote core's scheduler must re-evaluate (the boosted
+holder may now outrank its current thread). -/
 theorem pipBoostWithWake_emits_sgi_if_remote (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
+    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : t.pipBoost ≠ t'.pipBoost) :
@@ -298,7 +303,18 @@ theorem pipBoostWithWake_emits_sgi_if_remote (st : SystemState) (tid : ThreadId)
     cases h : (t.pipBoost == t'.pipBoost) with
     | false => rfl
     | true => exact absurd (eq_of_beq h) hMaterial
-  simp [pipBoostWithWake, hRem, hPre, hPost, hMat]
+  simp [pipBoostWithWake, hRem, hPre, hPost, hMat, hRunnable]
+
+/-- WS-SM SM5.F.4 (C9 precision): a boost of a holder that is NOT runnable on its
+home core emits no SGI — raising the `pipBoost` of a thread not competing for that
+core's CPU has no immediate scheduling effect (the boost is consumed when the thread
+is next re-enqueued there).  Closes the spurious-cross-core-IPI gap for blocked-holder
+boosts (the common PIP case: the boosted holder is itself blocked deeper in the
+chain). -/
+theorem pipBoostWithWake_no_sgi_if_not_runnable (st : SystemState) (tid : ThreadId) (ec : CoreId)
+    (hNotRun : tid ∉ st.scheduler.runQueueOnCore (determineTargetCore st tid)) :
+    (pipBoostWithWake st tid ec).2 = none := by
+  simp [pipBoostWithWake, hNotRun]
 
 /-- WS-SM SM5.F.2: a NO-OP PIP boost (the holder's `pipBoost` is unchanged) emits no
 SGI — there is no scheduling consequence, so poking a remote core would be a
@@ -323,9 +339,11 @@ theorem pipBoostWithWake_sgi_is_reschedule (st : SystemState) (tid : ThreadId) (
   · simp at hSgi
   · split at hSgi
     · split at hSgi
+      · split at hSgi
+        · simp at hSgi
+        · simp only [Option.some.injEq, Prod.mk.injEq] at hSgi
+          exact ⟨hSgi.1.symm, hSgi.2.symm⟩
       · simp at hSgi
-      · simp only [Option.some.injEq, Prod.mk.injEq] at hSgi
-        exact ⟨hSgi.1.symm, hSgi.2.symm⟩
     · simp at hSgi
 
 /-- WS-SM SM5.F.2 (SM5.C.11 latency parity): the cross-core PIP wake emits AT MOST
@@ -447,6 +465,7 @@ poked.  The substantive cross-core content. -/
 theorem propagatePipChainCrossCore_head_sgi_remote (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (n : Nat) (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
+    (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
     (hMaterial : t.pipBoost ≠ t'.pipBoost) :
@@ -455,7 +474,7 @@ theorem propagatePipChainCrossCore_head_sgi_remote (st : SystemState) (tid : Thr
   rw [propagatePipChainCrossCore_step]
   have hHead : (pipBoostWithWake st tid ec).2
       = some (determineTargetCore st tid, SgiKind.reschedule) :=
-    pipBoostWithWake_emits_sgi_if_remote st tid ec t t' hRemote hPre hPost hMaterial
+    pipBoostWithWake_emits_sgi_if_remote st tid ec t t' hRemote hRunnable hPre hPost hMaterial
   cases hBS : blockingServer st tid with
   | none =>
     refine ⟨[], ?_⟩
@@ -729,5 +748,608 @@ theorem priorityInheritance_perCore_witness (st : SystemState) (tid : ThreadId) 
   ⟨pipBoostWithWake_preserves_blockingAcyclic st tid ec hInv hAcyclic,
    fun c => blockingAcyclic_perCore st c hAcyclic,
    fun c t => blockingServerOnCore_subgraph st c t⟩
+
+-- ============================================================================
+-- §8  SM5.F.3 — post-boost per-core dominance (consistency, premise-free)
+-- ============================================================================
+--
+-- `pipBoost_perCore_consistent` (§2) bounds a core's slice by the holder's effective
+-- priority *given* the holder already carries a PIP-consistent boost.  The theorems
+-- below close the loop: a cross-core boost *establishes* that domination
+-- unconditionally — after `updatePipBoostOnCore` the holder's effective priority
+-- bounds every core's pre-state waiter slice (the boost "covers" the waiters that
+-- motivated it).  This is the soundness completeness for SM5.F.3.
+
+/-- WS-SM SM5.F.2: a PIP boost leaves the holder's `cpuAffinity` untouched — the
+record update writes only `pipBoost`.  Companion to `updatePipBoostOnCore_getTcb?_pipBoost`;
+the home-core stability lemma `updatePipBoostOnCore_preserves_determineTargetCore`
+consumes it. -/
+theorem updatePipBoostOnCore_getTcb?_cpuAffinity (st : SystemState) (c : CoreId) (tid : ThreadId)
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧ t'.cpuAffinity = tcb.cpuAffinity := by
+  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+  unfold updatePipBoostOnCore
+  simp only [hRaw]
+  split
+  · exact ⟨tcb, hTcb, rfl⟩
+  · refine ⟨{ tcb with pipBoost := computeMaxWaiterPriority st tid }, ?_, rfl⟩
+    rw [SystemState.getTcb?_eq_some_iff]
+    have hSelf := RHTable_get?_insert_self st.objects tid.toObjId
+      (.tcb { tcb with pipBoost := computeMaxWaiterPriority st tid }) hInv
+    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore c)
+    · simp only [hRQ, ite_true]; split <;> exact hSelf
+    · simp only [hRQ, ite_false]; exact hSelf
+
+/-- WS-SM SM5.F.2: a PIP boost of a thread with no TCB is the identity — the def's
+fallthrough arm returns `st`. -/
+theorem updatePipBoostOnCore_eq_self_of_getTcb?_none (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hNone : st.getTcb? tid = none) :
+    updatePipBoostOnCore st c tid = st := by
+  unfold updatePipBoostOnCore
+  unfold SystemState.getTcb? at hNone
+  split
+  · rename_i tcb hMatch; rw [hMatch] at hNone; simp at hNone
+  · rfl
+
+/-- WS-SM SM5.F.4 (cpuAffinity-stability / home-core stability): a PIP boost
+preserves *every* thread's home core (`determineTargetCore`).  `determineTargetCore`
+reads only `cpuAffinity`, which the boost never changes — so the cross-core chain
+walk's home-core decisions are stable as the boosts accumulate.  This is the
+invariant the single-core bridge and the deadlock-freedom argument rest on. -/
+theorem updatePipBoostOnCore_preserves_determineTargetCore (st : SystemState) (c : CoreId)
+    (tid t : ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t := by
+  by_cases hEq : t = tid
+  · subst hEq
+    cases hTcb : st.getTcb? t with
+    | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c t hTcb]
+    | some tcb =>
+      obtain ⟨t', hPost, hAff⟩ := updatePipBoostOnCore_getTcb?_cpuAffinity st c t tcb hTcb hInv
+      simp only [determineTargetCore, hPost, hTcb, hAff]
+  · unfold determineTargetCore
+    -- AK7-clean: frame `getTcb? t` via the `.get?`-method form (no raw `[·]?` bracket
+    -- in the proof source); the bracket-form `objects_ne` is applied under the
+    -- `RHTable_getElem?_eq_get?` bridge.
+    have hGet : (updatePipBoostOnCore st c tid).getTcb? t = st.getTcb? t := by
+      have hObjNe : (updatePipBoostOnCore st c tid).objects.get? t.toObjId
+          = st.objects.get? t.toObjId := by
+        rw [← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?]
+        exact updatePipBoostOnCore_objects_ne st c tid t.toObjId
+          (fun h => hEq (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm) hInv
+      unfold SystemState.getTcb?; simp only [RHTable_getElem?_eq_get?, hObjNe]
+    rw [hGet]
+
+/-- WS-SM SM5.F.3 (plan §3.6, post-boost dominance): after a cross-core PIP boost,
+the boosted holder's effective priority bounds *every* core's pre-state waiter slice
+— premise-free (it does not assume PIP-consistency; the boost *establishes* it).
+
+Chain: per-core slice ≤ global max-waiter (`_le_global`) = the holder's new
+`pipBoost` (`_getTcb?_pipBoost`) ≤ the holder's new effective priority
+(`optPriorityVal_pipBoost_le_effectiveSchedParams`).  This is the formal content of
+"the boost covers the waiters that motivated it": no core's waiter outranks the
+boosted holder. -/
+theorem updatePipBoostOnCore_establishes_perCore_dominance (st : SystemState) (c c' : CoreId)
+    (tid : ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ t', (updatePipBoostOnCore st c tid).getTcb? tid = some t' ∧
+      optPriorityVal (computeMaxWaiterPriorityOnCore st c' tid)
+        ≤ (effectiveSchedParams (updatePipBoostOnCore st c tid) t').1.val := by
+  obtain ⟨t', hPost, hPB⟩ := updatePipBoostOnCore_getTcb?_pipBoost st c tid tcb hTcb hInv
+  refine ⟨t', hPost, ?_⟩
+  calc optPriorityVal (computeMaxWaiterPriorityOnCore st c' tid)
+      ≤ optPriorityVal (computeMaxWaiterPriority st tid) :=
+        computeMaxWaiterPriorityOnCore_le_global st c' tid
+    _ = optPriorityVal t'.pipBoost := by rw [hPB]
+    _ ≤ (effectiveSchedParams (updatePipBoostOnCore st c tid) t').1.val :=
+        optPriorityVal_pipBoost_le_effectiveSchedParams _ t'
+
+-- ============================================================================
+-- §9  SM5.F.4 — cross-core chain SGI completeness + single-core bridge
+-- ============================================================================
+--
+-- `propagatePipChainCrossCore_head_sgi_remote` (§4) shows the chain *head* contributes
+-- an SGI when remote+material.  The lemmas below close the completeness gap: every
+-- link the walk visits, at any depth, contributes its `.reschedule` SGI to the root
+-- list — `head_emission_mem` (a link's emission enters its local frame's list) +
+-- `tail_sgis_mem` (every tail emission lifts to the root) compose to "every remote
+-- link is poked".  Plus the SGI list is well-formed (`all_reschedule`) and bounded
+-- (`length_le_fuel`, no SGI storm), and the single-core deployment fires no
+-- cross-core IPI and reduces to the legacy `propagatePriorityInheritance` walk.
+
+/-- WS-SM SM5.F.4: whatever SGI the chain *head* emits is in the collected list
+(generalises `_head_sgi_remote` from the specific `.reschedule` form to any emission;
+the per-link base case of the completeness argument). -/
+theorem propagatePipChainCrossCore_head_emission_mem (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (n : Nat) (s : CoreId × SgiKind)
+    (hHead : (pipBoostWithWake st tid ec).2 = some s) :
+    s ∈ (propagatePipChainCrossCore st tid ec (n + 1)).2 := by
+  rw [propagatePipChainCrossCore_step]
+  cases hbs : blockingServer st tid <;> simp [hHead]
+
+/-- WS-SM SM5.F.4: every SGI the *tail* walk collects lifts to the full list — the
+inductive step of "every visited link contributes". -/
+theorem propagatePipChainCrossCore_tail_sgis_mem (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (n : Nat) (nextServer : ThreadId)
+    (hBS : blockingServer st tid = some nextServer) :
+    ∀ x ∈ (propagatePipChainCrossCore (pipBoostWithWake st tid ec).1 nextServer ec n).2,
+      x ∈ (propagatePipChainCrossCore st tid ec (n + 1)).2 := by
+  intro x hx
+  rw [propagatePipChainCrossCore_step]
+  cases hsgi : (pipBoostWithWake st tid ec).2 with
+  | none => simp only [hBS, hsgi]; simpa using hx
+  | some s => simp only [hBS, hsgi]; exact List.mem_append.mpr (Or.inr hx)
+
+/-- WS-SM SM5.F.4: every SGI in the cross-core chain list is a `.reschedule` — the
+list is well-formed (no foreign SGI kinds slip in).  Lifts `pipBoostWithWake_sgi_is_reschedule`
+to the whole chain. -/
+theorem propagatePipChainCrossCore_sgis_all_reschedule (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) :
+    ∀ p ∈ (propagatePipChainCrossCore st tid ec fuel).2, p.2 = SgiKind.reschedule := by
+  induction fuel generalizing st tid with
+  | zero => intro p hp; simp [propagatePipChainCrossCore] at hp
+  | succ n ih =>
+    intro p hp
+    rw [propagatePipChainCrossCore_step] at hp
+    cases hsgi : (pipBoostWithWake st tid ec).2 with
+    | none =>
+      cases hbs : blockingServer st tid with
+      | none => simp only [hsgi, hbs] at hp; simp at hp
+      | some nextServer =>
+        simp only [hsgi, hbs] at hp
+        exact ih (pipBoostWithWake st tid ec).1 nextServer p (by simpa using hp)
+    | some s =>
+      have hsk : s.2 = SgiKind.reschedule :=
+        (pipBoostWithWake_sgi_is_reschedule st tid ec s.1 s.2 (by rw [hsgi])).2
+      cases hbs : blockingServer st tid with
+      | none =>
+        simp only [hsgi, hbs] at hp
+        rw [List.mem_singleton] at hp; rw [hp]; exact hsk
+      | some nextServer =>
+        simp only [hsgi, hbs] at hp
+        rw [List.singleton_append, List.mem_cons] at hp
+        rcases hp with hHead | hTail
+        · rw [hHead]; exact hsk
+        · exact ih (pipBoostWithWake st tid ec).1 nextServer p hTail
+
+/-- WS-SM SM5.F.4 (bounded emission, SM5.C.11 latency parity): the chain SGI list has
+length ≤ fuel — one SGI per visited link at most, never an SGI storm. -/
+theorem propagatePipChainCrossCore_sgi_length_le_fuel (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) :
+    (propagatePipChainCrossCore st tid ec fuel).2.length ≤ fuel := by
+  induction fuel generalizing st tid with
+  | zero => simp [propagatePipChainCrossCore]
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    cases hsgi : (pipBoostWithWake st tid ec).2 with
+    | none =>
+      cases hbs : blockingServer st tid with
+      | none => simp [hsgi]
+      | some nextServer =>
+        simp only [hsgi]
+        exact Nat.le_trans (by simpa using ih (pipBoostWithWake st tid ec).1 nextServer)
+          (Nat.le_succ n)
+    | some s =>
+      cases hbs : blockingServer st tid with
+      | none => simp only [hsgi]; exact Nat.succ_le_succ (Nat.zero_le n)
+      | some nextServer =>
+        simp only [hsgi, List.singleton_append, List.length_cons]
+        exact Nat.succ_le_succ (ih (pipBoostWithWake st tid ec).1 nextServer)
+
+/-- WS-SM SM5.F.4 (depth-2 completeness witness): when the chain continues past the
+head (`blockingServer st tid = some nextServer`) and the *second* link's boost is
+remote and material, the second link's `.reschedule` SGI is in the root list —
+concretely demonstrating that `head_emission_mem` + `tail_sgis_mem` propagate
+emissions from beyond the head.  Generalises by induction to every link. -/
+theorem propagatePipChainCrossCore_second_link_sgi_remote (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (n : Nat) (nextServer : ThreadId) (t t' : TCB)
+    (hBS : blockingServer st tid = some nextServer)
+    (hRemote : determineTargetCore (pipBoostWithWake st tid ec).1 nextServer ≠ ec)
+    (hRunnable : nextServer ∈ (pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore
+                  (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer))
+    (hPre : (pipBoostWithWake st tid ec).1.getTcb? nextServer = some t)
+    (hPost : (updatePipBoostOnCore (pipBoostWithWake st tid ec).1
+              (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer).getTcb?
+              nextServer = some t')
+    (hMaterial : t.pipBoost ≠ t'.pipBoost) :
+    (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer, SgiKind.reschedule)
+      ∈ (propagatePipChainCrossCore st tid ec (n + 1 + 1)).2 := by
+  have hHeadTail : (pipBoostWithWake (pipBoostWithWake st tid ec).1 nextServer ec).2
+      = some (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer, SgiKind.reschedule) :=
+    pipBoostWithWake_emits_sgi_if_remote (pipBoostWithWake st tid ec).1 nextServer ec t t'
+      hRemote hRunnable hPre hPost hMaterial
+  have hInTail : (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer, SgiKind.reschedule)
+      ∈ (propagatePipChainCrossCore (pipBoostWithWake st tid ec).1 nextServer ec (n + 1)).2 :=
+    propagatePipChainCrossCore_head_emission_mem (pipBoostWithWake st tid ec).1 nextServer ec n _
+      hHeadTail
+  exact propagatePipChainCrossCore_tail_sgis_mem st tid ec (n + 1) nextServer hBS _ hInTail
+
+/-- WS-SM SM5.F.4 (single-core bridge, no spurious IPI): on a single-core deployment
+(every thread unbound ⇒ home = `bootCoreId`) the cross-core chain walk fires NO SGI
+— there is no remote core to poke, so the trace carries no cross-core IPI.  The
+all-unbound hypothesis is preserved along the walk by
+`updatePipBoostOnCore_preserves_determineTargetCore`. -/
+theorem propagatePipChainCrossCore_singleCore_no_sgis (st : SystemState) (tid : ThreadId)
+    (fuel : Nat) (hInv : st.objects.invExt)
+    (hAllBoot : ∀ t, determineTargetCore st t = bootCoreId) :
+    (propagatePipChainCrossCore st tid bootCoreId fuel).2 = [] := by
+  induction fuel generalizing st tid with
+  | zero => rfl
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hLocal : determineTargetCore st tid = bootCoreId := hAllBoot tid
+    have hHeadNone : (pipBoostWithWake st tid bootCoreId).2 = none :=
+      pipBoostWithWake_no_sgi_if_local st tid bootCoreId hLocal
+    have hStInv : (pipBoostWithWake st tid bootCoreId).1.objects.invExt :=
+      pipBoostWithWake_preserves_objects_invExt st tid bootCoreId hInv
+    have hStBoot : ∀ t, determineTargetCore (pipBoostWithWake st tid bootCoreId).1 t = bootCoreId := by
+      intro t
+      rw [pipBoostWithWake_state, updatePipBoostOnCore_preserves_determineTargetCore st _ tid t hInv]
+      exact hAllBoot t
+    cases hbs : blockingServer st tid with
+    | none => simp [hHeadNone]
+    | some nextServer =>
+      simp only [hHeadNone]
+      exact ih (pipBoostWithWake st tid bootCoreId).1 nextServer hStInv hStBoot
+
+/-- WS-SM SM5.F.4 (single-core bridge, behaviour-identical): on a single-core
+deployment the cross-core chain walk's *state* effect is exactly the legacy
+single-core `propagatePriorityInheritance` walk — `pipBoostWithWake` reduces to
+`updatePipBoost` (home = `bootCoreId`) at every link.  This is the formal guarantee
+that routing PIP through the per-core walk changes nothing on single-core hardware. -/
+theorem propagatePipChainCrossCoreState_singleCore_eq_propagate (st : SystemState)
+    (tid : ThreadId) (fuel : Nat) (hInv : st.objects.invExt)
+    (hAllBoot : ∀ t, determineTargetCore st t = bootCoreId) :
+    propagatePipChainCrossCoreState st tid bootCoreId fuel
+      = propagatePriorityInheritance st tid fuel := by
+  induction fuel generalizing st tid with
+  | zero => rfl
+  | succ n ih =>
+    rw [propagatePipChainCrossCoreState_step, propagate_step]
+    have hLocal : determineTargetCore st tid = bootCoreId := hAllBoot tid
+    have hSt' : (pipBoostWithWake st tid bootCoreId).1 = updatePipBoost st tid := by
+      rw [pipBoostWithWake_state, hLocal, ← updatePipBoost_eq_updatePipBoostOnCore_bootCore]
+    have hStInv : (updatePipBoost st tid).objects.invExt := by
+      rw [updatePipBoost_eq_updatePipBoostOnCore_bootCore]
+      exact updatePipBoostOnCore_preserves_objects_invExt st bootCoreId tid hInv
+    have hStBoot : ∀ t, determineTargetCore (updatePipBoost st tid) t = bootCoreId := by
+      intro t
+      rw [updatePipBoost_eq_updatePipBoostOnCore_bootCore,
+          updatePipBoostOnCore_preserves_determineTargetCore st bootCoreId tid t hInv]
+      exact hAllBoot t
+    rw [hSt']
+    cases hbs : blockingServer st tid with
+    | none => rfl
+    | some nextServer => exact ih (updatePipBoost st tid) nextServer hStInv hStBoot
+
+-- ============================================================================
+-- §9b  SM5.F.4 — memory-model happens-before for the cross-core PIP boost
+-- ============================================================================
+--
+-- The cross-core PIP boost's `.reschedule` SGI obeys the same BKL release-acquire
+-- discipline as the wake (SM5.C.4 `wakeOrdering_happensBefore`): the boosting core
+-- emits `dsb ish` *before* writing `GICD_SGIR` (SM1.F.8), so its release-store of the
+-- boosted holder's new run-queue bucket is visible to the home core before that core
+-- takes the SGI (the acquire) and re-runs its scheduler.  The boost's ordering trace
+-- is structurally identical to the wake's (a release-store on the boosting core
+-- followed by an acquire-load on the home core, same location + value), so we lift
+-- the verified `wakeOrdering_*` memory-model results rather than re-deriving them —
+-- the events differ only in *meaning* (`loc`/`v` carry the pipBoost bucket rather than
+-- the run-queue insertion), which the parameters and docstrings record.
+
+/-- WS-SM SM5.F.4 (memory-model synchronizes-with): the boosting core's release-store
+of the holder's new run-queue bucket **synchronizes-with** the home core's acquire-load
+when it services the `.reschedule` SGI — the ARM ARM B2.3.7 release/acquire edge the
+`dsb ish`-before-`GICD_SGIR` discipline (SM1.F.8) establishes for the cross-core PIP
+boost.  Lifts `wakeOrdering_synchronizesWith` (same trace shape). -/
+theorem pipBoostOrdering_synchronizesWith (boostCore homeCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (loc : SeLe4n.Kernel.Concurrency.AtomicLocation) (v : Nat) :
+    SeLe4n.Kernel.Concurrency.synchronizesWith
+      (SeLe4n.Kernel.Concurrency.wakeOrderingTrace boostCore homeCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeReleaseEvent boostCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeAcquireEvent homeCore loc v) :=
+  SeLe4n.Kernel.Concurrency.wakeOrdering_synchronizesWith boostCore homeCore loc v
+
+/-- WS-SM SM5.F.4 (memory-model headline HB): the cross-core PIP boost's run-queue
+publication **happens-before** the home core observes it on the `.reschedule` SGI.
+
+In the verified operational memory model, the boosting core's release of the holder's
+new effective-priority bucket happens-before the home core's acquire of it — so when
+the home core services the SGI and re-runs `handleRescheduleSgiOnCore`, the boosted
+holder's raised priority is *guaranteed visible* in its run queue.  This is the
+machine-checked statement of the boost's BKL ordering ("emit the SGI after the boost
+is visible"), the PIP-boost analogue of `wakeOrdering_happensBefore`. -/
+theorem pipBoostOrdering_happensBefore (boostCore homeCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (loc : SeLe4n.Kernel.Concurrency.AtomicLocation) (v : Nat) :
+    SeLe4n.Kernel.Concurrency.happensBefore
+      (SeLe4n.Kernel.Concurrency.wakeOrderingTrace boostCore homeCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeReleaseEvent boostCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeAcquireEvent homeCore loc v) :=
+  SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore boostCore homeCore loc v
+
+-- ============================================================================
+-- §10  SM5.F.9 — priorityInheritance_perCore_witness_full (with decomposition)
+-- ============================================================================
+
+/-- WS-SM SM5.F.9 (plan §3.6, full aggregate witness): the complete per-core PIP
+soundness witness — the three keystones of `priorityInheritance_perCore_witness`
+(acyclicity preservation, per-core acyclicity, subgraph consistency) PLUS the
+**exact per-core decomposition** (`computeMaxWaiterPriority_eq_sup_perCore`): the
+global boost is the supremum over every core's waiter slice.
+
+This is the closed-loop soundness + completeness statement: the per-core PIP is an
+acyclic, consistent decomposition of the global priority-inheritance discipline that
+loses no waiter's contribution (the boost the runtime reassembles from the per-core
+slices is exactly the global boost). -/
+theorem priorityInheritance_perCore_witness_full (st : SystemState) (tid : ThreadId) (ec : CoreId)
+    (hInv : st.objects.invExt) (hAcyclic : blockingAcyclic st) :
+    blockingAcyclic (pipBoostWithWake st tid ec).1 ∧
+    (∀ c, blockingAcyclicOnCore st c) ∧
+    (∀ c t, blockingServerOnCore st c t = none ∨ blockingServerOnCore st c t = blockingServer st t) ∧
+    optPriorityVal (computeMaxWaiterPriority st tid)
+      = SeLe4n.Kernel.Concurrency.allCores.foldl
+          (fun n c => Nat.max n (optPriorityVal (computeMaxWaiterPriorityOnCore st c tid))) 0 :=
+  ⟨pipBoostWithWake_preserves_blockingAcyclic st tid ec hInv hAcyclic,
+   fun c => blockingAcyclic_perCore st c hAcyclic,
+   fun c t => blockingServerOnCore_subgraph st c t,
+   computeMaxWaiterPriority_eq_sup_perCore st tid⟩
+
+-- ============================================================================
+-- §11  SM5.F.6 — resumeThreadOnCore (the complete per-core resume)
+-- ============================================================================
+--
+-- `restoreToReadyOnCore` (§5) is the IPC-clear+enqueue *helper* (parallel to the
+-- shared `restoreToReady`); it deliberately does NOT set `threadState`.  The
+-- complete per-core resume `resumeThreadOnCore` (the per-core analogue of
+-- `resumeThread`) closes that gap: it validates the target is `.Inactive`, sets
+-- `threadState := .Ready`, recomputes the GLOBAL `pipBoost`, enqueues on the home
+-- core, and returns the cross-core `.reschedule` SGI for a remote resume.
+
+/-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" carries a TCB at `tid` whose
+`threadState` is `.Ready` — the H3c step `restoreToReadyOnCore` omits, isolated from
+the run-queue enqueue. -/
+theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (tcb : TCB)
+    (hGet : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧ tm.threadState = .Ready := by
+  have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
+  have hst1 : (restoreToReady st tid).getTcb? tid
+      = some { tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none } := by
+    unfold restoreToReady
+    simp only [hGet, SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+    exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
+  simp only [resumeReadyMidState, hst1]
+  refine ⟨{ ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none }) with threadState := .Ready, pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid }, ?_, rfl⟩
+  simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+  exact RHTable_get?_insert_self (restoreToReady st tid).objects tid.toObjId _ hst1Inv
+
+/-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" preserves the object-store
+invariant (`restoreToReady` then a single TCB `insert`). -/
+theorem resumeReadyMidState_objects_invExt (st : SystemState) (tid : ThreadId)
+    (hInv : st.objects.invExt) :
+    (resumeReadyMidState st tid).objects.invExt := by
+  have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
+  simp only [resumeReadyMidState]
+  split
+  · exact RHTable_insert_preserves_invExt _ _ _ hst1Inv
+  · exact hst1Inv
+
+/-- WS-SM SM5.F.6 (plan §3.6, resume H3c): the **complete** per-core resume sets the
+resumed thread's `threadState := .Ready` — the run-queue enqueue (no-op when already
+runnable, else `_makes_ready` which touches only `ipcState`) preserves it, so the
+post-resume thread is genuinely `.Ready`.  This is the gap `restoreToReadyOnCore`
+leaves and `resumeThreadOnCore` closes. -/
+theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt) :
+    ∃ st' sgi, resumeThreadOnCore st vtid ec = .ok (st', sgi) ∧
+      ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready := by
+  obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st vtid.val tcb hGet hInv
+  have hmidInv : (resumeReadyMidState st vtid.val).objects.invExt :=
+    resumeReadyMidState_objects_invExt st vtid.val hInv
+  simp only [resumeThreadOnCore, hGet]
+  rw [if_neg (by simp [hInactive])]
+  refine ⟨_, _, rfl, ?_⟩
+  by_cases hRun : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = true
+  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+    exact ⟨tm, hmid, hmidReady⟩
+  · have hFresh : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = false := by
+      simpa using hRun
+    exact ⟨{ tm with ipcState := .ready },
+      SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+
+/-- WS-SM SM5.F.6: the complete per-core resume preserves the object-store invariant. -/
+theorem resumeThreadOnCore_preserves_objects_invExt (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt) :
+    ∃ st' sgi, resumeThreadOnCore st vtid ec = .ok (st', sgi) ∧ st'.objects.invExt := by
+  have hmidInv : (resumeReadyMidState st vtid.val).objects.invExt :=
+    resumeReadyMidState_objects_invExt st vtid.val hInv
+  simp only [resumeThreadOnCore, hGet]
+  rw [if_neg (by simp [hInactive])]
+  exact ⟨_, _, rfl,
+    SeLe4n.Kernel.enqueueRunnableOnCore_preserves_objects_invExt _ _ _ hmidInv⟩
+
+/-- WS-SM SM5.F.6: resume of a non-`.Inactive` TCB is rejected with `illegalState`
+(parity with `resumeThread`). -/
+theorem resumeThreadOnCore_rejects_non_inactive (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hState : tcb.threadState ≠ .Inactive) :
+    resumeThreadOnCore st vtid ec = .error .illegalState := by
+  simp only [resumeThreadOnCore, hGet]
+  rw [if_pos (by simpa using hState)]
+
+/-- WS-SM SM5.F.6: resume of a non-TCB object (or absent slot) is rejected with
+`invalidArgument` — the typed `getTcb?` returns `none` for both. -/
+theorem resumeThreadOnCore_rejects_non_tcb (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (hGet : st.getTcb? vtid.val = none) :
+    resumeThreadOnCore st vtid ec = .error .invalidArgument := by
+  simp only [resumeThreadOnCore, hGet]
+
+/-- WS-SM SM5.F.6: a LOCAL complete resume (home = executing core) succeeds with no
+SGI. -/
+theorem resumeThreadOnCore_local_no_sgi (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hInactive : tcb.threadState = .Inactive)
+    (hLocal : determineTargetCore st vtid.val = ec) :
+    ∃ st', resumeThreadOnCore st vtid ec = .ok (st', none) := by
+  simp only [resumeThreadOnCore, hGet]
+  rw [if_neg (by simp [hInactive])]
+  simp only [hLocal, beq_self_eq_true, if_true]
+  exact ⟨_, rfl⟩
+
+/-- WS-SM SM5.F.6: a REMOTE complete resume succeeds and returns the `.reschedule`
+SGI to the resumed thread's home core. -/
+theorem resumeThreadOnCore_remote_sgi (st : SystemState) (vtid : SeLe4n.ValidThreadId)
+    (ec : CoreId) (tcb : TCB)
+    (hGet : st.getTcb? vtid.val = some tcb)
+    (hInactive : tcb.threadState = .Inactive)
+    (hRemote : determineTargetCore st vtid.val ≠ ec) :
+    ∃ st', resumeThreadOnCore st vtid ec
+      = .ok (st', some (determineTargetCore st vtid.val, SgiKind.reschedule)) := by
+  simp only [resumeThreadOnCore, hGet]
+  rw [if_neg (by simp [hInactive])]
+  have hb : (determineTargetCore st vtid.val == ec) = false := by
+    cases h : (determineTargetCore st vtid.val == ec) with
+    | false => rfl
+    | true => exact absurd (eq_of_beq h) hRemote
+  simp only [hb]
+  exact ⟨_, rfl⟩
+
+-- ============================================================================
+-- §12  SM5.F.4 — cross-core wake dispatch (the SM6 runtime firing layer)
+-- ============================================================================
+--
+-- The per-core PIP transitions (§3/§4/§5) return the set of cross-core
+-- `.reschedule` SGIs a boost warrants; SM5.I's runtime fires them.  This section is
+-- the **dispatch** that pulls that firing forward: `computeCrossCoreSgis` derives the
+-- SGIs from a transition's *state diff* (for the generic syscall path, which returns
+-- only a post-state), and the BaseIO combinators (`crossCoreWakeDispatch`,
+-- `pipChainWakeDispatch`, …) commit nothing new but *fire* the SGIs over the FFI
+-- (`Concurrency.fireCrossCoreSgis`).  Each combinator is proven **inert on single-core**
+-- (`pure ()` when every thread is on the boot core) — so wiring it into the live
+-- IPC donation / timeout / resume paths is trace-preserving on single-core hardware
+-- and activates automatically once per-core affinities are set.
+
+/-- WS-SM SM5.F.4: the per-object body of the diff-based dispatch — emits a
+`.reschedule` SGI to a thread's *remote* home core iff its `pipBoost` changed.
+Factored out so the dispatch theorems reference it by name (the single object-store
+read site, mirroring `waitersOf`'s raw iteration). -/
+def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
+    : Option (CoreId × SgiKind) :=
+  match post.objects[oid]? with
+  | some (KernelObject.tcb tpost) =>
+    match pre.getTcb? tpost.tid with
+    | some tpre =>
+      if tpre.pipBoost == tpost.pipBoost then none
+      else
+        let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
+        if home == execCore then none else some (home, SgiKind.reschedule)
+    | none => none
+  | _ => none
+
+/-- WS-SM SM5.F.4 (SM6 dispatch decision): the cross-core `.reschedule` SGIs a
+transition `pre → post` warrants, derived from the state diff — one per *remote*
+(home ≠ `execCore`) thread whose `pipBoost` (hence effective run-queue bucket) changed,
+coalesced by target core.  This is the dispatch for the generic syscall path, which
+returns only a post-state (the per-core boost transitions return their SGIs directly). -/
+def computeCrossCoreSgis (pre post : SystemState) (execCore : CoreId) : List (CoreId × SgiKind) :=
+  SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis (post.objectIndex.filterMap (crossCoreSgiBody pre post execCore))
+
+/-- WS-SM SM5.F.4: the dispatch body emits only `.reschedule` SGIs. -/
+theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid : ObjId)
+    (p : CoreId × SgiKind) (h : crossCoreSgiBody pre post ec oid = some p) :
+    p.2 = SgiKind.reschedule := by
+  unfold crossCoreSgiBody at h
+  split at h
+  · split at h
+    · split at h
+      · simp at h
+      · simp only [] at h
+        split at h
+        · simp at h
+        · simp only [Option.some.injEq] at h; rw [← h]
+    · simp at h
+  · simp at h
+
+/-- WS-SM SM5.F.4: under all-boot homes (single-core) the dispatch body is `none`. -/
+theorem crossCoreSgiBody_none_single_core (pre post : SystemState) (oid : ObjId)
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId) :
+    crossCoreSgiBody pre post bootCoreId oid = none := by
+  unfold crossCoreSgiBody
+  split
+  · split
+    · split
+      · rfl
+      · simp [hAllBoot]
+    · rfl
+  · rfl
+
+/-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it
+pokes cores only to reschedule, never with a foreign SGI kind. -/
+theorem computeCrossCoreSgis_all_reschedule (pre post : SystemState) (ec : CoreId) :
+    ∀ p ∈ computeCrossCoreSgis pre post ec, p.2 = SgiKind.reschedule := by
+  intro p hp
+  have hsub := SeLe4n.Kernel.Concurrency.dedupCrossCoreSgis_subset _ p hp
+  rw [List.mem_filterMap] at hsub
+  obtain ⟨oid, _, hbody⟩ := hsub
+  exact crossCoreSgiBody_reschedule pre post ec oid p hbody
+
+/-- WS-SM SM5.F.4 (single-core inertness): on a single-core deployment (every thread
+on the boot core ⇒ home = `bootCoreId` = `execCore`) the diff-based dispatch emits NO
+SGI.  No production thread on the current single-core path has a remote home, so
+`computeCrossCoreSgis` is `[]` there — the dispatch is safe to wire (trace-preserving)
+and activates only once per-core affinities exist. -/
+theorem computeCrossCoreSgis_nil_single_core (pre post : SystemState)
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId) :
+    computeCrossCoreSgis pre post bootCoreId = [] := by
+  unfold computeCrossCoreSgis
+  rw [List.filterMap_eq_nil_iff.mpr (fun oid _ => crossCoreSgiBody_none_single_core pre post oid hAllBoot)]
+  rfl
+
+/-- WS-SM SM5.F.4 (SM6 dispatch, generic syscall path): fire the cross-core
+`.reschedule` SGIs a transition `pre → post` warrants.  Wire this into the BaseIO
+syscall-return path (after the pure transition commits, before returning to user mode)
+so a cross-core PIP boost from a syscall fires its SGI; on the current single-core path
+it is `pure ()` (`crossCoreWakeDispatch_singleCore`). -/
+def crossCoreWakeDispatch (pre post : SystemState) (execCore : CoreId) : BaseIO Unit :=
+  SeLe4n.Kernel.Concurrency.fireCrossCoreSgis (computeCrossCoreSgis pre post execCore)
+
+/-- WS-SM SM5.F.4: the diff-based syscall dispatch is inert (`pure ()`) on single-core. -/
+theorem crossCoreWakeDispatch_singleCore (pre post : SystemState)
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore post t = bootCoreId) :
+    crossCoreWakeDispatch pre post bootCoreId = pure () := by
+  unfold crossCoreWakeDispatch
+  rw [computeCrossCoreSgis_nil_single_core pre post hAllBoot]
+  rfl
+
+/-- WS-SM SM5.F.4 (SM6 dispatch, chain path): run the pure cross-core PIP boost chain
+(the caller has committed its boost state under the lock) and fire the chain's
+cross-core `.reschedule` SGIs.  The dispatch SM5.I invokes from the live IPC donation
+path so a cross-core donation boost fires every remote link's SGI. -/
+def pipChainWakeDispatch (st : SystemState) (tid : ThreadId) (execCore : CoreId)
+    (fuel : Nat := st.objectIndex.length) : BaseIO Unit :=
+  SeLe4n.Kernel.Concurrency.fireCrossCoreSgis (propagatePipChainCrossCore st tid execCore fuel).2
+
+/-- WS-SM SM5.F.4: the chain-wake dispatch is inert (`pure ()`) on single-core
+(`propagatePipChainCrossCore_singleCore_no_sgis`). -/
+theorem pipChainWakeDispatch_singleCore (st : SystemState) (tid : ThreadId) (fuel : Nat)
+    (hInv : st.objects.invExt)
+    (hAllBoot : ∀ t, SeLe4n.Kernel.determineTargetCore st t = bootCoreId) :
+    pipChainWakeDispatch st tid bootCoreId fuel = pure () := by
+  unfold pipChainWakeDispatch
+  rw [propagatePipChainCrossCore_singleCore_no_sgis st tid fuel hInv hAllBoot]
+  rfl
+
+/-- WS-SM SM5.F.4 (SM6 dispatch, single-boost / resume paths): fire the optional SGI a
+`pipBoostWithWake` / `restoreToReadyWithWake` / `resumeThreadOnCore` returned — the
+single-SGI dispatch (lifts SM5.C `emitWakeSgi`).  Used by the live timeout / resume
+paths so a remote boost or resume fires its `.reschedule` SGI. -/
+def emitBoostWakeSgi (sgi : Option (CoreId × SgiKind)) : BaseIO Unit :=
+  SeLe4n.Kernel.Concurrency.emitWakeSgi sgi
+
+/-- WS-SM SM5.F.4: a local boost/resume (`none`) fires nothing. -/
+@[simp] theorem emitBoostWakeSgi_none : (emitBoostWakeSgi none : BaseIO Unit) = pure () := rfl
 
 end SeLe4n.Kernel.PriorityInheritance

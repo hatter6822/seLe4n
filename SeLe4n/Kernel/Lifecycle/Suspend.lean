@@ -198,6 +198,64 @@ def restoreToReadyWithWake (st : SystemState) (tid : SeLe4n.ThreadId)
          | some _ => some (target, SgiKind.reschedule)
   (st', sgi)
 
+/-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" — IPC transients cleared
+(`restoreToReady`), `threadState` set to `.Ready`, and `pipBoost` recomputed from the
+GLOBAL post-restore blocking graph — *before* the per-core run-queue enqueue.  Factored
+out (parallel to `restoreToReadyMidState`) so the resume's `threadState`/`pipBoost`
+effect is provable independently of the run-queue insertion.  When `tid` has no TCB
+the result is `restoreToReady st tid` (an unreachable branch from `resumeThreadOnCore`,
+which validates the TCB first). -/
+def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let st1 := restoreToReady st tid
+  let newPipBoost : Option SeLe4n.Priority :=
+    PriorityInheritance.computeMaxWaiterPriority st1 tid
+  match st1.getTcb? tid with
+  | some t =>
+    { st1 with objects := st1.objects.insert tid.toObjId (.tcb { t with threadState := .Ready, pipBoost := newPipBoost }) }
+  | none => st1
+
+/-- WS-SM SM5.F.6 (plan §3.6, resume H1–H5 per-core): the **complete** per-core
+resume — the per-core analogue of `resumeThread`.  Unlike `restoreToReadyOnCore`
+(the IPC-clear+enqueue helper, parallel to the shared `restoreToReady`), this
+performs the full Inactive→Ready transition:
+
+1. **H1/H2** — validate `tid` is a TCB in `.Inactive` state
+   (`invalidArgument` / `illegalState` otherwise), exactly as `resumeThread`.
+2. **H3a** — clear IPC transients (`restoreToReady`).
+3. **H3b** — re-derive `pipBoost` from the GLOBAL post-restore blocking graph
+   (`computeMaxWaiterPriority`; the per-core slice would under-boost).
+4. **H3c** — set `threadState := .Ready` *and* the recomputed `pipBoost` (the
+   step `restoreToReadyOnCore` deliberately omits, completing the resume) — both via
+   the `resumeReadyMidState` helper.
+5. **H4** — enqueue on the thread's **home core** (`determineTargetCore`) via the
+   SM5.C per-core `enqueueRunnableOnCore`.
+6. **H5 (cross-core)** — if the home core is remote (≠ `executingCore`), return the
+   `.reschedule` SGI it must receive (the resumed thread newly enters its run
+   queue and may outrank that core's current thread); a local resume needs none.
+
+`resumeThreadOnCore st vtid bootCoreId` with an unbound thread (home = `bootCoreId`)
+matches `resumeThread`'s state effect on the boot core, with no SGI. -/
+def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
+    : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  let tid : SeLe4n.ThreadId := vtid.val
+  -- AK7-clean: read through the typed `getTcb?` accessor — it returns `none` for
+  -- both a non-TCB and an absent slot, exactly the `invalidArgument` arm.
+  match st.getTcb? tid with
+  | some tcb =>
+    if tcb.threadState != .Inactive then .error .illegalState
+    else
+      -- home core of the resumed thread (where it re-enters the run queue)
+      let target := determineTargetCore st tid
+      -- H3a/H3b/H3c: IPC clear + threadState := .Ready + GLOBAL pipBoost recompute
+      let st2 := resumeReadyMidState st tid
+      -- H4: enqueue on the home core
+      let st3 := enqueueRunnableOnCore st2 target tid
+      -- H5: cross-core preemption notice
+      let sgi : Option (CoreId × SgiKind) :=
+        if target == executingCore then none else some (target, SgiKind.reschedule)
+      .ok (st3, sgi)
+  | none => .error .invalidArgument
+
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
   match tcb.ipcState with

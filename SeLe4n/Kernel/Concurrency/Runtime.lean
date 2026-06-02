@@ -379,4 +379,68 @@ theorem sgiIntidU8_reschedule : sgiIntidU8 SgiKind.reschedule = 0 := by decide
 /-- **WS-SM SM5.C.4**: the boot core's GIC target mask is bit 0 (`= 1`). -/
 theorem coreIdTargetMask_bootCore : coreIdTargetMask bootCoreId = 1 := by decide
 
+-- ============================================================================
+-- WS-SM SM5.F.4 — cross-core PIP wake dispatch (the SM6 firing layer)
+-- ============================================================================
+
+/-- **WS-SM SM5.F.4**: dedup a list of cross-core SGIs by target core, keeping the
+    first occurrence of each target.  A per-core priority-inheritance boost *chain*
+    (`propagatePipChainCrossCore`) can poke the same remote core more than once (two
+    chain links sharing a home core); one `.reschedule` SGI per core suffices, and
+    coalescing avoids a redundant cross-core IPI. -/
+def dedupCrossCoreSgis (sgis : List (CoreId × SgiKind)) : List (CoreId × SgiKind) :=
+  sgis.foldl (fun acc s => if acc.any (fun a => a.1 == s.1) then acc else acc ++ [s]) []
+
+/-- **WS-SM SM5.F.4** (SM6 cross-core PIP dispatch — the runtime firing side): fire
+    every cross-core `.reschedule` SGI a per-core priority-inheritance boost returned,
+    coalesced by target core.  The pure SM5.F transitions (`pipBoostWithWake`,
+    `propagatePipChainCrossCore`, `restoreToReadyWithWake`, `resumeThreadOnCore`)
+    compute *which* cores to poke and the boost state; `fireCrossCoreSgis` performs the
+    FFI emissions over `sendSgiToCore`.
+
+    **BKL-discipline ordering (SM5.C.4 / SM1.F.8).**  Invoke *after* the boost state is
+    committed and visible: each `ffi_send_sgi` emits `dsb ish` before writing
+    `GICD_SGIR`, so a poked core observes the boosted holder's new run-queue bucket
+    before its `.reschedule` SGI fires.  This is the dispatch the live IPC donation /
+    timeout / resume paths invoke so a cross-core boost from a syscall fires its SGI. -/
+def fireCrossCoreSgis (sgis : List (CoreId × SgiKind)) : BaseIO Unit :=
+  (dedupCrossCoreSgis sgis).forM (fun s => sendSgiToCore s.1 s.2)
+
+/-- **WS-SM SM5.F.4** marker: `dedupCrossCoreSgis []` is `[]`. -/
+@[simp] theorem dedupCrossCoreSgis_nil : dedupCrossCoreSgis [] = [] := rfl
+
+/-- **WS-SM SM5.F.4** marker: firing an empty SGI list is a no-op — the single-core
+    (all-local) case fires nothing, so the dispatch is inert on single-core hardware. -/
+@[simp] theorem fireCrossCoreSgis_nil : (fireCrossCoreSgis [] : BaseIO Unit) = pure () := rfl
+
+/-- **WS-SM SM5.F.4** (fold-frame helper): every element of the dedup fold result is
+    either in the seed accumulator or in the remaining list — the workhorse of
+    `dedupCrossCoreSgis_subset`. -/
+private theorem dedupFold_mem (l : List (CoreId × SgiKind)) :
+    ∀ (acc : List (CoreId × SgiKind)) x,
+      x ∈ l.foldl (fun acc s => if acc.any (fun a => a.1 == s.1) then acc else acc ++ [s]) acc →
+        x ∈ acc ∨ x ∈ l := by
+  induction l with
+  | nil => intro acc x hx; exact Or.inl hx
+  | cons head tail ih =>
+    intro acc x hx
+    simp only [List.foldl_cons] at hx
+    rcases ih _ x hx with hStep | hTail
+    · by_cases hc : (acc.any (fun a => a.1 == head.1)) = true
+      · rw [if_pos hc] at hStep; exact Or.inl hStep
+      · rw [if_neg hc] at hStep
+        rcases List.mem_append.mp hStep with hAcc | hHead
+        · exact Or.inl hAcc
+        · exact Or.inr (by rw [List.mem_singleton.mp hHead]; exact List.mem_cons_self)
+    · exact Or.inr (List.mem_cons_of_mem head hTail)
+
+/-- **WS-SM SM5.F.4**: every entry of a deduped SGI list was in the input — `dedup`
+    introduces no SGI the boost did not request (it only drops duplicates). -/
+theorem dedupCrossCoreSgis_subset (sgis : List (CoreId × SgiKind)) :
+    ∀ x ∈ dedupCrossCoreSgis sgis, x ∈ sgis := by
+  intro x hx
+  rcases dedupFold_mem sgis [] x hx with hAcc | hL
+  · simp at hAcc
+  · exact hL
+
 end SeLe4n.Kernel.Concurrency

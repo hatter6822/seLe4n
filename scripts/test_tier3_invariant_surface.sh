@@ -3594,6 +3594,45 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWak
 #check @perCorePipTheorems_count
 #check @perCorePipTheorems_partition_sum
 #check @perCorePipTheorems_identifiers_nodup
+-- SM5.F completion pass: B5 full decomposition, B6 dominance, B7 home-core
+-- stability + chain SGI completeness, C9 runnability gate, B8 full witness,
+-- D11 memory-model HB, F13 complete resume, and the cross-core wake dispatch.
+#check @computeMaxWaiterPriority_eq_sup_perCore
+#check @computeMaxWaiterPriority_value
+#check @computeMaxWaiterPriorityOnCore_value
+#check @updatePipBoostOnCore_getTcb?_cpuAffinity
+#check @updatePipBoostOnCore_eq_self_of_getTcb?_none
+#check @updatePipBoostOnCore_preserves_determineTargetCore
+#check @updatePipBoostOnCore_establishes_perCore_dominance
+#check @pipBoostWithWake_no_sgi_if_not_runnable
+#check @propagatePipChainCrossCore_head_emission_mem
+#check @propagatePipChainCrossCore_tail_sgis_mem
+#check @propagatePipChainCrossCore_sgis_all_reschedule
+#check @propagatePipChainCrossCore_sgi_length_le_fuel
+#check @propagatePipChainCrossCore_second_link_sgi_remote
+#check @propagatePipChainCrossCore_singleCore_no_sgis
+#check @propagatePipChainCrossCoreState_singleCore_eq_propagate
+#check @pipBoostOrdering_synchronizesWith
+#check @pipBoostOrdering_happensBefore
+#check @resumeReadyMidState_getTcb?_ready
+#check @resumeReadyMidState_objects_invExt
+#check @resumeThreadOnCore_sets_threadState
+#check @resumeThreadOnCore_preserves_objects_invExt
+#check @resumeThreadOnCore_rejects_non_inactive
+#check @resumeThreadOnCore_rejects_non_tcb
+#check @resumeThreadOnCore_local_no_sgi
+#check @resumeThreadOnCore_remote_sgi
+#check @priorityInheritance_perCore_witness_full
+#check @computeCrossCoreSgis
+#check @computeCrossCoreSgis_all_reschedule
+#check @computeCrossCoreSgis_nil_single_core
+#check @crossCoreWakeDispatch
+#check @crossCoreWakeDispatch_singleCore
+#check @pipChainWakeDispatch
+#check @pipChainWakeDispatch_singleCore
+#check @emitBoostWakeSgi
+#check @perCorePipTheorems_memoryModel_count
+#check @perCorePipTheorems_dispatch_count
 EOF
 lake env lean /tmp/sm5f_surface.lean'
 # WS-SM SM5.F: build the SM5.F theorem inventory so a renamed / removed

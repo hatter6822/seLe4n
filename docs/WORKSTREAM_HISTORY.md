@@ -2957,12 +2957,33 @@ identical raw object reads), so the raw floor legitimately rises by the structur
 minimum; staged proof helpers use the `.get?` method form where the math allows.
 All axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); trace
 byte-identical; partition gate 53 staged-only modules; Tier 0–3 green;
-`smp_pip_suite` 24/24.  **Tracked debt (SM5.I)**: wiring `pipBoostWithWake` /
-`restoreToReadyWithWake` into the live IPC donation / timeout / resume paths so a
-remote boost fires its SGI (also closes the SM5.D timeout-path latency gap — route
-the timeout re-enqueue through `wakeThread` so a remote target receives the
-`.reschedule` SGI); SM5.F lands the verified *mechanism*, SM5.I performs the
-production wiring + cross-subsystem preservation.  Items deferred past v1.0.0 with
+`smp_pip_suite` 24/24.
+
+**WS-SM SM5.F completion pass (same v0.31.50 cut)** brings SM5.F to the complete +
+optimal implementation, closing every gap the SM5.F self-audit flagged: B5 exact
+per-core decomposition (`computeMaxWaiterPriority_eq_sup_perCore` — global boost =
+sup over per-core slices); B6 post-boost dominance; B7 home-core stability + chain
+SGI completeness + the single-core behaviour-identical bridge to
+`propagatePriorityInheritance`; B8 full witness; C9 the `pipBoostWithWake`
+runnability gate (no spurious IPI for a blocked holder's boost); D11 the
+memory-model `pipBoostOrdering_happensBefore`; F13 the complete per-core resume
+`resumeThreadOnCore` (sets `threadState := .Ready`); F14 the slice-membership note;
+and the **SM6 dispatch pulled forward** — `Concurrency.fireCrossCoreSgis` + the
+diff-based `computeCrossCoreSgis` + the BaseIO combinators, each proven inert
+(`pure ()`) on single-core and demonstrated to fire `[(core1, .reschedule)]` for a
+cross-core boost diff.  Inventory 61 → 95 entries; tier-4 stub
+`scripts/test_qemu_smp_pip.sh`.  AK7 `RAW_LOOKUP_TID` stays at the 814 floor
+(typed-accessor refactor); `RAW_MATCH_TOTAL` re-anchors 124 → 125 for
+`crossCoreSgiBody`'s single object-store iteration (mirrors `waitersOf`).  All
+axiom-clean; trace byte-identical; Tier 0+1+2+3 green.
+
+**Tracked debt (SM5.I)**: the cross-core dispatch *mechanism* is built and verified;
+the remaining step is the production call-site substitution — routing the live IPC
+donation / timeout / resume `@[export]` bodies through the per-core boost +
+`fireCrossCoreSgis` (gated on the SM5.I per-core FFI seam, since the Lean test
+executables do not link `libsele4n_hal.a`).  This also closes the SM5.D
+timeout-path latency gap (route the timeout re-enqueue through `wakeThread` so a
+remote target receives the `.reschedule` SGI).  Items deferred past v1.0.0 with
 correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
