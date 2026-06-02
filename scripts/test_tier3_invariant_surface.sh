@@ -1261,7 +1261,8 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_pathARetired_count
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
 -- SM4.G — per-core idle-thread bootstrap
-#check @SeLe4n.Platform.Boot.idleThreadId_injective
+-- WS-SM SM5.E: idleThreadId (+ injectivity) moved to SeLe4n.Kernel.Scheduler.IdleThread.
+#check @SeLe4n.Kernel.idleThreadId_injective
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundle
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_schedulerInvariantBundleFull
@@ -3412,5 +3413,99 @@ lake env lean /tmp/sm5d_surface.lean'
 # WS-SM SM5.D audit-pass-1: build the 99-entry SM5.D theorem inventory so a
 # renamed / removed SM5.D theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory'
+
+# WS-SM SM5.E — per-core idle thread surface anchors.  Covers the SM5.E.5
+# idleThread_priority_zero + field lemmas, the SM5.E.3 enqueueIdleThreadOnCore
+# run-queue primitive (frame / membership / preservation), the SM5.E.6 keystone
+# chooseThreadOnCore_always_succeeds (+ idleThreadEnqueuedOnCore discharge +
+# enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds non-vacuity witness), and the
+# SM5.E.4 idleThread_core_locality (affinity-based + frame companion).  The idle
+# definitions live in Platform.Boot (SM4.G).  A rename / removal of any SM5.E
+# symbol fails here at elaboration time before the test suite.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5e_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
+open SeLe4n.Kernel
+open SeLe4n.Platform.Boot (createIdleThread)
+-- SM5.E.1/.2/.5 idle definitions + field lemmas.
+#check @idleThreadId
+#check @createIdleThread
+#check @idleThread_priority_zero
+#check @createIdleThread_domain_zero
+#check @createIdleThread_cpuAffinity
+#check @createIdleThread_tid
+-- SM5.E.3 enqueue op + frame / membership / preservation.
+#check @enqueueIdleThreadOnCore
+#check @enqueueIdleThreadOnCore_objects
+#check @enqueueIdleThreadOnCore_scheduler
+#check @enqueueIdleThreadOnCore_runQueueOnCore_self
+#check @enqueueIdleThreadOnCore_runQueueOnCore_ne
+#check @enqueueIdleThreadOnCore_activeDomainOnCore
+#check @enqueueIdleThreadOnCore_currentOnCore
+#check @enqueueIdleThreadOnCore_mem_runQueueOnCore_self
+#check @enqueueIdleThreadOnCore_getTcb?_self
+#check @enqueueIdleThreadOnCore_getTcb?_ne
+#check @enqueueIdleThreadOnCore_preserves_objects_invExt
+#check @enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed
+#check @enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore
+-- SM5.E.6 chooseThreadOnCore_always_succeeds.
+#check @idleThreadEnqueuedOnCore
+#check @enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore
+#check @chooseThreadOnCore_always_succeeds
+#check @enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds
+-- SM5.E.4 core locality + no-starvation.
+#check @runQueueAffinityConsistentOnCore
+#check @idleThread_core_locality
+#check @idleThread_core_locality_of_enqueue
+#check @idleThread_core_locality_forall
+#check @enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self
+#check @enqueueIdleThreadOnCore_selection_inputs_framed
+#check @idleThread_no_starvation
+-- SM5.E.3 per-core invariant preservation (SM5.I consumption surface).
+#check @enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore
+#check @enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore
+#check @enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore
+#check @enqueueIdleThreadOnCore_mem_idempotent
+-- SM5.E.3 lock-set footprint.
+#check @enqueueIdleThreadOnCoreLockSet
+#check @enqueueIdleThreadOnCoreLockSet_write_only
+#check @enqueueIdleThreadOnCoreLockSet_object_before_runQueue
+#check @enqueueIdleThreadOnCoreLockSet_pairwise_le
+-- SM5.E.6 decidable companion.
+#check @idleAvailableOnCoreB
+#check @chooseThreadOnCore_always_succeeds_of_idleAvailableB
+#check @idleThreadEnqueuedOnCore_idleAvailableOnCoreB
+-- SM5.E idle-aware dispatcher (SM5.I seed): production defs + establishment.
+-- Post-fold: idle dispatch lives in scheduleEffectiveOnCore none branch
+-- (idleFallbackOnCore); scheduleOrIdleOnCore is the SM5.E name for it.
+#check @idleDispatchableOnCore
+#check @dispatchIdleOnCore
+#check @idleFallbackOnCore
+#check @scheduleOrIdleOnCore
+#check @scheduleOrIdleOnCore_runs_idle
+#check @scheduleOrIdleOnCore_preserves_objects_invExt
+#check @scheduleOrIdleOnCore_establishes_currentThreadValidOnCore
+#check @scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore
+#check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
+#check @scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore
+#check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @dispatchIdleOnCore_currentOnCore
+#check @dispatchIdleOnCore_objects
+#check @dispatchIdleOnCore_runQueueOnCore
+#check @scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone
+#check @scheduleOrIdleOnCore_idle_starves_no_eligible_thread
+#check @scheduleDomainOnCore_runs_idle
+-- SM5.E inventory witnesses.
+#check @perCoreIdleTheorems_count
+#check @perCoreIdleTheorems_partition_sum
+#check @perCoreIdleTheorems_identifiers_nodup
+EOF
+lake env lean /tmp/sm5e_surface.lean'
+# WS-SM SM5.E: build the SM5.E theorem inventory so a renamed / removed
+# SM5.E theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory'
 
 finalize_report

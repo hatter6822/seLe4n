@@ -216,6 +216,12 @@
 [Z8J-004] budget after 4 ticks: remaining=1 preempted=false
 [Z8J-005] budget exhausted: remaining=0 preempted=true
 [Z8J-006] after replenishment: remaining=5 restored=true
+[IDLE-001] boot-core idle thread installed (id): 65536
+[IDLE-002] pre-dispatch current: none
+[IDLE-003] idle dispatchable on boot core: true
+[IDLE-004] legacy schedule current (idle = none): none
+[IDLE-005] idle-aware dispatch current (idle runs): some 65536
+[IDLE-006] dispatched idle absent from run queue (dequeue-on-dispatch): true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)

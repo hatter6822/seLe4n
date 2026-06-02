@@ -132,8 +132,8 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.smpRetiredInventory_perCoreBracketGated_count
 
 /-! ## SM4.G — per-core idle-thread bootstrap -/
-#check @SeLe4n.Platform.Boot.idleThreadId
-#check @SeLe4n.Platform.Boot.idleThreadId_injective
+#check @SeLe4n.Kernel.idleThreadId
+#check @SeLe4n.Kernel.idleThreadId_injective
 #check @SeLe4n.Platform.Boot.createIdleThread
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
 #check @SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads_all_cores_have_idle

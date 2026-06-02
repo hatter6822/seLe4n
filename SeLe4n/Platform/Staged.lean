@@ -241,6 +241,31 @@ import SeLe4n.Kernel.PerCoreTimerEntry
 -- Nodup witnesses; mirrors `CrossCoreWakeInventory`.  A renamed/removed SM5.D theorem fails
 -- this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
+-- WS-SM SM5.E: the per-core idle-thread theorem surface — SM5.E.5
+-- `idleThread_priority_zero` + field lemmas, the SM5.E.3 `enqueueIdleThreadOnCore`
+-- run-queue primitive (frame / membership / `invExt` + run-queue-wellFormed +
+-- runnable-are-TCBs preservation), the SM5.E.6 keystone
+-- `chooseThreadOnCore_always_succeeds` (+ the `idleThreadEnqueuedOnCore` discharge
+-- predicate, its constructive establishment, and the end-to-end non-vacuity
+-- witness), and the SM5.E.4 `idleThread_core_locality` (affinity-based + frame
+-- companion).  The idle *definitions* live in `Platform.Boot` (SM4.G); SM5.I's
+-- per-core dispatch loop is the first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
+-- WS-SM SM5.E: the per-core idle-aware dispatcher (`scheduleOrIdleOnCore`, the
+-- SM5.I dispatch-loop seed) establishment theorems — the headline
+-- `scheduleOrIdleOnCore_runs_idle` (idle is dispatched in a production transition
+-- when nothing else is runnable) + the soundness surface (currentThreadValid /
+-- queueCurrentConsistent / objects-invExt / runQueueWellFormed), composing the
+-- SM5.D `scheduleEffectiveOnCore` establishment surface with the idle-dispatch
+-- case.  The production defs (`idleDispatchableOnCore` / `dispatchIdleOnCore` /
+-- `scheduleOrIdleOnCore`) live in `Scheduler.Operations.Core`.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
+-- WS-SM SM5.E: the per-core-idle theorem inventory (categories field / enqueue /
+-- preservation / lockSet / alwaysSucceeds / locality / dispatch) with the `pcit!`
+-- compile-time identifier-validation macro + per-category count + partition-sum +
+-- Nodup witnesses; mirrors `PerCoreTimerInventory`.  A renamed/removed SM5.E
+-- theorem fails this module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

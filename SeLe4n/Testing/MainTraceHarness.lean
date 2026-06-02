@@ -1231,6 +1231,36 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
   checkInvariants counter "post-inline-context-switch" st1
 
 -- ============================================================================
+-- WS-SM SM5.E: per-core idle-thread dispatch trace scenario
+-- ============================================================================
+
+/-- WS-SM SM5.E: demonstrate that the per-core idle-aware dispatcher
+`scheduleOrIdleOnCore` runs core `c`'s **idle thread** when nothing else is
+runnable, instead of leaving the core at `current = none` (the legacy single-core
+`schedule` representation).  Builds a state with the boot core's idle thread
+installed in the object store but an empty run queue; the budget-aware selector
+finds nothing runnable, and the idle-aware dispatcher dispatches the idle TCB. -/
+private def runPerCoreIdleDispatchTrace : IO Unit := do
+  let idleTid := SeLe4n.Kernel.idleThreadId bootCoreId
+  let stIdle : SystemState :=
+    (BootstrapBuilder.empty.withObject idleTid.toObjId
+      (.tcb (SeLe4n.Platform.Boot.createIdleThread bootCoreId))).build
+  IO.println s!"[IDLE-001] boot-core idle thread installed (id): {reprStr idleTid.toNat}"
+  IO.println s!"[IDLE-002] pre-dispatch current: {reprStr ((stIdle.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
+  IO.println s!"[IDLE-003] idle dispatchable on boot core: {reprStr (SeLe4n.Kernel.idleDispatchableOnCore stIdle bootCoreId)}"
+  -- Legacy single-core schedule: a core with nothing runnable goes to current = none.
+  match SeLe4n.Kernel.schedule stIdle with
+  | .error err => IO.println s!"[IDLE-004] legacy schedule error: {reprStr err}"
+  | .ok (_, stLegacy) =>
+      IO.println s!"[IDLE-004] legacy schedule current (idle = none): {reprStr ((stLegacy.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
+  -- Idle-aware per-core dispatcher: the same core runs its idle thread.
+  match SeLe4n.Kernel.scheduleOrIdleOnCore stIdle bootCoreId with
+  | .error err => IO.println s!"[IDLE-005] idle-aware dispatch error: {reprStr err}"
+  | .ok stDispatched =>
+      IO.println s!"[IDLE-005] idle-aware dispatch current (idle runs): {reprStr ((stDispatched.scheduler.currentOnCore bootCoreId).map SeLe4n.ThreadId.toNat)}"
+      IO.println s!"[IDLE-006] dispatched idle absent from run queue (dequeue-on-dispatch): {!(stDispatched.scheduler.runQueueOnCore bootCoreId).toList.any (· == idleTid)}"
+
+-- ============================================================================
 -- WS-H12f: Bounded message extended trace scenario
 -- ============================================================================
 
@@ -2967,6 +2997,7 @@ def runMainTraceFrom (st1 : SystemState) : IO Unit := do
   runTimeoutEndpointTrace counter st1
   runDonationTrace counter st1
   runBudgetLifecycleTrace counter st1
+  runPerCoreIdleDispatchTrace
 
   let checkCount ← counter.get
   IO.println s!"[ITR-001] inter-transition invariant checks: {checkCount} passed"

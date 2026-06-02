@@ -845,6 +845,70 @@ theorem restoreIncomingContext_objects_eq (st : SystemState) (tid : SeLe4n.Threa
     (restoreIncomingContext st tid).objects = st.objects := by
   unfold restoreIncomingContext; split <;> rfl
 
+-- ============================================================================
+-- WS-SM SM5.E (folded idle): `idleFallbackOnCore` invariant lemmas.  These
+-- discharge the idle-vs-`none` case analysis **once**, so each
+-- `scheduleEffectiveOnCore` establishment proof's `none` case is a clean
+-- one-liner.  (Placed before the establishment theorems so they are in scope.)
+-- ============================================================================
+
+/-- WS-SM SM5.E: the idle fallback establishes current-thread validity — the idle
+arm dispatches the (installed) idle thread; the `none` arm is vacuous. -/
+theorem idleFallbackOnCore_establishes_currentThreadValidOnCore (st : SystemState) (c : CoreId) :
+    currentThreadValidOnCore (idleFallbackOnCore st c) c := by
+  unfold idleFallbackOnCore
+  split
+  · rename_i hd
+    unfold currentThreadValidOnCore
+    simp only [dispatchIdleOnCore_currentOnCore, dispatchIdleOnCore_getTcb?]
+    unfold idleDispatchableOnCore at hd
+    cases hres : st.getTcb? (idleThreadId c) with
+    | none => rw [hres] at hd; simp at hd
+    | some idleTcb => exact ⟨idleTcb, rfl⟩
+  · unfold currentThreadValidOnCore
+    simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+
+/-- WS-SM SM5.E: the idle fallback establishes dequeue-on-dispatch consistency —
+the idle arm dequeues idle before making it current; the `none` arm is vacuous. -/
+theorem idleFallbackOnCore_establishes_queueCurrentConsistentOnCore (st : SystemState) (c : CoreId) :
+    queueCurrentConsistentOnCore (idleFallbackOnCore st c).scheduler c := by
+  unfold idleFallbackOnCore
+  split
+  · unfold queueCurrentConsistentOnCore
+    simp only [dispatchIdleOnCore_currentOnCore, dispatchIdleOnCore_runQueueOnCore]
+    exact RunQueue.not_mem_remove_toList _ (idleThreadId c)
+  · unfold queueCurrentConsistentOnCore
+    simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+
+/-- WS-SM SM5.E: the idle fallback establishes current-in-active-domain — the idle
+arm's domain matches (the `idleDispatchableOnCore` gate checks it); the `none` arm
+is vacuous. -/
+theorem idleFallbackOnCore_establishes_currentThreadInActiveDomainOnCore (st : SystemState) (c : CoreId) :
+    currentThreadInActiveDomainOnCore (idleFallbackOnCore st c) c := by
+  unfold idleFallbackOnCore
+  split
+  · rename_i hd
+    unfold currentThreadInActiveDomainOnCore
+    simp only [dispatchIdleOnCore_currentOnCore, dispatchIdleOnCore_getTcb?,
+      dispatchIdleOnCore_activeDomainOnCore]
+    unfold idleDispatchableOnCore at hd
+    cases hres : st.getTcb? (idleThreadId c) with
+    | none => rw [hres] at hd; simp at hd
+    | some idleTcb => rw [hres] at hd; simp only [Bool.and_eq_true] at hd; simpa using hd.1
+  · unfold currentThreadInActiveDomainOnCore
+    simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+
+/-- WS-SM SM5.E: the idle fallback preserves run-queue well-formedness — the idle
+arm only `remove`s the idle thread; the `none` arm leaves the run queue. -/
+theorem idleFallbackOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c : CoreId)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
+    ((idleFallbackOnCore st c).scheduler.runQueueOnCore c).wellFormed := by
+  unfold idleFallbackOnCore
+  split
+  · rw [dispatchIdleOnCore_runQueueOnCore]
+    exact RunQueue.remove_preserves_wellFormed _ hwf _
+  · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hwf
+
 /-- WS-SM SM5.D.5 (preservation): the per-core budget-aware reschedule preserves
 the object-store invariant (save-outgoing insert + restore-incoming register-only
 write). -/
@@ -854,7 +918,10 @@ theorem scheduleEffectiveOnCore_preserves_objects_invExt (st : SystemState) (c :
   unfold scheduleEffectiveOnCore at hStep
   split at hStep
   · simp at hStep
-  · simp only [Except.ok.injEq] at hStep; subst hStep
+  · -- WS-SM SM5.E (folded idle): the `none` branch dispatches idle if dispatchable;
+    -- `idleFallbackOnCore_objects` discharges both arms (idle / `none`) at once.
+    simp only [Except.ok.injEq] at hStep; subst hStep
+    rw [idleFallbackOnCore_objects]
     exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
   · split at hStep
     · split at hStep
@@ -1409,7 +1476,9 @@ theorem scheduleEffectiveOnCore_objects_eq (st : SystemState) (c : CoreId)
   | ok res =>
     rw [hCh] at hStep
     cases res with
-    | none => simp only [Except.ok.injEq] at hStep; subst hStep; rfl
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      rw [idleFallbackOnCore_objects]
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -1446,7 +1515,7 @@ theorem scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed (st : SystemS
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore]
+      apply idleFallbackOnCore_preserves_runQueueOnCoreWellFormed
       rw [saveOutgoingContextOnCore_scheduler_eq]; exact hwf
     | some tid =>
       cases hTcb : st.getTcb? tid with
@@ -1478,8 +1547,7 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadValidOnCore (st : Syste
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      unfold currentThreadValidOnCore
-      simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+      exact idleFallbackOnCore_establishes_currentThreadValidOnCore _ c
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -1507,8 +1575,7 @@ theorem scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore (st : S
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      unfold queueCurrentConsistentOnCore
-      simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+      exact idleFallbackOnCore_establishes_queueCurrentConsistentOnCore _ c
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -1539,8 +1606,9 @@ theorem scheduleEffectiveOnCore_runQueue_toList_subset (st : SystemState) (c : C
     cases res with
     | none =>
       simp only [Except.ok.injEq] at hStep; subst hStep
-      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore] at hx
-      rw [saveOutgoingContextOnCore_scheduler_eq] at hx; exact hx
+      rw [RunQueue.mem_toList_iff_mem] at hx ⊢
+      have hm := idleFallbackOnCore_runQueueOnCore_mem _ c x hx
+      rwa [saveOutgoingContextOnCore_scheduler_eq] at hm
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
@@ -1906,10 +1974,8 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore (s
     rw [hCh] at hStep
     cases res with
     | none =>
-      simp only [Except.ok.injEq] at hStep
-      have hcur : st'.scheduler.currentOnCore c = none := by
-        rw [← hStep]; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]
-      simp only [currentThreadInActiveDomainOnCore, hcur]
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      exact idleFallbackOnCore_establishes_currentThreadInActiveDomainOnCore _ c
     | some tid =>
       cases hTcb : st.getTcb? tid with
       | none => simp [hTcb] at hStep
