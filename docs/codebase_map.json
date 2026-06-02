@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/eager-faraday-sokpy",
-      "commit_sha": "031539d7826ae3f84d568166d499e1c4302f3ac8",
-      "tree_sha": "029f2569a08fbb3dcb03387a0c980dc3722ff2df",
-      "committed_at_utc": "2026-06-02T17:13:29+00:00"
+      "commit_sha": "a75e453a03e870999bd03d4fbee48760ad1c67d3",
+      "tree_sha": "0f78f29a7d772260f51cd94616117b17adc3de67",
+      "committed_at_utc": "2026-06-02T20:07:39+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "62a371623c9687cec76c732acd1ff0b146760c2a8ff72c3fd209d1e3f3228ee6"
+    "source_digest": "fa49e12302a9133c06daf52f6a76ac42683f195203cf929ad01223a2479a6ab0"
   },
   "summary": {
     "module_count": 275,
-    "declaration_count": 10062
+    "declaration_count": 10064
   },
   "readme_sync": {
     "version": "0.31.50",
@@ -29,7 +29,7 @@
     "production_files": 222,
     "production_loc": 158403,
     "test_files": 53,
-    "test_loc": 34794,
+    "test_loc": 34836,
     "proved_theorem_lemma_decls": 5133,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -107693,6 +107693,7 @@
             "schedContextYieldTo",
             "setBootRqCur",
             "setCurrentOnCore",
+            "stUnbound",
             "toNat",
             "toObjId",
             "valid",
@@ -130130,7 +130131,7 @@
     {
       "module": "tests.SmpPipSuite",
       "path": "tests/SmpPipSuite.lean",
-      "declaration_count": 37,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -130654,8 +130655,23 @@
         },
         {
           "kind": "def",
+          "name": "stUnbound",
+          "line": 413,
+          "called": [
+            "SystemState",
+            "build",
+            "core1",
+            "mkServerTcb",
+            "mkWaiterTcb",
+            "none",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runC9Checks",
-          "line": 411,
+          "line": 419,
           "called": [
             "assertBool",
             "bind",
@@ -130672,7 +130688,7 @@
         {
           "kind": "def",
           "name": "runDecompositionChecks",
-          "line": 424,
+          "line": 432,
           "called": [
             "assertBool",
             "computeMaxWaiterPriority",
@@ -130685,7 +130701,7 @@
         {
           "kind": "def",
           "name": "runChainChecks",
-          "line": 434,
+          "line": 442,
           "called": [
             "all",
             "assertBool",
@@ -130700,7 +130716,7 @@
         {
           "kind": "def",
           "name": "runDispatchChecks",
-          "line": 446,
+          "line": 454,
           "called": [
             "all",
             "assertBool",
@@ -130714,12 +130730,37 @@
         },
         {
           "kind": "def",
+          "name": "runCompletionNonVacuityChecks",
+          "line": 473,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "cli",
+            "core0",
+            "core1",
+            "determineTargetCore",
+            "effectiveSchedParams",
+            "getTcb",
+            "ofNat",
+            "pipBoostWithWake",
+            "propagatePipChainCrossCore",
+            "resumeThreadOnCore",
+            "srv",
+            "st",
+            "stNoRq",
+            "stUnbound",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpPipChecks",
-          "line": 463,
+          "line": 504,
           "called": [
             "runBlockingGraphChecks",
             "runC9Checks",
             "runChainChecks",
+            "runCompletionNonVacuityChecks",
             "runComputeChecks",
             "runDecompositionChecks",
             "runDispatchChecks",
@@ -130731,7 +130772,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 480,
+          "line": 522,
           "called": [
             "runSmpPipChecks"
           ]
