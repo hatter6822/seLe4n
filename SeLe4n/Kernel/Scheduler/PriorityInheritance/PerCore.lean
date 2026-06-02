@@ -574,10 +574,11 @@ theorem restoreToReadyOnCore_pipBoost_recomputed (st : SystemState) (c : CoreId)
 
 -- §5b  SM5.F.6 — restoreToReadyWithWake (cross-core resume wake)
 
-/-- WS-SM SM5.F.6: `restoreToReadyWithWake`'s state component is the per-core
-re-ready on the resumed thread's home core. -/
+/-- WS-SM SM5.F.6: `restoreToReadyWithWake`'s state component sets the resumed thread
+`.Ready` (via `resumeReadyMidState`, PR #811 P2-3) and enqueues it on its home core. -/
 @[simp] theorem restoreToReadyWithWake_state (st : SystemState) (tid : ThreadId) (ec : CoreId) :
-    (restoreToReadyWithWake st tid ec).1 = restoreToReadyOnCore st (determineTargetCore st tid) tid := rfl
+    (restoreToReadyWithWake st tid ec).1
+      = enqueueRunnableOnCore (resumeReadyMidState st tid) (determineTargetCore st tid) tid := rfl
 
 /-- WS-SM SM5.F.6: a LOCAL resume (home = executing core) emits no SGI. -/
 theorem restoreToReadyWithWake_no_sgi_if_local (st : SystemState) (tid : ThreadId) (ec : CoreId)
@@ -613,12 +614,19 @@ theorem restoreToReadyWithWake_sgi_is_reschedule (st : SystemState) (tid : Threa
     · simp only [Option.some.injEq, Prod.mk.injEq] at hSgi
       exact ⟨hSgi.1.symm, hSgi.2.symm⟩
 
-/-- WS-SM SM5.F.6: `restoreToReadyWithWake` preserves the object-store invariant. -/
+/-- WS-SM SM5.F.6: `restoreToReadyWithWake` preserves the object-store invariant —
+both `resumeReadyMidState` (a single TCB `insert`) and the per-core enqueue preserve it. -/
 theorem restoreToReadyWithWake_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
     (ec : CoreId) (hInv : st.objects.invExt) :
     (restoreToReadyWithWake st tid ec).1.objects.invExt := by
   rw [restoreToReadyWithWake_state]
-  exact restoreToReadyOnCore_preserves_objects_invExt st _ tid hInv
+  apply enqueueRunnableOnCore_preserves_objects_invExt
+  -- (resumeReadyMidState st tid).objects.invExt
+  have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
+  simp only [resumeReadyMidState]
+  split
+  · exact RHTable_insert_preserves_invExt _ _ _ hst1Inv
+  · exact hst1Inv
 
 -- ============================================================================
 -- §6  SM5.F.7 / SM5.F.8 — per-core blocking graph (slice + acyclicity)
@@ -1217,6 +1225,24 @@ theorem resumeThreadOnCore_remote_sgi (st : SystemState) (vtid : SeLe4n.ValidThr
   simp only [hb]
   exact ⟨_, rfl⟩
 
+/-- WS-SM SM5.F.6 (PR #811 P2-3): the cross-core resume wake leaves the resumed thread
+genuinely `.Ready` — it never enqueues / pokes a core for a still-`.Inactive` TCB.  The
+pure (state + SGI) analogue of `resumeThreadOnCore_sets_threadState`; the state path goes
+through `resumeReadyMidState` (which sets `.Ready`). -/
+theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : ThreadId) (ec : CoreId)
+    (tcb : TCB) (hGet : st.getTcb? tid = some tcb) (hInv : st.objects.invExt) :
+    ∃ t', (restoreToReadyWithWake st tid ec).1.getTcb? tid = some t' ∧ t'.threadState = .Ready := by
+  rw [restoreToReadyWithWake_state]
+  obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st tid tcb hGet hInv
+  have hmidInv : (resumeReadyMidState st tid).objects.invExt :=
+    resumeReadyMidState_objects_invExt st tid hInv
+  by_cases hRun : runnableOnSomeCore (resumeReadyMidState st tid) tid = true
+  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+    exact ⟨tm, hmid, hmidReady⟩
+  · have hFresh : runnableOnSomeCore (resumeReadyMidState st tid) tid = false := by simpa using hRun
+    exact ⟨{ tm with ipcState := .ready },
+      SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+
 -- ============================================================================
 -- §12  SM5.F.4 — cross-core wake dispatch (the SM6 runtime firing layer)
 -- ============================================================================
@@ -1245,7 +1271,13 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
       if tpre.pipBoost == tpost.pipBoost then none
       else
         let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
-        if home == execCore then none else some (home, SgiKind.reschedule)
+        -- WS-SM SM5.F.4 (PR #811 P2-1): mirror `pipBoostWithWake`'s C9 runnability gate.
+        -- A holder not runnable on its home core has no run-queue bucket to re-evaluate,
+        -- so poking it would be a spurious cross-core IPI — exactly the case
+        -- `pipBoostWithWake_no_sgi_if_not_runnable` rules out on the direct path.
+        if home == execCore then none
+        else if tpost.tid ∈ post.scheduler.runQueueOnCore home then some (home, SgiKind.reschedule)
+        else none
     | none => none
   | _ => none
 
@@ -1269,7 +1301,9 @@ theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid 
       · simp only [] at h
         split at h
         · simp at h
-        · simp only [Option.some.injEq] at h; rw [← h]
+        · split at h
+          · simp only [Option.some.injEq] at h; rw [← h]
+          · simp at h
     · simp at h
   · simp at h
 

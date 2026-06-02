@@ -3622,6 +3622,7 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWak
 #check @resumeThreadOnCore_rejects_non_tcb
 #check @resumeThreadOnCore_local_no_sgi
 #check @resumeThreadOnCore_remote_sgi
+#check @restoreToReadyWithWake_sets_threadState
 #check @priorityInheritance_perCore_witness_full
 #check @computeCrossCoreSgis
 #check @computeCrossCoreSgis_all_reschedule

@@ -88,8 +88,16 @@ fi
 # We detect it by the banner the driver emits.  At SM5.F the driver is NOT
 # present (it needs SM5.I per-core scheduler state + donation-path SGI firing),
 # so this SKIPs.
+#
+# Capture `strings` output into a variable first, *then* grep it: under
+# `set -o pipefail`, a `strings … | grep -q` pipeline can report failure even on
+# a match — `grep -q` exits at the first hit and `strings` then dies with
+# SIGPIPE (exit 141), failing the pipeline.  That would silently SKIP a wired
+# Tier-4 test.  The capture (with `|| true` so a `strings` read error is benign)
+# decouples the two stages and avoids the SIGPIPE.
 # --------------------------------------------------------------------------
-if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*cross-core-pip"; then
+KERNEL_STRINGS="$(strings "${KERNEL_IMAGE}" 2>/dev/null || true)"
+if ! grep -q "smp-test.*cross-core-pip" <<<"${KERNEL_STRINGS}"; then
   echo "[SKIP] WS-SM SM5.F.10: cross-core PIP driver not wired in kernel image"
   echo ""
   echo "  Reason: exercising a real cross-core priority-inheritance boost requires"

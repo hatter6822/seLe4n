@@ -376,6 +376,11 @@ private def runResumeChecks : IO Unit := do
   -- Resuming while executing on the home core 1 needs no SGI.
   assertBool "local resume (executing on the home core) emits NO SGI"
     (decide ((restoreToReadyWithWake st srv core1).2 = none))
+  -- PR #811 P2-3: the resume wake sets the resumed thread .Ready (not left .Inactive),
+  -- so the poked core never dispatches a still-inactive run-queue entry.
+  assertBool "P2-3 restoreToReadyWithWake leaves the resumed thread threadState = .Ready"
+    (((restoreToReadyWithWake st srv core0).1.getTcb? srv).map (·.threadState)
+      == some ThreadState.Ready)
 
 /-- §3.5: SM5.F inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
@@ -467,6 +472,12 @@ private def runDispatchChecks : IO Unit := do
   -- Every dispatched SGI is a reschedule.
   assertBool "every dispatched SGI is a .reschedule"
     (decide ((computeCrossCoreSgis st post core0).all (fun p => p.2 == SgiKind.reschedule)))
+  -- PR #811 P2-1: a boost of a NON-runnable remote holder (stNoRq: srv bound to core1
+  -- but not in its run queue) emits no diff SGI — the C9 runnability gate, consistent
+  -- with pipBoostWithWake_no_sgi_if_not_runnable (no spurious cross-core IPI).
+  let postNoRq := (pipBoostWithWake stNoRq srv core0).1
+  assertBool "P2-1 diff dispatch is empty for a boost of a NON-runnable holder (C9 consistency)"
+    (decide (computeCrossCoreSgis stNoRq postNoRq core0 = []))
 
 /-- §3.10: completion-pass non-vacuity — B6 dominance, B7 home-core stability,
 F13 complete resume, and the single-core bridge, exercised on concrete states. -/

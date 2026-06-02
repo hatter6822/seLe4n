@@ -172,32 +172,6 @@ def restoreToReadyOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
   -- H4 (per-core): enqueue on core c at the boosted effective priority
   enqueueRunnableOnCore st2 c tid
 
-/-- WS-SM SM5.F.6 (plan §3.6, resume cross-core wake): restore `tid` to ready on
-its **home core** and, if that core is remote (≠ `executingCore`), return the
-`.reschedule` SGI it must receive.
-
-The cross-core analogue of `restoreToReadyOnCore`, mirroring `wakeThread` /
-`pipBoostWithWake`: a thread resumed onto a remote core lands runnable there at
-its PIP-correct bucket, but that core is not running the resume, so it must be
-poked to re-evaluate (the resumed thread may outrank its current).  A local
-resume (home = executing) needs no SGI.  Returns the post-state paired with the
-optional SGI for SM5.I's runtime dispatch to fire (after the state write is
-visible — the BKL ordering). -/
-def restoreToReadyWithWake (st : SystemState) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
-  let target := determineTargetCore st tid
-  let st' := restoreToReadyOnCore st target tid
-  let sgi : Option (CoreId × SgiKind) :=
-    -- Resume genuinely makes `tid` runnable (it was inactive/blocked), so unlike
-    -- the materiality-guarded `pipBoostWithWake` the only guard is remoteness:
-    -- a remote resume always warrants a `.reschedule` (the thread newly enters
-    -- the remote run queue).  `getTcb?` guards against a non-TCB `tid` (no-op).
-    if target == executingCore then none
-    else match st.getTcb? tid with
-         | none => none
-         | some _ => some (target, SgiKind.reschedule)
-  (st', sgi)
-
 /-- WS-SM SM5.F.6 (helper): the resume "ready mid-state" — IPC transients cleared
 (`restoreToReady`), `threadState` set to `.Ready`, and `pipBoost` recomputed from the
 GLOBAL post-restore blocking graph — *before* the per-core run-queue enqueue.  Factored
@@ -213,6 +187,36 @@ def resumeReadyMidState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState
   | some t =>
     { st1 with objects := st1.objects.insert tid.toObjId (.tcb { t with threadState := .Ready, pipBoost := newPipBoost }) }
   | none => st1
+
+/-- WS-SM SM5.F.6 (plan §3.6, resume cross-core wake): restore `tid` to **Ready** on
+its home core and, if that core is remote (≠ `executingCore`), return the
+`.reschedule` SGI it must receive.
+
+The cross-core resume wake, mirroring `wakeThread` / `pipBoostWithWake`: a thread
+resumed onto a remote core lands runnable there at its PIP-correct bucket, but that
+core is not running the resume, so it must be poked to re-evaluate (the resumed
+thread may outrank its current).  A local resume (home = executing) needs no SGI.
+
+PR #811 P2-3: the state path goes through `resumeReadyMidState` (which sets
+`threadState := .Ready` and recomputes the GLOBAL `pipBoost`) *before* the per-core
+enqueue — so a remote resume never pokes a core to dispatch a run-queue entry whose
+TCB is still `.Inactive`.  This makes the state effect identical to the validated
+complete resume `resumeThreadOnCore` (this pure form simply omits the `.Inactive`
+precondition check, returning the state + optional SGI for SM5.I's runtime dispatch
+to fire after the state write is visible — the BKL ordering). -/
+def restoreToReadyWithWake (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : SystemState × Option (CoreId × SgiKind) :=
+  let target := determineTargetCore st tid
+  let st' := enqueueRunnableOnCore (resumeReadyMidState st tid) target tid
+  let sgi : Option (CoreId × SgiKind) :=
+    -- Resume genuinely makes `tid` runnable, so unlike the materiality-guarded
+    -- `pipBoostWithWake` the only guard is remoteness: a remote resume always
+    -- warrants a `.reschedule`.  `getTcb?` guards against a non-TCB `tid` (no-op).
+    if target == executingCore then none
+    else match st.getTcb? tid with
+         | none => none
+         | some _ => some (target, SgiKind.reschedule)
+  (st', sgi)
 
 /-- WS-SM SM5.F.6 (plan §3.6, resume H1–H5 per-core): the **complete** per-core
 resume — the per-core analogue of `resumeThread`.  Unlike `restoreToReadyOnCore`
