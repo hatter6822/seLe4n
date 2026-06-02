@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.48.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.49.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5494,6 +5494,53 @@ documentation lives under `docs/` and `docs/gitbook/`.
   strong-no-starvation coverage; all new theorems axiom-clean; trace byte-identical;
   Tier 0–3 green (shellcheck now run locally).  Items deferred past v1.0.0 with
   correctness impact: NONE.
+
+  **WS-SM SM5.E review #4 closure LANDED at v0.31.49 on branch
+  `claude/amazing-johnson-eE3W3`** (fold the idle dispatch into
+  `scheduleEffectiveOnCore` — the maintainer-chosen answer to PR #810 review #4,
+  "wire the dispatcher into the live tick path"):
+  - **Fold (`Scheduler/Operations/Core.lean`)**: `scheduleEffectiveOnCore`'s `none`
+    branch (nothing budget-eligible) now returns
+    `.ok (idleFallbackOnCore (saveOutgoingContextOnCore st c) c)`.  The new
+    `idleFallbackOnCore` helper runs core `c`'s idle thread when dispatchable
+    (`idleDispatchableOnCore`: installed + in-domain + affinity-admits), else falls
+    back to the legacy `current = none`.  States with no installed idle thread take
+    the `else` arm, so the single-core boot trace and idle-free fixtures are
+    byte-identical.  `dispatchIdleOnCore` + its five frame lemmas move from the staged
+    `PerCoreDispatch` into `Core`; `scheduleOrIdleOnCore` is retained as the SM5.E
+    name and is now *definitionally* `scheduleEffectiveOnCore`.
+  - **Live tick path reaches idle**: `timerTickOnCore` (preempt path) and
+    `scheduleDomainOnCore` (domain boundary) call `scheduleEffectiveOnCore`, so they
+    now dispatch idle when nothing is runnable.  New theorem
+    `scheduleDomainOnCore_runs_idle` (staged `PerCoreDispatch`) proves it on the live
+    domain-tick path (single-domain boundary + nothing eligible + idle dispatchable ⇒
+    `current = some (idleThreadId c)`).
+  - **Soundness re-established on `scheduleEffectiveOnCore` directly**: the four new
+    `idleFallbackOnCore_*` case-analysis lemmas discharge the idle/`none` split once,
+    so the six `scheduleEffectiveOnCore_*` establishment theorems (PerCoreTimerTick
+    §7: objects `invExt`, `currentThreadValidOnCore`, `queueCurrentConsistentOnCore`,
+    `currentThreadInActiveDomainOnCore`, `runQueueOnCoreWellFormed`,
+    `runnableThreadsAreTCBsOnCore`) cover the folded dispatch.  Every
+    `timerTickOnCore` / `scheduleDomainOnCore` preservation proof consuming them is
+    unchanged (the SM5.D proof base is intact); the `scheduleOrIdleOnCore_*`
+    soundness theorems are now thin aliases (accepted by defeq).
+  - **Headline + no-starvation restated for the folded structure**:
+    `scheduleOrIdleOnCore_runs_idle` keys on the idle-dispatch precondition
+    (`chooseThreadEffectiveOnCore st c = .ok none` + `idleDispatchableOnCore` on the
+    context-saved state); `scheduleOrIdleOnCore_idle_starves_no_eligible_thread` keys
+    directly on that same precondition (the exact condition under which idle is
+    dispatched, so the property holds whether idle then runs or falls to
+    `current = none`); the `scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone`
+    bridge is retained.
+  Inventory 62 → 64 (dispatch 17 → 19: `idleFallbackOnCore` +
+  `scheduleDomainOnCore_runs_idle`); `smp_idle_suite` 40/40 PASS; Tier-3 +2 anchors.
+  Default build green (324 jobs); staged build + partition gate green (51 staged-only
+  modules); trace fixture byte-identical; Rust workspace unaffected; axiom-clean
+  (`propext` / `Quot.sound` / `Classical.choice`).  Tracked debt (SM5.I / SM5.H /
+  post-1.0, unchanged): the unconditional invariant-backed
+  `chooseThreadOnCore_always_succeeds`, per-(core,domain) idle for multi-domain
+  configs, and wiring `scheduleOrIdleOnCore` into the legacy single-core `schedule`.
+  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

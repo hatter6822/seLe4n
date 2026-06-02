@@ -1,3 +1,68 @@
+## v0.31.49 — WS-SM SM5.E review #4 closure: fold idle dispatch into `scheduleEffectiveOnCore`
+
+Closes PR #810 review #4 (wire the idle-aware dispatcher into the live per-core
+tick path) with the maintainer-chosen **fold-into-`scheduleEffectiveOnCore`**
+approach.  Pre-fold, idle dispatch lived in a separate `scheduleOrIdleOnCore`
+wrapper that `timerTickOnCore` / `scheduleDomainOnCore` did not call, so the running
+kernel never reached the idle thread.  Post-fold, the idle dispatch lives **inside**
+`scheduleEffectiveOnCore`'s `none` branch (the budget-aware per-core selector that
+the live tick / domain paths already call), so the idle thread runs on the live
+kernel with no separate wiring.
+
+- **Fold (`Scheduler/Operations/Core.lean`)**: `scheduleEffectiveOnCore`'s `none`
+  branch (nothing budget-eligible) now returns
+  `.ok (idleFallbackOnCore (saveOutgoingContextOnCore st c) c)`.  The new
+  `idleFallbackOnCore` helper runs core `c`'s idle thread when dispatchable
+  (`idleDispatchableOnCore`: installed + in-domain + affinity-admits), else falls
+  back to the legacy `current = none` representation.  States with **no** installed
+  idle thread take the `else` arm (`idleDispatchableOnCore = false`) and are
+  byte-identical to the pre-fold behaviour — so the single-core boot trace and every
+  idle-free fixture are unchanged.  `dispatchIdleOnCore` and its five frame lemmas
+  move from the staged `PerCoreDispatch` into `Core` (the production module that now
+  uses them); `scheduleOrIdleOnCore` is retained as the SM5.E name and is now
+  *definitionally* `scheduleEffectiveOnCore`.
+- **Live tick path reaches idle (the substantive review #4 answer)**:
+  `timerTickOnCore` (preempt path) and `scheduleDomainOnCore` (domain-boundary path)
+  call `scheduleEffectiveOnCore`, so they now dispatch idle when nothing is runnable.
+  The new theorem `scheduleDomainOnCore_runs_idle` (staged `PerCoreDispatch`) proves
+  it on the live domain-tick path: at a domain boundary in single-domain mode (the
+  RPi5 v1.0.0 config), with nothing budget-eligible and idle dispatchable, the result
+  has `current = some (idleThreadId c)`.
+- **Soundness re-established on `scheduleEffectiveOnCore` directly** (PerCoreTimerTick
+  §7 + the four new `idleFallbackOnCore_*` case-analysis lemmas): the idle/`none`
+  case split is discharged **once** in the helper lemmas, so the six
+  `scheduleEffectiveOnCore_*` establishment theorems (object-store `invExt`,
+  `currentThreadValidOnCore`, `queueCurrentConsistentOnCore`,
+  `currentThreadInActiveDomainOnCore`, `runQueueOnCoreWellFormed`,
+  `runnableThreadsAreTCBsOnCore`) cover the folded idle dispatch.  Every
+  `timerTickOnCore` / `scheduleDomainOnCore` preservation proof that consumes these
+  establishment theorems is **unchanged** (the SM5.D proof base is intact).  The
+  `scheduleOrIdleOnCore_*` soundness theorems are now thin aliases to their
+  `scheduleEffectiveOnCore_*` counterparts (accepted by defeq).
+- **Headline + no-starvation restated for the folded structure**:
+  `scheduleOrIdleOnCore_runs_idle` keys on the idle-dispatch precondition
+  (`chooseThreadEffectiveOnCore st c = .ok none` + `idleDispatchableOnCore` on the
+  context-saved state); `scheduleOrIdleOnCore_idle_starves_no_eligible_thread` now
+  keys directly on that same `chooseThreadEffectiveOnCore = .ok none` precondition
+  (the exact condition under which idle is dispatched), so "idle preempts no eligible
+  user thread of any priority" holds whether idle then runs (`current = some idle`) or
+  falls back to `current = none`.  The `scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone`
+  bridge is retained.
+
+Inventory 62 → 64 (dispatch 17 → 19: `idleFallbackOnCore` + `scheduleDomainOnCore_runs_idle`);
+`SmpIdleSuite` 40/40 PASS (headline / no-starvation examples restated; live-wiring
+witness example added); Tier-3 +2 anchors.  All new theorems axiom-clean (`propext` /
+`Quot.sound` / `Classical.choice`); default build green (324 jobs); staged build +
+partition gate green (51 staged-only modules); trace fixture byte-identical; Rust
+workspace unaffected.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Tracked debt remaining (SM5.I / SM5.H / post-1.0, unchanged): the unconditional
+invariant-backed `chooseThreadOnCore_always_succeeds` (needs idle-always-enqueued
+maintained across every transition), per-(core,domain) idle for multi-domain configs,
+and wiring `scheduleOrIdleOnCore` into the legacy single-core `schedule`.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md (SM5.E)
+
 ## v0.31.48 — WS-SM SM5.E audit-pass-2: PR #810 review closure (CI + 3 P2 findings)
 
 Closes the CI failure and the substantive automated-review (Codex) findings on PR

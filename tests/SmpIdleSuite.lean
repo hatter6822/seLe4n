@@ -84,8 +84,11 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @idleThread_core_locality_of_enqueue
 
 -- SM5.E idle-aware dispatcher (SM5.I seed): production defs + establishment.
+-- Post-fold: idle dispatch lives in `scheduleEffectiveOnCore`'s `none` branch
+-- (`idleFallbackOnCore`); `scheduleOrIdleOnCore` is the SM5.E name for it.
 #check @idleDispatchableOnCore
 #check @dispatchIdleOnCore
+#check @idleFallbackOnCore
 #check @scheduleOrIdleOnCore
 #check @scheduleOrIdleOnCore_runs_idle
 #check @scheduleOrIdleOnCore_establishes_currentThreadValidOnCore
@@ -94,6 +97,7 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
 #check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
 #check @scheduleOrIdleOnCore_preserves_objects_invExt
+#check @scheduleDomainOnCore_runs_idle
 
 -- SM5.E inventory:
 #check @perCoreIdleTheorems
@@ -157,15 +161,15 @@ example (st : SystemState) (c : CoreId) :
     idleThreadId c ∈ ((enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c).toList :=
   enqueueIdleThreadOnCore_mem_runQueueOnCore_self st c
 
--- SM5.E (dispatcher headline): when the budget-aware selector goes idle and idle
--- is dispatchable, the idle-aware dispatcher runs the idle thread.
-example (st st' st'' : SystemState) (c : CoreId)
-    (hEff : scheduleEffectiveOnCore st c = .ok st')
-    (hcur : st'.scheduler.currentOnCore c = none)
-    (hDisp : idleDispatchableOnCore st' c = true)
+-- SM5.E (dispatcher headline, post-fold): when the budget-aware selector goes idle
+-- (`chooseThreadEffectiveOnCore = .ok none`) and idle is dispatchable on the
+-- context-saved state, the folded `scheduleEffectiveOnCore` runs the idle thread.
+example (st st'' : SystemState) (c : CoreId)
+    (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
+    (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore st c) c = true)
     (hStep : scheduleOrIdleOnCore st c = .ok st'') :
     st''.scheduler.currentOnCore c = some (idleThreadId c) :=
-  scheduleOrIdleOnCore_runs_idle st c st' st'' hEff hcur hDisp hStep
+  scheduleOrIdleOnCore_runs_idle st c st'' hChoose hDisp hStep
 
 -- SM5.E (dispatcher soundness): the idle-aware dispatcher establishes current-thread
 -- validity, dequeue-on-dispatch consistency, current-in-domain, runnable-are-TCBs,
@@ -192,16 +196,27 @@ example (st st'' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
     runnableThreadsAreTCBsOnCore st'' c :=
   scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore st c st'' hInv hr hStep
 
--- SM5.E (strong no-starvation): when the dispatcher's idle-fallback fires (the
--- budget-aware selector found nothing), every run-queue thread is out-of-domain
--- or out-of-budget — idle preempts no eligible user thread of any priority.
-example (st st' : SystemState) (c : CoreId)
-    (hEff : scheduleEffectiveOnCore st c = .ok st')
-    (hcur : st'.scheduler.currentOnCore c = none)
+-- SM5.E (strong no-starvation, post-fold): under the idle-dispatch precondition
+-- (`chooseThreadEffectiveOnCore = .ok none`), every run-queue thread is
+-- out-of-domain or out-of-budget — idle preempts no eligible user thread of any
+-- priority.
+example (st : SystemState) (c : CoreId)
+    (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
     (tid : SeLe4n.ThreadId) (htid : tid ∈ (st.scheduler.runQueueOnCore c).toList)
     (tcb : TCB) (htcb : st.getTcb? tid = some tcb) :
     ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
-  scheduleOrIdleOnCore_idle_starves_no_eligible_thread st c st' hEff hcur tid htid tcb htcb
+  scheduleOrIdleOnCore_idle_starves_no_eligible_thread st c hChoose tid htid tcb htcb
+
+-- SM5.E (live-wiring witness, review #4 closure): the folded idle dispatch is
+-- reachable on the live per-core domain-tick path (`scheduleDomainOnCore`).
+example (st st'' : SystemState) (c : CoreId)
+    (hBoundary : st.scheduler.domainTimeRemainingOnCore c ≤ 1)
+    (hSched : st.scheduler.domainSchedule = [])
+    (hChoose : chooseThreadEffectiveOnCore st c = .ok none)
+    (hDisp : idleDispatchableOnCore (saveOutgoingContextOnCore st c) c = true)
+    (hStep : scheduleDomainOnCore st c = .ok st'') :
+    st''.scheduler.currentOnCore c = some (idleThreadId c) :=
+  scheduleDomainOnCore_runs_idle st c st'' hBoundary hSched hChoose hDisp hStep
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): concrete `enqueueIdleThreadOnCore` + selection
@@ -371,8 +386,8 @@ private def runLockSetChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.E theorem inventory ---"
-  assertBool "inventory has 62 entries"
-    (decide (perCoreIdleTheorems.length = 62))
+  assertBool "inventory has 64 entries"
+    (decide (perCoreIdleTheorems.length = 64))
   assertBool "field category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .field)).length = 6))
   assertBool "enqueue category has 13 entries"
@@ -385,8 +400,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length = 7))
   assertBool "locality category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6))
-  assertBool "dispatch category has 17 entries"
-    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 17))
+  assertBool "dispatch category has 19 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 19))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 

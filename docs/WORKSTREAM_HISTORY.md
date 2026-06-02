@@ -2873,6 +2873,41 @@ no reachable-state defect — closed one completeness gap):
   strong-no-starvation coverage; all new theorems axiom-clean; trace byte-identical;
   Tier 0–3 green.  Items deferred past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.E review #4 closure LANDED at v0.31.49** (fold the idle dispatch into
+`scheduleEffectiveOnCore` — the maintainer-chosen answer to PR #810 review #4, "wire
+the dispatcher into the live tick path"):
+
+- **Fold (`Scheduler/Operations/Core.lean`)**: `scheduleEffectiveOnCore`'s `none`
+  branch now returns `.ok (idleFallbackOnCore (saveOutgoingContextOnCore st c) c)`;
+  the new `idleFallbackOnCore` helper runs core `c`'s idle thread when dispatchable
+  (`idleDispatchableOnCore`: installed + in-domain + affinity-admits) else falls back
+  to the legacy `current = none`.  States with no installed idle thread take the
+  `else` arm, so the single-core boot trace and idle-free fixtures are byte-identical.
+  `dispatchIdleOnCore` + its five frame lemmas move from staged `PerCoreDispatch` into
+  `Core`; `scheduleOrIdleOnCore` is now *definitionally* `scheduleEffectiveOnCore`.
+- **Live tick path reaches idle**: `timerTickOnCore` (preempt path) and
+  `scheduleDomainOnCore` (domain boundary) call `scheduleEffectiveOnCore`, so they now
+  dispatch idle when nothing is runnable; new `scheduleDomainOnCore_runs_idle` proves
+  it on the live domain-tick path (single-domain boundary + nothing eligible + idle
+  dispatchable ⇒ `current = some (idleThreadId c)`).
+- **Soundness on `scheduleEffectiveOnCore` directly**: four new `idleFallbackOnCore_*`
+  case-analysis lemmas discharge the idle/`none` split once, so the six
+  `scheduleEffectiveOnCore_*` establishment theorems (PerCoreTimerTick §7) cover the
+  folded dispatch and every `timerTickOnCore` / `scheduleDomainOnCore` preservation
+  proof consuming them is unchanged; the `scheduleOrIdleOnCore_*` soundness theorems
+  are now thin aliases (accepted by defeq).
+- **Headline + no-starvation restated** on the idle-dispatch precondition
+  (`chooseThreadEffectiveOnCore = .ok none` + `idleDispatchableOnCore` on the
+  context-saved state); the `scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone`
+  bridge is retained.
+- Inventory 62 → 64 (dispatch 17 → 19: `idleFallbackOnCore` +
+  `scheduleDomainOnCore_runs_idle`); `smp_idle_suite` 40/40 PASS; Tier-3 +2 anchors;
+  default build green (324 jobs); partition gate 51 staged-only modules; trace
+  byte-identical; axiom-clean.  Tracked debt (SM5.I / SM5.H / post-1.0): the
+  unconditional invariant-backed `chooseThreadOnCore_always_succeeds`, per-(core,domain)
+  idle for multi-domain configs, and wiring `scheduleOrIdleOnCore` into the legacy
+  single-core `schedule`.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

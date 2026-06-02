@@ -1058,6 +1058,103 @@ def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
           { st with objects := st.objects.insert outTid.toObjId savedTcb }
       | none => st
 
+/-- WS-SM SM5.E (idle-dispatch admission): is core `c`'s idle thread a *safe*
+dispatch target — installed, in core `c`'s active domain, **and admissible on core
+`c`** (its `cpuAffinity` admits `c`)?  This gates the idle fallback in
+`scheduleEffectiveOnCore`'s `none` branch: it ensures the post-dispatch state
+satisfies `currentThreadValidOnCore` (idle resolves) and
+`currentThreadInActiveDomainOnCore` (idle's domain matches).  The
+`affinityAdmitsCore` conjunct mirrors `switchToThreadOnCore`'s reject-remote guard:
+it guarantees the core-local idle property even if the reserved idle slot were ever
+populated with a TCB bound to a *different* core (`cpuAffinity = some c'`, `c' ≠ c`)
+— such a TCB is **not** dispatchable as core `c`'s idle thread.  Fail-closed: an
+absent / out-of-domain / remote-bound idle thread is not dispatchable, and the
+core falls back to the legacy `current = none` idle representation. -/
+def idleDispatchableOnCore (st : SystemState) (c : CoreId) : Bool :=
+  match st.getTcb? (idleThreadId c) with
+  | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c && affinityAdmitsCore tcb c
+  | none => false
+
+/-- WS-SM SM5.E: the idle-dispatch state — core `c`'s idle thread becomes current
+via the same dequeue-on-dispatch (`RunQueue.remove`) + context-restore
+(`restoreIncomingContext`) + set-current sequence a normal switch uses.  Factored
+out of `scheduleEffectiveOnCore`'s idle branch so its frame lemmas prove once that
+it touches only core `c`'s scheduler slots + `machine.regs` (never the object
+store). -/
+def dispatchIdleOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  let stDeq := { st with scheduler :=
+    st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove (idleThreadId c)) }
+  let stRestored := restoreIncomingContext stDeq (idleThreadId c)
+  { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some (idleThreadId c)) }
+
+/-- WS-SM SM5.E: dispatching idle sets core `c`'s current thread to the idle thread. -/
+@[simp] theorem dispatchIdleOnCore_currentOnCore (st : SystemState) (c : CoreId) :
+    (dispatchIdleOnCore st c).scheduler.currentOnCore c = some (idleThreadId c) := by
+  simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_currentOnCore_self]
+
+/-- WS-SM SM5.E: dispatching idle does not touch the object store. -/
+@[simp] theorem dispatchIdleOnCore_objects (st : SystemState) (c : CoreId) :
+    (dispatchIdleOnCore st c).objects = st.objects := by
+  simp only [dispatchIdleOnCore, restoreIncomingContext_objects]
+
+/-- WS-SM SM5.E: after dispatching idle, core `c`'s run queue is the old one with
+the idle thread removed (dequeue-on-dispatch). -/
+theorem dispatchIdleOnCore_runQueueOnCore (st : SystemState) (c : CoreId) :
+    (dispatchIdleOnCore st c).scheduler.runQueueOnCore c
+      = (st.scheduler.runQueueOnCore c).remove (idleThreadId c) := by
+  simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
+    restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+
+/-- WS-SM SM5.E: dispatching idle frames core `c`'s active domain. -/
+@[simp] theorem dispatchIdleOnCore_activeDomainOnCore (st : SystemState) (c : CoreId) :
+    (dispatchIdleOnCore st c).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c := by
+  simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_activeDomainOnCore,
+    restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+
+/-- WS-SM SM5.E: dispatching idle leaves every thread's TCB resolution unchanged. -/
+theorem dispatchIdleOnCore_getTcb? (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    (dispatchIdleOnCore st c).getTcb? tid = st.getTcb? tid := by
+  unfold SystemState.getTcb?
+  rw [dispatchIdleOnCore_objects]
+
+/-- WS-SM SM5.E: the per-core idle fallback applied to an already-context-saved
+state — run core `c`'s idle thread if dispatchable, else leave `current = none`.
+Factored as a named helper (rather than an inline `if`) so `scheduleEffectiveOnCore`'s
+`none` branch is a clean `.ok (idleFallbackOnCore stSaved c)`, and the idle/none
+case analysis is discharged *once* in this helper's lemmas instead of inside every
+`scheduleEffectiveOnCore` establishment proof. -/
+def idleFallbackOnCore (st : SystemState) (c : CoreId) : SystemState :=
+  if idleDispatchableOnCore st c then dispatchIdleOnCore st c
+  else { st with scheduler := st.scheduler.setCurrentOnCore c none }
+
+/-- WS-SM SM5.E: the idle fallback never touches the object store (both arms — idle
+dispatch and `current = none` — leave `objects` unchanged). -/
+@[simp] theorem idleFallbackOnCore_objects (st : SystemState) (c : CoreId) :
+    (idleFallbackOnCore st c).objects = st.objects := by
+  unfold idleFallbackOnCore
+  split
+  · exact dispatchIdleOnCore_objects st c
+  · rfl
+
+/-- WS-SM SM5.E: the idle fallback frames every thread's TCB resolution. -/
+theorem idleFallbackOnCore_getTcb? (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    (idleFallbackOnCore st c).getTcb? tid = st.getTcb? tid := by
+  unfold SystemState.getTcb?
+  rw [idleFallbackOnCore_objects]
+
+/-- WS-SM SM5.E: the idle fallback's run queue is the old one with the idle thread
+removed (idle dispatch) or unchanged (`current = none`) — in both arms a *subset*
+of the old run queue (idle dispatch only `remove`s). -/
+theorem idleFallbackOnCore_runQueueOnCore_mem (st : SystemState) (c : CoreId)
+    (x : SeLe4n.ThreadId) (hx : x ∈ (idleFallbackOnCore st c).scheduler.runQueueOnCore c) :
+    x ∈ st.scheduler.runQueueOnCore c := by
+  unfold idleFallbackOnCore at hx
+  split at hx
+  · rw [dispatchIdleOnCore_runQueueOnCore] at hx
+    exact ((RunQueue.mem_remove _ _ _).mp hx).1
+  · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hx
+
 /-- WS-SM SM5.D.5 (per-core budget-aware reschedule): the per-core analogue of
 `scheduleEffective` (Core.lean).  Re-selects core `c`'s highest-priority
 *budget-eligible* runnable thread (`chooseThreadEffectiveOnCore`, SM5.A §6) and
@@ -1081,9 +1178,15 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
   match chooseThreadEffectiveOnCore st c with
   | .error e => .error e
   | .ok none =>
-      -- idle: save outgoing context and clear core `c`'s current thread.
-      let stSaved := saveOutgoingContextOnCore st c
-      .ok { stSaved with scheduler := stSaved.scheduler.setCurrentOnCore c none }
+      -- WS-SM SM5.E (folded idle dispatch): nothing budget-eligible is runnable.
+      -- Save the outgoing context, then run core `c`'s **idle thread** if it is
+      -- dispatchable (installed + in-domain + admissible on `c`); otherwise fall
+      -- back to the legacy `current = none` idle representation.  States without an
+      -- installed idle thread are unchanged (`idleDispatchableOnCore = false`), so
+      -- the single-core boot trace and idle-free fixtures are byte-identical.  This
+      -- is what makes the live per-core tick / domain paths (`timerTickOnCore` /
+      -- `scheduleDomainOnCore`, which call this) actually run the idle thread.
+      .ok (idleFallbackOnCore (saveOutgoingContextOnCore st c) c)
   | .ok (some tid) =>
       match st.getTcb? tid with
       | some tcb =>
@@ -1098,63 +1201,16 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
             .error .schedulerInvariantViolation
       | _ => .error .schedulerInvariantViolation
 
-/-- WS-SM SM5.E (idle-dispatch admission): is core `c`'s idle thread a *safe*
-dispatch target — installed, in core `c`'s active domain, **and admissible on core
-`c`** (its `cpuAffinity` admits `c`)?  This is the gate `scheduleOrIdleOnCore` uses
-before running the idle thread: it ensures the post-dispatch state satisfies
-`currentThreadValidOnCore` (idle resolves) and `currentThreadInActiveDomainOnCore`
-(idle's domain matches).  The `affinityAdmitsCore` conjunct mirrors
-`switchToThreadOnCore`'s reject-remote guard: it guarantees the core-local idle
-property even if the reserved idle slot were ever populated with a TCB bound to a
-*different* core (`cpuAffinity = some c'`, `c' ≠ c`) — such a TCB is **not**
-dispatchable as core `c`'s idle thread.  Fail-closed: an absent / out-of-domain /
-remote-bound idle thread is not dispatchable, and the dispatcher falls back to the
-legacy `current = none` idle representation. -/
-def idleDispatchableOnCore (st : SystemState) (c : CoreId) : Bool :=
-  match st.getTcb? (idleThreadId c) with
-  | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c && affinityAdmitsCore tcb c
-  | none => false
-
-/-- WS-SM SM5.E: the idle-dispatch state — core `c`'s idle thread becomes current
-via the same dequeue-on-dispatch (`RunQueue.remove`) + context-restore
-(`restoreIncomingContext`) + set-current sequence a normal switch uses.  Factored
-out of `scheduleOrIdleOnCore` so its frame lemmas (`PerCoreDispatch.lean`) prove
-once that it touches only core `c`'s scheduler slots + `machine.regs` (never the
-object store). -/
-def dispatchIdleOnCore (st : SystemState) (c : CoreId) : SystemState :=
-  let stDeq := { st with scheduler :=
-    st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove (idleThreadId c)) }
-  let stRestored := restoreIncomingContext stDeq (idleThreadId c)
-  { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some (idleThreadId c)) }
-
-/-- WS-SM SM5.E (plan §3.5 / §4.3, the per-core idle-aware dispatcher — the SM5.I
-dispatch-loop seed): run core `c`'s **idle thread** when nothing else is
-runnable, instead of leaving the core with `current = none`.
-
-It layers on the budget-aware per-core selector `scheduleEffectiveOnCore`
-(SM5.D.5): when that dispatches a real thread the result is returned unchanged;
-when it goes idle (`current = none`) and core `c`'s idle thread is *dispatchable*
-(`idleDispatchableOnCore` — installed and in-domain), this dispatches the idle
-thread (`dispatchIdleOnCore`, `current = some (idleThreadId c)`); if no idle
-thread is installed it keeps the legacy `current = none` (so states without idle
-threads — most test fixtures, the single-core boot trace — are unchanged).
-
-Layering on `scheduleEffectiveOnCore` (rather than modifying its `none` branch
-in place) keeps the mature SM5.D establishment-theorem surface and the
-`timerTickOnCore` proof base untouched; the establishment theorems for *this*
-dispatcher (`Scheduler/Operations/PerCoreDispatch.lean`) compose
-`scheduleEffectiveOnCore`'s with the idle-dispatch case.  Folding it into
-`scheduleEffectiveOnCore` directly is an SM5.I refinement. -/
+/-- WS-SM SM5.E (deprecated alias).  The idle dispatch is now folded directly into
+`scheduleEffectiveOnCore` (its `none` branch runs core `c`'s idle thread when
+dispatchable — see above), so the per-core *timer* / *domain* paths
+(`timerTickOnCore` / `scheduleDomainOnCore`, which call `scheduleEffectiveOnCore`)
+reach the idle thread on the live kernel.  `scheduleOrIdleOnCore` is therefore
+definitionally `scheduleEffectiveOnCore`; it is retained as a name for the SM5.E
+test / demo / inventory surface (and for callers that want the intent explicit). -/
 def scheduleOrIdleOnCore (st : SystemState) (c : CoreId) :
     Except KernelError SystemState :=
-  match scheduleEffectiveOnCore st c with
-  | .error e => .error e
-  | .ok st' =>
-      match st'.scheduler.currentOnCore c with
-      | some _ => .ok st'
-      | none =>
-          if idleDispatchableOnCore st' c then .ok (dispatchIdleOnCore st' c)
-          else .ok st'
+  scheduleEffectiveOnCore st c
 
 /-- WS-SM SM5.D.4 (replenishment wake decision): which bound thread, if any, a
 CBS replenishment of `scId` should make runnable.

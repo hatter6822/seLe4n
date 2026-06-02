@@ -537,12 +537,38 @@ similar to SM0/SM1 patterns.)
 > `idleThread_no_starvation`, the decidable `idleAvailableOnCoreB`, and the
 > `idleThread_core_locality_forall` `∀c` aggregate; `idleThreadId` moved to
 > `Scheduler/IdleThread.lean`; inventory 26 → 58 entries; partition gate 51
-> staged-only modules; axiom-clean; trace additive-only.  **Tracked debt (SM5.I /
-> SM5.H / post-1.0)**: folding the idle dispatch *into* `scheduleEffectiveOnCore` in
-> place; the unconditional invariant-backed `chooseThreadOnCore_always_succeeds`
-> (needs idle-always-enqueued maintained across every transition); per-(core,domain)
-> idle for multi-domain configs; wiring `scheduleOrIdleOnCore` into the legacy
-> single-core `schedule`.  Items deferred past v1.0.0 with correctness impact: NONE.
+> staged-only modules; axiom-clean; trace additive-only.
+>
+> **Review #4 closure — fold into `scheduleEffectiveOnCore` (v0.31.49)** — per the
+> maintainer's choice on PR #810 review #4 ("wire the dispatcher into the live tick
+> path"), the idle dispatch is folded **into** `scheduleEffectiveOnCore`'s `none`
+> branch: the new `idleFallbackOnCore` helper runs core `c`'s idle thread when
+> `idleDispatchableOnCore` (installed + in-domain + affinity-admits) else falls back
+> to the legacy `current = none`.  Because `timerTickOnCore` (preempt path) and
+> `scheduleDomainOnCore` (domain boundary) already call `scheduleEffectiveOnCore`,
+> the running kernel now reaches the idle thread with no separate wiring;
+> `dispatchIdleOnCore` + its frame lemmas move into `Core`; `scheduleOrIdleOnCore` is
+> retained as the SM5.E name and is now *definitionally* `scheduleEffectiveOnCore`.
+> The idle/`none` case split is discharged once in four `idleFallbackOnCore_*`
+> lemmas, so the six `scheduleEffectiveOnCore_*` establishment theorems
+> (PerCoreTimerTick §7) cover the folded dispatch and every `timerTickOnCore` /
+> `scheduleDomainOnCore` preservation proof consuming them is unchanged (the SM5.D
+> proof base is intact); the `scheduleOrIdleOnCore_*` soundness theorems are now thin
+> aliases.  New `scheduleDomainOnCore_runs_idle` proves the live domain-tick path
+> dispatches idle (single-domain boundary + nothing eligible + idle dispatchable ⇒
+> `current = some (idleThreadId c)`); headline / strong-no-starvation restated on the
+> idle-dispatch precondition (`chooseThreadEffectiveOnCore = .ok none`).  Inventory
+> 62 → 64 (dispatch +`idleFallbackOnCore` +`scheduleDomainOnCore_runs_idle`);
+> `smp_idle_suite` 40/40; default build green (324 jobs); partition gate 51
+> staged-only modules; axiom-clean; states without an installed idle thread
+> byte-identical to pre-fold (trace unchanged).
+>
+> **Tracked debt (SM5.I /
+> SM5.H / post-1.0)**: the unconditional invariant-backed
+> `chooseThreadOnCore_always_succeeds` (needs idle-always-enqueued maintained across
+> every transition); per-(core,domain) idle for multi-domain configs; wiring
+> `scheduleOrIdleOnCore` into the legacy single-core `schedule`.  Items deferred past
+> v1.0.0 with correctness impact: NONE.
 
 ### SM5.F — Per-core PIP (5 PRs, 10 sub-tasks)
 

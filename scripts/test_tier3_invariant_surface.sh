@@ -3479,8 +3479,11 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @chooseThreadOnCore_always_succeeds_of_idleAvailableB
 #check @idleThreadEnqueuedOnCore_idleAvailableOnCoreB
 -- SM5.E idle-aware dispatcher (SM5.I seed): production defs + establishment.
+-- Post-fold: idle dispatch lives in scheduleEffectiveOnCore none branch
+-- (idleFallbackOnCore); scheduleOrIdleOnCore is the SM5.E name for it.
 #check @idleDispatchableOnCore
 #check @dispatchIdleOnCore
+#check @idleFallbackOnCore
 #check @scheduleOrIdleOnCore
 #check @scheduleOrIdleOnCore_runs_idle
 #check @scheduleOrIdleOnCore_preserves_objects_invExt
@@ -3494,6 +3497,7 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @dispatchIdleOnCore_runQueueOnCore
 #check @scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone
 #check @scheduleOrIdleOnCore_idle_starves_no_eligible_thread
+#check @scheduleDomainOnCore_runs_idle
 -- SM5.E inventory witnesses.
 #check @perCoreIdleTheorems_count
 #check @perCoreIdleTheorems_partition_sum

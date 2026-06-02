@@ -202,7 +202,9 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
       idleDispatchableOnCore .dispatch,
     pcit! "dispatchIdleOnCore: the idle-dispatch state (dequeue + restore + set-current)"
       dispatchIdleOnCore .dispatch,
-    pcit! "scheduleOrIdleOnCore: the per-core idle-aware dispatcher (SM5.I seed)"
+    pcit! "idleFallbackOnCore: the folded idle-or-none fallback (scheduleEffectiveOnCore's none branch)"
+      idleFallbackOnCore .dispatch,
+    pcit! "scheduleOrIdleOnCore: the per-core idle-aware dispatcher (SM5.I seed; = scheduleEffectiveOnCore post-fold)"
       scheduleOrIdleOnCore .dispatch,
     pcit! "dispatchIdleOnCore_currentOnCore: dispatching idle sets current to the idle thread"
       dispatchIdleOnCore_currentOnCore .dispatch,
@@ -231,12 +233,14 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     pcit! "scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone: current=none ⟹ selector found nothing"
       scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone .dispatch,
     pcit! "scheduleOrIdleOnCore_idle_starves_no_eligible_thread: dispatcher runs idle only when nothing eligible (strong no-starvation)"
-      scheduleOrIdleOnCore_idle_starves_no_eligible_thread .dispatch]
+      scheduleOrIdleOnCore_idle_starves_no_eligible_thread .dispatch,
+    pcit! "scheduleDomainOnCore_runs_idle: the folded idle dispatch is reachable on the live per-core domain-tick path (review #4 closure)"
+      scheduleDomainOnCore_runs_idle .dispatch]
 
-/-- WS-SM SM5.E: the inventory has 62 substantive entries.  A regression that
+/-- WS-SM SM5.E: the inventory has 64 substantive entries.  A regression that
 adds a new SM5.E theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 62 := by decide
+theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 64 := by decide
 
 /-- WS-SM SM5.E: 6 entries in the `field` category (SM5.E.1 / .2 / .5). -/
 theorem perCoreIdleTheorems_field_count :
@@ -262,9 +266,10 @@ theorem perCoreIdleTheorems_alwaysSucceeds_count :
 theorem perCoreIdleTheorems_locality_count :
     (perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6 := by decide
 
-/-- WS-SM SM5.E: 17 entries in the `dispatch` category (SM5.I dispatcher seed). -/
+/-- WS-SM SM5.E: 19 entries in the `dispatch` category (SM5.I dispatcher seed;
+post-fold `idleFallbackOnCore` + live-wiring `scheduleDomainOnCore_runs_idle`). -/
 theorem perCoreIdleTheorems_dispatch_count :
-    (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 17 := by decide
+    (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 19 := by decide
 
 /-- WS-SM SM5.E: per-category counts sum to the total. -/
 theorem perCoreIdleTheorems_partition_sum :
