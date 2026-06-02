@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.46.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.47.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5431,6 +5431,40 @@ documentation lives under `docs/` and `docs/gitbook/`.
   every transition); per-(core,domain) idle for multi-domain configs; wiring
   `scheduleOrIdleOnCore` into the legacy single-core `schedule`.  Items deferred past
   v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.E audit-pass-1 LANDED at v0.31.47** (deep code-first audit of the
+  v0.31.46 completion — reading the implementation, not docstrings; checking
+  soundness, security, and mathematical correctness).  The cut was sound +
+  axiom-clean with no security shortcut and no reachable-state defect; the audit
+  closed **one substantive completeness gap** + one stale doc:
+  - **Dispatcher soundness parity (the finding)**: `scheduleOrIdleOnCore` established
+    a strictly *smaller* invariant surface than the `scheduleEffectiveOnCore` it
+    layers on (4 vs 6 properties — missing `currentThreadInActiveDomainOnCore` +
+    `runnableThreadsAreTCBsOnCore`, both establishable for the idle-dispatch branch:
+    the `idleDispatchableOnCore` gate checks the domain match, and the idle dispatch
+    only `remove`s the idle thread from the run queue).  Per
+    implement-the-improvement, both are now proved, bringing the wrapper to **exact
+    parity** with the wrapped selector.  The remaining 5 base conjuncts
+    (`timeSlicePositive` / `currentTimeSlicePositive` / EDF / `contextMatchesCurrent`
+    / `schedulerPriorityMatch` / `runQueueUnique` / `domainTimeRemaining`) are
+    uniformly SM5.I work for *every* per-core transition (unestablished by
+    `scheduleEffectiveOnCore` either); for the reachable `createIdleThread`
+    (timeSlice 5, unbound, domain 0, priority 0) all 11 conjuncts genuinely hold —
+    no reachable-state soundness hole.
+  - **Audit confirmations** (no change): the dispatcher trusts the idle slot (the
+    SM4.G boot contract; no syscall targets the reserved `idleThreadId c` slot at
+    SM5.E, and a clobbered slot would dispatch a thread that runs *as itself* — no
+    privilege escalation); the `enqueueIdleThreadOnCoreLockSet` object-store +
+    run-queue WRITE footprint exactly matches `enqueueIdleThreadOnCore`'s actual
+    writes; the conditional preservation theorems are correctly conditional +
+    non-vacuous; zero compiler/linter warnings; all new theorems axiom-clean.
+  - Inventory 58 → 60 (dispatch 13 → 15); inventory header docstring corrected
+    ("Four categories" → "Seven categories, 60 entries"); `SmpIdleSuite` gains §1
+    dispatcher anchors + §2 examples for the headline + all 6 soundness theorems;
+    Tier-3 +2 parity anchors.  Production code unchanged (the parity theorems +
+    inventory are staged; trace fixture byte-identical to v0.31.46); partition gate
+    51 staged-only modules; Tier 0–3 green.  Items deferred past v1.0.0 with
+    correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

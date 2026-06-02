@@ -196,4 +196,69 @@ theorem scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed (st : SystemStat
         exact RunQueue.remove_preserves_wellFormed _ hEffWf (idleThreadId c)
       · simp only [Except.ok.injEq] at hStep; subst hStep; exact hEffWf
 
+/-- WS-SM SM5.E (soundness, parity with `scheduleEffectiveOnCore`): the idle-aware
+dispatcher establishes that core `c`'s current thread is in its active domain — the
+idle case dispatches a thread whose domain matches (the `idleDispatchableOnCore`
+gate checks exactly this); the busy / not-dispatchable cases inherit
+`scheduleEffectiveOnCore`'s establishment.  Closes the parity gap: the wrapper is
+as sound as the function it layers on. -/
+theorem scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore (st : SystemState)
+    (c : CoreId) (st'' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    currentThreadInActiveDomainOnCore st'' c := by
+  unfold scheduleOrIdleOnCore at hStep
+  cases hEff : scheduleEffectiveOnCore st c with
+  | error e => rw [hEff] at hStep; simp at hStep
+  | ok st' =>
+    rw [hEff] at hStep
+    have hEffDom :=
+      scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore st c st' hInv hEff
+    cases hcur : st'.scheduler.currentOnCore c with
+    | some t => simp only [hcur, Except.ok.injEq] at hStep; subst hStep; exact hEffDom
+    | none =>
+      simp only [hcur] at hStep
+      split at hStep
+      · rename_i hd
+        simp only [Except.ok.injEq] at hStep; subst hStep
+        unfold currentThreadInActiveDomainOnCore
+        simp only [dispatchIdleOnCore_currentOnCore, dispatchIdleOnCore_getTcb?,
+          dispatchIdleOnCore_activeDomainOnCore]
+        unfold idleDispatchableOnCore at hd
+        cases hres : st'.getTcb? (idleThreadId c) with
+        | none => rw [hres] at hd; simp at hd
+        | some idleTcb => rw [hres] at hd; simpa using hd
+      · simp only [Except.ok.injEq] at hStep; subst hStep; exact hEffDom
+
+/-- WS-SM SM5.E (soundness, parity with `scheduleEffectiveOnCore`): the idle-aware
+dispatcher preserves "every runnable thread resolves to a TCB" — the idle case only
+`remove`s the idle thread from the run queue (so the post run queue is a subset of
+the pre run queue, which `scheduleEffectiveOnCore` already establishes as all-TCBs);
+the busy / not-dispatchable cases inherit `scheduleEffectiveOnCore`'s. -/
+theorem scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (c : CoreId) (st'' : SystemState) (hInv : st.objects.invExt)
+    (h : runnableThreadsAreTCBsOnCore st c)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    runnableThreadsAreTCBsOnCore st'' c := by
+  unfold scheduleOrIdleOnCore at hStep
+  cases hEff : scheduleEffectiveOnCore st c with
+  | error e => rw [hEff] at hStep; simp at hStep
+  | ok st' =>
+    rw [hEff] at hStep
+    have hEffR :=
+      scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore st c st' hInv hEff h
+    cases hcur : st'.scheduler.currentOnCore c with
+    | some t => simp only [hcur, Except.ok.injEq] at hStep; subst hStep; exact hEffR
+    | none =>
+      simp only [hcur] at hStep
+      split at hStep
+      · simp only [Except.ok.injEq] at hStep; subst hStep
+        intro tid htid
+        rw [dispatchIdleOnCore_runQueueOnCore] at htid
+        rw [dispatchIdleOnCore_getTcb?]
+        have hMemOld : tid ∈ (st'.scheduler.runQueueOnCore c).toList := by
+          rw [RunQueue.mem_toList_iff_mem, RunQueue.mem_remove] at htid
+          exact (RunQueue.mem_toList_iff_mem _ _).mpr htid.1
+        exact hEffR tid hMemOld
+      · simp only [Except.ok.injEq] at hStep; subst hStep; exact hEffR
+
 end SeLe4n.Kernel

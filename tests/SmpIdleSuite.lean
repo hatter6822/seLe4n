@@ -83,6 +83,18 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @idleThread_core_locality
 #check @idleThread_core_locality_of_enqueue
 
+-- SM5.E idle-aware dispatcher (SM5.I seed): production defs + establishment.
+#check @idleDispatchableOnCore
+#check @dispatchIdleOnCore
+#check @scheduleOrIdleOnCore
+#check @scheduleOrIdleOnCore_runs_idle
+#check @scheduleOrIdleOnCore_establishes_currentThreadValidOnCore
+#check @scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore
+#check @scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore
+#check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
+#check @scheduleOrIdleOnCore_preserves_objects_invExt
+
 -- SM5.E inventory:
 #check @perCoreIdleTheorems
 #check @perCoreIdleTheorems_count
@@ -144,6 +156,41 @@ example (st : SystemState) (c : CoreId) (hInv : st.objects.invExt)
 example (st : SystemState) (c : CoreId) :
     idleThreadId c ∈ ((enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c).toList :=
   enqueueIdleThreadOnCore_mem_runQueueOnCore_self st c
+
+-- SM5.E (dispatcher headline): when the budget-aware selector goes idle and idle
+-- is dispatchable, the idle-aware dispatcher runs the idle thread.
+example (st st' st'' : SystemState) (c : CoreId)
+    (hEff : scheduleEffectiveOnCore st c = .ok st')
+    (hcur : st'.scheduler.currentOnCore c = none)
+    (hDisp : idleDispatchableOnCore st' c = true)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    st''.scheduler.currentOnCore c = some (idleThreadId c) :=
+  scheduleOrIdleOnCore_runs_idle st c st' st'' hEff hcur hDisp hStep
+
+-- SM5.E (dispatcher soundness): the idle-aware dispatcher establishes current-thread
+-- validity, dequeue-on-dispatch consistency, current-in-domain, runnable-are-TCBs,
+-- run-queue well-formedness, and the object-store invariant (parity with
+-- `scheduleEffectiveOnCore`).
+example (st st'' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    currentThreadValidOnCore st'' c :=
+  scheduleOrIdleOnCore_establishes_currentThreadValidOnCore st c st'' hInv hStep
+
+example (st st'' : SystemState) (c : CoreId)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    queueCurrentConsistentOnCore st''.scheduler c :=
+  scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore st c st'' hStep
+
+example (st st'' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    currentThreadInActiveDomainOnCore st'' c :=
+  scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore st c st'' hInv hStep
+
+example (st st'' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hr : runnableThreadsAreTCBsOnCore st c)
+    (hStep : scheduleOrIdleOnCore st c = .ok st'') :
+    runnableThreadsAreTCBsOnCore st'' c :=
+  scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore st c st'' hInv hr hStep
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): concrete `enqueueIdleThreadOnCore` + selection
@@ -299,8 +346,8 @@ private def runLockSetChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.E theorem inventory ---"
-  assertBool "inventory has 58 entries"
-    (decide (perCoreIdleTheorems.length = 58))
+  assertBool "inventory has 60 entries"
+    (decide (perCoreIdleTheorems.length = 60))
   assertBool "field category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .field)).length = 6))
   assertBool "enqueue category has 13 entries"
@@ -313,8 +360,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length = 7))
   assertBool "locality category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6))
-  assertBool "dispatch category has 13 entries"
-    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 13))
+  assertBool "dispatch category has 15 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 15))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 

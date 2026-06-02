@@ -2827,6 +2827,29 @@ demonstrated in the trace).
   `scheduleOrIdleOnCore` into the legacy single-core `schedule`.  Items deferred past
   v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.E audit-pass-1 LANDED at v0.31.47** (deep code-first audit of the
+v0.31.46 completion; the cut was sound + axiom-clean with no security shortcut and
+no reachable-state defect — closed one completeness gap):
+
+- **Dispatcher soundness parity (the finding)**: `scheduleOrIdleOnCore` established a
+  strictly smaller invariant surface than the `scheduleEffectiveOnCore` it layers on
+  (4 vs 6 properties — missing `currentThreadInActiveDomainOnCore` +
+  `runnableThreadsAreTCBsOnCore`, both establishable for the idle branch).  Both are
+  now proved (exact parity with the wrapped selector).  The remaining 5 base
+  conjuncts are uniformly SM5.I work (unestablished by `scheduleEffectiveOnCore`
+  either); for the reachable `createIdleThread` (timeSlice 5, unbound, domain 0) all
+  11 hold — no reachable-state soundness hole.
+- **Audit confirmations** (no change): the dispatcher trusts the idle slot (SM4.G
+  boot contract; no syscall targets it at SM5.E, and a clobbered slot dispatches a
+  thread running *as itself* — no escalation); the `enqueueIdleThreadOnCoreLockSet`
+  footprint exactly matches the op's writes; conditional preservation theorems
+  correctly conditional + non-vacuous; zero warnings; all new theorems axiom-clean.
+- Inventory 58 → 60 (dispatch 13 → 15); header docstring corrected; `SmpIdleSuite` +
+  Tier-3 gain dispatcher anchors / examples.  Production code unchanged (parity
+  theorems + inventory staged; trace byte-identical to v0.31.46); partition gate 51
+  staged-only; Tier 0–3 green.  Items deferred past v1.0.0 with correctness impact:
+  NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

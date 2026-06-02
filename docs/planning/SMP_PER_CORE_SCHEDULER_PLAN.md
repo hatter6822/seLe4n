@@ -510,7 +510,7 @@ similar to SM0/SM1 patterns.)
 | SM5.E.5 | `idleThread_priority_zero` theorem | S |
 | SM5.E.6 | `chooseThreadOnCore_always_succeeds` | M |
 
-> **WS-SM SM5.E LANDED at v0.31.45; completion at v0.31.46** (all 6 sub-tasks).
+> **WS-SM SM5.E LANDED at v0.31.45; completion at v0.31.46; audit-pass-1 (dispatcher soundness parity — `scheduleOrIdleOnCore` brought to exact 6-property parity with `scheduleEffectiveOnCore`) at v0.31.47** (all 6 sub-tasks).
 > First cut (v0.31.45): `createIdleThread` `cpuAffinity := some c` (SM5.E.2);
 > `idleThread_priority_zero` (SM5.E.5) + field lemmas; the run-queue primitive
 > `enqueueIdleThreadOnCore` (SM5.E.3); `chooseThreadOnCore_always_succeeds`

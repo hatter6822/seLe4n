@@ -1,3 +1,59 @@
+## v0.31.47 — WS-SM SM5.E audit-pass-1: dispatcher soundness parity
+
+Deep, code-first audit of the v0.31.46 SM5.E completion (reading the
+implementation, not its docstrings; checking soundness, security, and
+mathematical correctness).  The cut was sound + axiom-clean with no security
+shortcut and no reachable-state defect; the audit closed **one substantive
+completeness gap** and corrected one stale doc.
+
+- **Dispatcher soundness parity (the finding)**: the production idle-aware
+  dispatcher `scheduleOrIdleOnCore` established a strictly *smaller* set of
+  per-core invariant properties than the function it layers on
+  (`scheduleEffectiveOnCore`).  The wrapper proved 4 (objects-`invExt`,
+  `currentThreadValid`, `queueCurrentConsistent`, `runQueueWellFormed`) while
+  `scheduleEffectiveOnCore` proves 6 — the wrapper was missing
+  `currentThreadInActiveDomainOnCore` and `runnableThreadsAreTCBsOnCore`, both of
+  which are establishable for the idle-dispatch branch (the `idleDispatchableOnCore`
+  gate checks the domain match; the idle dispatch only `remove`s the idle thread
+  from the run queue, so the post run queue is a subset of the pre run queue).
+  Per implement-the-improvement, the two theorems are now proved
+  (`scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore`,
+  `scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore`), bringing the
+  wrapper to **exact parity** with `scheduleEffectiveOnCore` — the dispatcher is
+  now provably as sound as the function it wraps.  (The remaining 5 base conjuncts
+  — `timeSlicePositive` / `currentTimeSlicePositive` / EDF / `contextMatchesCurrent`
+  / `schedulerPriorityMatch` / `runQueueUnique` / `domainTimeRemaining` — are not
+  established by `scheduleEffectiveOnCore` either; full 11-conjunct preservation is
+  uniformly SM5.I work for *every* per-core transition, so the dispatcher matching
+  `scheduleEffectiveOnCore`'s surface is the correct, consistent scope.  For the
+  reachable idle thread `createIdleThread` — `timeSlice = 5 > 0`, unbound, domain 0,
+  priority 0 — all 11 conjuncts genuinely hold, verified by re-reading the field
+  defaults; no reachable-state soundness hole.)
+
+- **Audit confirmations** (no change needed): `idleDispatchableOnCore` trusts the
+  idle slot, which is the established SM4.G boot contract (no syscall targets the
+  reserved `idleThreadId c` slot at SM5.E; even a hypothetically-clobbered slot
+  dispatches a thread that runs *as itself* — no privilege escalation); the
+  `enqueueIdleThreadOnCoreLockSet` object-store + run-queue WRITE footprint exactly
+  matches `enqueueIdleThreadOnCore`'s actual writes (TCB insert + run-queue insert);
+  the conditional preservation theorems are correctly conditional (the
+  `current ≠ idle` hypothesis is genuinely necessary and used, non-vacuous); the
+  decidable `idleAvailableOnCoreB` companion and `idleThread_no_starvation` are
+  correctly stated and honestly scoped; zero compiler/linter warnings across every
+  new/changed file; all new theorems axiom-clean.
+
+- **Inventory** 58 → **60** entries (dispatch category 13 → 15); the inventory
+  header docstring corrected ("Four categories" → "Seven categories (60 entries)",
+  the stale enumeration replaced).  **Tests**: `tests/SmpIdleSuite.lean` gains §1
+  dispatcher surface anchors + §2 elaboration examples for the headline + all 6
+  soundness theorems; Tier-3 gains the 2 parity anchors.
+
+Production code unchanged (the parity theorems + inventory are staged; the trace
+fixture is byte-identical to v0.31.46).  Partition gate 51 staged-only modules;
+Tier 0–3 green.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §SM5.E
+
 ## v0.31.46 — WS-SM SM5.E completion: production idle-aware dispatcher + full preservation surface
 
 Completes WS-SM Phase **SM5.E** to the optimal bar, closing every in-scope gap

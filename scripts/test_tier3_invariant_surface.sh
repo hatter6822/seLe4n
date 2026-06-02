@@ -3487,6 +3487,8 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @scheduleOrIdleOnCore_establishes_currentThreadValidOnCore
 #check @scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore
 #check @scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed
+#check @scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore
+#check @scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore
 #check @dispatchIdleOnCore_currentOnCore
 #check @dispatchIdleOnCore_objects
 #check @dispatchIdleOnCore_runQueueOnCore
