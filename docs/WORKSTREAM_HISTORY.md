@@ -2850,6 +2850,29 @@ no reachable-state defect — closed one completeness gap):
   staged-only; Tier 0–3 green.  Items deferred past v1.0.0 with correctness impact:
   NONE.
 
+**WS-SM SM5.E audit-pass-2 LANDED at v0.31.48** (PR #810 review closure — one CI fix
++ three Codex P2 findings):
+
+- **CI (shellcheck SC2016)**: a v0.31.46 tier-3 anchor comment had backticks in a
+  `bash -lc '...'` heredoc → shellcheck flagged command substitution, failing the
+  Tier 0 hygiene shellcheck gate (Fast + ARM64 lanes); removed the backticks (the gate
+  was skipped locally because shellcheck was not installed — now installed).
+- **Review #3 (affinity)**: `idleDispatchableOnCore` gained an `affinityAdmitsCore tcb
+  c` conjunct — a reserved-slot TCB bound to another core is no longer dispatchable as
+  core `c`'s idle (mirrors `switchToThreadOnCore`).
+- **Review #1 (rebucket)**: `enqueueIdleThreadOnCore` `remove`s-then-`insert`s so a
+  re-enqueue refreshes idle's priority bucket to 0 (bare `insert` is an identity for
+  existing members → stale bucket).
+- **Review #2 (same-priority)**: added the strong production-dispatcher no-starvation
+  `scheduleOrIdleOnCore_idle_starves_no_eligible_thread` (idle dispatched only when no
+  in-domain budget-eligible thread is runnable at all — never preempts any-priority
+  user threads, stronger than `idleThread_no_starvation`).
+- **Review #4 (wire into tick path)**: valid; the documented SM5.I tracked debt
+  (architecturally significant) — raised with the maintainer, not auto-wired.
+- Inventory 60 → 62 (dispatch 17); `SmpIdleSuite` + Tier-3 gain affinity-reject +
+  strong-no-starvation coverage; all new theorems axiom-clean; trace byte-identical;
+  Tier 0–3 green.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

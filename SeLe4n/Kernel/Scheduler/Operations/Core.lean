@@ -1099,15 +1099,20 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
       | _ => .error .schedulerInvariantViolation
 
 /-- WS-SM SM5.E (idle-dispatch admission): is core `c`'s idle thread a *safe*
-dispatch target — installed and in core `c`'s active domain?  This is the gate
-`scheduleOrIdleOnCore` uses before running the idle thread: it ensures the
-post-dispatch state satisfies `currentThreadValidOnCore` (idle resolves) and
-`currentThreadInActiveDomainOnCore` (idle's domain matches).  Fail-closed: an
-absent or out-of-domain idle thread is not dispatchable, and the dispatcher falls
-back to the legacy `current = none` idle representation. -/
+dispatch target — installed, in core `c`'s active domain, **and admissible on core
+`c`** (its `cpuAffinity` admits `c`)?  This is the gate `scheduleOrIdleOnCore` uses
+before running the idle thread: it ensures the post-dispatch state satisfies
+`currentThreadValidOnCore` (idle resolves) and `currentThreadInActiveDomainOnCore`
+(idle's domain matches).  The `affinityAdmitsCore` conjunct mirrors
+`switchToThreadOnCore`'s reject-remote guard: it guarantees the core-local idle
+property even if the reserved idle slot were ever populated with a TCB bound to a
+*different* core (`cpuAffinity = some c'`, `c' ≠ c`) — such a TCB is **not**
+dispatchable as core `c`'s idle thread.  Fail-closed: an absent / out-of-domain /
+remote-bound idle thread is not dispatchable, and the dispatcher falls back to the
+legacy `current = none` idle representation. -/
 def idleDispatchableOnCore (st : SystemState) (c : CoreId) : Bool :=
   match st.getTcb? (idleThreadId c) with
-  | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c
+  | some tcb => tcb.domain == st.scheduler.activeDomainOnCore c && affinityAdmitsCore tcb c
   | none => false
 
 /-- WS-SM SM5.E: the idle-dispatch state — core `c`'s idle thread becomes current

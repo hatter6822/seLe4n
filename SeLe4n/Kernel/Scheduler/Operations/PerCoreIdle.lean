@@ -113,9 +113,18 @@ core as `current = none`.  For `chooseThreadOnCore` — which reads only the run
 queue — to *fall back to idle*, the idle thread must be a run-queue *member*.
 `enqueueIdleThreadOnCore` is the primitive that ensures this: it (a) creates /
 refreshes the idle TCB in the object store at `(idleThreadId c).toObjId`, and
-(b) inserts `idleThreadId c` into core `c`'s run queue at the idle priority
-`⟨0⟩` (`= (createIdleThread c).priority`, which equals its effective run-queue
-priority since idle carries no PIP boost).
+(b) `remove`s then re-`insert`s `idleThreadId c` into core `c`'s run queue at the
+idle priority `⟨0⟩` (`= (createIdleThread c).priority`, which equals its effective
+run-queue priority since idle carries no PIP boost).
+
+The `remove`-then-`insert` (rather than a bare `insert`) is deliberate: a
+*re-enqueue* of an already-resident idle thread must refresh its priority bucket
+to `0`, but `RunQueue.insert` is an identity for existing members — a bare insert
+would leave a stale `byPriority` bucket if idle were ever resident at a non-`0`
+priority, so bucket-first selection could pick idle ahead of lower-bucket user
+threads.  `remove`-then-`insert` makes the refresh sound for *every* prior state
+(the membership set is unchanged — still `runQueue ∪ {idle}` — only idle's bucket
+is canonicalised to `0`).
 
 Footprint: WRITES the object-store slot `(idleThreadId c).toObjId` and core
 `c`'s run-queue slot.  Every other object-store key and every other core's
@@ -128,7 +137,7 @@ def enqueueIdleThreadOnCore (st : SystemState) (c : CoreId) : SystemState :=
       objects := st.objects.insert (idleThreadId c).toObjId
         (KernelObject.tcb (createIdleThread c)),
       scheduler := st.scheduler.setRunQueueOnCore c
-        ((st.scheduler.runQueueOnCore c).insert (idleThreadId c)
+        (((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
           (createIdleThread c).priority) }
 
 /-- WS-SM SM5.E.3: the idle-enqueue's object-store write (definitional). -/
@@ -136,18 +145,22 @@ theorem enqueueIdleThreadOnCore_objects (st : SystemState) (c : CoreId) :
     (enqueueIdleThreadOnCore st c).objects =
       st.objects.insert (idleThreadId c).toObjId (KernelObject.tcb (createIdleThread c)) := rfl
 
-/-- WS-SM SM5.E.3: the idle-enqueue's scheduler write (definitional). -/
+/-- WS-SM SM5.E.3: the idle-enqueue's scheduler write (definitional).  The
+run-queue write is `remove`-then-`insert` so a *re-enqueue* of an already-resident
+idle thread refreshes its priority bucket to `0` rather than leaving a stale
+bucket (`RunQueue.insert` is an identity for existing members). -/
 theorem enqueueIdleThreadOnCore_scheduler (st : SystemState) (c : CoreId) :
     (enqueueIdleThreadOnCore st c).scheduler =
       st.scheduler.setRunQueueOnCore c
-        ((st.scheduler.runQueueOnCore c).insert (idleThreadId c)
+        (((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
           (createIdleThread c).priority) := rfl
 
 /-- WS-SM SM5.E.3: after the enqueue, core `c`'s run queue is the old one with
 the idle thread inserted. -/
 theorem enqueueIdleThreadOnCore_runQueueOnCore_self (st : SystemState) (c : CoreId) :
     (enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c =
-      (st.scheduler.runQueueOnCore c).insert (idleThreadId c) (createIdleThread c).priority := by
+      ((st.scheduler.runQueueOnCore c).remove (idleThreadId c)).insert (idleThreadId c)
+        (createIdleThread c).priority := by
   rw [enqueueIdleThreadOnCore_scheduler]
   exact SchedulerState.setRunQueueOnCore_runQueueOnCore_self _ _ _
 
@@ -220,7 +233,7 @@ theorem enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed (st : System
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
     ((enqueueIdleThreadOnCore st c).scheduler.runQueueOnCore c).wellFormed := by
   rw [enqueueIdleThreadOnCore_runQueueOnCore_self]
-  exact RunQueue.insert_preserves_wellFormed _ hwf _ _
+  exact RunQueue.insert_preserves_wellFormed _ (RunQueue.remove_preserves_wellFormed _ hwf _) _ _
 
 /-- WS-SM SM5.E.3 (preservation): the enqueue preserves the per-core
 "every runnable thread resolves to a TCB" invariant.  The new run-queue member
@@ -238,7 +251,9 @@ theorem enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore (st : Sys
   by_cases hEq : tid = idleThreadId c
   · subst hEq
     exact ⟨createIdleThread c, enqueueIdleThreadOnCore_getTcb?_self st c hInv⟩
-  · have hMemOld : tid ∈ st.scheduler.runQueueOnCore c := htid.resolve_right hEq
+  · -- `remove`-then-`insert`: a non-idle member came from the pre-remove queue.
+    have hMemOld : tid ∈ st.scheduler.runQueueOnCore c :=
+      ((RunQueue.mem_remove _ _ _).mp (htid.resolve_right hEq)).1
     obtain ⟨tcb, htcb⟩ := hRunnable tid ((RunQueue.mem_toList_iff_mem _ _).mpr hMemOld)
     exact ⟨tcb, by rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq]; exact htcb⟩
 
@@ -295,7 +310,10 @@ theorem enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore (st : Sys
     rw [hcur] at hQC hNotCur
     simp only [enqueueIdleThreadOnCore_runQueueOnCore_self, RunQueue.mem_toList_iff_mem,
       RunQueue.mem_insert, not_or] at hQC ⊢
-    exact ⟨hQC, fun hEqIdle => hNotCur (congrArg some hEqIdle)⟩
+    -- `remove`-then-`insert`: the goal's non-idle disjunct is membership in the
+    -- pre-remove queue, which `mem_remove` reduces to the original `t ∉ rq`.
+    exact ⟨fun hmem => hQC ((RunQueue.mem_remove _ _ _).mp hmem).1,
+           fun hEqIdle => hNotCur (congrArg some hEqIdle)⟩
 
 /-- WS-SM SM5.E.3 (preservation): the enqueue preserves current-in-active-domain
 under the same not-the-running-idle precondition — when `current ≠ idle`, the
@@ -463,7 +481,8 @@ theorem enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self
     rw [enqueueIdleThreadOnCore_getTcb?_self st c hInv] at htcb
     cases htcb
     simp [affinityAdmitsCore, createIdleThread_cpuAffinity]
-  · have hMemOld : tid ∈ st.scheduler.runQueueOnCore c := htid.resolve_right hEq
+  · have hMemOld : tid ∈ st.scheduler.runQueueOnCore c :=
+      ((RunQueue.mem_remove _ _ _).mp (htid.resolve_right hEq)).1
     rw [enqueueIdleThreadOnCore_getTcb?_ne st c tid hInv hEq] at htcb
     exact hAff tid ((RunQueue.mem_toList_iff_mem _ _).mpr hMemOld) tcb htcb
 

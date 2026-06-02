@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.47.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.48.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5465,6 +5465,35 @@ documentation lives under `docs/` and `docs/gitbook/`.
     inventory are staged; trace fixture byte-identical to v0.31.46); partition gate
     51 staged-only modules; Tier 0–3 green.  Items deferred past v1.0.0 with
     correctness impact: NONE.
+
+  **WS-SM SM5.E audit-pass-2 LANDED at v0.31.48** (PR #810 review closure — one CI
+  fix + three Codex P2 findings):
+  - **CI (shellcheck SC2016)**: a v0.31.46 tier-3 anchor comment had backticks inside
+    a `bash -lc '...'` heredoc → shellcheck read them as command substitution, failing
+    the Tier 0 hygiene shellcheck gate (Fast + ARM64 lanes).  Removed the backticks.
+    (Missed locally because shellcheck was not installed in the dev container — now
+    installed; the full Tier 0 hygiene runs locally.)
+  - **Review #3 (affinity)**: `idleDispatchableOnCore` gained an `affinityAdmitsCore
+    tcb c` conjunct (mirrors `switchToThreadOnCore`'s reject-remote) — a reserved-slot
+    TCB bound to a *different* core is no longer dispatchable as core `c`'s idle thread.
+  - **Review #1 (rebucket)**: `enqueueIdleThreadOnCore` now `remove`s-then-`insert`s
+    so a re-enqueue refreshes idle's priority bucket to `0` (a bare `RunQueue.insert`
+    is an identity for existing members → stale bucket); ~5 run-queue-shape proofs gain
+    one `RunQueue.mem_remove` step (membership set unchanged).
+  - **Review #2 (same-priority)**: added the strong production-dispatcher no-starvation
+    `scheduleOrIdleOnCore_idle_starves_no_eligible_thread` — idle is dispatched **only
+    when no in-domain budget-eligible thread is runnable at all** (never preempts a
+    runnable user thread of any priority incl. `0`; stronger than the higher-priority-
+    only `idleThread_no_starvation`), via the new
+    `scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone` bridge.
+  - **Review #4 (wire into tick path)**: valid — `timerTickOnCore` /
+    `scheduleDomainOnCore` / the exported timer entry still bypass the dispatcher; this
+    is the documented SM5.I tracked debt (architecturally significant — changes the
+    SM5.D timer semantics + proof base), raised with the maintainer, not auto-wired.
+  Inventory 60 → 62 (dispatch 17); `SmpIdleSuite` + Tier-3 gain the affinity-reject +
+  strong-no-starvation coverage; all new theorems axiom-clean; trace byte-identical;
+  Tier 0–3 green (shellcheck now run locally).  Items deferred past v1.0.0 with
+  correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

@@ -226,7 +226,12 @@ theorem scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore (st :
         unfold idleDispatchableOnCore at hd
         cases hres : st'.getTcb? (idleThreadId c) with
         | none => rw [hres] at hd; simp at hd
-        | some idleTcb => rw [hres] at hd; simpa using hd
+        | some idleTcb =>
+          rw [hres] at hd
+          -- `idleDispatchableOnCore` is now `domain-match && affinity-admits`; the
+          -- current-in-domain establishment needs the domain-match conjunct.
+          simp only [Bool.and_eq_true] at hd
+          simpa using hd.1
       · simp only [Except.ok.injEq] at hStep; subst hStep; exact hEffDom
 
 /-- WS-SM SM5.E (soundness, parity with `scheduleEffectiveOnCore`): the idle-aware
@@ -260,5 +265,54 @@ theorem scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore (st : System
           exact (RunQueue.mem_toList_iff_mem _ _).mpr htid.1
         exact hEffR tid hMemOld
       · simp only [Except.ok.injEq] at hStep; subst hStep; exact hEffR
+
+-- ============================================================================
+-- §3  Strong no-starvation: the dispatcher runs idle only when nothing eligible
+-- ============================================================================
+
+/-- WS-SM SM5.E (no-starvation foundation): `scheduleEffectiveOnCore` yields a
+state with `current = none` on core `c` **only** when the budget-aware selector
+found nothing dispatchable (`chooseThreadEffectiveOnCore` returned `.ok none`).
+Its `some` branch always commits `current = some tid`, so a `none` result forces
+the idle (selector-found-nothing) branch. -/
+theorem scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone (st : SystemState)
+    (c : CoreId) (st' : SystemState)
+    (hEff : scheduleEffectiveOnCore st c = .ok st')
+    (hcur : st'.scheduler.currentOnCore c = none) :
+    chooseThreadEffectiveOnCore st c = .ok none := by
+  unfold scheduleEffectiveOnCore at hEff
+  split at hEff
+  · exact absurd hEff (by simp)
+  · rename_i heq; exact heq
+  · exfalso
+    split at hEff
+    · split at hEff
+      · simp only [Except.ok.injEq] at hEff
+        subst hEff
+        rw [SchedulerState.setCurrentOnCore_currentOnCore_self] at hcur
+        exact absurd hcur (by simp)
+      · exact absurd hEff (by simp)
+    · exact absurd hEff (by simp)
+
+/-- WS-SM SM5.E (the strong no-starvation property for the production dispatcher,
+addressing the "idle below same-priority user threads" concern): when
+`scheduleOrIdleOnCore` runs the idle thread via the fallback path (the budget-aware
+selector went idle: `scheduleEffectiveOnCore` produced `current = none`), **every**
+thread in core `c`'s run queue is either out of the active domain or out of budget.
+
+Unlike the run-queue-resident form (`enqueueIdleThreadOnCore` + `chooseThreadOnCore`,
+where idle is a priority-`0` peer and FIFO could pick it over a same-priority-`0`
+user thread), the production dispatcher dispatches idle **only when no in-domain,
+budget-eligible thread is runnable at all** — so it never preempts a runnable user
+thread of *any* priority, including priority `0`.  This is strictly stronger than
+`idleThread_no_starvation` (which only rules out *higher*-priority threads). -/
+theorem scheduleOrIdleOnCore_idle_starves_no_eligible_thread (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hEff : scheduleEffectiveOnCore st c = .ok st')
+    (hcur : st'.scheduler.currentOnCore c = none) :
+    ∀ tid ∈ (st.scheduler.runQueueOnCore c).toList, ∀ tcb : TCB,
+      st.getTcb? tid = some tcb →
+      ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
+  chooseThreadEffectiveOnCore_none_no_eligible st c
+    (scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone st c st' hEff hcur)
 
 end SeLe4n.Kernel

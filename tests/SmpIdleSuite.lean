@@ -192,6 +192,17 @@ example (st st'' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
     runnableThreadsAreTCBsOnCore st'' c :=
   scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore st c st'' hInv hr hStep
 
+-- SM5.E (strong no-starvation): when the dispatcher's idle-fallback fires (the
+-- budget-aware selector found nothing), every run-queue thread is out-of-domain
+-- or out-of-budget — idle preempts no eligible user thread of any priority.
+example (st st' : SystemState) (c : CoreId)
+    (hEff : scheduleEffectiveOnCore st c = .ok st')
+    (hcur : st'.scheduler.currentOnCore c = none)
+    (tid : SeLe4n.ThreadId) (htid : tid ∈ (st.scheduler.runQueueOnCore c).toList)
+    (tcb : TCB) (htcb : st.getTcb? tid = some tcb) :
+    ¬(tcb.domain = st.scheduler.activeDomainOnCore c ∧ hasSufficientBudget st tcb = true) :=
+  scheduleOrIdleOnCore_idle_starves_no_eligible_thread st c st' hEff hcur tid htid tcb htcb
+
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): concrete `enqueueIdleThreadOnCore` + selection
 -- ============================================================================
@@ -298,6 +309,14 @@ private def stIdleInstalled : SystemState :=
   (BootstrapBuilder.empty.withObject (idleThreadId bootCoreId).toObjId
     (.tcb (createIdleThread bootCoreId))).build
 
+/-- An idle slot holding a TCB BOUND TO ANOTHER CORE (`cpuAffinity := some core1`)
+— the review-#3 affinity-hardening probe.  Its domain matches the boot active
+domain, so a domain-only gate would (wrongly) admit it as core 0's idle thread; the
+`affinityAdmitsCore` conjunct of `idleDispatchableOnCore` rejects it. -/
+private def stForeignIdle : SystemState :=
+  (BootstrapBuilder.empty.withObject (idleThreadId bootCoreId).toObjId
+    (.tcb { createIdleThread bootCoreId with cpuAffinity := some core1 })).build
+
 /-- The current thread after the per-core idle-aware dispatcher runs. -/
 private def dispatchedCurrent (st : SystemState) (c : CoreId) : Option SeLe4n.ThreadId :=
   match SeLe4n.Kernel.scheduleOrIdleOnCore st c with
@@ -313,6 +332,12 @@ private def runDispatcherChecks : IO Unit := do
     (decide (idleDispatchableOnCore stIdleInstalled bootCoreId = true))
   assertBool "idle is NOT dispatchable when no idle thread is installed"
     (decide (idleDispatchableOnCore stEmpty bootCoreId = false))
+  -- review #3: a slot-TCB bound to another core is NOT dispatchable as core 0's idle
+  -- (its domain matches, so only the affinity gate rejects it).
+  assertBool "a remote-bound TCB at the idle slot is NOT dispatchable (affinity gate)"
+    (decide (idleDispatchableOnCore stForeignIdle bootCoreId = false))
+  assertBool "the remote-bound idle slot dispatches to current = none (fallback)"
+    (decide (dispatchedCurrent stForeignIdle bootCoreId = none))
   -- The idle-aware dispatcher runs the idle thread (current = some idleThreadId).
   assertBool "idle-aware dispatcher runs the idle thread (current = some idleThreadId)"
     (decide (dispatchedCurrent stIdleInstalled bootCoreId = some (idleThreadId bootCoreId)))
@@ -346,8 +371,8 @@ private def runLockSetChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.E theorem inventory ---"
-  assertBool "inventory has 60 entries"
-    (decide (perCoreIdleTheorems.length = 60))
+  assertBool "inventory has 62 entries"
+    (decide (perCoreIdleTheorems.length = 62))
   assertBool "field category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .field)).length = 6))
   assertBool "enqueue category has 13 entries"
@@ -360,8 +385,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .alwaysSucceeds)).length = 7))
   assertBool "locality category has 6 entries"
     (decide ((perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6))
-  assertBool "dispatch category has 15 entries"
-    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 15))
+  assertBool "dispatch category has 17 entries"
+    (decide ((perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 17))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreIdleTheorems.map (·.identifier)).Nodup)
 

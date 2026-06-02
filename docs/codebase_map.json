@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/amazing-johnson-eE3W3",
-      "commit_sha": "6721d305f40de04c7e3b670c4302566ced42a811",
-      "tree_sha": "7c95b0edbc1549608b1404fec3537ded6c4e6c95",
-      "committed_at_utc": "2026-06-02T02:26:37+00:00"
+      "commit_sha": "e817ed796b435ed6f90099c4ad15e95124bf1e04",
+      "tree_sha": "53677a8765a4976ca36bff56dab91d226cf1b29e",
+      "committed_at_utc": "2026-06-02T03:32:18+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "084a4bfa7c909ef27855178e94694e9b27b71bbc2aa24ef8edf6377d719922fe"
+    "source_digest": "3b72d740588748183cfb0f017088e651cae16ee561b001c9e9024f64556e517c"
   },
   "summary": {
     "module_count": 272,
-    "declaration_count": 9861
+    "declaration_count": 9865
   },
   "readme_sync": {
-    "version": "0.31.47",
+    "version": "0.31.48",
     "lean_toolchain": "v4.28.0",
     "production_files": 220,
-    "production_loc": 155819,
+    "production_loc": 155901,
     "test_files": 52,
-    "test_loc": 34272,
-    "proved_theorem_lemma_decls": 5004,
+    "test_loc": 34297,
+    "proved_theorem_lemma_decls": 5006,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -66616,11 +66616,12 @@
         {
           "kind": "def",
           "name": "idleDispatchableOnCore",
-          "line": 1108,
+          "line": 1113,
           "called": [
             "CoreId",
             "SystemState",
             "activeDomainOnCore",
+            "affinityAdmitsCore",
             "getTcb",
             "idleThreadId",
             "none"
@@ -66629,7 +66630,7 @@
         {
           "kind": "def",
           "name": "dispatchIdleOnCore",
-          "line": 1119,
+          "line": 1124,
           "called": [
             "CoreId",
             "SystemState",
@@ -66644,7 +66645,7 @@
         {
           "kind": "def",
           "name": "scheduleOrIdleOnCore",
-          "line": 1143,
+          "line": 1148,
           "called": [
             "CoreId",
             "KernelError",
@@ -66659,7 +66660,7 @@
         {
           "kind": "def",
           "name": "replenishWakeTarget",
-          "line": 1165,
+          "line": 1170,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -66674,7 +66675,7 @@
         {
           "kind": "def",
           "name": "processOneReplenishmentOnCore",
-          "line": 1195,
+          "line": 1200,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -66691,7 +66692,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDueOnCore",
-          "line": 1226,
+          "line": 1231,
           "called": [
             "CoreId",
             "SgiKind",
@@ -66707,7 +66708,7 @@
         {
           "kind": "def",
           "name": "timerTickBudgetOnCore",
-          "line": 1257,
+          "line": 1262,
           "called": [
             "Budget",
             "CoreId",
@@ -66735,7 +66736,7 @@
         {
           "kind": "def",
           "name": "timerTickOnCore",
-          "line": 1323,
+          "line": 1328,
           "called": [
             "CoreId",
             "KernelError",
@@ -66753,7 +66754,7 @@
         {
           "kind": "def",
           "name": "switchDomainOnCore",
-          "line": 1376,
+          "line": 1381,
           "called": [
             "CoreId",
             "KernelError",
@@ -66777,7 +66778,7 @@
         {
           "kind": "def",
           "name": "scheduleDomainOnCore",
-          "line": 1403,
+          "line": 1408,
           "called": [
             "CoreId",
             "KernelError",
@@ -66791,7 +66792,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 1423,
+          "line": 1428,
           "called": [
             "SystemState",
             "TCB",
@@ -66805,7 +66806,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 1438,
+          "line": 1443,
           "called": [
             "SystemState",
             "fold",
@@ -66817,7 +66818,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 1450,
+          "line": 1455,
           "called": [
             "Kernel",
             "ObjId",
@@ -68549,7 +68550,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreDispatch.lean",
-      "declaration_count": 13,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -68740,10 +68741,9 @@
         {
           "kind": "theorem",
           "name": "scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 237,
+          "line": 242,
           "called": [
             "CoreId",
-            "Kernel",
             "SystemState",
             "currentOnCore",
             "dispatchIdleOnCore_getTcb",
@@ -68757,6 +68757,41 @@
             "scheduleEffectiveOnCore",
             "scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore",
             "scheduleOrIdleOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone",
+          "line": 278,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "chooseThreadEffectiveOnCore",
+            "currentOnCore",
+            "none",
+            "scheduleEffectiveOnCore",
+            "setCurrentOnCore_currentOnCore_self"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleOrIdleOnCore_idle_starves_no_eligible_thread",
+          "line": 309,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SystemState",
+            "TCB",
+            "activeDomainOnCore",
+            "chooseThreadEffectiveOnCore_none_no_eligible",
+            "currentOnCore",
+            "getTcb",
+            "hasSufficientBudget",
+            "none",
+            "runQueueOnCore",
+            "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone",
             "toList"
           ]
         }
@@ -68813,13 +68848,14 @@
         {
           "kind": "def",
           "name": "enqueueIdleThreadOnCore",
-          "line": 126,
+          "line": 135,
           "called": [
             "CoreId",
             "SystemState",
             "createIdleThread",
             "idleThreadId",
             "insert",
+            "remove",
             "runQueueOnCore",
             "setRunQueueOnCore",
             "toObjId"
@@ -68828,7 +68864,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_objects",
-          "line": 135,
+          "line": 144,
           "called": [
             "CoreId",
             "SystemState",
@@ -68842,7 +68878,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_scheduler",
-          "line": 140,
+          "line": 152,
           "called": [
             "CoreId",
             "SystemState",
@@ -68850,6 +68886,7 @@
             "enqueueIdleThreadOnCore",
             "idleThreadId",
             "insert",
+            "remove",
             "runQueueOnCore",
             "setRunQueueOnCore"
           ]
@@ -68857,7 +68894,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_runQueueOnCore_self",
-          "line": 148,
+          "line": 160,
           "called": [
             "CoreId",
             "SystemState",
@@ -68866,6 +68903,7 @@
             "enqueueIdleThreadOnCore_scheduler",
             "idleThreadId",
             "insert",
+            "remove",
             "runQueueOnCore",
             "setRunQueueOnCore_runQueueOnCore_self"
           ]
@@ -68873,7 +68911,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_runQueueOnCore_ne",
-          "line": 157,
+          "line": 170,
           "called": [
             "CoreId",
             "SystemState",
@@ -68886,7 +68924,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_activeDomainOnCore",
-          "line": 164,
+          "line": 177,
           "called": [
             "CoreId",
             "SystemState",
@@ -68898,7 +68936,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_currentOnCore",
-          "line": 170,
+          "line": 183,
           "called": [
             "CoreId",
             "SystemState",
@@ -68910,7 +68948,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_mem_runQueueOnCore_self",
-          "line": 182,
+          "line": 195,
           "called": [
             "CoreId",
             "SystemState",
@@ -68926,7 +68964,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_getTcb",
-          "line": 190,
+          "line": 203,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -68943,7 +68981,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_getTcb",
-          "line": 200,
+          "line": 213,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -68961,7 +68999,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_objects_invExt",
-          "line": 211,
+          "line": 224,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -68974,13 +69012,14 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 219,
+          "line": 232,
           "called": [
             "CoreId",
             "SystemState",
             "enqueueIdleThreadOnCore",
             "enqueueIdleThreadOnCore_runQueueOnCore_self",
             "insert_preserves_wellFormed",
+            "remove_preserves_wellFormed",
             "runQueueOnCore",
             "wellFormed"
           ]
@@ -68988,7 +69027,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore",
-          "line": 232,
+          "line": 245,
           "called": [
             "CoreId",
             "SystemState",
@@ -68999,6 +69038,7 @@
             "idleThreadId",
             "invExt",
             "mem_insert",
+            "mem_remove",
             "mem_toList_iff_mem",
             "runQueueOnCore",
             "runnableThreadsAreTCBsOnCore"
@@ -69007,7 +69047,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore",
-          "line": 264,
+          "line": 279,
           "called": [
             "CoreId",
             "SystemState",
@@ -69025,7 +69065,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore",
-          "line": 286,
+          "line": 301,
           "called": [
             "CoreId",
             "SystemState",
@@ -69035,6 +69075,7 @@
             "enqueueIdleThreadOnCore_runQueueOnCore_self",
             "idleThreadId",
             "mem_insert",
+            "mem_remove",
             "mem_toList_iff_mem",
             "none",
             "queueCurrentConsistentOnCore"
@@ -69043,7 +69084,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_currentThreadInActiveDomainOnCore",
-          "line": 304,
+          "line": 322,
           "called": [
             "CoreId",
             "SystemState",
@@ -69061,7 +69102,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_mem_idempotent",
-          "line": 323,
+          "line": 341,
           "called": [
             "CoreId",
             "SystemState",
@@ -69075,7 +69116,7 @@
         {
           "kind": "def",
           "name": "idleThreadEnqueuedOnCore",
-          "line": 343,
+          "line": 361,
           "called": [
             "CoreId",
             "SystemState",
@@ -69090,7 +69131,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_establishes_idleThreadEnqueuedOnCore",
-          "line": 353,
+          "line": 371,
           "called": [
             "CoreId",
             "SystemState",
@@ -69107,7 +69148,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_always_succeeds",
-          "line": 373,
+          "line": 391,
           "called": [
             "CoreId",
             "SystemState",
@@ -69124,7 +69165,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_chooseThreadOnCore_succeeds",
-          "line": 387,
+          "line": 405,
           "called": [
             "CoreId",
             "SystemState",
@@ -69144,7 +69185,7 @@
         {
           "kind": "def",
           "name": "runQueueAffinityConsistentOnCore",
-          "line": 407,
+          "line": 425,
           "called": [
             "CoreId",
             "SystemState",
@@ -69158,7 +69199,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality",
-          "line": 423,
+          "line": 441,
           "called": [
             "CoreId",
             "SystemState",
@@ -69176,7 +69217,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality_of_enqueue",
-          "line": 437,
+          "line": 455,
           "called": [
             "CoreId",
             "SystemState",
@@ -69190,7 +69231,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_preserves_runQueueAffinityConsistentOnCore_self",
-          "line": 454,
+          "line": 472,
           "called": [
             "CoreId",
             "SystemState",
@@ -69202,6 +69243,7 @@
             "idleThreadId",
             "invExt",
             "mem_insert",
+            "mem_remove",
             "mem_toList_iff_mem",
             "runQueueAffinityConsistentOnCore",
             "runQueueOnCore"
@@ -69210,7 +69252,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_core_locality_forall",
-          "line": 474,
+          "line": 493,
           "called": [
             "SystemState",
             "createIdleThread",
@@ -69225,7 +69267,7 @@
         {
           "kind": "def",
           "name": "enqueueIdleThreadOnCoreLockSet",
-          "line": 489,
+          "line": 508,
           "called": [
             "AccessMode",
             "CoreId",
@@ -69236,7 +69278,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_length",
-          "line": 494,
+          "line": 513,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet",
@@ -69246,7 +69288,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_write_only",
-          "line": 498,
+          "line": 517,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -69255,7 +69297,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_contains_objStore_write",
-          "line": 506,
+          "line": 525,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet",
@@ -69265,7 +69307,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_contains_runQueue_write",
-          "line": 513,
+          "line": 532,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -69274,7 +69316,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_object_before_runQueue",
-          "line": 520,
+          "line": 539,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -69285,7 +69327,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_keys_nodup",
-          "line": 527,
+          "line": 546,
           "called": [
             "CoreId",
             "enqueueIdleThreadOnCoreLockSet"
@@ -69294,7 +69336,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCoreLockSet_pairwise_le",
-          "line": 535,
+          "line": 554,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -69307,7 +69349,7 @@
         {
           "kind": "theorem",
           "name": "idleThread_no_starvation",
-          "line": 557,
+          "line": 576,
           "called": [
             "CoreId",
             "SystemState",
@@ -69328,7 +69370,7 @@
         {
           "kind": "def",
           "name": "idleAvailableOnCoreB",
-          "line": 581,
+          "line": 600,
           "called": [
             "CoreId",
             "SystemState",
@@ -69343,7 +69385,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_always_succeeds_of_idleAvailableB",
-          "line": 592,
+          "line": 611,
           "called": [
             "CoreId",
             "SystemState",
@@ -69364,7 +69406,7 @@
         {
           "kind": "theorem",
           "name": "idleThreadEnqueuedOnCore_idleAvailableOnCoreB",
-          "line": 613,
+          "line": 632,
           "called": [
             "CoreId",
             "SystemState",
@@ -69377,7 +69419,7 @@
         {
           "kind": "theorem",
           "name": "enqueueIdleThreadOnCore_selection_inputs_framed",
-          "line": 632,
+          "line": 651,
           "called": [
             "CoreId",
             "Kernel",
@@ -69487,10 +69529,12 @@
             "idleThread_no_starvation",
             "idleThread_priority_zero",
             "runQueueAffinityConsistentOnCore",
+            "scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone",
             "scheduleOrIdleOnCore",
             "scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore",
             "scheduleOrIdleOnCore_establishes_currentThreadValidOnCore",
             "scheduleOrIdleOnCore_establishes_queueCurrentConsistentOnCore",
+            "scheduleOrIdleOnCore_idle_starves_no_eligible_thread",
             "scheduleOrIdleOnCore_preserves_objects_invExt",
             "scheduleOrIdleOnCore_preserves_runQueueOnCoreWellFormed",
             "scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore",
@@ -69500,7 +69544,7 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_count",
-          "line": 235,
+          "line": 239,
           "called": [
             "length"
           ]
@@ -69508,15 +69552,6 @@
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_field_count",
-          "line": 238,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "perCoreIdleTheorems_enqueue_count",
           "line": 242,
           "called": [
             "filter",
@@ -69525,7 +69560,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCoreIdleTheorems_preservation_count",
+          "name": "perCoreIdleTheorems_enqueue_count",
           "line": 246,
           "called": [
             "filter",
@@ -69534,7 +69569,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCoreIdleTheorems_lockSet_count",
+          "name": "perCoreIdleTheorems_preservation_count",
           "line": 250,
           "called": [
             "filter",
@@ -69543,7 +69578,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCoreIdleTheorems_alwaysSucceeds_count",
+          "name": "perCoreIdleTheorems_lockSet_count",
           "line": 254,
           "called": [
             "filter",
@@ -69552,7 +69587,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCoreIdleTheorems_locality_count",
+          "name": "perCoreIdleTheorems_alwaysSucceeds_count",
           "line": 258,
           "called": [
             "filter",
@@ -69561,7 +69596,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCoreIdleTheorems_dispatch_count",
+          "name": "perCoreIdleTheorems_locality_count",
           "line": 262,
           "called": [
             "filter",
@@ -69570,7 +69605,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCoreIdleTheorems_partition_sum",
+          "name": "perCoreIdleTheorems_dispatch_count",
           "line": 266,
           "called": [
             "filter",
@@ -69579,14 +69614,23 @@
         },
         {
           "kind": "theorem",
+          "name": "perCoreIdleTheorems_partition_sum",
+          "line": 270,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "perCoreIdleTheorems_identifiers_nodup",
-          "line": 283,
+          "line": 287,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "perCoreIdleTheorems_descriptions_nodup",
-          "line": 289,
+          "line": 293,
           "called": [
             "Kernel"
           ]
@@ -123946,7 +123990,7 @@
     {
       "module": "tests.SmpIdleSuite",
       "path": "tests/SmpIdleSuite.lean",
-      "declaration_count": 35,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -124185,9 +124229,29 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:198>",
+          "line": 198,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "getTcb",
+            "hasSufficientBudget",
+            "none",
+            "runQueueOnCore",
+            "scheduleEffectiveOnCore",
+            "scheduleOrIdleOnCore_idle_starves_no_eligible_thread",
+            "toList"
+          ]
+        },
+        {
           "kind": "def",
           "name": "mkUserTcb",
-          "line": 200,
+          "line": 211,
           "called": [
             "TCB",
             "ofNat"
@@ -124196,7 +124260,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 206,
+          "line": 217,
           "called": [
             "CoreId"
           ]
@@ -124204,7 +124268,7 @@
         {
           "kind": "def",
           "name": "tidUser",
-          "line": 207,
+          "line": 218,
           "called": [
             "ThreadId",
             "ofNat"
@@ -124213,7 +124277,7 @@
         {
           "kind": "def",
           "name": "stEmpty",
-          "line": 210,
+          "line": 221,
           "called": [
             "SystemState",
             "build"
@@ -124222,7 +124286,7 @@
         {
           "kind": "def",
           "name": "stEmptyIdle",
-          "line": 213,
+          "line": 224,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -124233,7 +124297,7 @@
         {
           "kind": "def",
           "name": "stUser",
-          "line": 217,
+          "line": 228,
           "called": [
             "SystemState",
             "build",
@@ -124247,7 +124311,7 @@
         {
           "kind": "def",
           "name": "stUserIdle",
-          "line": 222,
+          "line": 233,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -124258,7 +124322,7 @@
         {
           "kind": "def",
           "name": "stCore1Idle",
-          "line": 225,
+          "line": 236,
           "called": [
             "SystemState",
             "core1",
@@ -124269,7 +124333,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 227,
+          "line": 238,
           "called": [
             "throw"
           ]
@@ -124277,7 +124341,7 @@
         {
           "kind": "def",
           "name": "runFieldChecks",
-          "line": 235,
+          "line": 246,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -124289,7 +124353,7 @@
         {
           "kind": "def",
           "name": "runAlwaysSucceedsChecks",
-          "line": 248,
+          "line": 259,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -124306,7 +124370,7 @@
         {
           "kind": "def",
           "name": "runNoStarvationChecks",
-          "line": 262,
+          "line": 273,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -124321,7 +124385,7 @@
         {
           "kind": "def",
           "name": "runLocalityChecks",
-          "line": 276,
+          "line": 287,
           "called": [
             "affinityAdmitsCore",
             "assertBool",
@@ -124339,7 +124403,7 @@
         {
           "kind": "def",
           "name": "stIdleInstalled",
-          "line": 297,
+          "line": 308,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -124352,8 +124416,23 @@
         },
         {
           "kind": "def",
+          "name": "stForeignIdle",
+          "line": 316,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "build",
+            "core1",
+            "createIdleThread",
+            "idleThreadId",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "dispatchedCurrent",
-          "line": 302,
+          "line": 321,
           "called": [
             "CoreId",
             "SystemState",
@@ -124366,7 +124445,7 @@
         {
           "kind": "def",
           "name": "runDispatcherChecks",
-          "line": 309,
+          "line": 328,
           "called": [
             "any",
             "assertBool",
@@ -124380,13 +124459,14 @@
             "schedule",
             "scheduleOrIdleOnCore",
             "stEmpty",
+            "stForeignIdle",
             "stIdleInstalled"
           ]
         },
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 334,
+          "line": 359,
           "called": [
             "RunQueueLockId",
             "all",
@@ -124400,7 +124480,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 347,
+          "line": 372,
           "called": [
             "assertBool",
             "filter",
@@ -124410,7 +124490,7 @@
         {
           "kind": "def",
           "name": "runSmpIdleChecks",
-          "line": 368,
+          "line": 393,
           "called": [
             "runAlwaysSucceedsChecks",
             "runDispatcherChecks",
@@ -124424,7 +124504,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 383,
+          "line": 408,
           "called": [
             "runSmpIdleChecks"
           ]

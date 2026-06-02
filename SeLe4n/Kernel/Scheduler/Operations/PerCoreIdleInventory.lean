@@ -18,7 +18,7 @@ typed inventory with size and per-category witnesses.  Mirrors the SM5.C
 `CrossCoreWakeInventory.lean` and SM5.D `PerCoreTimerInventory.lean` patterns
 (and, further back, the SM3.A `PerObjectLockInventory.lean`).
 
-Seven categories matching the plan §3.5 / §4.3 / §5 sub-tasks (60 entries):
+Seven categories matching the plan §3.5 / §4.3 / §5 sub-tasks (62 entries):
 
 * `.field` — SM5.E.1 / SM5.E.2 / SM5.E.5: the idle-thread definitions
   (`idleThreadId`, `createIdleThread`) and field lemmas (`idleThread_priority_zero`,
@@ -227,12 +227,16 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     pcit! "scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore: dispatcher establishes current-in-domain (parity)"
       scheduleOrIdleOnCore_establishes_currentThreadInActiveDomainOnCore .dispatch,
     pcit! "scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore: dispatcher preserves runnable-are-TCBs (parity)"
-      scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore .dispatch]
+      scheduleOrIdleOnCore_preserves_runnableThreadsAreTCBsOnCore .dispatch,
+    pcit! "scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone: current=none ⟹ selector found nothing"
+      scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone .dispatch,
+    pcit! "scheduleOrIdleOnCore_idle_starves_no_eligible_thread: dispatcher runs idle only when nothing eligible (strong no-starvation)"
+      scheduleOrIdleOnCore_idle_starves_no_eligible_thread .dispatch]
 
-/-- WS-SM SM5.E: the inventory has 60 substantive entries.  A regression that
+/-- WS-SM SM5.E: the inventory has 62 substantive entries.  A regression that
 adds a new SM5.E theorem without registering it fails this count witness at the
 Tier-3 surface check. -/
-theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 60 := by decide
+theorem perCoreIdleTheorems_count : perCoreIdleTheorems.length = 62 := by decide
 
 /-- WS-SM SM5.E: 6 entries in the `field` category (SM5.E.1 / .2 / .5). -/
 theorem perCoreIdleTheorems_field_count :
@@ -258,9 +262,9 @@ theorem perCoreIdleTheorems_alwaysSucceeds_count :
 theorem perCoreIdleTheorems_locality_count :
     (perCoreIdleTheorems.filter (fun t => t.category == .locality)).length = 6 := by decide
 
-/-- WS-SM SM5.E: 15 entries in the `dispatch` category (SM5.I dispatcher seed). -/
+/-- WS-SM SM5.E: 17 entries in the `dispatch` category (SM5.I dispatcher seed). -/
 theorem perCoreIdleTheorems_dispatch_count :
-    (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 15 := by decide
+    (perCoreIdleTheorems.filter (fun t => t.category == .dispatch)).length = 17 := by decide
 
 /-- WS-SM SM5.E: per-category counts sum to the total. -/
 theorem perCoreIdleTheorems_partition_sum :

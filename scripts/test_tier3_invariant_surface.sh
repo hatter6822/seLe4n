@@ -3492,6 +3492,8 @@ open SeLe4n.Platform.Boot (createIdleThread)
 #check @dispatchIdleOnCore_currentOnCore
 #check @dispatchIdleOnCore_objects
 #check @dispatchIdleOnCore_runQueueOnCore
+#check @scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone
+#check @scheduleOrIdleOnCore_idle_starves_no_eligible_thread
 -- SM5.E inventory witnesses.
 #check @perCoreIdleTheorems_count
 #check @perCoreIdleTheorems_partition_sum

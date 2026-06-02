@@ -1,3 +1,55 @@
+## v0.31.48 — WS-SM SM5.E audit-pass-2: PR #810 review closure (CI + 3 P2 findings)
+
+Closes the CI failure and the substantive automated-review (Codex) findings on PR
+#810.
+
+- **CI fix (shellcheck SC2016)**: the v0.31.46 tier-3 anchor block added a Lean
+  `--` comment containing backticks inside a `bash -lc '...'` single-quoted heredoc;
+  shellcheck read the backticks as command substitution and failed the Tier 0
+  hygiene shellcheck gate (and thus the Fast + ARM64 Fast Gate lanes).  Removed the
+  backticks.  (Root cause it went unnoticed: shellcheck is not installed in the local
+  dev container, so local `test_full` runs silently skipped that gate — now installed
+  and the full Tier 0 hygiene runs locally.)
+- **Review #3 (affinity hardening, `idleDispatchableOnCore`)**: the idle-dispatch
+  admission gate checked only the domain, so a reserved-slot TCB bound to a
+  *different* core (`cpuAffinity = some c'`, `c' ≠ c`) would have been dispatched as
+  core `c`'s idle thread.  Added an `affinityAdmitsCore tcb c` conjunct (mirroring
+  `switchToThreadOnCore`'s reject-remote guard), guaranteeing the core-local idle
+  property.  `createIdleThread c` (`cpuAffinity = some c`) is unaffected; the trace
+  fixture is byte-identical.
+- **Review #1 (rebucket on re-enqueue, `enqueueIdleThreadOnCore`)**: the run-queue
+  write was a bare `RunQueue.insert`, which is an identity for existing members — a
+  *re-enqueue* of an already-resident idle thread would leave a stale priority bucket
+  (the object-store TCB is set to priority `0`, but `byPriority` keeps the old
+  bucket), so bucket-first selection could pick idle from a stale high bucket.
+  Changed to `remove`-then-`insert` so the refresh canonicalises idle's bucket to `0`
+  for *every* prior state (membership set unchanged — still `runQueue ∪ {idle}`).  The
+  ~5 dependent run-queue-shape proofs gain one `RunQueue.mem_remove` step each.
+- **Review #2 (idle vs same-priority user threads)**: the run-queue-resident form
+  (`enqueueIdleThreadOnCore` + `chooseThreadOnCore`) makes idle a priority-`0` peer,
+  so FIFO could pick it over a same-priority-`0` user thread; `idleThread_no_starvation`
+  is correctly scoped to *higher*-priority threads.  Per implement-the-improvement,
+  added the **strong** no-starvation property for the *production dispatcher*:
+  `scheduleOrIdleOnCore_idle_starves_no_eligible_thread` proves that when the
+  idle-fallback fires, **every** run-queue thread is out-of-domain or out-of-budget —
+  so the production path dispatches idle *only when nothing eligible is runnable at
+  all*, never preempting a runnable user thread of any priority (incl. `0`).  Built on
+  the new `scheduleEffectiveOnCore_currentNone_imp_chooseEffectiveNone` bridge.
+- **Review #4 (wire the dispatcher into the live tick path)**: a valid observation —
+  `timerTickOnCore` / `scheduleDomainOnCore` / the exported timer entry still bypass
+  `scheduleOrIdleOnCore`, so the running kernel does not yet reach the idle dispatch.
+  This is the documented SM5.I tracked debt (folding the dispatcher into the tick
+  path changes the SM5.D timer semantics + proof base — architecturally significant);
+  raised with the maintainer rather than auto-wired.
+
+Inventory 60 → 62 (dispatch 17); `SmpIdleSuite` gains the strong-no-starvation §2
+example + the affinity-reject §3.6 runtime tests; Tier-3 +2 anchors.  All new
+theorems axiom-clean; trace fixture byte-identical; Tier 0–3 green (shellcheck now
+included locally); Rust workspace unaffected.  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md (SM5.E)
+
 ## v0.31.47 — WS-SM SM5.E audit-pass-1: dispatcher soundness parity
 
 Deep, code-first audit of the v0.31.46 SM5.E completion (reading the
