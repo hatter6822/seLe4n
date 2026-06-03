@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.51.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.52.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5884,6 +5884,59 @@ documentation lives under `docs/` and `docs/gitbook/`.
   wired.  Items deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.H
   (per-core CBS), SM5.I (per-core invariant suite + the production wiring of the
   per-core domain rotation into the live run loop), SM5.J/K per the master overview.
+
+  **WS-SM SM5.G completion (audit-pass) LANDED at v0.31.52 on branch
+  `claude/stoic-volta-DHyaU`**: closes every optimality / completeness gap the SM5.G
+  self-audit identified, bringing per-core domain scheduling to its complete + optimal
+  form.  All additions axiom-clean (`propext` / `Quot.sound` / `Classical.choice`,
+  verified via `#print axioms`); default build green (324 jobs); trace byte-identical
+  (purely additive / staged); AK7 cascade floor unchanged.  The staged
+  `PerCoreDomain.lean` theorem inventory grows **39 → 67** entries across **9**
+  categories.
+
+  - **`advanceDomainOnCore` made load-bearing (the full domain-triple bridge)**: a
+    code-merge of `switchDomainOnCore` into `advanceDomainOnCore` would *regress* the
+    fail-closed `.error` on an out-of-bounds lookup (or force the pure-total rotation
+    to become `Except`-returning, breaking the cyclic theorem), so the two functions
+    stay correctly distinct.  Instead the active-domain-only bridge is upgraded to the
+    **full triple** `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore` (active
+    domain + time + index all agree), and `advanceDomainOnCore`'s establishment lemma
+    is the load-bearing step verifying the live `scheduleDomainOnCore` (below).
+  - **the cyclic theorem's `idx < length` precondition discharged from a maintained
+    invariant**: new `domainScheduleIndexInBoundsOnCore` (+ default / establishment /
+    per-other-core frame / live-transition preservation) +
+    `advanceDomainOnCore_cyclic_of_inBounds`.
+  - **the cyclic property extended from the index to the active domain**: new
+    `domainConsistentOnCore` (active domain = entry-at-index domain; unconditionally
+    established by any rotation) + `advanceDomainOnCore_cyclic_activeDomain` (the
+    round-robin cycle closes at the *domain* level, not just the index).
+  - **invariant preservation lifted to the LIVE transitions**:
+    `switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule` +
+    `scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule` (+ the
+    index-bounds preservation), requiring the previously-missing
+    `scheduleEffectiveOnCore_activeDomainOnCore` / `_domainSchedule` frames (plus
+    `idleFallbackOnCore` / `switchDomainOnCore` / `decrementDomainTimeOnCore` domain
+    frames).
+  - **the literal §3.7 `SystemState.activeDomainOnCore` accessor built + made
+    load-bearing** via `activeDomainOnCore_systemState_mem` (the §3.7 Theorem 3.7.1
+    over it; `@[simp]` bridge to the scheduler accessor).
+  - **the lock-set footprint given an acquisition-order witness
+    (`advanceDomainOnCoreLockSet_pairwise_le`) + a write-containment theorem
+    (`advanceDomainOnCore_frames_outside_core`)** — the rotation writes only core `c`'s
+    per-core scheduler state.
+  - **the tier-4 QEMU stub `scripts/test_qemu_smp_domain.sh`** (SKIP-only until SM5.I),
+    wired into `test_tier4_smp_bootcheck.sh`.
+  - **`chooseThreadEffectiveOnCore_respects_activeDomain` rewritten to drop the
+    asymmetric `wellFormed` hypothesis** (via the new no-`hwf`
+    `chooseBestRunnableEffective_result_eligible` /
+    `chooseBestInBucketEffective_result_eligible`).
+
+  Tests: `tests/SmpDomainSuite.lean` grows to 43 runtime assertions (+16 completion
+  scenarios — 3-domain rotation + cyclic, non-zero start, non-boot-core rotation, the
+  composed rotate-then-select, the index-bounds + consistency invariants, the
+  active-domain cyclic value) + new surface anchors / examples; inventory
+  partition-count guards updated to the 9-category / 67-entry totals.  Items deferred
+  past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

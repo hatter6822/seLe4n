@@ -1,3 +1,65 @@
+## v0.31.52 — WS-SM SM5.G completion (audit-pass): the optimal per-core domain-scheduling implementation
+
+Closes every optimality / completeness gap the SM5.G self-audit identified, bringing
+the per-core domain-scheduling workstream to its complete + optimal form.  All
+additions are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only,
+verified via `#print axioms`); the default production build is green (324 jobs); the
+trace fixture is **byte-identical** (purely additive / staged); the AK7 cascade floor
+is unchanged.  The staged `PerCoreDomain.lean` theorem inventory grows **39 → 67**
+entries across **9** categories.
+
+- **#1 / #2 — `advanceDomainOnCore` made load-bearing for the production transition
+  (the full domain-triple bridge).**  A code-merge of `switchDomainOnCore` into
+  `advanceDomainOnCore` would *regress* the fail-closed `.error` on an out-of-bounds
+  lookup (or force the pure-total rotation to become `Except`-returning, breaking the
+  cyclic theorem), so the two functions stay correctly distinct.  Instead the bridge
+  `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore` is upgraded to the **full
+  triple** `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore` (active domain +
+  time remaining + schedule index all agree), and `advanceDomainOnCore`'s
+  establishment lemma is now the **load-bearing step verifying the real live
+  transition** (`scheduleDomainOnCore`, below).
+- **#3 — the cyclic theorem's `idx < length` precondition discharged from a maintained
+  invariant.**  New `domainScheduleIndexInBoundsOnCore` invariant (+ default /
+  establishment / per-other-core frame / live-transition preservation), and
+  `advanceDomainOnCore_cyclic_of_inBounds` (the cyclic theorem with the raw obligation
+  replaced by the invariant — the form SM5.I uses directly).
+- **#4 — the cyclic property extended from the index to the active domain.**  New
+  `domainConsistentOnCore` invariant (active domain = the entry at the current index;
+  default / unconditionally established by any rotation) + the active-domain cyclic
+  theorem `advanceDomainOnCore_cyclic_activeDomain` (the round-robin cycle closes at
+  the *domain* level, not just the index).
+- **#5 — invariant preservation lifted from the abstract rotation to the LIVE
+  transitions.**  `switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule`
+  and `scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule` (+ the
+  index-bounds-invariant preservation) prove the production transitions maintain the
+  SM4.C domain-membership predicate.  This required the previously-missing
+  `scheduleEffectiveOnCore_activeDomainOnCore` / `_domainSchedule` frames (plus
+  `idleFallbackOnCore` / `switchDomainOnCore` / `decrementDomainTimeOnCore` domain
+  frames) — useful general lemmas now available.
+- **#6 — the literal §3.7 `SystemState.activeDomainOnCore` accessor built and made
+  load-bearing** via the §3.7 Theorem 3.7.1 membership form
+  `activeDomainOnCore_systemState_mem` over it (with the `@[simp]` bridge to the
+  scheduler accessor so existing lemmas keep firing).
+- **#7 — the lock-set footprint given an acquisition-order witness
+  (`advanceDomainOnCoreLockSet_pairwise_le`) and a write-containment theorem
+  (`advanceDomainOnCore_frames_outside_core`)** proving the rotation writes only core
+  `c`'s per-core scheduler state (which the run-queue lock — the per-core scheduler
+  lock per SM5.A — guards).
+- **#8 — the tier-4 QEMU stub `scripts/test_qemu_smp_domain.sh`** (SKIP-only until the
+  SM5.I per-core run loop drives `scheduleDomainOnCore`), wired into
+  `test_tier4_smp_bootcheck.sh`, reserving the nightly slot like the sibling phases.
+- **#10 — the budget-aware `chooseThreadEffectiveOnCore_respects_activeDomain` rewritten
+  to drop the asymmetric `wellFormed` hypothesis** (via the new no-`hwf`
+  `chooseBestRunnableEffective_result_eligible` / `chooseBestInBucketEffective_result_eligible`
+  domain-eligibility lemmas), matching the non-budget selector.
+
+Tests: `tests/SmpDomainSuite.lean` grows to 43 runtime assertions (+16 completion
+scenarios: 3-domain rotation + cyclic, non-zero starting index, non-boot-core
+rotation, the composed rotate-then-select, the index-bounds + consistency invariants,
+the active-domain cyclic value) + the new surface anchors / elaboration examples; the
+inventory partition-count guards updated to the 9-category / 67-entry totals.  Tier-2
++ Tier-3 wired.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.51 — WS-SM SM5.G: per-core domain scheduling
 
 Lands WS-SM Phase SM5.G (per-core domain scheduling) — all 6 sub-tasks

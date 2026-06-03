@@ -16,7 +16,8 @@ Aggregates the SM5.G per-core domain-scheduling substantive theorems into a sing
 typed inventory with size and per-category witnesses.  Mirrors the SM5.E
 `PerCoreIdleInventory.lean` and SM5.D `PerCoreTimerInventory.lean` patterns.
 
-Six categories matching the plan §3.7 / §5 sub-tasks:
+Nine categories matching the plan §3.7 / §5 sub-tasks (67 entries; 39 at the initial
+SM5.G landing + 28 from the completion audit-pass):
 
 * `.rotation` — SM5.G.1 / SM5.G.2: the pure rotation `advanceDomainOnCore`, its
   frame lemmas (objects / getTcb? / domainSchedule / run-queue / current /
@@ -32,7 +33,16 @@ Six categories matching the plan §3.7 / §5 sub-tasks:
 * `.respects` — SM5.G.4: `chooseThreadOnCore_respects_activeDomain` (+ the
   budget-aware companion and the fold-eligibility helpers).
 * `.independence` — SM5.G.5: cross-core domain independence + the
-  `advanceDomainOnCoreLockSet` footprint and its cross-core disjointness witness.
+  `advanceDomainOnCoreLockSet` footprint, its acquisition-order witness, its
+  cross-core disjointness witness, and the write-containment theorem.
+* `.query` — SM5.G.1: the literal §3.7 `SystemState.activeDomainOnCore` accessor,
+  its `@[simp]` bridge, and the §3.7 Theorem 3.7.1 membership form over it.
+* `.invariant` — SM5.G.2: the `domainScheduleIndexInBoundsOnCore` and
+  `domainConsistentOnCore` invariants (the cyclic theorem's discharged preconditions)
+  + their default-state / establishment / frame witnesses.
+* `.livePreservation` — SM5.G.3: invariant preservation by the **live** transitions
+  `switchDomainOnCore` / `scheduleDomainOnCore` + the `scheduleEffectiveOnCore` /
+  `idleFallbackOnCore` / `decrementDomainTimeOnCore` domain frames they consume.
 
 ## Identifier validation
 
@@ -57,6 +67,14 @@ inductive PerCoreDomainCategory where
   | respects
   /-- SM5.G.5 cross-core independence + footprint. -/
   | independence
+  /-- SM5.G.1 the `SystemState.activeDomainOnCore` query + its §3.7 membership form. -/
+  | query
+  /-- SM5.G.2 the index-bounds + domain-consistency invariants (the cyclic theorem's
+  discharged preconditions). -/
+  | invariant
+  /-- SM5.G.3 live-transition invariant preservation (`switchDomainOnCore` /
+  `scheduleDomainOnCore`) + the `scheduleEffectiveOnCore` domain frames. -/
+  | livePreservation
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM5.G: a theorem entry in the SM5.G inventory.  Records a description, the
@@ -169,36 +187,111 @@ def perCoreDomainTheorems : List PerCoreDomainTheorem :=
     pcdt! "advanceDomainOnCoreLockSet_keys_nodup: footprint keys are duplicate-free"
       advanceDomainOnCoreLockSet_keys_nodup .independence,
     pcdt! "advanceDomainOnCoreLockSet_disjoint_of_ne: disjoint cores have disjoint footprints"
-      advanceDomainOnCoreLockSet_disjoint_of_ne .independence]
+      advanceDomainOnCoreLockSet_disjoint_of_ne .independence,
+    -- ── SM5.G completion: cyclic extensions (.cyclic) ──
+    pcdt! "advanceDomainOnCore_cyclic_of_inBounds: cyclic discharged from the index-bounds invariant"
+      advanceDomainOnCore_cyclic_of_inBounds .cyclic,
+    pcdt! "advanceDomainOnCore_cyclic_activeDomain: the active domain (not just the index) cycles with period length"
+      advanceDomainOnCore_cyclic_activeDomain .cyclic,
+    -- ── SM5.G completion: full domain-triple bridge (.bridge) ──
+    pcdt! "switchDomainOnCore_domainScheduleIndexOnCore_self: the operational switch's index effect"
+      switchDomainOnCore_domainScheduleIndexOnCore_self .bridge,
+    pcdt! "switchDomainOnCore_domainTimeRemainingOnCore_self: the operational switch's time effect"
+      switchDomainOnCore_domainTimeRemainingOnCore_self .bridge,
+    pcdt! "switchDomainOnCore_domainTriple_eq_advanceDomainOnCore: the FULL domain-triple bridge (all 3 fields)"
+      switchDomainOnCore_domainTriple_eq_advanceDomainOnCore .bridge,
+    -- ── SM5.G completion: respects-without-hwf eligibility helpers (.respects) ──
+    pcdt! "chooseBestRunnableEffective_result_eligible: budget-aware fold records an in-domain thread (no hwf)"
+      chooseBestRunnableEffective_result_eligible .respects,
+    pcdt! "chooseBestInBucketEffective_result_eligible: budget-aware bucket selection records an in-domain thread (no hwf)"
+      chooseBestInBucketEffective_result_eligible .respects,
+    -- ── SM5.G completion: cross-core footprint witnesses (.independence) ──
+    pcdt! "advanceDomainOnCoreLockSet_pairwise_le: footprint keys form a valid acquisition order"
+      advanceDomainOnCoreLockSet_pairwise_le .independence,
+    pcdt! "advanceDomainOnCore_frames_outside_core: the rotation writes only core c's per-core scheduler state"
+      advanceDomainOnCore_frames_outside_core .independence,
+    -- ── SM5.G.1 query accessor (.query) ──
+    pcdt! "SystemState.activeDomainOnCore: the §3.7 SystemState-level active-domain query"
+      SeLe4n.Model.SystemState.activeDomainOnCore .query,
+    pcdt! "SystemState.activeDomainOnCore_eq: the @[simp] bridge to the scheduler accessor"
+      SeLe4n.Model.SystemState.activeDomainOnCore_eq .query,
+    pcdt! "activeDomainOnCore_systemState_mem: §3.7 Theorem 3.7.1 over the SystemState accessor"
+      activeDomainOnCore_systemState_mem .query,
+    -- ── SM5.G.2 invariants (index-bounds + domain-consistency) (.invariant) ──
+    pcdt! "domainScheduleIndexInBoundsOnCore: the schedule-index-bounds invariant"
+      domainScheduleIndexInBoundsOnCore .invariant,
+    pcdt! "default_domainScheduleIndexInBoundsOnCore: boot satisfies the index-bounds invariant"
+      default_domainScheduleIndexInBoundsOnCore .invariant,
+    pcdt! "advanceDomainOnCore_establishes_domainScheduleIndexInBoundsOnCore: rotation establishes index-bounds"
+      advanceDomainOnCore_establishes_domainScheduleIndexInBoundsOnCore .invariant,
+    pcdt! "advanceDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore_ne: index-bounds framed on other cores"
+      advanceDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore_ne .invariant,
+    pcdt! "domainConsistentOnCore: the domain-consistency invariant (activeDomain = entry-at-index domain)"
+      domainConsistentOnCore .invariant,
+    pcdt! "default_domainConsistentOnCore: boot satisfies the domain-consistency invariant"
+      default_domainConsistentOnCore .invariant,
+    pcdt! "advanceDomainOnCore_establishes_domainConsistentOnCore: rotation establishes domain consistency"
+      advanceDomainOnCore_establishes_domainConsistentOnCore .invariant,
+    -- ── SM5.G.3 live-transition preservation + scheduleEffective frames (.livePreservation) ──
+    pcdt! "idleFallbackOnCore_activeDomainOnCore: the idle fallback frames the active domain"
+      idleFallbackOnCore_activeDomainOnCore .livePreservation,
+    pcdt! "idleFallbackOnCore_domainSchedule: the idle fallback frames the domain schedule"
+      idleFallbackOnCore_domainSchedule .livePreservation,
+    pcdt! "scheduleEffectiveOnCore_activeDomainOnCore: the per-core reschedule frames the active domain"
+      scheduleEffectiveOnCore_activeDomainOnCore .livePreservation,
+    pcdt! "scheduleEffectiveOnCore_domainSchedule: the per-core reschedule frames the domain schedule"
+      scheduleEffectiveOnCore_domainSchedule .livePreservation,
+    pcdt! "switchDomainOnCore_domainSchedule: the operational switch frames the domain schedule"
+      switchDomainOnCore_domainSchedule .livePreservation,
+    pcdt! "decrementDomainTimeOnCore_domainSchedule: the domain decrement frames the domain schedule"
+      decrementDomainTimeOnCore_domainSchedule .livePreservation,
+    pcdt! "switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule: live rotation preserves the membership invariant"
+      switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule .livePreservation,
+    pcdt! "switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore: live rotation preserves index-bounds"
+      switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore .livePreservation,
+    pcdt! "scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule: live domain tick preserves the membership invariant"
+      scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule .livePreservation]
 
-/-- WS-SM SM5.G: the inventory has 39 substantive entries.  A regression that adds a
-new SM5.G theorem without registering it fails this count witness at the Tier-3
-surface check. -/
-theorem perCoreDomainTheorems_count : perCoreDomainTheorems.length = 39 := by decide
+/-- WS-SM SM5.G: the inventory has 67 substantive entries (39 at the initial SM5.G
+landing + 28 from the completion audit-pass).  A regression that adds a new SM5.G
+theorem without registering it fails this count witness at the Tier-3 surface check. -/
+theorem perCoreDomainTheorems_count : perCoreDomainTheorems.length = 67 := by decide
 
 /-- WS-SM SM5.G: 14 entries in the `rotation` category. -/
 theorem perCoreDomainTheorems_rotation_count :
     (perCoreDomainTheorems.filter (fun t => t.category == .rotation)).length = 14 := by decide
 
-/-- WS-SM SM5.G: 6 entries in the `cyclic` category. -/
+/-- WS-SM SM5.G: 8 entries in the `cyclic` category (+2 completion: discharged + active-domain). -/
 theorem perCoreDomainTheorems_cyclic_count :
-    (perCoreDomainTheorems.filter (fun t => t.category == .cyclic)).length = 6 := by decide
+    (perCoreDomainTheorems.filter (fun t => t.category == .cyclic)).length = 8 := by decide
 
-/-- WS-SM SM5.G: 1 entry in the `bridge` category. -/
+/-- WS-SM SM5.G: 4 entries in the `bridge` category (+3 completion: full domain-triple bridge). -/
 theorem perCoreDomainTheorems_bridge_count :
-    (perCoreDomainTheorems.filter (fun t => t.category == .bridge)).length = 1 := by decide
+    (perCoreDomainTheorems.filter (fun t => t.category == .bridge)).length = 4 := by decide
 
 /-- WS-SM SM5.G: 6 entries in the `domainSchedule` category. -/
 theorem perCoreDomainTheorems_domainSchedule_count :
     (perCoreDomainTheorems.filter (fun t => t.category == .domainSchedule)).length = 6 := by decide
 
-/-- WS-SM SM5.G: 4 entries in the `respects` category. -/
+/-- WS-SM SM5.G: 6 entries in the `respects` category (+2 completion: budget eligibility helpers). -/
 theorem perCoreDomainTheorems_respects_count :
-    (perCoreDomainTheorems.filter (fun t => t.category == .respects)).length = 4 := by decide
+    (perCoreDomainTheorems.filter (fun t => t.category == .respects)).length = 6 := by decide
 
-/-- WS-SM SM5.G: 8 entries in the `independence` category. -/
+/-- WS-SM SM5.G: 10 entries in the `independence` category (+2 completion: pairwise + write-containment). -/
 theorem perCoreDomainTheorems_independence_count :
-    (perCoreDomainTheorems.filter (fun t => t.category == .independence)).length = 8 := by decide
+    (perCoreDomainTheorems.filter (fun t => t.category == .independence)).length = 10 := by decide
+
+/-- WS-SM SM5.G: 3 entries in the `query` category (SM5.G.1 accessor + membership). -/
+theorem perCoreDomainTheorems_query_count :
+    (perCoreDomainTheorems.filter (fun t => t.category == .query)).length = 3 := by decide
+
+/-- WS-SM SM5.G: 7 entries in the `invariant` category (index-bounds + domain-consistency). -/
+theorem perCoreDomainTheorems_invariant_count :
+    (perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length = 7 := by decide
+
+/-- WS-SM SM5.G: 9 entries in the `livePreservation` category (live-transition preservation + frames). -/
+theorem perCoreDomainTheorems_livePreservation_count :
+    (perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length = 9 := by decide
 
 /-- WS-SM SM5.G: per-category counts sum to the total. -/
 theorem perCoreDomainTheorems_partition_sum :
@@ -207,7 +300,10 @@ theorem perCoreDomainTheorems_partition_sum :
     (perCoreDomainTheorems.filter (fun t => t.category == .bridge)).length +
     (perCoreDomainTheorems.filter (fun t => t.category == .domainSchedule)).length +
     (perCoreDomainTheorems.filter (fun t => t.category == .respects)).length +
-    (perCoreDomainTheorems.filter (fun t => t.category == .independence)).length =
+    (perCoreDomainTheorems.filter (fun t => t.category == .independence)).length +
+    (perCoreDomainTheorems.filter (fun t => t.category == .query)).length +
+    (perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length +
+    (perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length =
     perCoreDomainTheorems.length := by decide
 
 set_option maxRecDepth 10000 in

@@ -3707,8 +3707,32 @@ open SeLe4n.Kernel
 #check @advanceDomainOnCoreLockSet_contains_runQueue_write
 #check @advanceDomainOnCoreLockSet_keys_nodup
 #check @advanceDomainOnCoreLockSet_disjoint_of_ne
+-- SM5.G completion (audit-pass): query accessor, full bridge, invariants, live preservation.
+#check @SeLe4n.Model.SystemState.activeDomainOnCore
+#check @activeDomainOnCore_systemState_mem
+#check @switchDomainOnCore_domainTriple_eq_advanceDomainOnCore
+#check @switchDomainOnCore_domainScheduleIndexOnCore_self
+#check @switchDomainOnCore_domainTimeRemainingOnCore_self
+#check @advanceDomainOnCoreLockSet_pairwise_le
+#check @advanceDomainOnCore_frames_outside_core
+#check @domainScheduleIndexInBoundsOnCore
+#check @advanceDomainOnCore_establishes_domainScheduleIndexInBoundsOnCore
+#check @advanceDomainOnCore_cyclic_of_inBounds
+#check @domainConsistentOnCore
+#check @advanceDomainOnCore_establishes_domainConsistentOnCore
+#check @advanceDomainOnCore_cyclic_activeDomain
+#check @scheduleEffectiveOnCore_activeDomainOnCore
+#check @scheduleEffectiveOnCore_domainSchedule
+#check @switchDomainOnCore_domainSchedule
+#check @switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
+#check @switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
+#check @scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
+#check @chooseThreadEffectiveOnCore_respects_activeDomain
 #check @perCoreDomainTheorems_count
 #check @perCoreDomainTheorems_partition_sum
+#check @perCoreDomainTheorems_query_count
+#check @perCoreDomainTheorems_invariant_count
+#check @perCoreDomainTheorems_livePreservation_count
 EOF
 lake env lean /tmp/sm5g_surface.lean'
 # WS-SM SM5.G: build the SM5.G theorem inventory so a renamed / removed SM5.G

@@ -3069,6 +3069,62 @@ deferred past v1.0.0 with correctness impact: NONE.  Follow-on: SM5.H (per-core 
 SM5.I (per-core invariant suite + the production wiring of the per-core domain
 rotation into the live run loop), SM5.J/K per the master overview.
 
+**WS-SM SM5.G completion (audit-pass) LANDED at v0.31.52** (per-core domain
+scheduling; the optimal implementation).  Closes every optimality / completeness gap
+the SM5.G self-audit identified.  All additions axiom-clean (`propext` / `Quot.sound`
+/ `Classical.choice`, verified via `#print axioms`); default build green (324 jobs);
+trace byte-identical (purely additive / staged); AK7 cascade floor unchanged.  The
+staged `PerCoreDomain.lean` theorem inventory grows 39 → 67 entries across 9
+categories.
+
+- **`advanceDomainOnCore` made load-bearing (the full domain-triple bridge).**  A
+  code-merge of the operational `switchDomainOnCore` into the pure `advanceDomainOnCore`
+  would *regress* the fail-closed `.error` on an out-of-bounds lookup (the AK2-I
+  contract), or force the pure-total rotation to become `Except`-returning (breaking
+  the cyclic theorem), so the two functions stay correctly distinct.  Instead the
+  active-domain-only bridge is upgraded to the full triple
+  `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore` (active domain + time
+  remaining + schedule index all agree), and `advanceDomainOnCore`'s establishment
+  lemma becomes the load-bearing step verifying the live `scheduleDomainOnCore` (below)
+  — proof-level consumption, strictly better than a behaviour-regressing code-merge.
+- **The cyclic theorem's `idx < length` precondition discharged from a maintained
+  invariant.**  New `domainScheduleIndexInBoundsOnCore` (+ default / establishment /
+  per-other-core frame / live-transition preservation) +
+  `advanceDomainOnCore_cyclic_of_inBounds`.
+- **The cyclic property extended from the index to the active domain.**  New
+  `domainConsistentOnCore` (active domain = the entry at the current index;
+  unconditionally established by any rotation) + `advanceDomainOnCore_cyclic_activeDomain`
+  (the round-robin cycle closes at the *domain* level, not just the index).
+- **Invariant preservation lifted to the LIVE transitions.**
+  `switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule` +
+  `scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule` (+ the
+  index-bounds preservation), via the previously-missing
+  `scheduleEffectiveOnCore_activeDomainOnCore` / `_domainSchedule` frames (plus
+  `idleFallbackOnCore` / `switchDomainOnCore` / `decrementDomainTimeOnCore` domain
+  frames — useful general lemmas now available).
+- **The literal §3.7 `SystemState.activeDomainOnCore` accessor built + made
+  load-bearing** via the §3.7 Theorem 3.7.1 membership form
+  `activeDomainOnCore_systemState_mem` over it (`@[simp]` bridge to the scheduler
+  accessor).
+- **The lock-set footprint given an acquisition-order witness
+  (`advanceDomainOnCoreLockSet_pairwise_le`) + a write-containment theorem
+  (`advanceDomainOnCore_frames_outside_core`)** proving the rotation writes only core
+  `c`'s per-core scheduler state.
+- **The tier-4 QEMU stub `scripts/test_qemu_smp_domain.sh`** (SKIP-only until the
+  SM5.I per-core run loop drives `scheduleDomainOnCore`), wired into
+  `test_tier4_smp_bootcheck.sh`.
+- **The budget-aware `chooseThreadEffectiveOnCore_respects_activeDomain` rewritten to
+  drop its asymmetric `wellFormed` hypothesis** (via the new no-`hwf`
+  `chooseBestRunnableEffective_result_eligible` /
+  `chooseBestInBucketEffective_result_eligible`).
+
+Tests: `tests/SmpDomainSuite.lean` grows to 43 runtime assertions (+16 completion
+scenarios — 3-domain rotation + cyclic, non-zero starting index, non-boot-core
+rotation, the composed rotate-then-select, the index-bounds + consistency invariants,
+the active-domain cyclic value) + the new surface anchors / elaboration examples; the
+inventory partition-count guards updated to the 9-category / 67-entry totals.  Items
+deferred past v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

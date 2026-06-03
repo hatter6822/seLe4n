@@ -100,6 +100,40 @@ open SeLe4n.Testing
 #check @perCoreDomainTheorems_partition_sum
 #check @perCoreDomainTheorems_identifiers_nodup
 
+-- SM5.G completion (audit-pass): §7 query accessor, §8 full bridge, §8/§9 invariants,
+-- §10 live-transition preservation, respects-without-hwf.
+#check @SeLe4n.Model.SystemState.activeDomainOnCore
+#check @SeLe4n.Model.SystemState.activeDomainOnCore_eq
+#check @activeDomainOnCore_systemState_mem
+#check @switchDomainOnCore_domainScheduleIndexOnCore_self
+#check @switchDomainOnCore_domainTimeRemainingOnCore_self
+#check @switchDomainOnCore_domainTriple_eq_advanceDomainOnCore
+#check @advanceDomainOnCoreLockSet_pairwise_le
+#check @advanceDomainOnCore_frames_outside_core
+#check @domainScheduleIndexInBoundsOnCore
+#check @default_domainScheduleIndexInBoundsOnCore
+#check @advanceDomainOnCore_establishes_domainScheduleIndexInBoundsOnCore
+#check @advanceDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore_ne
+#check @advanceDomainOnCore_cyclic_of_inBounds
+#check @domainConsistentOnCore
+#check @default_domainConsistentOnCore
+#check @advanceDomainOnCore_establishes_domainConsistentOnCore
+#check @advanceDomainOnCore_cyclic_activeDomain
+#check @idleFallbackOnCore_activeDomainOnCore
+#check @idleFallbackOnCore_domainSchedule
+#check @scheduleEffectiveOnCore_activeDomainOnCore
+#check @scheduleEffectiveOnCore_domainSchedule
+#check @switchDomainOnCore_domainSchedule
+#check @decrementDomainTimeOnCore_domainSchedule
+#check @switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
+#check @switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
+#check @scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
+#check @chooseBestRunnableEffective_result_eligible
+#check @chooseBestInBucketEffective_result_eligible
+#check @perCoreDomainTheorems_query_count
+#check @perCoreDomainTheorems_invariant_count
+#check @perCoreDomainTheorems_livePreservation_count
+
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
 -- ============================================================================
@@ -146,6 +180,55 @@ example (st : SystemState) (c : CoreId) (st' : SystemState)
 example (c c' : CoreId) (h : c ≠ c') :
     SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) ∉ (advanceDomainOnCoreLockSet c').map (·.1) :=
   advanceDomainOnCoreLockSet_disjoint_of_ne c c' h
+
+-- SM5.G completion: the FULL domain-triple bridge — the operational switch's entire
+-- domain-state effect IS the pure rotation.
+example (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hStep : switchDomainOnCore st c = .ok st') :
+    st'.scheduler.activeDomainOnCore c = (advanceDomainOnCore st c).scheduler.activeDomainOnCore c ∧
+    st'.scheduler.domainTimeRemainingOnCore c = (advanceDomainOnCore st c).scheduler.domainTimeRemainingOnCore c ∧
+    st'.scheduler.domainScheduleIndexOnCore c = (advanceDomainOnCore st c).scheduler.domainScheduleIndexOnCore c :=
+  switchDomainOnCore_domainTriple_eq_advanceDomainOnCore st c st' hStep
+
+-- SM5.G completion: the cyclic theorem discharged from the (maintained) index-bounds
+-- invariant — the form SM5.I uses (no raw `idx < length` obligation).
+example (st : SystemState) (c : CoreId)
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hInv : domainScheduleIndexInBoundsOnCore st c) :
+    (advanceDomainOnCoreN st c st.scheduler.domainSchedule.length).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c :=
+  advanceDomainOnCore_cyclic_of_inBounds st c hSched hInv
+
+-- SM5.G completion: the active domain (not just the index) cycles with period length.
+example (st : SystemState) (c : CoreId)
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hidx : st.scheduler.domainScheduleIndexOnCore c < st.scheduler.domainSchedule.length)
+    (hConsistent : domainConsistentOnCore st c) :
+    (advanceDomainOnCoreN st c st.scheduler.domainSchedule.length).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c :=
+  advanceDomainOnCore_cyclic_activeDomain st c hSched hidx hConsistent
+
+-- SM5.G completion: the LIVE domain-tick transition `scheduleDomainOnCore` preserves the
+-- SM4.C `activeDomainOnCore_isInDomainSchedule` invariant.
+example (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hPred : activeDomainOnCore_isInDomainSchedule st c)
+    (hStep : scheduleDomainOnCore st c = .ok st') :
+    activeDomainOnCore_isInDomainSchedule st' c :=
+  scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule st c st' hPred hStep
+
+-- SM5.G completion: the §3.7 Theorem 3.7.1 over the SystemState-level accessor.
+example (st : SystemState) (c : CoreId)
+    (hPred : activeDomainOnCore_isInDomainSchedule st c)
+    (hNe : st.scheduler.domainSchedule ≠ []) :
+    st.activeDomainOnCore c ∈ st.scheduler.domainSchedule.map (·.domain) :=
+  activeDomainOnCore_systemState_mem st c hPred hNe
+
+-- SM5.G completion: budget-aware respects-domain WITHOUT the prior `hwf` asymmetry.
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hSel : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hTcb : st.getTcb? tid = some tcb) :
+    tcb.domain = st.scheduler.activeDomainOnCore c :=
+  chooseThreadEffectiveOnCore_respects_activeDomain st c tid tcb hSel hTcb
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.G.6 domain-rotation scenarios
@@ -259,26 +342,105 @@ private def runLockSetChecks : IO Unit := do
 /-- §3.8: the SM5.G theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.G inventory partition counts ---"
-  assertBool "inventory has 39 entries"
-    (decide (perCoreDomainTheorems.length = 39))
+  assertBool "inventory has 67 entries"
+    (decide (perCoreDomainTheorems.length = 67))
   assertBool "rotation category has 14 entries"
     (decide ((perCoreDomainTheorems.filter (fun t => t.category == .rotation)).length = 14))
-  assertBool "cyclic category has 6 entries"
-    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .cyclic)).length = 6))
+  assertBool "cyclic category has 8 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .cyclic)).length = 8))
   assertBool "domainSchedule category has 6 entries"
     (decide ((perCoreDomainTheorems.filter (fun t => t.category == .domainSchedule)).length = 6))
-  assertBool "respects category has 4 entries"
-    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .respects)).length = 4))
-  assertBool "independence category has 8 entries"
-    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .independence)).length = 8))
+  assertBool "respects category has 6 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .respects)).length = 6))
+  assertBool "independence category has 10 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .independence)).length = 10))
+  assertBool "query category has 3 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .query)).length = 3))
+  assertBool "invariant category has 7 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length = 7))
+  assertBool "livePreservation category has 9 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length = 9))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreDomainTheorems.map (·.identifier)).Nodup)
+
+/-- A three-entry domain schedule: domains 0, 1, 2.  Used by the completion cyclic
+and non-zero-start scenarios. -/
+private def threeDomainSchedule : List DomainScheduleEntry :=
+  [ { domain := ⟨0⟩, length := 5 }, { domain := ⟨1⟩, length := 3 },
+    { domain := ⟨2⟩, length := 2 } ]
+
+/-- A three-domain state at index 0.  Per-core defaults match the first entry. -/
+private def stThreeDomain : SystemState :=
+  let base := BootstrapBuilder.empty.build
+  { base with scheduler := { base.scheduler with domainSchedule := threeDomainSchedule } }
+
+/-- A two-domain state at a **non-zero** starting index (1, active domain 1) — so the
+rotation wraps `1 → 0` and the cyclic/consistency scenarios are exercised away from
+the default index. -/
+private def stTwoDomainAtIdx1 : SystemState :=
+  let base := BootstrapBuilder.empty.build
+  { base with scheduler :=
+      { (base.scheduler.setDomainScheduleIndexOnCore bootCoreId 1).setActiveDomainOnCore bootCoreId ⟨1⟩ with
+        domainSchedule := twoDomainSchedule } }
+
+/-- A two-domain state whose **core 1** carries the domain schedule index/active domain
+(boot core left at the default), for the non-boot-core rotation scenario. -/
+private def stCore1Domain : SystemState :=
+  let base := BootstrapBuilder.empty.build
+  { base with scheduler := { base.scheduler with domainSchedule := twoDomainSchedule } }
+
+/-- §3.9: the SM5.G completion (audit-pass) scenarios — multi-domain / non-zero-start /
+non-boot-core cyclic, the composed rotate-then-select, the index-bounds + consistency
+invariants, and the active-domain cyclic value. -/
+private def runCompletionScenarios : IO Unit := do
+  IO.println "--- §3.9 SM5.G completion (audit-pass) scenarios ---"
+  -- 3-domain rotation walks 0 → 1 → 2 → 0 (cyclic with period 3).
+  assertBool "3-domain: 1 rotation ⇒ active domain 1"
+    ((advanceDomainOnCore stThreeDomain bootCoreId).scheduler.activeDomainOnCore bootCoreId == ⟨1⟩)
+  assertBool "3-domain: 2 rotations ⇒ active domain 2"
+    ((advanceDomainOnCoreN stThreeDomain bootCoreId 2).scheduler.activeDomainOnCore bootCoreId == ⟨2⟩)
+  assertBool "3-domain: 3 rotations (= length) ⇒ index back to 0 (cyclic)"
+    ((advanceDomainOnCoreN stThreeDomain bootCoreId 3).scheduler.domainScheduleIndexOnCore bootCoreId == 0)
+  assertBool "3-domain: 3 rotations ⇒ active domain back to 0 (active-domain cyclic)"
+    ((advanceDomainOnCoreN stThreeDomain bootCoreId 3).scheduler.activeDomainOnCore bootCoreId == ⟨0⟩)
+  -- Non-zero starting index (1): rotation wraps 1 → 0.
+  assertBool "non-zero start: index 1 rotates to 0"
+    ((advanceDomainOnCore stTwoDomainAtIdx1 bootCoreId).scheduler.domainScheduleIndexOnCore bootCoreId == 0)
+  assertBool "non-zero start: active domain 1 rotates to 0"
+    ((advanceDomainOnCore stTwoDomainAtIdx1 bootCoreId).scheduler.activeDomainOnCore bootCoreId == ⟨0⟩)
+  assertBool "non-zero start: 2 rotations (= length) returns index to 1 (cyclic)"
+    ((advanceDomainOnCoreN stTwoDomainAtIdx1 bootCoreId 2).scheduler.domainScheduleIndexOnCore bootCoreId == 1)
+  -- Non-boot-core rotation: core 1's domain advances independently.
+  assertBool "non-boot core: core 1 rotates active domain 0 ⇒ 1"
+    ((advanceDomainOnCore stCore1Domain core1).scheduler.activeDomainOnCore core1 == ⟨1⟩)
+  assertBool "non-boot core: rotating core 1 frames the boot core's active domain"
+    ((advanceDomainOnCore stCore1Domain core1).scheduler.activeDomainOnCore bootCoreId
+      == stCore1Domain.scheduler.activeDomainOnCore bootCoreId)
+  -- Composed rotate-then-select (G.2 ∘ G.4): selection follows the rotated domain.
+  assertBool "composed: before rotation (active domain 0) the domain-0 thread A is selected"
+    (decide (chooseThreadOnCoreSelects stDomainSelect bootCoreId tidA))
+  assertBool "composed: after rotation (active domain 1) the domain-1 thread B is selected"
+    (decide (chooseThreadOnCoreSelects (advanceDomainOnCore stDomainSelect bootCoreId) bootCoreId tidB))
+  assertBool "composed: after rotation the domain-0 thread A is NO LONGER selected"
+    (!decide (chooseThreadOnCoreSelects (advanceDomainOnCore stDomainSelect bootCoreId) bootCoreId tidA))
+  -- Index-bounds invariant holds on the fixtures (boot empty + after rotation).
+  assertBool "index-bounds: boot (empty schedule) satisfies the invariant"
+    (decide (stSingleDomain.scheduler.domainSchedule = []
+              ∨ stSingleDomain.scheduler.domainScheduleIndexOnCore bootCoreId < stSingleDomain.scheduler.domainSchedule.length))
+  assertBool "index-bounds: after rotation the index is in bounds (< length)"
+    (decide ((advanceDomainOnCore stThreeDomain bootCoreId).scheduler.domainScheduleIndexOnCore bootCoreId
+              < (advanceDomainOnCore stThreeDomain bootCoreId).scheduler.domainSchedule.length))
+  -- Domain consistency holds after a rotation (active domain = entry-at-index domain).
+  assertBool "consistency: after rotation, active domain matches the entry at the new index"
+    (((advanceDomainOnCore stThreeDomain bootCoreId).scheduler.domainSchedule[(advanceDomainOnCore stThreeDomain bootCoreId).scheduler.domainScheduleIndexOnCore bootCoreId]?.map (·.domain))
+      == some ((advanceDomainOnCore stThreeDomain bootCoreId).scheduler.activeDomainOnCore bootCoreId))
 
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.G — Per-core domain scheduling suite ==="
   runDomainScenarios
   runLockSetChecks
   runInventoryChecks
+  runCompletionScenarios
   IO.println "=== SM5.G suite: all assertions passed ==="
 
 end SeLe4n.Testing.SmpDomain

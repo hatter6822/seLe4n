@@ -703,6 +703,30 @@ similar to SM0/SM1 patterns.)
 > staged-only modules.  Items deferred past v1.0.0 with correctness impact: NONE.
 > Follow-on: SM5.H (per-core CBS), SM5.I (per-core invariant suite + the production
 > wiring of the per-core domain rotation into the live run loop).
+>
+> **WS-SM SM5.G completion (audit-pass) LANDED at v0.31.52** — closes every
+> optimality / completeness gap from the SM5.G self-audit.  Axiom-clean; default
+> build green; trace byte-identical; AK7 floor unchanged; inventory **39 → 67**
+> entries across **9** categories.  (1) The bridge to the production
+> `switchDomainOnCore` is upgraded from the active-domain field alone to the **full
+> domain triple** (`switchDomainOnCore_domainTriple_eq_advanceDomainOnCore`); a code-
+> merge of the two rotation paths is deliberately *not* done — it would regress
+> `switchDomainOnCore`'s fail-closed `.error` on an out-of-bounds lookup — so the
+> abstract rotation is instead made load-bearing at the *proof* level.  (2) The cyclic
+> theorem's `idx < length` precondition is discharged from a maintained invariant
+> (`domainScheduleIndexInBoundsOnCore` + `advanceDomainOnCore_cyclic_of_inBounds`).
+> (3) The cyclic property is extended from the index to the **active domain**
+> (`domainConsistentOnCore` + `advanceDomainOnCore_cyclic_activeDomain`).  (4)
+> Invariant preservation is lifted to the **live** transitions
+> (`switchDomainOnCore_preserves_…` / `scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule`,
+> via the new `scheduleEffectiveOnCore` domain frames).  (5) The literal §3.7
+> `SystemState.activeDomainOnCore` accessor is built + made load-bearing
+> (`activeDomainOnCore_systemState_mem`).  (6) The lock-set gains an acquisition-order
+> witness + a write-containment theorem.  (7) The tier-4 stub
+> `scripts/test_qemu_smp_domain.sh` reserves the nightly slot.  (8) The budget-aware
+> respects-domain theorem drops its asymmetric `wellFormed` hypothesis.  Tests grow to
+> 43 runtime assertions (+16 completion scenarios).  Items deferred past v1.0.0 with
+> correctness impact: NONE.
 
 ### SM5.H — Per-core CBS (4 PRs, 8 sub-tasks)
 

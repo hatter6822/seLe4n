@@ -93,4 +93,16 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
 # runtime spot-check on real cores with a real GIC.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
 
+# SM5.G — per-core domain-scheduling rotation test (plan §6).  SKIPs at SM5.G if
+# the per-core domain-rotation driver isn't wired in the kernel image (needs
+# SM5.I's per-core scheduler tick driving scheduleDomainOnCore on each core plus a
+# multi-domain schedule configured at boot).  The per-core domain-scheduling
+# correctness — each core rotates its OWN domain schedule with the round-robin
+# period, the active domain always lands in the schedule (preserved by the live
+# tick), selection respects the active-domain barrier, and a rotation on one core
+# leaves the others' selection unchanged — is established FORMALLY for all
+# executions in tests/SmpDomainSuite.lean; this is a complementary runtime
+# spot-check on real cores.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
+
 finalize_report
