@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/eager-faraday-sokpy",
-      "commit_sha": "d1d2eb8f866f40349122ed8c5566dec2277e0407",
-      "tree_sha": "efff1b1667f5c31718fe7264bbda7704b066e0c2",
-      "committed_at_utc": "2026-06-02T23:36:38+00:00"
+      "commit_sha": "9dc6e45e0dcc0fd95ed9989f554cf3f7a3f41174",
+      "tree_sha": "bd465a135886fb2bc657088d2ce59c6fe077a6f9",
+      "committed_at_utc": "2026-06-03T00:41:41+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "502de9480f506f05164aeed94e9be723d8ee3a96f818d7dcc3356a40ac71eb16"
+    "source_digest": "f5d1326ab72a8890cda7e562ba6b0f4c4577cb7d6428d3d17b61b3c18cfbb65d"
   },
   "summary": {
     "module_count": 275,
-    "declaration_count": 10074
+    "declaration_count": 10076
   },
   "readme_sync": {
     "version": "0.31.50",
     "lean_toolchain": "v4.28.0",
     "production_files": 222,
-    "production_loc": 158647,
+    "production_loc": 158662,
     "test_files": 53,
-    "test_loc": 34929,
+    "test_loc": 34980,
     "proved_theorem_lemma_decls": 5138,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -56004,7 +56004,7 @@
         {
           "kind": "def",
           "name": "suspendThread_transientWindowInvariant",
-          "line": 663,
+          "line": 678,
           "called": [
             "SystemState",
             "ThreadId",
@@ -56016,7 +56016,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_transientWindowInvariant_default",
-          "line": 676,
+          "line": 691,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -56030,7 +56030,7 @@
         {
           "kind": "def",
           "name": "suspendThread_atomicity_precondition",
-          "line": 689,
+          "line": 704,
           "called": [
             "SystemState",
             "st"
@@ -56039,7 +56039,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_under_ffi_bracket_default",
-          "line": 717,
+          "line": 732,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -56054,7 +56054,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_precondition_default",
-          "line": 732,
+          "line": 747,
           "called": [
             "SystemState",
             "default",
@@ -56064,7 +56064,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_default_rejects_with_invalidArgument",
-          "line": 741,
+          "line": 756,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -133686,7 +133686,7 @@
     {
       "module": "tests.SuspendResumeSuite",
       "path": "tests/SuspendResumeSuite.lean",
-      "declaration_count": 39,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -134258,8 +134258,52 @@
         },
         {
           "kind": "def",
+          "name": "sr030_resumeHigherPriorityReenqueuesCaller",
+          "line": 647,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "build",
+            "contains",
+            "currentOnCore",
+            "expect",
+            "mkTcb",
+            "resumeThread",
+            "runQueueOnCore",
+            "st",
+            "throw",
+            "toObjId",
+            "withCurrent",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr031_resumeLowerPriorityKeepsCurrent",
+          "line": 671,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "build",
+            "contains",
+            "currentOnCore",
+            "expect",
+            "mkTcb",
+            "resumeThread",
+            "runQueueOnCore",
+            "st",
+            "throw",
+            "toObjId",
+            "withCurrent",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 641,
+          "line": 689,
           "called": [
             "sr001_suspendReady",
             "sr002_suspendInactive",
@@ -134292,7 +134336,9 @@
             "sr027c_resumeThreadPreservesBlockingAcyclic",
             "sr027d_resumeThreadPipBoostMatchesGraph",
             "sr028_restoreToReadyClearsIpcFields",
-            "sr029_restoreToReadyAbsentIdentity"
+            "sr029_restoreToReadyAbsentIdentity",
+            "sr030_resumeHigherPriorityReenqueuesCaller",
+            "sr031_resumeLowerPriorityKeepsCurrent"
           ]
         }
       ]

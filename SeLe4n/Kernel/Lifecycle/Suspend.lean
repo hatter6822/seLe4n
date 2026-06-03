@@ -615,6 +615,21 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
           | _ => true  -- No valid current → always reschedule
         | none => false  -- No current thread → no preemption needed
       if needsReschedule then
+        -- Re-enqueue the current (outgoing) thread BEFORE rescheduling, so the
+        -- higher-priority resumed thread PREEMPTS it rather than orphaning it.
+        -- `schedule` uses dequeue-on-dispatch and relies on its caller to have
+        -- re-enqueued the outgoing thread if that thread should stay runnable
+        -- (exactly as `handleYield` / `timerTick` / `switchDomain` do); seL4's
+        -- `schedule()` re-enqueues a runnable current thread before switching.
+        -- Pre-fix, `resumeThread` skipped this step, so a lower-priority caller
+        -- that resumed a higher-priority thread was silently dropped from
+        -- scheduling (saved-but-not-enqueued: never current, never runnable).
+        -- `ensureRunnable` inserts the current thread at its effective priority
+        -- and is a no-op if it is somehow already queued (no duplicate), so this
+        -- cannot violate run-queue uniqueness.
+        let st := match st.scheduler.currentOnCore bootCoreId with
+          | some curTid => ensureRunnable st curTid
+          | none => st
         match schedule st with
         | .ok ((), st') => .ok st'
         | .error e => .error e

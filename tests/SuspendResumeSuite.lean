@@ -635,6 +635,54 @@ private def sr029_restoreToReadyAbsentIdentity : IO Unit := do
   expect "restoreToReady absent TCB is identity"
     (st'.objects[tid.toObjId]?.isNone)
 
+/-- SR-030 (PR #811 — `resumeThread` orphaning fix): resuming a HIGHER-priority thread
+must NOT drop the calling (current) thread.  Pre-fix, `resumeThread`'s H5 called
+`schedule` without re-enqueuing the current thread, so a lower-priority caller that
+resumed a higher-priority thread was silently orphaned — saved-but-not-enqueued, never
+current, never runnable.  Here thread A (prio 10) is current and NOT in the run queue
+(the real dequeue-on-dispatch precondition; `.build` with empty `runnable` +
+`current := some A` reproduces it exactly, which `buildChecked`'s "current ∈ runnable"
+convention would otherwise mask and so hide the bug).  Resuming the Inactive thread B
+(prio 20) preempts A: B becomes current, and A is re-enqueued — not dropped. -/
+private def sr030_resumeHigherPriorityReenqueuesCaller : IO Unit := do
+  let aTid : SeLe4n.ThreadId := ⟨1⟩
+  let bTid : SeLe4n.ThreadId := ⟨2⟩
+  let st : SystemState :=
+    (((SeLe4n.Testing.BootstrapBuilder.empty.withObject aTid.toObjId
+        (.tcb (mkTcb 1 .Running 10))).withObject bTid.toObjId
+        (.tcb (mkTcb 2 .Inactive 20))).withCurrent (some aTid)).build
+  -- Precondition: A is current and NOT queued (dequeue-on-dispatch).
+  expect "SR-030 precondition: A is current"
+    (st.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId == some aTid)
+  expect "SR-030 precondition: A is NOT in the run queue"
+    (!(st.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains aTid)
+  match resumeThread st ⟨bTid, by decide⟩ with
+  | .ok st' =>
+    expect "SR-030 resumed higher-priority B preempts and becomes current"
+      (st'.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId == some bTid)
+    -- THE FIX: the preempted caller A is re-enqueued, not orphaned.
+    expect "SR-030 preempted caller A is re-enqueued (NOT orphaned)"
+      ((st'.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains aTid)
+  | .error e => throw <| IO.userError s!"SR-030 resume should succeed, got {repr e}"
+
+/-- SR-031: resuming a LOWER-priority thread does not preempt — the current thread keeps
+running (`needsReschedule = false`), so no `schedule` runs and nothing is dropped.  The
+companion to SR-030 confirming the fix only re-enqueues on the actual preemption path. -/
+private def sr031_resumeLowerPriorityKeepsCurrent : IO Unit := do
+  let aTid : SeLe4n.ThreadId := ⟨1⟩
+  let bTid : SeLe4n.ThreadId := ⟨2⟩
+  let st : SystemState :=
+    (((SeLe4n.Testing.BootstrapBuilder.empty.withObject aTid.toObjId
+        (.tcb (mkTcb 1 .Running 20))).withObject bTid.toObjId
+        (.tcb (mkTcb 2 .Inactive 10))).withCurrent (some aTid)).build
+  match resumeThread st ⟨bTid, by decide⟩ with
+  | .ok st' =>
+    expect "SR-031 lower-priority resume does not preempt: A stays current"
+      (st'.scheduler.currentOnCore SeLe4n.Kernel.Concurrency.bootCoreId == some aTid)
+    expect "SR-031 resumed lower-priority B is enqueued"
+      ((st'.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains bTid)
+  | .error e => throw <| IO.userError s!"SR-031 resume should succeed, got {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -682,4 +730,7 @@ def main : IO Unit := do
   IO.println "--- R5.D: restoreToReady shared helper ---"
   sr028_restoreToReadyClearsIpcFields
   sr029_restoreToReadyAbsentIdentity
-  IO.println "=== All D1 suspend/resume tests passed (30 tests) ==="
+  IO.println "--- PR #811: resumeThread preemption re-enqueues the caller ---"
+  sr030_resumeHigherPriorityReenqueuesCaller
+  sr031_resumeLowerPriorityKeepsCurrent
+  IO.println "=== All D1 suspend/resume tests passed (32 tests) ==="

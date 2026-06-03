@@ -213,6 +213,37 @@ closures axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); trace
 byte-identical; AK7 at the floor (`RAW_MATCH_TOTAL` 125, `RAW_LOOKUP_TID` 814 —
 the new proofs use the `.get?` method form).
 
+**Single-core `resumeThread` liveness fix (post-review investigation, same v0.31.50
+cut).**  A deep audit of the P2-5 single-core analogue surfaced a *pre-existing*
+liveness defect in the production single-core `resumeThread` (`Lifecycle/Suspend.lean`,
+the `seL4_TCB_Resume` syscall): its H5 reschedule called `schedule` **without
+re-enqueuing the current (calling) thread**.  `schedule` is dequeue-on-dispatch and
+relies on its caller to have re-enqueued the outgoing thread if it should stay runnable
+(as `handleYield` / `timerTick` / `switchDomain` all do; seL4's `schedule()` re-enqueues
+a runnable current); `resumeThread` was the **only** caller that skipped it.  Effect: a
+*lower*-priority thread that resumed a *higher*-priority thread silently **orphaned
+itself** — saved-but-not-enqueued, never current, never runnable, lost from scheduling
+(e.g. a low-priority bootstrap task vanishing after resuming its first higher-priority
+worker).  An audit of every `schedule` / `scheduleEffective` / per-core-dispatch caller
+confirmed `resumeThread` was the sole offending site; the SMP `resumeThreadOnCore`
+(P2-5) is unaffected (it routes through `switchToThreadOnCore`, which re-enqueues by
+construction).  The defect was invisible to the formal surface because the invariant it
+violates — `threadStateConsistent` (an orphaned `.Running`-but-non-current thread infers
+to `.Inactive`) — is a *testing-only* check (`Testing/InvariantChecks.lean`), not part of
+the proven `crossSubsystemInvariant`, and production dispatch never runs
+`syncThreadStates`.  **Fix**: `resumeThread`'s H5 re-enqueues the current thread (via the
+proven `ensureRunnable`, a no-op if already queued) before `schedule`, so the higher-
+priority resumed thread *preempts* the caller rather than dropping it.  The NI
+projection preservation for `tcbResume` is closure-form / deferred (AN6-A), so no
+concrete proof is affected; the fix is in fact NI-*better* (the buggy drop changed the
+caller's observable runnability as a side effect of resuming another thread).  Regression
+guard: `tests/SuspendResumeSuite.lean` SR-030 (a higher-priority resume re-enqueues the
+preempted caller — verified to FAIL without the fix) + SR-031 (a lower-priority resume
+does not preempt).  Axiom-clean; full build green (324 jobs); trace byte-identical; AK7
+at the floor.  Follow-on hardening (tracked): promote `threadStateConsistent` (or a
+"no orphaned runnable thread" property) into the proven invariant bundle so the proof
+surface catches such drops directly.
+
 **Items deferred past v1.0.0 with correctness impact**: NONE.  (The production
 wiring of the cross-core PIP wake / resume wake into the live IPC donation,
 timeout, and resume paths — closing the SM5.D timeout-path latency gap by routing
