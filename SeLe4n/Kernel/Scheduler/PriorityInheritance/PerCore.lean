@@ -282,25 +282,31 @@ theorem pipBoostWithWake_no_sgi_if_local (st : SystemState) (tid : ThreadId) (ec
 
 /-- WS-SM SM5.F.2 (Theorem 3.6.1 emission): a REMOTE, RUNNABLE-ON-HOME, MATERIAL PIP
 boost emits a `.reschedule` SGI to the holder's home core.  "Material" = the boost
-actually changed the holder's `pipBoost` (hence its effective run-queue bucket);
-"runnable on home" = the holder is in its home core's run queue, so the boost can
-actually change which thread that core runs next — together these are the exact
-condition under which the remote core's scheduler must re-evaluate (the boosted
-holder may now outrank its current thread). -/
+actually raised the holder's *effective* priority (`resolveEffectivePrioDeadline`,
+the run-queue bucket key) — NOT merely the raw `pipBoost` — so the boost genuinely
+migrates the holder's bucket; "runnable on home" = the holder is in its home core's
+run queue, so the boost can actually change which thread that core runs next —
+together these are the exact condition under which the remote core's scheduler must
+re-evaluate (the boosted holder may now outrank its current thread), and exactly the
+condition under which `updatePipBoostOnCore` performs its run-queue bucket migration. -/
 theorem pipBoostWithWake_emits_sgi_if_remote (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
     (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
-    (hMaterial : t.pipBoost ≠ t'.pipBoost) :
+    (hMaterial : (resolveEffectivePrioDeadline st t).1
+      ≠ (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1) :
     (pipBoostWithWake st tid ec).2 = some (determineTargetCore st tid, SgiKind.reschedule) := by
   have hRem : (determineTargetCore st tid == ec) = false := by
     cases h : (determineTargetCore st tid == ec) with
     | false => rfl
     | true => exact absurd (eq_of_beq h) hRemote
-  have hMat : (t.pipBoost == t'.pipBoost) = false := by
-    cases h : (t.pipBoost == t'.pipBoost) with
+  have hMat : ((resolveEffectivePrioDeadline st t).1
+      == (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1)
+      = false := by
+    cases h : ((resolveEffectivePrioDeadline st t).1
+        == (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1) with
     | false => rfl
     | true => exact absurd (eq_of_beq h) hMaterial
   simp [pipBoostWithWake, hRem, hPre, hPost, hMat, hRunnable]
@@ -316,16 +322,22 @@ theorem pipBoostWithWake_no_sgi_if_not_runnable (st : SystemState) (tid : Thread
     (pipBoostWithWake st tid ec).2 = none := by
   simp [pipBoostWithWake, hNotRun]
 
-/-- WS-SM SM5.F.2: a NO-OP PIP boost (the holder's `pipBoost` is unchanged) emits no
-SGI — there is no scheduling consequence, so poking a remote core would be a
-spurious cross-core IPI (the SM5.C.11 latency concern). -/
+/-- WS-SM SM5.F.2: a PIP boost that does not raise the holder's *effective* priority
+(the run-queue bucket key is unchanged) emits no SGI — there is no bucket migration
+and hence no scheduling consequence, so poking a remote core would be a spurious
+cross-core IPI (the SM5.C.11 latency concern).  Covers both the strict no-op (boost
+unchanged) and the immaterial case (boost rose but stayed dominated by the base
+priority, so the effective bucket is unchanged). -/
 theorem pipBoostWithWake_no_sgi_if_noop (st : SystemState) (tid : ThreadId) (ec : CoreId)
     (t t' : TCB)
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
-    (hNoop : t.pipBoost = t'.pipBoost) :
+    (hNoop : (resolveEffectivePrioDeadline st t).1
+      = (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1) :
     (pipBoostWithWake st tid ec).2 = none := by
-  have hEq : (t.pipBoost == t'.pipBoost) = true := by rw [hNoop]; exact beq_self_eq_true _
+  have hEq : ((resolveEffectivePrioDeadline st t).1
+      == (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1)
+      = true := by rw [hNoop]; exact beq_self_eq_true _
   simp [pipBoostWithWake, hPre, hPost, hEq]
 
 /-- WS-SM SM5.F.2: any SGI `pipBoostWithWake` emits is a `.reschedule` to the
@@ -468,7 +480,8 @@ theorem propagatePipChainCrossCore_head_sgi_remote (st : SystemState) (tid : Thr
     (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
-    (hMaterial : t.pipBoost ≠ t'.pipBoost) :
+    (hMaterial : (resolveEffectivePrioDeadline st t).1
+      ≠ (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1) :
     ∃ rest, (propagatePipChainCrossCore st tid ec (n + 1)).2
       = (determineTargetCore st tid, SgiKind.reschedule) :: rest := by
   rw [propagatePipChainCrossCore_step]
@@ -957,7 +970,9 @@ theorem propagatePipChainCrossCore_second_link_sgi_remote (st : SystemState) (ti
     (hPost : (updatePipBoostOnCore (pipBoostWithWake st tid ec).1
               (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer).getTcb?
               nextServer = some t')
-    (hMaterial : t.pipBoost ≠ t'.pipBoost) :
+    (hMaterial : (resolveEffectivePrioDeadline (pipBoostWithWake st tid ec).1 t).1
+      ≠ (resolveEffectivePrioDeadline (updatePipBoostOnCore (pipBoostWithWake st tid ec).1
+          (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer) nextServer) t').1) :
     (determineTargetCore (pipBoostWithWake st tid ec).1 nextServer, SgiKind.reschedule)
       ∈ (propagatePipChainCrossCore st tid ec (n + 1 + 1)).2 := by
   have hHeadTail : (pipBoostWithWake (pipBoostWithWake st tid ec).1 nextServer ec).2
@@ -1139,43 +1154,109 @@ theorem resumeReadyMidState_objects_invExt (st : SystemState) (tid : ThreadId)
   · exact RHTable_insert_preserves_invExt _ _ _ hst1Inv
   · exact hst1Inv
 
+/-- WS-SM SM5.F.6 (helper, PR #811 P2-5): the resume "ready mid-state" leaves the
+scheduler untouched — `restoreToReady` and the single TCB `insert` write only the
+object store.  So every core's `current` slot is preserved through the resume's
+object-writing prefix (used to discharge the `currentOnCore ec ≠ some tid` side
+condition of the inline local reschedule's `handleRescheduleSgiOnCore_getTcb?_ne_current`). -/
+theorem resumeReadyMidState_scheduler_eq (st : SystemState) (tid : ThreadId) :
+    (resumeReadyMidState st tid).scheduler = st.scheduler := by
+  simp only [resumeReadyMidState]
+  split <;> simp [Lifecycle.Suspend.restoreToReady_scheduler_eq]
+
 /-- WS-SM SM5.F.6 (plan §3.6, resume H3c): the **complete** per-core resume sets the
 resumed thread's `threadState := .Ready` — the run-queue enqueue (no-op when already
 runnable, else `_makes_ready` which touches only `ipcState`) preserves it, so the
 post-resume thread is genuinely `.Ready`.  This is the gap `restoreToReadyOnCore`
 leaves and `resumeThreadOnCore` closes. -/
 theorem resumeThreadOnCore_sets_threadState (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (ec : CoreId) (tcb : TCB)
+    (ec : CoreId) (tcb : TCB) (st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hGet : st.getTcb? vtid.val = some tcb)
-    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt) :
-    ∃ st' sgi, resumeThreadOnCore st vtid ec = .ok (st', sgi) ∧
-      ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready := by
+    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore ec ≠ some vtid.val)
+    (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
+    ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready := by
   obtain ⟨tm, hmid, hmidReady⟩ := resumeReadyMidState_getTcb?_ready st vtid.val tcb hGet hInv
   have hmidInv : (resumeReadyMidState st vtid.val).objects.invExt :=
     resumeReadyMidState_objects_invExt st vtid.val hInv
-  simp only [resumeThreadOnCore, hGet]
-  rw [if_neg (by simp [hInactive])]
-  refine ⟨_, _, rfl, ?_⟩
-  by_cases hRun : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = true
-  · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
-    exact ⟨tm, hmid, hmidReady⟩
-  · have hFresh : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = false := by
-      simpa using hRun
-    exact ⟨{ tm with ipcState := .ready },
-      SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+  -- The resume's object-writing prefix (H3+H4) establishes `tid` `.Ready` in the
+  -- enqueued state `st3` (enqueue is no-op-or-`_makes_ready`; both keep `.Ready`).
+  have hst3 : ∃ t3, (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+        (determineTargetCore st vtid.val) vtid.val).getTcb? vtid.val = some t3
+        ∧ t3.threadState = .Ready := by
+    by_cases hRun : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = true
+    · rw [SeLe4n.Kernel.enqueueRunnableOnCore_eq_self_of_runnable _ _ _ hRun]
+      exact ⟨tm, hmid, hmidReady⟩
+    · have hFresh : runnableOnSomeCore (resumeReadyMidState st vtid.val) vtid.val = false := by
+        simpa using hRun
+      exact ⟨{ tm with ipcState := .ready },
+        SeLe4n.Kernel.enqueueRunnableOnCore_makes_ready _ _ _ tm hmid hmidInv hFresh, hmidReady⟩
+  obtain ⟨t3, hst3get, hst3ready⟩ := hst3
+  -- `tid` is not `ec`'s current in `st3` (the resume prefix preserves `currentOnCore`).
+  have hst3cur : (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+      (determineTargetCore st vtid.val) vtid.val).scheduler.currentOnCore ec ≠ some vtid.val := by
+    rw [SeLe4n.Kernel.enqueueRunnableOnCore_currentOnCore, resumeReadyMidState_scheduler_eq]
+    exact hNotCur
+  have hst3inv : (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+      (determineTargetCore st vtid.val) vtid.val).objects.invExt :=
+    SeLe4n.Kernel.enqueueRunnableOnCore_preserves_objects_invExt _ _ _ hmidInv
+  simp only [resumeThreadOnCore, hGet] at h
+  rw [if_neg (by simp [hInactive])] at h
+  by_cases hLoc : (determineTargetCore st vtid.val == ec) = true
+  · -- LOCAL: the inline `handleRescheduleSgiOnCore` frames out `tid` (not `ec`'s
+    -- current), so `tid` keeps the `.Ready` it had in `st3`.
+    simp only [hLoc, if_true] at h
+    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+        (determineTargetCore st vtid.val) vtid.val) ec with
+    | error e => rw [hH] at h; simp at h
+    | ok st4 =>
+      rw [hH] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨hst4, _⟩ := h
+      subst hst4
+      rw [handleRescheduleSgiOnCore_getTcb?_ne_current _ ec vtid.val st4 hst3inv hst3cur hH]
+      exact ⟨t3, hst3get, hst3ready⟩
+  · -- REMOTE: the result is the enqueued state `st3` directly.
+    simp only [Bool.not_eq_true] at hLoc
+    simp only [hLoc, Bool.false_eq_true, if_false] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hst', _⟩ := h
+    subst hst'
+    exact ⟨t3, hst3get, hst3ready⟩
 
-/-- WS-SM SM5.F.6: the complete per-core resume preserves the object-store invariant. -/
+/-- WS-SM SM5.F.6: the complete per-core resume preserves the object-store invariant —
+the object-writing prefix (`resumeReadyMidState` + `enqueueRunnableOnCore`) preserves
+`invExt`, and the inline local reschedule (`handleRescheduleSgiOnCore`) does too. -/
 theorem resumeThreadOnCore_preserves_objects_invExt (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (ec : CoreId) (tcb : TCB)
+    (ec : CoreId) (tcb : TCB) (st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hGet : st.getTcb? vtid.val = some tcb)
-    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt) :
-    ∃ st' sgi, resumeThreadOnCore st vtid ec = .ok (st', sgi) ∧ st'.objects.invExt := by
+    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt)
+    (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
+    st'.objects.invExt := by
   have hmidInv : (resumeReadyMidState st vtid.val).objects.invExt :=
     resumeReadyMidState_objects_invExt st vtid.val hInv
-  simp only [resumeThreadOnCore, hGet]
-  rw [if_neg (by simp [hInactive])]
-  exact ⟨_, _, rfl,
-    SeLe4n.Kernel.enqueueRunnableOnCore_preserves_objects_invExt _ _ _ hmidInv⟩
+  have hst3inv : (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+      (determineTargetCore st vtid.val) vtid.val).objects.invExt :=
+    SeLe4n.Kernel.enqueueRunnableOnCore_preserves_objects_invExt _ _ _ hmidInv
+  simp only [resumeThreadOnCore, hGet] at h
+  rw [if_neg (by simp [hInactive])] at h
+  by_cases hLoc : (determineTargetCore st vtid.val == ec) = true
+  · simp only [hLoc, if_true] at h
+    cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+        (determineTargetCore st vtid.val) vtid.val) ec with
+    | error e => rw [hH] at h; simp at h
+    | ok st4 =>
+      rw [hH] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      obtain ⟨hst4, _⟩ := h
+      subst hst4
+      exact handleRescheduleSgiOnCore_preserves_objects_invExt _ ec st4 hst3inv hH
+  · simp only [Bool.not_eq_true] at hLoc
+    simp only [hLoc, Bool.false_eq_true, if_false] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨hst', _⟩ := h
+    subst hst'
+    exact hst3inv
 
 /-- WS-SM SM5.F.6: resume of a non-`.Inactive` TCB is rejected with `illegalState`
 (parity with `resumeThread`). -/
@@ -1194,18 +1275,28 @@ theorem resumeThreadOnCore_rejects_non_tcb (st : SystemState) (vtid : SeLe4n.Val
     resumeThreadOnCore st vtid ec = .error .invalidArgument := by
   simp only [resumeThreadOnCore, hGet]
 
-/-- WS-SM SM5.F.6: a LOCAL complete resume (home = executing core) succeeds with no
-SGI. -/
+/-- WS-SM SM5.F.6 (PR #811 P2-5): a LOCAL complete resume (home = executing core)
+emits **no** cross-core SGI — the reschedule is processed inline on the executing core
+(`handleRescheduleSgiOnCore`), never deferred to a remote core.  Stated as an
+implication over a successful result (the inline reschedule may itself error on a
+malformed run queue; on any `.ok` result the SGI component is `none`). -/
 theorem resumeThreadOnCore_local_no_sgi (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (ec : CoreId) (tcb : TCB)
+    (ec : CoreId) (tcb : TCB) (st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hGet : st.getTcb? vtid.val = some tcb)
     (hInactive : tcb.threadState = .Inactive)
-    (hLocal : determineTargetCore st vtid.val = ec) :
-    ∃ st', resumeThreadOnCore st vtid ec = .ok (st', none) := by
-  simp only [resumeThreadOnCore, hGet]
-  rw [if_neg (by simp [hInactive])]
-  simp only [hLocal, beq_self_eq_true, if_true]
-  exact ⟨_, rfl⟩
+    (hLocal : determineTargetCore st vtid.val = ec)
+    (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
+    sgi = none := by
+  simp only [resumeThreadOnCore, hGet] at h
+  rw [if_neg (by simp [hInactive])] at h
+  simp only [hLocal, beq_self_eq_true, if_true] at h
+  cases hH : handleRescheduleSgiOnCore (enqueueRunnableOnCore (resumeReadyMidState st vtid.val)
+      ec vtid.val) ec with
+  | error e => rw [hH] at h; simp at h
+  | ok st4 =>
+    rw [hH] at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    exact h.2.symm
 
 /-- WS-SM SM5.F.6: a REMOTE complete resume succeeds and returns the `.reschedule`
 SGI to the resumed thread's home core. -/
@@ -1259,16 +1350,23 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
 -- and activates automatically once per-core affinities are set.
 
 /-- WS-SM SM5.F.4: the per-object body of the diff-based dispatch — emits a
-`.reschedule` SGI to a thread's *remote* home core iff its `pipBoost` changed.
-Factored out so the dispatch theorems reference it by name (the single object-store
-read site, mirroring `waitersOf`'s raw iteration). -/
+`.reschedule` SGI to a thread's *remote* home core iff its *effective* priority
+(`resolveEffectivePrioDeadline`, the run-queue bucket key) changed.  Factored out so
+the dispatch theorems reference it by name (the single object-store read site,
+mirroring `waitersOf`'s raw iteration). -/
 def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     : Option (CoreId × SgiKind) :=
   match post.objects[oid]? with
   | some (KernelObject.tcb tpost) =>
     match pre.getTcb? tpost.tid with
     | some tpre =>
-      if tpre.pipBoost == tpost.pipBoost then none
+      -- WS-SM SM5.F.4 (PR #811 P2-2): gate on the *effective* priority changing, not
+      -- the raw `pipBoost` — exactly `pipBoostWithWake`'s bucket-migration materiality.
+      -- A boost that does not raise the effective priority migrates no run-queue bucket
+      -- and so has no scheduling consequence on the home core; firing an SGI for it would
+      -- be a spurious cross-core IPI.
+      if (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
+          == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1 then none
       else
         let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
         -- WS-SM SM5.F.4 (PR #811 P2-1): mirror `pipBoostWithWake`'s C9 runnability gate.
@@ -1283,7 +1381,8 @@ def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
 
 /-- WS-SM SM5.F.4 (SM6 dispatch decision): the cross-core `.reschedule` SGIs a
 transition `pre → post` warrants, derived from the state diff — one per *remote*
-(home ≠ `execCore`) thread whose `pipBoost` (hence effective run-queue bucket) changed,
+(home ≠ `execCore`) thread whose *effective* run-queue bucket
+(`resolveEffectivePrioDeadline`) changed,
 coalesced by target core.  This is the dispatch for the generic syscall path, which
 returns only a post-state (the per-core boost transitions return their SGIs directly). -/
 def computeCrossCoreSgis (pre post : SystemState) (execCore : CoreId) : List (CoreId × SgiKind) :=

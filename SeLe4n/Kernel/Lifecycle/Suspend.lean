@@ -233,12 +233,23 @@ performs the full Inactive→Ready transition:
    the `resumeReadyMidState` helper.
 5. **H4** — enqueue on the thread's **home core** (`determineTargetCore`) via the
    SM5.C per-core `enqueueRunnableOnCore`.
-6. **H5 (cross-core)** — if the home core is remote (≠ `executingCore`), return the
-   `.reschedule` SGI it must receive (the resumed thread newly enters its run
-   queue and may outrank that core's current thread); a local resume needs none.
+6. **H5 (reschedule)** — the resumed thread newly enters its home core's run queue
+   and may outrank that core's current thread, so that core must re-evaluate:
+   * **LOCAL** (home = `executingCore`): process the reschedule **inline** on the
+     executing core via `handleRescheduleSgiOnCore` — the *exact* `.reschedule`-SGI
+     handler the remote core would run, so the local and remote paths mirror each
+     other (PR #811 P2-5).  It re-runs the per-core dispatch under SM5.C's
+     preemption gate (`candidateOutranksCurrentOnCore` — no priority inversion) and,
+     when it does switch, re-enqueues the preempted thread (`switchToThreadOnCore`,
+     no current-thread drop).  This is the faithful — and, per the
+     implement-the-improvement rule, *improved* — analogue of the single-core
+     `resumeThread`'s H5 `schedule` call (which lacks both the preemption gate and
+     the re-enqueue).  No SGI is returned (the reschedule already happened here).
+   * **REMOTE** (home ≠ `executingCore`): return the `.reschedule` SGI the home core
+     must receive so it runs the same `handleRescheduleSgiOnCore` itself.
 
 `resumeThreadOnCore st vtid bootCoreId` with an unbound thread (home = `bootCoreId`)
-matches `resumeThread`'s state effect on the boot core, with no SGI. -/
+matches `resumeThread`'s resume + inline-reschedule on the boot core, with no SGI. -/
 def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
     : Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
   let tid : SeLe4n.ThreadId := vtid.val
@@ -254,10 +265,17 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
       let st2 := resumeReadyMidState st tid
       -- H4: enqueue on the home core
       let st3 := enqueueRunnableOnCore st2 target tid
-      -- H5: cross-core preemption notice
-      let sgi : Option (CoreId × SgiKind) :=
-        if target == executingCore then none else some (target, SgiKind.reschedule)
-      .ok (st3, sgi)
+      -- H5: process the reschedule (PR #811 P2-5).
+      if target == executingCore then
+        -- LOCAL: run the per-core reschedule handler inline on the executing core
+        -- (the exact handler the remote core would run on the SGI) — preemption-gated
+        -- and switch-based (no inversion, no drop).  No SGI is returned.
+        match handleRescheduleSgiOnCore st3 executingCore with
+        | .ok st4 => .ok (st4, none)
+        | .error e => .error e
+      else
+        -- REMOTE: hand the home core a `.reschedule` SGI so it runs the same handler.
+        .ok (st3, some (target, SgiKind.reschedule))
   | none => .error .invalidArgument
 
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)

@@ -3616,6 +3616,10 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReadyOnCore restoreToReadyWithWak
 #check @pipBoostOrdering_happensBefore
 #check @resumeReadyMidState_getTcb?_ready
 #check @resumeReadyMidState_objects_invExt
+#check @resumeReadyMidState_scheduler_eq
+#check @SeLe4n.Kernel.preemptCurrentOnCore_getTcb?_ne_current
+#check @SeLe4n.Kernel.switchToThreadOnCore_getTcb?_ne_current
+#check @SeLe4n.Kernel.handleRescheduleSgiOnCore_getTcb?_ne_current
 #check @resumeThreadOnCore_sets_threadState
 #check @resumeThreadOnCore_preserves_objects_invExt
 #check @resumeThreadOnCore_rejects_non_inactive

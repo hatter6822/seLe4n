@@ -351,21 +351,24 @@ home core needs a cross-core `.reschedule` SGI:
   SM5.C `wakeThread` / SM5.F `restoreToReadyWithWake`).  Poking the home core now
   would be a spurious cross-core IPI (SM5.C.11 latency / WS-SM SM5.F.4 C9).
 * **remote, runnable on home, material**: the boost changed the holder's
-  `pipBoost` (hence its effective run-queue bucket) AND the holder is runnable on
+  *effective* run-queue bucket (`resolveEffectivePrioDeadline` rose) AND the holder is runnable on
   its home core, so that core's scheduler must re-evaluate — the boosted holder
   may now outrank that core's current thread.  Emit `(home, .reschedule)`.
 * **remote, no-op** (boost unchanged ⇒ `updatePipBoostOnCore` returned `st`): no
   SGI — there is no scheduling consequence, so poking the remote core would be a
   spurious cross-core IPI.
 
-The runnability gate `tid ∈ runQueueOnCore target` aligns the SGI exactly with the
-run-queue *bucket migration* in `updatePipBoostOnCore` (which is itself gated on the
-same membership): an SGI is emitted only when the boost could actually change which
-thread the home core should run next.
+The runnability gate `tid ∈ runQueueOnCore target` AND the effective-priority
+materiality gate together align the SGI exactly with the run-queue *bucket
+migration* in `updatePipBoostOnCore` (which is gated on the same membership AND the
+same `oldPrio != newPrio` effective-priority change): an SGI is emitted only when
+the boost actually migrates the holder's bucket, i.e. could change which thread the
+home core should run next.
 
 Mirrors `wakeThread` (state + optional SGI; the BaseIO form that fires the SGI
 over the FFI is SM5.I's runtime dispatch).  The materiality guard reads the
-holder's `pipBoost` before/after, exactly tracking the state effect. -/
+holder's *effective* priority (`resolveEffectivePrioDeadline`) before/after,
+exactly tracking the bucket-migration condition. -/
 def pipBoostWithWake (st : SystemState) (tid : ThreadId) (executingCore : CoreId)
     : SystemState × Option (CoreId × SgiKind) :=
   let target := determineTargetCore st tid
@@ -374,7 +377,16 @@ def pipBoostWithWake (st : SystemState) (tid : ThreadId) (executingCore : CoreId
     if target == executingCore then none
     else if tid ∈ (st.scheduler.runQueueOnCore target) then
       match st.getTcb? tid, st'.getTcb? tid with
-      | some t, some t' => if t.pipBoost == t'.pipBoost then none else some (target, SgiKind.reschedule)
+      | some t, some t' =>
+        -- Gate on the *effective* priority (the run-queue bucket key) changing,
+        -- not the raw `pipBoost` — exactly the `oldPrio != newPrio` condition that
+        -- governs the run-queue bucket migration in `updatePipBoostOnCore`.  A
+        -- `pipBoost` rise that does not raise the effective priority (e.g. a holder
+        -- whose base priority already dominates the new boost) migrates no bucket
+        -- and has no scheduling consequence on the home core, so it must poke no
+        -- remote core (a spurious cross-core IPI otherwise).
+        if (resolveEffectivePrioDeadline st t).1 == (resolveEffectivePrioDeadline st' t').1
+        then none else some (target, SgiKind.reschedule)
       | _, _ => none
     else none
   (st', sgi)

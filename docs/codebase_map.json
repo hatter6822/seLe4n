@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/eager-faraday-sokpy",
-      "commit_sha": "3027b4646bb321146315f61b1006103d5f9e8f2b",
-      "tree_sha": "c3cd95a8bf107d6d291c6b42845a6829ac40df79",
-      "committed_at_utc": "2026-06-02T23:18:17+00:00"
+      "commit_sha": "d1d2eb8f866f40349122ed8c5566dec2277e0407",
+      "tree_sha": "efff1b1667f5c31718fe7264bbda7704b066e0c2",
+      "committed_at_utc": "2026-06-02T23:36:38+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ee3e237367ebb47ec91fb5bc8e36a12ce90c5182692ed4c97f33078fba91edc8"
+    "source_digest": "502de9480f506f05164aeed94e9be723d8ee3a96f818d7dcc3356a40ac71eb16"
   },
   "summary": {
     "module_count": 275,
-    "declaration_count": 10065
+    "declaration_count": 10074
   },
   "readme_sync": {
     "version": "0.31.50",
     "lean_toolchain": "v4.28.0",
     "production_files": 222,
-    "production_loc": 158441,
+    "production_loc": 158647,
     "test_files": 53,
-    "test_loc": 34847,
-    "proved_theorem_lemma_decls": 5134,
+    "test_loc": 34929,
+    "proved_theorem_lemma_decls": 5138,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -55762,7 +55762,7 @@
         {
           "kind": "def",
           "name": "resumeThreadOnCore",
-          "line": 242,
+          "line": 253,
           "called": [
             "CoreId",
             "KernelError",
@@ -55773,6 +55773,7 @@
             "determineTargetCore",
             "enqueueRunnableOnCore",
             "getTcb",
+            "handleRescheduleSgiOnCore",
             "none",
             "resumeReadyMidState",
             "st"
@@ -55781,7 +55782,7 @@
         {
           "kind": "def",
           "name": "cancelIpcBlocking",
-          "line": 263,
+          "line": 281,
           "called": [
             "SystemState",
             "TCB",
@@ -55795,7 +55796,7 @@
         {
           "kind": "def",
           "name": "cancelBoundDonation",
-          "line": 308,
+          "line": 326,
           "called": [
             "KernelError",
             "SystemState",
@@ -55818,7 +55819,7 @@
         {
           "kind": "def",
           "name": "cancelDonatedDonation",
-          "line": 341,
+          "line": 359,
           "called": [
             "KernelError",
             "SystemState",
@@ -55831,7 +55832,7 @@
         {
           "kind": "def",
           "name": "cancelDonation",
-          "line": 362,
+          "line": 380,
           "called": [
             "KernelError",
             "SystemState",
@@ -55845,7 +55846,7 @@
         {
           "kind": "def",
           "name": "clearPendingState",
-          "line": 376,
+          "line": 394,
           "called": [
             "SystemState",
             "ThreadId",
@@ -55859,7 +55860,7 @@
         {
           "kind": "def",
           "name": "clearTcbIpcFieldsValid",
-          "line": 401,
+          "line": 419,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -55870,7 +55871,7 @@
         {
           "kind": "theorem",
           "name": "clearTcbIpcFieldsValid_eq",
-          "line": 405,
+          "line": 423,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -55882,7 +55883,7 @@
         {
           "kind": "def",
           "name": "clearPendingStateValid",
-          "line": 409,
+          "line": 427,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -55893,7 +55894,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingStateValid_eq",
-          "line": 413,
+          "line": 431,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -55905,7 +55906,7 @@
         {
           "kind": "def",
           "name": "cancelIpcBlockingValid",
-          "line": 417,
+          "line": 435,
           "called": [
             "SystemState",
             "TCB",
@@ -55917,7 +55918,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingValid_eq",
-          "line": 421,
+          "line": 439,
           "called": [
             "SystemState",
             "TCB",
@@ -55930,7 +55931,7 @@
         {
           "kind": "def",
           "name": "cancelDonationValid",
-          "line": 426,
+          "line": 444,
           "called": [
             "KernelError",
             "SystemState",
@@ -55943,7 +55944,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonationValid_eq",
-          "line": 430,
+          "line": 448,
           "called": [
             "SystemState",
             "TCB",
@@ -55956,7 +55957,7 @@
         {
           "kind": "def",
           "name": "suspendThread",
-          "line": 456,
+          "line": 474,
           "called": [
             "KernelError",
             "SystemState",
@@ -55979,7 +55980,7 @@
         {
           "kind": "def",
           "name": "resumeThread",
-          "line": 546,
+          "line": 564,
           "called": [
             "KernelError",
             "Priority",
@@ -56003,7 +56004,7 @@
         {
           "kind": "def",
           "name": "suspendThread_transientWindowInvariant",
-          "line": 645,
+          "line": 663,
           "called": [
             "SystemState",
             "ThreadId",
@@ -56015,7 +56016,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_transientWindowInvariant_default",
-          "line": 658,
+          "line": 676,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -56029,7 +56030,7 @@
         {
           "kind": "def",
           "name": "suspendThread_atomicity_precondition",
-          "line": 671,
+          "line": 689,
           "called": [
             "SystemState",
             "st"
@@ -56038,7 +56039,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_under_ffi_bracket_default",
-          "line": 699,
+          "line": 717,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -56053,7 +56054,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_precondition_default",
-          "line": 714,
+          "line": 732,
           "called": [
             "SystemState",
             "default",
@@ -56063,7 +56064,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_default_rejects_with_invalidArgument",
-          "line": 723,
+          "line": 741,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -71915,7 +71916,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreSwitchToThread",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean",
-      "declaration_count": 32,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -72296,8 +72297,45 @@
         },
         {
           "kind": "theorem",
+          "name": "preemptCurrentOnCore_getTcb",
+          "line": 546,
+          "called": [
+            "CoreId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "currentOnCore",
+            "getTcb",
+            "invExt",
+            "preemptCurrentOnCore",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_getTcb",
+          "line": 575,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "getTcb",
+            "invExt",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_getTcb",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_objects_eq_preempt"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "switchToThreadOnCore_establishes_currentThreadValidOnCore",
-          "line": 556,
+          "line": 604,
           "called": [
             "CoreId",
             "SystemState",
@@ -72317,7 +72355,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCoreLockSet_pairwise_le",
-          "line": 596,
+          "line": 644,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -72330,7 +72368,7 @@
         {
           "kind": "theorem",
           "name": "switchToThreadOnCore_ok_iff",
-          "line": 619,
+          "line": 667,
           "called": [
             "CoreId",
             "SystemState",
@@ -72346,7 +72384,7 @@
         {
           "kind": "def",
           "name": "switchToThreadOnCoreSucceeds",
-          "line": 643,
+          "line": 691,
           "called": [
             "CoreId",
             "SystemState",
@@ -72357,8 +72395,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:647>",
-          "line": 647,
+          "name": "<anonymous:instance:695>",
+          "line": 695,
           "called": [
             "CoreId",
             "SystemState",
@@ -72371,7 +72409,7 @@
         {
           "kind": "def",
           "name": "switchToThreadOnCoreRejectsRemote",
-          "line": 655,
+          "line": 703,
           "called": [
             "CoreId",
             "SystemState",
@@ -72382,8 +72420,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:659>",
-          "line": 659,
+          "name": "<anonymous:instance:707>",
+          "line": 707,
           "called": [
             "CoreId",
             "Kernel",
@@ -74401,7 +74439,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreWake",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean",
-      "declaration_count": 91,
+      "declaration_count": 92,
       "declarations": [
         {
           "kind": "namespace",
@@ -75053,8 +75091,24 @@
         },
         {
           "kind": "theorem",
+          "name": "handleRescheduleSgiOnCore_getTcb",
+          "line": 701,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "getTcb",
+            "handleRescheduleSgiOnCore",
+            "invExt",
+            "st",
+            "switchToThreadOnCore_getTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 696,
+          "line": 716,
           "called": [
             "CoreId",
             "SystemState",
@@ -75068,7 +75122,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_independent_of_other_core",
-          "line": 713,
+          "line": 733,
           "called": [
             "CoreId",
             "SystemState",
@@ -75082,7 +75136,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_then_handle_dispatches_current",
-          "line": 759,
+          "line": 779,
           "called": [
             "CoreId",
             "SchedReachable",
@@ -75104,7 +75158,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_roundtrip_reachable_current",
-          "line": 791,
+          "line": 811,
           "called": [
             "CoreId",
             "SchedReachable",
@@ -75126,7 +75180,7 @@
         {
           "kind": "def",
           "name": "wakeSgiCount",
-          "line": 817,
+          "line": 837,
           "called": [
             "CoreId",
             "SgiKind",
@@ -75136,7 +75190,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_emits_at_most_one_sgi",
-          "line": 825,
+          "line": 845,
           "called": [
             "CoreId",
             "SystemState",
@@ -75149,13 +75203,13 @@
         {
           "kind": "theorem",
           "name": "rescheduleSgi_intid_eq_zero",
-          "line": 832,
+          "line": 852,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "rescheduleSgi_lowest_intid",
-          "line": 839,
+          "line": 859,
           "called": [
             "SgiKind"
           ]
@@ -75163,7 +75217,7 @@
         {
           "kind": "def",
           "name": "sgiDeliveryLatencyBound",
-          "line": 851,
+          "line": 871,
           "called": [
             "filter",
             "length"
@@ -75172,7 +75226,7 @@
         {
           "kind": "theorem",
           "name": "sgiDeliveryLatencyBound_eq_zero",
-          "line": 856,
+          "line": 876,
           "called": [
             "sgiDeliveryLatencyBound"
           ]
@@ -75180,7 +75234,7 @@
         {
           "kind": "theorem",
           "name": "sgiDeliveryLatencyBound_counts_higher_priority_kernel_sgis",
-          "line": 877,
+          "line": 897,
           "called": [
             "filter",
             "length",
@@ -75190,7 +75244,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_ok_of_tcb",
-          "line": 889,
+          "line": 909,
           "called": [
             "CoreId",
             "SystemState",
@@ -75204,7 +75258,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_error_of_no_tcb",
-          "line": 897,
+          "line": 917,
           "called": [
             "CoreId",
             "SystemState",
@@ -75218,7 +75272,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_sets_affinity",
-          "line": 905,
+          "line": 925,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -75236,7 +75290,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_objects_invExt",
-          "line": 918,
+          "line": 938,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -75252,7 +75306,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_preserves_scheduler",
-          "line": 934,
+          "line": 954,
           "called": [
             "CoreId",
             "SystemState",
@@ -75266,7 +75320,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_getTcb",
-          "line": 949,
+          "line": 969,
           "called": [
             "CoreId",
             "RHTable.getElem",
@@ -75285,7 +75339,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_affects_determineTargetCore",
-          "line": 971,
+          "line": 991,
           "called": [
             "CoreId",
             "SystemState",
@@ -75303,7 +75357,7 @@
         {
           "kind": "def",
           "name": "handleRescheduleSgiOnCoreSucceeds",
-          "line": 988,
+          "line": 1008,
           "called": [
             "CoreId",
             "SystemState",
@@ -75313,8 +75367,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:991>",
-          "line": 991,
+          "name": "<anonymous:instance:1011>",
+          "line": 1011,
           "called": [
             "CoreId",
             "SystemState",
@@ -75326,7 +75380,7 @@
         {
           "kind": "def",
           "name": "setThreadCpuAffinitySucceeds",
-          "line": 999,
+          "line": 1019,
           "called": [
             "CoreId",
             "SystemState",
@@ -75337,8 +75391,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1003>",
-          "line": 1003,
+          "name": "<anonymous:instance:1023>",
+          "line": 1023,
           "called": [
             "CoreId",
             "SystemState",
@@ -75351,7 +75405,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_getTcb",
-          "line": 1036,
+          "line": 1056,
           "called": [
             "CoreId",
             "SystemState",
@@ -75369,7 +75423,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_currentThreadValidOnCore",
-          "line": 1060,
+          "line": 1080,
           "called": [
             "CoreId",
             "SystemState",
@@ -75387,7 +75441,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne",
-          "line": 1077,
+          "line": 1097,
           "called": [
             "CoreId",
             "SystemState",
@@ -75404,7 +75458,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self",
-          "line": 1102,
+          "line": 1122,
           "called": [
             "CoreId",
             "SystemState",
@@ -75427,7 +75481,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_runnableThreadIpcReady",
-          "line": 1174,
+          "line": 1194,
           "called": [
             "CoreId",
             "SystemState",
@@ -75453,7 +75507,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedNotRunnable_aux",
-          "line": 1223,
+          "line": 1243,
           "called": [
             "CoreId",
             "SystemState",
@@ -75479,7 +75533,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnSendNotRunnable",
-          "line": 1266,
+          "line": 1286,
           "called": [
             "CoreId",
             "SystemState",
@@ -75494,7 +75548,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnReceiveNotRunnable",
-          "line": 1278,
+          "line": 1298,
           "called": [
             "CoreId",
             "SystemState",
@@ -75509,7 +75563,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnCallNotRunnable",
-          "line": 1290,
+          "line": 1310,
           "called": [
             "CoreId",
             "SystemState",
@@ -75524,7 +75578,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnReplyNotRunnable",
-          "line": 1303,
+          "line": 1323,
           "called": [
             "CoreId",
             "SystemState",
@@ -75539,7 +75593,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_blockedOnNotificationNotRunnable",
-          "line": 1315,
+          "line": 1335,
           "called": [
             "CoreId",
             "SystemState",
@@ -75554,7 +75608,7 @@
         {
           "kind": "theorem",
           "name": "enqueueRunnableOnCore_preserves_ipcSchedulerContract",
-          "line": 1334,
+          "line": 1354,
           "called": [
             "CoreId",
             "SystemState",
@@ -75574,7 +75628,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_currentThreadValidOnCore",
-          "line": 1357,
+          "line": 1377,
           "called": [
             "CoreId",
             "SystemState",
@@ -75591,7 +75645,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_ipcSchedulerContract",
-          "line": 1369,
+          "line": 1389,
           "called": [
             "CoreId",
             "SystemState",
@@ -75608,7 +75662,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_preserves_queueCurrentConsistentOnCore",
-          "line": 1387,
+          "line": 1407,
           "called": [
             "CoreId",
             "SystemState",
@@ -75626,13 +75680,13 @@
         {
           "kind": "namespace",
           "name": "Concurrency",
-          "line": 1429,
+          "line": 1449,
           "called": []
         },
         {
           "kind": "def",
           "name": "wakeReleaseEvent",
-          "line": 1436,
+          "line": 1456,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -75642,7 +75696,7 @@
         {
           "kind": "def",
           "name": "wakeAcquireEvent",
-          "line": 1445,
+          "line": 1465,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -75652,7 +75706,7 @@
         {
           "kind": "def",
           "name": "wakeOrderingTrace",
-          "line": 1451,
+          "line": 1471,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -75665,7 +75719,7 @@
         {
           "kind": "theorem",
           "name": "wakeReleaseEvent_ne_acquireEvent",
-          "line": 1459,
+          "line": 1479,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -75676,7 +75730,7 @@
         {
           "kind": "theorem",
           "name": "wakeOrderingTrace_wellFormed",
-          "line": 1471,
+          "line": 1491,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -75694,7 +75748,7 @@
         {
           "kind": "theorem",
           "name": "wakeOrdering_synchronizesWith",
-          "line": 1498,
+          "line": 1518,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -75712,7 +75766,7 @@
         {
           "kind": "theorem",
           "name": "wakeOrdering_happensBefore",
-          "line": 1529,
+          "line": 1549,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -79653,7 +79707,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean",
-      "declaration_count": 88,
+      "declaration_count": 89,
       "declarations": [
         {
           "kind": "namespace",
@@ -79871,7 +79925,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_emits_sgi_if_remote",
-          "line": 290,
+          "line": 292,
           "called": [
             "CoreId",
             "SystemState",
@@ -79880,6 +79934,7 @@
             "determineTargetCore",
             "getTcb",
             "pipBoostWithWake",
+            "resolveEffectivePrioDeadline",
             "runQueueOnCore",
             "st",
             "updatePipBoostOnCore"
@@ -79888,7 +79943,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_no_sgi_if_not_runnable",
-          "line": 314,
+          "line": 320,
           "called": [
             "CoreId",
             "SystemState",
@@ -79903,7 +79958,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_no_sgi_if_noop",
-          "line": 322,
+          "line": 331,
           "called": [
             "CoreId",
             "SystemState",
@@ -79913,6 +79968,7 @@
             "getTcb",
             "none",
             "pipBoostWithWake",
+            "resolveEffectivePrioDeadline",
             "st",
             "updatePipBoostOnCore"
           ]
@@ -79920,7 +79976,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_sgi_is_reschedule",
-          "line": 333,
+          "line": 345,
           "called": [
             "CoreId",
             "SgiKind",
@@ -79934,7 +79990,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_emits_at_most_one_sgi",
-          "line": 352,
+          "line": 364,
           "called": [
             "CoreId",
             "SystemState",
@@ -79947,7 +80003,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_preserves_objects_invExt",
-          "line": 361,
+          "line": 373,
           "called": [
             "CoreId",
             "SystemState",
@@ -79962,7 +80018,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_preserves_blockingAcyclic",
-          "line": 368,
+          "line": 380,
           "called": [
             "CoreId",
             "SystemState",
@@ -79978,7 +80034,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_bootCore_unbound",
-          "line": 377,
+          "line": 389,
           "called": [
             "SystemState",
             "TCB",
@@ -79996,7 +80052,7 @@
         {
           "kind": "def",
           "name": "propagatePipChainCrossCoreState",
-          "line": 393,
+          "line": 405,
           "called": [
             "CoreId",
             "SystemState",
@@ -80009,7 +80065,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCoreState_zero",
-          "line": 397,
+          "line": 409,
           "called": [
             "CoreId",
             "SystemState",
@@ -80021,7 +80077,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCoreState_step",
-          "line": 401,
+          "line": 413,
           "called": [
             "CoreId",
             "SystemState",
@@ -80037,7 +80093,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_preserves_objects_invExt",
-          "line": 415,
+          "line": 427,
           "called": [
             "CoreId",
             "SystemState",
@@ -80056,7 +80112,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_preserves_blockingAcyclic",
-          "line": 430,
+          "line": 442,
           "called": [
             "CoreId",
             "SystemState",
@@ -80077,7 +80133,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_zero_sgis",
-          "line": 447,
+          "line": 459,
           "called": [
             "CoreId",
             "SystemState",
@@ -80089,7 +80145,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_no_sgis_head_terminal",
-          "line": 454,
+          "line": 466,
           "called": [
             "CoreId",
             "SystemState",
@@ -80105,7 +80161,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_head_sgi_remote",
-          "line": 465,
+          "line": 477,
           "called": [
             "CoreId",
             "SystemState",
@@ -80119,6 +80175,7 @@
             "pipBoostWithWake_emits_sgi_if_remote",
             "propagatePipChainCrossCore",
             "propagatePipChainCrossCore_step",
+            "resolveEffectivePrioDeadline",
             "runQueueOnCore",
             "st",
             "updatePipBoostOnCore"
@@ -80127,7 +80184,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReady_objects_invExt",
-          "line": 492,
+          "line": 505,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SystemState",
@@ -80140,7 +80197,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyOnCore_preserves_objects_invExt",
-          "line": 503,
+          "line": 516,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -80157,7 +80214,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyOnCore_currentOnCore",
-          "line": 516,
+          "line": 529,
           "called": [
             "CoreId",
             "SystemState",
@@ -80172,7 +80229,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyOnCore_runQueueOnCore_ne",
-          "line": 523,
+          "line": 536,
           "called": [
             "CoreId",
             "SystemState",
@@ -80187,7 +80244,7 @@
         {
           "kind": "def",
           "name": "restoreToReadyMidState",
-          "line": 534,
+          "line": 547,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80203,7 +80260,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyOnCore_eq_enqueue_mid",
-          "line": 539,
+          "line": 552,
           "called": [
             "CoreId",
             "SystemState",
@@ -80217,7 +80274,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyOnCore_pipBoost_recomputed",
-          "line": 548,
+          "line": 561,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -80242,7 +80299,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyWithWake_state",
-          "line": 579,
+          "line": 592,
           "called": [
             "CoreId",
             "SystemState",
@@ -80257,7 +80314,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyWithWake_no_sgi_if_local",
-          "line": 584,
+          "line": 597,
           "called": [
             "CoreId",
             "SystemState",
@@ -80271,7 +80328,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyWithWake_emits_sgi_if_remote",
-          "line": 593,
+          "line": 606,
           "called": [
             "CoreId",
             "SystemState",
@@ -80286,7 +80343,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyWithWake_sgi_is_reschedule",
-          "line": 605,
+          "line": 618,
           "called": [
             "CoreId",
             "SgiKind",
@@ -80300,7 +80357,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyWithWake_preserves_objects_invExt",
-          "line": 619,
+          "line": 632,
           "called": [
             "CoreId",
             "RHTable_insert_preserves_invExt",
@@ -80319,7 +80376,7 @@
         {
           "kind": "def",
           "name": "blockingServerOnCore",
-          "line": 638,
+          "line": 651,
           "called": [
             "CoreId",
             "SystemState",
@@ -80333,7 +80390,7 @@
         {
           "kind": "theorem",
           "name": "blockingServerOnCore_eq_global_of_onCore",
-          "line": 642,
+          "line": 655,
           "called": [
             "CoreId",
             "SystemState",
@@ -80347,7 +80404,7 @@
         {
           "kind": "theorem",
           "name": "blockingServerOnCore_none_of_offCore",
-          "line": 648,
+          "line": 661,
           "called": [
             "CoreId",
             "SystemState",
@@ -80361,7 +80418,7 @@
         {
           "kind": "theorem",
           "name": "blockingServerOnCore_implies_global",
-          "line": 657,
+          "line": 670,
           "called": [
             "CoreId",
             "SystemState",
@@ -80374,7 +80431,7 @@
         {
           "kind": "theorem",
           "name": "blockingServerOnCore_subgraph",
-          "line": 668,
+          "line": 681,
           "called": [
             "CoreId",
             "SystemState",
@@ -80388,7 +80445,7 @@
         {
           "kind": "theorem",
           "name": "blockingGraphOnCore_consistent",
-          "line": 678,
+          "line": 691,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80404,7 +80461,7 @@
         {
           "kind": "def",
           "name": "blockingChainOnCore",
-          "line": 689,
+          "line": 702,
           "called": [
             "CoreId",
             "SystemState",
@@ -80418,7 +80475,7 @@
         {
           "kind": "theorem",
           "name": "blockingChainOnCore_subset",
-          "line": 701,
+          "line": 714,
           "called": [
             "CoreId",
             "SystemState",
@@ -80436,7 +80493,7 @@
         {
           "kind": "def",
           "name": "blockingAcyclicOnCore",
-          "line": 721,
+          "line": 734,
           "called": [
             "CoreId",
             "SystemState",
@@ -80447,7 +80504,7 @@
         {
           "kind": "theorem",
           "name": "blockingAcyclic_perCore",
-          "line": 729,
+          "line": 742,
           "called": [
             "CoreId",
             "SystemState",
@@ -80461,7 +80518,7 @@
         {
           "kind": "theorem",
           "name": "priorityInheritance_perCore_witness",
-          "line": 751,
+          "line": 764,
           "called": [
             "CoreId",
             "SystemState",
@@ -80482,7 +80539,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_getTcb",
-          "line": 775,
+          "line": 788,
           "called": [
             "CoreId",
             "RHTable_get",
@@ -80501,7 +80558,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_eq_self_of_getTcb",
-          "line": 793,
+          "line": 806,
           "called": [
             "CoreId",
             "SystemState",
@@ -80515,7 +80572,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_preserves_determineTargetCore",
-          "line": 807,
+          "line": 820,
           "called": [
             "CoreId",
             "RHTable_getElem",
@@ -80538,7 +80595,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_establishes_perCore_dominance",
-          "line": 839,
+          "line": 852,
           "called": [
             "CoreId",
             "SystemState",
@@ -80560,7 +80617,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_head_emission_mem",
-          "line": 869,
+          "line": 882,
           "called": [
             "CoreId",
             "SgiKind",
@@ -80576,7 +80633,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_tail_sgis_mem",
-          "line": 878,
+          "line": 891,
           "called": [
             "CoreId",
             "SystemState",
@@ -80592,7 +80649,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_sgis_all_reschedule",
-          "line": 892,
+          "line": 905,
           "called": [
             "CoreId",
             "SystemState",
@@ -80611,7 +80668,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_sgi_length_le_fuel",
-          "line": 923,
+          "line": 936,
           "called": [
             "CoreId",
             "SystemState",
@@ -80630,7 +80687,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_second_link_sgi_remote",
-          "line": 950,
+          "line": 963,
           "called": [
             "CoreId",
             "SystemState",
@@ -80644,6 +80701,7 @@
             "propagatePipChainCrossCore",
             "propagatePipChainCrossCore_head_emission_mem",
             "propagatePipChainCrossCore_tail_sgis_mem",
+            "resolveEffectivePrioDeadline",
             "runQueueOnCore",
             "st",
             "updatePipBoostOnCore"
@@ -80652,7 +80710,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_singleCore_no_sgis",
-          "line": 978,
+          "line": 993,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80675,7 +80733,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCoreState_singleCore_eq_propagate",
-          "line": 1006,
+          "line": 1021,
           "called": [
             "SystemState",
             "ThreadId",
@@ -80701,7 +80759,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostOrdering_synchronizesWith",
-          "line": 1051,
+          "line": 1066,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -80715,7 +80773,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostOrdering_happensBefore",
-          "line": 1068,
+          "line": 1083,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -80729,7 +80787,7 @@
         {
           "kind": "theorem",
           "name": "priorityInheritance_perCore_witness_full",
-          "line": 1090,
+          "line": 1105,
           "called": [
             "CoreId",
             "SystemState",
@@ -80754,7 +80812,7 @@
         {
           "kind": "theorem",
           "name": "resumeReadyMidState_getTcb",
-          "line": 1117,
+          "line": 1132,
           "called": [
             "RHTable_get",
             "RHTable_getElem",
@@ -80775,7 +80833,7 @@
         {
           "kind": "theorem",
           "name": "resumeReadyMidState_objects_invExt",
-          "line": 1133,
+          "line": 1148,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SystemState",
@@ -80789,20 +80847,41 @@
         },
         {
           "kind": "theorem",
+          "name": "resumeReadyMidState_scheduler_eq",
+          "line": 1162,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "restoreToReady_scheduler_eq",
+            "resumeReadyMidState",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "resumeThreadOnCore_sets_threadState",
-          "line": 1147,
+          "line": 1172,
           "called": [
             "CoreId",
+            "SgiKind",
             "SystemState",
             "TCB",
             "ValidThreadId",
+            "currentOnCore",
+            "determineTargetCore",
+            "enqueueRunnableOnCore",
+            "enqueueRunnableOnCore_currentOnCore",
             "enqueueRunnableOnCore_eq_self_of_runnable",
             "enqueueRunnableOnCore_makes_ready",
+            "enqueueRunnableOnCore_preserves_objects_invExt",
             "getTcb",
+            "handleRescheduleSgiOnCore",
+            "handleRescheduleSgiOnCore_getTcb",
             "invExt",
             "resumeReadyMidState",
             "resumeReadyMidState_getTcb",
             "resumeReadyMidState_objects_invExt",
+            "resumeReadyMidState_scheduler_eq",
             "resumeThreadOnCore",
             "runnableOnSomeCore",
             "st"
@@ -80811,14 +80890,19 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_preserves_objects_invExt",
-          "line": 1168,
+          "line": 1230,
           "called": [
             "CoreId",
+            "SgiKind",
             "SystemState",
             "TCB",
             "ValidThreadId",
+            "determineTargetCore",
+            "enqueueRunnableOnCore",
             "enqueueRunnableOnCore_preserves_objects_invExt",
             "getTcb",
+            "handleRescheduleSgiOnCore",
+            "handleRescheduleSgiOnCore_preserves_objects_invExt",
             "invExt",
             "resumeReadyMidState",
             "resumeReadyMidState_objects_invExt",
@@ -80829,7 +80913,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_rejects_non_inactive",
-          "line": 1182,
+          "line": 1263,
           "called": [
             "CoreId",
             "SystemState",
@@ -80843,7 +80927,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_rejects_non_tcb",
-          "line": 1192,
+          "line": 1273,
           "called": [
             "CoreId",
             "SystemState",
@@ -80857,15 +80941,19 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_local_no_sgi",
-          "line": 1199,
+          "line": 1283,
           "called": [
             "CoreId",
+            "SgiKind",
             "SystemState",
             "TCB",
             "ValidThreadId",
             "determineTargetCore",
+            "enqueueRunnableOnCore",
             "getTcb",
+            "handleRescheduleSgiOnCore",
             "none",
+            "resumeReadyMidState",
             "resumeThreadOnCore",
             "st"
           ]
@@ -80873,7 +80961,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_remote_sgi",
-          "line": 1212,
+          "line": 1303,
           "called": [
             "CoreId",
             "SystemState",
@@ -80888,7 +80976,7 @@
         {
           "kind": "theorem",
           "name": "restoreToReadyWithWake_sets_threadState",
-          "line": 1232,
+          "line": 1323,
           "called": [
             "CoreId",
             "SystemState",
@@ -80910,7 +80998,7 @@
         {
           "kind": "def",
           "name": "crossCoreSgiBody",
-          "line": 1265,
+          "line": 1357,
           "called": [
             "CoreId",
             "ObjId",
@@ -80919,13 +81007,14 @@
             "determineTargetCore",
             "getTcb",
             "none",
+            "resolveEffectivePrioDeadline",
             "runQueueOnCore"
           ]
         },
         {
           "kind": "def",
           "name": "computeCrossCoreSgis",
-          "line": 1289,
+          "line": 1388,
           "called": [
             "CoreId",
             "SgiKind",
@@ -80937,7 +81026,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_reschedule",
-          "line": 1293,
+          "line": 1392,
           "called": [
             "CoreId",
             "ObjId",
@@ -80949,7 +81038,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_none_single_core",
-          "line": 1311,
+          "line": 1410,
           "called": [
             "ObjId",
             "SystemState",
@@ -80962,7 +81051,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_all_reschedule",
-          "line": 1325,
+          "line": 1424,
           "called": [
             "CoreId",
             "SystemState",
@@ -80974,7 +81063,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_nil_single_core",
-          "line": 1338,
+          "line": 1437,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -80986,7 +81075,7 @@
         {
           "kind": "def",
           "name": "crossCoreWakeDispatch",
-          "line": 1350,
+          "line": 1449,
           "called": [
             "CoreId",
             "SystemState",
@@ -80997,7 +81086,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeDispatch_singleCore",
-          "line": 1354,
+          "line": 1453,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -81010,7 +81099,7 @@
         {
           "kind": "def",
           "name": "pipChainWakeDispatch",
-          "line": 1365,
+          "line": 1464,
           "called": [
             "CoreId",
             "SystemState",
@@ -81024,7 +81113,7 @@
         {
           "kind": "theorem",
           "name": "pipChainWakeDispatch_singleCore",
-          "line": 1371,
+          "line": 1470,
           "called": [
             "SystemState",
             "ThreadId",
@@ -81040,7 +81129,7 @@
         {
           "kind": "def",
           "name": "emitBoostWakeSgi",
-          "line": 1383,
+          "line": 1482,
           "called": [
             "CoreId",
             "SgiKind",
@@ -81050,7 +81139,7 @@
         {
           "kind": "theorem",
           "name": "emitBoostWakeSgi_none",
-          "line": 1387,
+          "line": 1486,
           "called": [
             "emitBoostWakeSgi",
             "none",
@@ -81127,6 +81216,7 @@
             "crossCoreWakeDispatch",
             "crossCoreWakeDispatch_singleCore",
             "emitBoostWakeSgi",
+            "handleRescheduleSgiOnCore_getTcb",
             "optPriorityVal",
             "optPriorityVal_pipBoost_le_effectiveSchedParams",
             "pipBoostOrdering_happensBefore",
@@ -81145,6 +81235,7 @@
             "pipBoost_perCore_consistent",
             "pipChainWakeDispatch",
             "pipChainWakeDispatch_singleCore",
+            "preemptCurrentOnCore_getTcb",
             "priorityInheritance_perCore_witness",
             "priorityInheritance_perCore_witness_full",
             "propagatePipChainCrossCore",
@@ -81179,12 +81270,14 @@
             "restoreToReady_objects_invExt",
             "resumeReadyMidState_getTcb",
             "resumeReadyMidState_objects_invExt",
+            "resumeReadyMidState_scheduler_eq",
             "resumeThreadOnCore_local_no_sgi",
             "resumeThreadOnCore_preserves_objects_invExt",
             "resumeThreadOnCore_rejects_non_inactive",
             "resumeThreadOnCore_rejects_non_tcb",
             "resumeThreadOnCore_remote_sgi",
             "resumeThreadOnCore_sets_threadState",
+            "switchToThreadOnCore_getTcb",
             "updatePipBoostOnCore",
             "updatePipBoostOnCore_currentOnCore",
             "updatePipBoostOnCore_eq_self_of_getTcb",
@@ -81203,7 +81296,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_count",
-          "line": 300,
+          "line": 308,
           "called": [
             "length"
           ]
@@ -81211,24 +81304,6 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_compute_count",
-          "line": 303,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "perCorePipTheorems_updateBoost_count",
-          "line": 307,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "perCorePipTheorems_consistent_count",
           "line": 311,
           "called": [
             "filter",
@@ -81237,7 +81312,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCorePipTheorems_wake_count",
+          "name": "perCorePipTheorems_updateBoost_count",
           "line": 315,
           "called": [
             "filter",
@@ -81246,7 +81321,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCorePipTheorems_chain_count",
+          "name": "perCorePipTheorems_consistent_count",
           "line": 319,
           "called": [
             "filter",
@@ -81255,7 +81330,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCorePipTheorems_resume_count",
+          "name": "perCorePipTheorems_wake_count",
           "line": 323,
           "called": [
             "filter",
@@ -81264,7 +81339,7 @@
         },
         {
           "kind": "theorem",
-          "name": "perCorePipTheorems_blockingGraph_count",
+          "name": "perCorePipTheorems_chain_count",
           "line": 327,
           "called": [
             "filter",
@@ -81273,8 +81348,26 @@
         },
         {
           "kind": "theorem",
+          "name": "perCorePipTheorems_resume_count",
+          "line": 332,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCorePipTheorems_blockingGraph_count",
+          "line": 336,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "perCorePipTheorems_witness_count",
-          "line": 331,
+          "line": 340,
           "called": [
             "filter",
             "length"
@@ -81283,7 +81376,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_memoryModel_count",
-          "line": 335,
+          "line": 344,
           "called": [
             "filter",
             "length"
@@ -81292,7 +81385,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_dispatch_count",
-          "line": 339,
+          "line": 348,
           "called": [
             "filter",
             "length"
@@ -81301,7 +81394,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_partition_sum",
-          "line": 343,
+          "line": 352,
           "called": [
             "filter",
             "length"
@@ -81310,13 +81403,13 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_identifiers_nodup",
-          "line": 362,
+          "line": 371,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_descriptions_nodup",
-          "line": 368,
+          "line": 377,
           "called": []
         }
       ]
@@ -82244,7 +82337,7 @@
         {
           "kind": "def",
           "name": "pipBoostWithWake",
-          "line": 369,
+          "line": 372,
           "called": [
             "CoreId",
             "SgiKind",
@@ -82253,6 +82346,7 @@
             "determineTargetCore",
             "getTcb",
             "none",
+            "resolveEffectivePrioDeadline",
             "runQueueOnCore",
             "st",
             "updatePipBoostOnCore"
@@ -82261,7 +82355,7 @@
         {
           "kind": "def",
           "name": "propagatePipChainCrossCore",
-          "line": 395,
+          "line": 407,
           "called": [
             "CoreId",
             "SgiKind",
@@ -82277,7 +82371,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_zero",
-          "line": 410,
+          "line": 422,
           "called": [
             "CoreId",
             "SystemState",
@@ -82289,7 +82383,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_step",
-          "line": 414,
+          "line": 426,
           "called": [
             "CoreId",
             "SgiKind",
@@ -130160,7 +130254,7 @@
     {
       "module": "tests.SmpPipSuite",
       "path": "tests/SmpPipSuite.lean",
-      "declaration_count": 39,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
@@ -130332,8 +130426,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
+          "name": "<anonymous:example:205>",
+          "line": 205,
           "called": [
             "CoreId",
             "SystemState",
@@ -130343,6 +130437,7 @@
             "getTcb",
             "pipBoostWithWake",
             "pipBoostWithWake_emits_sgi_if_remote",
+            "resolveEffectivePrioDeadline",
             "runQueueOnCore",
             "st",
             "updatePipBoostOnCore"
@@ -130350,8 +130445,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:213>",
-          "line": 213,
+          "name": "<anonymous:example:216>",
+          "line": 216,
           "called": [
             "CoreId",
             "SystemState",
@@ -130365,8 +130460,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:219>",
-          "line": 219,
+          "name": "<anonymous:example:222>",
+          "line": 222,
           "called": [
             "CoreId",
             "SystemState",
@@ -130383,8 +130478,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:227>",
-          "line": 227,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "SystemState",
             "ThreadId",
@@ -130396,8 +130491,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:232>",
-          "line": 232,
+          "name": "<anonymous:example:235>",
+          "line": 235,
           "called": [
             "CoreId",
             "SystemState",
@@ -130409,8 +130504,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:237>",
-          "line": 237,
+          "name": "<anonymous:example:240>",
+          "line": 240,
           "called": [
             "CoreId",
             "SystemState",
@@ -130428,8 +130523,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:245>",
-          "line": 245,
+          "name": "<anonymous:example:248>",
+          "line": 248,
           "called": [
             "SystemState",
             "ThreadId",
@@ -130442,8 +130537,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:252>",
-          "line": 252,
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
             "CoreId",
             "SystemState",
@@ -130458,8 +130553,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:258>",
-          "line": 258,
+          "name": "<anonymous:example:261>",
+          "line": 261,
           "called": [
             "CoreId",
             "SystemState",
@@ -130473,13 +130568,15 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:263>",
-          "line": 263,
+          "name": "<anonymous:example:268>",
+          "line": 268,
           "called": [
             "CoreId",
+            "SgiKind",
             "SystemState",
             "TCB",
             "ValidThreadId",
+            "currentOnCore",
             "getTcb",
             "invExt",
             "resumeThreadOnCore",
@@ -130489,8 +130586,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:271>",
-          "line": 271,
+          "name": "<anonymous:example:278>",
+          "line": 278,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -130502,8 +130599,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:277>",
-          "line": 277,
+          "name": "<anonymous:example:284>",
+          "line": 284,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -130517,7 +130614,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 287,
+          "line": 294,
           "called": [
             "CoreId"
           ]
@@ -130525,7 +130622,7 @@
         {
           "kind": "def",
           "name": "core0",
-          "line": 288,
+          "line": 295,
           "called": [
             "CoreId",
             "bootCoreId"
@@ -130534,7 +130631,7 @@
         {
           "kind": "def",
           "name": "srv",
-          "line": 290,
+          "line": 297,
           "called": [
             "ThreadId",
             "ofNat"
@@ -130543,7 +130640,7 @@
         {
           "kind": "def",
           "name": "cli",
-          "line": 291,
+          "line": 298,
           "called": [
             "ThreadId",
             "ofNat"
@@ -130552,7 +130649,7 @@
         {
           "kind": "def",
           "name": "mkServerTcb",
-          "line": 294,
+          "line": 301,
           "called": [
             "CoreId",
             "TCB",
@@ -130562,7 +130659,7 @@
         {
           "kind": "def",
           "name": "mkWaiterTcb",
-          "line": 301,
+          "line": 308,
           "called": [
             "TCB",
             "ofNat"
@@ -130571,7 +130668,7 @@
         {
           "kind": "def",
           "name": "st",
-          "line": 312,
+          "line": 319,
           "called": [
             "SystemState",
             "build",
@@ -130588,7 +130685,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 317,
+          "line": 324,
           "called": [
             "throw"
           ]
@@ -130596,7 +130693,7 @@
         {
           "kind": "def",
           "name": "runComputeChecks",
-          "line": 325,
+          "line": 332,
           "called": [
             "assertBool",
             "computeMaxWaiterPriority",
@@ -130612,7 +130709,7 @@
         {
           "kind": "def",
           "name": "runWakeChecks",
-          "line": 341,
+          "line": 348,
           "called": [
             "assertBool",
             "bind",
@@ -130630,7 +130727,7 @@
         {
           "kind": "def",
           "name": "runBlockingGraphChecks",
-          "line": 358,
+          "line": 365,
           "called": [
             "assertBool",
             "blockingServer",
@@ -130647,7 +130744,7 @@
         {
           "kind": "def",
           "name": "runResumeChecks",
-          "line": 371,
+          "line": 378,
           "called": [
             "assertBool",
             "core0",
@@ -130662,7 +130759,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 386,
+          "line": 393,
           "called": [
             "assertBool",
             "filter",
@@ -130672,7 +130769,7 @@
         {
           "kind": "def",
           "name": "stNoRq",
-          "line": 411,
+          "line": 418,
           "called": [
             "SystemState",
             "build",
@@ -130686,7 +130783,7 @@
         {
           "kind": "def",
           "name": "stUnbound",
-          "line": 418,
+          "line": 425,
           "called": [
             "SystemState",
             "build",
@@ -130700,8 +130797,43 @@
         },
         {
           "kind": "def",
+          "name": "srvHi",
+          "line": 431,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cliLo",
+          "line": 433,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stImmaterial",
+          "line": 442,
+          "called": [
+            "SystemState",
+            "build",
+            "core1",
+            "mkServerTcb",
+            "mkWaiterTcb",
+            "ofList",
+            "setRunQueueOnCore",
+            "srvHi",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runC9Checks",
-          "line": 424,
+          "line": 449,
           "called": [
             "assertBool",
             "bind",
@@ -130718,7 +130850,7 @@
         {
           "kind": "def",
           "name": "runDecompositionChecks",
-          "line": 437,
+          "line": 462,
           "called": [
             "assertBool",
             "computeMaxWaiterPriority",
@@ -130731,7 +130863,7 @@
         {
           "kind": "def",
           "name": "runChainChecks",
-          "line": 447,
+          "line": 472,
           "called": [
             "all",
             "assertBool",
@@ -130746,7 +130878,7 @@
         {
           "kind": "def",
           "name": "runDispatchChecks",
-          "line": 459,
+          "line": 484,
           "called": [
             "all",
             "assertBool",
@@ -130762,7 +130894,7 @@
         {
           "kind": "def",
           "name": "runCompletionNonVacuityChecks",
-          "line": 484,
+          "line": 509,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -130785,8 +130917,48 @@
         },
         {
           "kind": "def",
+          "name": "runP2MaterialityChecks",
+          "line": 546,
+          "called": [
+            "assertBool",
+            "bind",
+            "computeCrossCoreSgis",
+            "core0",
+            "core1",
+            "getTcb",
+            "mkServerTcb",
+            "none",
+            "pipBoostWithWake",
+            "resolveEffectivePrioDeadline",
+            "runQueueOnCore",
+            "srv",
+            "srvHi",
+            "st",
+            "stImmaterial"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runP5LocalRescheduleChecks",
+          "line": 574,
+          "called": [
+            "assertBool",
+            "core0",
+            "core1",
+            "currentOnCore",
+            "getTcb",
+            "none",
+            "ofNat",
+            "resumeThreadOnCore",
+            "srv",
+            "stNoRq",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpPipChecks",
-          "line": 515,
+          "line": 595,
           "called": [
             "runBlockingGraphChecks",
             "runC9Checks",
@@ -130796,6 +130968,8 @@
             "runDecompositionChecks",
             "runDispatchChecks",
             "runInventoryChecks",
+            "runP2MaterialityChecks",
+            "runP5LocalRescheduleChecks",
             "runResumeChecks",
             "runWakeChecks"
           ]
@@ -130803,7 +130977,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 533,
+          "line": 615,
           "called": [
             "runSmpPipChecks"
           ]

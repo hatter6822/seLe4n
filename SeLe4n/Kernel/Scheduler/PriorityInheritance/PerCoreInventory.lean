@@ -231,7 +231,15 @@ def perCorePipTheorems : List PerCorePipTheorem :=
       resumeReadyMidState_getTcb?_ready .resume,
     ppit! "resumeReadyMidState_objects_invExt: the resume mid-state preserves the object-store invariant"
       resumeReadyMidState_objects_invExt .resume,
-    ppit! "resumeThreadOnCore_sets_threadState: the complete per-core resume sets threadState := .Ready (SM5.F.6)"
+    ppit! "resumeReadyMidState_scheduler_eq: the resume mid-state leaves the scheduler untouched (P2-5)"
+      resumeReadyMidState_scheduler_eq .resume,
+    ppit! "preemptCurrentOnCore_getTcb?_ne_current: preempt frames out any non-current thread (P2-5)"
+      preemptCurrentOnCore_getTcb?_ne_current .resume,
+    ppit! "switchToThreadOnCore_getTcb?_ne_current: a switch frames out any non-current thread (P2-5)"
+      switchToThreadOnCore_getTcb?_ne_current .resume,
+    ppit! "handleRescheduleSgiOnCore_getTcb?_ne_current: the SGI handler frames out any non-current thread (P2-5)"
+      handleRescheduleSgiOnCore_getTcb?_ne_current .resume,
+    ppit! "resumeThreadOnCore_sets_threadState: every successful per-core resume leaves the thread .Ready (SM5.F.6)"
       resumeThreadOnCore_sets_threadState .resume,
     ppit! "resumeThreadOnCore_preserves_objects_invExt: the complete resume preserves the object-store invariant"
       resumeThreadOnCore_preserves_objects_invExt .resume,
@@ -297,7 +305,7 @@ def perCorePipTheorems : List PerCorePipTheorem :=
 SGI completeness, the runnability-gate, memory-model HB, the complete `resumeThreadOnCore`,
 and the cross-core wake dispatch).  A regression that adds a new SM5.F theorem without
 registering it fails this count witness at the Tier-3 surface check. -/
-theorem perCorePipTheorems_count : perCorePipTheorems.length = 95 := by decide
+theorem perCorePipTheorems_count : perCorePipTheorems.length = 99 := by decide
 
 /-- WS-SM SM5.F: 8 entries in the `compute` category (SM5.F.1). -/
 theorem perCorePipTheorems_compute_count :
@@ -319,9 +327,10 @@ theorem perCorePipTheorems_wake_count :
 theorem perCorePipTheorems_chain_count :
     (perCorePipTheorems.filter (fun t => t.category == .chain)).length = 18 := by decide
 
-/-- WS-SM SM5.F: 20 entries in the `resume` category (SM5.F.5 / SM5.F.6). -/
+/-- WS-SM SM5.F: 24 entries in the `resume` category (SM5.F.5 / SM5.F.6; +4 at PR #811
+P2-5 — the inline-local-reschedule frame lemmas + the scheduler-frame helper). -/
 theorem perCorePipTheorems_resume_count :
-    (perCorePipTheorems.filter (fun t => t.category == .resume)).length = 20 := by decide
+    (perCorePipTheorems.filter (fun t => t.category == .resume)).length = 24 := by decide
 
 /-- WS-SM SM5.F: 10 entries in the `blockingGraph` category (SM5.F.7 / SM5.F.8). -/
 theorem perCorePipTheorems_blockingGraph_count :

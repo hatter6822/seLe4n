@@ -198,14 +198,17 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
     (pipBoostWithWake st tid ec).2 = none :=
   pipBoostWithWake_no_sgi_if_local st tid ec hLocal
 
--- SM5.F.2: a remote, runnable-on-home, material PIP boost emits a reschedule SGI
--- to the home core (the WS-SM SM5.F.4 C9 runnability gate is part of the hypotheses).
+-- SM5.F.2 (PR #811 P2-2): a remote, runnable-on-home, material PIP boost emits a
+-- reschedule SGI to the home core.  "Material" is now the *effective* priority
+-- (run-queue bucket key) changing, exactly the `updatePipBoostOnCore` bucket-migration
+-- condition (the WS-SM SM5.F.4 C9 runnability gate is part of the hypotheses).
 example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (t t' : TCB)
     (hRemote : determineTargetCore st tid ≠ ec)
     (hRunnable : tid ∈ st.scheduler.runQueueOnCore (determineTargetCore st tid))
     (hPre : st.getTcb? tid = some t)
     (hPost : (updatePipBoostOnCore st (determineTargetCore st tid) tid).getTcb? tid = some t')
-    (hMaterial : t.pipBoost ≠ t'.pipBoost) :
+    (hMaterial : (resolveEffectivePrioDeadline st t).1
+      ≠ (resolveEffectivePrioDeadline (updatePipBoostOnCore st (determineTargetCore st tid) tid) t').1) :
     (pipBoostWithWake st tid ec).2 = some (determineTargetCore st tid, SgiKind.reschedule) :=
   pipBoostWithWake_emits_sgi_if_remote st tid ec t t' hRemote hRunnable hPre hPost hMaterial
 
@@ -259,13 +262,17 @@ example (st : SystemState) (c : CoreId) (tid t : SeLe4n.ThreadId) (hInv : st.obj
     determineTargetCore (updatePipBoostOnCore st c tid) t = determineTargetCore st t :=
   updatePipBoostOnCore_preserves_determineTargetCore st c tid t hInv
 
--- SM5.F.6 (F13): the complete per-core resume sets threadState := .Ready.
+-- SM5.F.6 (F13): every successful complete per-core resume leaves the resumed thread
+-- `.Ready` — including the PR #811 P2-5 inline local reschedule (which frames out the
+-- resumed thread, never the executing core's current).
 example (st : SystemState) (vtid : SeLe4n.ValidThreadId) (ec : CoreId) (tcb : TCB)
+    (st' : SystemState) (sgi : Option (CoreId × SgiKind))
     (hGet : st.getTcb? vtid.val = some tcb)
-    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt) :
-    ∃ st' sgi, resumeThreadOnCore st vtid ec = .ok (st', sgi) ∧
-      ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready :=
-  resumeThreadOnCore_sets_threadState st vtid ec tcb hGet hInactive hInv
+    (hInactive : tcb.threadState = .Inactive) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore ec ≠ some vtid.val)
+    (h : resumeThreadOnCore st vtid ec = .ok (st', sgi)) :
+    ∃ t', st'.getTcb? vtid.val = some t' ∧ t'.threadState = .Ready :=
+  resumeThreadOnCore_sets_threadState st vtid ec tcb st' sgi hGet hInactive hInv hNotCur h
 
 -- SM5.F.4: the diff-based dispatch is inert on single-core.
 example (pre post : SystemState)
@@ -385,8 +392,8 @@ private def runResumeChecks : IO Unit := do
 /-- §3.5: SM5.F inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.5 SM5.F theorem inventory ---"
-  assertBool "inventory has 95 entries"
-    (decide (perCorePipTheorems.length = 95))
+  assertBool "inventory has 99 entries"
+    (decide (perCorePipTheorems.length = 99))
   assertBool "compute category has 8 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .compute)).length = 8))
   assertBool "updateBoost category has 14 entries"
@@ -395,8 +402,8 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCorePipTheorems.filter (fun t => t.category == .wake)).length = 11))
   assertBool "chain category has 18 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .chain)).length = 18))
-  assertBool "resume category has 20 entries"
-    (decide ((perCorePipTheorems.filter (fun t => t.category == .resume)).length = 20))
+  assertBool "resume category has 24 entries"
+    (decide ((perCorePipTheorems.filter (fun t => t.category == .resume)).length = 24))
   assertBool "blockingGraph category has 10 entries"
     (decide ((perCorePipTheorems.filter (fun t => t.category == .blockingGraph)).length = 10))
   assertBool "memoryModel category has 2 entries"
@@ -419,6 +426,24 @@ private def stUnbound : SystemState :=
   ((BootstrapBuilder.empty.withObject srv.toObjId
       (.tcb { mkServerTcb 200 5 core1 with cpuAffinity := none })).withObject
     cli.toObjId (.tcb (mkWaiterTcb 201 10 200))).build
+
+/-- A high-base server bound to the remote core 1. -/
+private def srvHi : SeLe4n.ThreadId := ThreadId.ofNat 202
+/-- A low-priority waiter blocked on `srvHi`. -/
+private def cliLo : SeLe4n.ThreadId := ThreadId.ofNat 203
+
+/-- The PR #811 P2-2 fixture: a server `srvHi` whose BASE priority (10) already
+*dominates* its waiter `cliLo`'s priority (5).  Boosting `srvHi` sets its `pipBoost`
+to `some 5`, but its *effective* priority stays `max(10, 5) = 10` — so no run-queue
+bucket migrates and there is no scheduling consequence on the home core.  `srvHi` is
+runnable on its home core 1, so the C9 runnability gate is SATISFIED — only the new
+effective-priority materiality gate suppresses the (otherwise spurious) cross-core
+IPI that the old raw-`pipBoost` gate would have fired. -/
+private def stImmaterial : SystemState :=
+  let base := ((BootstrapBuilder.empty.withObject srvHi.toObjId
+      (.tcb (mkServerTcb 202 10 core1))).withObject
+    cliLo.toObjId (.tcb (mkWaiterTcb 203 5 202))).build
+  { base with scheduler := base.scheduler.setRunQueueOnCore core1 (RunQueue.ofList [(srvHi, ⟨10⟩)]) }
 
 /-- §3.6: WS-SM SM5.F.4 C9 — the runnability gate on the cross-core boost SGI. -/
 private def runC9Checks : IO Unit := do
@@ -512,6 +537,61 @@ private def runCompletionNonVacuityChecks : IO Unit := do
   assertBool "single-core (all-unbound) chain walk fires no cross-core SGI"
     (decide ((propagatePipChainCrossCore stUnbound cli bootCoreId 3).2 = []))
 
+/-- §3.11: WS-SM SM5.F.2 (PR #811 P2-2) — the effective-priority materiality gate.
+A boost that raises `pipBoost` but NOT the *effective* priority (the holder's base
+already dominates the boost) migrates no run-queue bucket and so fires NO cross-core
+SGI — closing the spurious IPI the old raw-`pipBoost` gate would have emitted.  The
+holder is runnable on its home core, so the C9 runnability gate is satisfied: only the
+new effective-priority gate suppresses the poke. -/
+private def runP2MaterialityChecks : IO Unit := do
+  IO.println "--- §3.11 SM5.F.2 P2-2 effective-priority materiality gate ---"
+  -- The boost VALUE is still applied: srvHi.pipBoost := some 5 (the waiter's prio).
+  assertBool "P2-2 the immaterial boost still sets pipBoost := some 5 (value applied)"
+    (decide (((pipBoostWithWake stImmaterial srvHi core0).1.getTcb? srvHi).bind (·.pipBoost)
+              = some ⟨5⟩))
+  -- srvHi IS runnable on its home core 1 — the C9 gate is satisfied, not the suppressor.
+  assertBool "P2-2 the holder IS runnable on its home core (C9 gate satisfied, not suppressing)"
+    (decide (srvHi ∈ stImmaterial.scheduler.runQueueOnCore core1))
+  -- The effective priority is unchanged (base 10 dominates the boost 5).
+  assertBool "P2-2 base priority 10 dominates the boost 5 (effective stays 10)"
+    (decide ((resolveEffectivePrioDeadline stImmaterial (mkServerTcb 202 10 core1)).1 = ⟨10⟩))
+  -- THE FIX: no SGI fires for the immaterial boost (no spurious cross-core IPI).
+  assertBool "P2-2 immaterial boost fires NO SGI (effective bucket unchanged)"
+    (decide ((pipBoostWithWake stImmaterial srvHi core0).2 = none))
+  -- The diff-based dispatch agrees: no dispatch for the immaterial diff.
+  let postImm := (pipBoostWithWake stImmaterial srvHi core0).1
+  assertBool "P2-2 diff dispatch is empty for the immaterial boost (matches direct path)"
+    (decide (computeCrossCoreSgis stImmaterial postImm core0 = []))
+  -- Contrast: the original fixture (srv base 5, waiter 10) IS material (5 → 10), fires.
+  assertBool "P2-2 contrast: a MATERIAL boost (srv 5→10) still fires (core1, .reschedule)"
+    (decide ((pipBoostWithWake st srv core0).2 = some (core1, SgiKind.reschedule)))
+
+/-- §3.12: WS-SM SM5.F.6 (PR #811 P2-5) — the inline LOCAL reschedule.  A resume whose
+home core IS the executing core processes the reschedule **inline** (the exact handler
+the remote core would otherwise run on the `.reschedule` SGI): the resumed thread is
+dispatched to current on that core, keeps `threadState = .Ready`, and NO cross-core SGI
+is emitted.  A resume from a *remote* executing core returns the SGI instead. -/
+private def runP5LocalRescheduleChecks : IO Unit := do
+  IO.println "--- §3.12 SM5.F.6 P2-5 inline local reschedule ---"
+  -- LOCAL: resume srv (bound to core 1) while EXECUTING on core 1 (its home).
+  match resumeThreadOnCore stNoRq ((ThreadId.ofNat 200).toValid (by decide)) core1 with
+  | .ok (st4, sgi) =>
+    assertBool "P2-5 local resume succeeds with NO cross-core SGI (reschedule done inline)"
+      (sgi == none)
+    assertBool "P2-5 local resume leaves the resumed thread threadState = .Ready"
+      ((st4.getTcb? srv).map (·.threadState) == some ThreadState.Ready)
+    assertBool "P2-5 local resume dispatches the resumed thread to current on its core"
+      (st4.scheduler.currentOnCore core1 == some srv)
+  | .error _ =>
+    assertBool "P2-5 local resume must succeed on the well-formed fixture" false
+  -- REMOTE contrast: resuming from a different executing core returns the SGI instead.
+  match resumeThreadOnCore stNoRq ((ThreadId.ofNat 200).toValid (by decide)) core0 with
+  | .ok (_, sgi) =>
+    assertBool "P2-5 contrast: a REMOTE resume returns the (core1, .reschedule) SGI"
+      (sgi == some (core1, SgiKind.reschedule))
+  | .error _ =>
+    assertBool "P2-5 remote resume must succeed" false
+
 def runSmpPipChecks : IO Unit := do
   IO.println "WS-SM SM5.F — Per-core PIP suite"
   IO.println "===================================="
@@ -524,6 +604,8 @@ def runSmpPipChecks : IO Unit := do
   runChainChecks
   runDispatchChecks
   runCompletionNonVacuityChecks
+  runP2MaterialityChecks
+  runP5LocalRescheduleChecks
   runInventoryChecks
   IO.println "===================================="
   IO.println "All SM5.F per-core PIP checks PASS."

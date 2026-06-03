@@ -161,6 +161,58 @@ The staged theorem-surface proof helpers route through the `.get?` method form
 (AK7-clean) wherever the math allows.  Adoption floors rise in lock-step
 (`gettcb_adoption` 186 → 562).
 
+**PR #811 review closure (same v0.31.50 cut).**  Five P2 review findings, all
+closed per the implement-the-improvement rule (no finding documented away —
+each is a code change plus a non-vacuity test):
+
+- **P2-1 (diff-dispatch C9 gate).**  `crossCoreSgiBody` (the diff-based
+  `computeCrossCoreSgis` body) now mirrors `pipBoostWithWake`'s C9 runnability
+  gate: a boost of a holder *not runnable on its home core* emits no diff SGI,
+  consistent with the direct-path `pipBoostWithWake_no_sgi_if_not_runnable`.
+- **P2-2 (effective-priority SGI gate).**  Both `pipBoostWithWake` and
+  `crossCoreSgiBody` now gate the cross-core `.reschedule` SGI on the *effective*
+  run-queue-bucket priority changing (`resolveEffectivePrioDeadline`), NOT the
+  raw `pipBoost` — exactly the `oldPrio != newPrio` condition governing
+  `updatePipBoostOnCore`'s bucket migration.  A boost that raises `pipBoost` but
+  not the effective priority (the holder's base already dominates the boost)
+  migrates no bucket and so fires no spurious cross-core IPI.  The emission /
+  no-op / chain theorems thread the effective-priority materiality hypothesis;
+  new `SmpPipSuite` §3.11 non-vacuity test (holder base 10, waiter 5 → boost
+  applied but effective stays 10 → no SGI, where the old raw-`pipBoost` gate
+  would have fired a spurious IPI).
+- **P2-3 (resume-wake `.Ready`).**  The cross-core resume wake
+  (`restoreToReadyWithWake`, via the new `resumeReadyMidState` helper) sets
+  `threadState := .Ready` before enqueue, so a poked core never dispatches a
+  still-`.Inactive` run-queue entry (`restoreToReadyWithWake_sets_threadState`).
+- **P2-4 (QEMU script).**  `scripts/test_qemu_smp_pip.sh` greps the kernel
+  image's strings for the SMP-PIP test marker rather than a nonexistent binary
+  path.
+- **P2-5 (inline local reschedule).**  A LOCAL `resumeThreadOnCore` (home =
+  executing core) now processes the reschedule **inline** on the executing core
+  via `handleRescheduleSgiOnCore` — the *exact* `.reschedule`-SGI handler the
+  remote core would run, so the local and remote paths mirror each other.  It is
+  preemption-gated (`candidateOutranksCurrentOnCore` — no priority inversion) and
+  switch-based (`switchToThreadOnCore` re-enqueues the preempted thread — no
+  current-thread drop), the faithful and *improved* analogue of single-core
+  `resumeThread`'s H5 `schedule` call (which lacks both the gate and the
+  re-enqueue).  The resume theorems move to the robust implication shape
+  (`… = .ok (st', sgi) → P st'`), since the inline reschedule may itself error on
+  a malformed run queue: every successful resume still leaves the thread `.Ready`
+  (`resumeThreadOnCore_sets_threadState`, via the new `.get?`-method-form frame
+  lemmas `preemptCurrentOnCore_getTcb?_ne_current` /
+  `switchToThreadOnCore_getTcb?_ne_current` /
+  `handleRescheduleSgiOnCore_getTcb?_ne_current` — the inline reschedule frames
+  out the resumed thread, never the executing core's current — plus
+  `resumeReadyMidState_scheduler_eq`), preserves `objects.invExt`, and (local)
+  emits no SGI; new `SmpPipSuite` §3.12 test dispatches the resumed thread to
+  current on its core with no cross-core SGI.
+
+The four P2-5 frame lemmas register in the SM5.F inventory (resume 20 → 24, total
+95 → 99); `smp_pip_suite` 99 anchors / 16 examples / 58 runtime assertions.  All
+closures axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); trace
+byte-identical; AK7 at the floor (`RAW_MATCH_TOTAL` 125, `RAW_LOOKUP_TID` 814 —
+the new proofs use the `.get?` method form).
+
 **Items deferred past v1.0.0 with correctness impact**: NONE.  (The production
 wiring of the cross-core PIP wake / resume wake into the live IPC donation,
 timeout, and resume paths — closing the SM5.D timeout-path latency gap by routing
