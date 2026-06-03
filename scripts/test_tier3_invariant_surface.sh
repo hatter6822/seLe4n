@@ -3728,6 +3728,14 @@ open SeLe4n.Kernel
 #check @switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
 #check @scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
 #check @chooseThreadEffectiveOnCore_respects_activeDomain
+-- SM5.G §11 deep-audit: the SM5.G invariants maintained by the live domain tick.
+#check @domainScheduleIndexInBoundsOnCore_frame
+#check @domainConsistentOnCore_frame
+#check @scheduleEffectiveOnCore_domainScheduleIndexOnCore
+#check @decrementDomainTimeOnCore_domainScheduleIndexOnCore
+#check @scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
+#check @switchDomainOnCore_preserves_domainConsistentOnCore
+#check @scheduleDomainOnCore_preserves_domainConsistentOnCore
 #check @perCoreDomainTheorems_count
 #check @perCoreDomainTheorems_partition_sum
 #check @perCoreDomainTheorems_query_count

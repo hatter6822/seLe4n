@@ -93,8 +93,9 @@ This is the *abstract* domain rotation primitive: unlike the operational
 re-enqueue the current thread, or clear `currentOnCore`.  It is the pure
 domain-state effect that the cyclic theorem (`advanceDomainOnCore_cyclic`) and the
 domain-membership theorem (`advanceDomainOnCore_establishes_…`) reason about; the
-bridge `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore` proves the
-operational switch's *domain effect* is exactly this rotation.
+bridge `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore` proves the
+operational switch's *entire* domain-state effect (active domain + time remaining +
+schedule index) is exactly this rotation.
 
 Single-domain mode is a no-op: when `domainSchedule = []`, the lookup index `(idx +
 1) % 0 = idx + 1` is out of bounds of the empty list, so `domainSchedule[…]? = none`
@@ -1108,5 +1109,159 @@ theorem scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule
     unfold activeDomainOnCore_isInDomainSchedule at hPred ⊢
     rw [decrementDomainTimeOnCore_domainSchedule, decrementDomainTimeOnCore_activeDomainOnCore]
     exact hPred
+
+-- ============================================================================
+-- §11  SM5.G.2/.3 — the SM5.G invariants maintained by the LIVE domain tick
+-- ============================================================================
+--
+-- §10 lifted the SM4.C `activeDomainOnCore_isInDomainSchedule` predicate to the live
+-- transitions.  This section does the same for the two SM5.G-introduced invariants —
+-- `domainScheduleIndexInBoundsOnCore` (§8, the cyclic theorem's precondition) and
+-- `domainConsistentOnCore` (§9, the active-domain cyclic's precondition) — so SM5.I's
+-- per-core run loop, which drives `scheduleDomainOnCore`, can carry **both** cyclic
+-- theorems' hypotheses across the live domain tick (closing the asymmetry where only
+-- `switchDomainOnCore` preserved the index-bounds invariant and neither live
+-- transition preserved domain consistency).  The two `…_frame` lemmas reduce each
+-- invariant to its read footprint; the per-transition frames discharge them.
+
+/-- WS-SM SM5.G.2 (frame): `domainScheduleIndexInBoundsOnCore` depends only on the
+schedule table and core `c`'s index — two states agreeing on those agree on it. -/
+theorem domainScheduleIndexInBoundsOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hSch : st'.scheduler.domainSchedule = st.scheduler.domainSchedule)
+    (hIdx : st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c)
+    (hInv : domainScheduleIndexInBoundsOnCore st c) :
+    domainScheduleIndexInBoundsOnCore st' c := by
+  unfold domainScheduleIndexInBoundsOnCore at hInv ⊢
+  rw [hSch, hIdx]; exact hInv
+
+/-- WS-SM SM5.G.2 (frame): `domainConsistentOnCore` depends only on the schedule
+table, core `c`'s index, and core `c`'s active domain. -/
+theorem domainConsistentOnCore_frame {st st' : SystemState} {c : CoreId}
+    (hSch : st'.scheduler.domainSchedule = st.scheduler.domainSchedule)
+    (hIdx : st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c)
+    (hAD : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c)
+    (hInv : domainConsistentOnCore st c) :
+    domainConsistentOnCore st' c := by
+  intro entry he
+  rw [hSch, hIdx] at he
+  rw [hAD]; exact hInv entry he
+
+/-- WS-SM SM5.G.2 helper: the idle fallback frames core `c`'s schedule index. -/
+theorem idleFallbackOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) :
+    (idleFallbackOnCore st c).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c := by
+  unfold idleFallbackOnCore
+  split
+  · simp [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
+      restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+  · simp [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore]
+
+/-- WS-SM SM5.G.2 helper: a successful per-core reschedule frames core `c`'s schedule
+index (the re-dispatch changes current / run queue / object store, never the index). -/
+theorem scheduleEffectiveOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      rw [idleFallbackOnCore_domainScheduleIndexOnCore, saveOutgoingContextOnCore_scheduler_eq]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep
+          rw [← hStep]
+          simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContext_scheduler,
+            SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+          rw [saveOutgoingContextOnCore_scheduler_eq]
+        · simp at hStep
+
+/-- WS-SM SM5.G.2 helper: `decrementDomainTimeOnCore` frames core `c`'s schedule index. -/
+theorem decrementDomainTimeOnCore_domainScheduleIndexOnCore (st : SystemState) (c : CoreId) :
+    (decrementDomainTimeOnCore st c).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c := by
+  simp [decrementDomainTimeOnCore, SchedulerState.setDomainTimeRemainingOnCore_domainScheduleIndexOnCore]
+
+/-- WS-SM SM5.G.2 (**live domain-tick preserves the index-bounds invariant**):
+`scheduleDomainOnCore` maintains `domainScheduleIndexInBoundsOnCore` — the boundary
+branch lands the index in bounds (`switchDomainOnCore`, then the index-framing
+`scheduleEffectiveOnCore`); the non-boundary branch (`decrementDomainTimeOnCore`)
+frames the index.  Together with `default_…` and `advanceDomainOnCore_establishes_…`
+this makes the index-bounds invariant a genuinely maintained invariant — so SM5.I can
+discharge `advanceDomainOnCore_cyclic_of_inBounds`'s hypothesis across the live tick. -/
+theorem scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
+    (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hInv : domainScheduleIndexInBoundsOnCore st c)
+    (hStep : scheduleDomainOnCore st c = .ok st') :
+    domainScheduleIndexInBoundsOnCore st' c := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · cases hsw : switchDomainOnCore st c with
+    | error e => rw [hsw] at hStep; simp at hStep
+    | ok stMid =>
+      rw [hsw] at hStep
+      exact domainScheduleIndexInBoundsOnCore_frame
+        (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
+        (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+        (switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c stMid hsw)
+  · simp only [Except.ok.injEq] at hStep; subst hStep
+    exact domainScheduleIndexInBoundsOnCore_frame
+      (decrementDomainTimeOnCore_domainSchedule st c)
+      (decrementDomainTimeOnCore_domainScheduleIndexOnCore st c) hInv
+
+/-- WS-SM SM5.G.2 (live rotation preserves domain consistency): `switchDomainOnCore`
+maintains `domainConsistentOnCore` — on a non-empty schedule it *establishes* it (the
+new active domain is the domain of the entry at the new index); on an empty schedule it
+is a no-op. -/
+theorem switchDomainOnCore_preserves_domainConsistentOnCore
+    (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hCons : domainConsistentOnCore st c)
+    (hStep : switchDomainOnCore st c = .ok st') :
+    domainConsistentOnCore st' c := by
+  by_cases hSched : st.scheduler.domainSchedule = []
+  · rw [switchDomainOnCore_singleDomain_noop st c hSched] at hStep
+    injection hStep with hStep'
+    subst hStep'
+    exact hCons
+  · intro e he
+    rw [switchDomainOnCore_domainSchedule st c st' hStep,
+      switchDomainOnCore_domainScheduleIndexOnCore_self st c st' hSched hStep] at he
+    rw [switchDomainOnCore_rotates st c st' e he hSched hStep]
+
+/-- WS-SM SM5.G.2 (**live domain-tick preserves domain consistency**):
+`scheduleDomainOnCore` maintains `domainConsistentOnCore` — the boundary branch
+establishes it (`switchDomainOnCore`) then frames it through the consistency-framing
+`scheduleEffectiveOnCore`; the non-boundary branch frames it through
+`decrementDomainTimeOnCore`.  So SM5.I can discharge
+`advanceDomainOnCore_cyclic_activeDomain`'s consistency hypothesis across the live
+tick. -/
+theorem scheduleDomainOnCore_preserves_domainConsistentOnCore
+    (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hCons : domainConsistentOnCore st c)
+    (hStep : scheduleDomainOnCore st c = .ok st') :
+    domainConsistentOnCore st' c := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · cases hsw : switchDomainOnCore st c with
+    | error e => rw [hsw] at hStep; simp at hStep
+    | ok stMid =>
+      rw [hsw] at hStep
+      exact domainConsistentOnCore_frame
+        (scheduleEffectiveOnCore_domainSchedule stMid c st' hStep)
+        (scheduleEffectiveOnCore_domainScheduleIndexOnCore stMid c st' hStep)
+        (scheduleEffectiveOnCore_activeDomainOnCore stMid c st' hStep)
+        (switchDomainOnCore_preserves_domainConsistentOnCore st c stMid hCons hsw)
+  · simp only [Except.ok.injEq] at hStep; subst hStep
+    exact domainConsistentOnCore_frame
+      (decrementDomainTimeOnCore_domainSchedule st c)
+      (decrementDomainTimeOnCore_domainScheduleIndexOnCore st c)
+      (decrementDomainTimeOnCore_activeDomainOnCore st c c) hCons
 
 end SeLe4n.Kernel

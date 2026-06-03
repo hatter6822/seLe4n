@@ -727,6 +727,30 @@ similar to SM0/SM1 patterns.)
 > respects-domain theorem drops its asymmetric `wellFormed` hypothesis.  Tests grow to
 > 43 runtime assertions (+16 completion scenarios).  Items deferred past v1.0.0 with
 > correctness impact: NONE.
+>
+> **WS-SM SM5.G deep-audit pass LANDED at v0.31.53** — a code-first audit (reading the
+> implementation, not its docstrings) confirmed the v0.31.52 cut sound, secure, and
+> proved with no dependency beyond the foundational `propext` / `Quot.sound` /
+> `Classical.choice`, with no shortcut that made the codebase less secure.  Closed
+> **one substantive completeness asymmetry**: v0.31.52 #3/#4 introduced the two
+> per-core domain invariants `domainScheduleIndexInBoundsOnCore` (index
+> `< domainSchedule.length`) and `domainConsistentOnCore` (active domain = the entry
+> at the index) but proved only that the *abstract* rotation establishes them and that
+> `scheduleDomainOnCore` preserves the SM4.C *membership* predicate — it did **not**
+> prove the **live** transitions maintain these two new invariants, so SM5.I could not
+> assume them across a domain tick.  §11 closes this with 8 live-transition
+> preservation theorems: the two per-other-core frames (`…_frame`), the three
+> schedule-index frames the re-dispatch path needs
+> (`idleFallbackOnCore` / `scheduleEffectiveOnCore` / `decrementDomainTimeOnCore`
+> `_domainScheduleIndexOnCore`), and the three live-preservation theorems
+> (`scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore`,
+> `switchDomainOnCore_preserves_domainConsistentOnCore`,
+> `scheduleDomainOnCore_preserves_domainConsistentOnCore`).  Plus a stale def docstring
+> fix (`advanceDomainOnCore` now cites the full-triple bridge, not the superseded
+> active-domain-only one).  Inventory **67 → 75** (`livePreservation` 7 → 15); tests
+> grow to **45** runtime assertions (+2 §11 scenarios); default build green (324 jobs);
+> trace byte-identical; AK7 floor unchanged.  Items deferred past v1.0.0 with
+> correctness impact: NONE.
 
 ### SM5.H — Per-core CBS (4 PRs, 8 sub-tasks)
 

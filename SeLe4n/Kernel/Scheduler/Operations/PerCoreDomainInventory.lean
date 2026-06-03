@@ -16,8 +16,9 @@ Aggregates the SM5.G per-core domain-scheduling substantive theorems into a sing
 typed inventory with size and per-category witnesses.  Mirrors the SM5.E
 `PerCoreIdleInventory.lean` and SM5.D `PerCoreTimerInventory.lean` patterns.
 
-Nine categories matching the plan §3.7 / §5 sub-tasks (67 entries; 39 at the initial
-SM5.G landing + 28 from the completion audit-pass):
+Nine categories matching the plan §3.7 / §5 sub-tasks (75 entries; 39 at the initial
+SM5.G landing + 28 from the completion audit-pass + 8 from the §11 deep-audit pass —
+the SM5.G invariants maintained by the live domain tick):
 
 * `.rotation` — SM5.G.1 / SM5.G.2: the pure rotation `advanceDomainOnCore`, its
   frame lemmas (objects / getTcb? / domainSchedule / run-queue / current /
@@ -250,12 +251,29 @@ def perCoreDomainTheorems : List PerCoreDomainTheorem :=
     pcdt! "switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore: live rotation preserves index-bounds"
       switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore .livePreservation,
     pcdt! "scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule: live domain tick preserves the membership invariant"
-      scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule .livePreservation]
+      scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule .livePreservation,
+    -- ── SM5.G completion §11: the SM5.G invariants maintained by the LIVE domain tick ──
+    pcdt! "domainScheduleIndexInBoundsOnCore_frame: the index-bounds invariant's read-footprint frame"
+      domainScheduleIndexInBoundsOnCore_frame .invariant,
+    pcdt! "domainConsistentOnCore_frame: the domain-consistency invariant's read-footprint frame"
+      domainConsistentOnCore_frame .invariant,
+    pcdt! "idleFallbackOnCore_domainScheduleIndexOnCore: the idle fallback frames the schedule index"
+      idleFallbackOnCore_domainScheduleIndexOnCore .livePreservation,
+    pcdt! "scheduleEffectiveOnCore_domainScheduleIndexOnCore: the reschedule frames the schedule index"
+      scheduleEffectiveOnCore_domainScheduleIndexOnCore .livePreservation,
+    pcdt! "decrementDomainTimeOnCore_domainScheduleIndexOnCore: the domain decrement frames the schedule index"
+      decrementDomainTimeOnCore_domainScheduleIndexOnCore .livePreservation,
+    pcdt! "scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore: live domain tick preserves index-bounds"
+      scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore .livePreservation,
+    pcdt! "switchDomainOnCore_preserves_domainConsistentOnCore: live rotation preserves domain consistency"
+      switchDomainOnCore_preserves_domainConsistentOnCore .livePreservation,
+    pcdt! "scheduleDomainOnCore_preserves_domainConsistentOnCore: live domain tick preserves domain consistency"
+      scheduleDomainOnCore_preserves_domainConsistentOnCore .livePreservation]
 
 /-- WS-SM SM5.G: the inventory has 67 substantive entries (39 at the initial SM5.G
 landing + 28 from the completion audit-pass).  A regression that adds a new SM5.G
 theorem without registering it fails this count witness at the Tier-3 surface check. -/
-theorem perCoreDomainTheorems_count : perCoreDomainTheorems.length = 67 := by decide
+theorem perCoreDomainTheorems_count : perCoreDomainTheorems.length = 75 := by decide
 
 /-- WS-SM SM5.G: 14 entries in the `rotation` category. -/
 theorem perCoreDomainTheorems_rotation_count :
@@ -285,13 +303,15 @@ theorem perCoreDomainTheorems_independence_count :
 theorem perCoreDomainTheorems_query_count :
     (perCoreDomainTheorems.filter (fun t => t.category == .query)).length = 3 := by decide
 
-/-- WS-SM SM5.G: 7 entries in the `invariant` category (index-bounds + domain-consistency). -/
+/-- WS-SM SM5.G: 9 entries in the `invariant` category (index-bounds + domain-consistency
++ §11 read-footprint frames). -/
 theorem perCoreDomainTheorems_invariant_count :
-    (perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length = 7 := by decide
+    (perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length = 9 := by decide
 
-/-- WS-SM SM5.G: 9 entries in the `livePreservation` category (live-transition preservation + frames). -/
+/-- WS-SM SM5.G: 15 entries in the `livePreservation` category (live-transition preservation
++ frames; +6 §11: the SM5.G invariants maintained by the live domain tick). -/
 theorem perCoreDomainTheorems_livePreservation_count :
-    (perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length = 9 := by decide
+    (perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length = 15 := by decide
 
 /-- WS-SM SM5.G: per-category counts sum to the total. -/
 theorem perCoreDomainTheorems_partition_sum :

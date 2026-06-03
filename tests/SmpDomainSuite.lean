@@ -134,6 +134,16 @@ open SeLe4n.Testing
 #check @perCoreDomainTheorems_invariant_count
 #check @perCoreDomainTheorems_livePreservation_count
 
+-- SM5.G §11 deep-audit: the SM5.G invariants maintained by the LIVE domain tick.
+#check @domainScheduleIndexInBoundsOnCore_frame
+#check @domainConsistentOnCore_frame
+#check @idleFallbackOnCore_domainScheduleIndexOnCore
+#check @scheduleEffectiveOnCore_domainScheduleIndexOnCore
+#check @decrementDomainTimeOnCore_domainScheduleIndexOnCore
+#check @scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore
+#check @switchDomainOnCore_preserves_domainConsistentOnCore
+#check @scheduleDomainOnCore_preserves_domainConsistentOnCore
+
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
 -- ============================================================================
@@ -229,6 +239,20 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) :
     tcb.domain = st.scheduler.activeDomainOnCore c :=
   chooseThreadEffectiveOnCore_respects_activeDomain st c tid tcb hSel hTcb
+
+-- SM5.G §11: the LIVE domain tick maintains BOTH cyclic-theorem invariants — so SM5.I
+-- can carry their hypotheses across `scheduleDomainOnCore`.
+example (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hInv : domainScheduleIndexInBoundsOnCore st c)
+    (hStep : scheduleDomainOnCore st c = .ok st') :
+    domainScheduleIndexInBoundsOnCore st' c :=
+  scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore st c st' hInv hStep
+
+example (st : SystemState) (c : CoreId) (st' : SystemState)
+    (hCons : domainConsistentOnCore st c)
+    (hStep : scheduleDomainOnCore st c = .ok st') :
+    domainConsistentOnCore st' c :=
+  scheduleDomainOnCore_preserves_domainConsistentOnCore st c st' hCons hStep
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM5.G.6 domain-rotation scenarios
@@ -342,8 +366,8 @@ private def runLockSetChecks : IO Unit := do
 /-- §3.8: the SM5.G theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.8 SM5.G inventory partition counts ---"
-  assertBool "inventory has 67 entries"
-    (decide (perCoreDomainTheorems.length = 67))
+  assertBool "inventory has 75 entries"
+    (decide (perCoreDomainTheorems.length = 75))
   assertBool "rotation category has 14 entries"
     (decide ((perCoreDomainTheorems.filter (fun t => t.category == .rotation)).length = 14))
   assertBool "cyclic category has 8 entries"
@@ -356,10 +380,10 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreDomainTheorems.filter (fun t => t.category == .independence)).length = 10))
   assertBool "query category has 3 entries"
     (decide ((perCoreDomainTheorems.filter (fun t => t.category == .query)).length = 3))
-  assertBool "invariant category has 7 entries"
-    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length = 7))
-  assertBool "livePreservation category has 9 entries"
-    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length = 9))
+  assertBool "invariant category has 9 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .invariant)).length = 9))
+  assertBool "livePreservation category has 15 entries"
+    (decide ((perCoreDomainTheorems.filter (fun t => t.category == .livePreservation)).length = 15))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreDomainTheorems.map (·.identifier)).Nodup)
 

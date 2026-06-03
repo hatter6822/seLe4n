@@ -3125,6 +3125,66 @@ the active-domain cyclic value) + the new surface anchors / elaboration examples
 inventory partition-count guards updated to the 9-category / 67-entry totals.  Items
 deferred past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.G deep-audit pass LANDED at v0.31.53** (per-core domain scheduling; the
+live-transition invariant-preservation closure).  A code-first audit (reading the
+implementation, not its docstrings — checking soundness, security, and mathematical
+correctness) confirmed the v0.31.52 cut sound, secure, and proved with no dependency
+beyond the foundational `propext` / `Quot.sound` / `Classical.choice`, with no shortcut
+that made the codebase less secure.  It closed one substantive completeness asymmetry +
+one stale def docstring.  All additions carry the same foundational-only dependency
+(verified via `#print axioms`); default build green (324 jobs); trace byte-identical
+(purely additive / staged); the AK7 cascade floor is unchanged (`RAW_LOOKUP_TID` 814).
+The staged `PerCoreDomain.lean` theorem inventory grows 67 → 75 entries (the
+`livePreservation` category 7 → 15).
+
+- **The asymmetry (the finding).**  The v0.31.52 cut introduced the two SM5.G per-core
+  domain invariants `domainScheduleIndexInBoundsOnCore` (the schedule index stays
+  `< domainSchedule.length`) and `domainConsistentOnCore` (the active domain equals the
+  schedule entry at the current index) and proved that `scheduleDomainOnCore`
+  *preserves* the SM4.C *membership* predicate — but it did **not** prove the live
+  `scheduleDomainOnCore` / `switchDomainOnCore` transitions maintain these two new
+  invariants.  An invariant established by the abstract rotation yet not shown
+  maintained by the real transitions is half-delivered: SM5.I could not assume it
+  across a domain tick.  Per the implement-the-improvement rule the gap is closed by
+  proving the maintenance, not by weakening the invariant.
+- **§11 — 8 new live-transition preservation theorems.**
+  `domainScheduleIndexInBoundsOnCore_frame` / `domainConsistentOnCore_frame` (the
+  per-other-core frames — a write to core `c'`'s domain triple leaves core `c`'s
+  invariant untouched); `idleFallbackOnCore_domainScheduleIndexOnCore` /
+  `scheduleEffectiveOnCore_domainScheduleIndexOnCore` /
+  `decrementDomainTimeOnCore_domainScheduleIndexOnCore` (the schedule-index frames the
+  re-dispatch path needs — none of the idle fallback, the effective dispatch, or the
+  pure domain-time decrement touches the schedule index);
+  `scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore` (the live domain
+  tick keeps the index in bounds — the rotated entry is `(idx+1) % length < length`;
+  the `else` branch's `decrementDomainTimeOnCore` is index-inert);
+  `switchDomainOnCore_preserves_domainConsistentOnCore` /
+  `scheduleDomainOnCore_preserves_domainConsistentOnCore` (both live transitions keep
+  the active domain equal to the entry at the current index — `switchDomainOnCore`'s
+  domain effect is exactly the rotation, so consistency is *established*
+  unconditionally; `scheduleDomainOnCore` inherits it through the context save/restore
+  frames).
+- **Def docstring corrected.**  `advanceDomainOnCore`'s header cited the superseded
+  active-domain-only bridge `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore`;
+  updated to the full-triple `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore`
+  (active domain + time remaining + schedule index) from v0.31.52, so the docstring
+  names the load-bearing bridge rather than the weaker one it supersedes.
+
+Tests: `tests/SmpDomainSuite.lean` grows to 45 runtime assertions (+2 §11 scenarios:
+the live `scheduleDomainOnCore` keeps the schedule index in bounds; both live
+transitions keep the active domain consistent with the index) + the §11 surface
+anchors and 2 elaboration examples; the inventory partition-count guards updated to the
+75-entry / `livePreservation`-15 totals; `scripts/test_tier3_invariant_surface.sh`
+gains the §11 anchor block.  Audit confirmations (no change required): every SM5.G
+theorem re-verified to depend only on the three foundational Lean axioms; the staged
+build (208 jobs) + production/staged partition gate (55 staged-only modules) green; no
+compiler / linter warnings on a forced clean rebuild; the domain barrier
+(`chooseThreadOnCore_respects_activeDomain` + the budget variant) re-traced as
+genuinely enforced (the selection's fold-eligibility induction never admits an
+out-of-domain thread, and `scheduleEffectiveOnCore` independently re-checks
+`tcb.domain = activeDomainOnCore c` before committing a dispatch).  Items deferred past
+v1.0.0 with correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/stoic-volta-DHyaU",
-      "commit_sha": "3e501643014f388b5134878686606e073169fd67",
-      "tree_sha": "fc6e84b5fd10b351c1a0c38cddc123a4c33398bf",
-      "committed_at_utc": "2026-06-03T07:14:07+00:00"
+      "commit_sha": "6c0f908d54b2a58895f28a36568d5278ac7f0a92",
+      "tree_sha": "de8902acfaab1fbc33a114d00c216912f15e8be4",
+      "committed_at_utc": "2026-06-03T19:50:20+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0556a735d7faa2a588745513e40a3274b58e649886c842c9c56ea5edfee22d1"
+    "source_digest": "d2bd17a3cae1212b08292cd8f25fc2259b1540162da91aaa94658659e57d4ee1"
   },
   "summary": {
     "module_count": 278,
-    "declaration_count": 10201
+    "declaration_count": 10211
   },
   "readme_sync": {
-    "version": "0.31.52",
+    "version": "0.31.53",
     "lean_toolchain": "v4.28.0",
     "production_files": 224,
-    "production_loc": 160155,
+    "production_loc": 160330,
     "test_files": 54,
-    "test_loc": 35460,
-    "proved_theorem_lemma_decls": 5218,
+    "test_loc": 35484,
+    "proved_theorem_lemma_decls": 5226,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -71069,7 +71069,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain",
       "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean",
-      "declaration_count": 70,
+      "declaration_count": 78,
       "declarations": [
         {
           "kind": "def",
@@ -71100,7 +71100,7 @@
         {
           "kind": "def",
           "name": "advanceDomainOnCore",
-          "line": 104,
+          "line": 105,
           "called": [
             "CoreId",
             "SystemState",
@@ -71116,7 +71116,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_empty",
-          "line": 116,
+          "line": 117,
           "called": [
             "CoreId",
             "SystemState",
@@ -71127,7 +71127,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_objects",
-          "line": 124,
+          "line": 125,
           "called": [
             "CoreId",
             "SystemState",
@@ -71138,7 +71138,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_getTcb",
-          "line": 130,
+          "line": 131,
           "called": [
             "CoreId",
             "SystemState",
@@ -71152,7 +71152,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_domainSchedule",
-          "line": 138,
+          "line": 139,
           "called": [
             "CoreId",
             "SystemState",
@@ -71166,7 +71166,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_runQueueOnCore",
-          "line": 148,
+          "line": 149,
           "called": [
             "CoreId",
             "SystemState",
@@ -71178,7 +71178,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_currentOnCore",
-          "line": 154,
+          "line": 155,
           "called": [
             "CoreId",
             "SystemState",
@@ -71190,7 +71190,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_activeDomainOnCore_ne",
-          "line": 159,
+          "line": 160,
           "called": [
             "CoreId",
             "SystemState",
@@ -71202,7 +71202,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_domainTimeRemainingOnCore_ne",
-          "line": 165,
+          "line": 166,
           "called": [
             "CoreId",
             "SystemState",
@@ -71214,7 +71214,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_domainScheduleIndexOnCore_ne",
-          "line": 171,
+          "line": 172,
           "called": [
             "CoreId",
             "SystemState",
@@ -71226,7 +71226,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_rotates",
-          "line": 183,
+          "line": 184,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
@@ -71244,7 +71244,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_domainTimeRemainingOnCore_self",
-          "line": 196,
+          "line": 197,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
@@ -71261,7 +71261,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_domainScheduleIndexOnCore_self",
-          "line": 208,
+          "line": 209,
           "called": [
             "CoreId",
             "SystemState",
@@ -71275,7 +71275,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_index_lt",
-          "line": 221,
+          "line": 222,
           "called": [
             "CoreId",
             "SystemState",
@@ -71289,7 +71289,7 @@
         {
           "kind": "def",
           "name": "advanceDomainOnCoreN",
-          "line": 235,
+          "line": 236,
           "called": [
             "CoreId",
             "SystemState",
@@ -71300,7 +71300,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreN_zero",
-          "line": 239,
+          "line": 240,
           "called": [
             "CoreId",
             "SystemState",
@@ -71311,7 +71311,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreN_succ",
-          "line": 242,
+          "line": 243,
           "called": [
             "CoreId",
             "SystemState",
@@ -71323,7 +71323,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreN_domainSchedule",
-          "line": 247,
+          "line": 248,
           "called": [
             "CoreId",
             "SystemState",
@@ -71337,13 +71337,13 @@
         {
           "kind": "theorem",
           "name": "mod_add_one_mod",
-          "line": 255,
+          "line": 256,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreN_index",
-          "line": 263,
+          "line": 264,
           "called": [
             "CoreId",
             "SystemState",
@@ -71362,7 +71362,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_cyclic",
-          "line": 286,
+          "line": 287,
           "called": [
             "CoreId",
             "SystemState",
@@ -71376,7 +71376,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_activeDomain_eq_advanceDomainOnCore",
-          "line": 307,
+          "line": 308,
           "called": [
             "CoreId",
             "SystemState",
@@ -71396,7 +71396,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_establishes_activeDomainOnCore_isInDomainSchedule",
-          "line": 335,
+          "line": 336,
           "called": [
             "CoreId",
             "SystemState",
@@ -71413,7 +71413,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule_ne",
-          "line": 353,
+          "line": 354,
           "called": [
             "CoreId",
             "SystemState",
@@ -71427,7 +71427,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_preserves_isInDomainSchedule_smp",
-          "line": 366,
+          "line": 367,
           "called": [
             "CoreId",
             "SystemState",
@@ -71441,7 +71441,7 @@
         {
           "kind": "theorem",
           "name": "activeDomainOnCore_isInDomainSchedule_mem",
-          "line": 381,
+          "line": 382,
           "called": [
             "CoreId",
             "SystemState",
@@ -71453,7 +71453,7 @@
         {
           "kind": "theorem",
           "name": "activeDomainOnCore_isInDomainSchedule_mem_of_smp",
-          "line": 393,
+          "line": 394,
           "called": [
             "CoreId",
             "SystemState",
@@ -71467,7 +71467,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_activeDomain_mem",
-          "line": 402,
+          "line": 403,
           "called": [
             "CoreId",
             "SystemState",
@@ -71482,7 +71482,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_eligible_aux",
-          "line": 426,
+          "line": 427,
           "called": [
             "Deadline",
             "KernelObject",
@@ -71500,7 +71500,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_eligible",
-          "line": 478,
+          "line": 479,
           "called": [
             "Deadline",
             "KernelObject",
@@ -71517,7 +71517,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_result_eligible",
-          "line": 491,
+          "line": 492,
           "called": [
             "Deadline",
             "DomainId",
@@ -71540,7 +71540,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadOnCore_respects_activeDomain",
-          "line": 518,
+          "line": 519,
           "called": [
             "CoreId",
             "SystemState",
@@ -71560,7 +71560,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableEffective_result_eligible",
-          "line": 538,
+          "line": 539,
           "called": [
             "Deadline",
             "Priority",
@@ -71578,7 +71578,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucketEffective_result_eligible",
-          "line": 550,
+          "line": 551,
           "called": [
             "Deadline",
             "DomainId",
@@ -71602,7 +71602,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadEffectiveOnCore_respects_activeDomain",
-          "line": 578,
+          "line": 579,
           "called": [
             "CoreId",
             "SystemState",
@@ -71622,7 +71622,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_independent_of_other_core",
-          "line": 604,
+          "line": 605,
           "called": [
             "CoreId",
             "SystemState",
@@ -71638,7 +71638,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_perCore_independence",
-          "line": 614,
+          "line": 615,
           "called": [
             "CoreId",
             "SystemState",
@@ -71651,7 +71651,7 @@
         {
           "kind": "def",
           "name": "advanceDomainOnCoreLockSet",
-          "line": 629,
+          "line": 630,
           "called": [
             "AccessMode",
             "CoreId",
@@ -71661,7 +71661,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreLockSet_length",
-          "line": 634,
+          "line": 635,
           "called": [
             "CoreId",
             "advanceDomainOnCoreLockSet",
@@ -71671,7 +71671,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreLockSet_write_only",
-          "line": 639,
+          "line": 640,
           "called": [
             "CoreId",
             "advanceDomainOnCoreLockSet"
@@ -71680,7 +71680,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreLockSet_contains_runQueue_write",
-          "line": 646,
+          "line": 647,
           "called": [
             "CoreId",
             "advanceDomainOnCoreLockSet"
@@ -71689,7 +71689,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreLockSet_keys_nodup",
-          "line": 653,
+          "line": 654,
           "called": [
             "CoreId",
             "advanceDomainOnCoreLockSet"
@@ -71698,7 +71698,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreLockSet_disjoint_of_ne",
-          "line": 661,
+          "line": 662,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -71708,7 +71708,7 @@
         {
           "kind": "theorem",
           "name": "activeDomainOnCore_systemState_mem",
-          "line": 698,
+          "line": 699,
           "called": [
             "CoreId",
             "SystemState",
@@ -71722,7 +71722,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_domainScheduleIndexOnCore_self",
-          "line": 710,
+          "line": 711,
           "called": [
             "CoreId",
             "SystemState",
@@ -71737,7 +71737,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_domainTimeRemainingOnCore_self",
-          "line": 730,
+          "line": 731,
           "called": [
             "CoreId",
             "DomainScheduleEntry",
@@ -71755,7 +71755,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_domainTriple_eq_advanceDomainOnCore",
-          "line": 756,
+          "line": 757,
           "called": [
             "CoreId",
             "SystemState",
@@ -71780,7 +71780,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCoreLockSet_pairwise_le",
-          "line": 785,
+          "line": 786,
           "called": [
             "CoreId",
             "advanceDomainOnCoreLockSet"
@@ -71789,7 +71789,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_frames_outside_core",
-          "line": 797,
+          "line": 798,
           "called": [
             "CoreId",
             "SystemState",
@@ -71811,7 +71811,7 @@
         {
           "kind": "def",
           "name": "domainScheduleIndexInBoundsOnCore",
-          "line": 821,
+          "line": 822,
           "called": [
             "CoreId",
             "SystemState",
@@ -71823,7 +71823,7 @@
         {
           "kind": "theorem",
           "name": "default_domainScheduleIndexInBoundsOnCore",
-          "line": 827,
+          "line": 828,
           "called": [
             "CoreId",
             "SystemState",
@@ -71834,7 +71834,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_establishes_domainScheduleIndexInBoundsOnCore",
-          "line": 833,
+          "line": 834,
           "called": [
             "CoreId",
             "SystemState",
@@ -71848,7 +71848,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore_ne",
-          "line": 844,
+          "line": 845,
           "called": [
             "CoreId",
             "SystemState",
@@ -71862,7 +71862,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_cyclic_of_inBounds",
-          "line": 856,
+          "line": 857,
           "called": [
             "CoreId",
             "SystemState",
@@ -71877,7 +71877,7 @@
         {
           "kind": "def",
           "name": "domainConsistentOnCore",
-          "line": 875,
+          "line": 876,
           "called": [
             "CoreId",
             "SystemState",
@@ -71889,7 +71889,7 @@
         {
           "kind": "theorem",
           "name": "default_domainConsistentOnCore",
-          "line": 881,
+          "line": 882,
           "called": [
             "CoreId",
             "SystemState",
@@ -71900,7 +71900,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_establishes_domainConsistentOnCore",
-          "line": 890,
+          "line": 891,
           "called": [
             "CoreId",
             "SystemState",
@@ -71916,7 +71916,7 @@
         {
           "kind": "theorem",
           "name": "advanceDomainOnCore_cyclic_activeDomain",
-          "line": 906,
+          "line": 907,
           "called": [
             "CoreId",
             "SystemState",
@@ -71936,7 +71936,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_activeDomainOnCore",
-          "line": 944,
+          "line": 945,
           "called": [
             "CoreId",
             "SystemState",
@@ -71950,7 +71950,7 @@
         {
           "kind": "theorem",
           "name": "idleFallbackOnCore_domainSchedule",
-          "line": 952,
+          "line": 953,
           "called": [
             "CoreId",
             "SystemState",
@@ -71965,7 +71965,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_activeDomainOnCore",
-          "line": 965,
+          "line": 966,
           "called": [
             "CoreId",
             "SystemState",
@@ -71985,7 +71985,7 @@
         {
           "kind": "theorem",
           "name": "scheduleEffectiveOnCore_domainSchedule",
-          "line": 991,
+          "line": 992,
           "called": [
             "CoreId",
             "SystemState",
@@ -72004,7 +72004,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_domainSchedule",
-          "line": 1018,
+          "line": 1019,
           "called": [
             "CoreId",
             "SystemState",
@@ -72021,7 +72021,7 @@
         {
           "kind": "theorem",
           "name": "decrementDomainTimeOnCore_domainSchedule",
-          "line": 1036,
+          "line": 1037,
           "called": [
             "CoreId",
             "SystemState",
@@ -72033,7 +72033,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule",
-          "line": 1047,
+          "line": 1048,
           "called": [
             "CoreId",
             "SystemState",
@@ -72051,7 +72051,7 @@
         {
           "kind": "theorem",
           "name": "switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore",
-          "line": 1070,
+          "line": 1071,
           "called": [
             "CoreId",
             "SystemState",
@@ -72065,10 +72065,9 @@
         {
           "kind": "theorem",
           "name": "scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule",
-          "line": 1089,
+          "line": 1090,
           "called": [
             "CoreId",
-            "Kernel",
             "SystemState",
             "activeDomainOnCore_isInDomainSchedule",
             "decrementDomainTimeOnCore_activeDomainOnCore",
@@ -72079,6 +72078,137 @@
             "st",
             "switchDomainOnCore",
             "switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "domainScheduleIndexInBoundsOnCore_frame",
+          "line": 1129,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "domainScheduleIndexInBoundsOnCore",
+            "domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "domainConsistentOnCore_frame",
+          "line": 1139,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "activeDomainOnCore",
+            "domainConsistentOnCore",
+            "domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleFallbackOnCore_domainScheduleIndexOnCore",
+          "line": 1150,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "dispatchIdleOnCore",
+            "domainScheduleIndexOnCore",
+            "idleFallbackOnCore",
+            "restoreIncomingContext_scheduler",
+            "setCurrentOnCore_domainScheduleIndexOnCore",
+            "setRunQueueOnCore_domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleEffectiveOnCore_domainScheduleIndexOnCore",
+          "line": 1161,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "chooseThreadEffectiveOnCore",
+            "domainScheduleIndexOnCore",
+            "getTcb",
+            "idleFallbackOnCore_domainScheduleIndexOnCore",
+            "none",
+            "restoreIncomingContext_scheduler",
+            "saveOutgoingContextOnCore_scheduler_eq",
+            "scheduleEffectiveOnCore",
+            "setCurrentOnCore_domainScheduleIndexOnCore",
+            "setRunQueueOnCore_domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decrementDomainTimeOnCore_domainScheduleIndexOnCore",
+          "line": 1187,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "decrementDomainTimeOnCore",
+            "domainScheduleIndexOnCore",
+            "setDomainTimeRemainingOnCore_domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore",
+          "line": 1199,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "decrementDomainTimeOnCore_domainSchedule",
+            "decrementDomainTimeOnCore_domainScheduleIndexOnCore",
+            "domainScheduleIndexInBoundsOnCore",
+            "domainScheduleIndexInBoundsOnCore_frame",
+            "scheduleDomainOnCore",
+            "scheduleEffectiveOnCore_domainSchedule",
+            "scheduleEffectiveOnCore_domainScheduleIndexOnCore",
+            "st",
+            "switchDomainOnCore",
+            "switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchDomainOnCore_preserves_domainConsistentOnCore",
+          "line": 1223,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "domainConsistentOnCore",
+            "st",
+            "switchDomainOnCore",
+            "switchDomainOnCore_domainSchedule",
+            "switchDomainOnCore_domainScheduleIndexOnCore_self",
+            "switchDomainOnCore_rotates",
+            "switchDomainOnCore_singleDomain_noop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleDomainOnCore_preserves_domainConsistentOnCore",
+          "line": 1245,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SystemState",
+            "decrementDomainTimeOnCore_activeDomainOnCore",
+            "decrementDomainTimeOnCore_domainSchedule",
+            "decrementDomainTimeOnCore_domainScheduleIndexOnCore",
+            "domainConsistentOnCore",
+            "domainConsistentOnCore_frame",
+            "scheduleDomainOnCore",
+            "scheduleEffectiveOnCore_activeDomainOnCore",
+            "scheduleEffectiveOnCore_domainSchedule",
+            "scheduleEffectiveOnCore_domainScheduleIndexOnCore",
+            "st",
+            "switchDomainOnCore",
+            "switchDomainOnCore_preserves_domainConsistentOnCore"
           ]
         }
       ]
@@ -72091,13 +72221,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 54,
+          "line": 55,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreDomainCategory",
-          "line": 57,
+          "line": 58,
           "called": [
             "invariant"
           ]
@@ -72105,7 +72235,7 @@
         {
           "kind": "structure",
           "name": "PerCoreDomainTheorem",
-          "line": 84,
+          "line": 85,
           "called": [
             "PerCoreDomainCategory"
           ]
@@ -72113,13 +72243,13 @@
         {
           "kind": "syntax",
           "name": "\"pcdt!\"",
-          "line": 92,
+          "line": 93,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:94>",
-          "line": 94,
+          "name": "<anonymous:macro_rules:95>",
+          "line": 95,
           "called": [
             "PerCoreDomainTheorem"
           ]
@@ -72127,7 +72257,7 @@
         {
           "kind": "def",
           "name": "perCoreDomainTheorems",
-          "line": 106,
+          "line": 107,
           "called": [
             "PerCoreDomainTheorem",
             "SeLe4n.Model.SystemState.activeDomainOnCore",
@@ -72181,29 +72311,37 @@
             "chooseThreadEffectiveOnCore_respects_activeDomain",
             "chooseThreadOnCore_respects_activeDomain",
             "decrementDomainTimeOnCore_domainSchedule",
+            "decrementDomainTimeOnCore_domainScheduleIndexOnCore",
             "default_domainConsistentOnCore",
             "default_domainScheduleIndexInBoundsOnCore",
             "domainConsistentOnCore",
+            "domainConsistentOnCore_frame",
             "domainScheduleIndexInBoundsOnCore",
+            "domainScheduleIndexInBoundsOnCore_frame",
             "idleFallbackOnCore_activeDomainOnCore",
             "idleFallbackOnCore_domainSchedule",
+            "idleFallbackOnCore_domainScheduleIndexOnCore",
             "invariant",
             "scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule",
+            "scheduleDomainOnCore_preserves_domainConsistentOnCore",
+            "scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore",
             "scheduleEffectiveOnCore_activeDomainOnCore",
             "scheduleEffectiveOnCore_domainSchedule",
+            "scheduleEffectiveOnCore_domainScheduleIndexOnCore",
             "switchDomainOnCore_activeDomain_eq_advanceDomainOnCore",
             "switchDomainOnCore_domainSchedule",
             "switchDomainOnCore_domainScheduleIndexOnCore_self",
             "switchDomainOnCore_domainTimeRemainingOnCore_self",
             "switchDomainOnCore_domainTriple_eq_advanceDomainOnCore",
             "switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule",
+            "switchDomainOnCore_preserves_domainConsistentOnCore",
             "switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore"
           ]
         },
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_count",
-          "line": 258,
+          "line": 276,
           "called": [
             "length"
           ]
@@ -72211,7 +72349,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_rotation_count",
-          "line": 261,
+          "line": 279,
           "called": [
             "filter",
             "length"
@@ -72220,7 +72358,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_cyclic_count",
-          "line": 265,
+          "line": 283,
           "called": [
             "filter",
             "length"
@@ -72229,7 +72367,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_bridge_count",
-          "line": 269,
+          "line": 287,
           "called": [
             "filter",
             "length"
@@ -72238,7 +72376,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_domainSchedule_count",
-          "line": 273,
+          "line": 291,
           "called": [
             "filter",
             "length"
@@ -72247,7 +72385,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_respects_count",
-          "line": 277,
+          "line": 295,
           "called": [
             "filter",
             "length"
@@ -72256,7 +72394,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_independence_count",
-          "line": 281,
+          "line": 299,
           "called": [
             "filter",
             "length"
@@ -72265,7 +72403,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_query_count",
-          "line": 285,
+          "line": 303,
           "called": [
             "filter",
             "length"
@@ -72274,7 +72412,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_invariant_count",
-          "line": 289,
+          "line": 308,
           "called": [
             "filter",
             "invariant",
@@ -72284,7 +72422,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_livePreservation_count",
-          "line": 293,
+          "line": 313,
           "called": [
             "filter",
             "length"
@@ -72293,7 +72431,7 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_partition_sum",
-          "line": 297,
+          "line": 317,
           "called": [
             "filter",
             "invariant",
@@ -72303,13 +72441,13 @@
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_identifiers_nodup",
-          "line": 313,
+          "line": 333,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "perCoreDomainTheorems_descriptions_nodup",
-          "line": 319,
+          "line": 339,
           "called": [
             "Kernel"
           ]
@@ -130179,7 +130317,7 @@
     {
       "module": "tests.SmpDomainSuite",
       "path": "tests/SmpDomainSuite.lean",
-      "declaration_count": 33,
+      "declaration_count": 35,
       "declarations": [
         {
           "kind": "namespace",
@@ -130237,12 +130375,16 @@
             "chooseThreadEffectiveOnCore_respects_activeDomain",
             "chooseThreadOnCore_respects_activeDomain",
             "decrementDomainTimeOnCore_domainSchedule",
+            "decrementDomainTimeOnCore_domainScheduleIndexOnCore",
             "default_domainConsistentOnCore",
             "default_domainScheduleIndexInBoundsOnCore",
             "domainConsistentOnCore",
+            "domainConsistentOnCore_frame",
             "domainScheduleIndexInBoundsOnCore",
+            "domainScheduleIndexInBoundsOnCore_frame",
             "idleFallbackOnCore_activeDomainOnCore",
             "idleFallbackOnCore_domainSchedule",
+            "idleFallbackOnCore_domainScheduleIndexOnCore",
             "perCoreDomainTheorems",
             "perCoreDomainTheorems_count",
             "perCoreDomainTheorems_identifiers_nodup",
@@ -130251,21 +130393,25 @@
             "perCoreDomainTheorems_partition_sum",
             "perCoreDomainTheorems_query_count",
             "scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule",
+            "scheduleDomainOnCore_preserves_domainConsistentOnCore",
+            "scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore",
             "scheduleEffectiveOnCore_activeDomainOnCore",
             "scheduleEffectiveOnCore_domainSchedule",
+            "scheduleEffectiveOnCore_domainScheduleIndexOnCore",
             "switchDomainOnCore_activeDomain_eq_advanceDomainOnCore",
             "switchDomainOnCore_domainSchedule",
             "switchDomainOnCore_domainScheduleIndexOnCore_self",
             "switchDomainOnCore_domainTimeRemainingOnCore_self",
             "switchDomainOnCore_domainTriple_eq_advanceDomainOnCore",
             "switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule",
+            "switchDomainOnCore_preserves_domainConsistentOnCore",
             "switchDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:142>",
-          "line": 142,
+          "name": "<anonymous:example:152>",
+          "line": 152,
           "called": [
             "CoreId",
             "SystemState",
@@ -130278,8 +130424,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:150>",
-          "line": 150,
+          "name": "<anonymous:example:160>",
+          "line": 160,
           "called": [
             "CoreId",
             "SystemState",
@@ -130291,8 +130437,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:155>",
-          "line": 155,
+          "name": "<anonymous:example:165>",
+          "line": 165,
           "called": [
             "CoreId",
             "SystemState",
@@ -130304,8 +130450,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:162>",
-          "line": 162,
+          "name": "<anonymous:example:172>",
+          "line": 172,
           "called": [
             "CoreId",
             "SystemState",
@@ -130320,8 +130466,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:169>",
-          "line": 169,
+          "name": "<anonymous:example:179>",
+          "line": 179,
           "called": [
             "CoreId",
             "SystemState",
@@ -130333,8 +130479,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:174>",
-          "line": 174,
+          "name": "<anonymous:example:184>",
+          "line": 184,
           "called": [
             "CoreId",
             "SystemState",
@@ -130347,8 +130493,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:180>",
-          "line": 180,
+          "name": "<anonymous:example:190>",
+          "line": 190,
           "called": [
             "CoreId",
             "RunQueueLockId",
@@ -130358,8 +130504,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:186>",
-          "line": 186,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
             "CoreId",
             "SystemState",
@@ -130374,8 +130520,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:195>",
-          "line": 195,
+          "name": "<anonymous:example:205>",
+          "line": 205,
           "called": [
             "CoreId",
             "SystemState",
@@ -130389,8 +130535,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
+          "name": "<anonymous:example:213>",
+          "line": 213,
           "called": [
             "CoreId",
             "SystemState",
@@ -130405,8 +130551,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:213>",
-          "line": 213,
+          "name": "<anonymous:example:223>",
+          "line": 223,
           "called": [
             "CoreId",
             "SystemState",
@@ -130418,8 +130564,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:220>",
-          "line": 220,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "CoreId",
             "SystemState",
@@ -130431,8 +130577,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:227>",
-          "line": 227,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "CoreId",
             "SystemState",
@@ -130446,9 +130592,35 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:245>",
+          "line": 245,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "domainScheduleIndexInBoundsOnCore",
+            "scheduleDomainOnCore",
+            "scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:251>",
+          "line": 251,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "domainConsistentOnCore",
+            "scheduleDomainOnCore",
+            "scheduleDomainOnCore_preserves_domainConsistentOnCore",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "mkTcb",
-          "line": 238,
+          "line": 262,
           "called": [
             "TCB",
             "ofNat"
@@ -130457,7 +130629,7 @@
         {
           "kind": "def",
           "name": "tidA",
-          "line": 243,
+          "line": 267,
           "called": [
             "ThreadId",
             "ofNat"
@@ -130466,7 +130638,7 @@
         {
           "kind": "def",
           "name": "tidB",
-          "line": 244,
+          "line": 268,
           "called": [
             "ThreadId",
             "ofNat"
@@ -130475,7 +130647,7 @@
         {
           "kind": "def",
           "name": "twoDomainSchedule",
-          "line": 247,
+          "line": 271,
           "called": [
             "DomainScheduleEntry",
             "length"
@@ -130484,7 +130656,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 251,
+          "line": 275,
           "called": [
             "CoreId"
           ]
@@ -130492,7 +130664,7 @@
         {
           "kind": "def",
           "name": "stSingleDomain",
-          "line": 254,
+          "line": 278,
           "called": [
             "SystemState",
             "build"
@@ -130501,7 +130673,7 @@
         {
           "kind": "def",
           "name": "stTwoDomain",
-          "line": 260,
+          "line": 284,
           "called": [
             "SystemState",
             "build",
@@ -130515,7 +130687,7 @@
         {
           "kind": "def",
           "name": "stDomainSelect",
-          "line": 269,
+          "line": 293,
           "called": [
             "SystemState",
             "build",
@@ -130531,7 +130703,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 274,
+          "line": 298,
           "called": [
             "throw"
           ]
@@ -130539,7 +130711,7 @@
         {
           "kind": "def",
           "name": "runDomainScenarios",
-          "line": 282,
+          "line": 306,
           "called": [
             "activeDomainOnCore",
             "advanceDomainOnCore",
@@ -130564,7 +130736,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 329,
+          "line": 353,
           "called": [
             "RunQueueLockId",
             "advanceDomainOnCoreLockSet",
@@ -130578,7 +130750,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 343,
+          "line": 367,
           "called": [
             "assertBool",
             "filter",
@@ -130589,7 +130761,7 @@
         {
           "kind": "def",
           "name": "threeDomainSchedule",
-          "line": 368,
+          "line": 392,
           "called": [
             "DomainScheduleEntry",
             "length"
@@ -130598,7 +130770,7 @@
         {
           "kind": "def",
           "name": "stThreeDomain",
-          "line": 373,
+          "line": 397,
           "called": [
             "SystemState",
             "build",
@@ -130608,7 +130780,7 @@
         {
           "kind": "def",
           "name": "stTwoDomainAtIdx1",
-          "line": 380,
+          "line": 404,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -130621,7 +130793,7 @@
         {
           "kind": "def",
           "name": "stCore1Domain",
-          "line": 388,
+          "line": 412,
           "called": [
             "SystemState",
             "build",
@@ -130631,7 +130803,7 @@
         {
           "kind": "def",
           "name": "runCompletionScenarios",
-          "line": 395,
+          "line": 419,
           "called": [
             "activeDomainOnCore",
             "advanceDomainOnCore",
@@ -130653,7 +130825,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 438,
+          "line": 462,
           "called": [
             "runCompletionScenarios",
             "runDomainScenarios",
@@ -130664,7 +130836,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 448,
+          "line": 472,
           "called": []
         }
       ]
