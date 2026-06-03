@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.50"
+version = "0.31.53"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -424,3 +424,15 @@ root = "tests.SmpIdleSuite"
 [[lean_exe]]
 name = "smp_pip_suite"
 root = "tests.SmpPipSuite"
+
+# WS-SM SM5.G — Per-core domain scheduling test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM5.G.6 scenarios on concrete domain-schedule fixtures: single-domain no-op,
+# multi-domain rotation (domain + index + time), cyclic return-to-start (SM5.G.2),
+# post-rotation in-domain membership (SM5.G.3 / Thm 3.7.1), selection respects the
+# active-domain barrier (SM5.G.4), cross-core domain independence (SM5.G.5), plus
+# the SM5.G.5 lock-set witnesses and the SM5.G inventory partition counts.  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_domain_suite"
+root = "tests.SmpDomainSuite"

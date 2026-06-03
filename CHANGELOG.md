@@ -1,3 +1,202 @@
+## v0.31.53 — WS-SM SM5.G deep-audit pass: live-transition preservation of the per-core domain invariants
+
+A deep, code-first audit of the SM5.G workstream (reading the implementation, not
+its docstrings — checking soundness, security, and mathematical correctness)
+confirmed the v0.31.52 cut was sound, secure, and proved with no dependency beyond
+Lean's foundational `propext` / `Quot.sound` / `Classical.choice`, with no shortcut
+that made the codebase less secure.  The audit closed **one substantive completeness
+asymmetry** + corrected one stale def docstring.  All additions carry the same
+foundational-only dependency (verified via `#print axioms`); the default production
+build is green (324 jobs); the trace fixture is **byte-identical** (purely additive /
+staged); the AK7 cascade floor is unchanged (`RAW_LOOKUP_TID` 814).  The staged
+`PerCoreDomain.lean` theorem inventory grows **67 → 75** entries (the
+`livePreservation` category 7 → 15).
+
+- **The asymmetry (the finding)**: v0.31.52's #3 / #4 introduced the two SM5.G
+  per-core domain invariants `domainScheduleIndexInBoundsOnCore` (the schedule index
+  stays `< domainSchedule.length`) and `domainConsistentOnCore` (the active domain
+  equals the schedule entry at the current index) and proved
+  `scheduleDomainOnCore` *preserves* the SM4.C membership predicate — but it did
+  **not** prove the live transitions preserve these two new invariants.  An invariant
+  that is established by the abstract rotation yet not shown maintained by the real
+  `scheduleDomainOnCore` / `switchDomainOnCore` transitions is a half-delivered
+  invariant: SM5.I could not assume it across a domain tick.  Per the
+  implement-the-improvement rule the gap is closed by proving the maintenance, not by
+  weakening the invariant.
+- **§11 (8 new theorems, all live-transition preservation)**:
+  `domainScheduleIndexInBoundsOnCore_frame` / `domainConsistentOnCore_frame` (the
+  per-other-core frames — a write to core `c'`'s domain triple leaves core `c`'s
+  invariant untouched); `idleFallbackOnCore_domainScheduleIndexOnCore` /
+  `scheduleEffectiveOnCore_domainScheduleIndexOnCore` /
+  `decrementDomainTimeOnCore_domainScheduleIndexOnCore` (the schedule-index frames the
+  re-dispatch path needs — neither the idle fallback, the effective dispatch, nor the
+  pure domain-time decrement touches the schedule index);
+  `scheduleDomainOnCore_preserves_domainScheduleIndexInBoundsOnCore` (the live domain
+  tick keeps the index in bounds — the rotated entry is `(idx+1) % length < length`,
+  the `else` branch's `decrementDomainTimeOnCore` is index-inert);
+  `switchDomainOnCore_preserves_domainConsistentOnCore` /
+  `scheduleDomainOnCore_preserves_domainConsistentOnCore` (both live transitions keep
+  the active domain equal to the entry at the current index — `switchDomainOnCore`'s
+  domain effect is exactly the rotation, so consistency is *established*
+  unconditionally; `scheduleDomainOnCore` inherits it through the context
+  save/restore frames).
+- **Def docstring corrected**: `advanceDomainOnCore`'s header cited the
+  superseded active-domain-only bridge
+  `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore`; updated to the full-triple
+  `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore` (active domain + time
+  remaining + schedule index) introduced in v0.31.52 #1/#2, so the docstring now names
+  the load-bearing bridge rather than the weaker one it supersedes.
+
+Tests: `tests/SmpDomainSuite.lean` grows to 45 runtime assertions (+2 §11 scenarios:
+the live `scheduleDomainOnCore` keeps the schedule index in bounds, and both live
+transitions keep the active domain consistent with the index) + the §11 surface
+anchors and 2 elaboration examples; the inventory partition-count guards updated to
+the 75-entry / `livePreservation`-15 totals; `scripts/test_tier3_invariant_surface.sh`
+gains the §11 anchor block.  Audit confirmations (no change required): every SM5.G
+theorem re-verified to depend only on the three foundational Lean axioms; the staged
+build (208 jobs) + production/staged partition gate (55 staged-only modules) green;
+no compiler / linter warnings on a forced clean rebuild; the domain barrier
+(`chooseThreadOnCore_respects_activeDomain` + the budget variant) re-traced as
+genuinely enforced (the selection's fold-eligibility induction never admits an
+out-of-domain thread, and `scheduleEffectiveOnCore` independently re-checks
+`tcb.domain = activeDomainOnCore c` before committing a dispatch).  Items deferred
+past v1.0.0 with correctness impact: NONE.
+
+## v0.31.52 — WS-SM SM5.G completion (audit-pass): the optimal per-core domain-scheduling implementation
+
+Closes every optimality / completeness gap the SM5.G self-audit identified, bringing
+the per-core domain-scheduling workstream to its complete + optimal form.  All
+additions are axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only,
+verified via `#print axioms`); the default production build is green (324 jobs); the
+trace fixture is **byte-identical** (purely additive / staged); the AK7 cascade floor
+is unchanged.  The staged `PerCoreDomain.lean` theorem inventory grows **39 → 67**
+entries across **9** categories.
+
+- **#1 / #2 — `advanceDomainOnCore` made load-bearing for the production transition
+  (the full domain-triple bridge).**  A code-merge of `switchDomainOnCore` into
+  `advanceDomainOnCore` would *regress* the fail-closed `.error` on an out-of-bounds
+  lookup (or force the pure-total rotation to become `Except`-returning, breaking the
+  cyclic theorem), so the two functions stay correctly distinct.  Instead the bridge
+  `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore` is upgraded to the **full
+  triple** `switchDomainOnCore_domainTriple_eq_advanceDomainOnCore` (active domain +
+  time remaining + schedule index all agree), and `advanceDomainOnCore`'s
+  establishment lemma is now the **load-bearing step verifying the real live
+  transition** (`scheduleDomainOnCore`, below).
+- **#3 — the cyclic theorem's `idx < length` precondition discharged from a maintained
+  invariant.**  New `domainScheduleIndexInBoundsOnCore` invariant (+ default /
+  establishment / per-other-core frame / live-transition preservation), and
+  `advanceDomainOnCore_cyclic_of_inBounds` (the cyclic theorem with the raw obligation
+  replaced by the invariant — the form SM5.I uses directly).
+- **#4 — the cyclic property extended from the index to the active domain.**  New
+  `domainConsistentOnCore` invariant (active domain = the entry at the current index;
+  default / unconditionally established by any rotation) + the active-domain cyclic
+  theorem `advanceDomainOnCore_cyclic_activeDomain` (the round-robin cycle closes at
+  the *domain* level, not just the index).
+- **#5 — invariant preservation lifted from the abstract rotation to the LIVE
+  transitions.**  `switchDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule`
+  and `scheduleDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule` (+ the
+  index-bounds-invariant preservation) prove the production transitions maintain the
+  SM4.C domain-membership predicate.  This required the previously-missing
+  `scheduleEffectiveOnCore_activeDomainOnCore` / `_domainSchedule` frames (plus
+  `idleFallbackOnCore` / `switchDomainOnCore` / `decrementDomainTimeOnCore` domain
+  frames) — useful general lemmas now available.
+- **#6 — the literal §3.7 `SystemState.activeDomainOnCore` accessor built and made
+  load-bearing** via the §3.7 Theorem 3.7.1 membership form
+  `activeDomainOnCore_systemState_mem` over it (with the `@[simp]` bridge to the
+  scheduler accessor so existing lemmas keep firing).
+- **#7 — the lock-set footprint given an acquisition-order witness
+  (`advanceDomainOnCoreLockSet_pairwise_le`) and a write-containment theorem
+  (`advanceDomainOnCore_frames_outside_core`)** proving the rotation writes only core
+  `c`'s per-core scheduler state (which the run-queue lock — the per-core scheduler
+  lock per SM5.A — guards).
+- **#8 — the tier-4 QEMU stub `scripts/test_qemu_smp_domain.sh`** (SKIP-only until the
+  SM5.I per-core run loop drives `scheduleDomainOnCore`), wired into
+  `test_tier4_smp_bootcheck.sh`, reserving the nightly slot like the sibling phases.
+- **#10 — the budget-aware `chooseThreadEffectiveOnCore_respects_activeDomain` rewritten
+  to drop the asymmetric `wellFormed` hypothesis** (via the new no-`hwf`
+  `chooseBestRunnableEffective_result_eligible` / `chooseBestInBucketEffective_result_eligible`
+  domain-eligibility lemmas), matching the non-budget selector.
+
+Tests: `tests/SmpDomainSuite.lean` grows to 43 runtime assertions (+16 completion
+scenarios: 3-domain rotation + cyclic, non-zero starting index, non-boot-core
+rotation, the composed rotate-then-select, the index-bounds + consistency invariants,
+the active-domain cyclic value) + the new surface anchors / elaboration examples; the
+inventory partition-count guards updated to the 9-category / 67-entry totals.  Tier-2
++ Tier-3 wired.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+## v0.31.51 — WS-SM SM5.G: per-core domain scheduling
+
+Lands WS-SM Phase SM5.G (per-core domain scheduling) — all 6 sub-tasks
+(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.7, §5).  Each core
+independently rotates its **own** domain schedule, so different cores can be in
+different scheduling domains simultaneously — maximising parallelism while still
+bounding per-domain CPU share (plan §4.2).  Built on the SM4.B per-core
+`SchedulerState` domain fields (`activeDomainOnCore`, `domainScheduleIndexOnCore`,
+`domainTimeRemainingOnCore`) and the SM5.A selector `chooseThreadOnCore`.
+
+All theorems are axiom-clean (only the foundational `propext` / `Quot.sound` /
+`Classical.choice`); the default production build is green (324 jobs) and the
+trace fixture is **byte-identical** (SM5.G is purely additive — the new module is
+staged; production is untouched).
+
+- **SM5.G.1** (`activeDomainOnCore` query): the per-core active-domain query is the
+  existing `SchedulerState.activeDomainOnCore` accessor (the form plan §3.7's
+  `s.scheduler.activeDomainOnCore c` uses), recapped by the rotation-query lemmas
+  `advanceDomainOnCore_rotates` / `_activeDomainOnCore_ne`.
+- **SM5.G.2** (`advanceDomainOnCore` + cyclic theorem):
+  `advanceDomainOnCore` — the *pure* per-core domain rotation, advancing **only**
+  core `c`'s domain triple (`activeDomain` / `domainTimeRemaining` /
+  `domainScheduleIndex`), never the run queue, current thread, or object store.
+  Single-domain mode (`domainSchedule = []`) is a no-op (the out-of-bounds lookup
+  returns `none`).  Plus the full frame surface, the single-step index/domain/time
+  formulas, the boundedness witness `advanceDomainOnCore_index_lt`, the
+  `advanceDomainOnCoreN` `k`-fold iteration, and the **cyclic theorem**
+  `advanceDomainOnCore_cyclic` (iterating `domainSchedule.length` times returns the
+  schedule index to its start — the defining round-robin property).  The bridge
+  `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore` proves the operational
+  SM5.D.6 `switchDomainOnCore`'s *domain effect* is exactly this rotation (wiring the
+  abstract rotation into the live domain-switch path — not an orphan).
+- **SM5.G.3** (`activeDomainOnCore_isInDomainSchedule`):
+  `advanceDomainOnCore_establishes_activeDomainOnCore_isInDomainSchedule`
+  *unconditionally* establishes the SM4.C predicate on the rotated core (the
+  rotation always lands on a domain genuinely in the schedule — never a phantom
+  domain); `_preserves_…_ne` / `_preserves_isInDomainSchedule_smp` frame the
+  untouched cores and lift to the system-wide form; the plan §3.7 **Theorem 3.7.1**
+  literal membership form `activeDomainOnCore_isInDomainSchedule_mem`
+  (+ `_mem_of_smp` discharged from `schedulerInvariant_smp_crossSubsystem`).
+- **SM5.G.4** (`chooseThreadOnCore_respects_activeDomain`): a thread selected by
+  `chooseThreadOnCore` on core `c` is in core `c`'s active scheduling domain — the
+  domain barrier (temporal isolation between domains) is honoured by selection.
+  Proven via the new fold-eligibility lemmas
+  `chooseBestRunnableBy_result_eligible` / `chooseBestInBucket_result_eligible`
+  (mirroring SM5.A's `_result_mem`), plus the budget-aware companion
+  `chooseThreadEffectiveOnCore_respects_activeDomain`.
+- **SM5.G.5** (cross-core domain independence): `advanceDomainOnCore st c` frames
+  every other core's scheduler reads, so `chooseThreadOnCore · c'` is unchanged for
+  `c' ≠ c` (`advanceDomainOnCore_independent_of_other_core` /
+  `_perCore_independence`); the `advanceDomainOnCoreLockSet` footprint (the single
+  core-`c` run-queue WRITE lock over SM5.A's `SchedLockId`) structurally pins the
+  rotation to core `c` — disjoint cores have disjoint footprints
+  (`advanceDomainOnCoreLockSet_disjoint_of_ne`), the lock-discipline counterpart of
+  the semantic independence frame.
+
+**Modules**: new staged `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean`
+(38 theorems + 3 defs, ~608 LoC) + `PerCoreDomainInventory.lean` (39-entry typed
+inventory in 6 categories — rotation / cyclic / bridge / domainSchedule / respects /
+independence — with the `pcdt!` compile-time identifier-validation macro +
+per-category counts + partition-sum + kernel-sound `Nodup` witnesses).  Both staged
+via `Platform.Staged` (partition gate now **55** staged-only modules, was 53 at
+SM5.F).  Tests: new `tests/SmpDomainSuite.lean` (`lake exe smp_domain_suite`) — 43
+surface anchors, 7 elaboration-time theorem-application examples, 27 runtime
+assertions across the SM5.G.6 scenarios (single-domain no-op, multi-domain rotation,
+cyclic return-to-start, post-rotation in-domain membership, selection respecting the
+active-domain barrier, cross-core independence) + the lock-set witnesses + inventory
+partition counts.  Tier-2 (negative) + Tier-3 (invariant surface) wired.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.  Follow-on: SM5.H
+(per-core CBS), SM5.I (per-core invariant suite + the production wiring of the
+per-core domain rotation into the live run loop), SM5.J/K per the master overview.
+
 ## v0.31.50 — WS-SM SM5.F: per-core priority inheritance protocol
 
 Lands WS-SM Phase SM5.F (per-core PIP) — all 10 sub-tasks

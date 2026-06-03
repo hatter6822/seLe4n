@@ -287,6 +287,24 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 -- Nodup witnesses; mirrors `PerCoreIdleInventory`.  A renamed/removed SM5.F theorem
 -- fails this module's elaboration.
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory
+-- WS-SM SM5.G: the per-core domain-scheduling theorem surface — SM5.G.2
+-- `advanceDomainOnCore` (pure per-core domain rotation) + frame lemmas + single-step
+-- index/domain/time formulas + the `advanceDomainOnCoreN` iteration and cyclic
+-- theorem `advanceDomainOnCore_cyclic`, SM5.G.2 bridge
+-- `switchDomainOnCore_activeDomain_eq_advanceDomainOnCore` (the production switch's
+-- domain effect IS this rotation), SM5.G.3 `activeDomainOnCore_isInDomainSchedule`
+-- establishment / SMP preservation / the plan §3.7 Theorem 3.7.1 membership form,
+-- SM5.G.4 `chooseThreadOnCore_respects_activeDomain`, and SM5.G.5 cross-core domain
+-- independence + the `advanceDomainOnCoreLockSet` footprint.  `advanceDomainOnCore`
+-- is forward-looking (the live tick path rotates via `scheduleDomainOnCore` →
+-- `switchDomainOnCore`); SM5.I's per-core run loop is the first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
+-- WS-SM SM5.G: the per-core-domain theorem inventory (categories rotation / cyclic /
+-- bridge / domainSchedule / respects / independence) with the `pcdt!` compile-time
+-- identifier-validation macro + per-category count + partition-sum + Nodup witnesses;
+-- mirrors `PerCoreIdleInventory`.  A renamed/removed SM5.G theorem fails this
+-- module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
