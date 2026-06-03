@@ -208,10 +208,32 @@ each is a code change plus a non-vacuity test):
   current on its core with no cross-core SGI.
 
 The four P2-5 frame lemmas register in the SM5.F inventory (resume 20 → 24, total
-95 → 99); `smp_pip_suite` 99 anchors / 16 examples / 58 runtime assertions.  All
+95 → 99); `smp_pip_suite` 99 anchors / 16 examples / 64 runtime assertions.  All
 closures axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); trace
 byte-identical; AK7 at the floor (`RAW_MATCH_TOTAL` 125, `RAW_LOOKUP_TID` 814 —
 the new proofs use the `.get?` method form).
+
+**Deep-audit pass (same v0.31.50 cut).**  A second, independent deep audit (two
+read-only audit agents + direct re-reading of the production transitions) confirmed
+the SM5.F surface is complete, secure, mathematically correct, and axiom-clean: the
+boost VALUE is genuinely global (`computeMaxWaiterPriority`), the effective-priority
+SGI gate (P2-2) is exactly aligned with `updatePipBoostOnCore`'s bucket-migration
+condition (no spurious / no missed IPI), the chain walk is fuel-bounded, the dispatch
+fires only legitimate home-core pokes, and all 7 theorem categories are SUBSTANTIVE
+(materiality hypotheses load-bearing + jointly satisfiable, no vacuous statements, no
+`sorry`/`axiom`/`native_decide`/`unsafe`).  Three polish items closed: (1) added
+`dedupCrossCoreSgis_nodup_cores` (the dispatch's optimal coalescing *completeness* —
+deduped target cores are pairwise distinct, so a boost chain naming the same remote
+home core twice fires exactly one IPI; pairs with the existing `_subset` safety),
+axiom-clean; (2) gave the dedup coalescing layer executable coverage via the new
+`SmpPipSuite` §3.13 (empty / single / coalesce-same-core / distinct-preserved /
+nodup-cores / subset — the BaseIO `fireCrossCoreSgis` itself is FFI-unrunnable
+host-side, but its pure decision core is now runtime-tested); (3) strengthened the
+§3.11 P2-2 auxiliary to read the genuine *post-boost* holder's effective priority
+(`max(10, 5) = 10`) instead of a fresh TCB.  Plus a stale `PerCoreInventory` docstring
+count (95 → 99) and four new tier-3 dispatch anchors.  Runtime assertions 58 → 64.
+No correctness/security defects found; no production behavior changed; trace
+byte-identical.
 
 **Single-core `resumeThread` liveness fix (post-review investigation, same v0.31.50
 cut).**  A deep audit of the P2-5 single-core analogue surfaced a *pre-existing*

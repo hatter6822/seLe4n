@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/eager-faraday-sokpy",
-      "commit_sha": "9dc6e45e0dcc0fd95ed9989f554cf3f7a3f41174",
-      "tree_sha": "bd465a135886fb2bc657088d2ce59c6fe077a6f9",
-      "committed_at_utc": "2026-06-03T00:41:41+00:00"
+      "commit_sha": "9aaa36916d4c6956852adae9b53c737d80b107f2",
+      "tree_sha": "567f33ce89be7b2b72b062b93534eb5e09e0c880",
+      "committed_at_utc": "2026-06-03T04:00:12+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f5d1326ab72a8890cda7e562ba6b0f4c4577cb7d6428d3d17b61b3c18cfbb65d"
+    "source_digest": "3566f113ce85c881413b1eab54a664914e925c3bc4149536e5df7f477ecfe14e"
   },
   "summary": {
     "module_count": 275,
-    "declaration_count": 10076
+    "declaration_count": 10079
   },
   "readme_sync": {
     "version": "0.31.50",
     "lean_toolchain": "v4.28.0",
     "production_files": 222,
-    "production_loc": 158662,
+    "production_loc": 158703,
     "test_files": 53,
-    "test_loc": 34980,
-    "proved_theorem_lemma_decls": 5138,
+    "test_loc": 35012,
+    "proved_theorem_lemma_decls": 5141,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -28568,7 +28568,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Runtime",
       "path": "SeLe4n/Kernel/Concurrency/Runtime.lean",
-      "declaration_count": 39,
+      "declaration_count": 41,
       "declarations": [
         {
           "kind": "namespace",
@@ -28965,6 +28965,32 @@
             "SgiKind",
             "dedupCrossCoreSgis",
             "dedupFold_mem"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dedupFold_nodup_cores",
+          "line": 449,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "any",
+            "cons",
+            "head",
+            "mem_singleton",
+            "tail",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "dedupCrossCoreSgis_nodup_cores",
+          "line": 480,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "dedupCrossCoreSgis",
+            "dedupFold_nodup_cores"
           ]
         }
       ]
@@ -81296,7 +81322,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_count",
-          "line": 308,
+          "line": 311,
           "called": [
             "length"
           ]
@@ -81304,7 +81330,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_compute_count",
-          "line": 311,
+          "line": 314,
           "called": [
             "filter",
             "length"
@@ -81313,7 +81339,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_updateBoost_count",
-          "line": 315,
+          "line": 318,
           "called": [
             "filter",
             "length"
@@ -81322,7 +81348,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_consistent_count",
-          "line": 319,
+          "line": 322,
           "called": [
             "filter",
             "length"
@@ -81331,7 +81357,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_wake_count",
-          "line": 323,
+          "line": 326,
           "called": [
             "filter",
             "length"
@@ -81340,7 +81366,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_chain_count",
-          "line": 327,
+          "line": 330,
           "called": [
             "filter",
             "length"
@@ -81349,7 +81375,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_resume_count",
-          "line": 332,
+          "line": 335,
           "called": [
             "filter",
             "length"
@@ -81358,7 +81384,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_blockingGraph_count",
-          "line": 336,
+          "line": 339,
           "called": [
             "filter",
             "length"
@@ -81367,7 +81393,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_witness_count",
-          "line": 340,
+          "line": 343,
           "called": [
             "filter",
             "length"
@@ -81376,7 +81402,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_memoryModel_count",
-          "line": 344,
+          "line": 347,
           "called": [
             "filter",
             "length"
@@ -81385,7 +81411,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_dispatch_count",
-          "line": 348,
+          "line": 351,
           "called": [
             "filter",
             "length"
@@ -81394,7 +81420,7 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_partition_sum",
-          "line": 352,
+          "line": 355,
           "called": [
             "filter",
             "length"
@@ -81403,13 +81429,13 @@
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_identifiers_nodup",
-          "line": 371,
+          "line": 374,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "perCorePipTheorems_descriptions_nodup",
-          "line": 377,
+          "line": 380,
           "called": []
         }
       ]
@@ -130254,7 +130280,7 @@
     {
       "module": "tests.SmpPipSuite",
       "path": "tests/SmpPipSuite.lean",
-      "declaration_count": 44,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
@@ -130926,7 +130952,6 @@
             "core0",
             "core1",
             "getTcb",
-            "mkServerTcb",
             "none",
             "pipBoostWithWake",
             "resolveEffectivePrioDeadline",
@@ -130940,7 +130965,7 @@
         {
           "kind": "def",
           "name": "runP5LocalRescheduleChecks",
-          "line": 574,
+          "line": 579,
           "called": [
             "assertBool",
             "core0",
@@ -130957,8 +130982,21 @@
         },
         {
           "kind": "def",
+          "name": "runDedupChecks",
+          "line": 605,
+          "called": [
+            "all",
+            "assertBool",
+            "contains",
+            "core0",
+            "core1",
+            "dedupCrossCoreSgis"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpPipChecks",
-          "line": 595,
+          "line": 626,
           "called": [
             "runBlockingGraphChecks",
             "runC9Checks",
@@ -130966,6 +131004,7 @@
             "runCompletionNonVacuityChecks",
             "runComputeChecks",
             "runDecompositionChecks",
+            "runDedupChecks",
             "runDispatchChecks",
             "runInventoryChecks",
             "runP2MaterialityChecks",
@@ -130977,7 +131016,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 615,
+          "line": 647,
           "called": [
             "runSmpPipChecks"
           ]

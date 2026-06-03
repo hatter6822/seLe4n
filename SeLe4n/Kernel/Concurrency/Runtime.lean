@@ -443,4 +443,42 @@ theorem dedupCrossCoreSgis_subset (sgis : List (CoreId × SgiKind)) :
   · simp at hAcc
   · exact hL
 
+/-- **WS-SM SM5.F.4** (fold-frame helper): the dedup fold preserves core-distinctness —
+    if the seed accumulator's target cores are `Nodup`, so are the result's.  The
+    workhorse of `dedupCrossCoreSgis_nodup_cores`. -/
+private theorem dedupFold_nodup_cores (l : List (CoreId × SgiKind)) :
+    ∀ (acc : List (CoreId × SgiKind)), (acc.map (·.1)).Nodup →
+      ((l.foldl (fun acc s => if acc.any (fun a => a.1 == s.1) then acc else acc ++ [s])
+        acc).map (·.1)).Nodup := by
+  induction l with
+  | nil => intro acc hacc; exact hacc
+  | cons head tail ih =>
+    intro acc hacc
+    simp only [List.foldl_cons]
+    apply ih
+    by_cases hc : (acc.any (fun a => a.1 == head.1)) = true
+    · rw [if_pos hc]; exact hacc
+    · rw [if_neg hc, List.map_append, List.nodup_append]
+      refine ⟨hacc, by simp, ?_⟩
+      intro a ha b hb
+      simp only [List.map_cons, List.map_nil, List.mem_singleton] at hb
+      subst hb
+      rw [List.mem_map] at ha
+      obtain ⟨entry, hEntry, hEq⟩ := ha
+      intro hContra
+      have hCore : entry.1 = head.1 := hEq.trans hContra
+      have hAny : acc.any (fun a => a.1 == head.1) = true := by
+        rw [List.any_eq_true]
+        exact ⟨entry, hEntry, by rw [hCore]; exact beq_self_eq_true _⟩
+      exact absurd hAny hc
+
+/-- **WS-SM SM5.F.4**: a deduped SGI list pokes each target core **at most once** — its
+    target cores are pairwise distinct.  Together with `dedupCrossCoreSgis_subset` (no SGI
+    the boost did not request) this is the full coalescing guarantee: a per-core boost
+    *chain* that names the same remote home core on two links fires exactly one
+    `.reschedule` IPI there, never a redundant cross-core poke (no IPI storm). -/
+theorem dedupCrossCoreSgis_nodup_cores (sgis : List (CoreId × SgiKind)) :
+    ((dedupCrossCoreSgis sgis).map (·.1)).Nodup :=
+  dedupFold_nodup_cores sgis [] (by simp)
+
 end SeLe4n.Kernel.Concurrency

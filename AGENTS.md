@@ -5766,6 +5766,32 @@ documentation lives under `docs/` and `docs/gitbook/`.
   property) into the proven invariant bundle so the proof surface catches such
   drops directly.
 
+  **WS-SM SM5.F deep-audit pass (same v0.31.50 cut)**: a second, independent deep
+  audit (two read-only audit agents over the staged theorem surface + the tests, plus
+  a direct re-read of every production transition — not trusting docstrings) confirmed
+  SM5.F is complete, secure, mathematically correct, and axiom-clean.  Verified
+  directly: the boost VALUE is genuinely global (`computeMaxWaiterPriority` folds
+  `Nat.max` over every cross-core waiter); the P2-2 effective-priority SGI gate is
+  *exactly* aligned with `updatePipBoostOnCore`'s bucket-migration condition (no
+  spurious / no missed IPI — same `resolveEffectivePrioDeadline` comparison in
+  `pipBoostWithWake` and the diff-based `crossCoreSgiBody`); the chain walk is
+  fuel-bounded (terminates even on a cyclic graph); the dispatch fires only legitimate
+  home-core pokes; and all 7 theorem categories are SUBSTANTIVE with load-bearing,
+  jointly-satisfiable hypotheses (no vacuity, no `sorry`/`axiom`/`native_decide`/`unsafe`;
+  `#print axioms` clean on every headline theorem incl. the kernel-sound `decide`
+  inventory count).  Three polish items closed: (1) NEW `dedupCrossCoreSgis_nodup_cores`
+  (the dispatch's optimal coalescing *completeness* — deduped target cores are pairwise
+  distinct, so a boost chain naming the same remote home core twice fires exactly one
+  IPI; pairs with the existing `_subset` safety), axiom-clean; (2) the dedup coalescing
+  layer gained executable coverage via `SmpPipSuite` §3.13 (empty / single /
+  coalesce-same-core / distinct-preserved / nodup-cores / subset — the BaseIO
+  `fireCrossCoreSgis` is FFI-unrunnable host-side, but its pure decision core is now
+  runtime-tested); (3) the §3.11 P2-2 auxiliary now reads the genuine *post-boost*
+  holder's effective priority (`max(10, 5) = 10`) instead of a fresh TCB.  Plus a stale
+  `PerCoreInventory` docstring count (95 → 99) and four new tier-3 dispatch anchors.
+  Runtime assertions 58 → 64; no correctness/security defect found; no production
+  behaviour changed; trace byte-identical; AK7 at the floor.
+
   **Tracked debt (SM5.I)**: the cross-core dispatch *mechanism* is now built and
   verified; the remaining step is the production **call-site substitution** —
   routing the live IPC donation / timeout / resume `@[export]` bodies through the

@@ -300,11 +300,14 @@ def perCorePipTheorems : List PerCorePipTheorem :=
     ppit! "emitBoostWakeSgi: the single-SGI boost/resume dispatch (lifts emitWakeSgi)"
       emitBoostWakeSgi .dispatch]
 
-/-- WS-SM SM5.F: the inventory has 95 substantive entries (61 at the SM5.F landing +
+/-- WS-SM SM5.F: the inventory has 99 substantive entries (61 at the SM5.F landing +
 34 from the completion pass: full per-core decomposition, post-boost dominance, chain
 SGI completeness, the runnability-gate, memory-model HB, the complete `resumeThreadOnCore`,
-and the cross-core wake dispatch).  A regression that adds a new SM5.F theorem without
-registering it fails this count witness at the Tier-3 surface check. -/
+and the cross-core wake dispatch; +4 at the PR #811 P2-5 closure: the inline-local-
+reschedule frame lemmas `preemptCurrentOnCore_getTcb?_ne_current` /
+`switchToThreadOnCore_getTcb?_ne_current` / `handleRescheduleSgiOnCore_getTcb?_ne_current`
+and the `resumeReadyMidState_scheduler_eq` frame).  A regression that adds a new SM5.F
+theorem without registering it fails this count witness at the Tier-3 surface check. -/
 theorem perCorePipTheorems_count : perCorePipTheorems.length = 99 := by decide
 
 /-- WS-SM SM5.F: 8 entries in the `compute` category (SM5.F.1). -/

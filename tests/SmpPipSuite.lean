@@ -552,9 +552,14 @@ private def runP2MaterialityChecks : IO Unit := do
   -- srvHi IS runnable on its home core 1 — the C9 gate is satisfied, not the suppressor.
   assertBool "P2-2 the holder IS runnable on its home core (C9 gate satisfied, not suppressing)"
     (decide (srvHi ∈ stImmaterial.scheduler.runQueueOnCore core1))
-  -- The effective priority is unchanged (base 10 dominates the boost 5).
-  assertBool "P2-2 base priority 10 dominates the boost 5 (effective stays 10)"
-    (decide ((resolveEffectivePrioDeadline stImmaterial (mkServerTcb 202 10 core1)).1 = ⟨10⟩))
+  -- The effective priority of the POST-BOOST holder is unchanged (base 10 dominates the
+  -- applied boost 5) — read from the genuinely boosted state, so this exercises the exact
+  -- `max(base, pipBoost) = max(10, 5) = 10` the materiality gate compares.
+  assertBool "P2-2 post-boost effective priority is STILL 10 (base 10 dominates the applied boost 5)"
+    (match (pipBoostWithWake stImmaterial srvHi core0).1.getTcb? srvHi with
+     | some t => decide ((resolveEffectivePrioDeadline (pipBoostWithWake stImmaterial srvHi core0).1 t).1
+                          = ⟨10⟩)
+     | none => false)
   -- THE FIX: no SGI fires for the immaterial boost (no spurious cross-core IPI).
   assertBool "P2-2 immaterial boost fires NO SGI (effective bucket unchanged)"
     (decide ((pipBoostWithWake stImmaterial srvHi core0).2 = none))
@@ -592,6 +597,32 @@ private def runP5LocalRescheduleChecks : IO Unit := do
   | .error _ =>
     assertBool "P2-5 remote resume must succeed" false
 
+/-- §3.13: WS-SM SM5.F.4 — cross-core SGI coalescing (`dedupCrossCoreSgis`).  The pure
+dispatch layer `fireCrossCoreSgis` fires: one `.reschedule` per target core (no redundant
+cross-core IPI — a boost chain naming the same remote home core twice pokes it once), and
+no SGI the boost did not request.  Exercises the coalescing logic at runtime (the BaseIO
+`fireCrossCoreSgis` itself is FFI and unrunnable host-side; its pure decision core is here). -/
+private def runDedupChecks : IO Unit := do
+  IO.println "--- §3.13 SM5.F.4 cross-core SGI coalescing (dedup) ---"
+  let r := SgiKind.reschedule
+  assertBool "dedup of [] is [] (no SGIs to fire)"
+    (decide (dedupCrossCoreSgis [] = []))
+  assertBool "dedup of a single SGI is itself"
+    (decide (dedupCrossCoreSgis [(core1, r)] = [(core1, r)]))
+  -- THE COALESCING: two links naming the SAME home core fire ONE IPI (no storm).
+  assertBool "dedup coalesces a duplicate target core to ONE SGI (no IPI storm)"
+    (decide (dedupCrossCoreSgis [(core1, r), (core1, r)] = [(core1, r)]))
+  -- DISTINCT cores preserved (first occurrence wins), the repeated one dropped.
+  assertBool "dedup keeps DISTINCT target cores, drops the repeat (first-wins)"
+    (decide (dedupCrossCoreSgis [(core1, r), (core0, r), (core1, r)] = [(core1, r), (core0, r)]))
+  -- `dedupCrossCoreSgis_nodup_cores` witness: deduped target cores are pairwise distinct.
+  assertBool "deduped target cores are pairwise distinct (nodup_cores)"
+    (decide ((dedupCrossCoreSgis [(core1, r), (core0, r), (core1, r), (core0, r)]).map (·.1)).Nodup)
+  -- `dedupCrossCoreSgis_subset` witness: every deduped SGI was in the input.
+  assertBool "dedup introduces no SGI the input did not contain (subset)"
+    (decide ((dedupCrossCoreSgis [(core1, r), (core0, r)]).all
+              (fun s => [(core1, r), (core0, r)].contains s)))
+
 def runSmpPipChecks : IO Unit := do
   IO.println "WS-SM SM5.F — Per-core PIP suite"
   IO.println "===================================="
@@ -606,6 +637,7 @@ def runSmpPipChecks : IO Unit := do
   runCompletionNonVacuityChecks
   runP2MaterialityChecks
   runP5LocalRescheduleChecks
+  runDedupChecks
   runInventoryChecks
   IO.println "===================================="
   IO.println "All SM5.F per-core PIP checks PASS."

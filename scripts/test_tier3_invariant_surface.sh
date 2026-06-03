@@ -3246,6 +3246,12 @@ open SeLe4n.Kernel.Concurrency
 #check @sgiIntidU8_reschedule
 #check @coreIdTargetMask_bootCore
 
+-- WS-SM SM5.F.4: cross-core PIP wake dispatch + coalescing (Concurrency.Runtime).
+#check @dedupCrossCoreSgis
+#check @fireCrossCoreSgis
+#check @dedupCrossCoreSgis_subset
+#check @dedupCrossCoreSgis_nodup_cores
+
 -- WS-SM SM5.C audit-pass-1: ghost-wake SGI guard (SM5.C.4).
 #check @wakeThread_no_sgi_if_no_tcb
 
