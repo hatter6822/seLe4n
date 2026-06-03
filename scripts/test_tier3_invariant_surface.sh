@@ -3650,4 +3650,69 @@ lake env lean /tmp/sm5f_surface.lean'
 # SM5.F theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory'
 
+# WS-SM SM5.G: per-core domain scheduling.  SM5.G.2 advanceDomainOnCore (pure
+# rotation) + frames + single-step + the advanceDomainOnCoreN iteration & cyclic
+# theorem, SM5.G.2 bridge switchDomainOnCore_activeDomain_eq_advanceDomainOnCore,
+# SM5.G.3 activeDomainOnCore_isInDomainSchedule establishment/SMP-preservation + the
+# plan §3.7 Theorem 3.7.1 membership form, SM5.G.4 chooseThreadOnCore_respects_activeDomain,
+# SM5.G.5 cross-core domain independence + the advanceDomainOnCoreLockSet footprint.
+# A rename / removal of any SM5.G symbol fails here at elaboration time.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5g_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory
+open SeLe4n.Kernel
+-- SM5.G.2 rotation + frames + single-step.
+#check @advanceDomainOnCore
+#check @advanceDomainOnCore_empty
+#check @advanceDomainOnCore_objects
+#check @advanceDomainOnCore_getTcb?
+#check @advanceDomainOnCore_domainSchedule
+#check @advanceDomainOnCore_runQueueOnCore
+#check @advanceDomainOnCore_currentOnCore
+#check @advanceDomainOnCore_activeDomainOnCore_ne
+#check @advanceDomainOnCore_domainTimeRemainingOnCore_ne
+#check @advanceDomainOnCore_domainScheduleIndexOnCore_ne
+#check @advanceDomainOnCore_rotates
+#check @advanceDomainOnCore_domainTimeRemainingOnCore_self
+#check @advanceDomainOnCore_domainScheduleIndexOnCore_self
+#check @advanceDomainOnCore_index_lt
+-- SM5.G.2 cyclic.
+#check @advanceDomainOnCoreN
+#check @advanceDomainOnCoreN_zero
+#check @advanceDomainOnCoreN_succ
+#check @advanceDomainOnCoreN_domainSchedule
+#check @advanceDomainOnCoreN_index
+#check @advanceDomainOnCore_cyclic
+-- SM5.G.2 bridge to production.
+#check @switchDomainOnCore_activeDomain_eq_advanceDomainOnCore
+-- SM5.G.3 isInDomainSchedule (Thm 3.7.1).
+#check @advanceDomainOnCore_establishes_activeDomainOnCore_isInDomainSchedule
+#check @advanceDomainOnCore_preserves_activeDomainOnCore_isInDomainSchedule_ne
+#check @advanceDomainOnCore_preserves_isInDomainSchedule_smp
+#check @activeDomainOnCore_isInDomainSchedule_mem
+#check @activeDomainOnCore_isInDomainSchedule_mem_of_smp
+#check @advanceDomainOnCore_activeDomain_mem
+-- SM5.G.4 respects_activeDomain.
+#check @chooseBestRunnableBy_result_eligible
+#check @chooseBestInBucket_result_eligible
+#check @chooseThreadOnCore_respects_activeDomain
+#check @chooseThreadEffectiveOnCore_respects_activeDomain
+-- SM5.G.5 cross-core independence + footprint.
+#check @advanceDomainOnCore_independent_of_other_core
+#check @advanceDomainOnCore_perCore_independence
+#check @advanceDomainOnCoreLockSet
+#check @advanceDomainOnCoreLockSet_length
+#check @advanceDomainOnCoreLockSet_write_only
+#check @advanceDomainOnCoreLockSet_contains_runQueue_write
+#check @advanceDomainOnCoreLockSet_keys_nodup
+#check @advanceDomainOnCoreLockSet_disjoint_of_ne
+#check @perCoreDomainTheorems_count
+#check @perCoreDomainTheorems_partition_sum
+EOF
+lake env lean /tmp/sm5g_surface.lean'
+# WS-SM SM5.G: build the SM5.G theorem inventory so a renamed / removed SM5.G
+# theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory'
+
 finalize_report

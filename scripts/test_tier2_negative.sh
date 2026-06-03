@@ -279,4 +279,13 @@ run_check_with_timeout "TRACE" lake exe smp_idle_suite
 # (restoreToReadyWithWake), and the SM5.F theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_pip_suite
 
+# WS-SM SM5.G — per-core domain scheduling.  Runtime assertions for the SM5.G.6
+# domain-rotation scenarios on concrete domain-schedule fixtures: single-domain
+# no-op, multi-domain rotation (domain + index + time), cyclic return-to-start
+# (advanceDomainOnCore_cyclic), post-rotation in-domain membership (Thm 3.7.1),
+# selection respecting the active-domain barrier (chooseThreadOnCore_respects_activeDomain),
+# cross-core domain independence, plus the SM5.G.5 lock-set witnesses and the SM5.G
+# theorem-inventory partition counts.
+run_check_with_timeout "TRACE" lake exe smp_domain_suite
+
 finalize_report
