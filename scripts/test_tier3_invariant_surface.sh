@@ -3747,4 +3747,88 @@ lake env lean /tmp/sm5g_surface.lean'
 # theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory'
 
+# WS-SM SM5.H: per-core CBS.  SM5.H.2 replenishOnCore (per-core CBS replenishment-
+# scheduling primitive) + frames, SM5.H.3/.6/.5 validity/pipeline-order/affinity
+# preservation, SM5.H.4 migrateSchedContextReplenishment (SchedContext replenishment
+# migration on affinity change) + setThreadCpuAffinityWithMigration composite + the
+# headline restoration schedContextMigration_consistent, SM5.H.5 the plan §3.8 Theorem
+# 3.8.1 affinity invariant replenishQueueAffinityConsistentOnCore, SM5.H.7 the aggregate
+# perCoreCbsInvariant + CBS budget-bound accounting.  A rename / removal of any SM5.H
+# symbol fails here at elaboration time.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5h_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
+open SeLe4n.Kernel
+-- SM5.H.1 / .5 the affinity-consistency invariant.
+#check @replenishQueueAffinityConsistentOnCore
+#check @replenishQueueAffinityConsistent_smp
+#check @replenishQueueAffinityConsistent_smp_at
+#check @default_replenishQueueAffinityConsistentOnCore
+#check @default_replenishQueueAffinityConsistent_smp
+#check @replenishQueueAffinityConsistentOnCore_frame
+-- SM5.H.2 the replenishOnCore primitive + frames.
+#check @replenishOnCore
+#check @replenishOnCore_objects
+#check @replenishOnCore_machine
+#check @replenishOnCore_getTcb?
+#check @replenishOnCore_getSchedContext?
+#check @replenishOnCore_determineTargetCore
+#check @replenishOnCore_replenishQueueOnCore_self
+#check @replenishOnCore_replenishQueueOnCore_ne
+#check @replenishOnCore_runQueueOnCore
+#check @replenishOnCore_currentOnCore
+#check @replenishOnCore_activeDomainOnCore
+#check @replenishOnCore_mem
+-- SM5.H.3 / .6 / .5 replenishOnCore preservation.
+#check @replenishOnCore_preserves_replenishQueueValidOnCore
+#check @replenishOnCore_preserves_replenishQueueValidOnCore_ne
+#check @replenishOnCore_preserves_replenishQueueValid_smp
+#check @replenishOnCore_preserves_replenishmentPipelineOrderOnCore
+#check @replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne
+#check @replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore
+-- SM5.H.4 the migration operation + frames + structural + validity/pipeline.
+#check @migrateSchedContextReplenishment
+#check @migrateSchedContextReplenishment_noop
+#check @migrateSchedContextReplenishment_objects
+#check @migrateSchedContextReplenishment_machine
+#check @migrateSchedContextReplenishment_getSchedContext?
+#check @migrateSchedContextReplenishment_determineTargetCore
+#check @migrateSchedContextReplenishment_replenishQueueOnCore_to
+#check @migrateSchedContextReplenishment_replenishQueueOnCore_from
+#check @migrateSchedContextReplenishment_replenishQueueOnCore_other
+#check @migrateSchedContextReplenishment_fromCore_excludes_scId
+#check @migrateSchedContextReplenishment_mem_toCore
+#check @migrateSchedContextReplenishment_preserves_replenishQueueValid_smp
+#check @migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp
+-- SM5.H.4 affinity-write helpers.
+#check @determineTargetCore_congr_getTcb?
+#check @setThreadCpuAffinity_determineTargetCore_ne
+#check @setThreadCpuAffinity_getSchedContext?
+-- SM5.H.4 / .5 migration affinity behaviour + composite + headline.
+#check @migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to
+#check @migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from
+#check @migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
+#check @setThreadCpuAffinityWithMigration
+#check @setThreadCpuAffinityWithMigration_error_of_no_tcb
+#check @setThreadCpuAffinityWithMigration_bound_eq
+#check @setThreadCpuAffinityWithMigration_unbound_eq
+#check @schedContextMigration_consistent
+-- SM5.H.7 per-core CBS invariant + budget accounting.
+#check @perCoreCbsInvariant
+#check @default_perCoreCbsInvariant
+#check @replenishOnCore_preserves_perCoreCbsInvariant
+#check @consumeBudget_preserves_le_budget
+#check @applyRefill_preserves_le_budget
+#check @scheduleReplenishment_replenishments_bounded
+-- SM5.H inventory.
+#check @perCoreCbsTheorems_count
+#check @perCoreCbsTheorems_partition_sum
+#check @perCoreCbsTheorems_identifiers_nodup
+EOF
+lake env lean /tmp/sm5h_surface.lean'
+# WS-SM SM5.H: build the SM5.H theorem inventory so a renamed / removed SM5.H
+# theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory'
+
 finalize_report

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/stoic-volta-DHyaU",
-      "commit_sha": "6c0f908d54b2a58895f28a36568d5278ac7f0a92",
-      "tree_sha": "de8902acfaab1fbc33a114d00c216912f15e8be4",
-      "committed_at_utc": "2026-06-03T19:50:20+00:00"
+      "branch": "claude/exciting-brahmagupta-XAFDT",
+      "commit_sha": "942e0ebe4f3a4b129a3a78f25383227c5195cb11",
+      "tree_sha": "ccb73bc52b4121185df2dfdc23d2ae6771e2bc53",
+      "committed_at_utc": "2026-06-03T23:17:12+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d2bd17a3cae1212b08292cd8f25fc2259b1540162da91aaa94658659e57d4ee1"
+    "source_digest": "d963a692c19076cebafa0efd6a8fc2087a5c4248782e2bcfeef211657f69e3df"
   },
   "summary": {
-    "module_count": 278,
-    "declaration_count": 10211
+    "module_count": 281,
+    "declaration_count": 10313
   },
   "readme_sync": {
-    "version": "0.31.53",
+    "version": "0.31.54",
     "lean_toolchain": "v4.28.0",
-    "production_files": 224,
-    "production_loc": 160330,
-    "test_files": 54,
-    "test_loc": 35484,
-    "proved_theorem_lemma_decls": 5226,
+    "production_files": 226,
+    "production_loc": 161631,
+    "test_files": 55,
+    "test_loc": 35847,
+    "proved_theorem_lemma_decls": 5290,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -31490,6 +31490,8 @@
             "collectQueueMembers",
             "none",
             "tail",
+            "tcb0",
+            "tid0",
             "toObjId",
             "zero"
           ]
@@ -31507,6 +31509,8 @@
             "head",
             "none",
             "tail",
+            "tcb0",
+            "tid0",
             "toObjId",
             "zero"
           ]
@@ -34537,7 +34541,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
-            "storeTcbQueueLinks_tcb_forward"
+            "storeTcbQueueLinks_tcb_forward",
+            "tcb0"
           ]
         },
         {
@@ -69361,6 +69366,1153 @@
           "kind": "theorem",
           "name": "crossCoreWakeTheorems_descriptions_nodup",
           "line": 343,
+          "called": [
+            "Kernel"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs",
+      "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean",
+      "declaration_count": 60,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 79,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueAffinityConsistentOnCore",
+          "line": 106,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replenishQueueAffinityConsistent_smp",
+          "line": 115,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "replenishQueueAffinityConsistentOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishQueueAffinityConsistent_smp_at",
+          "line": 119,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistent_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_replenishQueueAffinityConsistentOnCore",
+          "line": 125,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_state_perCoreInitialized",
+            "empty",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueOnCore",
+            "scId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_replenishQueueAffinityConsistent_smp",
+          "line": 134,
+          "called": [
+            "SystemState",
+            "default",
+            "default_replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistent_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishQueueAffinityConsistentOnCore_frame",
+          "line": 142,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "getTcb",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_insertSorted_iff",
+          "line": 167,
+          "called": [
+            "SchedContextId",
+            "cons",
+            "insertSorted",
+            "scId",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_remove_entries",
+          "line": 194,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "remove",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "replenishOnCore",
+          "line": 225,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "insert",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_objects",
+          "line": 231,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_machine",
+          "line": 236,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_getTcb",
+          "line": 241,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "replenishOnCore",
+            "replenishOnCore_objects",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_getSchedContext",
+          "line": 247,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "replenishOnCore",
+            "replenishOnCore_objects",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_determineTargetCore",
+          "line": 254,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "replenishOnCore",
+            "replenishOnCore_objects",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_replenishQueueOnCore_self",
+          "line": 263,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "insert",
+            "replenishOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_self",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_replenishQueueOnCore_ne",
+          "line": 272,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_runQueueOnCore",
+          "line": 280,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "runQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_runQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_currentOnCore",
+          "line": 288,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "currentOnCore",
+            "replenishOnCore",
+            "scId",
+            "setReplenishQueueOnCore_currentOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_activeDomainOnCore",
+          "line": 296,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "activeDomainOnCore",
+            "replenishOnCore",
+            "scId",
+            "setReplenishQueueOnCore_activeDomainOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_mem",
+          "line": 305,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "mem_insertSorted",
+            "replenishOnCore",
+            "replenishOnCore_replenishQueueOnCore_self",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishQueueValidOnCore",
+          "line": 320,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "insert_preserves_sorted",
+            "insert_sizeConsistent",
+            "replenishOnCore",
+            "replenishOnCore_replenishQueueOnCore_self",
+            "replenishQueueValidOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishQueueValidOnCore_ne",
+          "line": 330,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishOnCore_replenishQueueOnCore_ne",
+            "replenishQueueValidOnCore",
+            "replenishQueueValidOnCore_frame",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishQueueValid_smp",
+          "line": 338,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore_ne",
+            "replenishQueueValidOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishmentPipelineOrderOnCore",
+          "line": 362,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "mem_insertSorted_iff",
+            "replenishOnCore",
+            "replenishOnCore_machine",
+            "replenishOnCore_replenishQueueOnCore_self",
+            "replenishmentPipelineOrderOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne",
+          "line": 376,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishOnCore_machine",
+            "replenishOnCore_replenishQueueOnCore_ne",
+            "replenishmentPipelineOrderOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore",
+          "line": 397,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "mem_insertSorted_iff",
+            "replenishOnCore",
+            "replenishOnCore_determineTargetCore",
+            "replenishOnCore_getSchedContext",
+            "replenishOnCore_replenishQueueOnCore_self",
+            "replenishQueueAffinityConsistentOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_foldl_insert_provenance",
+          "line": 427,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "cons",
+            "insert",
+            "mem_insertSorted_iff",
+            "scId",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_insert_preserves_sorted",
+          "line": 444,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "cons",
+            "insert",
+            "insert_preserves_sorted",
+            "replenishQueueSorted",
+            "scId",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "foldl_insert_preserves_sizeConsistent",
+          "line": 456,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "cons",
+            "insert",
+            "insert_sizeConsistent",
+            "replenishQueueSizeConsistent",
+            "scId",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "migrateSchedContextReplenishment",
+          "line": 483,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "filter",
+            "insert",
+            "remove",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_noop",
+          "line": 496,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_objects",
+          "line": 502,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_machine",
+          "line": 508,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_getSchedContext",
+          "line": 514,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "getSchedContext",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_objects",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_determineTargetCore",
+          "line": 521,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_objects",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_replenishQueueOnCore_to",
+          "line": 529,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "filter",
+            "insert",
+            "migrateSchedContextReplenishment",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_self",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+          "line": 539,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "remove",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "setReplenishQueueOnCore_replenishQueueOnCore_self",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+          "line": 549,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "replenishQueueOnCore",
+            "scId",
+            "setReplenishQueueOnCore_replenishQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_fromCore_excludes_scId",
+          "line": 565,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "mem_remove_entries",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_mem_toCore",
+          "line": 576,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "mem_foldl_insert_provenance",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_to",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_preserves_replenishQueueValid_smp",
+          "line": 596,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "foldl_insert_preserves_sizeConsistent",
+            "foldl_insert_preserves_sorted",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_noop",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_to",
+            "remove_preserves_sorted",
+            "remove_sizeConsistent",
+            "replenishQueueValidOnCore",
+            "replenishQueueValidOnCore_frame",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp",
+          "line": 627,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "mem_remove_entries",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_machine",
+            "migrateSchedContextReplenishment_mem_toCore",
+            "migrateSchedContextReplenishment_noop",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "replenishmentPipelineOrderOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "determineTargetCore_congr_getTcb",
+          "line": 653,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinity_determineTargetCore_ne",
+          "line": 660,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "determineTargetCore_congr_getTcb",
+            "invExt",
+            "setThreadCpuAffinity",
+            "setThreadCpuAffinity_getTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinity_getSchedContext",
+          "line": 672,
+          "called": [
+            "CoreId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "get",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "invExt",
+            "none",
+            "setThreadCpuAffinity",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to",
+          "line": 715,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_determineTargetCore",
+            "migrateSchedContextReplenishment_getSchedContext",
+            "migrateSchedContextReplenishment_mem_toCore",
+            "replenishQueueAffinityConsistentOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from",
+          "line": 735,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "mem_remove_entries",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_determineTargetCore",
+            "migrateSchedContextReplenishment_getSchedContext",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other",
+          "line": 752,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_objects",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistentOnCore_frame",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "setThreadCpuAffinityWithMigration",
+          "line": 780,
+          "called": [
+            "CoreId",
+            "KernelError",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "migrateSchedContextReplenishment",
+            "none",
+            "scId",
+            "setThreadCpuAffinity",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinityWithMigration_error_of_no_tcb",
+          "line": 794,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "setThreadCpuAffinityWithMigration",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinityWithMigration_bound_eq",
+          "line": 803,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "migrateSchedContextReplenishment",
+            "scId",
+            "setThreadCpuAffinity",
+            "setThreadCpuAffinityWithMigration",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinityWithMigration_unbound_eq",
+          "line": 814,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "scId",
+            "setThreadCpuAffinity",
+            "setThreadCpuAffinityWithMigration",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextMigration_consistent",
+          "line": 837,
+          "called": [
+            "CoreId",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "getSchedContext",
+            "getTcb",
+            "invExt",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from",
+            "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to",
+            "migrateSchedContextReplenishment_noop",
+            "migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueOnCore",
+            "scId",
+            "setThreadCpuAffinityWithMigration",
+            "setThreadCpuAffinityWithMigration_bound_eq",
+            "setThreadCpuAffinity_affects_determineTargetCore",
+            "setThreadCpuAffinity_determineTargetCore_ne",
+            "setThreadCpuAffinity_getSchedContext",
+            "setThreadCpuAffinity_ok_of_tcb",
+            "setThreadCpuAffinity_preserves_scheduler",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreCbsInvariant",
+          "line": 943,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueValidOnCore",
+            "replenishmentPipelineOrderOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_perCoreCbsInvariant",
+          "line": 950,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_replenishQueueAffinityConsistentOnCore",
+            "default_state_perCoreInitialized",
+            "empty",
+            "empty_sizeConsistent",
+            "empty_sorted",
+            "perCoreCbsInvariant",
+            "replenishQueueOnCore",
+            "replenishQueueValidOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_perCoreCbsInvariant",
+          "line": 970,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "perCoreCbsInvariant",
+            "replenishOnCore",
+            "replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore",
+            "replenishOnCore_preserves_replenishmentPipelineOrderOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consumeBudget_preserves_le_budget",
+          "line": 988,
+          "called": [
+            "SchedContext",
+            "consumeBudget",
+            "consumeBudget_budgetRemaining_le",
+            "le_trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyRefill_preserves_le_budget",
+          "line": 1001,
+          "called": [
+            "SchedContext",
+            "applyRefill",
+            "applyRefill_le_budget"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleReplenishment_replenishments_bounded",
+          "line": 1010,
+          "called": [
+            "Budget",
+            "Kernel",
+            "SchedContext",
+            "length",
+            "maxReplenishments",
+            "scheduleReplenishment",
+            "truncateReplenishments_length_le"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory",
+      "path": "SeLe4n/Kernel/Scheduler/Operations/PerCoreCbsInventory.lean",
+      "declaration_count": 17,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "PerCoreCbsCategory",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "PerCoreCbsTheorem",
+          "line": 71,
+          "called": [
+            "PerCoreCbsCategory"
+          ]
+        },
+        {
+          "kind": "syntax",
+          "name": "\"pccbst!\"",
+          "line": 79,
+          "called": []
+        },
+        {
+          "kind": "macro_rules",
+          "name": "<anonymous:macro_rules:81>",
+          "line": 81,
+          "called": [
+            "PerCoreCbsTheorem"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreCbsTheorems",
+          "line": 93,
+          "called": [
+            "PerCoreCbsTheorem",
+            "applyRefill_preserves_le_budget",
+            "consumeBudget_preserves_le_budget",
+            "default_perCoreCbsInvariant",
+            "default_replenishQueueAffinityConsistentOnCore",
+            "default_replenishQueueAffinityConsistent_smp",
+            "determineTargetCore_congr_getTcb",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_determineTargetCore",
+            "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from",
+            "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to",
+            "migrateSchedContextReplenishment_fromCore_excludes_scId",
+            "migrateSchedContextReplenishment_getSchedContext",
+            "migrateSchedContextReplenishment_machine",
+            "migrateSchedContextReplenishment_mem_toCore",
+            "migrateSchedContextReplenishment_noop",
+            "migrateSchedContextReplenishment_objects",
+            "migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other",
+            "migrateSchedContextReplenishment_preserves_replenishQueueValid_smp",
+            "migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_to",
+            "perCoreCbsInvariant",
+            "replenishOnCore",
+            "replenishOnCore_activeDomainOnCore",
+            "replenishOnCore_currentOnCore",
+            "replenishOnCore_determineTargetCore",
+            "replenishOnCore_getSchedContext",
+            "replenishOnCore_getTcb",
+            "replenishOnCore_machine",
+            "replenishOnCore_mem",
+            "replenishOnCore_objects",
+            "replenishOnCore_preserves_perCoreCbsInvariant",
+            "replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore_ne",
+            "replenishOnCore_preserves_replenishQueueValid_smp",
+            "replenishOnCore_preserves_replenishmentPipelineOrderOnCore",
+            "replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne",
+            "replenishOnCore_replenishQueueOnCore_ne",
+            "replenishOnCore_replenishQueueOnCore_self",
+            "replenishOnCore_runQueueOnCore",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistentOnCore_frame",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueAffinityConsistent_smp_at",
+            "schedContextMigration_consistent",
+            "scheduleReplenishment_replenishments_bounded",
+            "setThreadCpuAffinityWithMigration",
+            "setThreadCpuAffinityWithMigration_bound_eq",
+            "setThreadCpuAffinityWithMigration_error_of_no_tcb",
+            "setThreadCpuAffinityWithMigration_unbound_eq",
+            "setThreadCpuAffinity_determineTargetCore_ne",
+            "setThreadCpuAffinity_getSchedContext"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_count",
+          "line": 213,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_predicate_count",
+          "line": 216,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_replenish_count",
+          "line": 220,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_preservation_count",
+          "line": 224,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_migration_count",
+          "line": 228,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_affinityWrite_count",
+          "line": 232,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_consistency_count",
+          "line": 236,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_budget_count",
+          "line": 240,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_partition_sum",
+          "line": 244,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_identifiers_nodup",
+          "line": 258,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreCbsTheorems_descriptions_nodup",
+          "line": 264,
           "called": [
             "Kernel"
           ]
@@ -104435,13 +105587,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 357,
+          "line": 375,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 363,
+          "line": 381,
           "called": []
         }
       ]
@@ -109318,6 +110470,7 @@
             "scId",
             "schedContextBind",
             "schedContextConfigure",
+            "tcb0",
             "tick",
             "toObjId"
           ]
@@ -122803,6 +123956,7 @@
             "expectErr",
             "insert",
             "ofNat",
+            "sc0",
             "scId",
             "schedContextBind",
             "schedContextConfigure",
@@ -130311,6 +131465,410 @@
           "called": [
             "runSerializabilityChecks"
           ]
+        }
+      ]
+    },
+    {
+      "module": "tests.SmpCbsSuite",
+      "path": "tests/SmpCbsSuite.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SmpCbs",
+          "line": 35,
+          "called": [
+            "applyRefill_preserves_le_budget",
+            "consumeBudget_preserves_le_budget",
+            "default_perCoreCbsInvariant",
+            "default_replenishQueueAffinityConsistentOnCore",
+            "default_replenishQueueAffinityConsistent_smp",
+            "determineTargetCore_congr_getTcb",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_determineTargetCore",
+            "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from",
+            "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to",
+            "migrateSchedContextReplenishment_fromCore_excludes_scId",
+            "migrateSchedContextReplenishment_getSchedContext",
+            "migrateSchedContextReplenishment_machine",
+            "migrateSchedContextReplenishment_mem_toCore",
+            "migrateSchedContextReplenishment_noop",
+            "migrateSchedContextReplenishment_objects",
+            "migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other",
+            "migrateSchedContextReplenishment_preserves_replenishQueueValid_smp",
+            "migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_from",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_to",
+            "perCoreCbsInvariant",
+            "perCoreCbsTheorems",
+            "perCoreCbsTheorems_count",
+            "perCoreCbsTheorems_identifiers_nodup",
+            "perCoreCbsTheorems_partition_sum",
+            "replenishOnCore",
+            "replenishOnCore_activeDomainOnCore",
+            "replenishOnCore_currentOnCore",
+            "replenishOnCore_determineTargetCore",
+            "replenishOnCore_getSchedContext",
+            "replenishOnCore_getTcb",
+            "replenishOnCore_machine",
+            "replenishOnCore_mem",
+            "replenishOnCore_objects",
+            "replenishOnCore_preserves_perCoreCbsInvariant",
+            "replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore_ne",
+            "replenishOnCore_preserves_replenishQueueValid_smp",
+            "replenishOnCore_preserves_replenishmentPipelineOrderOnCore",
+            "replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne",
+            "replenishOnCore_replenishQueueOnCore_ne",
+            "replenishOnCore_replenishQueueOnCore_self",
+            "replenishOnCore_runQueueOnCore",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistentOnCore_frame",
+            "replenishQueueAffinityConsistent_smp",
+            "replenishQueueAffinityConsistent_smp_at",
+            "schedContextMigration_consistent",
+            "scheduleReplenishment_replenishments_bounded",
+            "setThreadCpuAffinityWithMigration",
+            "setThreadCpuAffinityWithMigration_bound_eq",
+            "setThreadCpuAffinityWithMigration_error_of_no_tcb",
+            "setThreadCpuAffinityWithMigration_unbound_eq",
+            "setThreadCpuAffinity_determineTargetCore_ne",
+            "setThreadCpuAffinity_getSchedContext"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:125>",
+          "line": 125,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishOnCore_preserves_replenishQueueValidOnCore",
+            "replenishQueueValidOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:131>",
+          "line": 131,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishOnCore_preserves_replenishmentPipelineOrderOnCore",
+            "replenishmentPipelineOrderOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:137>",
+          "line": 137,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "replenishOnCore",
+            "replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistentOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:145>",
+          "line": 145,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_preserves_replenishQueueValid_smp",
+            "replenishQueueValidOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:151>",
+          "line": 151,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "migrateSchedContextReplenishment_fromCore_excludes_scId",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:158>",
+          "line": 158,
+          "called": [
+            "CoreId",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "getSchedContext",
+            "getTcb",
+            "invExt",
+            "replenishQueueAffinityConsistentOnCore",
+            "replenishQueueAffinityConsistent_smp",
+            "scId",
+            "schedContextMigration_consistent",
+            "setThreadCpuAffinityWithMigration",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:172>",
+          "line": 172,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "determineTargetCore",
+            "getSchedContext",
+            "perCoreCbsInvariant",
+            "replenishOnCore",
+            "replenishOnCore_preserves_perCoreCbsInvariant",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:180>",
+          "line": 180,
+          "called": [
+            "SchedContext",
+            "applyRefill",
+            "applyRefill_preserves_le_budget"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core1",
+          "line": 188,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scId0",
+          "line": 189,
+          "called": [
+            "SchedContextId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tid0",
+          "line": 190,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sc0",
+          "line": 193,
+          "called": [
+            "SchedContext",
+            "scId",
+            "scId0",
+            "tid0"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcb0",
+          "line": 199,
+          "called": [
+            "TCB",
+            "core1",
+            "ofNat",
+            "scId0",
+            "tid0"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stCbs",
+          "line": 207,
+          "called": [
+            "SystemState",
+            "build",
+            "core1",
+            "insert",
+            "sc0",
+            "scId0",
+            "setReplenishQueueOnCore",
+            "tcb0",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sizeConsistentB",
+          "line": 214,
+          "called": [
+            "ReplenishQueue",
+            "length",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 216,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runReplenishScenarios",
+          "line": 224,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "contains",
+            "core1",
+            "getSchedContext",
+            "isEmpty",
+            "replenishOnCore",
+            "replenishQueueOnCore",
+            "scId0",
+            "sizeConsistentB",
+            "stCbs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMigrationScenarios",
+          "line": 241,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "contains",
+            "core1",
+            "getSchedContext",
+            "isEmpty",
+            "migrateSchedContextReplenishment",
+            "replenishQueueOnCore",
+            "scId0",
+            "sizeConsistentB",
+            "stCbs"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runCompositeScenarios",
+          "line": 265,
+          "called": [
+            "SystemState",
+            "assertBool",
+            "bootCoreId",
+            "build",
+            "contains",
+            "core1",
+            "determineTargetCore",
+            "ofNat",
+            "replenishQueueOnCore",
+            "scId0",
+            "setThreadCpuAffinityWithMigration",
+            "stCbs",
+            "stUnbound",
+            "tcb0",
+            "tid0",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runBudgetScenarios",
+          "line": 301,
+          "called": [
+            "applyRefill",
+            "assertBool",
+            "consumeBudget",
+            "length",
+            "maxReplenishments",
+            "sc0",
+            "scheduleReplenishment"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAffinityScenarios",
+          "line": 319,
+          "called": [
+            "SystemState",
+            "all",
+            "allCores",
+            "assertBool",
+            "core1",
+            "default",
+            "determineTargetCore",
+            "isEmpty",
+            "replenishQueueOnCore",
+            "scId0",
+            "stCbs",
+            "tid0"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runInventoryChecks",
+          "line": 332,
+          "called": [
+            "assertBool",
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 351,
+          "called": [
+            "runAffinityScenarios",
+            "runBudgetScenarios",
+            "runCompositeScenarios",
+            "runInventoryChecks",
+            "runMigrationScenarios",
+            "runReplenishScenarios"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 363,
+          "called": []
         }
       ]
     },

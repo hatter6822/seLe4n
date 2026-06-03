@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.53.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.54.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5992,6 +5992,76 @@ documentation lives under `docs/` and `docs/gitbook/`.
   never admits an out-of-domain thread, and `scheduleEffectiveOnCore` independently
   re-checks `tcb.domain = activeDomainOnCore c` before committing a dispatch).  Items
   deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.H LANDED at v0.31.54 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (per-core CBS — Constant Bandwidth Server;
+  plan §3.8, §5; all 8 sub-tasks).  Each core owns its **own** CBS replenishment queue
+  (`replenishQueueOnCore c`, the SM4.B per-core field), holding the budget-refill
+  schedule for the SchedContexts whose bound thread is homed on that core; when a
+  thread's `cpuAffinity` changes, its bound SchedContext's pending replenishments
+  **migrate** to the new core's queue, so the per-core CBS accounting follows the
+  thread.  Built on SM5.D's per-core replenishment machinery
+  (`processReplenishmentsDueOnCore`, `timerTickBudgetOnCore`) + SM4.C's per-core
+  invariant predicates (`replenishQueueValidOnCore`, `replenishmentPipelineOrderOnCore`).
+  All theorems axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only); default
+  build green (324 jobs); trace byte-identical (purely additive — the new modules are
+  staged); AK7 floor unchanged (`RAW_LOOKUP_TID` 814 —
+  `setThreadCpuAffinity_getSchedContext?` routes through the `.get?` method form).
+
+  - **SM5.H.1 / .5**: `replenishQueueAffinityConsistentOnCore` (plan §3.8 Theorem
+    3.8.1) — every SchedContext with a pending replenishment in core `c`'s queue has
+    its bound thread homed on `c` (`determineTargetCore = c`) — plus the SMP form
+    (`replenishQueueAffinityConsistent_smp`), default-state, and frame.  **Naming
+    erratum**: §3.8 captions this `schedContextRunQueueConsistent_perCore`, which
+    collides with an unrelated SM4.C predicate (run-queue ↔ budget); per the internal-
+    first naming rule the SM5.H replenish-queue ↔ affinity invariant is named
+    `replenishQueueAffinityConsistentOnCore`.  The literal `cpuAffinity = some c` of the
+    §3.8 pseudocode is realised as `determineTargetCore st tid = c` (the SM5.C.9
+    "unbound ⇒ bootCoreId" home-core rule), which correctly admits SchedContext-bound
+    but affinity-unbound threads (homed on the boot core) — the literal form would
+    wrongly forbid them.
+  - **SM5.H.2**: `replenishOnCore` — the per-core "schedule a CBS replenishment"
+    primitive (insert `(scId, eligibleAt)` into `replenishQueueOnCore c`, the clean
+    named extraction of the queue insert `timerTickBudgetOnCore` /
+    `handleYieldWithBudget` open-code) + full frame surface + membership.
+  - **SM5.H.3 / .6**: `replenishOnCore` preserves `replenishQueueValidOnCore` (sorted +
+    size-consistent) and `replenishmentPipelineOrderOnCore` (future-eligible, given
+    `eligibleAt > machine.timer` — guaranteed by `now + period`, `period > 0`), per-core
+    / sibling-core / SMP-wide.  (The plan's `replenishQueueOnCore_wellFormed` /
+    `replenishmentPipelineOrder_perCore` are realised as the SM4.C
+    `replenishQueueValidOnCore` / `replenishmentPipelineOrderOnCore` preservation.)
+  - **SM5.H.4**: `migrateSchedContextReplenishment` (move a SchedContext's pending
+    replenishments between cores — `remove` from source, fold-of-`insert`s into
+    destination, no-op self-migration) + frames + structural moves-the-entries facts
+    (`_fromCore_excludes_scId`, `_mem_toCore`) + validity / pipeline SMP-preservation;
+    the composite `setThreadCpuAffinityWithMigration` (the SM5.C.8 affinity write + the
+    migration); the affinity-write helper lemmas (`setThreadCpuAffinity_getSchedContext?`
+    / `_determineTargetCore_ne`, `determineTargetCore_congr_getTcb?`); the migration's
+    affinity establish / preserve lemmas; and the headline
+    **`schedContextMigration_consistent`** — binding a thread to a new core **and**
+    migrating its SchedContext's replenishments *restores*
+    `replenishQueueAffinityConsistent_smp` on every core, under the 1:1 binding
+    (`schedContextBindingConsistent`) and pre-state consistency.
+  - **SM5.H.7**: the aggregate `perCoreCbsInvariant` (validity ∧ pipeline ∧ affinity) +
+    default + the `replenishOnCore` bundle preservation; CBS budget-bound accounting
+    (`consumeBudget` / `applyRefill` keep `budgetRemaining ≤ budget`;
+    `scheduleReplenishment` stays within `maxReplenishments`).
+  - **SM5.H.8**: `tests/SmpCbsSuite.lean` (`lake exe smp_cbs_suite`) — 60 surface
+    anchors, 8 elaboration-time theorem-application examples, 36 runtime assertions
+    across six sections (per-core replenishment scheduling; the cross-core SchedContext
+    migration — entries genuinely move between cores; the affinity-change-with-migration
+    composite; the CBS budget bounds; affinity-consistency witnesses; inventory
+    partition counts).  Tier-2 + Tier-3 wired.
+
+  **Modules**: staged `Scheduler/Operations/PerCoreCbs.lean` (~54 substantive theorems
+  + defs) + `PerCoreCbsInventory.lean` (54-entry `pccbst!` inventory, 7 categories:
+  predicate / replenish / preservation / migration / affinityWrite / consistency /
+  budget).  Both staged via `Platform.Staged`; the production/staged partition gate now
+  verifies **57** staged-only modules (was 55).  `replenishOnCore` / the migration are
+  forward-looking (the live per-core CBS path is the SM5.D `timerTickOnCore`; the
+  affinity-migration `tcbSetAffinity` syscall is SM5.I+) — SM5.I's per-core run loop is
+  the first runtime exerciser.  Items deferred past v1.0.0 with correctness impact:
+  NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

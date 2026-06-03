@@ -305,6 +305,24 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 -- mirrors `PerCoreIdleInventory`.  A renamed/removed SM5.G theorem fails this
 -- module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory
+-- WS-SM SM5.H: per-core CBS (Constant Bandwidth Server) theorem surface — SM5.H.2
+-- `replenishOnCore` (the per-core CBS replenishment-scheduling primitive) + frames,
+-- SM5.H.3 / SM5.H.6 / SM5.H.5 `replenishOnCore` validity / pipeline-order / affinity
+-- preservation, SM5.H.4 `migrateSchedContextReplenishment` (SchedContext replenishment
+-- migration on affinity change) + `setThreadCpuAffinityWithMigration` + the headline
+-- restoration `schedContextMigration_consistent`, SM5.H.5 the plan §3.8 Theorem 3.8.1
+-- affinity invariant `replenishQueueAffinityConsistentOnCore`, and SM5.H.7 the aggregate
+-- `perCoreCbsInvariant` + CBS budget-bound accounting.  `replenishOnCore` / the migration
+-- are forward-looking (the live per-core CBS path is the SM5.D `timerTickOnCore`; the
+-- affinity-migration `tcbSetAffinity` syscall is SM5.I+); SM5.I's per-core run loop is the
+-- first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+-- WS-SM SM5.H: the per-core-CBS theorem inventory (categories predicate / replenish /
+-- preservation / migration / affinityWrite / consistency / budget) with the `pccbst!`
+-- compile-time identifier-validation macro + per-category count + partition-sum + Nodup
+-- witnesses; mirrors `PerCoreDomainInventory`.  A renamed/removed SM5.H theorem fails this
+-- module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

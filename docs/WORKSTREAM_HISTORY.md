@@ -3185,6 +3185,50 @@ out-of-domain thread, and `scheduleEffectiveOnCore` independently re-checks
 `tcb.domain = activeDomainOnCore c` before committing a dispatch).  Items deferred past
 v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.H LANDED at v0.31.54** (per-core CBS — Constant Bandwidth Server; plan
+§3.8 / §5; all 8 sub-tasks).  Each core owns its **own** CBS replenishment queue
+(`replenishQueueOnCore c`, the SM4.B per-core field), holding the budget-refill schedule
+for the SchedContexts whose bound thread is homed on that core; when a thread's
+`cpuAffinity` changes, its bound SchedContext's pending replenishments **migrate** to the
+new core's queue, so the per-core CBS accounting follows the thread.  Built on SM5.D's
+per-core replenishment machinery (`processReplenishmentsDueOnCore`,
+`timerTickBudgetOnCore`) + SM4.C's per-core invariant predicates
+(`replenishQueueValidOnCore`, `replenishmentPipelineOrderOnCore`).  All theorems
+axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); default build green (324
+jobs); trace byte-identical (purely additive — the new modules are staged); AK7 floor
+unchanged.
+
+- **SM5.H.1 / .5**: `replenishQueueAffinityConsistentOnCore` (plan §3.8 Theorem 3.8.1) —
+  every SchedContext with a pending replenishment in core `c`'s queue has its bound thread
+  homed on `c` (`determineTargetCore = c`) — + the SMP form / default-state / frame.
+  Naming erratum: §3.8 captions this `schedContextRunQueueConsistent_perCore`, which
+  collides with an unrelated SM4.C predicate; the internal-first name is
+  `replenishQueueAffinityConsistentOnCore`.  The literal `cpuAffinity = some c` is realised
+  as `determineTargetCore = c` (the SM5.C.9 unbound-⇒-bootCoreId rule), correctly admitting
+  SchedContext-bound but affinity-unbound threads.
+- **SM5.H.2 / .3 / .6**: `replenishOnCore` (the per-core CBS replenishment-scheduling
+  primitive — insert into `replenishQueueOnCore c`) + frames + preservation of
+  `replenishQueueValidOnCore` (sorted + size-consistent) and
+  `replenishmentPipelineOrderOnCore` (future-eligible) per-core / sibling / SMP.
+- **SM5.H.4**: `migrateSchedContextReplenishment` (move a SchedContext's replenishments
+  between cores) + frames + structural moves-the-entries facts + validity / pipeline
+  SMP-preservation; the composite `setThreadCpuAffinityWithMigration`; and the headline
+  `schedContextMigration_consistent` — the composite *restores*
+  `replenishQueueAffinityConsistent_smp` on every core (under the 1:1 binding + pre-state
+  consistency).
+- **SM5.H.7**: the aggregate `perCoreCbsInvariant` (validity ∧ pipeline ∧ affinity) +
+  default + `replenishOnCore` bundle preservation; CBS budget-bound accounting
+  (`consumeBudget` / `applyRefill` keep `budgetRemaining ≤ budget`).
+
+Modules: staged `Scheduler/Operations/PerCoreCbs.lean` + `PerCoreCbsInventory.lean`
+(54-entry `pccbst!` inventory, 7 categories).  Tests: `tests/SmpCbsSuite.lean`
+(`smp_cbs_suite`, 60 anchors / 8 examples / 36 runtime assertions — the cross-core
+migration genuinely moves entries between cores).  Partition gate 57 staged-only modules.
+`replenishOnCore` / the migration are forward-looking (the live per-core CBS path is the
+SM5.D `timerTickOnCore`; the affinity-migration `tcbSetAffinity` syscall is SM5.I+);
+SM5.I's per-core run loop is the first runtime exerciser.  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

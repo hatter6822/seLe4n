@@ -1,0 +1,267 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+/-
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+-/
+
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+
+/-!
+# WS-SM SM5.H — Theorem inventory
+
+Aggregates the SM5.H per-core CBS substantive theorems into a single typed
+inventory with size and per-category witnesses.  Mirrors the SM5.G
+`PerCoreDomainInventory.lean` and SM5.E `PerCoreIdleInventory.lean` patterns.
+
+Seven categories matching the plan §3.8 / §5 sub-tasks (54 entries):
+
+* `.predicate` — SM5.H.1 / SM5.H.5: the per-core CBS affinity-consistency invariant
+  `replenishQueueAffinityConsistentOnCore` (+ the SMP form, default-state, frame).
+* `.replenish` — SM5.H.2: the per-core CBS scheduling primitive `replenishOnCore`
+  and its frame / membership lemmas.
+* `.preservation` — SM5.H.3 / SM5.H.6 / SM5.H.5: `replenishOnCore` preserves
+  replenish-queue validity, pipeline order, and affinity consistency.
+* `.migration` — SM5.H.4: `migrateSchedContextReplenishment` (the SchedContext
+  replenishment migration) — frames, the structural "moves the entries" facts, and
+  validity / pipeline preservation.
+* `.affinityWrite` — SM5.H.4: the affinity-write helper lemmas
+  (`determineTargetCore` congruence, `setThreadCpuAffinity` SchedContext / home-core
+  frames) the composite restoration proof rests on.
+* `.consistency` — SM5.H.4 / SM5.H.5: the migration's affinity establish / preserve
+  lemmas, the composite `setThreadCpuAffinityWithMigration`, and the headline
+  restoration theorem `schedContextMigration_consistent`.
+* `.budget` — SM5.H.7: the aggregate `perCoreCbsInvariant` (+ default + the
+  `replenishOnCore` bundle preservation) and the CBS budget-bound accounting
+  theorems.
+
+## Identifier validation
+
+Identifiers are compile-time-validated via the `pccbst!` macro, mirroring SM5.G's
+`pcdt!`.  A typo or stale rename fails the build at this module's elaboration step
+with "unknown identifier '<name>'".
+-/
+
+namespace SeLe4n.Kernel
+
+/-- WS-SM SM5.H: category tag for the SM5.H theorem inventory. -/
+inductive PerCoreCbsCategory where
+  /-- SM5.H.1 / .5 the per-core CBS affinity-consistency invariant + SMP form / default / frame. -/
+  | predicate
+  /-- SM5.H.2 the `replenishOnCore` scheduling primitive + frames + membership. -/
+  | replenish
+  /-- SM5.H.3 / .6 / .5 `replenishOnCore` validity / pipeline / affinity preservation. -/
+  | preservation
+  /-- SM5.H.4 the `migrateSchedContextReplenishment` op + frames + structural + validity/pipeline. -/
+  | migration
+  /-- SM5.H.4 the affinity-write helper lemmas. -/
+  | affinityWrite
+  /-- SM5.H.4 / .5 the migration affinity establish/preserve + composite + headline restoration. -/
+  | consistency
+  /-- SM5.H.7 the per-core CBS invariant bundle + budget-bound accounting. -/
+  | budget
+  deriving Repr, DecidableEq, Inhabited
+
+/-- WS-SM SM5.H: a theorem entry in the SM5.H inventory.  Records a description,
+the fully-qualified name as a `String`, a compile-time elaboration witness, and a
+category tag.  The `_elabCheck` field (produced by `pccbst!`) forces Lean to resolve
+the referenced declaration at construction time. -/
+structure PerCoreCbsTheorem where
+  description : String
+  identifier  : String
+  _elabCheck  : Unit
+  category    : PerCoreCbsCategory
+  deriving Repr, Inhabited
+
+/-- WS-SM SM5.H: build a `PerCoreCbsTheorem` with a compile-time-validated identifier. -/
+syntax (name := perCoreCbsTheoremMacro) "pccbst!" str ident term : term
+
+macro_rules
+  | `(pccbst! $desc:str $ident:ident $cat:term) => do
+      let nameStr : String := ident.getId.toString
+      let nameStxLit := Lean.Syntax.mkStrLit nameStr
+      `(({ description := $desc,
+           identifier := $nameStxLit,
+           _elabCheck := (let _ := @$ident; ()),
+           category := $cat
+         } : PerCoreCbsTheorem))
+
+/-- WS-SM SM5.H: substantive theorem inventory.  Every entry's identifier is
+compile-time-validated by `pccbst!`. -/
+def perCoreCbsTheorems : List PerCoreCbsTheorem :=
+  [-- ── SM5.H.1 / .5 the affinity-consistency invariant (.predicate) ──
+    pccbst! "replenishQueueAffinityConsistentOnCore: the plan §3.8 Theorem 3.8.1 per-core CBS affinity invariant (SM5.H.5)"
+      replenishQueueAffinityConsistentOnCore .predicate,
+    pccbst! "replenishQueueAffinityConsistent_smp: the SMP-wide affinity-consistency invariant"
+      replenishQueueAffinityConsistent_smp .predicate,
+    pccbst! "replenishQueueAffinityConsistent_smp_at: the SMP form extracts the per-core form"
+      replenishQueueAffinityConsistent_smp_at .predicate,
+    pccbst! "default_replenishQueueAffinityConsistentOnCore: boot is affinity-consistent on every core"
+      default_replenishQueueAffinityConsistentOnCore .predicate,
+    pccbst! "default_replenishQueueAffinityConsistent_smp: boot is SMP-affinity-consistent"
+      default_replenishQueueAffinityConsistent_smp .predicate,
+    pccbst! "replenishQueueAffinityConsistentOnCore_frame: the invariant's read-footprint frame"
+      replenishQueueAffinityConsistentOnCore_frame .predicate,
+    -- ── SM5.H.2 the replenishOnCore primitive (.replenish) ──
+    pccbst! "replenishOnCore: the per-core CBS replenishment-scheduling primitive (SM5.H.2)"
+      replenishOnCore .replenish,
+    pccbst! "replenishOnCore_objects: scheduling never touches the object store"
+      replenishOnCore_objects .replenish,
+    pccbst! "replenishOnCore_machine: scheduling never advances the machine timer"
+      replenishOnCore_machine .replenish,
+    pccbst! "replenishOnCore_getTcb?: scheduling frames every TCB resolution"
+      replenishOnCore_getTcb? .replenish,
+    pccbst! "replenishOnCore_getSchedContext?: scheduling frames every SchedContext resolution"
+      replenishOnCore_getSchedContext? .replenish,
+    pccbst! "replenishOnCore_determineTargetCore: scheduling frames every thread's home core"
+      replenishOnCore_determineTargetCore .replenish,
+    pccbst! "replenishOnCore_replenishQueueOnCore_self: core c's queue is the old queue + the insert"
+      replenishOnCore_replenishQueueOnCore_self .replenish,
+    pccbst! "replenishOnCore_replenishQueueOnCore_ne: scheduling frames a different core's queue"
+      replenishOnCore_replenishQueueOnCore_ne .replenish,
+    pccbst! "replenishOnCore_runQueueOnCore: scheduling frames every run queue"
+      replenishOnCore_runQueueOnCore .replenish,
+    pccbst! "replenishOnCore_currentOnCore: scheduling frames every current thread"
+      replenishOnCore_currentOnCore .replenish,
+    pccbst! "replenishOnCore_activeDomainOnCore: scheduling frames every active domain"
+      replenishOnCore_activeDomainOnCore .replenish,
+    pccbst! "replenishOnCore_mem: the scheduled entry is a member of the post-state queue"
+      replenishOnCore_mem .replenish,
+    -- ── SM5.H.3 / .6 / .5 replenishOnCore preservation (.preservation) ──
+    pccbst! "replenishOnCore_preserves_replenishQueueValidOnCore: validity preserved on core c (SM5.H.3)"
+      replenishOnCore_preserves_replenishQueueValidOnCore .preservation,
+    pccbst! "replenishOnCore_preserves_replenishQueueValidOnCore_ne: validity preserved on another core"
+      replenishOnCore_preserves_replenishQueueValidOnCore_ne .preservation,
+    pccbst! "replenishOnCore_preserves_replenishQueueValid_smp: validity preserved on every core (SM5.H.3)"
+      replenishOnCore_preserves_replenishQueueValid_smp .preservation,
+    pccbst! "replenishOnCore_preserves_replenishmentPipelineOrderOnCore: pipeline order preserved on core c (SM5.H.6)"
+      replenishOnCore_preserves_replenishmentPipelineOrderOnCore .preservation,
+    pccbst! "replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne: pipeline order preserved on another core"
+      replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne .preservation,
+    pccbst! "replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore: affinity consistency preserved (SM5.H.5)"
+      replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore .preservation,
+    -- ── SM5.H.4 the migration operation (.migration) ──
+    pccbst! "migrateSchedContextReplenishment: the SchedContext replenishment migration (SM5.H.4)"
+      migrateSchedContextReplenishment .migration,
+    pccbst! "migrateSchedContextReplenishment_noop: a self-migration is the identity"
+      migrateSchedContextReplenishment_noop .migration,
+    pccbst! "migrateSchedContextReplenishment_objects: the migration never touches the object store"
+      migrateSchedContextReplenishment_objects .migration,
+    pccbst! "migrateSchedContextReplenishment_machine: the migration never advances the timer"
+      migrateSchedContextReplenishment_machine .migration,
+    pccbst! "migrateSchedContextReplenishment_getSchedContext?: the migration frames SchedContext resolution"
+      migrateSchedContextReplenishment_getSchedContext? .migration,
+    pccbst! "migrateSchedContextReplenishment_determineTargetCore: the migration frames every home core"
+      migrateSchedContextReplenishment_determineTargetCore .migration,
+    pccbst! "migrateSchedContextReplenishment_replenishQueueOnCore_to: destination queue = fold of inserts"
+      migrateSchedContextReplenishment_replenishQueueOnCore_to .migration,
+    pccbst! "migrateSchedContextReplenishment_replenishQueueOnCore_from: source queue = pre-state with scId removed"
+      migrateSchedContextReplenishment_replenishQueueOnCore_from .migration,
+    pccbst! "migrateSchedContextReplenishment_replenishQueueOnCore_other: other cores' queues untouched"
+      migrateSchedContextReplenishment_replenishQueueOnCore_other .migration,
+    pccbst! "migrateSchedContextReplenishment_fromCore_excludes_scId: no scId entry remains on the source core"
+      migrateSchedContextReplenishment_fromCore_excludes_scId .migration,
+    pccbst! "migrateSchedContextReplenishment_mem_toCore: destination membership decomposition (old or moved)"
+      migrateSchedContextReplenishment_mem_toCore .migration,
+    pccbst! "migrateSchedContextReplenishment_preserves_replenishQueueValid_smp: validity preserved on every core (SM5.H.3)"
+      migrateSchedContextReplenishment_preserves_replenishQueueValid_smp .migration,
+    pccbst! "migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp: pipeline order preserved (SM5.H.6)"
+      migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp .migration,
+    -- ── SM5.H.4 affinity-write helpers (.affinityWrite) ──
+    pccbst! "determineTargetCore_congr_getTcb?: equal TCB resolutions give equal home cores"
+      determineTargetCore_congr_getTcb? .affinityWrite,
+    pccbst! "setThreadCpuAffinity_determineTargetCore_ne: the affinity write frames other threads' home cores"
+      setThreadCpuAffinity_determineTargetCore_ne .affinityWrite,
+    pccbst! "setThreadCpuAffinity_getSchedContext?: the affinity write frames SchedContext resolution"
+      setThreadCpuAffinity_getSchedContext? .affinityWrite,
+    -- ── SM5.H.4 / .5 migration affinity behaviour + composite + headline (.consistency) ──
+    pccbst! "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to: establishes consistency on the destination"
+      migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to .consistency,
+    pccbst! "migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from: establishes consistency on the source"
+      migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from .consistency,
+    pccbst! "migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other: preserves consistency elsewhere"
+      migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other .consistency,
+    pccbst! "setThreadCpuAffinityWithMigration: the affinity-change + replenishment-migration composite (SM5.H.4)"
+      setThreadCpuAffinityWithMigration .consistency,
+    pccbst! "setThreadCpuAffinityWithMigration_error_of_no_tcb: the composite is fail-closed on a non-TCB target"
+      setThreadCpuAffinityWithMigration_error_of_no_tcb .consistency,
+    pccbst! "setThreadCpuAffinityWithMigration_bound_eq: the bound-case composite is affinity-write then migration"
+      setThreadCpuAffinityWithMigration_bound_eq .consistency,
+    pccbst! "setThreadCpuAffinityWithMigration_unbound_eq: the unbound-case composite is just the affinity write"
+      setThreadCpuAffinityWithMigration_unbound_eq .consistency,
+    pccbst! "schedContextMigration_consistent: the composite RESTORES affinity consistency on every core (SM5.H.4 headline)"
+      schedContextMigration_consistent .consistency,
+    -- ── SM5.H.7 per-core CBS invariant + budget accounting (.budget) ──
+    pccbst! "perCoreCbsInvariant: the aggregate per-core CBS invariant (validity + pipeline + affinity) (SM5.H.7)"
+      perCoreCbsInvariant .budget,
+    pccbst! "default_perCoreCbsInvariant: boot satisfies the per-core CBS invariant"
+      default_perCoreCbsInvariant .budget,
+    pccbst! "replenishOnCore_preserves_perCoreCbsInvariant: scheduling maintains the per-core CBS invariant (SM5.H.7)"
+      replenishOnCore_preserves_perCoreCbsInvariant .budget,
+    pccbst! "consumeBudget_preserves_le_budget: charging budget preserves the CBS bandwidth bound (SM5.H.7)"
+      consumeBudget_preserves_le_budget .budget,
+    pccbst! "applyRefill_preserves_le_budget: replenishment establishes the CBS bandwidth bound (SM5.H.7)"
+      applyRefill_preserves_le_budget .budget,
+    pccbst! "scheduleReplenishment_replenishments_bounded: the replenishment schedule stays within maxReplenishments (SM5.H.7)"
+      scheduleReplenishment_replenishments_bounded .budget]
+
+/-- WS-SM SM5.H: the inventory has 54 substantive entries.  A regression that adds
+a new SM5.H theorem without registering it fails this count witness at the Tier-3
+surface check. -/
+theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 54 := by decide
+
+/-- WS-SM SM5.H: 6 entries in the `predicate` category. -/
+theorem perCoreCbsTheorems_predicate_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6 := by decide
+
+/-- WS-SM SM5.H: 12 entries in the `replenish` category. -/
+theorem perCoreCbsTheorems_replenish_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 12 := by decide
+
+/-- WS-SM SM5.H: 6 entries in the `preservation` category. -/
+theorem perCoreCbsTheorems_preservation_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 6 := by decide
+
+/-- WS-SM SM5.H: 13 entries in the `migration` category. -/
+theorem perCoreCbsTheorems_migration_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 13 := by decide
+
+/-- WS-SM SM5.H: 3 entries in the `affinityWrite` category. -/
+theorem perCoreCbsTheorems_affinityWrite_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 3 := by decide
+
+/-- WS-SM SM5.H: 8 entries in the `consistency` category. -/
+theorem perCoreCbsTheorems_consistency_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 8 := by decide
+
+/-- WS-SM SM5.H: 6 entries in the `budget` category. -/
+theorem perCoreCbsTheorems_budget_count :
+    (perCoreCbsTheorems.filter (fun t => t.category == .budget)).length = 6 := by decide
+
+/-- WS-SM SM5.H: per-category counts sum to the total. -/
+theorem perCoreCbsTheorems_partition_sum :
+    (perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length +
+    (perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length +
+    (perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length +
+    (perCoreCbsTheorems.filter (fun t => t.category == .migration)).length +
+    (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length +
+    (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length +
+    (perCoreCbsTheorems.filter (fun t => t.category == .budget)).length =
+    perCoreCbsTheorems.length := by decide
+
+set_option maxRecDepth 10000 in
+/-- WS-SM SM5.H: every inventory identifier is unique.  Kernel-sound `decide` (not
+`native_decide`): a duplicate identifier — which `native_decide` could mask by
+trusting the compiled evaluation — fails this proof in the kernel. -/
+theorem perCoreCbsTheorems_identifiers_nodup :
+    (perCoreCbsTheorems.map (·.identifier)).Nodup := by decide
+
+set_option maxRecDepth 10000 in
+/-- WS-SM SM5.H: every inventory description is unique.  Kernel-sound `decide` under
+an elevated `maxRecDepth` (see `perCoreCbsTheorems_identifiers_nodup`). -/
+theorem perCoreCbsTheorems_descriptions_nodup :
+    (perCoreCbsTheorems.map (·.description)).Nodup := by decide
+
+end SeLe4n.Kernel
