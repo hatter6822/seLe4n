@@ -535,6 +535,54 @@ theorem switchToThreadOnCore_objects_eq_preempt (st : SystemState) (c : CoreId)
       simp only [restoreIncomingContext_objects]
     · rw [if_neg hAff] at h; simp at h
 
+/-- WS-SM SM5.F.6 (PR #811 P2-5 support): `preemptCurrentOnCore` frames out **any**
+thread that is not core `c`'s current thread — its only object-store write is the
+*previous* current thread's register-context save (at `prevTid.toObjId`), so the
+lookup at every other `tid` is unchanged.  Generalises `_getTcb?_incoming` (which
+frames the *incoming* thread, also `≠ prevTid` via the `prevTid == incoming` no-op
+guard) to any `tid` with `currentOnCore c ≠ some tid`.  Routes through the typed
+`getTcb?` accessor + the `.get?`-method-form `RHTable.getElem?_insert_ne` (no raw
+object-store `[·]?` bracket — AK7-clean). -/
+theorem preemptCurrentOnCore_getTcb?_ne_current (st : SystemState) (c : CoreId)
+    (incoming tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hNe : st.scheduler.currentOnCore c ≠ some tid) :
+    (preemptCurrentOnCore st c incoming).getTcb? tid = st.getTcb? tid := by
+  unfold preemptCurrentOnCore
+  split
+  · rfl
+  · next prevTid hCur =>
+    split
+    · rfl
+    · next _ =>
+      split
+      · next prevTcb _ =>
+        have hNeT : prevTid ≠ tid := by
+          intro he; subst he; exact hNe hCur
+        have hNeO : ¬ (prevTid.toObjId == tid.toObjId) = true := fun he =>
+          hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId
+          tid.toObjId _ hNeO hInv]
+      · rfl
+
+/-- WS-SM SM5.F.6 (PR #811 P2-5 support): a successful `switchToThreadOnCore` frames
+out **any** thread that is not core `c`'s current thread (the preempted thread is the
+only TCB written, via its register-context save).  Composes
+`switchToThreadOnCore_objects_eq_preempt` (the switch writes only what the preempt
+does) with `preemptCurrentOnCore_getTcb?_ne_current`.  In particular the resumed
+thread of `resumeThreadOnCore` (never the executing core's current, since it was
+`.Inactive`) has its `threadState` preserved across the inline local reschedule. -/
+theorem switchToThreadOnCore_getTcb?_ne_current (st : SystemState) (c : CoreId)
+    (chosen tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt) (hNe : st.scheduler.currentOnCore c ≠ some tid)
+    (h : switchToThreadOnCore st c chosen = .ok st') :
+    st'.getTcb? tid = st.getTcb? tid := by
+  have hobj : st'.objects = (preemptCurrentOnCore st c chosen).objects :=
+    switchToThreadOnCore_objects_eq_preempt st c chosen st' h
+  have heq : st'.getTcb? tid = (preemptCurrentOnCore st c chosen).getTcb? tid := by
+    simp only [SystemState.getTcb?, hobj]
+  rw [heq, preemptCurrentOnCore_getTcb?_ne_current st c chosen tid hInv hNe]
+
 /-- WS-SM SM5.B.5 (invariant established): after a successful switch, core `c`
 satisfies `currentThreadValidOnCore` — its new current thread (`= tid`) resolves
 to a TCB in the object store.  The switch requires `tid` to resolve to a TCB up

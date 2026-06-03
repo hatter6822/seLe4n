@@ -12,7 +12,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
 namespace SeLe4n.Kernel.PriorityInheritance
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 
 -- ============================================================================
 -- D4-G: updatePipBoost (single-thread priority update)
@@ -239,13 +239,15 @@ For `t = tid`: `ipcState` is preserved by the record-with update
 (`updatePipBoost_self_ipcState`). Since `blockingServer` reads only
 `ipcState`, the result is identical in both cases. -/
 -- Helper: blockingServer depends only on objects[t.toObjId]?
-private theorem blockingServer_congr_objects (st₁ st₂ : SystemState) (t : ThreadId)
+-- (WS-SM SM5.F: de-privatised so the per-core PIP module can reuse it.)
+theorem blockingServer_congr_objects (st₁ st₂ : SystemState) (t : ThreadId)
     (h : st₁.objects[t.toObjId]? = st₂.objects[t.toObjId]?) :
     blockingServer st₁ t = blockingServer st₂ t := by
   simp only [blockingServer, h]
 
 -- Helper: blockingServer is determined by the ipcState of the looked-up TCB
-private theorem blockingServer_ipcState_congr (st₁ st₂ : SystemState) (t : ThreadId)
+-- (WS-SM SM5.F: de-privatised so the per-core PIP module can reuse it.)
+theorem blockingServer_ipcState_congr (st₁ st₂ : SystemState) (t : ThreadId)
     (tcb₁ tcb₂ : TCB) (h₁ : st₁.objects[t.toObjId]? = some (.tcb tcb₁))
     (h₂ : st₂.objects[t.toObjId]? = some (.tcb tcb₂))
     (hIpc : tcb₁.ipcState = tcb₂.ipcState) :
@@ -282,5 +284,154 @@ theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : Thread
           · simp only [hRQ, ite_false]; exact hSelf
       | _ => rfl
   · exact blockingServer_congr_objects _ _ _ (updatePipBoost_ipcState_frame st tid hObjInv t hEq)
+
+-- ============================================================================
+-- WS-SM SM5.F.2 / SM5.F.4: per-core priority-inheritance transitions
+-- ============================================================================
+--
+-- Under SMP the boosted holder may live on a core *other* than the one running
+-- the IPC operation, so two things become per-core: (1) the run-queue *bucket
+-- migration* must happen on the holder's home core (not always `bootCoreId`),
+-- and (2) if that core is remote, its scheduler must be poked with a
+-- `.reschedule` SGI (the boosted holder may now outrank the remote core's
+-- current thread).  The boost *value* stays GLOBAL — `computeMaxWaiterPriority`
+-- (the max over ALL waiters regardless of core); using only a per-core slice
+-- would under-boost and re-introduce priority inversion.  `updatePipBoostOnCore`
+-- is therefore `updatePipBoost` with the bucket migration generalised from
+-- `bootCoreId` to an explicit home core `c`; the single-core form is recovered
+-- at `c = bootCoreId` (`updatePipBoost_eq_updatePipBoostOnCore_bootCore`, an
+-- `rfl`, proved in the staged `PriorityInheritance.PerCore`).
+
+/-- WS-SM SM5.F.2 (plan §3.6): per-core single-thread PIP boost update.
+
+Identical to `updatePipBoost` except the run-queue *bucket migration* targets
+the holder's home core `c` instead of `bootCoreId`.  The boost VALUE is the
+GLOBAL `computeMaxWaiterPriority st tid` (max over every waiter, cross-core) —
+the per-core parameter only controls *where* the bucket is re-positioned, never
+the magnitude of the boost (under-boosting would reintroduce inversion).
+
+`updatePipBoost st tid = updatePipBoostOnCore st bootCoreId tid` definitionally
+(the only change is the literal core), so the existing single-core PIP proof base
+is preserved verbatim and the per-core form generalises it. -/
+def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : SystemState :=
+  match st.objects[tid.toObjId]? with
+  | some (KernelObject.tcb tcb) =>
+    let newBoost := computeMaxWaiterPriority st tid
+    -- Only update if pipBoost actually changed
+    if tcb.pipBoost == newBoost then st
+    else
+      -- Update TCB with new (GLOBAL) pipBoost
+      let tcb' := { tcb with pipBoost := newBoost }
+      let st' := { st with objects := st.objects.insert tid.toObjId (KernelObject.tcb tcb') }
+      -- Conditional run-queue bucket migration ON CORE c (the holder's home core)
+      if tid ∈ (st.scheduler.runQueueOnCore c) then
+        let oldPrio := (resolveEffectivePrioDeadline st tcb).1
+        let newPrio := (resolveEffectivePrioDeadline st' tcb').1
+        if oldPrio != newPrio then
+          { st' with
+            scheduler := st'.scheduler.setRunQueueOnCore c
+              (((st'.scheduler.runQueueOnCore c).remove tid).insert tid newPrio)
+          }
+        else st'
+      else st'
+  | _ => st
+
+/-- WS-SM SM5.F.2 (plan §3.6): cross-core PIP boost with wake.
+
+Boost `tid` on its home core (`determineTargetCore`), then decide whether the
+home core needs a cross-core `.reschedule` SGI:
+
+* **local** (home = `executingCore`): no SGI — the executing core will pick up
+  the re-bucketed holder on its next scheduling decision.
+* **remote, not runnable on home** (the holder is not in its home core's run
+  queue — it is itself blocked deeper in the chain, or currently running): no
+  SGI.  Raising the `pipBoost` of a thread that is not competing for its home
+  core's CPU has no immediate scheduling consequence — the new boost is consumed
+  when the thread next becomes runnable there (via the wake that re-enqueues it,
+  SM5.C `wakeThread` / SM5.F `restoreToReadyWithWake`).  Poking the home core now
+  would be a spurious cross-core IPI (SM5.C.11 latency / WS-SM SM5.F.4 C9).
+* **remote, runnable on home, material**: the boost changed the holder's
+  *effective* run-queue bucket (`resolveEffectivePrioDeadline` rose) AND the holder is runnable on
+  its home core, so that core's scheduler must re-evaluate — the boosted holder
+  may now outrank that core's current thread.  Emit `(home, .reschedule)`.
+* **remote, no-op** (boost unchanged ⇒ `updatePipBoostOnCore` returned `st`): no
+  SGI — there is no scheduling consequence, so poking the remote core would be a
+  spurious cross-core IPI.
+
+The runnability gate `tid ∈ runQueueOnCore target` AND the effective-priority
+materiality gate together align the SGI exactly with the run-queue *bucket
+migration* in `updatePipBoostOnCore` (which is gated on the same membership AND the
+same `oldPrio != newPrio` effective-priority change): an SGI is emitted only when
+the boost actually migrates the holder's bucket, i.e. could change which thread the
+home core should run next.
+
+Mirrors `wakeThread` (state + optional SGI; the BaseIO form that fires the SGI
+over the FFI is SM5.I's runtime dispatch).  The materiality guard reads the
+holder's *effective* priority (`resolveEffectivePrioDeadline`) before/after,
+exactly tracking the bucket-migration condition. -/
+def pipBoostWithWake (st : SystemState) (tid : ThreadId) (executingCore : CoreId)
+    : SystemState × Option (CoreId × SgiKind) :=
+  let target := determineTargetCore st tid
+  let st' := updatePipBoostOnCore st target tid
+  let sgi : Option (CoreId × SgiKind) :=
+    if target == executingCore then none
+    else if tid ∈ (st.scheduler.runQueueOnCore target) then
+      match st.getTcb? tid, st'.getTcb? tid with
+      | some t, some t' =>
+        -- Gate on the *effective* priority (the run-queue bucket key) changing,
+        -- not the raw `pipBoost` — exactly the `oldPrio != newPrio` condition that
+        -- governs the run-queue bucket migration in `updatePipBoostOnCore`.  A
+        -- `pipBoost` rise that does not raise the effective priority (e.g. a holder
+        -- whose base priority already dominates the new boost) migrates no bucket
+        -- and has no scheduling consequence on the home core, so it must poke no
+        -- remote core (a spurious cross-core IPI otherwise).
+        if (resolveEffectivePrioDeadline st t).1 == (resolveEffectivePrioDeadline st' t').1
+        then none else some (target, SgiKind.reschedule)
+      | _, _ => none
+    else none
+  (st', sgi)
+
+/-- WS-SM SM5.F.4 (plan §3.6, "donation chain across cores"): walk the blocking
+chain upward from `startTid`, boosting each holder on **its own** home core and
+collecting the cross-core `.reschedule` SGIs for the holders that live on a
+remote core.
+
+The blocking chain can cross cores (a client on core 0 blocked on a server on
+core 1 blocked on a server on core 2); each link is boosted on its own home core
+via `pipBoostWithWake`, and the SGIs accumulate so the runtime dispatch (SM5.I)
+fires one `.reschedule` per distinct remote core touched.  As in
+`propagatePriorityInheritance`, `blockingServer` is read from the *pre-mutation*
+state (boost updates never touch `ipcState`, so the chain topology is fixed —
+AF1-J).  Functionally identical for propagation and reversion (both recompute
+from current `waitersOf`), matching `revert_eq_propagate`. -/
+def propagatePipChainCrossCore (st : SystemState) (startTid : ThreadId)
+    (executingCore : CoreId) (fuel : Nat := st.objectIndex.length)
+    : SystemState × List (CoreId × SgiKind) :=
+  match fuel with
+  | 0 => (st, [])
+  | fuel' + 1 =>
+    let res := pipBoostWithWake st startTid executingCore
+    let here : List (CoreId × SgiKind) := match res.2 with | some s => [s] | none => []
+    match blockingServer st startTid with
+    | some nextServer =>
+      let tailRes := propagatePipChainCrossCore res.1 nextServer executingCore fuel'
+      (tailRes.1, here ++ tailRes.2)
+    | none => (res.1, here)
+
+/-- WS-SM SM5.F.4: cross-core chain walk with zero fuel is identity (no boost, no SGI). -/
+theorem propagatePipChainCrossCore_zero (st : SystemState) (tid : ThreadId) (ec : CoreId) :
+    propagatePipChainCrossCore st tid ec 0 = (st, []) := rfl
+
+/-- WS-SM SM5.F.4: one chain-walk step unfolding. -/
+theorem propagatePipChainCrossCore_step (st : SystemState) (tid : ThreadId) (ec : CoreId)
+    (n : Nat) :
+    propagatePipChainCrossCore st tid ec (n + 1) =
+      let res := pipBoostWithWake st tid ec
+      let here : List (CoreId × SgiKind) := match res.2 with | some s => [s] | none => []
+      match blockingServer st tid with
+      | some nextServer =>
+        let tailRes := propagatePipChainCrossCore res.1 nextServer ec n
+        (tailRes.1, here ++ tailRes.2)
+      | none => (res.1, here) := rfl
 
 end SeLe4n.Kernel.PriorityInheritance

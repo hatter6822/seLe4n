@@ -266,6 +266,27 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreDispatch
 -- Nodup witnesses; mirrors `PerCoreTimerInventory`.  A renamed/removed SM5.E
 -- theorem fails this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
+-- WS-SM SM5.F: the per-core priority-inheritance theorem surface — SM5.F.1
+-- `computeMaxWaiterPriorityOnCore` (per-core waiter slice) + the per-core ≤ global
+-- decomposition, SM5.F.2 `updatePipBoostOnCore` (per-core bucket migration) +
+-- `pipBoostWithWake` cross-core PIP wake (emits `.reschedule` iff remote + material),
+-- SM5.F.3 `pipBoost_perCore_consistent`, SM5.F.4 `propagatePipChainCrossCore`
+-- (donation chain across cores), SM5.F.5/.6 `restoreToReadyOnCore` /
+-- `restoreToReadyWithWake` (per-core resume PIP recompute + cross-core resume wake),
+-- SM5.F.7 `blockingGraphOnCore_consistent` + SM5.F.8 `blockingAcyclic_perCore`, and
+-- SM5.F.9 `priorityInheritance_perCore_witness`.  The per-core PIP *transition* defs
+-- (`computeMaxWaiterPriorityOnCore` / `updatePipBoostOnCore` / `pipBoostWithWake` /
+-- `propagatePipChainCrossCore` in `Scheduler.PriorityInheritance.*`, `restoreToReadyOnCore`
+-- / `restoreToReadyWithWake` in `Lifecycle.Suspend`) are production-reached; SM5.I's
+-- runtime dispatch (wiring `pipBoostWithWake` / `restoreToReadyWithWake` into the live
+-- donation / timeout / resume paths) is the first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+-- WS-SM SM5.F: the per-core-PIP theorem inventory (categories compute / updateBoost /
+-- consistent / wake / chain / resume / blockingGraph / witness) with the `ppit!`
+-- compile-time identifier-validation macro + per-category count + partition-sum +
+-- Nodup witnesses; mirrors `PerCoreIdleInventory`.  A renamed/removed SM5.F theorem
+-- fails this module's elaboration.
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCoreInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

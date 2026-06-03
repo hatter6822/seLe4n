@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.49"
+version = "0.31.50"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -412,3 +412,15 @@ root = "tests.SmpTimerSuite"
 [[lean_exe]]
 name = "smp_idle_suite"
 root = "tests.SmpIdleSuite"
+
+# WS-SM SM5.F — Per-core PIP test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM5.F scenarios on a concrete cross-core blocking fixture (a server bound to a
+# remote core with a high-priority waiter on the boot core): SM5.F.1 per-core ≤
+# global decomposition, SM5.F.2 cross-core PIP wake SGI emission (remote material
+# vs local), SM5.F.7 per-core blocking-graph slice + consistency, SM5.F.6
+# cross-core resume wake, and the SM5.F inventory partition counts.  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_pip_suite"
+root = "tests.SmpPipSuite"

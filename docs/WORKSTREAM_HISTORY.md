@@ -2908,6 +2908,84 @@ the dispatcher into the live tick path"):
   idle for multi-domain configs, and wiring `scheduleOrIdleOnCore` into the legacy
   single-core `schedule`.  Items deferred past v1.0.0 with correctness impact: NONE.
 
+**WS-SM SM5.F LANDED at v0.31.50** (per-core priority inheritance protocol; plan
+§3.6 / §5).  All 10 sub-tasks landed in one cut.  Under SMP a thread `t` on core
+`c` blocked on a resource held by a thread `t'` on core `c'` boosts `t'` to `t`'s
+priority; if `c' ≠ c`, the boost emits a `.reschedule` SGI to `c'`.
+
+**Correctness keystone — the boost VALUE stays global.**  `computeMaxWaiterPriority`
+(the max over *every* waiter, cross-core) is the value `updatePipBoostOnCore`
+applies; the per-core aspect is purely (1) which core's run queue the boosted
+holder's bucket migrates on (its home core, not always `bootCoreId`) and (2)
+whether a remote core must be poked with a `.reschedule` SGI.  Taking only a
+per-core slice would *under-boost* and re-introduce priority inversion.
+
+- **SM5.F.1** `computeMaxWaiterPriorityOnCore` (`Scheduler/PriorityInheritance/Compute.lean`,
+  production) — the per-core analytic *slice* of the global max-waiter priority,
+  plus `optPriorityVal`, `computeMaxWaiterPriorityOnCore_le_global` (the per-core ≤
+  global decomposition), and `_frame`.
+- **SM5.F.2** `updatePipBoostOnCore` + `pipBoostWithWake`
+  (`Scheduler/PriorityInheritance/Propagate.lean`, production).  `updatePipBoostOnCore`
+  is `updatePipBoost` with the bucket migration generalised from `bootCoreId` to an
+  explicit home core `c`; recovered at `c = bootCoreId`
+  (`updatePipBoost_eq_updatePipBoostOnCore_bootCore`, an `rfl`), preserving the
+  single-core PIP proof base verbatim.  `pipBoostWithWake` boosts the holder on its
+  home core and emits a `.reschedule` SGI iff remote + material; full frame /
+  blocking-graph / `invExt` preservation.
+- **SM5.F.3** `pipBoost_perCore_consistent` (Thm 3.6.1).
+- **SM5.F.4** `propagatePipChainCrossCore` (`Propagate.lean`, production) — donation
+  chain across cores (each holder boosted on its own home core, remote SGIs
+  collected); `invExt` + blocking-acyclicity preservation.
+- **SM5.F.5 / SM5.F.6** `restoreToReadyOnCore` / `restoreToReadyWithWake`
+  (`Lifecycle/Suspend.lean`, production) — per-core resume re-ready (restore IPC
+  clear → recompute `pipBoost` from the GLOBAL graph → per-core enqueue) +
+  cross-core resume wake.
+- **SM5.F.7** `blockingServerOnCore` + `blockingGraphOnCore_consistent`.
+- **SM5.F.8** `blockingAcyclic_perCore` (the per-core slice is a sub-walk of the
+  acyclic global chain).
+- **SM5.F.9** `priorityInheritance_perCore_witness` (aggregate soundness).
+- **SM5.F.10** `tests/SmpPipSuite.lean` (`smp_pip_suite`, 60+ anchors / 9 examples /
+  24 runtime assertions on a concrete cross-core blocking fixture).
+
+Theorem surface + 61-entry `ppit!` inventory in the new staged modules
+`Scheduler/PriorityInheritance/PerCore.lean` + `PerCoreInventory.lean` (8
+categories).  Two private `blockingServer_*` helpers in `Propagate.lean`
+de-privatised for reuse.  **AK7 baseline re-anchored** (`raw_match_total` 122 →
+126, `raw_lookup_tid` 810 → 814): the per-core PIP transitions necessarily mirror
+the raw-based D4-era single-core PIP (the `rfl` bridges + decomposition require
+identical raw object reads), so the raw floor legitimately rises by the structural
+minimum; staged proof helpers use the `.get?` method form where the math allows.
+All axiom-clean (`propext` / `Quot.sound` / `Classical.choice`); trace
+byte-identical; partition gate 53 staged-only modules; Tier 0–3 green;
+`smp_pip_suite` 24/24.
+
+**WS-SM SM5.F completion pass (same v0.31.50 cut)** brings SM5.F to the complete +
+optimal implementation, closing every gap the SM5.F self-audit flagged: B5 exact
+per-core decomposition (`computeMaxWaiterPriority_eq_sup_perCore` — global boost =
+sup over per-core slices); B6 post-boost dominance; B7 home-core stability + chain
+SGI completeness + the single-core behaviour-identical bridge to
+`propagatePriorityInheritance`; B8 full witness; C9 the `pipBoostWithWake`
+runnability gate (no spurious IPI for a blocked holder's boost); D11 the
+memory-model `pipBoostOrdering_happensBefore`; F13 the complete per-core resume
+`resumeThreadOnCore` (sets `threadState := .Ready`); F14 the slice-membership note;
+and the **SM6 dispatch pulled forward** — `Concurrency.fireCrossCoreSgis` + the
+diff-based `computeCrossCoreSgis` + the BaseIO combinators, each proven inert
+(`pure ()`) on single-core and demonstrated to fire `[(core1, .reschedule)]` for a
+cross-core boost diff.  Inventory 61 → 95 entries; tier-4 stub
+`scripts/test_qemu_smp_pip.sh`.  AK7 `RAW_LOOKUP_TID` stays at the 814 floor
+(typed-accessor refactor); `RAW_MATCH_TOTAL` re-anchors 124 → 125 for
+`crossCoreSgiBody`'s single object-store iteration (mirrors `waitersOf`).  All
+axiom-clean; trace byte-identical; Tier 0+1+2+3 green.
+
+**Tracked debt (SM5.I)**: the cross-core dispatch *mechanism* is built and verified;
+the remaining step is the production call-site substitution — routing the live IPC
+donation / timeout / resume `@[export]` bodies through the per-core boost +
+`fireCrossCoreSgis` (gated on the SM5.I per-core FFI seam, since the Lean test
+executables do not link `libsele4n_hal.a`).  This also closes the SM5.D
+timeout-path latency gap (route the timeout re-enqueue through `wakeThread` so a
+remote target receives the `.reschedule` SGI).  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the

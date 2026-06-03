@@ -81,4 +81,16 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_wake.sh"
 # this is a complementary runtime spot-check on real cores with a real GIC.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_timer.sh"
 
+# SM5.F — cross-core priority-inheritance round-trip test (plan §6).  SKIPs at
+# SM5.F if the cross-core PIP driver isn't wired in the kernel image (needs
+# SM5.I per-core scheduler state + the IPC donation @[export] body routing
+# through pipBoostWithWake + firing the SGIs over fireCrossCoreSgis).  The
+# cross-core PIP correctness — a remote, runnable, material boost fires exactly
+# a .reschedule SGI to the holder's home core, every remote chain link is
+# poked, the global boost is the exact supremum of the per-core slices, and the
+# boost happens-before the home core observes it on the SGI — is established
+# FORMALLY for all executions in tests/SmpPipSuite.lean; this is a complementary
+# runtime spot-check on real cores with a real GIC.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
+
 finalize_report
