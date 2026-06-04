@@ -8,14 +8,18 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 25-variant enum in
+//! `SyscallId` here mirrors the 26-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
-//! (the HAL crate is the lowest-level workspace member with zero
-//! dependencies, by design — see `rust/sele4n-hal/Cargo.toml`), so
-//! the discriminants are duplicated here.  The unit test
-//! `syscall_id_discriminants_match_lean_abi` asserts the bidirectional
-//! `from_u64` / `to_u64` roundtrip stays aligned with the Lean
-//! `SyscallId.toNat` encoding.
+//! in the runtime build (the HAL crate is the lowest-level workspace
+//! member with zero runtime dependencies, by design — see
+//! `rust/sele4n-hal/Cargo.toml`), so the discriminants are duplicated
+//! here.  The unit test `syscall_id_discriminants_match_lean_abi`
+//! cross-checks this mirror against the canonical
+//! `sele4n-types::SyscallId` (a dev-dependency, available only under
+//! `#[cfg(test)]`) so any drift in the discriminants / `COUNT` /
+//! `from_u32` decode fails the build — the previous self-referential
+//! form (comparing the mirror to its own `COUNT`) could not catch a
+//! missing variant.
 //!
 //! ## Argument layout
 //!
@@ -64,7 +68,7 @@ use crate::trap::TrapFrame;
 /// the way to user-mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// Caller passed a syscall id outside the valid 0..=24 range.
+    /// Caller passed a syscall id outside the valid 0..=25 range.
     /// `to_u32` returns 7 (legacy AN9-F discriminant; collides with
     /// `KernelError::EndpointStateMismatch` on the wire).
     InvalidSyscallId,
@@ -102,7 +106,7 @@ impl DispatchError {
     }
 }
 
-/// AN9-F: 25-variant syscall ID enum mirroring
+/// AN9-F: 26-variant syscall ID enum mirroring
 /// `sele4n-types::SyscallId`.  Discriminants align with the Lean
 /// `SyscallId.toNat` encoding so a `u64` syscall id read from the
 /// trap frame's `x7` register decodes identically on both sides.
@@ -134,14 +138,16 @@ pub enum SyscallId {
     TcbSetPriority = 22,
     TcbSetMCPriority = 23,
     TcbSetIPCBuffer = 24,
+    // WS-SM SM5.H.4: CPU-affinity configuration (+ run-queue/replenish migration).
+    TcbSetAffinity = 25,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 25;
+    pub const COUNT: u32 = 26;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
-    /// outside the valid 0..=24 range with `None`.
+    /// outside the valid 0..=25 range with `None`.
     pub const fn from_u32(v: u32) -> Option<Self> {
         match v {
             0 => Some(Self::Send),
@@ -169,6 +175,7 @@ impl SyscallId {
             22 => Some(Self::TcbSetPriority),
             23 => Some(Self::TcbSetMCPriority),
             24 => Some(Self::TcbSetIPCBuffer),
+            25 => Some(Self::TcbSetAffinity),
             _ => None,
         }
     }
@@ -211,6 +218,8 @@ impl SyscallId {
             Self::TcbSetPriority => 2,
             Self::TcbSetMCPriority => 2,
             Self::TcbSetIPCBuffer => 2,
+            // WS-SM SM5.H.4: x2 = the raw affinity word (1 inline register).
+            Self::TcbSetAffinity => 1,
         }
     }
 }
@@ -291,7 +300,7 @@ impl SyscallArgs {
 ///   `Err(error)`    — argument count mismatch, invalid syscall id,
 ///                     or Lean-side rejection.
 pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, DispatchError> {
-    // AN9-F.1.b: reject ids outside 0..=24
+    // AN9-F.1.b: reject ids outside 0..=25
     let sid = match SyscallId::from_u32(syscall_id) {
         Some(sid) => sid,
         None => return Err(DispatchError::InvalidSyscallId),
@@ -429,6 +438,46 @@ mod tests {
         assert!(SyscallId::from_u32(255).is_none());
     }
 
+    /// WS-SM SM5.H.4 audit: cross-check the hand-mirrored HAL `SyscallId`
+    /// against the canonical `sele4n-types::SyscallId` (the same source the
+    /// verified Lean kernel and the `sele4n-abi`/`sele4n-sys` user ABI use).
+    /// This catches the exact drift the audit found — a syscall added to Lean
+    /// and `sele4n-types` but NOT to this HAL trap-dispatcher mirror, which
+    /// would reject the syscall at the trap boundary before it reaches the kernel.
+    /// The previous self-referential round-trip (against this enum's own COUNT)
+    /// could not detect a missing variant.
+    #[test]
+    fn syscall_id_mirror_matches_sele4n_types() {
+        // Counts agree.
+        assert_eq!(
+            SyscallId::COUNT as usize,
+            sele4n_types::SyscallId::COUNT,
+            "HAL SyscallId::COUNT drifted from sele4n-types"
+        );
+        // Every canonical discriminant decodes to a HAL variant with the same
+        // raw u32, and vice-versa (the boundary is exactly [0, COUNT)).
+        for i in 0..sele4n_types::SyscallId::COUNT as u32 {
+            let canonical = sele4n_types::SyscallId::from_u64(u64::from(i))
+                .expect("canonical syscall id must decode");
+            assert_eq!(
+                canonical.to_u64(),
+                u64::from(i),
+                "sele4n-types round-trip failed at id {i}"
+            );
+            let hal = SyscallId::from_u32(i)
+                .expect("HAL mirror must decode every canonical syscall id");
+            assert_eq!(
+                hal.to_u32(),
+                i,
+                "HAL mirror discriminant drifted from sele4n-types at id {i}"
+            );
+        }
+        // The first out-of-range id is rejected by BOTH.
+        let oob = sele4n_types::SyscallId::COUNT as u32;
+        assert!(SyscallId::from_u32(oob).is_none());
+        assert!(sele4n_types::SyscallId::from_u64(u64::from(oob)).is_none());
+    }
+
     #[test]
     fn syscall_args_from_trap_frame_extracts_x0_to_x5() {
         let mut frame = zero_frame();
@@ -527,5 +576,11 @@ mod tests {
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
         assert_eq!(SyscallId::TcbSuspend.min_inline_args(), 1);
         assert_eq!(SyscallId::Send.min_inline_args(), 0);
+        // WS-SM SM5.H.4: tcbSetAffinity reads exactly 1 inline register (the raw
+        // affinity word, msgReg[0]) — matching `decodeSetAffinityArgs` (requireMsgReg 0)
+        // and the `tcb_set_affinity` wrapper's `MessageInfo::new_const(1, 0, 0)`.  A
+        // larger minimum would reject the (valid, length-1) wrapper call at the trap
+        // boundary, re-introducing the unreachable-on-hardware defect.
+        assert_eq!(SyscallId::TcbSetAffinity.min_inline_args(), 1);
     }
 }

@@ -234,6 +234,14 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 -- than the runtime `IO Bool` wrapper would be.
 #check @SeLe4n.Kernel.niStepConstructorCoverage
 #check @SeLe4n.Kernel.dispatchCapabilityOnly_preserves_projection
+-- WS-SM SM5.H.4: the per-op NI witnesses for the `tcbSetAffinity` capability-only
+-- arm (the affinity write is cpuAffinity-erased; the run-queue migration preserves
+-- the filtered projectRunnable for a high thread; the replenish migration is never
+-- projected) — these discharge `hArmProj` for the `.tcbSetAffinity` dispatch arm.
+#check @SeLe4n.Kernel.setThreadCpuAffinityOp_preserves_projection
+#check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_preserves_projection
+#check @SeLe4n.Kernel.migrateRunQueueOnAffinityChange_preserves_projection
+#check @SeLe4n.Kernel.migrateSchedContextReplenishment_preserves_projection
 
 /-- AK6-E (NI-H01): `niStepConstructorCoverage` is the constructor-level
 discoverability index for `KernelOperation`.  Beyond the compile-time

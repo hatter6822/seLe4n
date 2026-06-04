@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/exciting-brahmagupta-XAFDT",
-      "commit_sha": "6ad551e0befecf2ece5c1357109f86b4fa5261b2",
-      "tree_sha": "c061cd68c73ef878a810da029ffc49b36b3f7f6c",
-      "committed_at_utc": "2026-06-03T23:18:18+00:00"
+      "commit_sha": "dd9ccc0494db8c501272b83db84e29b2053b105b",
+      "tree_sha": "934616fac18670a54e74c467d1826639b5ea68db",
+      "committed_at_utc": "2026-06-04T01:31:22+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fd25301a03bb04165aa37df1292857aa18890bd902016b6a3dfb8dfa917d09e2"
+    "source_digest": "17731ebca3b313dbb9db9aeb7530dccd7ca8afb451f67dda32bdb2052bc7c6fb"
   },
   "summary": {
     "module_count": 281,
-    "declaration_count": 10388
+    "declaration_count": 10394
   },
   "readme_sync": {
     "version": "0.31.55",
     "lean_toolchain": "v4.28.0",
     "production_files": 226,
-    "production_loc": 162945,
+    "production_loc": 163093,
     "test_files": 55,
-    "test_loc": 36023,
-    "proved_theorem_lemma_decls": 5346,
+    "test_loc": 36071,
+    "proved_theorem_lemma_decls": 5351,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1345,7 +1345,7 @@
         {
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_preserves_projection",
-          "line": 2317,
+          "line": 2318,
           "called": [
             "Capability",
             "IfObserver",
@@ -1361,7 +1361,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 2356,
+          "line": 2357,
           "called": [
             "Capability",
             "IfObserver",
@@ -49100,7 +49100,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 100,
+      "declaration_count": 105,
       "declarations": [
         {
           "kind": "namespace",
@@ -51075,8 +51075,133 @@
         },
         {
           "kind": "theorem",
+          "name": "migrateSchedContextReplenishment_preserves_projection",
+          "line": 3372,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SchedContextId",
+            "SchedulerState.runnable",
+            "SystemState",
+            "migrateSchedContextReplenishment",
+            "projectActiveDomain",
+            "projectCurrent",
+            "projectDomainScheduleIndex",
+            "projectDomainTimeRemaining",
+            "projectMachineRegs",
+            "projectRunnable",
+            "projectState",
+            "scId",
+            "setReplenishQueueOnCore_activeDomainOnCore",
+            "setReplenishQueueOnCore_currentOnCore",
+            "setReplenishQueueOnCore_domainScheduleIndexOnCore",
+            "setReplenishQueueOnCore_domainTimeRemainingOnCore",
+            "setReplenishQueueOnCore_runQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateRunQueueOnAffinityChange_preserves_projection",
+          "line": 3399,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SchedulerState.runnable",
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "migrateRunQueueOnAffinityChange",
+            "projectActiveDomain",
+            "projectCurrent",
+            "projectDomainScheduleIndex",
+            "projectDomainTimeRemaining",
+            "projectMachineRegs",
+            "projectRunnable",
+            "projectState",
+            "runQueueOnCore",
+            "setRunQueueOnCore_activeDomainOnCore",
+            "setRunQueueOnCore_currentOnCore",
+            "setRunQueueOnCore_domainScheduleIndexOnCore",
+            "setRunQueueOnCore_domainTimeRemainingOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "threadObservable",
+            "toList_filter_insert_neg'",
+            "toList_filter_remove_neg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinity_preserves_projection",
+          "line": 3441,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "objectObservable",
+            "objects_insert_preserves_projection_high",
+            "projectState",
+            "setThreadCpuAffinity",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinityWithMigration_preserves_projection",
+          "line": 3464,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SgiKind",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "migrateRunQueueOnAffinityChange_preserves_projection",
+            "migrateSchedContextReplenishment_preserves_projection",
+            "objectObservable",
+            "projectState",
+            "setThreadCpuAffinityWithMigration",
+            "setThreadCpuAffinity_preserves_projection",
+            "st",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setThreadCpuAffinityOp_preserves_projection",
+          "line": 3495,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ValidThreadId",
+            "bootCoreId",
+            "invExt",
+            "objectObservable",
+            "projectState",
+            "setThreadCpuAffinityOp",
+            "setThreadCpuAffinityWithMigration",
+            "setThreadCpuAffinityWithMigration_preserves_projection",
+            "st",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "setPriorityOp_preserves_projection",
-          "line": 3371,
+          "line": 3527,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -51106,7 +51231,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOp_preserves_projection",
-          "line": 3449,
+          "line": 3605,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -51137,7 +51262,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_state",
-          "line": 3540,
+          "line": 3696,
           "called": [
             "ObjId",
             "ServiceRegistration",
@@ -51151,7 +51276,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_projection",
-          "line": 3558,
+          "line": 3714,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51167,7 +51292,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_projection",
-          "line": 3587,
+          "line": 3743,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51196,7 +51321,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_projection",
-          "line": 3641,
+          "line": 3797,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51210,7 +51335,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_frame_runQueue_rebucket",
-          "line": 3662,
+          "line": 3818,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51231,7 +51356,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_preserves_projection",
-          "line": 3679,
+          "line": 3835,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51246,7 +51371,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_preserves_projection",
-          "line": 3705,
+          "line": 3861,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51260,7 +51385,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
-          "line": 3735,
+          "line": 3891,
           "called": [
             "Capability",
             "IfObserver",
@@ -51276,7 +51401,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_preserves_projection",
-          "line": 3763,
+          "line": 3919,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51291,7 +51416,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonation_preserves_projection",
-          "line": 3788,
+          "line": 3944,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51306,7 +51431,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonation_preserves_projection",
-          "line": 3810,
+          "line": 3966,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51321,7 +51446,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 3853,
+          "line": 4009,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51335,7 +51460,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 3872,
+          "line": 4028,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -51354,7 +51479,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 3886,
+          "line": 4042,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -51370,7 +51495,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 3911,
+          "line": 4067,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -111644,9 +111769,7 @@
             "SyscallDecodeResult",
             "SyscallId",
             "all",
-            "cspaceCopy",
-            "cspaceMint",
-            "cspaceMove",
+            "count",
             "decode",
             "decodeCSpaceMintArgs",
             "decodeSetIPCBufferArgs",
@@ -111655,13 +111778,8 @@
             "encodeSetIPCBufferArgs",
             "length",
             "none",
-            "notificationSignal",
-            "notificationWait",
             "ofNat",
             "ofNatMasked",
-            "schedContextBind",
-            "schedContextConfigure",
-            "schedContextUnbind",
             "throw",
             "toNat"
           ]
@@ -111669,7 +111787,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 3162,
+          "line": 3153,
           "called": [
             "assertCrossSubsystemInvariants",
             "assertStateInvariantsFor",
@@ -117876,11 +117994,15 @@
             "default",
             "dispatchCapabilityOnly_preserves_projection",
             "insert",
+            "migrateRunQueueOnAffinityChange_preserves_projection",
+            "migrateSchedContextReplenishment_preserves_projection",
             "niStepConstructorCoverage",
             "none",
             "ofNat",
             "scId",
             "schedContextYieldTo",
+            "setThreadCpuAffinityOp_preserves_projection",
+            "setThreadCpuAffinityWithMigration_preserves_projection",
             "st",
             "toObjId"
           ]
@@ -117888,7 +118010,7 @@
         {
           "kind": "def",
           "name": "test_niStepConstructorCoverage_witness_is_state_identity",
-          "line": 247,
+          "line": 255,
           "called": [
             "SystemState",
             "default",
@@ -117901,7 +118023,7 @@
         {
           "kind": "def",
           "name": "test_dispatchCapabilityOnly_projection_invariant",
-          "line": 287,
+          "line": 295,
           "called": [
             "KernelObject",
             "ObjId",
@@ -117919,7 +118041,7 @@
         {
           "kind": "def",
           "name": "test_projectKernelObject_strips_tcb_signals",
-          "line": 323,
+          "line": 331,
           "called": [
             "IpcMessage",
             "TCB",
@@ -117933,7 +118055,7 @@
         {
           "kind": "def",
           "name": "test_defaultLabelingContext_runtime_rejection",
-          "line": 348,
+          "line": 356,
           "called": [
             "defaultLabelingContext",
             "isInsecureDefaultContext"
@@ -117942,13 +118064,13 @@
         {
           "kind": "def",
           "name": "test_cbs_bandwidth_bounded_tight_arithmetic",
-          "line": 356,
+          "line": 364,
           "called": []
         },
         {
           "kind": "def",
           "name": "ak6Tests",
-          "line": 366,
+          "line": 374,
           "called": [
             "test_applyConfigureParamsFull_post_state_shape",
             "test_cbs_bandwidth_bounded_tight_arithmetic",
@@ -117964,7 +118086,7 @@
         {
           "kind": "def",
           "name": "runAk6Suite",
-          "line": 380,
+          "line": 388,
           "called": [
             "ak6Tests"
           ]
@@ -117972,7 +118094,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 400,
+          "line": 408,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -118081,7 +118203,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1615,
+          "line": 1623,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -132536,7 +132658,7 @@
     {
       "module": "tests.SmpCbsSuite",
       "path": "tests/SmpCbsSuite.lean",
-      "declaration_count": 31,
+      "declaration_count": 32,
       "declarations": [
         {
           "kind": "namespace",
@@ -132986,6 +133108,7 @@
             "core1",
             "decodeAffinity",
             "determineTargetCore",
+            "getTcb",
             "none",
             "numCores",
             "ofNat",
@@ -133045,8 +133168,10 @@
             "bootCoreId",
             "contains",
             "core1",
+            "getSchedContext",
             "insert",
             "migrateRunQueueOnAffinityChange",
+            "none",
             "replenishQueueOnCore",
             "runQueueOnCore",
             "scId0",
@@ -133058,8 +133183,31 @@
         },
         {
           "kind": "def",
+          "name": "runLiveTickScenarios",
+          "line": 502,
+          "called": [
+            "SchedContext",
+            "SystemState",
+            "assertBool",
+            "contains",
+            "core1",
+            "insert",
+            "replenishOnCore",
+            "replenishQueueOnCore",
+            "sc0",
+            "scId0",
+            "sizeConsistentB",
+            "stCbs",
+            "tcb0",
+            "tid0",
+            "timerTickBudgetOnCore",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runInventoryChecks",
-          "line": 494,
+          "line": 533,
           "called": [
             "assertBool",
             "filter",
@@ -133069,12 +133217,13 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 519,
+          "line": 558,
           "called": [
             "runAffinityScenarios",
             "runBudgetScenarios",
             "runCompositeScenarios",
             "runInventoryChecks",
+            "runLiveTickScenarios",
             "runMigrationScenarios",
             "runReplenishScenarios",
             "runRunQueueMigrationScenarios"
@@ -133083,7 +133232,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 532,
+          "line": 572,
           "called": []
         }
       ]

@@ -3098,25 +3098,16 @@ private def runRustXvalVectors : IO Unit := do
       throw <| IO.userError "[XVAL-001] MessageInfo roundtrip FAILED"
   | none => throw <| IO.userError "[XVAL-001] MessageInfo decode returned none"
 
-  -- RUST-XVAL: SyscallId roundtrip (all 25)
-  let allSyscalls : List SyscallId := [
-    .send, .receive, .call, .reply,
-    .cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete,
-    .lifecycleRetype, .vspaceMap, .vspaceUnmap,
-    .serviceRegister, .serviceRevoke, .serviceQuery,
-    .notificationSignal, .notificationWait, .replyRecv,
-    .schedContextConfigure, .schedContextBind, .schedContextUnbind,
-    .tcbSuspend, .tcbResume,
-    .tcbSetPriority, .tcbSetMCPriority,
-    .tcbSetIPCBuffer
-  ]
+  -- RUST-XVAL: SyscallId roundtrip over the canonical `SyscallId.all` (drift-proof —
+  -- auto-covers every variant, incl. WS-SM SM5.H.4 `tcbSetAffinity`; the count printed
+  -- is `SyscallId.count`, so a new syscall never silently escapes the roundtrip).
   let mut syscallOk := true
-  for s in allSyscalls do
+  for s in SyscallId.all do
     match SyscallId.ofNat? s.toNat with
     | some s' => if s != s' then syscallOk := false
     | none => syscallOk := false
-  if syscallOk then
-    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all 25 variants"
+  if syscallOk && SyscallId.all.length == SyscallId.count then
+    IO.println s!"[XVAL-002] SyscallId roundtrip ok: all {SyscallId.count} variants"
   else
     throw <| IO.userError "[XVAL-002] SyscallId roundtrip FAILED"
 

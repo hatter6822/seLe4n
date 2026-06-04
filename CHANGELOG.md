@@ -65,12 +65,70 @@ production/staged partition gate holds (57 staged-only modules).  Refs:
   `required_right` / `from_u64`; `sele4n-abi` `SetAffinityArgs`; `sele4n-sys`
   `tcb_set_affinity`; conformance tests).  The op commits the state; the cross-core
   SGI firing is the SM5.I FFI seam.
-- **Inventory + tests + tier-4** — the SM5.H inventory grows 54 → 109 entries across
+- **Inventory + tests + tier-4** — the SM5.H inventory grows 54 → 111 entries across
   three new categories (`.lockSet`, `.liveTick`, `.memoryModel`); `tests/SmpCbsSuite.lean`
   gains the new headline examples (B7 grounded, A4 live tick, A5 composite, run-queue
   migration) and runtime scenarios (cross-core SGI emission, the `tcbSetAffinity`
   syscall op, `decodeAffinity`); `scripts/test_qemu_smp_cbs.sh` reserves the plan §6
   Tier-4 slot (SKIP-only until SM5.I wires the per-core scheduler tick).
+
+### Audit-pass-1 (post-completion deep audit; ships inside v0.31.55)
+
+A deep code-first audit (not trusting docstrings) of the completion cut closed four
+findings; all axiom-clean, default build green, Rust workspace + clippy clean.  (The
+trace fixture gains exactly one line — finding 4 below — because the syscall-roundtrip
+banner now correctly covers the new variant.)
+
+- **HIGH — `tcbSetAffinity` was unreachable on hardware (HAL trap-dispatcher drift).**
+  The HAL crate (`rust/sele4n-hal/src/svc_dispatch.rs`) hand-mirrors the `SyscallId`
+  enum (zero runtime deps, by design).  The mirror had NOT been bumped for
+  `tcbSetAffinity`, so it stopped at `TcbSetIPCBuffer = 24` / `COUNT = 25`; a real
+  userland `tcb_set_affinity` SVC (`x7 = 25`, correctly encoded by `sele4n-sys`) was
+  rejected by `dispatch_svc`'s `SyscallId::from_u32(25) = None` with `InvalidSyscallId`
+  **before reaching the verified Lean kernel** — i.e. the "production-reached" claim was
+  false on hardware.  Fixed: added `TcbSetAffinity = 25`, `COUNT = 26`, the `from_u32`
+  arm, and `min_inline_args(TcbSetAffinity) = 1` (matching the 1-register
+  `decodeSetAffinityArgs` / `sele4n-sys` wrapper).  Root cause of the miss: the
+  `syscall_id_discriminants_match_lean_abi` test only round-tripped the mirror against
+  its **own** `COUNT` (self-referential), so it could not detect a missing variant;
+  added `syscall_id_mirror_matches_sele4n_types` which cross-checks the mirror against
+  the canonical `sele4n-types::SyscallId` (a new `#[cfg(test)]` dev-dependency —
+  `sele4n-types` is a leaf crate, so no cycle), so any future drift fails the test
+  build.
+- **MEDIUM/HIGH — the affinity syscall had no non-interference (NI) coverage.**  The
+  syscall-reachable op (`setThreadCpuAffinityOp` → `setThreadCpuAffinityWithMigration`)
+  rewrites the boot-core run queue via `migrateRunQueueOnAffinityChange`, which flows
+  into the observable `projectRunnable`; every sibling capability-only TCB-control op
+  (`setPriorityOp`, `setIPCBufferOp`, suspend, resume) carries a `_preserves_projection`
+  NI theorem, but the affinity op had none.  Added five axiom-clean theorems in
+  `InformationFlow/Invariant/Operations.lean`:
+  `setThreadCpuAffinity_preserves_projection` (the `cpuAffinity` write is projection-
+  erased, so invisible at a high target),
+  `migrateSchedContextReplenishment_preserves_projection` (replenish queues are never
+  projected — unconditional),
+  `migrateRunQueueOnAffinityChange_preserves_projection` (for a high thread, inserting /
+  removing it in the boot-core run queue leaves the *filtered* `projectRunnable`
+  unchanged — the outer `fromCore = toCore` guard already excludes both being the boot
+  core), and the composite `setThreadCpuAffinityWithMigration_preserves_projection` +
+  `setThreadCpuAffinityOp_preserves_projection` (the affinity analogue of
+  `setPriorityOp_preserves_projection` — a high-target affinity change provably
+  preserves the low projection).  Wired into the API per-arm NI discharge table
+  (`.tcbSetAffinity`) and `tests/InformationFlowSuite.lean` anchors.
+- **Test coverage** — replaced a dead-weight `assertBool "… succeeds" true` with a real
+  `cpuAffinity`-committed check, and added genuine runtime assertions for A2 (the live
+  bound-exhausted tick's core-1 replenish queue computes EQUAL to `replenishOnCore`'s),
+  A4 (the post-tick queue is size-consistent; an unbound tick leaves it untouched), and
+  D15 (a migrated runnable thread carries its positive SC budget to the new core).
+  `smp_cbs_suite` now 58/58 PASS (was 52).
+- **MEDIUM — the trace harness undercounted the syscalls.**  `MainTraceHarness.lean`'s
+  `[XVAL-002] SyscallId roundtrip` used a hand-written 25-entry list (missing
+  `tcbSetAffinity`) and printed a hardcoded "all 25 variants", so it never round-trip-
+  tested the new syscall and the banner was stale.  Replaced the manual list with the
+  canonical drift-proof `SyscallId.all` and printed `SyscallId.count`, so the roundtrip
+  auto-covers every variant and a future syscall can never silently escape it.  The
+  trace fixture (`tests/fixtures/main_trace_smoke.expected`) gains exactly one line
+  (`all 25 variants` → `all 26 variants`) — the only trace change in v0.31.55, justified
+  by the new variant.
 
 ## v0.31.54 — WS-SM SM5.H: per-core CBS (Constant Bandwidth Server)
 

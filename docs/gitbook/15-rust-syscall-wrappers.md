@@ -32,7 +32,7 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
-- **`SyscallId`**: 25-variant enum (0–24), including notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3)
+- **`SyscallId`**: 26-variant enum (0–25), including notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4)
 
 ### sele4n-abi
 
@@ -67,7 +67,7 @@ Safe high-level wrappers for all 25 syscalls:
 | VSpace | `vspace_map` (W^X pre-check), `vspace_unmap` |
 | Service | `service_register`, `service_revoke`, `service_query` |
 | SchedContext | `sched_context_configure`, `sched_context_bind`, `sched_context_unbind` |
-| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer` |
+| TCB | `tcb_suspend`, `tcb_resume`, `tcb_set_priority`, `tcb_set_mcp`, `tcb_set_ipc_buffer`, `tcb_set_affinity` |
 
 ### Phantom-Typed Capabilities
 
@@ -129,7 +129,7 @@ ARM Architecture Reference Manual.
 |--------|---------|-----------|
 | `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id`, **`MPIDR_CORE_ID_MASK_SYM`** shared linker symbol (AN8-B v0.30.9 — H-18), **`wfe_bounded(max_ticks)`** + `WFE_DEFAULT_TIMEOUT_TICKS` (AN9-G v0.30.10 — DEF-R-HAL-L17); **`sev` / `sevl` wrappers + `idle_wait` / `idle_wait_bounded` per-core idle primitives + ~140-line SEV / WFE coordination docstring** (WS-SM SM1.I.3 + SM1.I.5 v0.31.8 — local event register semantics, IS-domain broadcast scope, kernel policy for SEV emission) |
 | `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb`, **`dsb_ishst`**, **`dsb_osh`**, **`dsb_oshst`** + parameterised **`BarrierKind`** enum with `emit()` + composite emitters `emit_armv8_page_table_update` / `emit_tlb_invalidation_bracket` / `emit_mmio_cross_cluster_barrier` (AN9-H/I v0.30.10 — DEF-R-HAL-L18/L19) |
-| `svc_dispatch` | SVC typed dispatch | `SyscallArgs::from_trap_frame`, 25-variant `SyscallId` enum, `dispatch_svc(id, args) -> Result<u64, DispatchError>` (AN9-F v0.30.10 — DEF-R-HAL-L14; replaces `NOT_IMPLEMENTED` SVC stub) |
+| `svc_dispatch` | SVC typed dispatch | `SyscallArgs::from_trap_frame`, 26-variant `SyscallId` enum (mirrors `sele4n-types`, cross-checked by `syscall_id_mirror_matches_sele4n_types`), `dispatch_svc(id, args) -> Result<u64, DispatchError>` (AN9-F v0.30.10 — DEF-R-HAL-L14; replaces `NOT_IMPLEMENTED` SVC stub) |
 | `psci` | Power State Coordination Interface | `cpu_on`, `cpu_off`, `affinity_info` (+ `AffinityInfoState`), `psci_version` (+ `PsciVersion`), `migrate_info_type` (+ `MigrateInfoType`), `system_off`, `system_reset` — full DEN0022D §5 surface with compile-time function-id pinning (Fast call + SMC32/64 + OEN=4) (AN9-J.1 v0.30.10 — DEF-R-HAL-L20 + WS-SM SM1.A v0.31.9) |
 | `smp` | Secondary-core bring-up | `SMP_ENABLED: AtomicBool` (default `false` at module load; Phase 5 stores parsed cmdline value), `CORE_READY: [AtomicBool; 4]`, `bring_up_secondaries`, **`bring_up_secondaries_with_limit(max_cores)`** (WS-SM SM1.D.6 v0.31.6 — limit-aware variant), `rust_secondary_main` (SM1.C full per-core init pipeline: MMU → VBAR → GIC → timer → IRQ → Lean kernel via `lean_secondary_kernel_main`); SM1.B back-compat re-exports of `PerCpuData`, `PER_CPU_DATA`, `PER_CPU_DATA_SLOT_SIZE*`, `per_cpu_slot_addr` (AN9-J v0.30.10 — DEF-R-HAL-L20; SM1.C v0.31.5 closes SMP-C2; SM1.D v0.31.6 wires the cmdline-driven Phase 5; v1.0.0 ships SMP enabled by default via `CmdlineConfig::default()`) |
 | `cmdline` | DTB cmdline parser + Phase 5 helpers | `CmdlineConfig { smp_enabled: bool, smp_max_cores: usize }` with `Default::default() = { true, 4 }` (SM1.D.3 — maintainer decision #7); `parse_cmdline(s: &str) -> CmdlineConfig` (robust key=value / quoted / flag-only token parser; unknown keys ignored, malformed values keep default); self-contained DTB walker (`parse_fdt_header`, `validate_fdt_header`, `find_bootargs_in_dtb`, `extract_bootargs_into`, `extract_bootargs_from_blob_into`) with `FDT_WALK_FUEL = 4096` / `FDT_MAX_DEPTH = 32` / `MAX_DTB_SIZE = 2 MiB` / `FDT_PARSER_VERSION = 17` bounds; only direct `/chosen/bootargs` matched (depth-bounded — audit-pass-1 closes the `/chosen/sub/bootargs` exploit); `checked_add` arithmetic throughout for overflow safety; one-shot `parse_cmdline_from_dtb(dtb_ptr: u64) -> CmdlineConfig` (Phase 5 entry); `apply_cmdline_and_start_smp(&CmdlineConfig) -> u32` (writes SMP_ENABLED + dispatches `bring_up_secondaries_with_limit`); audit-pass-1 `pub(crate) fn apply_cmdline_and_start_smp_inner` for test isolation (WS-SM SM1.D v0.31.6) |

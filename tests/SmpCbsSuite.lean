@@ -379,8 +379,8 @@ private def runCompositeScenarios : IO Unit := do
   -- is remote from the executing core (core 1).
   match setThreadCpuAffinityWithMigration stCbs tid0 (some bootCoreId) core1 with
   | .ok (st', sgi) =>
-      assertBool "composite (bind tid0 → boot core) succeeds"
-        true
+      assertBool "after the composite, tid0's cpuAffinity is committed to the boot core"
+        (match st'.getTcb? tid0 with | some t => t.cpuAffinity == some bootCoreId | none => false)
       assertBool "after the composite, the boot core's queue holds (scId0, 5000)"
         ((st'.scheduler.replenishQueueOnCore bootCoreId).entries.contains (scId0, 5000))
       assertBool "after the composite, core 1's queue no longer holds (scId0, 5000)"
@@ -489,8 +489,47 @@ private def runRunQueueMigrationScenarios : IO Unit := do
       assertBool "runnable tid0's remote re-home: tid0 is now in the boot core's run queue"
         ((st'.scheduler.runQueueOnCore bootCoreId).contains tid0)
   | .error _ => assertBool "runnable tid0 remote re-home succeeds" false
+  -- D15 witness: after migrating tid0 (in core 1's run queue, SC budget 50 > 0) to the
+  -- boot core, the SM4.C run-queue↔budget consistency content holds for tid0 on the new
+  -- core — it is in the boot core's run queue AND its SchedContext has positive budget.
+  assertBool "D15: a migrated runnable thread carries its positive SC budget to the new core"
+    (((stMoved.scheduler.runQueueOnCore bootCoreId).contains tid0) &&
+     (match stMoved.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
 
-/-- §3.7: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
+/-- §3.7 (A2/A4): the live per-core budget tick's bound-exhausted replenish write IS
+the abstract `replenishOnCore` primitive's (A2), and the tick preserves replenish-queue
+validity (A4) — driven on a genuine budget-exhausted SchedContext. -/
+private def runLiveTickScenarios : IO Unit := do
+  IO.println "--- §3.7 SM5.H.2 (A2/A4) live-tick CBS bridge ---"
+  -- A budget-EXHAUSTED SchedContext (budgetRemaining = 1 ≤ 1) bound to tid0, on core 1.
+  let scExhausted : SchedContext := { sc0 with budgetRemaining := ⟨1⟩ }
+  let stExhausted : SystemState :=
+    { stCbs with objects := stCbs.objects.insert scId0.toObjId (.schedContext scExhausted) }
+  match timerTickBudgetOnCore stExhausted core1 tid0 tcb0 with
+  | .ok (st', preempted) =>
+      assertBool "bound-exhausted budget tick preempts (returns true)"
+        (preempted == true)
+      -- A2: the LIVE tick's replenish-queue write on core 1 is exactly the
+      -- abstract `replenishOnCore` primitive's (scheduling scId0 at now + period).
+      assertBool "A2: live bound-exhausted tick's core-1 replenish queue == replenishOnCore's"
+        ((st'.scheduler.replenishQueueOnCore core1).entries ==
+          ((replenishOnCore stExhausted core1 scId0
+            (stExhausted.machine.timer + scExhausted.period.val)).scheduler.replenishQueueOnCore core1).entries)
+      -- A2 (concretely): the new replenishment (scId0, 0 + 1000) was scheduled.
+      assertBool "A2: the tick scheduled (scId0, now + period = 1000) on core 1"
+        ((st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 1000))
+      -- A4: the post-tick core-1 replenish queue is still valid (size-consistent).
+      assertBool "A4: live bound-exhausted tick keeps core 1's replenish queue size-consistent"
+        (sizeConsistentB (st'.scheduler.replenishQueueOnCore core1))
+      -- A non-exhausted / unbound tick leaves the replenish queue untouched (A4 other branches).
+      assertBool "A4: an UNBOUND time-slice tick leaves core 1's replenish queue untouched"
+        (match timerTickBudgetOnCore stCbs core1 tid0
+            { tcb0 with schedContextBinding := .unbound, timeSlice := 3 } with
+         | .ok (stU, _) => (stU.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)]
+         | .error _ => false)
+  | .error _ => assertBool "bound-exhausted budget tick succeeds" false
+
+/-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.7 SM5.H inventory partition counts ---"
   assertBool "inventory has 111 entries"
@@ -524,6 +563,7 @@ def main : IO Unit := do
   runBudgetScenarios
   runAffinityScenarios
   runRunQueueMigrationScenarios
+  runLiveTickScenarios
   runInventoryChecks
   IO.println "=== SM5.H suite: all assertions passed ==="
 

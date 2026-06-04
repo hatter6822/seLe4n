@@ -31,6 +31,7 @@ name = "sele4n-hal"
 version = "0.31.55"
 dependencies = [
  "cc",
+ "sele4n-types",
 ]
 
 [[package]]

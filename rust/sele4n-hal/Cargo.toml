@@ -8,6 +8,16 @@ repository.workspace = true
 
 [dependencies]
 
+[dev-dependencies]
+# WS-SM SM5.H.4 audit: the HAL `SyscallId` mirror (svc_dispatch.rs) is hand-
+# duplicated (zero runtime deps, by design).  This dev-dependency is used ONLY
+# under `#[cfg(test)]` to cross-check the mirror's discriminants / COUNT / decode
+# against the canonical `sele4n-types::SyscallId`, so a drift (e.g. a new syscall
+# added to Lean + sele4n-types but not to the HAL mirror) fails the test build.
+# `sele4n-types` is a leaf crate (no path deps), so this introduces no cycle and
+# no runtime dependency.
+sele4n-types = { path = "../sele4n-types" }
+
 [features]
 default = []
 hw_target = []

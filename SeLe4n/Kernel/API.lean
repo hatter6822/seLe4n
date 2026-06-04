@@ -2302,6 +2302,7 @@ theorem dispatchWithCap_preservation_composition_witness :
     | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
     | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
     | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
+    | `.tcbSetAffinity` | **`setThreadCpuAffinityOp_preserves_projection`** (Operations.lean — WS-SM SM5.H.4) at non-observable target.  The affinity write is `cpuAffinity`-erased (invisible); the run-queue migration's boot-core write preserves the filtered `projectRunnable` for a high thread (`migrateRunQueueOnAffinityChange_preserves_projection`); the replenishment migration is never projected (`migrateSchedContextReplenishment_preserves_projection`). |
     | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target |
 
     **New AK6-F building blocks in v0.29.10:**

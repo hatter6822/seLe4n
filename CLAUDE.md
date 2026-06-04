@@ -6081,7 +6081,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
     (`updatePipBoost` / `revertPriorityInheritance` / `ensureRunnable` /
     `timeoutThread` / `timeoutBlockedThreads` each preserve every replenish queue)
     grounds `timerTickBudgetOnCore_bound_exhausted_replenish_eq` (the LIVE budget tick's
-    replenish write IS `replenishOnCore`'s — making the primitives load-bearing) and
+    replenish write is proven EQUAL to `replenishOnCore`'s — so the abstract primitives
+    are the verified characterisation of the live CBS engine, connected to production by
+    the bridge rather than orphan defs; the live tick still open-codes the insert) and
     `timerTickBudgetOnCore_preserves_replenishQueueValidOnCore` (the live tick preserves
     replenish-queue validity on every core).
   - **A5 composite preservation (§13)**:
@@ -6106,6 +6108,37 @@ documentation lives under `docs/` and `docs/gitbook/`.
     categories (`.lockSet`, `.liveTick`, `.memoryModel`); `tests/SmpCbsSuite.lean` adds
     the new headline examples + cross-core SGI / syscall runtime scenarios;
     `scripts/test_qemu_smp_cbs.sh` reserves the Tier-4 slot (SKIP-only until SM5.I).
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.H completion audit-pass-1 (post-completion deep code-first audit;
+  ships inside v0.31.55)**: closed four findings, all axiom-clean; default build
+  green; Rust workspace + clippy clean (the trace fixture gains exactly one line —
+  finding 4 — as the syscall-roundtrip banner now correctly covers the new variant).
+  - **HIGH — `tcbSetAffinity` unreachable on hardware**: the HAL trap dispatcher's
+    hand-mirrored `SyscallId` enum (`rust/sele4n-hal/src/svc_dispatch.rs`, zero
+    runtime deps) was not bumped, so a real `tcb_set_affinity` SVC (`x7=25`) was
+    rejected by `from_u32(25) = None` (`InvalidSyscallId`) before reaching the
+    verified kernel.  Fixed (variant + `COUNT=26` + `from_u32` + `min_inline_args=1`);
+    the self-referential mirror test replaced with a `sele4n-types` cross-check
+    (`#[cfg(test)]` dev-dep, leaf crate ⇒ no cycle) so future drift fails the build.
+  - **MEDIUM/HIGH — affinity syscall had no NI coverage**: the op rewrites the
+    boot-core run queue (observable via `projectRunnable`) yet had no
+    `_preserves_projection` theorem while every sibling TCB op does.  Added five
+    axiom-clean theorems (`setThreadCpuAffinityOp_preserves_projection` + the
+    composite / migrate-run-queue / migrate-replenish / affinity-write lemmas) — a
+    high-target affinity change provably preserves the low projection (the
+    `cpuAffinity` write is projection-erased; the run-queue migration leaves the
+    filtered observable list unchanged for a high thread).  Wired into the API
+    per-arm NI discharge table + `InformationFlowSuite` anchors.
+  - **Test coverage**: replaced a dead-weight `assertBool … true`; added genuine
+    runtime assertions for A2 (live tick replenish == `replenishOnCore`'s), A4
+    (post-tick validity), D15 (migrated thread carries positive budget).  Inventory
+    109 → 111 (D15 entries); `smp_cbs_suite` 58/58 PASS.
+  - **MEDIUM — trace harness undercounted syscalls**: `MainTraceHarness`'s
+    `[XVAL-002]` roundtrip used a hand-written 25-entry list (missing `tcbSetAffinity`)
+    and a hardcoded "all 25 variants" banner — it never round-trip-tested the new
+    syscall.  Replaced with the canonical drift-proof `SyscallId.all` / `SyscallId.count`
+    (auto-covers every variant); the fixture gains one line (`25` → `26 variants`).
   Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
