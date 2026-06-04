@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
+import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -99,8 +100,8 @@ open SeLe4n.Testing
 #check @migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
 #check @setThreadCpuAffinityWithMigration
 #check @setThreadCpuAffinityWithMigration_error_of_no_tcb
-#check @setThreadCpuAffinityWithMigration_bound_eq
-#check @setThreadCpuAffinityWithMigration_unbound_eq
+#check @setThreadCpuAffinityWithMigration_bound_state_eq
+#check @setThreadCpuAffinityWithMigration_unbound_state_eq
 #check @schedContextMigration_consistent
 
 -- SM5.H.7 per-core CBS invariant + budget accounting:
@@ -111,11 +112,61 @@ open SeLe4n.Testing
 #check @applyRefill_preserves_le_budget
 #check @scheduleReplenishment_replenishments_bounded
 
+-- SM5.H.2 (B8) the faithful sc-based scheduling primitive:
+#check @replenishScOnCore
+#check @replenishScOnCore_eq
+#check @replenishScOnCore_preserves_replenishmentPipelineOrderOnCore
+
+-- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation:
+#check @migrateRunQueueOnAffinityChange
+#check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
+#check @migrateSchedContextReplenishment_runQueueOnCore
+#check @setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
+#check @migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+
+-- SM5.H.4 (§9) object-store invariant preservation:
+#check @replenishOnCore_preserves_objects_invExt
+#check @setThreadCpuAffinityWithMigration_preserves_objects_invExt
+
+-- SM5.H.4 (§12 B7) the binding-uniqueness grounding + grounded headline:
+#check @schedContextBindingConsistent_boundThread_unique
+#check @schedContextMigration_consistent_of_bindingConsistent
+
+-- SM5.H.4 (§13 A5) the composite per-core CBS invariant preservation:
+#check @setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp
+#check @setThreadCpuAffinityWithMigration_preserves_replenishmentPipelineOrder_smp
+#check @setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp
+
+-- SM5.H.4 (§10) the cross-domain lock-set footprints:
+#check @replenishOnCoreLockSet
+#check @migrateSchedContextReplenishmentLockSet
+#check @migrateRunQueueOnAffinityChangeLockSet
+#check @setThreadCpuAffinityWithMigrationLockSet
+#check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le
+
+-- SM5.H.2 (A2/A4, §14) the live-tick CBS bridge:
+#check @timeoutBlockedThreads_replenishQueueOnCore
+#check @timerTickBudgetOnCore_bound_exhausted_replenish_eq
+#check @timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
+
+-- SM5.H.4 (C10, §15) the migration's cross-core memory-model HB:
+#check @affinityMigrationOrdering_synchronizesWith
+#check @affinityMigrationOrdering_happensBefore
+
+-- SM5.H.4 the `tcbSetAffinity` syscall wiring (production-reached):
+#check @setThreadCpuAffinityOp
+#check @decodeAffinity
+#check @lockSet_tcbSetAffinity
+#check @lockSet_consistent_tcbSetAffinity
+
 -- SM5.H inventory:
 #check @perCoreCbsTheorems
 #check @perCoreCbsTheorems_count
 #check @perCoreCbsTheorems_partition_sum
 #check @perCoreCbsTheorems_identifiers_nodup
+#check @perCoreCbsTheorems_lockSet_count
+#check @perCoreCbsTheorems_liveTick_count
+#check @perCoreCbsTheorems_memoryModel_count
 
 -- ============================================================================
 -- §2  Elaboration-time examples (apply each headline theorem)
@@ -155,18 +206,73 @@ example (st : SystemState) (scId : SchedContextId) (fromCore toCore : CoreId)
 
 -- SM5.H.4 headline: the affinity-change + migration composite RESTORES affinity
 -- consistency on every core (given the 1:1 binding + pre-state consistency).
-example (st : SystemState) (targetTid : SeLe4n.ThreadId) (newCore : CoreId)
-    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext) (st' : SystemState)
+example (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (st' : SystemState × Option (CoreId × SgiKind))
     (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
     (hBind : tcb.schedContextBinding.scId? = some scId)
     (hSc : st.getSchedContext? scId = some sc) (hBound : sc.boundThread = some targetTid)
     (hUnique : ∀ scId'' sc'', st.getSchedContext? scId'' = some sc'' →
       sc''.boundThread = some targetTid → scId'' = scId)
     (hCons : ∀ c, replenishQueueAffinityConsistentOnCore st c)
-    (hStep : setThreadCpuAffinityWithMigration st targetTid (some newCore) = .ok st') :
-    replenishQueueAffinityConsistent_smp st' :=
-  schedContextMigration_consistent st targetTid newCore tcb scId sc st'
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    replenishQueueAffinityConsistent_smp st'.1 :=
+  schedContextMigration_consistent st targetTid affinity executingCore tcb scId sc st'
     hTcb hInv hBind hSc hBound hUnique hCons hStep
+
+-- SM5.H.4 (§12 B7) grounded headline: hUnique is DISCHARGED from the live
+-- `schedContextBindingConsistent` invariant.
+example (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
+    (hBind : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc) (hBound : sc.boundThread = some targetTid)
+    (hBindCons : schedContextBindingConsistent st)
+    (hCons : ∀ c, replenishQueueAffinityConsistentOnCore st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    replenishQueueAffinityConsistent_smp st'.1 :=
+  schedContextMigration_consistent_of_bindingConsistent st targetTid affinity executingCore
+    tcb scId sc st' hTcb hInv hBind hSc hBound hBindCons hCons hStep
+
+-- SM5.H.4 (§13 A5): the composite preserves the FULL per-core CBS invariant on every core.
+example (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
+    (hBind : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc) (hBound : sc.boundThread = some targetTid)
+    (hBindCons : schedContextBindingConsistent st)
+    (hCbs : ∀ c, perCoreCbsInvariant st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    ∀ c, perCoreCbsInvariant st'.1 c :=
+  setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp st targetTid affinity
+    executingCore tcb scId sc st' hTcb hInv hBind hSc hBound hBindCons hCbs hStep
+
+-- SM5.H.4 (§11): the run-queue migration preserves run-queue well-formedness on every core.
+example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
+    (h : runQueueOnCoreWellFormed st.scheduler c') :
+    runQueueOnCoreWellFormed (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler c' :=
+  migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed st tid fromCore toCore c' h
+
+-- SM5.H.4 (§16 D15): the run-queue migration preserves SM4.C run-queue↔budget consistency.
+example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
+    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) :
+    schedContextRunQueueConsistent_perCore
+      (migrateRunQueueOnAffinityChange st tid fromCore toCore) c' :=
+  migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+    st tid fromCore toCore c' hAll
+
+-- SM5.H.2 (A4): the live per-core budget tick preserves replenish-queue validity.
+example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st' : SystemState) (b : Bool) (c' : CoreId)
+    (hValid : ∀ c'', replenishQueueValidOnCore st c'')
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) :
+    replenishQueueValidOnCore st' c' :=
+  timerTickBudgetOnCore_preserves_replenishQueueValidOnCore st c tid tcb st' b c' hValid hStep
 
 -- SM5.H.7: scheduling maintains the aggregate per-core CBS invariant.
 example (st : SystemState) (c : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
@@ -261,16 +367,18 @@ private def runMigrationScenarios : IO Unit := do
     ((migrateSchedContextReplenishment stCbs scId0 core1 bootCoreId).scheduler.replenishQueueOnCore ⟨2, by decide⟩).entries.isEmpty
 
 /-- §3.3 SM5.H.4: the affinity-change-with-migration composite drags the SchedContext's
-replenishments to the new home core. -/
+replenishments to the new home core AND (for a remote new home) emits the cross-core
+`.reschedule` SGI. -/
 private def runCompositeScenarios : IO Unit := do
   IO.println "--- §3.3 SM5.H.4 setThreadCpuAffinityWithMigration composite ---"
   -- determineTargetCore reads tcb0's affinity (= core 1).
   assertBool "tid0's home core (determineTargetCore) is core 1 (its cpuAffinity)"
     (determineTargetCore stCbs tid0 == core1)
-  -- Rebind tid0 to the boot core: the composite migrates scId0's replenishments
-  -- from core 1 to the boot core.
-  match setThreadCpuAffinityWithMigration stCbs tid0 (some bootCoreId) with
-  | .ok st' =>
+  -- Rebind tid0 to the boot core, executing on core 1: the composite migrates
+  -- scId0's replenishments from core 1 to the boot core.  The new home (boot core)
+  -- is remote from the executing core (core 1).
+  match setThreadCpuAffinityWithMigration stCbs tid0 (some bootCoreId) core1 with
+  | .ok (st', sgi) =>
       assertBool "composite (bind tid0 → boot core) succeeds"
         true
       assertBool "after the composite, the boot core's queue holds (scId0, 5000)"
@@ -279,22 +387,47 @@ private def runCompositeScenarios : IO Unit := do
         (!(st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
       assertBool "after the composite, tid0's new home core is the boot core"
         (determineTargetCore st' tid0 == bootCoreId)
+      -- tid0 was not runnable (not in any run queue), so no cross-core SGI fires
+      -- (the SGI is gated on the thread being runnable on its new home core).
+      assertBool "blocked tid0's remote re-home emits no spurious cross-core SGI"
+        (sgi == none)
   | .error _ =>
       assertBool "composite (bind tid0 → boot core) succeeds" false
+  -- A LOCAL re-home (executing core == new home) never emits a cross-core SGI.
+  match setThreadCpuAffinityWithMigration stCbs tid0 (some core1) core1 with
+  | .ok (_, sgi) =>
+      assertBool "local re-home (exec core == new home) emits no SGI"
+        (sgi == none)
+  | .error _ => assertBool "local re-home succeeds" false
   -- The composite is fail-closed on a non-TCB target.
   assertBool "composite on a non-TCB target is .error .invalidArgument"
-    (match setThreadCpuAffinityWithMigration stCbs (ThreadId.ofNat 999) (some bootCoreId) with
+    (match setThreadCpuAffinityWithMigration stCbs (ThreadId.ofNat 999) (some bootCoreId) core1 with
      | .error .invalidArgument => true
      | _ => false)
   -- An unbound thread (no SchedContext) has no replenishments to migrate; the
-  -- composite is just the affinity write.
+  -- composite is just the affinity write + run-queue migration.
   let stUnbound : SystemState :=
     let base := (BootstrapBuilder.empty.withObject (ThreadId.ofNat 300).toObjId
       (.tcb { tcb0 with tid := ThreadId.ofNat 300, schedContextBinding := .unbound })).build
     base
-  assertBool "composite on an unbound thread succeeds (affinity write only)"
-    (match setThreadCpuAffinityWithMigration stUnbound (ThreadId.ofNat 300) (some bootCoreId) with
+  assertBool "composite on an unbound thread succeeds (affinity + run-queue write only)"
+    (match setThreadCpuAffinityWithMigration stUnbound (ThreadId.ofNat 300) (some bootCoreId) core1 with
      | .ok _ => true | .error _ => false)
+  -- The syscall op (`setThreadCpuAffinityOp`, production-reached) commits the state.
+  match ThreadId.toValid? tid0 with
+  | some vtid0 =>
+      assertBool "setThreadCpuAffinityOp (bind tid0 → boot core) succeeds + migrates"
+        (match setThreadCpuAffinityOp stCbs vtid0 (some bootCoreId) with
+         | .ok st' => (st'.scheduler.replenishQueueOnCore bootCoreId).entries.contains (scId0, 5000)
+         | .error _ => false)
+  | none => assertBool "tid0 validates as a non-sentinel ThreadId" false
+  -- `decodeAffinity` decodes the raw affinity word: 0..numCores-1 bind, the marker unbinds.
+  assertBool "decodeAffinity 1 = .ok (some core 1)"
+    (match decodeAffinity 1 with | .ok (some c) => c.val == 1 | _ => false)
+  assertBool "decodeAffinity (unbind marker = numCores) = .ok none"
+    (match decodeAffinity affinityUnbindMarker with | .ok none => true | _ => false)
+  assertBool "decodeAffinity (out of range) = .error .invalidArgument"
+    (match decodeAffinity (numCores + 5) with | .error .invalidArgument => true | _ => false)
 
 /-- §3.4 SM5.H.7: the CBS budget bounds (`budgetRemaining ≤ budget`) hold under
 charge / refill, and the replenishment schedule stays bounded. -/
@@ -328,25 +461,60 @@ private def runAffinityScenarios : IO Unit := do
   assertBool "stCbs: core 1's replenish queue holds exactly scId0's entry"
     ((stCbs.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)])
 
-/-- §3.6: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
+/-- §3.6: SM5.H.4 full-thread-migration — the run-queue entry moves cores. -/
+private def runRunQueueMigrationScenarios : IO Unit := do
+  IO.println "--- §3.6 SM5.H.4 run-queue migration (full thread migration) ---"
+  -- Put tid0 in core 1's run queue, then migrate it to the boot core.
+  let stRq : SystemState :=
+    let rq := RunQueue.empty.insert tid0 ⟨5⟩
+    { stCbs with scheduler := stCbs.scheduler.setRunQueueOnCore core1 rq }
+  let stMoved := migrateRunQueueOnAffinityChange stRq tid0 core1 bootCoreId
+  assertBool "before: tid0 is in core 1's run queue"
+    ((stRq.scheduler.runQueueOnCore core1).contains tid0)
+  assertBool "after run-queue migration: tid0 left core 1's run queue"
+    (!(stMoved.scheduler.runQueueOnCore core1).contains tid0)
+  assertBool "after run-queue migration: tid0 entered the boot core's run queue"
+    ((stMoved.scheduler.runQueueOnCore bootCoreId).contains tid0)
+  assertBool "run-queue migration frames the replenish queue (still holds scId0)"
+    ((stMoved.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+  -- A self-migration is the identity.
+  assertBool "self run-queue migration (core 1 → core 1) is the identity"
+    ((migrateRunQueueOnAffinityChange stRq tid0 core1 core1).scheduler.runQueueOnCore core1
+      |>.contains tid0)
+  -- A runnable thread re-homed to a REMOTE core emits the cross-core SGI.
+  match setThreadCpuAffinityWithMigration stRq tid0 (some bootCoreId) core1 with
+  | .ok (st', sgi) =>
+      assertBool "runnable tid0's remote re-home emits a cross-core .reschedule SGI to the boot core"
+        (sgi == some (bootCoreId, SgiKind.reschedule))
+      assertBool "runnable tid0's remote re-home: tid0 is now in the boot core's run queue"
+        ((st'.scheduler.runQueueOnCore bootCoreId).contains tid0)
+  | .error _ => assertBool "runnable tid0 remote re-home succeeds" false
+
+/-- §3.7: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
-  IO.println "--- §3.6 SM5.H inventory partition counts ---"
-  assertBool "inventory has 54 entries"
-    (decide (perCoreCbsTheorems.length = 54))
+  IO.println "--- §3.7 SM5.H inventory partition counts ---"
+  assertBool "inventory has 111 entries"
+    (decide (perCoreCbsTheorems.length = 111))
   assertBool "predicate category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6))
-  assertBool "replenish category has 12 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 12))
-  assertBool "preservation category has 6 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 6))
-  assertBool "migration category has 13 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 13))
+  assertBool "replenish category has 17 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 17))
+  assertBool "preservation category has 8 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 8))
+  assertBool "migration category has 22 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 22))
   assertBool "affinityWrite category has 3 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 3))
-  assertBool "consistency category has 8 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 8))
+  assertBool "consistency category has 19 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 19))
   assertBool "budget category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .budget)).length = 6))
+  assertBool "lockSet category has 20 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .lockSet)).length = 20))
+  assertBool "liveTick category has 8 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .liveTick)).length = 8))
+  assertBool "memoryModel category has 2 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 2))
 
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
@@ -355,6 +523,7 @@ def main : IO Unit := do
   runCompositeScenarios
   runBudgetScenarios
   runAffinityScenarios
+  runRunQueueMigrationScenarios
   runInventoryChecks
   IO.println "=== SM5.H suite: all assertions passed ==="
 

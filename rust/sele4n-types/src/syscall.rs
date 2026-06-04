@@ -47,11 +47,13 @@ pub enum SyscallId {
     TcbSetMCPriority = 23,
     // IPC buffer configuration (WS-AB, D3)
     TcbSetIPCBuffer = 24,
+    // CPU-affinity configuration (WS-SM, SM5.H.4)
+    TcbSetAffinity = 25,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 25;
+    pub const COUNT: usize = 26;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -82,6 +84,7 @@ impl SyscallId {
             22 => Some(Self::TcbSetPriority),
             23 => Some(Self::TcbSetMCPriority),
             24 => Some(Self::TcbSetIPCBuffer),
+            25 => Some(Self::TcbSetAffinity),
             _ => None,
         }
     }
@@ -110,6 +113,7 @@ impl SyscallId {
             Self::TcbSuspend | Self::TcbResume => AccessRight::Write,
             Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
             Self::TcbSetIPCBuffer => AccessRight::Write,
+            Self::TcbSetAffinity => AccessRight::Write,
         }
     }
 }
@@ -128,7 +132,7 @@ mod tests {
 
     #[test]
     fn from_u64_out_of_range() {
-        assert!(SyscallId::from_u64(25).is_none());
+        assert!(SyscallId::from_u64(26).is_none());
         assert!(SyscallId::from_u64(255).is_none());
     }
 
@@ -223,6 +227,12 @@ mod tests {
     }
 
     #[test]
+    fn tcb_affinity_discriminant() {
+        // WS-SM SM5.H.4: CPU-affinity configuration
+        assert_eq!(SyscallId::TcbSetAffinity.to_u64(), 25);
+    }
+
+    #[test]
     fn required_right_tcb_lifecycle() {
         // D1: Suspend/Resume require Write (API.lean:387-388)
         assert_eq!(SyscallId::TcbSuspend.required_right(), AccessRight::Write);
@@ -240,5 +250,11 @@ mod tests {
     fn required_right_tcb_ipc_buffer() {
         // D3: IPC buffer configuration requires Write (API.lean:391)
         assert_eq!(SyscallId::TcbSetIPCBuffer.required_right(), AccessRight::Write);
+    }
+
+    #[test]
+    fn required_right_tcb_affinity() {
+        // WS-SM SM5.H.4: CPU-affinity configuration requires Write
+        assert_eq!(SyscallId::TcbSetAffinity.required_right(), AccessRight::Write);
     }
 }

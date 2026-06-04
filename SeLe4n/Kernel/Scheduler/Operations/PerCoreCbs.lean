@@ -79,7 +79,7 @@ wrongly forbid them.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId)
+open SeLe4n.Kernel.Concurrency (numCores CoreId bootCoreId SgiKind)
 
 -- ============================================================================
 -- §1  SM5.H.1 / SM5.H.5 — the per-core CBS replenish-queue predicates
@@ -205,27 +205,19 @@ private theorem mem_remove_entries {rq : ReplenishQueue} {scId : SchedContextId}
 -- §2  SM5.H.2 — `replenishOnCore`: per-core CBS replenishment scheduling
 -- ============================================================================
 
-/-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
-`scId` on core `c`, eligible at absolute tick `eligibleAt`.
+/- WS-SM SM5.H.2 (plan §3.8): `replenishOnCore st c scId eligibleAt` schedules a CBS
+replenishment for SchedContext `scId` on core `c` — inserts `(scId, eligibleAt)`
+into core `c`'s replenish queue (`replenishQueueOnCore c`, SM4.B per-core field),
+leaving every other scheduler slot, every *other* core's replenish queue, and the
+object store untouched.  The clean named extraction of the queue insert
+`timerTickBudgetOnCore` / `handleYieldWithBudget` open-code.  The plan signature
+`replenishOnCore (s, c, sc)` realises `sc` as `(scId, eligibleAt)`; the faithful
+`replenishScOnCore (s, c, sc, now)` form computes `now + sc.period.val` internally,
+discharging the SM5.H.6 pipeline-order future-ness from `sc.period > 0`.
 
-Inserts `(scId, eligibleAt)` into core `c`'s replenish queue
-(`replenishQueueOnCore c`, sorted-by-eligibility, SM4.B per-core field), leaving
-every other per-core scheduler slot, every *other* core's replenish queue, and
-the object store untouched.  This is the per-core "schedule a replenishment"
-primitive — the clean, reusable named extraction of the queue insert
-`timerTickBudgetOnCore` / `handleYieldWithBudget` open-code as
-`(replenishQueueOnCore c).insert scId (now + period)`.
-
-The plan signature `replenishOnCore (s, c, sc)` realises `sc` as the pair
-`(scId, eligibleAt)`: the replenish queue is keyed by `SchedContextId`, and the
-eligibility tick (which the CBS engine computes as `now + period.val`) is made an
-explicit argument so this primitive is agnostic to *how* the eligibility time was
-derived (the SM5.H.6 pipeline-order theorem then requires `eligibleAt >
-machine.timer`, which the CBS engine guarantees since `period.val > 0`). -/
-def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
-    (eligibleAt : Nat) : SystemState :=
-  let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
-  { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
+`replenishOnCore`, `replenishScOnCore`, the migration, and the composite are
+**production** defs in `Scheduler/Operations/Core.lean` (reached via the SM5.H.4
+`tcbSetAffinity` syscall); this staged module collects their theorem surface. -/
 
 /-- WS-SM SM5.H.2: scheduling a replenishment never touches the object store. -/
 @[simp] theorem replenishOnCore_objects (st : SystemState) (c : CoreId)
@@ -464,33 +456,16 @@ private theorem foldl_insert_preserves_sizeConsistent (moved : List (SchedContex
     rw [List.foldl_cons]
     exact ih (toQ.insert scId hd.2) (insert_sizeConsistent h)
 
-/-- WS-SM SM5.H.4 (plan §3.8): migrate SchedContext `scId`'s pending
-replenishments from core `fromCore`'s replenish queue to core `toCore`'s.
-
-Removes every `(scId, _)` entry from `fromCore`'s queue (`ReplenishQueue.remove`)
-and re-inserts each — at its **original** eligibility time — into `toCore`'s queue
-(a fold of `ReplenishQueue.insert`s, which keeps each destination queue sorted).
-A no-op when `fromCore = toCore` (a self-migration is the identity).  Writes only
-the two replenish-queue slots; the object store, every run queue / current thread,
-and every other per-core slot are untouched — so `getSchedContext?` /
-`determineTargetCore` (the object-store reads the affinity-consistency invariant
-depends on) are unchanged by the migration itself.
-
-This is the operation an affinity-change syscall composes with the affinity write
-(`setThreadCpuAffinityWithMigration`) so a thread's CBS budget-refill schedule
-follows it to its new home core, restoring `replenishQueueAffinityConsistentOnCore`
-(SM5.H.5). -/
-def migrateSchedContextReplenishment (st : SystemState) (scId : SchedContextId)
-    (fromCore toCore : CoreId) : SystemState :=
-  if fromCore = toCore then st
-  else
-    let fromQ := st.scheduler.replenishQueueOnCore fromCore
-    let toQ := st.scheduler.replenishQueueOnCore toCore
-    let moved := fromQ.entries.filter (fun e => e.1 == scId)
-    let fromQ' := fromQ.remove scId
-    let toQ' := moved.foldl (fun q e => q.insert scId e.2) toQ
-    let sched' := (st.scheduler.setReplenishQueueOnCore fromCore fromQ').setReplenishQueueOnCore toCore toQ'
-    { st with scheduler := sched' }
+/- WS-SM SM5.H.4 (plan §3.8): `migrateSchedContextReplenishment st scId fromCore
+toCore` migrates SchedContext `scId`'s pending replenishments from core `fromCore`'s
+replenish queue to core `toCore`'s — removes every `(scId, _)` entry from
+`fromCore` and re-inserts each at its original eligibility time into `toCore` (a
+fold of `ReplenishQueue.insert`s).  A no-op when `fromCore = toCore`.  Writes only
+the two replenish-queue slots; the object store, every run queue, and every other
+per-core slot are untouched — so `getSchedContext?` / `determineTargetCore` are
+unchanged by the migration itself.  Production def in
+`Scheduler/Operations/Core.lean`; the affinity-change composite composes it with
+the run-queue migration to follow the thread to its new home core. -/
 
 /-- WS-SM SM5.H.4: a self-migration (`fromCore = toCore`) is the identity. -/
 @[simp] theorem migrateSchedContextReplenishment_noop (st : SystemState)
@@ -758,85 +733,82 @@ theorem migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_othe
     (migrateSchedContextReplenishment_replenishQueueOnCore_other st scId fromCore toCore c' hFrom hTo)
     (migrateSchedContextReplenishment_objects st scId fromCore toCore)).mpr hCons
 
--- §6c  The composite: affinity write + replenishment migration.
+-- §6c  Run-queue migration frame lemmas (the full-migration's run-queue step
+--       frames the object store + every replenish queue, so the replenish-queue
+--       theorems carry through the full composite).
 
-/-- WS-SM SM5.H.4 (plan §3.8): set a thread's CPU affinity **and** migrate its
-bound SchedContext's pending replenishments to the new home core.
+/-- WS-SM SM5.H.4: the run-queue migration never touches the object store. -/
+@[simp] theorem migrateRunQueueOnAffinityChange_objects (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects = st.objects := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split <;> rfl
 
-Composes the production SM5.C.8 affinity-control op (`setThreadCpuAffinity`) with
-the SM5.H.4 replenishment migration: after the affinity write moves the thread's
-home core from `determineTargetCore st targetTid` (old) to
-`determineTargetCore stSet targetTid` (new — the just-written affinity), the bound
-SchedContext's replenishments migrate from the old core's replenish queue to the
-new core's, restoring `replenishQueueAffinityConsistentOnCore` (the migrated
-budget-refill schedule now lives where the thread will wake).  Unbound threads
-(`schedContextBinding.scId? = none`) have no SchedContext to migrate, so the op is
-just the affinity write.  Fail-closed (`.invalidArgument`) on a non-TCB target.
+/-- WS-SM SM5.H.4: the run-queue migration never advances the machine timer. -/
+@[simp] theorem migrateRunQueueOnAffinityChange_machine (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).machine = st.machine := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split <;> rfl
 
-**Authority**: like `setThreadCpuAffinity`, this primitive performs **no** in-op
-capability check; the `tcbSetAffinity` syscall (SM5.I+) must verify a scheduler-
-control capability before invoking it (see `setThreadCpuAffinity`'s authority
-note). -/
-def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.ThreadId)
-    (affinity : Option CoreId) : Except KernelError SystemState :=
-  match st.getTcb? targetTid with
-  | some tcb =>
-      match setThreadCpuAffinity st targetTid affinity with
-      | .ok stSet =>
-          match tcb.schedContextBinding.scId? with
-          | some scId => .ok (migrateSchedContextReplenishment stSet scId
-              (determineTargetCore st targetTid) (determineTargetCore stSet targetTid))
-          | none => .ok stSet
-      | .error e => .error e
-  | none => .error .invalidArgument
+/-- WS-SM SM5.H.4: the run-queue migration frames every core's **replenish** queue
+(it writes only run-queue slots). -/
+@[simp] theorem migrateRunQueueOnAffinityChange_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · simp
+      · rfl
 
-/-- WS-SM SM5.H.4: the composite rejects a non-TCB target (fail-closed). -/
-theorem setThreadCpuAffinityWithMigration_error_of_no_tcb (st : SystemState)
-    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
-    (hTcb : st.getTcb? targetTid = none) :
-    setThreadCpuAffinityWithMigration st targetTid affinity = .error .invalidArgument := by
-  simp only [setThreadCpuAffinityWithMigration, hTcb]
+/-- WS-SM SM5.H.4: the run-queue migration frames every SchedContext resolution. -/
+theorem migrateRunQueueOnAffinityChange_getSchedContext? (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (scId' : SchedContextId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).getSchedContext? scId'
+      = st.getSchedContext? scId' := by
+  unfold SystemState.getSchedContext?; rw [migrateRunQueueOnAffinityChange_objects]
 
-/-- WS-SM SM5.H.4: for a SchedContext-**bound** target, the composite is the
-affinity write `stSet` followed by the replenishment migration from the old home
-core to the new. -/
-theorem setThreadCpuAffinityWithMigration_bound_eq (st : SystemState)
-    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (tcb : TCB) (scId : SchedContextId)
-    (hTcb : st.getTcb? targetTid = some tcb) (hBind : tcb.schedContextBinding.scId? = some scId)
-    (stSet : SystemState) (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet) :
-    setThreadCpuAffinityWithMigration st targetTid affinity
-      = .ok (migrateSchedContextReplenishment stSet scId
-          (determineTargetCore st targetTid) (determineTargetCore stSet targetTid)) := by
-  simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind]
+/-- WS-SM SM5.H.4: the run-queue migration frames every thread's home core. -/
+theorem migrateRunQueueOnAffinityChange_determineTargetCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (tid' : SeLe4n.ThreadId) :
+    determineTargetCore (migrateRunQueueOnAffinityChange st tid fromCore toCore) tid'
+      = determineTargetCore st tid' := by
+  unfold determineTargetCore SystemState.getTcb?; rw [migrateRunQueueOnAffinityChange_objects]
 
-/-- WS-SM SM5.H.4: for an **unbound** target (no SchedContext), the composite is
-just the affinity write — there is no replenishment schedule to migrate. -/
-theorem setThreadCpuAffinityWithMigration_unbound_eq (st : SystemState)
-    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? targetTid = some tcb) (hBind : tcb.schedContextBinding.scId? = none)
-    (stSet : SystemState) (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet) :
-    setThreadCpuAffinityWithMigration st targetTid affinity = .ok stSet := by
-  simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind]
+-- §6c  The replenish-affinity restoration (generalised to any affinity, incl. unbind).
 
-/-- WS-SM SM5.H.4 (plan §6.1 `schedContextMigration_consistent`): binding
-`targetTid` to a new core (`some newCore`) **and** migrating its SchedContext's
-replenishments *restores* per-core CBS affinity consistency on **every** core.
+/-- WS-SM SM5.H.4 (the replenish-affinity restoration core): the affinity write
+(`stSet`) followed by the SchedContext replenishment migration from the old home
+core (`determineTargetCore st targetTid`) to the new home core (`newHome =
+determineTargetCore stSet targetTid`) *restores* per-core CBS affinity consistency
+on **every** core.
 
-Pre-state hypotheses: the target is a SchedContext-bound TCB (`hTcb`, `hBind`,
-`hSc`, `hBound`); the binding is 1:1 — no other SchedContext names `targetTid` as
-its bound thread (`hUnique`, supplied by `schedContextBindingConsistent`); and the
-whole state is already affinity-consistent (`hCons`).  Conclusion: the composite's
-output state is affinity-consistent on every core.
-
-The migration moves `targetTid`'s SchedContext (`scId`) from its old home core
-(`determineTargetCore st targetTid`) to the new one (`newCore`), where the affinity
-write has made `determineTargetCore = newCore`; every other SchedContext's entries
-and home core are unchanged (the 1:1 binding means only `scId` referenced
-`targetTid`), so consistency is preserved everywhere else and *established* for the
-migrated entries on `newCore`. -/
-theorem schedContextMigration_consistent
-    (st : SystemState) (targetTid : SeLe4n.ThreadId) (newCore : CoreId)
-    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext) (st' : SystemState)
+Generalised over `affinity` (the new home `newHome` is supplied via `hNewHome`,
+which is `determineTargetCore_bound_eq_affinity` for `some c` and
+`determineTargetCore_unbound_eq_bootCore` for `none`), so it covers both **bind**
+and **unbind**.  Pre-state hypotheses: SchedContext-bound TCB (`hTcb`/`hBind`/
+`hSc`/`hBound`); 1:1 binding (`hUnique`, from `schedContextBindingConsistent`);
+whole state already affinity-consistent (`hCons`).  The migration moves `scId`
+from `oldHome` to `newHome` where `determineTargetCore stSet targetTid = newHome`;
+every other SchedContext's home core is unchanged (1:1 binding), so consistency is
+preserved elsewhere and established for the migrated entries on `newHome`. -/
+theorem schedContextReplMigration_consistent
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (newHome : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (affinity : Option CoreId) (stSet : SystemState)
     (hTcb : st.getTcb? targetTid = some tcb)
     (hInv : st.objects.invExt)
     (hBind : tcb.schedContextBinding.scId? = some scId)
@@ -845,32 +817,22 @@ theorem schedContextMigration_consistent
     (hUnique : ∀ (scId'' : SchedContextId) (sc'' : SchedContext),
       st.getSchedContext? scId'' = some sc'' → sc''.boundThread = some targetTid → scId'' = scId)
     (hCons : ∀ c, replenishQueueAffinityConsistentOnCore st c)
-    (hStep : setThreadCpuAffinityWithMigration st targetTid (some newCore) = .ok st') :
-    replenishQueueAffinityConsistent_smp st' := by
-  obtain ⟨stSet, hSet⟩ := setThreadCpuAffinity_ok_of_tcb st targetTid (some newCore) tcb hTcb
-  -- stSet facts (the affinity write).
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (hNewHome : determineTargetCore stSet targetTid = newHome) :
+    replenishQueueAffinityConsistent_smp
+      (migrateSchedContextReplenishment stSet scId (determineTargetCore st targetTid) newHome) := by
   have hSchedEq : stSet.scheduler = st.scheduler :=
-    setThreadCpuAffinity_preserves_scheduler st targetTid (some newCore) stSet hSet
+    setThreadCpuAffinity_preserves_scheduler st targetTid affinity stSet hSet
   have hScFrame : ∀ scId'', stSet.getSchedContext? scId'' = st.getSchedContext? scId'' :=
-    fun scId'' => setThreadCpuAffinity_getSchedContext? st targetTid (some newCore) stSet tcb hTcb hInv hSet scId''
-  have hTgtSelf : determineTargetCore stSet targetTid = newCore :=
-    setThreadCpuAffinity_affects_determineTargetCore st targetTid newCore stSet tcb hTcb hInv hSet
+    fun scId'' => setThreadCpuAffinity_getSchedContext? st targetTid affinity stSet tcb hTcb hInv hSet scId''
+  have hTgtSelf : determineTargetCore stSet targetTid = newHome := hNewHome
   have hTgtNe : ∀ other, other ≠ targetTid → determineTargetCore stSet other = determineTargetCore st other :=
-    fun other hNe => setThreadCpuAffinity_determineTargetCore_ne st targetTid (some newCore) other stSet hInv hNe hSet
-  -- st' is the migration of stSet from the old home core to newCore.
-  have hSt'Eq : st' = migrateSchedContextReplenishment stSet scId (determineTargetCore st targetTid) newCore := by
-    have hb := setThreadCpuAffinityWithMigration_bound_eq st targetTid (some newCore) tcb scId hTcb hBind stSet hSet
-    rw [hStep, hTgtSelf] at hb
-    exact Except.ok.inj hb
-  subst hSt'Eq
-  -- scId's replenishments live only on `targetTid`'s old home core (by pre-state consistency).
+    fun other hNe => setThreadCpuAffinity_determineTargetCore_ne st targetTid affinity other stSet hInv hNe hSet
   have hOldEntries : ∀ (c : CoreId) (t : Nat),
       (scId, t) ∈ (st.scheduler.replenishQueueOnCore c).entries →
       c = determineTargetCore st targetTid := by
     intro c t hMem
     exact (hCons c scId t hMem sc hSc targetTid hBound).symm
-  -- The home-core bridge: for any consistent st-entry whose SchedContext ≠ scId,
-  -- the affinity write leaves the bound thread's home core unchanged.
   have bridge : ∀ (c₀ : CoreId) (scId₀ : SchedContextId) (t : Nat) (sc₀ : SchedContext) (tid₀ : SeLe4n.ThreadId),
       (scId₀, t) ∈ (st.scheduler.replenishQueueOnCore c₀).entries →
       st.getSchedContext? scId₀ = some sc₀ → sc₀.boundThread = some tid₀ → scId₀ ≠ scId →
@@ -881,8 +843,6 @@ theorem schedContextMigration_consistent
       intro hEq; subst hEq
       exact hNeScId (hUnique scId₀ sc₀ hSc₀ hBound₀)
     rw [hTgtNe tid₀ hNeTid]; exact hConsC
-  -- stSet is consistent on every core OTHER than `targetTid`'s old home core
-  -- (those cores never held `scId`'s entries, so nothing moved out from under them).
   have hStSetOff : ∀ c, c ≠ determineTargetCore st targetTid →
       replenishQueueAffinityConsistentOnCore stSet c := by
     intro c hcNeOld scId₀ t hMem sc₀ hSc₀ tid₀ hBound₀
@@ -891,10 +851,8 @@ theorem schedContextMigration_consistent
     have hNeScId : scId₀ ≠ scId := fun hEq => hcNeOld (hOldEntries c t (hEq ▸ hMem))
     exact bridge c scId₀ t sc₀ tid₀ hMem hSc₀ hBound₀ hNeScId
   intro c
-  by_cases hON : determineTargetCore st targetTid = newCore
-  · -- Old home = new home: the migration is a no-op, and the affinity write left
-    -- every thread's home core unchanged ⇒ stSet is fully consistent.
-    rw [hON, migrateSchedContextReplenishment_noop]
+  by_cases hON : determineTargetCore st targetTid = newHome
+  · rw [hON, migrateSchedContextReplenishment_noop]
     intro scId₀ t hMem sc₀ hSc₀ tid₀ hBound₀
     rw [hSchedEq] at hMem
     rw [hScFrame scId₀] at hSc₀
@@ -902,12 +860,10 @@ theorem schedContextMigration_consistent
     · subst hTid
       have hScEq : scId₀ = scId := hUnique scId₀ sc₀ hSc₀ hBound₀
       subst hScEq
-      rw [hTgtSelf, ← hON]
-      exact (hOldEntries c t hMem).symm
+      exact hTgtSelf.trans ((hOldEntries c t hMem).trans hON).symm
     · rw [hTgtNe tid₀ hTid]
       exact hCons c scId₀ t hMem sc₀ hSc₀ tid₀ hBound₀
-  · -- Old home ≠ new home: apply the migration-level establish/preserve lemmas.
-    by_cases hcNew : c = newCore
+  · by_cases hcNew : c = newHome
     · subst hcNew
       refine migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to
         stSet scId _ c (fun hEq => hON hEq) (hStSetOff c (fun hEq => hON hEq.symm)) ?_
@@ -921,14 +877,93 @@ theorem schedContextMigration_consistent
     · by_cases hcOld : c = determineTargetCore st targetTid
       · subst hcOld
         refine migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from
-          stSet scId (determineTargetCore st targetTid) newCore (fun hEq => hON hEq) ?_
+          stSet scId (determineTargetCore st targetTid) newHome (fun hEq => hON hEq) ?_
         intro scId₀ t hMem hNeScId sc₀ hSc₀ tid₀ hBound₀
         rw [hSchedEq] at hMem
         rw [hScFrame scId₀] at hSc₀
         exact bridge (determineTargetCore st targetTid) scId₀ t sc₀ tid₀ hMem hSc₀ hBound₀ hNeScId
       · exact migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
-          stSet scId (determineTargetCore st targetTid) newCore c
+          stSet scId (determineTargetCore st targetTid) newHome c
           (fun hEq => hcOld hEq.symm) (fun hEq => hcNew hEq.symm) (hStSetOff c hcOld)
+
+-- §6c  The full composite (affinity write + replenishment migration + run-queue
+--      migration + cross-core SGI) shape theorems + the headline restoration.
+
+/-- WS-SM SM5.H.4: the full composite rejects a non-TCB target (fail-closed). -/
+theorem setThreadCpuAffinityWithMigration_error_of_no_tcb (st : SystemState)
+    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (hTcb : st.getTcb? targetTid = none) :
+    setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .error .invalidArgument := by
+  simp only [setThreadCpuAffinityWithMigration, hTcb]
+
+/-- WS-SM SM5.H.4: for a SchedContext-**bound** target, the full composite's state
+component is the affinity write `stSet`, followed by the replenishment migration
+(old home → new home), followed by the run-queue migration. -/
+theorem setThreadCpuAffinityWithMigration_bound_state_eq (st : SystemState)
+    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId)
+    (hTcb : st.getTcb? targetTid = some tcb) (hBind : tcb.schedContextBinding.scId? = some scId)
+    (stSet : SystemState) (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    st'.1 = migrateRunQueueOnAffinityChange
+      (migrateSchedContextReplenishment stSet scId
+        (determineTargetCore st targetTid) (determineTargetCore stSet targetTid))
+      targetTid (determineTargetCore st targetTid) (determineTargetCore stSet targetTid) := by
+  simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind] at hStep
+  rw [← Except.ok.inj hStep]
+
+/-- WS-SM SM5.H.4: for an **unbound** target (no SchedContext), the full composite's
+state component is the affinity write `stSet` followed by the run-queue migration —
+there is no replenishment schedule to migrate. -/
+theorem setThreadCpuAffinityWithMigration_unbound_state_eq (st : SystemState)
+    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (tcb : TCB)
+    (hTcb : st.getTcb? targetTid = some tcb) (hBind : tcb.schedContextBinding.scId? = none)
+    (stSet : SystemState) (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    st'.1 = migrateRunQueueOnAffinityChange stSet
+      targetTid (determineTargetCore st targetTid) (determineTargetCore stSet targetTid) := by
+  simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind] at hStep
+  rw [← Except.ok.inj hStep]
+
+/-- WS-SM SM5.H.4 (plan §6.1 `schedContextMigration_consistent`, the headline): the
+**full** affinity-change-with-migration composite (for **any** affinity — bind or
+unbind) *restores* per-core CBS affinity consistency on **every** core for a
+SchedContext-bound target.
+
+The run-queue migration step frames every replenish queue + the object store, so
+the replenish-affinity invariant reduces to the replenish-only restoration
+(`schedContextReplMigration_consistent`), with the new home `determineTargetCore
+stSet targetTid` (no separate `some`/`none` case split — the home core is whatever
+the affinity write produced).  The 1:1 binding (`hUnique`, from
+`schedContextBindingConsistent`) is what keeps every *other* SchedContext's home
+core fixed across the affinity write. -/
+theorem schedContextMigration_consistent
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hInv : st.objects.invExt)
+    (hBind : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hBound : sc.boundThread = some targetTid)
+    (hUnique : ∀ (scId'' : SchedContextId) (sc'' : SchedContext),
+      st.getSchedContext? scId'' = some sc'' → sc''.boundThread = some targetTid → scId'' = scId)
+    (hCons : ∀ c, replenishQueueAffinityConsistentOnCore st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    replenishQueueAffinityConsistent_smp st'.1 := by
+  obtain ⟨stSet, hSet⟩ := setThreadCpuAffinity_ok_of_tcb st targetTid affinity tcb hTcb
+  rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
+        tcb scId hTcb hBind stSet hSet st' hStep]
+  intro c
+  rw [replenishQueueAffinityConsistentOnCore_frame
+        (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)
+        (migrateRunQueueOnAffinityChange_objects _ _ _ _)]
+  exact schedContextReplMigration_consistent st targetTid (determineTargetCore stSet targetTid)
+    tcb scId sc affinity stSet hTcb hInv hBind hSc hBound hUnique hCons hSet rfl c
 
 -- ============================================================================
 -- §7  SM5.H.7 — Per-core CBS budget accounting + the per-core CBS invariant
@@ -1012,5 +1047,872 @@ theorem scheduleReplenishment_replenishments_bounded (sc : SchedContext)
     (scheduleReplenishment sc currentTime consumed).replenishments.length ≤ maxReplenishments := by
   unfold scheduleReplenishment
   exact truncateReplenishments_length_le _
+
+-- ============================================================================
+-- §8  SM5.H.2 (B8) — `replenishScOnCore`: faithful `sc`-based scheduling
+--     + SM5.H.6 UNCONDITIONAL pipeline-order preservation (from `period > 0`)
+-- ============================================================================
+
+/-- WS-SM SM5.H.2: the faithful `sc`-based scheduling primitive is the `scId`-keyed
+`replenishOnCore` at the CBS-computed eligibility `now + sc.period.val`. -/
+theorem replenishScOnCore_eq (st : SystemState) (c : CoreId) (sc : SchedContext) (now : Nat) :
+    replenishScOnCore st c sc now = replenishOnCore st c sc.scId (now + sc.period.val) := rfl
+
+/-- WS-SM SM5.H.2: `replenishScOnCore` frames the object store. -/
+@[simp] theorem replenishScOnCore_objects (st : SystemState) (c : CoreId)
+    (sc : SchedContext) (now : Nat) :
+    (replenishScOnCore st c sc now).objects = st.objects := rfl
+
+/-- WS-SM SM5.H.6 (the unconditional pipeline-order preservation): scheduling
+`sc`'s replenishment at `now = machine.timer` preserves the replenishment-pipeline
+order **without** a caller-supplied future-ness hypothesis — the eligibility
+`machine.timer + sc.period.val` is strictly future because `sc.period > 0`
+(`sc.wellFormed`'s first conjunct).  This is the SM5.H.6 obligation the faithful
+`sc`-form discharges internally. -/
+theorem replenishScOnCore_preserves_replenishmentPipelineOrderOnCore (st : SystemState)
+    (c : CoreId) (sc : SchedContext)
+    (hPipeline : replenishmentPipelineOrderOnCore st c) (hPos : 0 < sc.period.val) :
+    replenishmentPipelineOrderOnCore (replenishScOnCore st c sc st.machine.timer) c := by
+  rw [replenishScOnCore_eq]
+  apply replenishOnCore_preserves_replenishmentPipelineOrderOnCore st c sc.scId _ hPipeline
+  omega
+
+/-- WS-SM SM5.H.6: the `0 < period` obligation is exactly `sc.wellFormed`'s first
+conjunct, so a well-formed SchedContext's scheduling is unconditionally
+pipeline-preserving. -/
+theorem replenishScOnCore_preserves_replenishmentPipelineOrderOnCore_of_wf (st : SystemState)
+    (c : CoreId) (sc : SchedContext)
+    (hPipeline : replenishmentPipelineOrderOnCore st c) (hWf : sc.wellFormed) :
+    replenishmentPipelineOrderOnCore (replenishScOnCore st c sc st.machine.timer) c :=
+  replenishScOnCore_preserves_replenishmentPipelineOrderOnCore st c sc hPipeline
+    (by have := hWf.1; simpa [Period.isPositive] using this)
+
+-- ============================================================================
+-- §9  SM5.H (C9) — object-store invariant (`invExt`) preservation
+-- ============================================================================
+
+/-- WS-SM SM5.H.2: `replenishOnCore` preserves the RobinHood object-store invariant
+(it never touches the object store). -/
+theorem replenishOnCore_preserves_objects_invExt (st : SystemState) (c : CoreId)
+    (scId : SchedContextId) (eligibleAt : Nat) (h : st.objects.invExt) :
+    (replenishOnCore st c scId eligibleAt).objects.invExt := by
+  rw [replenishOnCore_objects]; exact h
+
+/-- WS-SM SM5.H.4: `migrateSchedContextReplenishment` preserves `invExt`. -/
+theorem migrateSchedContextReplenishment_preserves_objects_invExt (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) (h : st.objects.invExt) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).objects.invExt := by
+  rw [migrateSchedContextReplenishment_objects]; exact h
+
+/-- WS-SM SM5.H.4: the run-queue migration preserves `invExt`. -/
+theorem migrateRunQueueOnAffinityChange_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (h : st.objects.invExt) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).objects.invExt := by
+  rw [migrateRunQueueOnAffinityChange_objects]; exact h
+
+/-- WS-SM SM5.H.4: the full affinity-change composite preserves `invExt` — the
+affinity write preserves it (the only object write is the target TCB's affinity
+field, an insert at an existing key), and the replenish / run-queue migrations
+never touch the object store. -/
+theorem setThreadCpuAffinityWithMigration_preserves_objects_invExt (st : SystemState)
+    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (hInv : st.objects.invExt) (st' : SystemState × Option (CoreId × SgiKind))
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    st'.1.objects.invExt := by
+  cases hTcb : st.getTcb? targetTid with
+  | none =>
+      rw [setThreadCpuAffinityWithMigration_error_of_no_tcb st targetTid affinity executingCore hTcb] at hStep
+      simp at hStep
+  | some tcb =>
+      obtain ⟨stSet, hSet⟩ := setThreadCpuAffinity_ok_of_tcb st targetTid affinity tcb hTcb
+      have hStInv : stSet.objects.invExt :=
+        setThreadCpuAffinity_preserves_objects_invExt st targetTid affinity stSet hInv hSet
+      cases hBind : tcb.schedContextBinding.scId? with
+      | some scId =>
+          rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
+                tcb scId hTcb hBind stSet hSet st' hStep,
+              migrateRunQueueOnAffinityChange_objects, migrateSchedContextReplenishment_objects]
+          exact hStInv
+      | none =>
+          rw [setThreadCpuAffinityWithMigration_unbound_state_eq st targetTid affinity executingCore
+                tcb hTcb hBind stSet hSet st' hStep,
+              migrateRunQueueOnAffinityChange_objects]
+          exact hStInv
+
+-- ============================================================================
+-- §10  SM5.H (A1) — lock-set footprints over `SchedLockId`
+-- ============================================================================
+--
+-- Every SM5.H operation declares its cross-domain lock footprint over the SM5.A
+-- `SchedLockId` order (object < runQueue < replenishQueue, plan §4.4, then by
+-- `core.val` within a kind).  The migration / composite are the first SM5
+-- operations holding **two locks of the same kind** (`replenishQueue ⟨fromCore⟩`
+-- and `⟨toCore⟩`, / `runQueue` likewise); their ascending acquisition order (the
+-- SM3.D deadlock-freedom ladder) is certified by `_pairwise_le_of_core_le` under
+-- `fromCore.val ≤ toCore.val` (the canonical order the SM3.B `lockAcquireSequence`
+-- sort produces for either argument order).
+
+/-- WS-SM SM5.H.2 (lock-set): `replenishOnCore c` writes only core `c`'s
+replenish-queue slot. -/
+def replenishOnCoreLockSet (c : CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.replenishQueue ⟨c⟩, .write) ]
+
+/-- SM5.H.2: the footprint is the single per-core replenish-queue write lock. -/
+@[simp] theorem replenishOnCoreLockSet_length (c : CoreId) :
+    (replenishOnCoreLockSet c).length = 1 := rfl
+
+/-- SM5.H.2: the footprint is write-only. -/
+theorem replenishOnCoreLockSet_write_only (c : CoreId) :
+    ∀ p ∈ replenishOnCoreLockSet c, p.2 = Concurrency.AccessMode.write := by
+  intro p hp; simp only [replenishOnCoreLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  subst hp; rfl
+
+/-- SM5.H.2: the footprint contains core `c`'s replenish-queue write lock. -/
+theorem replenishOnCoreLockSet_contains_replenishQueue_write (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ replenishOnCoreLockSet c := by
+  simp [replenishOnCoreLockSet]
+
+/-- SM5.H.2: the footprint is within the SM3.D `maxLockSetSize` (= 8) cap. -/
+theorem replenishOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
+    (replenishOnCoreLockSet c).length ≤ 8 := by rw [replenishOnCoreLockSet_length]; decide
+
+/-- WS-SM SM5.H.4 (lock-set): `migrateSchedContextReplenishment fromCore toCore`
+writes both cores' replenish-queue slots. -/
+def migrateSchedContextReplenishmentLockSet (fromCore toCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.replenishQueue ⟨fromCore⟩, .write)
+  , (SchedLockId.replenishQueue ⟨toCore⟩, .write) ]
+
+/-- SM5.H.4: the migration footprint is the two replenish-queue write locks. -/
+@[simp] theorem migrateSchedContextReplenishmentLockSet_length (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishmentLockSet fromCore toCore).length = 2 := rfl
+
+/-- SM5.H.4: the migration footprint is write-only. -/
+theorem migrateSchedContextReplenishmentLockSet_write_only (fromCore toCore : CoreId) :
+    ∀ p ∈ migrateSchedContextReplenishmentLockSet fromCore toCore, p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h <;> subst h <;> rfl
+
+/-- SM5.H.4: for distinct cores the migration footprint's keys are duplicate-free. -/
+theorem migrateSchedContextReplenishmentLockSet_keys_nodup (fromCore toCore : CoreId)
+    (h : fromCore ≠ toCore) :
+    ((migrateSchedContextReplenishmentLockSet fromCore toCore).map (·.1)).Nodup := by
+  simp only [migrateSchedContextReplenishmentLockSet, List.map_cons, List.map_nil]
+  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
+  rw [List.mem_singleton] at ha; subst ha
+  intro hEq
+  exact h (congrArg ReplenishQueueLockId.core (SchedLockId.replenishQueue.inj hEq))
+
+/-- SM5.H.4 (plan §4.4 / SM3.D ladder): under the canonical core order
+`fromCore.val ≤ toCore.val`, the migration footprint's keys are ascending — a valid
+`withLockSet` acquisition sequence. -/
+theorem migrateSchedContextReplenishmentLockSet_pairwise_le_of_core_le (fromCore toCore : CoreId)
+    (h : fromCore.val ≤ toCore.val) :
+    ((migrateSchedContextReplenishmentLockSet fromCore toCore).map (·.1)).Pairwise (· ≤ ·) := by
+  simp only [migrateSchedContextReplenishmentLockSet, List.map_cons, List.map_nil]
+  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
+  rw [List.mem_singleton] at ha; subst ha; exact h
+
+/-- SM5.H.4: the migration footprint is within the `maxLockSetSize` cap. -/
+theorem migrateSchedContextReplenishmentLockSet_size_le_maxLockSetSize (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishmentLockSet fromCore toCore).length ≤ 8 := by
+  rw [migrateSchedContextReplenishmentLockSet_length]; decide
+
+/-- WS-SM SM5.H.4 (lock-set): `migrateRunQueueOnAffinityChange fromCore toCore`
+writes both cores' run-queue slots. -/
+def migrateRunQueueOnAffinityChangeLockSet (fromCore toCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.runQueue ⟨fromCore⟩, .write)
+  , (SchedLockId.runQueue ⟨toCore⟩, .write) ]
+
+/-- SM5.H.4: the run-queue-migration footprint is the two run-queue write locks. -/
+@[simp] theorem migrateRunQueueOnAffinityChangeLockSet_length (fromCore toCore : CoreId) :
+    (migrateRunQueueOnAffinityChangeLockSet fromCore toCore).length = 2 := rfl
+
+/-- SM5.H.4: under the canonical core order the run-queue-migration footprint's keys
+are ascending. -/
+theorem migrateRunQueueOnAffinityChangeLockSet_pairwise_le_of_core_le (fromCore toCore : CoreId)
+    (h : fromCore.val ≤ toCore.val) :
+    ((migrateRunQueueOnAffinityChangeLockSet fromCore toCore).map (·.1)).Pairwise (· ≤ ·) := by
+  simp only [migrateRunQueueOnAffinityChangeLockSet, List.map_cons, List.map_nil]
+  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
+  rw [List.mem_singleton] at ha; subst ha; exact h
+
+/-- WS-SM SM5.H.4 (lock-set): the **complete** footprint of the full
+affinity-change-with-migration composite — the object-store write lock (the
+affinity write, an SM3.A.10 table-level write), the two run-queue write locks
+(the run-queue migration), and the two replenish-queue write locks (the
+replenishment migration), in plan §4.4 ascending order (object < runQueue <
+replenishQueue, then by `core.val`).  This is the footprint a `withLockSet`
+caller (the SM5.I `tcbSetAffinity` runtime path) acquires. -/
+def setThreadCpuAffinityWithMigrationLockSet (oldCore newCore : CoreId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  [ (SchedLockId.object schedObjStoreLockId, .write)
+  , (SchedLockId.runQueue ⟨oldCore⟩, .write)
+  , (SchedLockId.runQueue ⟨newCore⟩, .write)
+  , (SchedLockId.replenishQueue ⟨oldCore⟩, .write)
+  , (SchedLockId.replenishQueue ⟨newCore⟩, .write) ]
+
+/-- SM5.H.4: the composite footprint has the five cross-domain write locks. -/
+@[simp] theorem setThreadCpuAffinityWithMigrationLockSet_length (oldCore newCore : CoreId) :
+    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length = 5 := rfl
+
+/-- SM5.H.4: the composite footprint is write-only. -/
+theorem setThreadCpuAffinityWithMigrationLockSet_write_only (oldCore newCore : CoreId) :
+    ∀ p ∈ setThreadCpuAffinityWithMigrationLockSet oldCore newCore,
+      p.2 = Concurrency.AccessMode.write := by
+  intro p hp
+  simp only [setThreadCpuAffinityWithMigrationLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
+  rcases hp with h | h | h | h | h <;> subst h <;> rfl
+
+/-- SM5.H.4: the composite footprint contains the object-store write lock (the
+affinity write). -/
+theorem setThreadCpuAffinityWithMigrationLockSet_contains_objStore_write (oldCore newCore : CoreId) :
+    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
+      ∈ setThreadCpuAffinityWithMigrationLockSet oldCore newCore := by
+  simp [setThreadCpuAffinityWithMigrationLockSet]
+
+/-- SM5.H.4 (plan §4.4 / SM3.D ladder): under the canonical core order
+`oldCore.val ≤ newCore.val`, the composite footprint's keys form an ascending
+acquisition sequence (object < runQueue < replenishQueue, then by core). -/
+theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore newCore : CoreId)
+    (h : oldCore.val ≤ newCore.val) :
+    ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) := by
+  have hObjRq : ∀ (r : RunQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.runQueue r :=
+    fun r => (SchedLockId.object_lt_runQueue _ _).1
+  have hObjRpq : ∀ (r : ReplenishQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.replenishQueue r :=
+    fun r => (SchedLockId.object_lt_replenishQueue _ _).1
+  have hRqRpq : ∀ (q : RunQueueLockId) (r : ReplenishQueueLockId),
+      SchedLockId.runQueue q ≤ SchedLockId.replenishQueue r := fun q r => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  simp only [setThreadCpuAffinityWithMigrationLockSet, List.map_cons, List.map_nil]
+  refine List.Pairwise.cons (fun a ha => ?_) (List.Pairwise.cons (fun a ha => ?_)
+    (List.Pairwise.cons (fun a ha => ?_) (List.Pairwise.cons (fun a ha => ?_)
+      (List.pairwise_singleton _ _))))
+  · rcases List.mem_cons.mp ha with rfl | ha
+    · exact hObjRq _
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact hObjRq _
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact hObjRpq _
+    rcases List.mem_singleton.mp ha with rfl; exact hObjRpq _
+  · rcases List.mem_cons.mp ha with rfl | ha
+    · exact h
+    rcases List.mem_cons.mp ha with rfl | ha
+    · exact hRqRpq _ _
+    rcases List.mem_singleton.mp ha with rfl; exact hRqRpq _ _
+  · rcases List.mem_cons.mp ha with rfl | ha
+    · exact hRqRpq _ _
+    rcases List.mem_singleton.mp ha with rfl; exact hRqRpq _ _
+  · rcases List.mem_singleton.mp ha with rfl; exact h
+
+/-- SM5.H.4 (WCRT): the composite footprint (5 locks) is within the SM3.D
+`maxLockSetSize` (= 8) cap — so its worst-case lock-wait is bounded. -/
+theorem setThreadCpuAffinityWithMigrationLockSet_size_le_maxLockSetSize (oldCore newCore : CoreId) :
+    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length ≤ 8 := by
+  rw [setThreadCpuAffinityWithMigrationLockSet_length]; decide
+
+-- ============================================================================
+-- §11  SM5.H.4 — Scheduler-invariant (`runQueueOnCoreWellFormed`) preservation
+--      for the full-thread-migration run-queue move + the whole composite.
+--
+-- The "Full thread migration" decision (the composite also dequeues the thread
+-- from its old core's run queue and re-enqueues on the new core) makes
+-- `runQueueOnCoreWellFormed` preservation a genuine obligation: a per-core
+-- transition that rewrites two run-queue slots must keep both well-formed, else
+-- `chooseThreadOnCore` (which assumes well-formedness) could fault.  The move is
+-- a `remove` on the old slot + an `insert` on the new slot, both
+-- well-formedness-preserving (`RunQueue.remove_preserves_wellFormed` /
+-- `insert_preserves_wellFormed`); every other core's slot is framed untouched.
+-- ============================================================================
+
+/-- WS-SM SM5.H.4: the run-queue migration preserves run-queue well-formedness on
+**every** core.  In the write branch it `remove`s `tid` from `fromCore`'s slot and
+`insert`s it into `toCore`'s — both preserve `RunQueue.wellFormed`; every other
+core's slot is left untouched (framed by the SM4.B per-core set/get algebra). -/
+theorem migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
+    (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
+    (h : runQueueOnCoreWellFormed st.scheduler c') :
+    runQueueOnCoreWellFormed (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler c' := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · exact h
+  · split
+    · exact h
+    · split
+      · -- write branch: scheduler = (setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo
+        rename_i tcb _ _
+        unfold runQueueOnCoreWellFormed at h ⊢
+        by_cases hToc : toCore = c'
+        · subst hToc
+          simp only [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact RunQueue.insert_preserves_wellFormed _ h _ _
+        · rw [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hToc]
+          by_cases hFromc : fromCore = c'
+          · subst hFromc
+            simp only [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.remove_preserves_wellFormed _ h _
+          · rw [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hFromc]
+            exact h
+      · exact h
+
+/-- WS-SM SM5.H.4 (frame): the replenishment migration leaves **every** run-queue
+slot untouched (it writes only replenish-queue slots) — so it preserves
+run-queue well-formedness on every core trivially. -/
+@[simp] theorem migrateSchedContextReplenishment_runQueueOnCore (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore c' : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.runQueueOnCore c'
+      = st.scheduler.runQueueOnCore c' := by
+  unfold migrateSchedContextReplenishment
+  split
+  · rfl
+  · simp
+
+/-- WS-SM SM5.H.4: the **full** affinity-change-with-migration composite preserves
+run-queue well-formedness on every core.  Decomposes into the affinity write
+(leaves the scheduler untouched), the optional replenishment migration (leaves
+every run-queue slot untouched), and the run-queue migration
+(`migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed`). -/
+theorem setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore c' : CoreId) (tcb : TCB)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (h : runQueueOnCoreWellFormed st.scheduler c')
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    runQueueOnCoreWellFormed st'.1.scheduler c' := by
+  obtain ⟨stSet, hSet⟩ := setThreadCpuAffinity_ok_of_tcb st targetTid affinity tcb hTcb
+  -- `stSet` shares `st`'s scheduler (the affinity write touches only the TCB object).
+  have hSetSched : stSet.scheduler = st.scheduler :=
+    setThreadCpuAffinity_preserves_scheduler st targetTid affinity stSet hSet
+  have hSetWf : runQueueOnCoreWellFormed stSet.scheduler c' := by
+    unfold runQueueOnCoreWellFormed at h ⊢; rw [hSetSched]; exact h
+  cases hBind : tcb.schedContextBinding.scId? with
+  | some scId =>
+      rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
+        tcb scId hTcb hBind stSet hSet st' hStep]
+      apply migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
+      -- run-queue migration's input is the replenishment migration of `stSet`.
+      unfold runQueueOnCoreWellFormed at hSetWf ⊢
+      rw [migrateSchedContextReplenishment_runQueueOnCore]
+      exact hSetWf
+  | none =>
+      rw [setThreadCpuAffinityWithMigration_unbound_state_eq st targetTid affinity executingCore
+        tcb hTcb hBind stSet hSet st' hStep]
+      exact migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
+        stSet targetTid _ _ c' hSetWf
+
+-- ============================================================================
+-- §12  SM5.H.4 (B7) — grounding the `hUnique` 1:1-binding hypothesis in the
+--      live `schedContextBindingConsistent` invariant.
+--
+-- The headline `schedContextMigration_consistent` takes `hUnique` (a thread is
+-- bound by at most one SchedContext) as a hypothesis.  It is not assumed: it is
+-- a *consequence* of the maintained `schedContextBindingConsistent` invariant —
+-- a SchedContext bound to `targetTid` forces `targetTid`'s (unique) TCB binding
+-- to name that SchedContext, so two SchedContexts bound to the same thread name
+-- the same id.  This grounds `hUnique`, so the migration restoration discharges
+-- from the live invariant surface (the form SM5.I consumes).
+-- ============================================================================
+
+/-- WS-SM SM5.H.4 (B7): under `schedContextBindingConsistent`, a thread is bound by
+**at most one** SchedContext — the `hUnique` hypothesis of the headline migration
+theorem, derived rather than assumed.  Two SchedContexts both reporting
+`boundThread = some targetTid` force `targetTid`'s unique TCB binding to name each
+of their ids, so the ids coincide. -/
+theorem schedContextBindingConsistent_boundThread_unique
+    (st : SystemState) (targetTid : SeLe4n.ThreadId)
+    (hCons : schedContextBindingConsistent st)
+    (scId : SchedContextId) (sc : SchedContext)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hBound : sc.boundThread = some targetTid) :
+    ∀ (scId'' : SchedContextId) (sc'' : SchedContext),
+      st.getSchedContext? scId'' = some sc'' → sc''.boundThread = some targetTid → scId'' = scId := by
+  intro scId'' sc'' hSc'' hBound''
+  obtain ⟨tcb, hTcb, hb⟩ := hCons.2 scId sc
+    ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc) targetTid hBound
+  obtain ⟨tcb'', hTcb'', hb''⟩ := hCons.2 scId'' sc''
+    ((SystemState.getSchedContext?_eq_some_iff st scId'' sc'').mp hSc'') targetTid hBound''
+  -- The TCB at `targetTid` is unique, so `tcb'' = tcb`.
+  rw [hTcb] at hTcb''
+  injection hTcb'' with hObjEq
+  injection hObjEq with htcbEq
+  subst htcbEq
+  -- `tcb.schedContextBinding` is a single value naming both ids.
+  rcases hb with hb | ⟨_, hb⟩ <;> rcases hb'' with hb'' | ⟨_, hb''⟩
+  · exact SchedContextBinding.bound.inj (hb''.symm.trans hb)
+  · exact absurd (hb''.symm.trans hb) (by simp)
+  · exact absurd (hb''.symm.trans hb) (by simp)
+  · exact (SchedContextBinding.donated.inj (hb''.symm.trans hb)).1
+
+/-- WS-SM SM5.H.4 (B7, grounded headline): the full affinity-change-with-migration
+composite restores per-core CBS affinity consistency, with the 1:1-binding
+hypothesis **discharged from the live `schedContextBindingConsistent`
+invariant** — the form the SM5.I per-core run loop consumes (it maintains
+`schedContextBindingConsistent`, not the bare `hUnique`). -/
+theorem schedContextMigration_consistent_of_bindingConsistent
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hInv : st.objects.invExt)
+    (hBind : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hBound : sc.boundThread = some targetTid)
+    (hBindCons : schedContextBindingConsistent st)
+    (hCons : ∀ c, replenishQueueAffinityConsistentOnCore st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    replenishQueueAffinityConsistent_smp st'.1 :=
+  schedContextMigration_consistent st targetTid affinity executingCore tcb scId sc st'
+    hTcb hInv hBind hSc hBound
+    (schedContextBindingConsistent_boundThread_unique st targetTid hBindCons scId sc hSc hBound)
+    hCons hStep
+
+-- ============================================================================
+-- §13  SM5.H.4 (A5) — the FULL composite preserves the per-core CBS invariant
+--      (`replenishQueueValid` + `replenishmentPipelineOrder` + affinity
+--      consistency) on **every** core.
+--
+-- Decomposes the composite into its three production steps — the affinity write
+-- (scheduler + machine untouched), the optional replenishment migration (the
+-- SM5.H.3 / SM5.H.6 preservation), and the run-queue migration (frames every
+-- replenish queue + the machine timer) — and bundles them with the §12 grounded
+-- affinity restoration into the single per-core CBS-invariant SMP preservation.
+-- ============================================================================
+
+/-- WS-SM SM5.H.4: the affinity write leaves the machine state untouched (its only
+write is the target TCB's `cpuAffinity` field in the object store). -/
+theorem setThreadCpuAffinity_machine (st : SystemState) (targetTid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) (stSet : SystemState)
+    (h : setThreadCpuAffinity st targetTid affinity = .ok stSet) :
+    stSet.machine = st.machine := by
+  unfold setThreadCpuAffinity at h
+  cases hTcb : st.getTcb? targetTid with
+  | none => simp [hTcb] at h
+  | some tcb => simp only [hTcb, Except.ok.injEq] at h; subst h; rfl
+
+/-- WS-SM SM5.H.4 (A5): the full composite preserves replenish-queue **validity**
+on every core.  The affinity write shares `st`'s scheduler, the replenishment
+migration preserves validity (SM5.H.3), and the run-queue migration frames every
+replenish queue. -/
+theorem setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hValid : ∀ c, replenishQueueValidOnCore st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    ∀ c, replenishQueueValidOnCore st'.1 c := by
+  obtain ⟨stSet, hSet⟩ := setThreadCpuAffinity_ok_of_tcb st targetTid affinity tcb hTcb
+  have hSetSched := setThreadCpuAffinity_preserves_scheduler st targetTid affinity stSet hSet
+  have hSetValid : ∀ c, replenishQueueValidOnCore stSet c := fun c =>
+    (replenishQueueValidOnCore_frame (by rw [hSetSched])).mpr (hValid c)
+  cases hBind : tcb.schedContextBinding.scId? with
+  | some scId =>
+      rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
+        tcb scId hTcb hBind stSet hSet st' hStep]
+      intro c
+      exact (replenishQueueValidOnCore_frame
+        (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)).mpr
+          (migrateSchedContextReplenishment_preserves_replenishQueueValid_smp stSet scId _ _ hSetValid c)
+  | none =>
+      rw [setThreadCpuAffinityWithMigration_unbound_state_eq st targetTid affinity executingCore
+        tcb hTcb hBind stSet hSet st' hStep]
+      intro c
+      exact (replenishQueueValidOnCore_frame
+        (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)).mpr (hSetValid c)
+
+/-- WS-SM SM5.H.4 (A5): the full composite preserves replenishment-**pipeline
+order** on every core.  None of the three steps advances the machine timer, and
+only the replenishment migration relocates existing (future) entries (SM5.H.6). -/
+theorem setThreadCpuAffinityWithMigration_preserves_replenishmentPipelineOrder_smp
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hPipeline : ∀ c, replenishmentPipelineOrderOnCore st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    ∀ c, replenishmentPipelineOrderOnCore st'.1 c := by
+  obtain ⟨stSet, hSet⟩ := setThreadCpuAffinity_ok_of_tcb st targetTid affinity tcb hTcb
+  have hSetSched := setThreadCpuAffinity_preserves_scheduler st targetTid affinity stSet hSet
+  have hSetMach := setThreadCpuAffinity_machine st targetTid affinity stSet hSet
+  have hSetPipe : ∀ c, replenishmentPipelineOrderOnCore stSet c := fun c =>
+    (replenishmentPipelineOrderOnCore_frame (by rw [hSetSched]) (by rw [hSetMach])).mpr (hPipeline c)
+  cases hBind : tcb.schedContextBinding.scId? with
+  | some scId =>
+      rw [setThreadCpuAffinityWithMigration_bound_state_eq st targetTid affinity executingCore
+        tcb scId hTcb hBind stSet hSet st' hStep]
+      intro c
+      exact (replenishmentPipelineOrderOnCore_frame
+        (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)
+        (congrArg (·.timer) (migrateRunQueueOnAffinityChange_machine _ _ _ _))).mpr
+          (migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp stSet scId _ _ hSetPipe c)
+  | none =>
+      rw [setThreadCpuAffinityWithMigration_unbound_state_eq st targetTid affinity executingCore
+        tcb hTcb hBind stSet hSet st' hStep]
+      intro c
+      exact (replenishmentPipelineOrderOnCore_frame
+        (migrateRunQueueOnAffinityChange_replenishQueueOnCore _ _ _ _ c)
+        (congrArg (·.timer) (migrateRunQueueOnAffinityChange_machine _ _ _ _))).mpr (hSetPipe c)
+
+/-- WS-SM SM5.H.4 (A5, the bundle): the full affinity-change-with-migration
+composite preserves the **aggregate per-core CBS invariant**
+(`perCoreCbsInvariant`) on **every** core, for a SchedContext-bound target, with
+all hypotheses discharged from the live invariant surface
+(`schedContextBindingConsistent`, `objects.invExt`, the per-core CBS invariant on
+every core).  This is the SM5.I-consumed closure: the syscall path can migrate a
+thread's affinity and know the whole CBS bookkeeping stays well-formed,
+future-ordered, and affinity-consistent. -/
+theorem setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId)
+    (tcb : TCB) (scId : SchedContextId) (sc : SchedContext)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hInv : st.objects.invExt)
+    (hBind : tcb.schedContextBinding.scId? = some scId)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hBound : sc.boundThread = some targetTid)
+    (hBindCons : schedContextBindingConsistent st)
+    (hCbs : ∀ c, perCoreCbsInvariant st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    ∀ c, perCoreCbsInvariant st'.1 c := by
+  have hValid := setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp
+    st targetTid affinity executingCore tcb st' hTcb (fun c => (hCbs c).1) hStep
+  have hPipe := setThreadCpuAffinityWithMigration_preserves_replenishmentPipelineOrder_smp
+    st targetTid affinity executingCore tcb st' hTcb (fun c => (hCbs c).2.1) hStep
+  have hAff := schedContextMigration_consistent_of_bindingConsistent
+    st targetTid affinity executingCore tcb scId sc st' hTcb hInv hBind hSc hBound hBindCons
+    (fun c => (hCbs c).2.2) hStep
+  exact fun c => ⟨hValid c, hPipe c, hAff c⟩
+
+-- ============================================================================
+-- §14  SM5.H.2 (A2/A4) — the production live-tick CBS bridge: the per-core timer
+--      tick's replenish write IS `replenishOnCore`, and the tick preserves
+--      replenish-queue validity on every core.
+--
+-- `replenishOnCore` / `replenishScOnCore` are the named SM5.H.2 CBS-replenishment
+-- primitives.  `timerTickBudgetOnCore`'s bound-budget-exhausted branch open-codes
+-- the *same* insert; this section proves they coincide, making the abstract
+-- primitives the verified characterisation of the live CBS engine.  The bridge
+-- rests on a small replenish-queue frame chain: the budget-exhausted branch's
+-- only post-insert step (`timeoutBlockedThreads`) re-enqueues / reverts PIP for
+-- IPC-blocked threads, touching only run-queue + object-store slots — never the
+-- replenish queue.
+-- ============================================================================
+
+/-- WS-SM SM5.H (frame): a PIP-boost update never touches any replenish queue (it
+writes only the boosted thread's TCB object + its boot-core run-queue bucket). -/
+theorem updatePipBoost_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (PriorityInheritance.updatePipBoost st tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  simp only [PriorityInheritance.updatePipBoost]
+  split
+  · rename_i tcb hObj
+    split
+    · rfl
+    · split
+      · split
+        · rfl
+        · rfl
+      · rfl
+  · rfl
+
+/-- WS-SM SM5.H (frame): reverting priority inheritance never touches any
+replenish queue (every recursion step is a `updatePipBoost`). -/
+theorem revertPriorityInheritance_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) (fuel : Nat) :
+    (PriorityInheritance.revertPriorityInheritance st tid fuel).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  induction fuel generalizing st tid with
+  | zero => rfl
+  | succ n ih =>
+    unfold PriorityInheritance.revertPriorityInheritance
+    split
+    · rw [ih]; exact updatePipBoost_replenishQueueOnCore st tid c
+    · exact updatePipBoost_replenishQueueOnCore st tid c
+
+/-- WS-SM SM5.H (frame): making a thread runnable never touches any replenish
+queue (it writes only the boot-core run-queue slot). -/
+theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (ensureRunnable st tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold ensureRunnable
+  split
+  · rfl
+  · split
+    · simp
+    · rfl
+
+/-- WS-SM SM5.H (frame): timing out one IPC-blocked thread never touches any
+replenish queue.  Its steps are an endpoint-queue removal (scheduler-invariant),
+a TCB store (scheduler-invariant), a run-queue re-enqueue, and a PIP reversion —
+all replenish-queue-preserving. -/
+theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st st' : SystemState) (c : CoreId)
+    (h : timeoutThread epId isReceiveQ tid st = .ok st') :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold timeoutThread at h
+  split at h
+  · simp at h
+  · rename_i st1 hER
+    have hSched1 := endpointQueueRemove_scheduler_eq epId isReceiveQ tid st st1 hER
+    split at h
+    · simp at h
+    · rename_i tcb hLk
+      simp only [storeObject] at h
+      split at h <;>
+        · simp only [Except.ok.injEq] at h
+          subst h
+          first
+            | rw [revertPriorityInheritance_replenishQueueOnCore]
+            | skip
+          rw [ensureRunnable_replenishQueueOnCore]
+          show st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
+          rw [hSched1]
+
+/-- WS-SM SM5.H (frame): timing out **all** of a SchedContext's IPC-blocked threads
+never touches any replenish queue (each step is a `timeoutThread`). -/
+theorem timeoutBlockedThreads_replenishQueueOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (c : CoreId) :
+    (timeoutBlockedThreads st scId).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold timeoutBlockedThreads
+  -- prove the fold preserves the queue from any accumulator
+  suffices hFold : ∀ (tids : List SeLe4n.ThreadId)
+      (acc : SystemState × List (SeLe4n.ThreadId × KernelError)),
+      (tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+        match acc.1.getTcb? tid with
+        | some tcb =>
+          match tcbBlockingInfo tcb with
+          | some (epId, isReceiveQ) =>
+            match timeoutThread epId isReceiveQ tid acc.1 with
+            | .ok st'' => (st'', acc.2)
+            | .error e => (acc.1, acc.2 ++ [(tid, e)])
+          | none => (acc.1, acc.2)
+        | none => (acc.1, acc.2)) acc).1.scheduler.replenishQueueOnCore c
+        = acc.1.scheduler.replenishQueueOnCore c by
+    exact hFold _ (st, [])
+  intro tids
+  induction tids with
+  | nil => intro acc; rfl
+  | cons hd tail ih =>
+    intro acc
+    rw [List.foldl_cons, ih]
+    -- the single head step preserves the queue
+    split
+    · split
+      · split
+        · next st'' heqTo =>
+            exact timeoutThread_replenishQueueOnCore _ _ hd acc.1 st'' c heqTo
+        · rfl
+      · rfl
+    · rfl
+
+/-- WS-SM SM5.H.2 (A2, the production bridge): in the budget-**exhausted** branch the
+live per-core timer tick's replenish-queue write on **every** core is exactly the
+abstract `replenishOnCore` primitive's (scheduling `scId` at `now + sc.period`).
+The post-insert `timeoutBlockedThreads` + `setLastTimeoutErrors` steps frame every
+replenish queue, so the abstract primitive is the verified characterisation of the
+live CBS engine. -/
+theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext) (st' : SystemState) (b : Bool)
+    (hBound : tcb.schedContextBinding = .bound scId)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) (c' : CoreId) :
+    st'.scheduler.replenishQueueOnCore c'
+      = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
+  simp only [timerTickBudgetOnCore, hBound, hSc, if_pos hBudget, Except.ok.injEq,
+    Prod.mk.injEq] at hStep
+  obtain ⟨hst, _⟩ := hStep
+  subst hst
+  simp only [replenishOnCore,
+    SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
+    timeoutBlockedThreads_replenishQueueOnCore,
+    SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+
+/-- WS-SM SM5.H.4 (A4): the per-core budget tick preserves replenish-queue validity
+on **every** core.  The unbound and bound-not-exhausted branches leave every
+replenish queue untouched; the bound/donated-exhausted branch's write is the
+SM5.H.2 `replenishOnCore` insert (A2 bridge), which preserves validity (SM5.H.3).
+The per-core CBS-validity half of the SM5.I live-tick maintenance obligation. -/
+theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId) (sc : SchedContext)
+    (st' : SystemState) (b : Bool)
+    (hDonated : tcb.schedContextBinding = .donated scId owner)
+    (hSc : st.getSchedContext? scId = some sc)
+    (hBudget : sc.budgetRemaining.val ≤ 1)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) (c' : CoreId) :
+    st'.scheduler.replenishQueueOnCore c'
+      = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
+  simp only [timerTickBudgetOnCore, hDonated, hSc, if_pos hBudget, Except.ok.injEq,
+    Prod.mk.injEq] at hStep
+  obtain ⟨hst, _⟩ := hStep
+  subst hst
+  simp only [replenishOnCore,
+    SeLe4n.Model.SchedulerState.setLastTimeoutErrorsOnCore_replenishQueueOnCore,
+    timeoutBlockedThreads_replenishQueueOnCore,
+    SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+
+theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st' : SystemState) (b : Bool) (c' : CoreId)
+    (hValid : ∀ c'', replenishQueueValidOnCore st c'')
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b)) :
+    replenishQueueValidOnCore st' c' := by
+  match hB : tcb.schedContextBinding with
+  | .unbound =>
+      simp only [timerTickBudgetOnCore, hB] at hStep
+      split at hStep <;>
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨hst, _⟩ := hStep; subst hst
+          refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
+  | .bound scId =>
+      match hSc : st.getSchedContext? scId with
+      | some sc =>
+          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_bound_exhausted_replenish_eq
+              st c tid tcb scId sc st' b hB hSc hBud hStep c'))]
+            exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
+          · simp only [timerTickBudgetOnCore, hB, hSc, if_neg hBud, Except.ok.injEq,
+              Prod.mk.injEq] at hStep
+            obtain ⟨hst, _⟩ := hStep; subst hst
+            refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
+      | none =>
+          simp only [timerTickBudgetOnCore, hB, hSc] at hStep
+          exact absurd hStep (by simp)
+  | .donated scId owner =>
+      match hSc : st.getSchedContext? scId with
+      | some sc =>
+          by_cases hBud : sc.budgetRemaining.val ≤ 1
+          · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_donated_exhausted_replenish_eq
+              st c tid tcb scId owner sc st' b hB hSc hBud hStep c'))]
+            exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
+          · simp only [timerTickBudgetOnCore, hB, hSc, if_neg hBud, Except.ok.injEq,
+              Prod.mk.injEq] at hStep
+            obtain ⟨hst, _⟩ := hStep; subst hst
+            refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
+      | none =>
+          simp only [timerTickBudgetOnCore, hB, hSc] at hStep
+          exact absurd hStep (by simp)
+
+-- ============================================================================
+-- §15  SM5.H.4 (C10) — memory-model happens-before for the migration's
+--      cross-core visibility.
+--
+-- When the full-thread-migration composite re-homes a thread to a *remote* core
+-- and emits the `.reschedule` SGI, the executing core's release-store of the
+-- migrated thread's new run-queue / replenish-queue slots must be visible on the
+-- new home core before that core takes the SGI and re-runs its scheduler.  This
+-- is the *same* BKL release→acquire ordering the wake (SM5.C.4) and the PIP boost
+-- (SM5.F.4) establish — the `dsb ish`-before-`GICD_SGIR` discipline (SM1.F.8) —
+-- so we lift the verified `wakeOrdering_*` memory-model results; the events differ
+-- only in *meaning* (the published location carries the migrated thread's new home
+-- placement rather than a wake's run-queue insertion).
+-- ============================================================================
+
+/-- WS-SM SM5.H.4 (memory-model synchronizes-with): the migrating (executing) core's
+release-store of the re-homed thread's new run-queue bucket **synchronizes-with** the
+new home core's acquire-load when it services the migration's `.reschedule` SGI — the
+ARM ARM B2.3.7 release/acquire edge the `dsb ish`-before-`GICD_SGIR` discipline
+(SM1.F.8) establishes.  Lifts `wakeOrdering_synchronizesWith` (same trace shape). -/
+theorem affinityMigrationOrdering_synchronizesWith
+    (execCore newHomeCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (loc : SeLe4n.Kernel.Concurrency.AtomicLocation) (v : Nat) :
+    SeLe4n.Kernel.Concurrency.synchronizesWith
+      (SeLe4n.Kernel.Concurrency.wakeOrderingTrace execCore newHomeCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeReleaseEvent execCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeAcquireEvent newHomeCore loc v) :=
+  SeLe4n.Kernel.Concurrency.wakeOrdering_synchronizesWith execCore newHomeCore loc v
+
+/-- WS-SM SM5.H.4 (memory-model headline HB): the migration's re-homing publication
+**happens-before** the new home core observes it on the `.reschedule` SGI.  When the
+new home core services the SGI and re-runs `handleRescheduleSgiOnCore`, the migrated
+thread's run-queue + replenish-queue placement is *guaranteed visible* — the
+machine-checked statement of the migration's BKL ordering ("emit the SGI after the
+re-homing is visible"), the affinity-migration analogue of `wakeOrdering_happensBefore`. -/
+theorem affinityMigrationOrdering_happensBefore
+    (execCore newHomeCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (loc : SeLe4n.Kernel.Concurrency.AtomicLocation) (v : Nat) :
+    SeLe4n.Kernel.Concurrency.happensBefore
+      (SeLe4n.Kernel.Concurrency.wakeOrderingTrace execCore newHomeCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeReleaseEvent execCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeAcquireEvent newHomeCore loc v) :=
+  SeLe4n.Kernel.Concurrency.wakeOrdering_happensBefore execCore newHomeCore loc v
+
+-- ============================================================================
+-- §16  SM5.H.4 (D15) — the run-queue migration preserves the SM4.C scheduler
+--      invariant `schedContextRunQueueConsistent_perCore` (run-queue membership
+--      ⇒ positive SchedContext budget) on every core.
+--
+-- The full-thread-migration run-queue move relocates a thread's run-queue entry
+-- but never touches the object store, so every queued thread's budget is framed.
+-- A thread added to the new core's queue came from the old core's queue, where —
+-- by the invariant — it had positive budget; a thread is only ever *removed* from
+-- the old core's queue.  Hence the per-core run-queue↔budget consistency is
+-- preserved on every core.
+-- ============================================================================
+
+/-- WS-SM SM5.H.4 (frame): the run-queue migration frames every TCB resolution. -/
+theorem migrateRunQueueOnAffinityChange_getTcb? (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore : CoreId) (tid' : SeLe4n.ThreadId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).getTcb? tid'
+      = st.getTcb? tid' := by
+  unfold SystemState.getTcb?; rw [migrateRunQueueOnAffinityChange_objects]
+
+/-- WS-SM SM5.H.4 (D15): the full-thread-migration run-queue move preserves the SM4.C
+per-core run-queue↔budget consistency on **every** core, given the invariant holds
+on every core pre-migration.  The migrated thread carries its (unchanged) positive
+budget to the new core; every other core's membership only shrinks or is untouched. -/
+theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+    (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
+    (hAll : ∀ c, schedContextRunQueueConsistent_perCore st c) :
+    schedContextRunQueueConsistent_perCore
+      (migrateRunQueueOnAffinityChange st tid fromCore toCore) c' := by
+  intro x hxMem tcb hTcb scId hBind
+  rw [migrateRunQueueOnAffinityChange_getTcb?] at hTcb
+  -- It suffices to find the SchedContext in `st` (objects are framed).
+  suffices h : ∃ sc, st.getSchedContext? scId = some sc ∧ sc.budgetRemaining.val > 0 by
+    obtain ⟨sc, hsc, hbud⟩ := h
+    exact ⟨sc, by rw [migrateRunQueueOnAffinityChange_getSchedContext?]; exact hsc, hbud⟩
+  -- Reduce the membership hypothesis to membership in some `st` run queue.
+  revert hxMem
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · intro hxMem; exact hAll c' x hxMem tcb hTcb scId hBind
+  · split
+    · intro hxMem; exact hAll c' x hxMem tcb hTcb scId hBind
+    · rename_i migTcb _
+      split
+      · -- write branch: the scheduler is the two-core run-queue update.
+        rename_i hContains
+        intro hxMem
+        by_cases hToc : toCore = c'
+        · -- c' = toCore: the migrated `x` is an old member or `tid` itself.
+          subst hToc
+          rw [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hxMem
+          rw [RunQueue.mem_toList_iff_mem, RunQueue.mem_insert] at hxMem
+          rcases hxMem with hOld | hEq
+          · exact hAll toCore x ((RunQueue.mem_toList_iff_mem _ _).mpr hOld) tcb hTcb scId hBind
+          · subst hEq
+            exact hAll fromCore x
+              ((RunQueue.mem_toList_iff_mem _ _).mpr ((RunQueue.mem_iff_contains).mpr hContains))
+              tcb hTcb scId hBind
+        · rw [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hToc] at hxMem
+          by_cases hFromc : fromCore = c'
+          · -- c' = fromCore: a removal can only shrink the membership.
+            subst hFromc
+            rw [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hxMem
+            rw [RunQueue.mem_toList_iff_mem, RunQueue.mem_remove] at hxMem
+            exact hAll fromCore x ((RunQueue.mem_toList_iff_mem _ _).mpr hxMem.1) tcb hTcb scId hBind
+          · rw [SeLe4n.Model.SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hFromc] at hxMem
+            exact hAll c' x hxMem tcb hTcb scId hBind
+      · intro hxMem; exact hAll c' x hxMem tcb hTcb scId hBind
 
 end SeLe4n.Kernel

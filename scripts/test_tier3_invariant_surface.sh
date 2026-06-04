@@ -3811,8 +3811,8 @@ open SeLe4n.Kernel
 #check @migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
 #check @setThreadCpuAffinityWithMigration
 #check @setThreadCpuAffinityWithMigration_error_of_no_tcb
-#check @setThreadCpuAffinityWithMigration_bound_eq
-#check @setThreadCpuAffinityWithMigration_unbound_eq
+#check @setThreadCpuAffinityWithMigration_bound_state_eq
+#check @setThreadCpuAffinityWithMigration_unbound_state_eq
 #check @schedContextMigration_consistent
 -- SM5.H.7 per-core CBS invariant + budget accounting.
 #check @perCoreCbsInvariant
@@ -3821,10 +3821,49 @@ open SeLe4n.Kernel
 #check @consumeBudget_preserves_le_budget
 #check @applyRefill_preserves_le_budget
 #check @scheduleReplenishment_replenishments_bounded
+-- SM5.H.2 (B8) the faithful sc-based scheduling primitive.
+#check @replenishScOnCore
+#check @replenishScOnCore_eq
+#check @replenishScOnCore_preserves_replenishmentPipelineOrderOnCore
+-- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation.
+#check @migrateRunQueueOnAffinityChange
+#check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
+#check @migrateSchedContextReplenishment_runQueueOnCore
+#check @setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
+#check @migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+-- SM5.H.4 (§9) object-store invariant preservation.
+#check @replenishOnCore_preserves_objects_invExt
+#check @setThreadCpuAffinityWithMigration_preserves_objects_invExt
+-- SM5.H.4 (§12 B7) the binding-uniqueness grounding + grounded headline.
+#check @schedContextBindingConsistent_boundThread_unique
+#check @schedContextMigration_consistent_of_bindingConsistent
+-- SM5.H.4 (§13 A5) the composite per-core CBS invariant preservation.
+#check @setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp
+#check @setThreadCpuAffinityWithMigration_preserves_replenishmentPipelineOrder_smp
+#check @setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp
+-- SM5.H.4 (§10) the cross-domain lock-set footprints.
+#check @replenishOnCoreLockSet
+#check @migrateSchedContextReplenishmentLockSet
+#check @migrateRunQueueOnAffinityChangeLockSet
+#check @setThreadCpuAffinityWithMigrationLockSet
+#check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le
+-- SM5.H.2 (A2/A4, §14) the live-tick CBS bridge.
+#check @timeoutBlockedThreads_replenishQueueOnCore
+#check @timerTickBudgetOnCore_bound_exhausted_replenish_eq
+#check @timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
+-- SM5.H.4 (C10, the migration cross-core memory-model HB).
+#check @affinityMigrationOrdering_synchronizesWith
+#check @affinityMigrationOrdering_happensBefore
+-- SM5.H.4 the tcbSetAffinity syscall wiring (production-reached).
+#check @setThreadCpuAffinityOp
+#check @decodeAffinity
 -- SM5.H inventory.
 #check @perCoreCbsTheorems_count
 #check @perCoreCbsTheorems_partition_sum
 #check @perCoreCbsTheorems_identifiers_nodup
+#check @perCoreCbsTheorems_lockSet_count
+#check @perCoreCbsTheorems_liveTick_count
+#check @perCoreCbsTheorems_memoryModel_count
 EOF
 lake env lean /tmp/sm5h_surface.lean'
 # WS-SM SM5.H: build the SM5.H theorem inventory so a renamed / removed SM5.H

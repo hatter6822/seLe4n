@@ -240,6 +240,8 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "setMCPriority"
   -- D3: IPC buffer configuration capability-only operation
   , .capabilityOnly "setIPCBuffer"
+  -- WS-SM SM5.H.4: CPU-affinity configuration capability-only operation
+  , .capabilityOnly "setThreadCpuAffinity"
   -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
   , .capabilityOnly "vspaceMapPageCheckedWithFlushFromState"
   , .capabilityOnly "vspaceUnmapPageWithFlush"
@@ -281,6 +283,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetPriority        => "setPriority"
   | .tcbSetMCPriority      => "setMCPriority"
   | .tcbSetIPCBuffer       => "setIPCBuffer"
+  | .tcbSetAffinity        => "setThreadCpuAffinity"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/
@@ -301,7 +304,7 @@ def enforcementBoundaryComplete : Bool :=
     - An `enforcementBoundary` entry is removed that was the sole coverage for
       a `SyscallId` variant. -/
 -- AF4-A: Replaced `native_decide` with `decide` to remove Lean runtime
--- evaluator from the TCB. The 25-element SyscallId enumeration is small enough
+-- evaluator from the TCB. The 26-element SyscallId enumeration is small enough
 -- for the kernel-checked `decide` tactic (may increase compile time slightly).
 theorem enforcementBoundary_is_complete :
     enforcementBoundaryComplete = true := by decide

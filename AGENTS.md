@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.54.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.55.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6062,6 +6062,51 @@ documentation lives under `docs/` and `docs/gitbook/`.
   affinity-migration `tcbSetAffinity` syscall is SM5.I+) — SM5.I's per-core run loop is
   the first runtime exerciser.  Items deferred past v1.0.0 with correctness impact:
   NONE.
+
+  **WS-SM SM5.H completion LANDED at v0.31.55 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (full thread migration + live-tick CBS bridge +
+  `tcbSetAffinity` syscall; closes every gap from the SM5.H self-audit and the two
+  maintainer-chosen scope decisions).  All new theorems axiom-clean (`propext` /
+  `Quot.sound` / `Classical.choice`); default build green; trace byte-identical; Rust
+  workspace (892 tests) + clippy clean; partition gate 57 staged-only modules.
+  - **Full thread migration (decision Q1)**: `setThreadCpuAffinityWithMigration` now
+    returns `(SystemState × Option (CoreId × SgiKind))` and additionally dequeues the
+    thread from its old core's run queue + re-enqueues on the new core
+    (`migrateRunQueueOnAffinityChange`), emitting a `.reschedule` SGI when the new home
+    is remote AND the thread is runnable there — closing the wrong-core-dispatch gap
+    (`scheduleEffectiveOnCore` doesn't check affinity).  Run-queue well-formedness is
+    preserved on both cores (`migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed`
+    + the composite lift).
+  - **A2/A4 live-tick CBS bridge (§14)**: a replenish-queue frame chain
+    (`updatePipBoost` / `revertPriorityInheritance` / `ensureRunnable` /
+    `timeoutThread` / `timeoutBlockedThreads` each preserve every replenish queue)
+    grounds `timerTickBudgetOnCore_bound_exhausted_replenish_eq` (the LIVE budget tick's
+    replenish write IS `replenishOnCore`'s — making the primitives load-bearing) and
+    `timerTickBudgetOnCore_preserves_replenishQueueValidOnCore` (the live tick preserves
+    replenish-queue validity on every core).
+  - **A5 composite preservation (§13)**:
+    `setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp` (the full
+    composite preserves validity + pipeline order + affinity consistency on every core).
+  - **B7 grounding (§12)**: `schedContextBindingConsistent_boundThread_unique` derives
+    the headline's `hUnique` from the live `schedContextBindingConsistent` invariant
+    (`schedContextMigration_consistent_of_bindingConsistent` is the SM5.I-consumed form).
+  - **Lock-set footprints (§10)** + **C10 memory-model HB (§15)**: the four
+    cross-domain footprints over SM5.A's `SchedLockId` (plan §4.4 ascending order) +
+    `affinityMigrationOrdering_happensBefore` (the migration's re-homing happens-before
+    the new home observes the SGI).
+  - **`tcbSetAffinity` syscall (decision Q2)**: `SyscallId.tcbSetAffinity` (discriminant
+    25; `count` 26) wired end-to-end — `decodeSetAffinityArgs`, the
+    `dispatchCapabilityOnly` arm (`setThreadCpuAffinityOp` + `decodeAffinity` past the
+    `.write`-on-target-TCB gate), enforcement-boundary + wildcard-unreachability proofs,
+    SM3.B `lockSet_tcbSetAffinity` + `permittedKinds` + consistency + inventory (92
+    entries), and Rust ABI parity (`sele4n-types` / `sele4n-abi` `SetAffinityArgs` /
+    `sele4n-sys` `tcb_set_affinity` / conformance).  The op is production-reached; the
+    cross-core SGI firing is the SM5.I FFI seam.
+  - **Inventory + tests**: the SM5.H inventory grows 54 → 109 across three new
+    categories (`.lockSet`, `.liveTick`, `.memoryModel`); `tests/SmpCbsSuite.lean` adds
+    the new headline examples + cross-core SGI / syscall runtime scenarios;
+    `scripts/test_qemu_smp_cbs.sh` reserves the Tier-4 slot (SKIP-only until SM5.I).
+  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

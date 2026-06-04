@@ -453,14 +453,15 @@ fn message_info_exhaustive_bounds() {
     }
 }
 
-/// Verify SyscallId roundtrip for all 25 variants (D6: +D1/D2/D3 TCB ops).
+/// Verify SyscallId roundtrip for all 26 variants (D6: +D1/D2/D3 TCB ops;
+/// WS-SM SM5.H.4: +TcbSetAffinity).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..25u64 {
+    for i in 0..26u64 {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(25).is_none());
+    assert!(SyscallId::from_u64(26).is_none());
 }
 
 /// Verify KernelError roundtrip for all 54 variants.
@@ -978,10 +979,11 @@ fn kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1 / D6: SyscallId variant count matches Lean (25 variants, 0-24).
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (26 variants, 0-25;
+/// WS-SM SM5.H.4 added TcbSetAffinity at 25).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 25;
+    const SYSCALL_COUNT: u64 = 26;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1120,10 +1122,10 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 20.
+/// AA1-B-5: COUNT is updated to 26 (WS-SM SM5.H.4 added TcbSetAffinity).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 25);
+    assert_eq!(SyscallId::COUNT, 26);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1346,15 +1348,24 @@ fn tcb_set_ipc_buffer_roundtrip() {
     assert_eq!(sid.to_u64(), 24);
 }
 
-/// D6-D5: Boundary — discriminant 25 is out of range for SyscallId.
+/// WS-SM SM5.H.4: TcbSetAffinity roundtrip (discriminant 25).
 #[test]
-fn syscall_boundary() {
-    assert!(SyscallId::from_u64(24).is_some()); // Last valid
-    assert!(SyscallId::from_u64(25).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 25);
+fn tcb_set_affinity_roundtrip() {
+    let sid = SyscallId::from_u64(25).expect("TcbSetAffinity must exist");
+    assert_eq!(sid, SyscallId::TcbSetAffinity);
+    assert_eq!(sid.to_u64(), 25);
 }
 
-/// D6-D6: All TCB operations require Write access (API.lean:387-391).
+/// D6-D5: Boundary — discriminant 26 is out of range for SyscallId
+/// (WS-SM SM5.H.4 moved the boundary from 25 to 26).
+#[test]
+fn syscall_boundary() {
+    assert!(SyscallId::from_u64(25).is_some()); // Last valid
+    assert!(SyscallId::from_u64(26).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 26);
+}
+
+/// D6-D6: All TCB operations require Write access (API.lean:387-392).
 #[test]
 fn tcb_ops_require_write() {
     assert_eq!(SyscallId::TcbSuspend.required_right(), AccessRight::Write);
@@ -1362,6 +1373,7 @@ fn tcb_ops_require_write() {
     assert_eq!(SyscallId::TcbSetPriority.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::TcbSetMCPriority.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::TcbSetIPCBuffer.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbSetAffinity.required_right(), AccessRight::Write);
 }
 
 /// D6-D3: AlignmentError roundtrip (discriminant 43).

@@ -312,13 +312,15 @@ theorem enforcementSoundness_registerServiceChecked
     D1 expanded from 25 to 27 entries with thread lifecycle capability-only operations.
     D2 expanded from 27 to 29 entries with priority management capability-only operations.
     D3 expanded from 29 to 30 entries with IPC buffer configuration capability-only operation.
-    AC4-D expanded from 30 to 33 entries with VSpace map/unmap and service revocation. -/
+    AC4-D expanded from 30 to 33 entries with VSpace map/unmap and service revocation.
+    WS-SM SM5.H.4 expanded from 33 to 34 entries with the CPU-affinity configuration
+    capability-only operation. -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 33 entries, matching the canonical `enforcementBoundary`. -/
+    has exactly 34 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 33 := by rfl
+    enforcementBoundaryExtended.length = 34 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

@@ -105,4 +105,16 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_pip.sh"
 # spot-check on real cores.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
 
+# WS-SM SM5.H — per-core CBS replenishment + affinity-driven thread migration.
+# SKIP-only until SM5.I wires the per-core scheduler tick (driving timerTickOnCore
+# on each core) plus a tcbSetAffinity-driven migration.  The per-core CBS
+# correctness — each core runs its OWN replenishment queue, the live budget tick's
+# replenish write IS the verified `replenishOnCore` primitive (A2) and preserves
+# replenish-queue validity (A4), an affinity change migrates a thread's
+# replenishments AND its run-queue entry to the new home core (restoring per-core
+# CBS affinity consistency, B7/A5) and emits the cross-core SGI under the verified
+# happens-before ordering (C10) — is established FORMALLY for all executions in
+# tests/SmpCbsSuite.lean; this is a complementary runtime spot-check on real cores.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
+
 finalize_report

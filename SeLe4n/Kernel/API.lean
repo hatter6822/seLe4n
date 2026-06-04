@@ -391,6 +391,7 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetPriority        => .write
   | .tcbSetMCPriority      => .write
   | .tcbSetIPCBuffer       => .write
+  | .tcbSetAffinity        => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -768,6 +769,25 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
                 vtid args.bufferAddr with
             | .ok st' => .ok ((), st')
             | .error e => .error e
+    | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM5.H.4: TCB setAffinity — affinity word from message register, target
+  -- from capability.  Authority is the `.write` right on the target TCB
+  -- (`syscallRequiredRight .tcbSetAffinity = .write`, identical to setPriority).
+  | .tcbSetAffinity =>
+    some <| match cap.target with
+    | .object objId =>
+      fun st => match Architecture.SyscallArgDecode.decodeSetAffinityArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+        | .error e => .error e
+        | .ok vtid =>
+            match decodeAffinity args.affinityRaw with
+            | .error e => .error e
+            | .ok affinity =>
+                match setThreadCpuAffinityOp st vtid affinity with
+                | .ok st' => .ok ((), st')
+                | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none
 
@@ -1550,7 +1570,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer] : List SyscallId) := by
+            .tcbSetIPCBuffer, .tcbSetAffinity] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -1568,7 +1588,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer] : List SyscallId) := by
+            .tcbSetIPCBuffer, .tcbSetAffinity] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

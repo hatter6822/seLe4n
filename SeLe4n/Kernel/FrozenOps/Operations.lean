@@ -950,7 +950,10 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
 
     Lifecycle operations (`lifecycleRetype`) are intentionally excluded — they
     modify the key set, which is incompatible with frozen maps. Service
-    registration/revocation are also builder-only. -/
+    registration/revocation are also builder-only.  `tcbSetAffinity` (WS-SM SM5.H.4)
+    is excluded because the operation is defined by its run-queue + replenish-queue
+    *migration* (live scheduler state), which the frozen snapshot phase does not
+    model — the production op is complete and verified in the non-frozen path. -/
 def frozenOpCoverage : SyscallId → Bool
   | .send => true             -- frozenEndpointSend
   | .receive => true          -- frozenEndpointReceive
@@ -977,10 +980,12 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetPriority => true          -- D2: frozenSetPriority
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
   | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
+  | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 5 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
-    lifecycleRetype, serviceRegister, serviceRevoke). -/
+    The 6 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
+    lifecycleRetype, serviceRegister, serviceRevoke) plus the runtime-scheduler
+    `tcbSetAffinity` (WS-SM SM5.H.4). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
@@ -988,11 +993,11 @@ theorem frozenOpCoverage_count :
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind,
        .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
-       .tcbSetIPCBuffer].filter
+       .tcbSetIPCBuffer, .tcbSetAffinity].filter
          frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2/D3: All 25 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 26 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

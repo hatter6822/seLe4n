@@ -138,6 +138,32 @@ impl SetIPCBufferArgs {
     }
 }
 
+/// Arguments for `tcbSetAffinity` (syscall 25).
+/// Register mapping: x2 = the raw affinity word.  Values `0 .. numCores-1` bind
+/// the target thread to that core; the marker `numCores` unbinds it.  The semantic
+/// range check is the kernel's `decodeAffinity` responsibility (so the raw word is
+/// passed through unvalidated here).
+///
+/// Lean: `SetAffinityArgs` (SyscallArgDecode.lean, WS-SM SM5.H.4)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SetAffinityArgs {
+    pub affinity_raw: u64,
+}
+
+impl SetAffinityArgs {
+    pub const fn encode(&self) -> [u64; 1] {
+        [self.affinity_raw]
+    }
+
+    /// Decode from message registers. Requires 1 register (the raw affinity word).
+    /// The semantic range check (`< numCores`, or the unbind marker) is performed
+    /// kernel-side by `decodeAffinity`, matching Lean `decodeSetAffinityArgs`.
+    pub fn decode(regs: &[u64]) -> KernelResult<Self> {
+        if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
+        Ok(Self { affinity_raw: regs[0] })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +252,33 @@ mod tests {
     #[test]
     fn set_ipc_buffer_insufficient_regs() {
         assert_eq!(SetIPCBufferArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
+    }
+
+    // -- WS-SM SM5.H.4: SetAffinity --
+
+    #[test]
+    fn set_affinity_roundtrip() {
+        let args = SetAffinityArgs { affinity_raw: 2 };
+        assert_eq!(SetAffinityArgs::decode(&args.encode()).unwrap(), args);
+    }
+
+    #[test]
+    fn set_affinity_unbind_marker() {
+        // The unbind marker (numCores = 4 on RPi5) is passed through unvalidated;
+        // the kernel's `decodeAffinity` interprets it.
+        let args = SetAffinityArgs::decode(&[4]).unwrap();
+        assert_eq!(args.affinity_raw, 4);
+    }
+
+    #[test]
+    fn set_affinity_passes_through_large_value() {
+        // The ABI decode does not range-check; the kernel rejects out-of-range.
+        let args = SetAffinityArgs::decode(&[999]).unwrap();
+        assert_eq!(args.affinity_raw, 999);
+    }
+
+    #[test]
+    fn set_affinity_insufficient_regs() {
+        assert_eq!(SetAffinityArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
     }
 }

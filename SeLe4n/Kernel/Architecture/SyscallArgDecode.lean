@@ -1587,4 +1587,36 @@ theorem decodeSetIPCBufferArgs_roundtrip (args : SetIPCBufferArgs)
         SeLe4n.VAddr.ofNat, SeLe4n.VAddr.toNat] at *
   simp [hAligned]
 
+-- ============================================================================
+-- WS-SM SM5.H.4: CPU-affinity configuration decode (`tcbSetAffinity`)
+-- ============================================================================
+
+/-- WS-SM SM5.H.4: per-syscall argument structure for `tcbSetAffinity`.
+    Register mapping: x2 = the raw affinity word.  Values `0 .. numCores-1` bind the
+    target thread to that core; the marker `numCores` unbinds it (runs on any core).
+    The target thread comes from the capability target.  The raw value is range-validated
+    downstream by `decodeAffinity` (which produces the typed `Option CoreId`). -/
+structure SetAffinityArgs where
+  affinityRaw : Nat
+  deriving Repr, DecidableEq
+
+/-- WS-SM SM5.H.4: decode `tcbSetAffinity` arguments from message registers.
+    Requires 1 message register (the raw affinity word).  The semantic range check
+    (`< numCores`, or the unbind marker) is `decodeAffinity`'s responsibility, so the
+    decode itself only extracts the raw word. -/
+def decodeSetAffinityArgs (decoded : SyscallDecodeResult)
+    : Except KernelError SetAffinityArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { affinityRaw := r0.val }
+
+/-- WS-SM SM5.H.4: encode `tcbSetAffinity` arguments into message registers. -/
+@[inline] def encodeSetAffinityArgs (args : SetAffinityArgs) : Array RegValue :=
+  #[⟨args.affinityRaw⟩]
+
+/-- WS-SM SM5.H.4: SetAffinityArgs decode round-trip. -/
+theorem decodeSetAffinityArgs_roundtrip (args : SetAffinityArgs) :
+    decodeSetAffinityArgs (stubDecoded (encodeSetAffinityArgs args)) = .ok args := by
+  simp [decodeSetAffinityArgs, encodeSetAffinityArgs, stubDecoded, requireMsgReg, Bind.bind,
+        Except.bind, Pure.pure, Except.pure]
+
 end SeLe4n.Kernel.Architecture.SyscallArgDecode
