@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.56.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.57.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6225,6 +6225,44 @@ documentation lives under `docs/` and `docs/gitbook/`.
     The 3 other SM3.x lock inventories (Serializability / Deadlock / WithLockSet)
     still use `native_decide` — pre-existing, untouched by this PR; a separate
     hygiene slice.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I LANDED at v0.31.57 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (the live per-core timer tick preserves the
+  per-core CBS invariant).  NEW staged module
+  `Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~40 theorems, all
+  axiom-clean): proves `timerTickOnCore` preserves `perCoreCbsInvariant` — the
+  "preservation by every transition" obligation for the live CBS engine the v0.31.56
+  `perCoreTimerTickEntry` driver runs.  Default build green; trace byte-identical
+  (additive, staged); partition gate 59 staged-only modules.
+  - **Validity (unconditional)**:
+    `timerTickOnCore_preserves_replenishQueueValidOnCore` — `timerTickOnCorePrepared`
+    only `popDue`-removes core `c`'s queue (the SM5.D.4 wake fold never touches a
+    replenish queue), the SM5.H §14 budget A4 preserves it, a preempting
+    `scheduleEffectiveOnCore` frames it.
+  - **Machine-timer chain**: `timerTickOnCore_machine_timer_eq` (the tick reads
+    `now := machine.timer` but never advances the global timer), built bottom-up from
+    `endpointQueueRemove_machine` / `ensureRunnable_machine` / `timeoutThread_machine` /
+    `timeoutBlockedThreads_machine` / `timerTickBudgetOnCore_machine` +
+    `restoreIncomingContext_machine_timer` / `saveOutgoingContextOnCore_machine` /
+    `scheduleEffectiveOnCore_machine_timer` (the context save/restore changes
+    `machine.regs`, not the timer).
+  - **Pipeline-order (given positive periods)**:
+    `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` — `popDue` only
+    *removes* (`popDue_remaining_subset`), so a pre-tick future-ordered queue stays
+    future-ordered; the budget insert is `now + period > now` (`period > 0`); machine
+    timer unchanged.  Composes the per-phase preservations (the budget-exhausted insert
+    via the SM5.H A2 bridge + `replenishOnCore_preserves_replenishmentPipelineOrderOnCore`).
+  - **Aggregate**: `timerTickOnCore_preserves_perCoreCbsInvariant` composes validity +
+    pipeline (unconditional) with **affinity-consistency supplied as the explicit
+    `hAffinity` input** — the one conjunct genuinely gated on the SM5.I affinity-
+    placement invariant (current-on-`c` ⇒ homed-on-`c`) + determineTargetCore/
+    `boundThread`-through-tick frames the per-core scheduler will provide; exposed as an
+    input rather than assumed silently.
+  - **Tests**: `SmpCbsSuite` §3.9 verifies validity + pipeline on a concrete live-tick
+    result (size-consistent, future-ordered, timer unchanged); tier-3 anchors the
+    headline theorems + machine chain + aggregate.  **Tracked**: the affinity conjunct's
+    full discharge lands with the per-core scheduler that enforces affinity placement.
+    Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

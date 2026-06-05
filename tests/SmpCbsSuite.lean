@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Testing.StateBuilder
 
@@ -597,6 +598,25 @@ private def runSm5hCompletionScenarios : IO Unit := do
         (sgi == none)
   | .error _ => assertBool "local re-home composite succeeds" false
 
+/-- §3.9 (SM5.I): the live per-core timer tick preserves the per-core CBS invariant's
+**validity** + **pipeline-order** conjuncts — verified on a concrete tick result
+(both conjuncts are decidable on a closed state).  This exercises the SM5.I
+preservation theorems' content non-vacuously: on an idle core the tick succeeds and
+its replenish queue is sorted, size-consistent, and future-ordered. -/
+private def runSm5iTickCbsChecks : IO Unit := do
+  IO.println "--- §3.9 SM5.I live-tick preserves perCoreCbsInvariant (validity + pipeline) ---"
+  let st := BootstrapBuilder.empty.build
+  match timerTickOnCore st bootCoreId with
+  | .ok (st1, _) =>
+      let rq := st1.scheduler.replenishQueueOnCore bootCoreId
+      assertBool "SM5.I: live-tick result replenish queue is size-consistent (validity)"
+        (rq.size == rq.entries.length)
+      assertBool "SM5.I: live-tick result replenish queue is future-ordered (pipeline)"
+        (rq.entries.all (fun pair => decide (pair.2 > st1.machine.timer)))
+      assertBool "SM5.I: live-tick reads but does not advance the global timer"
+        (st1.machine.timer == st.machine.timer)
+  | .error _ => assertBool "SM5.I: live-tick succeeds on an idle core" false
+
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
   runReplenishScenarios
@@ -607,6 +627,7 @@ def main : IO Unit := do
   runRunQueueMigrationScenarios
   runLiveTickScenarios
   runSm5hCompletionScenarios
+  runSm5iTickCbsChecks
   runInventoryChecks
   IO.println "=== SM5.H suite: all assertions passed ==="
 

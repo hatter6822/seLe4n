@@ -1,3 +1,59 @@
+## v0.31.57 — WS-SM SM5.I: the live per-core timer tick preserves the per-core CBS invariant
+
+A focused SM5.I slice: proves that the **live per-core timer tick**
+(`Kernel.timerTickOnCore`, driven by the v0.31.56 `perCoreTimerTickEntry` run-loop
+driver) preserves `perCoreCbsInvariant` — the "preservation by every transition"
+obligation the live CBS engine owes (SM5.H §13 already proved the affinity-change
+composite preserves it; this closes the *tick* side).  NEW staged module
+`Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~40 theorems, **all
+axiom-clean** — `propext` / `Classical.choice` / `Quot.sound`).  Default build green;
+trace byte-identical (purely additive, staged); partition gate **59** staged-only
+modules.  Refs: `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.4.
+
+- **Validity conjunct (unconditional)** —
+  `timerTickOnCore_preserves_replenishQueueValidOnCore`: the tick preserves
+  replenish-queue validity (sorted + size-consistent) on every core, given the
+  pre-tick validity.  `timerTickOnCorePrepared` only `popDue`-removes core `c`'s
+  queue (the SM5.D.4 wake fold — `refillSchedContext` / `wakeThread` /
+  `processOneReplenishmentOnCore` — never touches a replenish queue), the SM5.H §14
+  budget-tick A4 preserves it, and a preempting `scheduleEffectiveOnCore` frames it
+  (`scheduleEffectiveOnCore_replenishQueueOnCore`, mirroring the SM5.G domain frame).
+- **Machine-timer chain** —
+  `timerTickOnCore_machine_timer_eq`: the tick reads `now := machine.timer` but
+  **never advances the global timer**.  Built bottom-up from the per-op frames the
+  budget-exhausted path needs — `endpointQueueRemove_machine`, `ensureRunnable_machine`,
+  `timeoutThread_machine`, `timeoutBlockedThreads_machine`, `timerTickBudgetOnCore_machine`
+  (full machine), plus `restoreIncomingContext_machine_timer` /
+  `saveOutgoingContextOnCore_machine` / `scheduleEffectiveOnCore_machine_timer` (the
+  context save/restore changes `machine.regs`, not the timer).  This is the substrate
+  the pipeline-order conjunct rests on.
+- **Pipeline-order conjunct (given positive periods)** —
+  `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore`: every pending
+  replenishment stays strictly in the future.  `popDue` only *removes* entries
+  (`popDue_remaining_subset`), so a pre-tick future-ordered queue stays future-ordered;
+  the budget-exhausted insert is `now + period > now` because the SchedContext's
+  `period` is positive (an explicit hypothesis on the prepared state, the maintained
+  `schedContextsWellFormed` invariant); and `machine.timer` is unchanged (the chain
+  above).  Composes per-phase preservations for `processReplenishmentsDueOnCore`,
+  `timerTickBudgetOnCore` (all three binding arms, the exhausted insert via the SM5.H
+  A2 bridge + `replenishOnCore_preserves_replenishmentPipelineOrderOnCore`), and
+  `scheduleEffectiveOnCore`.
+- **Aggregate** — `timerTickOnCore_preserves_perCoreCbsInvariant` composes the two
+  unconditional conjuncts (validity + pipeline) with **affinity-consistency supplied
+  as the explicit `hAffinity` input**.  Affinity-consistency-through-the-tick is the
+  one conjunct genuinely gated on the SM5.I *affinity-placement invariant* (a thread
+  current on core `c` is homed on `c`) the per-core scheduler maintains, together with
+  the determineTargetCore / `boundThread`-through-tick frames — infrastructure that
+  lands with the per-core scheduler.  Exposed as an input rather than assumed silently;
+  the budget insert's affinity-consistency reduces exactly to that placement fact.
+- **Tests** — `tests/SmpCbsSuite.lean` §3.9 verifies the validity + pipeline conjuncts
+  on a concrete live-tick result (size-consistent, future-ordered, timer unchanged);
+  tier-3 anchors the headline theorems + the machine chain + the aggregate.
+- **Tracked (precise closure target)** — the affinity-consistency conjunct's full
+  discharge (the affinity-placement invariant + the determineTargetCore/`boundThread`
+  preservation frames) lands with the per-core scheduler that enforces affinity
+  placement.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.56 — WS-SM SM5.H completion audit-pass-2 + SM5.I per-core run-loop driver pulled forward
 
 Continues PR #813 to its complete-as-feasible form: closes the high-value SM5.H

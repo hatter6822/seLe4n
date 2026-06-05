@@ -3891,4 +3891,26 @@ lake env lean /tmp/sm5h_surface.lean'
 # theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory'
 
+# WS-SM SM5.I: the live per-core timer tick preserves perCoreCbsInvariant.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5i_tick_cbs.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+open SeLe4n.Kernel
+-- validity (unconditional) + pipeline-order (positive periods) conjuncts.
+#check @timerTickOnCore_preserves_replenishQueueValidOnCore
+#check @timerTickOnCore_preserves_replenishmentPipelineOrderOnCore
+-- the machine-timer chain (the tick reads but never advances the global timer).
+#check @timerTickOnCore_machine_timer_eq
+#check @timerTickBudgetOnCore_machine
+#check @timeoutBlockedThreads_machine
+#check @scheduleEffectiveOnCore_machine_timer
+-- the supporting replenish-queue + pipeline frames.
+#check @processReplenishmentsDueOnCore_preserves_replenishQueueValidOnCore
+#check @processReplenishmentsDueOnCore_preserves_replenishmentPipelineOrderOnCore
+#check @popDue_remaining_subset
+-- the aggregate (validity + pipeline discharged, affinity-consistency the placement-gated input).
+#check @timerTickOnCore_preserves_perCoreCbsInvariant
+EOF
+lake env lean /tmp/sm5i_tick_cbs.lean'
+
 finalize_report

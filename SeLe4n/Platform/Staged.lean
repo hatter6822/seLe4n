@@ -329,6 +329,14 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 -- witnesses; mirrors `PerCoreDomainInventory`.  A renamed/removed SM5.H theorem fails this
 -- module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
+-- WS-SM SM5.I: the live per-core timer tick preserves `perCoreCbsInvariant` —
+-- `timerTickOnCore_preserves_replenishQueueValidOnCore` (validity, unconditional),
+-- `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` (pipeline-order, given
+-- positive periods), the full `timerTickOnCore_machine_timer_eq` machine chain (the
+-- tick never advances the global timer), and the aggregate
+-- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
+-- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
