@@ -3313,9 +3313,11 @@ EOF'
 # SM5.D.8 decidability, and the SM5.D.1 export seam.  A rename / removal of any
 # SM5.D symbol fails here at elaboration time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.PerCoreTimerEntry'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5d_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Kernel.PerCoreTimerEntry
 open SeLe4n.Kernel
 -- SM5.D.2/.4/.5/.6/.9 production transitions.
@@ -3386,9 +3388,16 @@ open SeLe4n.Kernel
 #check @timerTickOnCoreSucceeds
 #check @timerTickOnCoreEmitsSgi
 #check @timerTickBudgetOnCorePreempts
--- SM5.D.1 export seam.
+-- SM5.I per-core run-loop step + the live timer-entry driver.
+#check @perCoreTimerTickStep
+#check @perCoreTimerTickStep_invalid_core
+#check @perCoreTimerTickStep_ok
+#check @perCoreTimerTickStep_error
+#check @perCoreTimerTickStep_sgis_eq_tick
+#check @perCoreTimerTickStep_preserves_objects_invExt
+#check @perCoreTimerTickStep_ok_currentThreadValidOnCore
 #check @perCoreTimerTickEntry
-#check @perCoreTimerTickEntry_returns_unit_marker
+#check @perCoreTimerTickEntry_def
 -- SM5.D.6 full per-core domain re-dispatch (§4b).
 #check @switchDomainOnCore_singleDomain_noop
 #check @switchDomainOnCore_preserves_objects_invExt
@@ -3746,5 +3755,193 @@ lake env lean /tmp/sm5g_surface.lean'
 # WS-SM SM5.G: build the SM5.G theorem inventory so a renamed / removed SM5.G
 # theorem fails at the inventory's elaboration.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory'
+
+# WS-SM SM5.H: per-core CBS.  SM5.H.2 replenishOnCore (per-core CBS replenishment-
+# scheduling primitive) + frames, SM5.H.3/.6/.5 validity/pipeline-order/affinity
+# preservation, SM5.H.4 migrateSchedContextReplenishment (SchedContext replenishment
+# migration on affinity change) + setThreadCpuAffinityWithMigration composite + the
+# headline restoration schedContextMigration_consistent, SM5.H.5 the plan §3.8 Theorem
+# 3.8.1 affinity invariant replenishQueueAffinityConsistentOnCore, SM5.H.7 the aggregate
+# perCoreCbsInvariant + CBS budget-bound accounting.  A rename / removal of any SM5.H
+# symbol fails here at elaboration time.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5h_surface.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
+open SeLe4n.Kernel
+-- SM5.H.1 / .5 the affinity-consistency invariant.
+#check @replenishQueueAffinityConsistentOnCore
+#check @replenishQueueAffinityConsistent_smp
+#check @replenishQueueAffinityConsistent_smp_at
+#check @default_replenishQueueAffinityConsistentOnCore
+#check @default_replenishQueueAffinityConsistent_smp
+#check @replenishQueueAffinityConsistentOnCore_frame
+-- SM5.H.2 the replenishOnCore primitive + frames.
+#check @replenishOnCore
+#check @replenishOnCore_objects
+#check @replenishOnCore_machine
+#check @replenishOnCore_getTcb?
+#check @replenishOnCore_getSchedContext?
+#check @replenishOnCore_determineTargetCore
+#check @replenishOnCore_replenishQueueOnCore_self
+#check @replenishOnCore_replenishQueueOnCore_ne
+#check @replenishOnCore_runQueueOnCore
+#check @replenishOnCore_currentOnCore
+#check @replenishOnCore_activeDomainOnCore
+#check @replenishOnCore_mem
+-- SM5.H.3 / .6 / .5 replenishOnCore preservation.
+#check @replenishOnCore_preserves_replenishQueueValidOnCore
+#check @replenishOnCore_preserves_replenishQueueValidOnCore_ne
+#check @replenishOnCore_preserves_replenishQueueValid_smp
+#check @replenishOnCore_preserves_replenishmentPipelineOrderOnCore
+#check @replenishOnCore_preserves_replenishmentPipelineOrderOnCore_ne
+#check @replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore
+-- SM5.H.4 the migration operation + frames + structural + validity/pipeline.
+#check @migrateSchedContextReplenishment
+#check @migrateSchedContextReplenishment_noop
+#check @migrateSchedContextReplenishment_objects
+#check @migrateSchedContextReplenishment_machine
+#check @migrateSchedContextReplenishment_getSchedContext?
+#check @migrateSchedContextReplenishment_determineTargetCore
+#check @migrateSchedContextReplenishment_replenishQueueOnCore_to
+#check @migrateSchedContextReplenishment_replenishQueueOnCore_from
+#check @migrateSchedContextReplenishment_replenishQueueOnCore_other
+#check @migrateSchedContextReplenishment_fromCore_excludes_scId
+#check @migrateSchedContextReplenishment_mem_toCore
+#check @migrateSchedContextReplenishment_preserves_replenishQueueValid_smp
+#check @migrateSchedContextReplenishment_preserves_replenishmentPipelineOrder_smp
+-- SM5.H.4 affinity-write helpers.
+#check @determineTargetCore_congr_getTcb?
+#check @setThreadCpuAffinity_determineTargetCore_ne
+#check @setThreadCpuAffinity_getSchedContext?
+-- SM5.H.4 / .5 migration affinity behaviour + composite + headline.
+#check @migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_to
+#check @migrateSchedContextReplenishment_establishes_affinityConsistentOnCore_from
+#check @migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
+#check @setThreadCpuAffinityWithMigration
+#check @setThreadCpuAffinityWithMigration_error_of_no_tcb
+#check @setThreadCpuAffinityWithMigration_bound_state_eq
+#check @setThreadCpuAffinityWithMigration_unbound_state_eq
+#check @schedContextMigration_consistent
+-- SM5.H.7 per-core CBS invariant + budget accounting.
+#check @perCoreCbsInvariant
+#check @default_perCoreCbsInvariant
+#check @replenishOnCore_preserves_perCoreCbsInvariant
+#check @consumeBudget_preserves_le_budget
+#check @applyRefill_preserves_le_budget
+#check @scheduleReplenishment_replenishments_bounded
+-- SM5.H.2 (B8) the faithful sc-based scheduling primitive.
+#check @replenishScOnCore
+#check @replenishScOnCore_eq
+#check @replenishScOnCore_preserves_replenishmentPipelineOrderOnCore
+-- SM5.H.4 (§6c/§11) the full-thread-migration run-queue move + scheduler preservation.
+#check @migrateRunQueueOnAffinityChange
+#check @migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed
+#check @migrateSchedContextReplenishment_runQueueOnCore
+#check @setThreadCpuAffinityWithMigration_preserves_runQueueOnCoreWellFormed
+#check @migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+-- SM5.H.4 (§9) object-store invariant preservation.
+#check @replenishOnCore_preserves_objects_invExt
+#check @setThreadCpuAffinityWithMigration_preserves_objects_invExt
+-- SM5.H.4 (§12 B7) the binding-uniqueness grounding + grounded headline.
+#check @schedContextBindingConsistent_boundThread_unique
+#check @schedContextMigration_consistent_of_bindingConsistent
+-- SM5.H.4 (§13 A5) the composite per-core CBS invariant preservation.
+#check @setThreadCpuAffinityWithMigration_preserves_replenishQueueValid_smp
+#check @setThreadCpuAffinityWithMigration_preserves_replenishmentPipelineOrder_smp
+#check @setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp
+-- SM5.H.4 (§10) the cross-domain lock-set footprints.
+#check @replenishOnCoreLockSet
+#check @migrateSchedContextReplenishmentLockSet
+#check @migrateRunQueueOnAffinityChangeLockSet
+#check @setThreadCpuAffinityWithMigrationLockSet
+#check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le
+-- Codex review safety items pulled forward: #5 (unconditional ascending lock order,
+-- no reverse-direction migration deadlock) + #2 (reject rebinding a running thread to
+-- a core its new affinity forbids).
+#check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le
+#check @setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
+-- SM5.H.2 (A2/A4, §14) the live-tick CBS bridge.
+#check @timeoutBlockedThreads_replenishQueueOnCore
+#check @timerTickBudgetOnCore_bound_exhausted_replenish_eq
+#check @timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
+-- SM5.H.4 (C10, the migration cross-core memory-model HB).
+#check @affinityMigrationOrdering_synchronizesWith
+#check @affinityMigrationOrdering_happensBefore
+-- SM5.H.4 audit-pass-2 (D15 composite, §17): the full affinity composite preserves
+-- SM4.C run-queue↔budget consistency on every core.
+#check @setThreadCpuAffinity_getTcb?_self
+#check @setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
+#check @migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+#check @setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore
+-- SM5.H.4 audit-pass-2 (B8/SGI + C10 tightened, §18): the composite cross-core
+-- .reschedule SGI characterisation, pinned to the memory-model happens-before.
+#check @setThreadCpuAffinityWithMigration_sgi_eq
+#check @setThreadCpuAffinityWithMigration_no_sgi_if_local
+#check @setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable
+#check @setThreadCpuAffinityWithMigration_sgi_happensBefore
+-- SM5.H.4 the tcbSetAffinity syscall wiring (production-reached).
+#check @setThreadCpuAffinityOp
+#check @decodeAffinity
+-- SM5.H inventory.
+#check @perCoreCbsTheorems_count
+#check @perCoreCbsTheorems_partition_sum
+#check @perCoreCbsTheorems_identifiers_nodup
+#check @perCoreCbsTheorems_lockSet_count
+#check @perCoreCbsTheorems_liveTick_count
+#check @perCoreCbsTheorems_memoryModel_count
+EOF
+lake env lean /tmp/sm5h_surface.lean'
+# WS-SM SM5.H: build the SM5.H theorem inventory so a renamed / removed SM5.H
+# theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory'
+
+# WS-SM SM5.I: the live per-core timer tick preserves perCoreCbsInvariant.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5i_tick_cbs.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+open SeLe4n.Kernel
+-- validity (unconditional) + pipeline-order (positive periods) conjuncts.
+#check @timerTickOnCore_preserves_replenishQueueValidOnCore
+#check @timerTickOnCore_preserves_replenishmentPipelineOrderOnCore
+-- the machine-timer chain (the tick reads but never advances the global timer).
+#check @timerTickOnCore_machine_timer_eq
+#check @timerTickBudgetOnCore_machine
+#check @timeoutBlockedThreads_machine
+#check @scheduleEffectiveOnCore_machine_timer
+-- the supporting replenish-queue + pipeline frames.
+#check @processReplenishmentsDueOnCore_preserves_replenishQueueValidOnCore
+#check @processReplenishmentsDueOnCore_preserves_replenishmentPipelineOrderOnCore
+#check @popDue_remaining_subset
+-- the aggregate (validity + pipeline discharged, affinity-consistency the placement-gated input).
+#check @timerTickOnCore_preserves_perCoreCbsInvariant
+EOF
+lake env lean /tmp/sm5i_tick_cbs.lean'
+
+# WS-SM SM5.I affinity discharge: timerTickOnCore preserves replenish-queue affinity-consistency.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5i_tick_affinity.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
+open SeLe4n.Kernel
+-- foundation: object-store insert atoms + the affinity-transfer keystone.
+#check @affinityConsistent_transfer
+#check @determineTargetCore_insert_tcb
+#check @getSchedContext?_insert_tcb_eq
+#check @getTcb?_insert_schedContext_eq
+#check @getSchedContext?_boundThread_insert_schedContext
+-- per-op determineTargetCore + boundThread frames.
+#check @enqueueRunnableOnCore_determineTargetCore
+#check @refillSchedContext_boundThread
+#check @scheduleEffectiveOnCore_determineTargetCore
+#check @processReplenishmentsDueOnCore_determineTargetCore
+#check @processReplenishmentsDueOnCore_boundThread
+-- the proven prepared + schedule per-phase affinity preservation.
+#check @timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore
+#check @scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
+-- the headline + the strengthened aggregate (affinity DERIVED, budget-phase frame the residual).
+#check @timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @timerTickOnCore_preserves_perCoreCbsInvariant_discharged
+EOF
+lake env lean /tmp/sm5i_tick_affinity.lean'
 
 finalize_report

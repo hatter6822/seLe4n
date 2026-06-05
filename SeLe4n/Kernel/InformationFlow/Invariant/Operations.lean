@@ -3357,6 +3357,238 @@ theorem migrateRunQueueBucket_preserves_projection
     rfl
 
 -- ============================================================================
+-- WS-SM SM5.H.4 audit: information-flow non-interference for the `tcbSetAffinity`
+-- syscall path.  The syscall-reachable op (`setThreadCpuAffinityOp`) is a
+-- run-queue-migrating op whose boot-core run-queue write flows into the
+-- observable `projectRunnable`; like every sibling TCB-control op (setPriority,
+-- setMCPriority, setIPCBuffer, suspend, resume) it must carry a per-op NI
+-- preservation theorem.  These three lemmas close that gap.
+-- ============================================================================
+
+/-- WS-SM SM5.H.4 (NI): the per-core SchedContext **replenishment** migration
+preserves the projection **unconditionally** — `projectState` never reads any
+replenish queue (the projected scheduler view is the boot-core run queue /
+current / domain), and the migration writes only replenish-queue slots. -/
+theorem migrateSchedContextReplenishment_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    projectState ctx observer (migrateSchedContextReplenishment st scId fromCore toCore)
+      = projectState ctx observer st := by
+  unfold migrateSchedContextReplenishment
+  split
+  · rfl
+  · simp only [projectState, projectRunnable, projectCurrent, projectActiveDomain,
+      projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+      SchedulerState.runnable,
+      SchedulerState.setReplenishQueueOnCore_runQueueOnCore,
+      SchedulerState.setReplenishQueueOnCore_currentOnCore,
+      SchedulerState.setReplenishQueueOnCore_activeDomainOnCore,
+      SchedulerState.setReplenishQueueOnCore_domainTimeRemainingOnCore,
+      SchedulerState.setReplenishQueueOnCore_domainScheduleIndexOnCore]
+    congr 1
+
+/-- WS-SM SM5.H.4 (NI): the full-thread-migration **run-queue** move preserves the
+projection when the migrated thread is **non-observable** (high).  The op rewrites
+the source and destination cores' run queues, but `projectRunnable` reads ONLY the
+boot core's run queue, filtered by `threadObservable`; inserting / removing a high
+thread leaves that filtered list unchanged (`toList_filter_insert_neg'` /
+`toList_filter_remove_neg`).  In the write branch the outer `fromCore = toCore`
+guard already excludes both being the boot core, so at most one of the two writes
+touches the boot core. -/
+theorem migrateRunQueueOnAffinityChange_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (fromCore toCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (migrateRunQueueOnAffinityChange st tid fromCore toCore)
+      = projectState ctx observer st := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · rename_i tcb _
+      split
+      · -- write branch: the two-core run-queue update.
+        simp only [projectState, projectCurrent, projectActiveDomain,
+          projectDomainTimeRemaining, projectDomainScheduleIndex, projectMachineRegs,
+          SchedulerState.setRunQueueOnCore_currentOnCore,
+          SchedulerState.setRunQueueOnCore_activeDomainOnCore,
+          SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore,
+          SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+        congr 1
+        simp only [projectRunnable, SchedulerState.runnable]
+        -- Reduce the boot-core run-queue read through the two writes.
+        by_cases hTo : toCore = bootCoreId
+        · subst hTo
+          rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+            (st.scheduler.runQueueOnCore bootCoreId) tid _ (threadObservable ctx observer) hTidHigh
+        · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hTo]
+          by_cases hFrom : fromCore = bootCoreId
+          · subst hFrom
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
+              (st.scheduler.runQueueOnCore bootCoreId) tid (threadObservable ctx observer) hTidHigh
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hFrom]
+      · rfl
+
+/-- WS-SM SM5.H.4 (NI): the bare affinity **write** preserves the projection when the
+target object is non-observable (high).  `setThreadCpuAffinity` writes only the
+target TCB's `cpuAffinity` field — which the projection erases — so for a high
+target the object insert is invisible (`objects_insert_preserves_projection_high`). -/
+theorem setThreadCpuAffinity_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option SeLe4n.Kernel.Concurrency.CoreId)
+    (stSet : SystemState)
+    (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet) :
+    projectState ctx observer stSet = projectState ctx observer st := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · simp only [Except.ok.injEq] at hSet
+    subst hSet
+    exact objects_insert_preserves_projection_high ctx observer st targetTid.toObjId _ hTargetObjHigh hObjInv
+  · simp at hSet
+
+/-- WS-SM SM5.H.4 (NI, projection insensitivity to `cpuAffinity`): the projection
+of a TCB is unchanged by rewriting only its `cpuAffinity` — the `.tcb` arm strips
+`cpuAffinity := none` structurally, so the affinity value never survives.  This is
+the structural fact behind the *unconditional* affinity-write NI below. -/
+theorem projectKernelObject_tcb_cpuAffinity_irrelevant
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB)
+    (a : Option SeLe4n.Kernel.Concurrency.CoreId) :
+    projectKernelObject ctx observer (.tcb { tcb with cpuAffinity := a })
+      = projectKernelObject ctx observer (.tcb tcb) := by
+  simp only [projectKernelObject]
+
+/-- WS-SM SM5.H.4 (NI, general): inserting an object whose **projection equals the
+original's** preserves `projectState` — *unconditionally* (regardless of whether
+the slot is observable).  The redacted view at that slot is identical, and no other
+projection component reads the object store.  The proj-eq generalisation of
+`objects_insert_preserves_projection_high` (which is the special case where both
+projections are erased because the slot is high). -/
+theorem objects_insert_preserves_projection_of_proj_eq
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hProjEq : (st.objects[oid]?).map (projectKernelObject ctx observer)
+             = some (projectKernelObject ctx observer obj)) :
+    projectState ctx observer { st with objects := st.objects.insert oid obj }
+      = projectState ctx observer st := by
+  have hProjObj : projectObjects ctx observer { st with objects := st.objects.insert oid obj }
+                = projectObjects ctx observer st := by
+    funext o
+    simp only [projectObjects]
+    cases hObs : objectObservable ctx observer o with
+    | true =>
+      simp only [RHTable_getElem?_eq_get?]
+      by_cases hEq : oid = o
+      · subst hEq
+        rw [RobinHood.RHTable.getElem?_insert_self st.objects oid obj hObjInv]
+        rw [RHTable_getElem?_eq_get?] at hProjEq
+        exact hProjEq.symm
+      · rw [RobinHood.RHTable.getElem?_insert_ne st.objects oid o obj
+          (fun hb => hEq (eq_of_beq hb)) hObjInv]
+    | false => rfl
+  show (ObservableState.mk (projectObjects ctx observer
+                              { st with objects := st.objects.insert oid obj })
+          _ _ _ _ _ _ _ _ _ _ _ _) = _
+  rw [hProjObj]
+  rfl
+
+/-- WS-SM SM5.H.4 (NI, **unconditional**): the affinity write preserves the
+projection for **any** target — high *or* low.  Because the projection erases
+`cpuAffinity` (`projectKernelObject_tcb_cpuAffinity_irrelevant`), the target's
+projected view is identical before and after, so the write is invisible to every
+observer regardless of whether the target is observable.  Strictly stronger than
+`setThreadCpuAffinity_preserves_projection` (which assumes a high target): per-thread
+CPU placement is a non-observable scheduling decision unconditionally, so a low
+observer cannot detect an affinity change even on a thread it *can* see. -/
+theorem setThreadCpuAffinity_preserves_projection_unconditional
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (targetTid : SeLe4n.ThreadId)
+    (affinity : Option SeLe4n.Kernel.Concurrency.CoreId) (stSet : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet) :
+    projectState ctx observer stSet = projectState ctx observer st := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · rename_i tcb hTcb
+    simp only [Except.ok.injEq] at hSet
+    subst hSet
+    refine objects_insert_preserves_projection_of_proj_eq ctx observer st targetTid.toObjId
+      (.tcb { tcb with cpuAffinity := affinity }) hObjInv ?_
+    rw [(SystemState.getTcb?_eq_some_iff st targetTid tcb).mp hTcb]
+    rw [projectKernelObject_tcb_cpuAffinity_irrelevant]
+    rfl
+  · simp at hSet
+
+/-- WS-SM SM5.H.4 (NI, the composite): the full affinity-change-with-migration
+composite preserves the projection when the target thread/object is non-observable
+(high) — the standard non-interference guarantee for a TCB-control op, the affinity
+analogue of `setPriorityOp_preserves_projection`.  Chains the affinity write
+(`setThreadCpuAffinity_preserves_projection`), the optional replenishment migration
+(`migrateSchedContextReplenishment_preserves_projection`, unconditional), and the
+run-queue migration (`migrateRunQueueOnAffinityChange_preserves_projection`, high
+thread). -/
+theorem setThreadCpuAffinityWithMigration_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option SeLe4n.Kernel.Concurrency.CoreId)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
+    (st' : SystemState) (sgi : Option (SeLe4n.Kernel.Concurrency.CoreId × SeLe4n.Kernel.Concurrency.SgiKind))
+    (hTargetThreadHigh : threadObservable ctx observer targetTid = false)
+    (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok (st', sgi)) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold setThreadCpuAffinityWithMigration at hStep
+  split at hStep
+  · rename_i tcb _
+    -- #2 (Codex P1): the running-on-forbidden-core reject guard.
+    split at hStep
+    · simp at hStep
+    · split at hStep
+      · rename_i stSet hSet
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep
+        subst hst
+        rw [migrateRunQueueOnAffinityChange_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh]
+        have hSetProj : projectState ctx observer stSet = projectState ctx observer st :=
+          setThreadCpuAffinity_preserves_projection ctx observer st targetTid affinity stSet
+            hTargetObjHigh hObjInv hSet
+        split
+        · rw [migrateSchedContextReplenishment_preserves_projection]; exact hSetProj
+        · exact hSetProj
+      · simp at hStep
+  · simp at hStep
+
+/-- WS-SM SM5.H.4 (NI, the syscall op): `setThreadCpuAffinityOp` (the production op the
+`tcbSetAffinity` dispatch invokes) preserves the projection for a high target —
+closing the per-syscall NI gap (every sibling capability-only TCB op has this). -/
+theorem setThreadCpuAffinityOp_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
+    (affinity : Option SeLe4n.Kernel.Concurrency.CoreId)
+    (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityOp st vTargetTid affinity = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold setThreadCpuAffinityOp at hStep
+  cases hWith : setThreadCpuAffinityWithMigration st vTargetTid.val affinity bootCoreId with
+  | error e => rw [hWith] at hStep; simp at hStep
+  | ok pair =>
+    obtain ⟨stWith, sgi⟩ := pair
+    rw [hWith] at hStep
+    simp only [Except.ok.injEq] at hStep
+    subst hStep
+    exact setThreadCpuAffinityWithMigration_preserves_projection ctx observer st vTargetTid.val
+      affinity bootCoreId stWith sgi hTargetThreadHigh hTargetObjHigh hObjInv hWith
+
+-- ============================================================================
 -- AK6-F Step 3: setPriorityOp preservation
 -- ============================================================================
 

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.53.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.59.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5992,6 +5992,340 @@ documentation lives under `docs/` and `docs/gitbook/`.
   never admits an out-of-domain thread, and `scheduleEffectiveOnCore` independently
   re-checks `tcb.domain = activeDomainOnCore c` before committing a dispatch).  Items
   deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.H LANDED at v0.31.54 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (per-core CBS — Constant Bandwidth Server;
+  plan §3.8, §5; all 8 sub-tasks).  Each core owns its **own** CBS replenishment queue
+  (`replenishQueueOnCore c`, the SM4.B per-core field), holding the budget-refill
+  schedule for the SchedContexts whose bound thread is homed on that core; when a
+  thread's `cpuAffinity` changes, its bound SchedContext's pending replenishments
+  **migrate** to the new core's queue, so the per-core CBS accounting follows the
+  thread.  Built on SM5.D's per-core replenishment machinery
+  (`processReplenishmentsDueOnCore`, `timerTickBudgetOnCore`) + SM4.C's per-core
+  invariant predicates (`replenishQueueValidOnCore`, `replenishmentPipelineOrderOnCore`).
+  All theorems axiom-clean (`propext` / `Quot.sound` / `Classical.choice` only); default
+  build green (324 jobs); trace byte-identical (purely additive — the new modules are
+  staged); AK7 floor unchanged (`RAW_LOOKUP_TID` 814 —
+  `setThreadCpuAffinity_getSchedContext?` routes through the `.get?` method form).
+
+  - **SM5.H.1 / .5**: `replenishQueueAffinityConsistentOnCore` (plan §3.8 Theorem
+    3.8.1) — every SchedContext with a pending replenishment in core `c`'s queue has
+    its bound thread homed on `c` (`determineTargetCore = c`) — plus the SMP form
+    (`replenishQueueAffinityConsistent_smp`), default-state, and frame.  **Naming
+    erratum**: §3.8 captions this `schedContextRunQueueConsistent_perCore`, which
+    collides with an unrelated SM4.C predicate (run-queue ↔ budget); per the internal-
+    first naming rule the SM5.H replenish-queue ↔ affinity invariant is named
+    `replenishQueueAffinityConsistentOnCore`.  The literal `cpuAffinity = some c` of the
+    §3.8 pseudocode is realised as `determineTargetCore st tid = c` (the SM5.C.9
+    "unbound ⇒ bootCoreId" home-core rule), which correctly admits SchedContext-bound
+    but affinity-unbound threads (homed on the boot core) — the literal form would
+    wrongly forbid them.
+  - **SM5.H.2**: `replenishOnCore` — the per-core "schedule a CBS replenishment"
+    primitive (insert `(scId, eligibleAt)` into `replenishQueueOnCore c`, the clean
+    named extraction of the queue insert `timerTickBudgetOnCore` /
+    `handleYieldWithBudget` open-code) + full frame surface + membership.
+  - **SM5.H.3 / .6**: `replenishOnCore` preserves `replenishQueueValidOnCore` (sorted +
+    size-consistent) and `replenishmentPipelineOrderOnCore` (future-eligible, given
+    `eligibleAt > machine.timer` — guaranteed by `now + period`, `period > 0`), per-core
+    / sibling-core / SMP-wide.  (The plan's `replenishQueueOnCore_wellFormed` /
+    `replenishmentPipelineOrder_perCore` are realised as the SM4.C
+    `replenishQueueValidOnCore` / `replenishmentPipelineOrderOnCore` preservation.)
+  - **SM5.H.4**: `migrateSchedContextReplenishment` (move a SchedContext's pending
+    replenishments between cores — `remove` from source, fold-of-`insert`s into
+    destination, no-op self-migration) + frames + structural moves-the-entries facts
+    (`_fromCore_excludes_scId`, `_mem_toCore`) + validity / pipeline SMP-preservation;
+    the composite `setThreadCpuAffinityWithMigration` (the SM5.C.8 affinity write + the
+    migration); the affinity-write helper lemmas (`setThreadCpuAffinity_getSchedContext?`
+    / `_determineTargetCore_ne`, `determineTargetCore_congr_getTcb?`); the migration's
+    affinity establish / preserve lemmas; and the headline
+    **`schedContextMigration_consistent`** — binding a thread to a new core **and**
+    migrating its SchedContext's replenishments *restores*
+    `replenishQueueAffinityConsistent_smp` on every core, under the 1:1 binding
+    (`schedContextBindingConsistent`) and pre-state consistency.
+  - **SM5.H.7**: the aggregate `perCoreCbsInvariant` (validity ∧ pipeline ∧ affinity) +
+    default + the `replenishOnCore` bundle preservation; CBS budget-bound accounting
+    (`consumeBudget` / `applyRefill` keep `budgetRemaining ≤ budget`;
+    `scheduleReplenishment` stays within `maxReplenishments`).
+  - **SM5.H.8**: `tests/SmpCbsSuite.lean` (`lake exe smp_cbs_suite`) — 60 surface
+    anchors, 8 elaboration-time theorem-application examples, 36 runtime assertions
+    across six sections (per-core replenishment scheduling; the cross-core SchedContext
+    migration — entries genuinely move between cores; the affinity-change-with-migration
+    composite; the CBS budget bounds; affinity-consistency witnesses; inventory
+    partition counts).  Tier-2 + Tier-3 wired.
+
+  **Modules**: staged `Scheduler/Operations/PerCoreCbs.lean` (~54 substantive theorems
+  + defs) + `PerCoreCbsInventory.lean` (54-entry `pccbst!` inventory, 7 categories:
+  predicate / replenish / preservation / migration / affinityWrite / consistency /
+  budget).  Both staged via `Platform.Staged`; the production/staged partition gate now
+  verifies **57** staged-only modules (was 55).  `replenishOnCore` / the migration are
+  forward-looking (the live per-core CBS path is the SM5.D `timerTickOnCore`; the
+  affinity-migration `tcbSetAffinity` syscall is SM5.I+) — SM5.I's per-core run loop is
+  the first runtime exerciser.  Items deferred past v1.0.0 with correctness impact:
+  NONE.
+
+  **WS-SM SM5.H completion LANDED at v0.31.55 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (full thread migration + live-tick CBS bridge +
+  `tcbSetAffinity` syscall; closes every gap from the SM5.H self-audit and the two
+  maintainer-chosen scope decisions).  All new theorems axiom-clean (`propext` /
+  `Quot.sound` / `Classical.choice`); default build green; trace byte-identical; Rust
+  workspace (892 tests) + clippy clean; partition gate 57 staged-only modules.
+  - **Full thread migration (decision Q1)**: `setThreadCpuAffinityWithMigration` now
+    returns `(SystemState × Option (CoreId × SgiKind))` and additionally dequeues the
+    thread from its old core's run queue + re-enqueues on the new core
+    (`migrateRunQueueOnAffinityChange`), emitting a `.reschedule` SGI when the new home
+    is remote AND the thread is runnable there — closing the wrong-core-dispatch gap
+    (`scheduleEffectiveOnCore` doesn't check affinity).  Run-queue well-formedness is
+    preserved on both cores (`migrateRunQueueOnAffinityChange_preserves_runQueueOnCoreWellFormed`
+    + the composite lift).
+  - **A2/A4 live-tick CBS bridge (§14)**: a replenish-queue frame chain
+    (`updatePipBoost` / `revertPriorityInheritance` / `ensureRunnable` /
+    `timeoutThread` / `timeoutBlockedThreads` each preserve every replenish queue)
+    grounds `timerTickBudgetOnCore_bound_exhausted_replenish_eq` (the LIVE budget tick's
+    replenish write is proven EQUAL to `replenishOnCore`'s — so the abstract primitives
+    are the verified characterisation of the live CBS engine, connected to production by
+    the bridge rather than orphan defs; the live tick still open-codes the insert) and
+    `timerTickBudgetOnCore_preserves_replenishQueueValidOnCore` (the live tick preserves
+    replenish-queue validity on every core).
+  - **A5 composite preservation (§13)**:
+    `setThreadCpuAffinityWithMigration_preserves_perCoreCbsInvariant_smp` (the full
+    composite preserves validity + pipeline order + affinity consistency on every core).
+  - **B7 grounding (§12)**: `schedContextBindingConsistent_boundThread_unique` derives
+    the headline's `hUnique` from the live `schedContextBindingConsistent` invariant
+    (`schedContextMigration_consistent_of_bindingConsistent` is the SM5.I-consumed form).
+  - **Lock-set footprints (§10)** + **C10 memory-model HB (§15)**: the four
+    cross-domain footprints over SM5.A's `SchedLockId` (plan §4.4 ascending order) +
+    `affinityMigrationOrdering_happensBefore` (the migration's re-homing happens-before
+    the new home observes the SGI).
+  - **`tcbSetAffinity` syscall (decision Q2)**: `SyscallId.tcbSetAffinity` (discriminant
+    25; `count` 26) wired end-to-end — `decodeSetAffinityArgs`, the
+    `dispatchCapabilityOnly` arm (`setThreadCpuAffinityOp` + `decodeAffinity` past the
+    `.write`-on-target-TCB gate), enforcement-boundary + wildcard-unreachability proofs,
+    SM3.B `lockSet_tcbSetAffinity` + `permittedKinds` + consistency + inventory (92
+    entries), and Rust ABI parity (`sele4n-types` / `sele4n-abi` `SetAffinityArgs` /
+    `sele4n-sys` `tcb_set_affinity` / conformance).  The op is production-reached; the
+    cross-core SGI firing is the SM5.I FFI seam.
+  - **Inventory + tests**: the SM5.H inventory grows 54 → 109 across three new
+    categories (`.lockSet`, `.liveTick`, `.memoryModel`); `tests/SmpCbsSuite.lean` adds
+    the new headline examples + cross-core SGI / syscall runtime scenarios;
+    `scripts/test_qemu_smp_cbs.sh` reserves the Tier-4 slot (SKIP-only until SM5.I).
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.H completion audit-pass-1 (post-completion deep code-first audit;
+  ships inside v0.31.55)**: closed four findings, all axiom-clean; default build
+  green; Rust workspace + clippy clean (the trace fixture gains exactly one line —
+  finding 4 — as the syscall-roundtrip banner now correctly covers the new variant).
+  - **HIGH — `tcbSetAffinity` unreachable on hardware**: the HAL trap dispatcher's
+    hand-mirrored `SyscallId` enum (`rust/sele4n-hal/src/svc_dispatch.rs`, zero
+    runtime deps) was not bumped, so a real `tcb_set_affinity` SVC (`x7=25`) was
+    rejected by `from_u32(25) = None` (`InvalidSyscallId`) before reaching the
+    verified kernel.  Fixed (variant + `COUNT=26` + `from_u32` + `min_inline_args=1`);
+    the self-referential mirror test replaced with a `sele4n-types` cross-check
+    (`#[cfg(test)]` dev-dep, leaf crate ⇒ no cycle) so future drift fails the build.
+  - **MEDIUM/HIGH — affinity syscall had no NI coverage**: the op rewrites the
+    boot-core run queue (observable via `projectRunnable`) yet had no
+    `_preserves_projection` theorem while every sibling TCB op does.  Added five
+    axiom-clean theorems (`setThreadCpuAffinityOp_preserves_projection` + the
+    composite / migrate-run-queue / migrate-replenish / affinity-write lemmas) — a
+    high-target affinity change provably preserves the low projection (the
+    `cpuAffinity` write is projection-erased; the run-queue migration leaves the
+    filtered observable list unchanged for a high thread).  Wired into the API
+    per-arm NI discharge table + `InformationFlowSuite` anchors.
+  - **Test coverage**: replaced a dead-weight `assertBool … true`; added genuine
+    runtime assertions for A2 (live tick replenish == `replenishOnCore`'s), A4
+    (post-tick validity), D15 (migrated thread carries positive budget).  Inventory
+    109 → 111 (D15 entries); `smp_cbs_suite` 58/58 PASS.
+  - **MEDIUM — trace harness undercounted syscalls**: `MainTraceHarness`'s
+    `[XVAL-002]` roundtrip used a hand-written 25-entry list (missing `tcbSetAffinity`)
+    and a hardcoded "all 25 variants" banner — it never round-trip-tested the new
+    syscall.  Replaced with the canonical drift-proof `SyscallId.all` / `SyscallId.count`
+    (auto-covers every variant); the fixture gains one line (`25` → `26 variants`).
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.H completion audit-pass-2 + SM5.I run-loop driver pulled forward
+  (v0.31.56, same branch `claude/exciting-brahmagupta-XAFDT`)**: closes the
+  high-value SM5.H completeness gaps the post-landing review surfaced, **pulls
+  SM5.I forward** (the per-core timer entry becomes the live driver firing SGIs),
+  and fixes a pre-existing ABI off-by-one.  All Lean theorems axiom-clean; default
+  build green (324 jobs); trace byte-identical; Rust HAL 724 tests + clippy clean;
+  partition gate 58 staged-only modules.
+  - **ABI off-by-one (correctness, DoS-class)**: `min_inline_args` for
+    `TcbSetPriority` / `TcbSetMCPriority` / `TcbSetIPCBuffer` was `2`, but all three
+    decoders read exactly one inline register and their wrappers send length 1, so
+    `dispatch_svc`'s `len < min_inline_args` gate rejected every valid call —
+    unreachable on hardware.  Corrected to `1` + a regression guard.
+  - **D15 composite (§17)**:
+    `setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore`
+    — the full affinity composite preserves SM4.C run-queue↔budget consistency on
+    every core (affinity write cpuAffinity-only + replenish migration + run-queue
+    move), with the `setThreadCpuAffinity_getTcb?_self` frame.
+  - **SGI characterisation + tightened C10 (§18)**:
+    `setThreadCpuAffinityWithMigration_sgi_eq` / `_no_sgi_if_local` /
+    `_emits_reschedule_of_remote_runnable` pin the composite's cross-core SGI to its
+    exact remote-and-runnable condition; `_sgi_happensBefore` ties the emitted SGI
+    to the SM2.A memory-model happens-before.
+  - **Unconditional affinity-write NI (item 9)**:
+    `setThreadCpuAffinity_preserves_projection_unconditional` — the affinity write
+    preserves the IF projection for ANY target (high *or* low) because the
+    projection erases `cpuAffinity` (`projectKernelObject_tcb_cpuAffinity_irrelevant`
+    + the general `objects_insert_preserves_projection_of_proj_eq`).  Strictly
+    stronger than the high-target form.
+  - **SM5.I run-loop driver**: NEW staged
+    `Scheduler/Operations/PerCoreRunLoop.lean` (`perCoreTimerTickStep` — verified
+    pure core: fail-closed reductions, `_preserves_objects_invExt`,
+    `_ok_currentThreadValidOnCore`).  `Kernel.perCoreTimerTickEntry`
+    (`@[export lean_per_core_timer_tick]`) **rewired from the SM5.D `pure ()`
+    placeholder into the live driver**: atomic `modifyGetKernelState` over the step
+    (committing `timerTickOnCore`'s result) + `fireCrossCoreSgis` (the SM5.F
+    pattern).  Per the FFI fail-closed convention the entry references the
+    `ffiSendSgi` extern, so test exes exercise the FFI-free step; the entry's
+    signature + `perCoreTimerTickEntry_def` body-shape marker are tier-3 anchors.
+  - **Inventory + tests**: `PerCoreCbsInventory` 111 → 119; `SmpCbsSuite` §3.8
+    D15-composite + SGI runtime section; `SmpTimerSuite` exercises the pure step.
+  - **Tracked (explicit closure targets)**: the full-tick CBS-invariant
+    preservation chain, the budget-tick pipeline-order (needs a timeout machine-timer
+    frame), the full composite scheduler/cross-subsystem bundle preservation, the
+    unconditional `SchedLockId`-sort lock ordering, the `SchedLockId`-level
+    `withLockSet` runtime bracket (SM3.C is `LockId`-only), and the bootable
+    `[[bin]]` kernel image + live QEMU boot (the entry IS the live driver; the
+    image is the remaining item).  Items deferred past v1.0.0 with correctness
+    impact: NONE.
+
+  **WS-SM SM5.H audit-pass-3 (deeper comprehensive audit; ships inside v0.31.56,
+  same branch)**: three independent read-only auditors (SM5.I driver, §17/§18 CBS
+  theorems, NI/tests/ABI) + direct security re-verification, reading the **code**
+  (not docstrings), confirmed the PR **clean** — `modifyGet` tuple order correct
+  (verified vs Lean-core `ST.lean`: returns the first component, installs the
+  second, so the new state is installed and the SGIs returned); the SM5.I driver
+  fail-closed (no spurious commit/SGI on error); `tcbSetAffinity` gated by `.write`
+  on the cap target (`syscallInvoke` before dispatch, target from `cap.target` not
+  a register, `decodeAffinity` rejects out-of-range); the unconditional
+  affinity-write NI has no leak (`cpuAffinity` is in the projection's stripped set,
+  no other TCB field touched); §17/§18 theorems non-vacuous + axiom-clean
+  (executable witnesses pass); zero dead-weight `assertBool … true`.  Closes one
+  soundness shortcut + three doc/test refinements:
+  - **Soundness (the one code change)**: `LockSetInventory.lean` (which this PR
+    modified to add `lockSet_tcbSetAffinity`) proved its identifier/description
+    `Nodup` witnesses with `native_decide` — the trust shortcut the SM5.D
+    audit-pass-2 caught masking a real duplicate.  Switched to kernel-sound
+    `decide` (elevated `maxRecDepth`/`maxHeartbeats`; ~38 s) so the affinity entry's
+    uniqueness — and all 92+ entries' — is kernel-verified.
+  - **Doc accuracy**: `PerCoreCbsInventory` header prose `111` → `119`;
+    `PerCoreTimerEntry` FFI-link-isolation mechanism clarified (link-isolated by
+    **non-import** — no `lake exe` imports it — the stronger, actually-true
+    guarantee, not "an importing exe is shielded").
+  - **Test strengthening**: `SmpTimerSuite` run-loop-step test now exercises the
+    success-path commit (a valid-core step runs the SM5.D.9 `lastTimeoutErrors`
+    clear) vs the fail-closed out-of-range no-op (record untouched).
+  - **Tracked**: the full-tick CBS-invariant preservation (`timerTickOnCore`
+    preserving replenish-queue validity / pipeline-order / affinity-consistency)
+    is SM5.I-scope — validity is cheap (mirror the `lastTimeoutErrorsOnCore` frame
+    chain + `popDue` preservation + a `scheduleEffectiveOnCore` replenish frame),
+    pipeline-order needs a `timeoutBlockedThreads` machine-timer frame chain, and
+    affinity-consistency needs the not-yet-formalized affinity-placement invariant.
+    The 3 other SM3.x lock inventories (Serializability / Deadlock / WithLockSet)
+    still use `native_decide` — pre-existing, untouched by this PR; a separate
+    hygiene slice.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I LANDED at v0.31.57 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (the live per-core timer tick preserves the
+  per-core CBS invariant).  NEW staged module
+  `Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~40 theorems, all
+  axiom-clean): proves `timerTickOnCore` preserves `perCoreCbsInvariant` — the
+  "preservation by every transition" obligation for the live CBS engine the v0.31.56
+  `perCoreTimerTickEntry` driver runs.  Default build green; trace byte-identical
+  (additive, staged); partition gate 59 staged-only modules.
+  - **Validity (unconditional)**:
+    `timerTickOnCore_preserves_replenishQueueValidOnCore` — `timerTickOnCorePrepared`
+    only `popDue`-removes core `c`'s queue (the SM5.D.4 wake fold never touches a
+    replenish queue), the SM5.H §14 budget A4 preserves it, a preempting
+    `scheduleEffectiveOnCore` frames it.
+  - **Machine-timer chain**: `timerTickOnCore_machine_timer_eq` (the tick reads
+    `now := machine.timer` but never advances the global timer), built bottom-up from
+    `endpointQueueRemove_machine` / `ensureRunnable_machine` / `timeoutThread_machine` /
+    `timeoutBlockedThreads_machine` / `timerTickBudgetOnCore_machine` +
+    `restoreIncomingContext_machine_timer` / `saveOutgoingContextOnCore_machine` /
+    `scheduleEffectiveOnCore_machine_timer` (the context save/restore changes
+    `machine.regs`, not the timer).
+  - **Pipeline-order (given positive periods)**:
+    `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` — `popDue` only
+    *removes* (`popDue_remaining_subset`), so a pre-tick future-ordered queue stays
+    future-ordered; the budget insert is `now + period > now` (`period > 0`); machine
+    timer unchanged.  Composes the per-phase preservations (the budget-exhausted insert
+    via the SM5.H A2 bridge + `replenishOnCore_preserves_replenishmentPipelineOrderOnCore`).
+  - **Aggregate**: `timerTickOnCore_preserves_perCoreCbsInvariant` composes validity +
+    pipeline (unconditional) with **affinity-consistency supplied as the explicit
+    `hAffinity` input** — the one conjunct genuinely gated on the SM5.I affinity-
+    placement invariant (current-on-`c` ⇒ homed-on-`c`) + determineTargetCore/
+    `boundThread`-through-tick frames the per-core scheduler will provide; exposed as an
+    input rather than assumed silently.
+  - **Tests**: `SmpCbsSuite` §3.9 verifies validity + pipeline on a concrete live-tick
+    result (size-consistent, future-ordered, timer unchanged); tier-3 anchors the
+    headline theorems + machine chain + aggregate.  **Tracked**: the affinity conjunct's
+    full discharge lands with the per-core scheduler that enforces affinity placement.
+    Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I affinity discharge LANDED at v0.31.58 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (audit-driven strengthening of the
+  v0.31.57 aggregate).  The v0.31.57 aggregate took the CBS **affinity-consistency**
+  conjunct verbatim as `hAffinity` — covering the whole post-state (an
+  assume-the-conclusion input; a deep audit flagged the docstring overclaim).  This
+  cut **derives** the carried-over entries' affinity instead, narrowing the residual
+  to a single budget-phase frame.  NEW staged module
+  `Scheduler/Operations/PerCoreTickCbsAffinity.lean` (~30 theorems, **all
+  axiom-clean** — `propext` / `Classical.choice` / `Quot.sound`; zero warnings):
+  object-store insert atoms (`determineTargetCore_insert_tcb` /
+  `getSchedContext?_insert_tcb_eq` / `getTcb?_insert_schedContext_eq` /
+  `getSchedContext?_boundThread_insert_schedContext`, on the AK7 `.get?` method form)
+  + the `affinityConsistent_transfer` keystone (affinity transfers across any
+  queue-shrinking, `determineTargetCore`/`boundThread`-preserving change); per-op
+  frames (`enqueueRunnableOnCore` / `refillSchedContext` /
+  `saveOutgoingContextOnCore` / `scheduleEffectiveOnCore` + the
+  `processReplenishmentsDueOnCore` fold); the **prepared** + **schedule** per-phase
+  affinity preservation (PROVEN via the transfer helper); the headline
+  `timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore` + the
+  strengthened aggregate
+  `timerTickOnCore_preserves_perCoreCbsInvariant_discharged` that **supersedes** the
+  v0.31.57 form — affinity DERIVED for the carried entries, replacing the whole-state
+  `hAffinity` with the budget-phase frame `hBudgetAffinity` + the maintained `invExt`.
+  **Single tracked-debt residual**: `hBudgetAffinity` — the budget phase's affinity
+  preservation, whose *exhausted* arm runs the IPC `timeoutBlockedThreads` whose
+  `determineTargetCore` / `getSchedContext?` object-frame reduces to
+  `endpointQueueRemove`'s object-store key-distinctness (a `dualQueueSystemInvariant`
+  consequence; TRUE — the timeout path writes only thread-state / IPC-state /
+  queue-links / `pipBoost`, never `cpuAffinity` or `boundThread`).  The new budget
+  insert's affinity uses the existing SM5.H
+  `replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore` under the
+  affinity-placement invariant + `schedContextBindingConsistent`.  Partition gate
+  **60** staged-only modules (was 59); the v0.31.57 `hAffinity` aggregate retained for
+  the existing call surface with its docstring corrected (audit Finding 1);
+  `smp_cbs_suite` + tier-3 SM5.I affinity anchors added; trace byte-identical.  Items
+  deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM PR #813 Codex-review safety items LANDED at v0.31.59 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (maintainer-directed "pull the safety items
+  forward now" — two of the five automated Codex findings on the SM5.H
+  `tcbSetAffinity` / `setThreadCpuAffinityWithMigration` path; the other three are the
+  established `.write`-authority decision, the cross-core SGI firing, and the
+  per-syscall-vs-`SchedLockId` lock-set distinction — documented SM5.I FFI-seam
+  tracked debt).  **#2 (P1)**: `setThreadCpuAffinityWithMigration` now **rejects
+  fail-closed** (`.threadOnDifferentCore`) when the target is currently *running*
+  (`currentOnCore c`) on a core its new affinity forbids — dequeue-on-dispatch means
+  such a target is in no run queue, so the run-queue migration could not move it off
+  `c`, and the pre-fix composite left it executing on a core `affinityAdmitsCore` /
+  `switchToThreadOnCore` would reject.  The guard precedes the affinity write, so the
+  ~16 downstream migration theorems are unchanged; only the four direct-unfold proofs
+  + the NI projection theorem gain a guard-split.  New witness
+  `setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core`.  **#5 (P2)**:
+  `setThreadCpuAffinityWithMigrationLockSet` now orders its per-core run-queue /
+  replenish-queue locks **lower-core-first** (regardless of the old→new direction), so
+  `setThreadCpuAffinityWithMigrationLockSet_pairwise_le` proves the keys
+  `SchedLockId`-ascending **unconditionally** — a reverse-direction migration acquires
+  in canonical order, no deadlock against a concurrent forward migration (the
+  conditional `_pairwise_le_of_core_le` is retained, now immediate from it; the lock
+  set is the same five write locks).  All axiom-clean; default build green (324 jobs);
+  `smp_cbs_suite` green (+ #2 reject scenario + #5 unconditional-ordering example);
+  Tier-3 anchors extended; AK7 `RAW_LOOKUP_TID` at the 814 floor.  Items deferred past
+  v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

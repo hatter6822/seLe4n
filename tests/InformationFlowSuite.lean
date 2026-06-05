@@ -234,6 +234,21 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 -- than the runtime `IO Bool` wrapper would be.
 #check @SeLe4n.Kernel.niStepConstructorCoverage
 #check @SeLe4n.Kernel.dispatchCapabilityOnly_preserves_projection
+-- WS-SM SM5.H.4: the per-op NI witnesses for the `tcbSetAffinity` capability-only
+-- arm (the affinity write is cpuAffinity-erased; the run-queue migration preserves
+-- the filtered projectRunnable for a high thread; the replenish migration is never
+-- projected) — these discharge `hArmProj` for the `.tcbSetAffinity` dispatch arm.
+#check @SeLe4n.Kernel.setThreadCpuAffinityOp_preserves_projection
+#check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_preserves_projection
+#check @SeLe4n.Kernel.migrateRunQueueOnAffinityChange_preserves_projection
+#check @SeLe4n.Kernel.migrateSchedContextReplenishment_preserves_projection
+-- SM5.H.4 audit-pass-2: the *unconditional* affinity-write NI — the affinity write
+-- preserves the projection for ANY target (high OR low), because the projection
+-- erases cpuAffinity (`projectKernelObject_tcb_cpuAffinity_irrelevant`).  Strictly
+-- stronger than the high-target form above.
+#check @SeLe4n.Kernel.projectKernelObject_tcb_cpuAffinity_irrelevant
+#check @SeLe4n.Kernel.objects_insert_preserves_projection_of_proj_eq
+#check @SeLe4n.Kernel.setThreadCpuAffinity_preserves_projection_unconditional
 
 /-- AK6-E (NI-H01): `niStepConstructorCoverage` is the constructor-level
 discoverability index for `KernelOperation`.  Beyond the compile-time
@@ -700,10 +715,11 @@ def runInformationFlowChecks : IO Unit := do
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- 33 classified ops: 30 original + suspend/resume + setPriority + setMCPriority +
-  -- setIPCBuffer (priority/IPC-buffer ops added after the initial classification).
-  expect "enforcement boundary: total 33 classified operations"
-    (SeLe4n.Kernel.enforcementBoundary.length == 33)
+  -- 34 classified ops: 30 original + suspend/resume + setPriority + setMCPriority +
+  -- setIPCBuffer (priority/IPC-buffer ops added after the initial classification) +
+  -- setThreadCpuAffinity (WS-SM SM5.H.4).
+  expect "enforcement boundary: total 34 classified operations"
+    (SeLe4n.Kernel.enforcementBoundary.length == 34)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
@@ -1207,12 +1223,12 @@ def runInformationFlowChecks : IO Unit := do
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
   expect "enforcement boundary has 11 policy-gated"
     (pgCount = 11)
-  expect "enforcement boundary has 18 capability-only"
-    (coCount = 18)
+  expect "enforcement boundary has 19 capability-only"
+    (coCount = 19)
   expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "enforcement boundary total is 33"
-    (boundary.length = 33)
+  expect "enforcement boundary total is 34"
+    (boundary.length = 34)
 
   IO.println "enforcement boundary completeness verified"
 
@@ -1272,8 +1288,8 @@ def runInformationFlowChecks : IO Unit := do
   IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "enforcementBoundaryExtended has 33 entries"
-    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 33)
+  expect "enforcementBoundaryExtended has 34 entries"
+    (SeLe4n.Kernel.enforcementBoundaryExtended.length = 34)
   expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 

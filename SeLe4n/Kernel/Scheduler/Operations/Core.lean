@@ -1292,6 +1292,17 @@ def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
     let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
     (s, acc.2 ++ sgi?.toList)) (st', [])
 
+/-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
+`scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
+`c`'s replenish queue.  The named CBS-replenishment-scheduling primitive that the
+live per-core budget tick (`timerTickBudgetOnCore`, below) **calls** for its
+replenishment write, so it is genuinely load-bearing (not merely proven-equal).
+Defined here, before the tick, to satisfy the forward reference. -/
+def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
+    (eligibleAt : Nat) : SystemState :=
+  let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
+  { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
+
 /-- WS-SM SM5.D.5 (per-core budget/time-slice tick): the per-core analogue of
 `timerTickBudget`.  Charges the current thread `tid` (with TCB `tcb`) one tick of
 budget on core `c`, returning `(updatedState, wasPreempted)`.
@@ -1338,9 +1349,13 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
         let sc'' := scheduleReplenishment sc' now consumedAmount
         let sc''' := cbsUpdateDeadline sc'' now true
         let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc''') }
-        let rq := (st'.scheduler.replenishQueueOnCore c).insert scId (now + sc.period.val)
-        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore c rq).setRunQueueOnCore
-          c ((st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc))) }
+        -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
+        -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
+        -- equal); `stReplenished` is defeq to the prior open-coded
+        -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
+        let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+        let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
+        let st'' := { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
         let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
         let st'''' := { st''' with scheduler :=
           st'''.scheduler.setLastTimeoutErrorsOnCore c timeoutErrors }
@@ -1512,6 +1527,161 @@ def threadStateConsistent (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (tcb : TCB),
     st.objects[oid]? = some (.tcb tcb) →
     tcb.threadState = inferThreadState st ⟨oid.toNat⟩ tcb
+
+-- ============================================================================
+-- WS-SM SM5.H — Per-core CBS (production operations)
+-- ============================================================================
+--
+-- The per-core CBS replenishment-scheduling primitive, the SchedContext
+-- replenishment migration, the run-queue migration, and the full
+-- affinity-change-with-migration composite (the production transition the
+-- `tcbSetAffinity` syscall dispatches).  The forward-looking theorem surface
+-- lives in the staged `Scheduler/Operations/PerCoreCbs.lean`; these defs are
+-- production-reached via the SM5.H.4 syscall (`setThreadCpuAffinityOp`).
+--
+-- `replenishOnCore` itself is defined earlier (just before
+-- `timerTickBudgetOnCore`) because the live per-core budget tick now CALLS it
+-- for its CBS replenishment write (so the primitive is genuinely load-bearing,
+-- not merely proven-equal); see its def site for the docstring.
+
+/-- WS-SM SM5.H.2 (faithful plan signature `replenishOnCore (s, c, sc)`): schedule
+a CBS replenishment for SchedContext `sc` on core `c`, computing the eligibility
+tick internally as `now + sc.period.val` (the CBS-engine rule).  Because
+`sc.wellFormed` carries `period > 0`, this form makes the SM5.H.6 pipeline-order
+preservation **unconditional** (the new entry is eligible strictly in the future
+without a caller-supplied `eligibleAt > now` hypothesis). -/
+def replenishScOnCore (st : SystemState) (c : CoreId) (sc : SchedContext)
+    (now : Nat) : SystemState :=
+  replenishOnCore st c sc.scId (now + sc.period.val)
+
+/-- WS-SM SM5.H.4 (plan §3.8): migrate SchedContext `scId`'s pending replenishments
+from core `fromCore`'s replenish queue to core `toCore`'s — `remove` from the
+source, fold-of-`insert`s into the destination (each at its original eligibility
+time), no-op on self-migration.  Writes only the two replenish-queue slots. -/
+def migrateSchedContextReplenishment (st : SystemState) (scId : SchedContextId)
+    (fromCore toCore : CoreId) : SystemState :=
+  if fromCore = toCore then st
+  else
+    let fromQ := st.scheduler.replenishQueueOnCore fromCore
+    let toQ := st.scheduler.replenishQueueOnCore toCore
+    let moved := fromQ.entries.filter (fun e => e.1 == scId)
+    let fromQ' := fromQ.remove scId
+    let toQ' := moved.foldl (fun q e => q.insert scId e.2) toQ
+    let sched' := (st.scheduler.setReplenishQueueOnCore fromCore fromQ').setReplenishQueueOnCore toCore toQ'
+    { st with scheduler := sched' }
+
+/-- WS-SM SM5.H.4 (full thread migration): migrate thread `tid`'s **run-queue
+entry** from core `fromCore` to core `toCore` on an affinity change.  When `tid`
+is runnable on `fromCore` (`fromCore`'s run queue contains it), it is dequeued
+there and re-enqueued on `toCore` at its effective priority; otherwise (blocked,
+current, or already homed) it is a no-op.
+
+This closes the wrong-core-dispatch gap: without it, a thread left on its old
+core's run queue after a remote-affinity change would be selected by that core's
+`chooseThreadOnCore` and dispatched by `scheduleEffectiveOnCore` (which does not
+check affinity), running it on the wrong core.  Moving its run-queue entry
+guarantees the affinity change can never strand a runnable thread on a core its
+new affinity forbids. -/
+def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
+    (fromCore toCore : CoreId) : SystemState :=
+  if fromCore = toCore then st
+  else
+    match st.getTcb? tid with
+    | none => st
+    | some tcb =>
+      if (st.scheduler.runQueueOnCore fromCore).contains tid then
+        let rqFrom := (st.scheduler.runQueueOnCore fromCore).remove tid
+        let rqTo := (st.scheduler.runQueueOnCore toCore).insert tid (effectiveRunQueuePriority tcb)
+        let sched' := (st.scheduler.setRunQueueOnCore fromCore rqFrom).setRunQueueOnCore toCore rqTo
+        { st with scheduler := sched' }
+      else st
+
+/-- WS-SM SM5.H.4 (plan §3.8, full thread migration): set a thread's CPU affinity
+**and** migrate everything that follows the thread to its new home core — its
+bound SchedContext's pending replenishments (`migrateSchedContextReplenishment`)
+**and** its run-queue entry (`migrateRunQueueOnAffinityChange`) — emitting a
+cross-core `.reschedule` SGI when the new home is remote from the executing core
+and the thread is now runnable there (mirroring SM5.C's `wakeThread` cross-core
+protocol).
+
+**Reject (#2, Codex P1):** rebinding a thread currently *running*
+(`currentOnCore c`) on a core `c` its new affinity would forbid is rejected
+fail-closed with `.threadOnDifferentCore`.  Such a target is, by dequeue-on-dispatch,
+in no run queue, so the run-queue migration could not move it off `c`; rejecting
+guarantees a *successful* migration never leaves the target executing on a core
+`affinityAdmitsCore` / `switchToThreadOnCore` reject
+(`setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core`).
+
+`oldCore` / `newCore` are the thread's home core before / after the affinity
+write (`determineTargetCore`).  Unbound threads (`schedContextBinding.scId? =
+none`) have no replenishments to migrate, so only the affinity write + run-queue
+migration apply.  Fail-closed (`.invalidArgument`) on a non-TCB target.  Returns
+the post-migration state paired with the optional SGI; the syscall path
+(`setThreadCpuAffinityOp`) commits the state (the SGI firing is the SM5.I FFI
+seam, exactly as SM5.C/D/F).
+
+**Authority (security contract).**  The op performs **no** in-op capability check;
+authority is the dispatch-layer write-capability gate on the target TCB
+(`syscallRequiredRight .tcbSetAffinity = .write`, identical to `tcbSetPriority`).
+A caller reaching this op already holds `.write` on the target via
+`syscallLookupCap`. -/
+def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.ThreadId)
+    (affinity : Option CoreId) (executingCore : CoreId) :
+    Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
+  match st.getTcb? targetTid with
+  | some tcb =>
+      -- #2 (Codex P1 review): reject rebinding a thread currently RUNNING on a core
+      -- its new affinity would forbid.  Dequeue-on-dispatch means such a target is in
+      -- no run queue, so `migrateRunQueueOnAffinityChange` cannot move it off the old
+      -- core; fail-closed (`.threadOnDifferentCore`) rather than leave it executing on
+      -- a core `affinityAdmitsCore` / `switchToThreadOnCore` rejects.  A caller holding
+      -- `.write` suspends the thread first if it must be rebound while running.
+      if (SeLe4n.Kernel.Concurrency.allCores).any (fun c =>
+            st.scheduler.currentOnCore c == some targetTid
+            && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c) then
+        .error .threadOnDifferentCore
+      else match setThreadCpuAffinity st targetTid affinity with
+      | .ok stSet =>
+          let oldCore := determineTargetCore st targetTid
+          let newCore := determineTargetCore stSet targetTid
+          let st1 := match tcb.schedContextBinding.scId? with
+            | some scId => migrateSchedContextReplenishment stSet scId oldCore newCore
+            | none => stSet
+          let st2 := migrateRunQueueOnAffinityChange st1 targetTid oldCore newCore
+          let sgi : Option (CoreId × SgiKind) :=
+            if newCore == executingCore then none
+            else if (st2.scheduler.runQueueOnCore newCore).contains targetTid then
+              some (newCore, SgiKind.reschedule)
+            else none
+          .ok (st2, sgi)
+      | .error e => .error e
+  | none => .error .invalidArgument
+
+/-- WS-SM SM5.H.4: decode a `tcbSetAffinity` argument register into a target
+affinity.  Values `0 .. numCores-1` bind the thread to that core; the dedicated
+marker `numCores` (= `affinityUnbindMarker`) unbinds it (runs on any core); any
+larger value is rejected with `.invalidArgument`.  The validated decode the
+syscall dispatch uses. -/
+def affinityUnbindMarker : Nat := SeLe4n.Kernel.Concurrency.numCores
+
+/-- WS-SM SM5.H.4: the affinity argument decoder (see `affinityUnbindMarker`). -/
+def decodeAffinity (v : Nat) : Except KernelError (Option CoreId) :=
+  if h : v < SeLe4n.Kernel.Concurrency.numCores then .ok (some ⟨v, h⟩)
+  else if v = affinityUnbindMarker then .ok none
+  else .error .invalidArgument
+
+/-- WS-SM SM5.H.4 (the `tcbSetAffinity` syscall operation): set a thread's CPU
+affinity and migrate it to its new home core (the state effect of
+`setThreadCpuAffinityWithMigration`).  Reached from the kernel dispatch
+(`dispatchCapabilityOnly .tcbSetAffinity`) past the `.write`-on-target-TCB
+capability gate.  The executing core is the boot core in the single-core dispatch
+model (SM5.I passes the live core); the cross-core SGI is recomputed and fired by
+the SM5.I FFI seam, so the syscall commits only the state. -/
+def setThreadCpuAffinityOp (st : SystemState) (vTargetTid : ValidThreadId)
+    (affinity : Option CoreId) : Except KernelError SystemState :=
+  match setThreadCpuAffinityWithMigration st vTargetTid.val affinity bootCoreId with
+  | .ok (st', _) => .ok st'
+  | .error e => .error e
 
 end SeLe4n.Kernel
 

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.53"
+version = "0.31.59"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -436,3 +436,16 @@ root = "tests.SmpPipSuite"
 [[lean_exe]]
 name = "smp_domain_suite"
 root = "tests.SmpDomainSuite"
+
+# WS-SM SM5.H — Per-core CBS test suite.  Surface anchors + elaboration-time
+# theorem-application witnesses + runtime assertions for the SM5.H.8 cross-core CBS
+# scenarios on concrete CBS fixtures: per-core replenishment scheduling
+# (replenishOnCore), the cross-core SchedContext replenishment migration
+# (migrateSchedContextReplenishment — entries genuinely move between cores), the
+# affinity-change-with-migration composite (setThreadCpuAffinityWithMigration), the
+# CBS budget bounds (consumeBudget / applyRefill keep budgetRemaining ≤ budget), the
+# affinity-consistency witnesses, and the SM5.H inventory partition counts.  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_cbs_suite"
+root = "tests.SmpCbsSuite"

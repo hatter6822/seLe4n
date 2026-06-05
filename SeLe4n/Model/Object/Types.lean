@@ -1468,6 +1468,7 @@ inductive SyscallId where
   | tcbSetPriority         -- D2-B: set thread scheduling priority (MCP-bounded)
   | tcbSetMCPriority       -- D2-B: set thread maximum controlled priority
   | tcbSetIPCBuffer        -- D3-A: set thread IPC buffer address
+  | tcbSetAffinity         -- WS-SM SM5.H.4: set thread CPU affinity (+ migration)
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1500,9 +1501,10 @@ namespace SyscallId
   | .tcbSetPriority        => 22
   | .tcbSetMCPriority      => 23
   | .tcbSetIPCBuffer       => 24
+  | .tcbSetAffinity        => 25
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 25
+def count : Nat := 26
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1532,6 +1534,7 @@ def count : Nat := 25
   | 22 => some .tcbSetPriority
   | 23 => some .tcbSetMCPriority
   | 24 => some .tcbSetIPCBuffer
+  | 25 => some .tcbSetAffinity
   | _  => none
 
 instance : ToString SyscallId where
@@ -1561,6 +1564,7 @@ instance : ToString SyscallId where
     | .tcbSetPriority        => "tcbSetPriority"
     | .tcbSetMCPriority      => "tcbSetMCPriority"
     | .tcbSetIPCBuffer       => "tcbSetIPCBuffer"
+    | .tcbSetAffinity        => "tcbSetAffinity"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1574,7 +1578,7 @@ def all : List SyscallId :=
   , .notificationSignal, .notificationWait, .replyRecv
   , .schedContextConfigure, .schedContextBind, .schedContextUnbind
   , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
-  , .tcbSetIPCBuffer ]
+  , .tcbSetIPCBuffer, .tcbSetAffinity ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1591,7 +1595,7 @@ theorem ofNat_toNat (s : SyscallId) : SyscallId.ofNat? s.toNat = some s := by
 /-- Round-trip: decoding then encoding preserves the numeric value.
 
 S4-I: This proof uses a uniform `match`/`simp`/`subst` pattern for each of
-the 20 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
+the 26 syscall variants plus a wildcard case. The `cases s <;> rfl` approach
 used for `ofNat_toNat` is not applicable here because the hypothesis is on `n`
 (a `Nat`) rather than on a finite inductive type. A `decide`-based approach
 would require `BEq`/`DecidableEq` on the `Option SyscallId × Nat` pair and
@@ -1604,9 +1608,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
-  | 20 | 21 | 22 | 23 | 24 =>
+  | 20 | 21 | 22 | 23 | 24 | 25 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 25 => intro s h; simp [ofNat?] at h
+  | n + 26 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

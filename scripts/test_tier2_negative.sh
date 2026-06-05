@@ -288,4 +288,13 @@ run_check_with_timeout "TRACE" lake exe smp_pip_suite
 # theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_domain_suite
 
+# WS-SM SM5.H — per-core CBS.  Runtime assertions for the SM5.H.8 cross-core CBS
+# scenarios on concrete CBS fixtures: per-core replenishment scheduling
+# (replenishOnCore), the cross-core SchedContext replenishment migration
+# (migrateSchedContextReplenishment — entries genuinely move between cores), the
+# affinity-change-with-migration composite (setThreadCpuAffinityWithMigration), the
+# CBS budget bounds (consumeBudget / applyRefill keep budgetRemaining ≤ budget), the
+# affinity-consistency witnesses, and the SM5.H theorem-inventory partition counts.
+run_check_with_timeout "TRACE" lake exe smp_cbs_suite
+
 finalize_report

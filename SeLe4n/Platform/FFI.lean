@@ -805,6 +805,15 @@ def getKernelState : BaseIO SystemState :=
 def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
   kernelStateRef.modify f
 
+/-- WS-SM SM5.I: atomic read-modify-write of the kernel state, returning a
+    by-product computed alongside the new state.  `f st = (a, st')` installs `st'`
+    and returns `a`, all under a single `IO.Ref.modifyGet` so no concurrent writer
+    can interleave between the read and the write (the per-core timer-tick driver
+    uses this to commit `timerTickOnCore`'s new state and recover its cross-core
+    SGIs in one step). -/
+def modifyGetKernelState {α : Type} (f : SystemState → α × SystemState) : BaseIO α :=
+  kernelStateRef.modifyGet f
+
 /-- WS-RC R2.A.2: Install a fresh `LabelingContext` into the
     deployment policy slot.  The boot wrapper accepts a labeling
     context as an optional argument; tests use the same entry point

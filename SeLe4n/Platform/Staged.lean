@@ -230,10 +230,16 @@ import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
 -- production transitions are in `Scheduler.Operations.Core`; SM5.I's per-core
 -- scheduler-tick driver is the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
--- WS-SM SM5.D.1: the per-core timer-tick kernel entry seam
+-- WS-SM SM5.I: the verified per-core run-loop step (`perCoreTimerTickStep`) the
+-- per-core timer-tick kernel entry drives — a pure decision core over the verified
+-- `timerTickOnCore` transition (fail-closed reductions + objects-`invExt` /
+-- current-thread-validity preservation), the SM5.F pattern's verified core.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+-- WS-SM SM5.D.1 / SM5.I: the per-core timer-tick kernel entry seam
 -- (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP ISR
--- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I moves it
--- production-reached when the per-core scheduler-tick driver lands.
+-- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I rewires it from the
+-- SM5.D `pure ()` placeholder into the live driver: atomically run
+-- `perCoreTimerTickStep` against the kernel state, then fire the cross-core SGIs.
 import SeLe4n.Kernel.PerCoreTimerEntry
 -- WS-SM SM5.D: the 101-entry per-core-timer theorem inventory (7 categories:
 -- lockSet/domain/replenish/budget/tick/preservation/decidability) with the `pctt!`
@@ -305,6 +311,38 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 -- mirrors `PerCoreIdleInventory`.  A renamed/removed SM5.G theorem fails this
 -- module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomainInventory
+-- WS-SM SM5.H: per-core CBS (Constant Bandwidth Server) theorem surface — SM5.H.2
+-- `replenishOnCore` (the per-core CBS replenishment-scheduling primitive) + frames,
+-- SM5.H.3 / SM5.H.6 / SM5.H.5 `replenishOnCore` validity / pipeline-order / affinity
+-- preservation, SM5.H.4 `migrateSchedContextReplenishment` (SchedContext replenishment
+-- migration on affinity change) + `setThreadCpuAffinityWithMigration` + the headline
+-- restoration `schedContextMigration_consistent`, SM5.H.5 the plan §3.8 Theorem 3.8.1
+-- affinity invariant `replenishQueueAffinityConsistentOnCore`, and SM5.H.7 the aggregate
+-- `perCoreCbsInvariant` + CBS budget-bound accounting.  `replenishOnCore` / the migration
+-- are forward-looking (the live per-core CBS path is the SM5.D `timerTickOnCore`; the
+-- affinity-migration `tcbSetAffinity` syscall is SM5.I+); SM5.I's per-core run loop is the
+-- first runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+-- WS-SM SM5.H: the per-core-CBS theorem inventory (categories predicate / replenish /
+-- preservation / migration / affinityWrite / consistency / budget) with the `pccbst!`
+-- compile-time identifier-validation macro + per-category count + partition-sum + Nodup
+-- witnesses; mirrors `PerCoreDomainInventory`.  A renamed/removed SM5.H theorem fails this
+-- module's elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
+-- WS-SM SM5.I: the live per-core timer tick preserves `perCoreCbsInvariant` —
+-- `timerTickOnCore_preserves_replenishQueueValidOnCore` (validity, unconditional),
+-- `timerTickOnCore_preserves_replenishmentPipelineOrderOnCore` (pipeline-order, given
+-- positive periods), the full `timerTickOnCore_machine_timer_eq` machine chain (the
+-- tick never advances the global timer), and the aggregate
+-- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
+-- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+-- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
+-- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
+-- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried
+-- entries proven via the prepared/schedule per-phase frames; only the budget-phase
+-- frame (timeoutBlockedThreads object-frame) remains as tracked-debt residual.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

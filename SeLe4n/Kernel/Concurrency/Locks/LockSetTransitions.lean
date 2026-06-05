@@ -735,6 +735,29 @@ def lockSet_tcbSetIPCBuffer (callerTid : ThreadId)
        (tcbLock targetTcbTid, .write)])
     (targetVSpaceRootObjId.map (fun vsr => (vspaceRootLock vsr, .read)))
 
+/-- WS-SM SM5.H.4: `lockSet` for `tcbSetAffinity`.
+
+`setThreadCpuAffinityOp` writes the target TCB's `cpuAffinity` field (covered by
+`tcbLock targetTcbTid .write` in the base) and, for a SchedContext-bound target,
+migrates that SchedContext's pending replenishments to the new home core.  The
+replenishment migration relocates entries between the source/destination
+*replenish-queue* slots (SchedulerState fields, in SM5.A's separate `SchedLockId`
+domain), but the bound SchedContext is included here as a `write` for the
+conservative kernel-object footprint — matching `lockSet_tcbSetPriority`'s shape.
+
+The caller pre-resolves `targetTcb.schedContextBinding.scId?` identically to
+`lockSet_tcbSetPriority`; `boundSchedContextId = none` covers the unbound target
+(no replenishments to migrate). -/
+def lockSet_tcbSetAffinity (callerTid : ThreadId)
+    (cnodeRootObjId : ObjId) (targetTcbTid : ThreadId)
+    (boundSchedContextId : Option SchedContextId) : LockSet :=
+  lockSetExtendOpt
+    (lockSetOfList
+      [(tcbLock callerTid, .read),
+       (cnodeLock cnodeRootObjId, .read),
+       (tcbLock targetTcbTid, .write)])
+    (boundSchedContextId.map (fun sc => (schedContextLock sc, .write)))
+
 -- ============================================================================
 -- SM3.B.3 (audit-pass-5) — PIP-chain-walk start markers
 -- ============================================================================
@@ -911,6 +934,12 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .schedContext]
   | .tcbSetIPCBuffer =>
       [.tcb, .cnode, .vspaceRoot]
+  -- WS-SM SM5.H.4: `setThreadCpuAffinityOp` writes the target TCB's `cpuAffinity`
+  -- and, for a SchedContext-bound target, migrates that SC's pending replenishments
+  -- (so the bound SchedContext object is in the conservative kernel-object footprint;
+  -- the run-queue / replenish-queue slots are SM5.A's separate `SchedLockId` domain).
+  | .tcbSetAffinity =>
+      [.tcb, .cnode, .schedContext]
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
 instance (k : LockKind) (sid : SyscallId) :
@@ -1615,5 +1644,27 @@ theorem lockSet_consistent_tcbSetIPCBuffer (callerTid : ThreadId)
         cases targetVSpaceRoot with
         | none => simp at hpp
         | some vsr => simp at hpp; rw [← hpp]; simp; decide)
+
+/-- WS-SM SM5.H.4 for `.tcbSetAffinity`.
+
+Same shape as `.tcbSetPriority`: the base three locks (caller TCB read, CNode read,
+target TCB write) plus the optional bound-SchedContext write. -/
+theorem lockSet_consistent_tcbSetAffinity (callerTid : ThreadId)
+    (cnRoot : ObjId) (targetTcb : ThreadId) (boundSc : Option SchedContextId) :
+    ∀ p ∈ (lockSet_tcbSetAffinity callerTid cnRoot targetTcb boundSc).pairs,
+      p.fst.kind ∈ permittedKinds .tcbSetAffinity :=
+  lockSet_consistent_base_plus_opt _ _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+    (by intro pp hpp
+        cases boundSc with
+        | none => simp at hpp
+        | some sc => simp at hpp; rw [← hpp]; simp; decide)
 
 end SeLe4n.Kernel.Concurrency

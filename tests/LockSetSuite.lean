@@ -140,6 +140,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_tcbSetPriority
 #check @lockSet_tcbSetMCPriority
 #check @lockSet_tcbSetIPCBuffer
+#check @lockSet_tcbSetAffinity
 
 /-! ## SM3.B.3 audit-pass-5 — PIP-chain-walk start markers -/
 
@@ -175,6 +176,7 @@ open SeLe4n.Kernel.Concurrency
 #check @lockSet_consistent_tcbSetPriority
 #check @lockSet_consistent_tcbSetMCPriority
 #check @lockSet_consistent_tcbSetIPCBuffer
+#check @lockSet_consistent_tcbSetAffinity
 
 /-! ## SM3.B Inventory -/
 
@@ -677,15 +679,15 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 90 := by decide
+example : lockSetTheorems.length = 92 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 26 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 25 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 26 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1207,14 +1209,14 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 90"
-    (decide (lockSetTheorems.length = 90))
+  assertBool "lockSetTheorems.length = 92"
+    (decide (lockSetTheorems.length = 92))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
-  assertBool "lockSet category count = 25 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 25))
-  assertBool "consistency category count = 25 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 25))
+  assertBool "lockSet category count = 26 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 26))
+  assertBool "consistency category count = 26 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 26))
   assertBool "acquireSort category count = 6"
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"

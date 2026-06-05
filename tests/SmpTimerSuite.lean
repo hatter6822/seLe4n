@@ -7,7 +7,7 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
-import SeLe4n.Kernel.PerCoreTimerEntry
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -101,9 +101,19 @@ open SeLe4n.Testing
 #check @timerTickOnCoreEmitsSgi
 #check @timerTickBudgetOnCorePreempts
 
--- SM5.D.1 export seam (PerCoreTimerEntry).
-#check @perCoreTimerTickEntry
-#check @perCoreTimerTickEntry_returns_unit_marker
+-- SM5.I per-core run-loop step (PerCoreRunLoop) — the verified, FFI-free decision
+-- core the (HAL-linked) per-core timer entry drives.  The `@[export]`
+-- `perCoreTimerTickEntry` itself references the `ffiSendSgi` extern (via
+-- `fireCrossCoreSgis`), so it is NOT imported here (a test exe does not link the
+-- HAL); its signature + `perCoreTimerTickEntry_def` body-shape marker are anchored
+-- in `test_tier3_invariant_surface.sh` (elaboration-only, no link).
+#check @perCoreTimerTickStep
+#check @perCoreTimerTickStep_invalid_core
+#check @perCoreTimerTickStep_ok
+#check @perCoreTimerTickStep_error
+#check @perCoreTimerTickStep_sgis_eq_tick
+#check @perCoreTimerTickStep_preserves_objects_invExt
+#check @perCoreTimerTickStep_ok_currentThreadValidOnCore
 
 -- §4b SM5.D.6 full per-core domain re-dispatch (switchDomainOnCore / scheduleDomainOnCore).
 #check @switchDomainOnCore_singleDomain_noop
@@ -405,13 +415,37 @@ private def runReplenishChecks : IO Unit := do
   assertBool "replenishment does not advance machine.timer"
     ((processReplenishmentsDueOnCore stIdle bootCoreId 0).1.machine.timer == stIdle.machine.timer)
 
-/-- §3.8 SM5.D.1: the per-core timer-entry export seam returns unit. -/
-private def runEntrySeamChecks : IO Unit := do
-  IO.println "--- §3.8 SM5.D.1 per-core timer-entry seam ---"
-  -- The export seam is a BaseIO action; running it must complete without error.
-  perCoreTimerTickEntry 0
-  perCoreTimerTickEntry 3
-  assertBool "perCoreTimerTickEntry seam ran for cores 0 and 3" true
+/-- §3.8 SM5.I: the verified per-core run-loop step (`perCoreTimerTickStep`) — the
+FFI-free decision core the (HAL-linked) per-core timer entry drives.  The entry's
+runtime behaviour (firing SGIs through `ffiSendSgi`) is not host-runnable (the test
+exe does not link the HAL); we exercise the pure step here. -/
+private def runRunLoopStepChecks : IO Unit := do
+  IO.println "--- §3.8 SM5.I per-core run-loop step ---"
+  let st := stIdle
+  -- Out-of-range core id is a fail-closed no-op: state unchanged, no SGIs.
+  assertBool "step: out-of-range core id (99) is a no-op, no SGIs"
+    (((perCoreTimerTickStep st 99).2).isEmpty)
+  assertBool "step: out-of-range core id (99) leaves the timer untouched"
+    ((perCoreTimerTickStep st 99).1.machine.timer == st.machine.timer)
+  -- On a valid idle core (currentOnCore = none), the tick emits no cross-core SGIs.
+  assertBool "step: idle valid core (0) emits no cross-core SGIs"
+    (((perCoreTimerTickStep st 0).2).isEmpty)
+  -- The step never fabricates SGIs beyond what `timerTickOnCore` returns.
+  assertBool "step on valid core 3 emits no SGIs on the idle fixture"
+    (((perCoreTimerTickStep st 3).2).isEmpty)
+  -- Success path COMMITS a genuine state change (vs the fail-closed no-op):
+  -- seed core 0's lastTimeoutErrors with a stale record, then a valid-core step
+  -- runs the SM5.D.9 clear so the post-step record is empty — proving the step
+  -- took the `.ok result → result` branch and installed the new state, not `(st, [])`.
+  let staleErrs : List (ThreadId × KernelError) := [(ThreadId.ofNat 1, KernelError.invalidArgument)]
+  let stStale : SystemState :=
+    { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore bootCoreId staleErrs }
+  assertBool "step on valid core 0 commits the tick (SM5.D.9 clears lastTimeoutErrors)"
+    (((perCoreTimerTickStep stStale 0).1.scheduler.lastTimeoutErrorsOnCore bootCoreId).isEmpty)
+  -- ... whereas the fail-closed out-of-range step leaves the stale record untouched
+  -- (it returns the input state unchanged, never committing a partial tick).
+  assertBool "step on out-of-range core 99 does NOT clear lastTimeoutErrors (true no-op)"
+    (((perCoreTimerTickStep stStale 99).1.scheduler.lastTimeoutErrorsOnCore bootCoreId).length == 1)
 
 /-- A single-domain (empty schedule) idle state, for the SM5.D.6 no-op witness. -/
 private def stSingleDomain : SystemState :=
@@ -458,7 +492,7 @@ def runAll : IO Unit := do
   runBudgetPreemptChecks
   runIdleTickChecks
   runReplenishChecks
-  runEntrySeamChecks
+  runRunLoopStepChecks
   runDomainRedispatchChecks
   IO.println "=== SM5.D timer suite: all checks passed ==="
 

@@ -67,22 +67,25 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- Last valid: .tcbSetIPCBuffer (24)
   let r24 := decodeSyscallId ⟨24⟩
   expect "tcbSetIPCBuffer=24" (isOkEq r24 .tcbSetIPCBuffer)
+  -- WS-SM SM5.H.4: tcbSetAffinity=25
+  let r25 := decodeSyscallId ⟨25⟩
+  expect "tcbSetAffinity=25" (isOkEq r25 .tcbSetAffinity)
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 25
-  let r25 := decodeSyscallId ⟨25⟩
-  expect "invalid=25" (isErrEq r25 .invalidSyscallNumber)
+  -- First invalid: 26 (WS-SM SM5.H.4 added tcbSetAffinity at 25)
+  let r26 := decodeSyscallId ⟨26⟩
+  expect "invalid=26" (isErrEq r26 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 24/25. -/
+/-- RD-003: decodeSyscallId — boundary edge 25/26. -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r24 := decodeSyscallId ⟨24⟩
   let r25 := decodeSyscallId ⟨25⟩
-  expect "boundary=24 ok" (r24.isOk)
-  expect "boundary=25 err" (!r25.isOk)
+  let r26 := decodeSyscallId ⟨26⟩
+  expect "boundary=25 ok" (r25.isOk)
+  expect "boundary=26 err" (!r26.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

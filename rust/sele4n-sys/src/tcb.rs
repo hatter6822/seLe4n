@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! TCB (Thread Control Block) operations — suspend, resume, priority, IPC buffer.
+//! TCB (Thread Control Block) operations — suspend, resume, priority, IPC buffer,
+//! CPU affinity.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — D1 (suspend/resume), D2 (priority),
-//! D3 (IPC buffer). All require `.write` right on the target TCB capability.
+//! D3 (IPC buffer), WS-SM SM5.H.4 (CPU affinity). All require `.write` right on the
+//! target TCB capability.
 
 use sele4n_types::{CPtr, KernelResult, SyscallId};
 use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, invoke_syscall};
@@ -96,5 +98,28 @@ pub fn tcb_set_ipc_buffer(
         msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::TcbSetIPCBuffer,
+    })
+}
+
+/// Set a thread's CPU affinity and migrate it to its new home core (WS-SM SM5.H.4).
+///
+/// `affinity_raw` values `0 .. numCores-1` bind the target to that core; the marker
+/// `numCores` (4 on RPi5) unbinds it (runs on any core).  Requires the `.write` right
+/// on the target TCB capability.
+///
+/// Lean: `setThreadCpuAffinityOp` (Scheduler/Operations/Core.lean), dispatched as
+/// `SyscallId.tcbSetAffinity` in `API.lean`.
+#[inline]
+pub fn tcb_set_affinity(
+    tcb_cap: CPtr,
+    affinity_raw: u64,
+) -> KernelResult<SyscallResponse> {
+    let args = SetAffinityArgs { affinity_raw };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: tcb_cap,
+        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_regs: [encoded[0], 0, 0, 0],
+        syscall_id: SyscallId::TcbSetAffinity,
     })
 }
