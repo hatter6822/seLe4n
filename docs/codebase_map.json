@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/exciting-brahmagupta-XAFDT",
-      "commit_sha": "64e2d5ee5c7d350dfb8ebbb590b103f955be9d2f",
-      "tree_sha": "35a6ad7824706b5db452ef80481189386fd06e69",
-      "committed_at_utc": "2026-06-04T19:07:37+00:00"
+      "commit_sha": "88a67ebc47e2a93d574388ac1b3de12489c4910c",
+      "tree_sha": "5cbdc722774bdcaafc2617b38abbee099460723b",
+      "committed_at_utc": "2026-06-05T01:51:12+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c542a5be8ae0629950b76d05f4b79aff013ff218db7766bbffd12d4b82cd11b6"
+    "source_digest": "fc89bdb640d11e06ad08ca9af4fdbbee1970a6637d41bfc2c512a4ed6b57a701"
   },
   "summary": {
     "module_count": 282,
@@ -27,9 +27,9 @@
     "version": "0.31.56",
     "lean_toolchain": "v4.28.0",
     "production_files": 227,
-    "production_loc": 163570,
+    "production_loc": 163592,
     "test_files": 55,
-    "test_loc": 36142,
+    "test_loc": 36155,
     "proved_theorem_lemma_decls": 5368,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -20139,19 +20139,19 @@
         {
           "kind": "theorem",
           "name": "lockSetTheorems_identifiers_nodup",
-          "line": 361,
+          "line": 363,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lockSetTheorems_descriptions_nodup",
-          "line": 365,
+          "line": 371,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "lockSet_consistent_aggregate_covers_every_syscall",
-          "line": 373,
+          "line": 379,
           "called": [
             "count",
             "filter",
@@ -56369,13 +56369,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 64,
+          "line": 78,
           "called": []
         },
         {
           "kind": "def",
           "name": "perCoreTimerTickEntry",
-          "line": 74,
+          "line": 88,
           "called": [
             "fireCrossCoreSgis",
             "modifyGetKernelState",
@@ -56386,7 +56386,7 @@
         {
           "kind": "theorem",
           "name": "perCoreTimerTickEntry_def",
-          "line": 87,
+          "line": 101,
           "called": [
             "Kernel",
             "fireCrossCoreSgis",
@@ -71655,19 +71655,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 49,
+          "line": 51,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "PerCoreCbsCategory",
-          "line": 52,
+          "line": 54,
           "called": []
         },
         {
           "kind": "structure",
           "name": "PerCoreCbsTheorem",
-          "line": 83,
+          "line": 85,
           "called": [
             "PerCoreCbsCategory"
           ]
@@ -71675,13 +71675,13 @@
         {
           "kind": "syntax",
           "name": "\"pccbst!\"",
-          "line": 91,
+          "line": 93,
           "called": []
         },
         {
           "kind": "macro_rules",
-          "name": "<anonymous:macro_rules:93>",
-          "line": 93,
+          "name": "<anonymous:macro_rules:95>",
+          "line": 95,
           "called": [
             "PerCoreCbsTheorem"
           ]
@@ -71689,7 +71689,7 @@
         {
           "kind": "def",
           "name": "perCoreCbsTheorems",
-          "line": 105,
+          "line": 107,
           "called": [
             "PerCoreCbsTheorem",
             "affinityMigrationOrdering_happensBefore",
@@ -71816,7 +71816,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_count",
-          "line": 367,
+          "line": 369,
           "called": [
             "length"
           ]
@@ -71824,7 +71824,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_predicate_count",
-          "line": 370,
+          "line": 372,
           "called": [
             "filter",
             "length"
@@ -71833,7 +71833,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_replenish_count",
-          "line": 374,
+          "line": 376,
           "called": [
             "filter",
             "length"
@@ -71842,7 +71842,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_preservation_count",
-          "line": 378,
+          "line": 380,
           "called": [
             "filter",
             "length"
@@ -71851,7 +71851,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_migration_count",
-          "line": 382,
+          "line": 384,
           "called": [
             "filter",
             "length"
@@ -71860,7 +71860,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_affinityWrite_count",
-          "line": 386,
+          "line": 388,
           "called": [
             "filter",
             "length"
@@ -71869,7 +71869,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_consistency_count",
-          "line": 390,
+          "line": 392,
           "called": [
             "filter",
             "length"
@@ -71878,7 +71878,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_budget_count",
-          "line": 394,
+          "line": 396,
           "called": [
             "filter",
             "length"
@@ -71887,7 +71887,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_lockSet_count",
-          "line": 398,
+          "line": 400,
           "called": [
             "filter",
             "length"
@@ -71896,7 +71896,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_liveTick_count",
-          "line": 402,
+          "line": 404,
           "called": [
             "filter",
             "length"
@@ -71905,7 +71905,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_memoryModel_count",
-          "line": 406,
+          "line": 408,
           "called": [
             "filter",
             "length"
@@ -71914,7 +71914,7 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_partition_sum",
-          "line": 410,
+          "line": 412,
           "called": [
             "filter",
             "length"
@@ -71923,13 +71923,13 @@
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_identifiers_nodup",
-          "line": 427,
+          "line": 429,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "perCoreCbsTheorems_descriptions_nodup",
-          "line": 437,
+          "line": 439,
           "called": [
             "Kernel"
           ]
@@ -138190,9 +138190,17 @@
           "name": "runRunLoopStepChecks",
           "line": 422,
           "called": [
+            "KernelError",
+            "SystemState",
+            "ThreadId",
             "assertBool",
+            "bootCoreId",
             "isEmpty",
+            "lastTimeoutErrorsOnCore",
+            "length",
+            "ofNat",
             "perCoreTimerTickStep",
+            "setLastTimeoutErrorsOnCore",
             "st",
             "stIdle"
           ]
@@ -138200,7 +138208,7 @@
         {
           "kind": "def",
           "name": "stSingleDomain",
-          "line": 438,
+          "line": 451,
           "called": [
             "SystemState",
             "build",
@@ -138210,7 +138218,7 @@
         {
           "kind": "def",
           "name": "runDomainRedispatchChecks",
-          "line": 444,
+          "line": 457,
           "called": [
             "activeDomainOnCore",
             "assertBool",
@@ -138228,7 +138236,7 @@
         {
           "kind": "def",
           "name": "runAll",
-          "line": 473,
+          "line": 486,
           "called": [
             "runBudgetPreemptChecks",
             "runDomainDecrementChecks",
@@ -138244,7 +138252,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 488,
+          "line": 501,
           "called": [
             "runAll"
           ]

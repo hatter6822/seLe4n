@@ -350,20 +350,26 @@ theorem lockSetTheorems_partition_sum :
     (lockSetTheorems.filter (fun t => t.category == .chainStart)).length =
     lockSetTheorems.length := by decide
 
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 2000000 in
 /-- WS-SM SM3.B: every inventory identifier is unique.
 
-We use `native_decide` because the 92-entry inventory's
-list-of-strings `Nodup` check exceeds `decide`'s practical
-elaboration budget; `native_decide` compiles to native code and
-discharges the same proposition in milliseconds.  The trust base
-is identical to `decide` (Lean's kernel verifies the reduction
-result). -/
+Kernel-sound `decide` (not `native_decide`): a duplicate identifier — which
+`native_decide` could mask by trusting the compiled `Lean.ofReduceBool`
+evaluation (see the SM5.D audit-pass-2 finding where exactly such a duplicate
+slipped past `native_decide`) — fails this proof in the kernel.  The
+list-of-strings `Nodup` check needs an elevated `maxRecDepth` + `maxHeartbeats`
+budget at this inventory's size, but stays a kernel-checked `of_decide_eq_true`. -/
 theorem lockSetTheorems_identifiers_nodup :
-    (lockSetTheorems.map (·.identifier)).Nodup := by native_decide
+    (lockSetTheorems.map (·.identifier)).Nodup := by decide
 
-/-- WS-SM SM3.B: every inventory description is unique. -/
+set_option maxRecDepth 100000 in
+set_option maxHeartbeats 2000000 in
+/-- WS-SM SM3.B: every inventory description is unique.  Kernel-sound `decide`
+under an elevated `maxRecDepth` + `maxHeartbeats` (see
+`lockSetTheorems_identifiers_nodup`). -/
 theorem lockSetTheorems_descriptions_nodup :
-    (lockSetTheorems.map (·.description)).Nodup := by native_decide
+    (lockSetTheorems.map (·.description)).Nodup := by decide
 
 /-- WS-SM SM3.B.4 aggregate count: there are exactly 26 consistency
 entries — one per SyscallId variant.  This pairs with

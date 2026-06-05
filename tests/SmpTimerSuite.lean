@@ -433,6 +433,19 @@ private def runRunLoopStepChecks : IO Unit := do
   -- The step never fabricates SGIs beyond what `timerTickOnCore` returns.
   assertBool "step on valid core 3 emits no SGIs on the idle fixture"
     (((perCoreTimerTickStep st 3).2).isEmpty)
+  -- Success path COMMITS a genuine state change (vs the fail-closed no-op):
+  -- seed core 0's lastTimeoutErrors with a stale record, then a valid-core step
+  -- runs the SM5.D.9 clear so the post-step record is empty — proving the step
+  -- took the `.ok result → result` branch and installed the new state, not `(st, [])`.
+  let staleErrs : List (ThreadId × KernelError) := [(ThreadId.ofNat 1, KernelError.invalidArgument)]
+  let stStale : SystemState :=
+    { st with scheduler := st.scheduler.setLastTimeoutErrorsOnCore bootCoreId staleErrs }
+  assertBool "step on valid core 0 commits the tick (SM5.D.9 clears lastTimeoutErrors)"
+    (((perCoreTimerTickStep stStale 0).1.scheduler.lastTimeoutErrorsOnCore bootCoreId).isEmpty)
+  -- ... whereas the fail-closed out-of-range step leaves the stale record untouched
+  -- (it returns the input state unchanged, never committing a partial tick).
+  assertBool "step on out-of-range core 99 does NOT clear lastTimeoutErrors (true no-op)"
+    (((perCoreTimerTickStep stStale 99).1.scheduler.lastTimeoutErrorsOnCore bootCoreId).length == 1)
 
 /-- A single-domain (empty schedule) idle state, for the SM5.D.6 no-op witness. -/
 private def stSingleDomain : SystemState :=

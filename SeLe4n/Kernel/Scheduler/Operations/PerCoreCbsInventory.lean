@@ -16,9 +16,11 @@ Aggregates the SM5.H per-core CBS substantive theorems into a single typed
 inventory with size and per-category witnesses.  Mirrors the SM5.G
 `PerCoreDomainInventory.lean` and SM5.E `PerCoreIdleInventory.lean` patterns.
 
-Ten categories matching the plan §3.8 / §5 sub-tasks (111 entries — the original
+Ten categories matching the plan §3.8 / §5 sub-tasks (119 entries — the original
 seven plus `.lockSet` (§10 cross-domain footprints), `.liveTick` (§14 A2/A4
-live-tick CBS bridge), and `.memoryModel` (§15 C10 cross-core happens-before)):
+live-tick CBS bridge), and `.memoryModel` (§15 C10 cross-core happens-before);
+audit-pass-2 added the §17 D15 composite + §18 SGI characterisation + tightened
+C10 happens-before):
 
 * `.predicate` — SM5.H.1 / SM5.H.5: the per-core CBS affinity-consistency invariant
   `replenishQueueAffinityConsistentOnCore` (+ the SMP form, default-state, frame).

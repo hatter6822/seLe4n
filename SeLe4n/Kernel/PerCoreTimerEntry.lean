@@ -55,10 +55,24 @@ C-callable wrapper named `lean_per_core_timer_tick` against which the Rust side
 resolves `extern "C" { fn lean_per_core_timer_tick(core_id: u64); }` (gated on the
 HAL's `hw_target` feature).  The attribute is required so the symbol is linkable.
 
-## Build reachability
+## Build reachability and FFI-link isolation
 
 Staged via `SeLe4n/Platform/Staged.lean` (added to the staged-module allowlist per
 the WS-RC R12.B partition gate).
+
+This driver references the `ffiSendSgi` extern transitively (via
+`Concurrency.fireCrossCoreSgis`), and `@[export]` keeps the symbol live — so an
+executable that *linked* this module would demand `ffi_send_sgi` at link time.
+The guarantee that no test executable hits that is **link-isolation by
+non-import**: no `lake exe` root imports this module.  `Main.lean` reaches only
+`SeLe4n` + `MainTraceHarness`; the test suites that exercise the per-core tick
+(`SmpTimerSuite`) deliberately import the FFI-free `PerCoreRunLoop` (the verified
+`perCoreTimerTickStep`) and **not** this entry.  The only importers are
+`Platform/Staged.lean` (a library build anchor, not an exe root, so no link step)
+and `PerCoreTimerInventory.lean` (likewise).  The entry's signature +
+`perCoreTimerTickEntry_def` body-shape marker are surfaced as tier-3 elaboration
+anchors (no exe link).  The real kernel image (a future `[[bin]]` target) *will*
+link the HAL, so `ffi_send_sgi` resolves there.
 -/
 
 namespace SeLe4n.Kernel

@@ -78,6 +78,51 @@ production/staged partition gate holds (**58** staged-only modules).  Refs:
   (the per-core entry IS the live driver; the remaining item is the image to load).
   Items deferred past v1.0.0 with correctness impact: NONE.
 
+### Audit-pass-3 (deeper comprehensive audit; ships inside v0.31.56)
+
+A second, deeper audit — three independent read-only auditors (SM5.I driver,
+§17/§18 CBS theorems, NI/tests/ABI) plus direct security re-verification, reading
+the **code** (not docstrings) — confirmed the PR **clean**: the `modifyGet` tuple
+order is correct (verified against Lean-core `ST.lean`: returns the first tuple
+component, installs the second — so the new state is installed, the SGIs returned);
+the SM5.I driver is fail-closed with no spurious commit/SGI on error; the
+`tcbSetAffinity` gate is enforced (`.write` on the cap target, `syscallInvoke`
+before dispatch — no bypass, target from `cap.target` not a register; `decodeAffinity`
+rejects out-of-range); the unconditional affinity-write NI has no leak (`cpuAffinity`
+is in the projection's *stripped* set; every other TCB field is untouched); the
+§17/§18 theorems are non-vacuous + axiom-clean (executable witnesses pass); and the
+suites have **zero** dead-weight `assertBool … true` assertions.  Closes one
+soundness shortcut + three doc/test refinements:
+
+- **Soundness (the one code change)** — `LockSetInventory.lean` (which this PR
+  modified to add the `lockSet_tcbSetAffinity` entry) proved its identifier/
+  description `Nodup` with **`native_decide`**, the trust shortcut the SM5.D
+  audit-pass-2 caught masking a real duplicate.  Switched both proofs to
+  kernel-sound **`decide`** (elevated `maxRecDepth`/`maxHeartbeats`; builds in
+  ~38 s) so the affinity entry's uniqueness — and all 92+ entries' — is
+  kernel-verified, not native-evaluated.
+- **Doc accuracy** — `PerCoreCbsInventory.lean` header prose corrected `111` → `119`
+  entries (the authoritative `perCoreCbsTheorems_count = 119` witness was already
+  right); `PerCoreTimerEntry.lean` clarified the FFI-link-isolation **mechanism**
+  (the entry references the `ffiSendSgi` extern via `fireCrossCoreSgis`, but is
+  link-isolated because **no `lake exe` imports it** — the stronger, actually-true
+  guarantee — not because an importing exe is somehow shielded).
+- **Test strengthening** — `SmpTimerSuite` run-loop-step test now exercises the
+  **success path with a committed state change** (a valid-core step runs the
+  SM5.D.9 `lastTimeoutErrors` clear) and contrasts it against the fail-closed
+  out-of-range no-op (record untouched) — distinguishing a genuine `.ok` commit
+  from the `(st, [])` no-op, not just "no SGIs on idle".
+- **Tracked (precise closure plan, not silently dropped)** — the full-tick
+  CBS-invariant preservation (`timerTickOnCore` preserving replenish-queue
+  validity / pipeline-order / affinity-consistency) is SM5.I-scope: validity is
+  cheap (mirror the existing `lastTimeoutErrorsOnCore` frame chain + `popDue`
+  preservation + the `scheduleEffectiveOnCore` replenish frame), pipeline-order
+  needs a `timeoutBlockedThreads` machine-timer frame chain, and
+  affinity-consistency needs the not-yet-formalized affinity-placement invariant.
+  The three other SM3.x lock inventories (Serializability / Deadlock / WithLockSet)
+  still use `native_decide` — pre-existing, untouched by this PR; a separate
+  hygiene slice.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.55 — WS-SM SM5.H completion: full thread migration, live-tick CBS bridge, `tcbSetAffinity` syscall
 
 Completes **WS-SM SM5.H — Per-core CBS** to its optimal form, closing every gap from

@@ -6190,6 +6190,42 @@ documentation lives under `docs/` and `docs/gitbook/`.
     image is the remaining item).  Items deferred past v1.0.0 with correctness
     impact: NONE.
 
+  **WS-SM SM5.H audit-pass-3 (deeper comprehensive audit; ships inside v0.31.56,
+  same branch)**: three independent read-only auditors (SM5.I driver, §17/§18 CBS
+  theorems, NI/tests/ABI) + direct security re-verification, reading the **code**
+  (not docstrings), confirmed the PR **clean** — `modifyGet` tuple order correct
+  (verified vs Lean-core `ST.lean`: returns the first component, installs the
+  second, so the new state is installed and the SGIs returned); the SM5.I driver
+  fail-closed (no spurious commit/SGI on error); `tcbSetAffinity` gated by `.write`
+  on the cap target (`syscallInvoke` before dispatch, target from `cap.target` not
+  a register, `decodeAffinity` rejects out-of-range); the unconditional
+  affinity-write NI has no leak (`cpuAffinity` is in the projection's stripped set,
+  no other TCB field touched); §17/§18 theorems non-vacuous + axiom-clean
+  (executable witnesses pass); zero dead-weight `assertBool … true`.  Closes one
+  soundness shortcut + three doc/test refinements:
+  - **Soundness (the one code change)**: `LockSetInventory.lean` (which this PR
+    modified to add `lockSet_tcbSetAffinity`) proved its identifier/description
+    `Nodup` witnesses with `native_decide` — the trust shortcut the SM5.D
+    audit-pass-2 caught masking a real duplicate.  Switched to kernel-sound
+    `decide` (elevated `maxRecDepth`/`maxHeartbeats`; ~38 s) so the affinity entry's
+    uniqueness — and all 92+ entries' — is kernel-verified.
+  - **Doc accuracy**: `PerCoreCbsInventory` header prose `111` → `119`;
+    `PerCoreTimerEntry` FFI-link-isolation mechanism clarified (link-isolated by
+    **non-import** — no `lake exe` imports it — the stronger, actually-true
+    guarantee, not "an importing exe is shielded").
+  - **Test strengthening**: `SmpTimerSuite` run-loop-step test now exercises the
+    success-path commit (a valid-core step runs the SM5.D.9 `lastTimeoutErrors`
+    clear) vs the fail-closed out-of-range no-op (record untouched).
+  - **Tracked**: the full-tick CBS-invariant preservation (`timerTickOnCore`
+    preserving replenish-queue validity / pipeline-order / affinity-consistency)
+    is SM5.I-scope — validity is cheap (mirror the `lastTimeoutErrorsOnCore` frame
+    chain + `popDue` preservation + a `scheduleEffectiveOnCore` replenish frame),
+    pipeline-order needs a `timeoutBlockedThreads` machine-timer frame chain, and
+    affinity-consistency needs the not-yet-formalized affinity-placement invariant.
+    The 3 other SM3.x lock inventories (Serializability / Deadlock / WithLockSet)
+    still use `native_decide` — pre-existing, untouched by this PR; a separate
+    hygiene slice.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:
