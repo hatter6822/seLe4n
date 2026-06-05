@@ -43,10 +43,14 @@
 #     bracket (the per-core FFI seam; SM5.I).
 #   * A per-core timer driver in the kernel image emitting the banner below.
 #
-# At v0.31.41 (this script's landing) `perCoreTimerTickEntry` is a deliberate
-# `pure ()` placeholder; the per-core scheduler-tick wiring that lets a real
-# core's CNTP advance live per-core state lands at SM5.I.  This script therefore
-# SKIPs with a documentation banner until that wiring exists.
+# As of SM5.I, `perCoreTimerTickEntry` is the live driver: it atomically runs the
+# verified `perCoreTimerTickStep` (decoding the core id, driving `timerTickOnCore`,
+# committing the new state) and fires the recovered cross-core `.reschedule` SGIs
+# via `fireCrossCoreSgis`.  What this script still needs is a bootable kernel
+# **image** (`[[bin]]` target linking the HAL + the Lean `@[export]` symbols) and a
+# real (or QEMU-emulated) multi-core boot to exercise it end-to-end — that image
+# target is the remaining SM5.I closure item.  This script therefore SKIPs with a
+# documentation banner until the kernel image exists.
 #
 # Skip / pass / fail conditions:
 #   * No QEMU on PATH                 → SKIP
@@ -92,12 +96,13 @@ fi
 if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -q "smp-test.*per-core-timer"; then
   echo "[SKIP] WS-SM SM5.D: per-core timer driver not wired in kernel image"
   echo ""
-  echo "  Reason: exercising a real per-core timer tick requires SM5.I per-core"
-  echo "          scheduler state (live current / run-queue / domain slots per"
-  echo "          core) and the per-core timer ISR driving timerTickOnCore under"
-  echo "          withLockSet over timerTickOnCoreLockSet.  At SM5.D the per-core"
-  echo "          entry seam (perCoreTimerTickEntry) is a pure () placeholder; the"
-  echo "          tick correctness guarantee is established FORMALLY (and for ALL"
+  echo "  Reason: exercising a real per-core timer tick end-to-end requires a"
+  echo "          bootable kernel IMAGE ([[bin]] target linking the HAL + the Lean"
+  echo "          @[export] symbols).  The per-core entry seam (perCoreTimerTickEntry)"
+  echo "          IS the live driver as of SM5.I — it drives perCoreTimerTickStep"
+  echo "          (timerTickOnCore) and fires the cross-core SGIs; the remaining item"
+  echo "          is the kernel image to load.  The per-core tick correctness"
+  echo "          guarantee is established FORMALLY (and for ALL"
   echo "          executions) by:"
   echo "            timerTickOnCore_advances_per_core      (no global advance; D.2)"
   echo "            switchDomainOnCore_rotates             (domain rotation; D.6)"

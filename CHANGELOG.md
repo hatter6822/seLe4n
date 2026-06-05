@@ -1,3 +1,83 @@
+## v0.31.56 — WS-SM SM5.H completion audit-pass-2 + SM5.I per-core run-loop driver pulled forward
+
+Continues PR #813 to its complete-as-feasible form: closes the high-value SM5.H
+completeness gaps the post-landing review surfaced (the **D15 composite**, the
+cross-core **SGI characterisation**, the **unconditional** affinity-write NI, and
+the **tightened C10** happens-before), **pulls SM5.I forward** (the per-core
+timer-tick kernel entry becomes the live driver — it drives the verified
+`timerTickOnCore` and **fires** the cross-core SGIs), and fixes a pre-existing
+**ABI off-by-one** that made three TCB-management syscalls unreachable on hardware.
+All new Lean theorems are axiom-clean (`propext` / `Quot.sound` / `Classical.choice`
+only); the default production build is green (324 jobs); the trace fixture is
+**byte-identical**; the full Rust HAL suite (724 tests) + clippy are clean; the
+production/staged partition gate holds (**58** staged-only modules).  Refs:
+`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.4/§3.8/§5,
+`docs/planning/SMP_PER_CORE_STATE_PLAN.md`.
+
+- **ABI off-by-one fix (correctness, DoS-class)** — `min_inline_args` for
+  `TcbSetPriority` / `TcbSetMCPriority` / `TcbSetIPCBuffer` was `2`, but all three
+  decoders read exactly one inline register (`requireMsgReg decoded.msgRegs 0`;
+  docstrings "Requires 1 message register") and their `sele4n-sys` wrappers send
+  `MessageInfo::new_const(1, 0, 0)` (length 1).  `dispatch_svc`'s `len < min_inline_args`
+  gate (`1 < 2`) therefore **rejected every valid call** at the trap boundary,
+  making these three syscalls unreachable on hardware before reaching the verified
+  kernel.  Corrected to `1`; new `dispatch_svc_accepts_single_register_tcb_management_syscalls`
+  regression guard + value pins for all four single-register TCB ops.
+- **D15 composite (§17)** — `setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore`:
+  the **full** affinity composite preserves the SM4.C per-core run-queue↔budget
+  consistency on every core (the standalone companion of the run-queue-move helper
+  D15).  Composes the affinity write (`setThreadCpuAffinity_preserves_…`,
+  cpuAffinity-only via the new `setThreadCpuAffinity_getTcb?_self` frame), the
+  replenishment migration (`migrateSchedContextReplenishment_preserves_…`,
+  replenish-queues-only), and the run-queue move (§16).
+- **SGI characterisation (§18)** — `setThreadCpuAffinityWithMigration_sgi_eq` pins the
+  composite's emitted SGI to its exact `if`-expression; `_no_sgi_if_local` (local
+  re-home ⇒ no poke) and `_emits_reschedule_of_remote_runnable` (remote + runnable ⇒
+  exactly one `.reschedule` SGI to the new home) are the directional corollaries the
+  run loop reads to decide whether to poke a remote core.
+- **Tightened C10 (§18)** — `setThreadCpuAffinityWithMigration_sgi_happensBefore` pins
+  the generic `affinityMigrationOrdering_happensBefore` to the composite's actual
+  emission: an emitted `some (newHome, k)` necessarily targets the new home, is a
+  `.reschedule`, and the executing core's release-store happens-before the new home's
+  acquire-load (SM2.A operational memory model).
+- **Unconditional affinity-write NI (item 9)** —
+  `setThreadCpuAffinity_preserves_projection_unconditional`: the affinity write
+  preserves the IF projection for **any** target (high *or* low), because the
+  projection erases `cpuAffinity` (`projectKernelObject_tcb_cpuAffinity_irrelevant`).
+  Strictly stronger than the high-target form; per-thread CPU placement is a
+  non-observable scheduling decision unconditionally.  Built on the new general
+  `objects_insert_preserves_projection_of_proj_eq`.
+- **SM5.I per-core run-loop driver pulled forward** — NEW staged module
+  `Scheduler/Operations/PerCoreRunLoop.lean` exports the verified pure decision core
+  `perCoreTimerTickStep` (decode the `UInt64` core id fail-closed, drive the verified
+  `timerTickOnCore`, commit + recover the cross-core SGIs) with fail-closed
+  reductions, `_preserves_objects_invExt` (unconditional), and
+  `_ok_currentThreadValidOnCore`.  `Kernel.perCoreTimerTickEntry`
+  (`@[export lean_per_core_timer_tick]`, the Rust CNTP-ISR seam) is **rewired from
+  the SM5.D `pure ()` placeholder into the live driver**: it atomically runs
+  `perCoreTimerTickStep` against the kernel state (new `Platform.FFI.modifyGetKernelState`)
+  and **fires** the recovered cross-core `.reschedule` SGIs via
+  `Concurrency.fireCrossCoreSgis`.  The SM5.F pattern (verified pure core + inert-on-
+  no-SGI `BaseIO` shell); `perCoreTimerTickEntry_def` pins the body shape.  Per the
+  FFI fail-closed convention the entry references the `ffiSendSgi` extern, so the
+  test exes test the FFI-free `perCoreTimerTickStep` (the entry's signature +
+  body-shape marker are tier-3 elaboration anchors only).
+- **Inventory + tests** — `PerCoreCbsInventory` 111 → **119** (+8: D15 composite,
+  SGI characterisation, tightened C10), kernel-sound `decide` under an elevated
+  heartbeat budget; `SmpCbsSuite` gains a §3.8 D15-composite + SGI-characterisation
+  runtime section; `SmpTimerSuite` exercises the pure `perCoreTimerTickStep`;
+  tier-3 + `InformationFlowSuite` anchors updated.
+- **Items tracked (explicit closure targets, not silently dropped)** — the full-tick
+  CBS-invariant preservation chain (`timerTickOnCore` replenish-validity +
+  pipeline-order through `processReplenishmentsDueOnCore`), the budget-tick
+  pipeline-order (needs a `timeoutBlockedThreads` machine-timer frame chain), the
+  full per-core scheduler/cross-subsystem bundle preservation for the composite, the
+  unconditional lock-ordering via the canonical `SchedLockId` sort, the
+  `SchedLockId`-level `withLockSet` runtime bracket (SM3.C's combinator is
+  `LockId`-only), and the bootable `[[bin]]` kernel image + live QEMU multi-core boot
+  (the per-core entry IS the live driver; the remaining item is the image to load).
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.55 — WS-SM SM5.H completion: full thread migration, live-tick CBS bridge, `tcbSetAffinity` syscall
 
 Completes **WS-SM SM5.H — Per-core CBS** to its optimal form, closing every gap from

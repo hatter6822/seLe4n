@@ -230,10 +230,16 @@ import SeLe4n.Kernel.Scheduler.Operations.CrossCoreWakeInventory
 -- production transitions are in `Scheduler.Operations.Core`; SM5.I's per-core
 -- scheduler-tick driver is the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
--- WS-SM SM5.D.1: the per-core timer-tick kernel entry seam
+-- WS-SM SM5.I: the verified per-core run-loop step (`perCoreTimerTickStep`) the
+-- per-core timer-tick kernel entry drives — a pure decision core over the verified
+-- `timerTickOnCore` transition (fail-closed reductions + objects-`invExt` /
+-- current-thread-validity preservation), the SM5.F pattern's verified core.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
+-- WS-SM SM5.D.1 / SM5.I: the per-core timer-tick kernel entry seam
 -- (`@[export lean_per_core_timer_tick]`) the Rust per-core CNTP ISR
--- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I moves it
--- production-reached when the per-core scheduler-tick driver lands.
+-- (`timer::per_core_timer_tick_isr`) resolves against.  SM5.I rewires it from the
+-- SM5.D `pure ()` placeholder into the live driver: atomically run
+-- `perCoreTimerTickStep` against the kernel state, then fire the cross-core SGIs.
 import SeLe4n.Kernel.PerCoreTimerEntry
 -- WS-SM SM5.D: the 101-entry per-core-timer theorem inventory (7 categories:
 -- lockSet/domain/replenish/budget/tick/preservation/decidability) with the `pctt!`

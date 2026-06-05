@@ -1292,6 +1292,17 @@ def processReplenishmentsDueOnCore (st : SystemState) (c : CoreId) (now : Nat) :
     let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
     (s, acc.2 ++ sgi?.toList)) (st', [])
 
+/-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
+`scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
+`c`'s replenish queue.  The named CBS-replenishment-scheduling primitive that the
+live per-core budget tick (`timerTickBudgetOnCore`, below) **calls** for its
+replenishment write, so it is genuinely load-bearing (not merely proven-equal).
+Defined here, before the tick, to satisfy the forward reference. -/
+def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
+    (eligibleAt : Nat) : SystemState :=
+  let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
+  { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
+
 /-- WS-SM SM5.D.5 (per-core budget/time-slice tick): the per-core analogue of
 `timerTickBudget`.  Charges the current thread `tid` (with TCB `tcb`) one tick of
 budget on core `c`, returning `(updatedState, wasPreempted)`.
@@ -1338,9 +1349,13 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
         let sc'' := scheduleReplenishment sc' now consumedAmount
         let sc''' := cbsUpdateDeadline sc'' now true
         let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc''') }
-        let rq := (st'.scheduler.replenishQueueOnCore c).insert scId (now + sc.period.val)
-        let st'' := { st' with scheduler := ((st'.scheduler.setReplenishQueueOnCore c rq).setRunQueueOnCore
-          c ((st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc))) }
+        -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
+        -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
+        -- equal); `stReplenished` is defeq to the prior open-coded
+        -- `setReplenishQueueOnCore c ((replenishQueueOnCore c).insert scId (now+period))`.
+        let stReplenished := replenishOnCore st' c scId (now + sc.period.val)
+        let rqPreempt := (st'.scheduler.runQueueOnCore c).insert tid (resolveInsertPriority st' tid sc)
+        let st'' := { stReplenished with scheduler := stReplenished.scheduler.setRunQueueOnCore c rqPreempt }
         let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
         let st'''' := { st''' with scheduler :=
           st'''.scheduler.setLastTimeoutErrorsOnCore c timeoutErrors }
@@ -1523,15 +1538,11 @@ def threadStateConsistent (st : SystemState) : Prop :=
 -- `tcbSetAffinity` syscall dispatches).  The forward-looking theorem surface
 -- lives in the staged `Scheduler/Operations/PerCoreCbs.lean`; these defs are
 -- production-reached via the SM5.H.4 syscall (`setThreadCpuAffinityOp`).
-
-/-- WS-SM SM5.H.2 (plan §3.8): schedule a CBS replenishment for SchedContext
-`scId` on core `c`, eligible at absolute tick `eligibleAt` — insert into core
-`c`'s replenish queue.  The clean named extraction of the queue insert
-`timerTickBudgetOnCore` / `handleYieldWithBudget` open-code. -/
-def replenishOnCore (st : SystemState) (c : CoreId) (scId : SchedContextId)
-    (eligibleAt : Nat) : SystemState :=
-  let rq := (st.scheduler.replenishQueueOnCore c).insert scId eligibleAt
-  { st with scheduler := st.scheduler.setReplenishQueueOnCore c rq }
+--
+-- `replenishOnCore` itself is defined earlier (just before
+-- `timerTickBudgetOnCore`) because the live per-core budget tick now CALLS it
+-- for its CBS replenishment write (so the primitive is genuinely load-bearing,
+-- not merely proven-equal); see its def site for the docstring.
 
 /-- WS-SM SM5.H.2 (faithful plan signature `replenishOnCore (s, c, sc)`): schedule
 a CBS replenishment for SchedContext `sc` on core `c`, computing the eligibility

@@ -3313,9 +3313,11 @@ EOF'
 # SM5.D.8 decidability, and the SM5.D.1 export seam.  A rename / removal of any
 # SM5.D symbol fails here at elaboration time before the test suite.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.PerCoreTimerEntry'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5d_surface.lean <<EOF
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreRunLoop
 import SeLe4n.Kernel.PerCoreTimerEntry
 open SeLe4n.Kernel
 -- SM5.D.2/.4/.5/.6/.9 production transitions.
@@ -3386,9 +3388,16 @@ open SeLe4n.Kernel
 #check @timerTickOnCoreSucceeds
 #check @timerTickOnCoreEmitsSgi
 #check @timerTickBudgetOnCorePreempts
--- SM5.D.1 export seam.
+-- SM5.I per-core run-loop step + the live timer-entry driver.
+#check @perCoreTimerTickStep
+#check @perCoreTimerTickStep_invalid_core
+#check @perCoreTimerTickStep_ok
+#check @perCoreTimerTickStep_error
+#check @perCoreTimerTickStep_sgis_eq_tick
+#check @perCoreTimerTickStep_preserves_objects_invExt
+#check @perCoreTimerTickStep_ok_currentThreadValidOnCore
 #check @perCoreTimerTickEntry
-#check @perCoreTimerTickEntry_returns_unit_marker
+#check @perCoreTimerTickEntry_def
 -- SM5.D.6 full per-core domain re-dispatch (§4b).
 #check @switchDomainOnCore_singleDomain_noop
 #check @switchDomainOnCore_preserves_objects_invExt
@@ -3854,6 +3863,18 @@ open SeLe4n.Kernel
 -- SM5.H.4 (C10, the migration cross-core memory-model HB).
 #check @affinityMigrationOrdering_synchronizesWith
 #check @affinityMigrationOrdering_happensBefore
+-- SM5.H.4 audit-pass-2 (D15 composite, §17): the full affinity composite preserves
+-- SM4.C run-queue↔budget consistency on every core.
+#check @setThreadCpuAffinity_getTcb?_self
+#check @setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
+#check @migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+#check @setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore
+-- SM5.H.4 audit-pass-2 (B8/SGI + C10 tightened, §18): the composite cross-core
+-- .reschedule SGI characterisation, pinned to the memory-model happens-before.
+#check @setThreadCpuAffinityWithMigration_sgi_eq
+#check @setThreadCpuAffinityWithMigration_no_sgi_if_local
+#check @setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable
+#check @setThreadCpuAffinityWithMigration_sgi_happensBefore
 -- SM5.H.4 the tcbSetAffinity syscall wiring (production-reached).
 #check @setThreadCpuAffinityOp
 #check @decodeAffinity

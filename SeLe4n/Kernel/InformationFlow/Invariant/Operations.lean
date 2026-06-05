@@ -3453,6 +3453,79 @@ theorem setThreadCpuAffinity_preserves_projection
     exact objects_insert_preserves_projection_high ctx observer st targetTid.toObjId _ hTargetObjHigh hObjInv
   · simp at hSet
 
+/-- WS-SM SM5.H.4 (NI, projection insensitivity to `cpuAffinity`): the projection
+of a TCB is unchanged by rewriting only its `cpuAffinity` — the `.tcb` arm strips
+`cpuAffinity := none` structurally, so the affinity value never survives.  This is
+the structural fact behind the *unconditional* affinity-write NI below. -/
+theorem projectKernelObject_tcb_cpuAffinity_irrelevant
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB)
+    (a : Option SeLe4n.Kernel.Concurrency.CoreId) :
+    projectKernelObject ctx observer (.tcb { tcb with cpuAffinity := a })
+      = projectKernelObject ctx observer (.tcb tcb) := by
+  simp only [projectKernelObject]
+
+/-- WS-SM SM5.H.4 (NI, general): inserting an object whose **projection equals the
+original's** preserves `projectState` — *unconditionally* (regardless of whether
+the slot is observable).  The redacted view at that slot is identical, and no other
+projection component reads the object store.  The proj-eq generalisation of
+`objects_insert_preserves_projection_high` (which is the special case where both
+projections are erased because the slot is high). -/
+theorem objects_insert_preserves_projection_of_proj_eq
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hProjEq : (st.objects[oid]?).map (projectKernelObject ctx observer)
+             = some (projectKernelObject ctx observer obj)) :
+    projectState ctx observer { st with objects := st.objects.insert oid obj }
+      = projectState ctx observer st := by
+  have hProjObj : projectObjects ctx observer { st with objects := st.objects.insert oid obj }
+                = projectObjects ctx observer st := by
+    funext o
+    simp only [projectObjects]
+    cases hObs : objectObservable ctx observer o with
+    | true =>
+      simp only [RHTable_getElem?_eq_get?]
+      by_cases hEq : oid = o
+      · subst hEq
+        rw [RobinHood.RHTable.getElem?_insert_self st.objects oid obj hObjInv]
+        rw [RHTable_getElem?_eq_get?] at hProjEq
+        exact hProjEq.symm
+      · rw [RobinHood.RHTable.getElem?_insert_ne st.objects oid o obj
+          (fun hb => hEq (eq_of_beq hb)) hObjInv]
+    | false => rfl
+  show (ObservableState.mk (projectObjects ctx observer
+                              { st with objects := st.objects.insert oid obj })
+          _ _ _ _ _ _ _ _ _ _ _ _) = _
+  rw [hProjObj]
+  rfl
+
+/-- WS-SM SM5.H.4 (NI, **unconditional**): the affinity write preserves the
+projection for **any** target — high *or* low.  Because the projection erases
+`cpuAffinity` (`projectKernelObject_tcb_cpuAffinity_irrelevant`), the target's
+projected view is identical before and after, so the write is invisible to every
+observer regardless of whether the target is observable.  Strictly stronger than
+`setThreadCpuAffinity_preserves_projection` (which assumes a high target): per-thread
+CPU placement is a non-observable scheduling decision unconditionally, so a low
+observer cannot detect an affinity change even on a thread it *can* see. -/
+theorem setThreadCpuAffinity_preserves_projection_unconditional
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (targetTid : SeLe4n.ThreadId)
+    (affinity : Option SeLe4n.Kernel.Concurrency.CoreId) (stSet : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet) :
+    projectState ctx observer stSet = projectState ctx observer st := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · rename_i tcb hTcb
+    simp only [Except.ok.injEq] at hSet
+    subst hSet
+    refine objects_insert_preserves_projection_of_proj_eq ctx observer st targetTid.toObjId
+      (.tcb { tcb with cpuAffinity := affinity }) hObjInv ?_
+    rw [(SystemState.getTcb?_eq_some_iff st targetTid tcb).mp hTcb]
+    rw [projectKernelObject_tcb_cpuAffinity_irrelevant]
+    rfl
+  · simp at hSet
+
 /-- WS-SM SM5.H.4 (NI, the composite): the full affinity-change-with-migration
 composite preserves the projection when the target thread/object is non-observable
 (high) — the standard non-interference guarantee for a TCB-control op, the affinity

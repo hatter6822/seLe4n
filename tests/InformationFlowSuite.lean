@@ -242,6 +242,13 @@ def test_schedContext_yield_self_returns_state_unchanged : IO Bool := do
 #check @SeLe4n.Kernel.setThreadCpuAffinityWithMigration_preserves_projection
 #check @SeLe4n.Kernel.migrateRunQueueOnAffinityChange_preserves_projection
 #check @SeLe4n.Kernel.migrateSchedContextReplenishment_preserves_projection
+-- SM5.H.4 audit-pass-2: the *unconditional* affinity-write NI — the affinity write
+-- preserves the projection for ANY target (high OR low), because the projection
+-- erases cpuAffinity (`projectKernelObject_tcb_cpuAffinity_irrelevant`).  Strictly
+-- stronger than the high-target form above.
+#check @SeLe4n.Kernel.projectKernelObject_tcb_cpuAffinity_irrelevant
+#check @SeLe4n.Kernel.objects_insert_preserves_projection_of_proj_eq
+#check @SeLe4n.Kernel.setThreadCpuAffinity_preserves_projection_unconditional
 
 /-- AK6-E (NI-H01): `niStepConstructorCoverage` is the constructor-level
 discoverability index for `KernelOperation`.  Beyond the compile-time

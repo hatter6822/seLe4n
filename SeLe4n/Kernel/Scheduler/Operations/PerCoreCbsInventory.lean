@@ -339,12 +339,32 @@ def perCoreCbsTheorems : List PerCoreCbsTheorem :=
     pccbst! "migrateRunQueueOnAffinityChange_getTcb?: the run-queue migration frames every TCB resolution"
       migrateRunQueueOnAffinityChange_getTcb? .consistency,
     pccbst! "migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore: D15 — the run-queue migration preserves SM4.C run-queue↔budget consistency on every core"
-      migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore .consistency]
+      migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore .consistency,
+    -- ── SM5.H.4 (D15 composite, §17) the FULL affinity composite preserves SM4.C run-queue↔budget ──
+    pccbst! "setThreadCpuAffinity_getTcb?_self: the affinity write reads back the target's TCB with only cpuAffinity rewritten"
+      setThreadCpuAffinity_getTcb?_self .affinityWrite,
+    pccbst! "setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore: D15 helper — the affinity write preserves SM4.C run-queue↔budget consistency"
+      setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore .consistency,
+    pccbst! "migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore: D15 helper — the replenishment migration preserves SM4.C run-queue↔budget consistency"
+      migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore .consistency,
+    pccbst! "setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore: D15 composite — the full affinity composite preserves SM4.C run-queue↔budget consistency on every core"
+      setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore .consistency,
+    -- ── SM5.H.4 (B8/SGI, §18) the composite's cross-core .reschedule SGI characterisation (.migration) ──
+    pccbst! "setThreadCpuAffinityWithMigration_sgi_eq: the composite's emitted SGI is exactly the remote-and-runnable if-expression"
+      setThreadCpuAffinityWithMigration_sgi_eq .migration,
+    pccbst! "setThreadCpuAffinityWithMigration_no_sgi_if_local: a local affinity change (new home = executing core) emits no cross-core SGI"
+      setThreadCpuAffinityWithMigration_no_sgi_if_local .migration,
+    pccbst! "setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable: a remote+runnable affinity change emits exactly one .reschedule SGI to the new home"
+      setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable .migration,
+    -- ── SM5.H.4 (C10 tightened, §18) the emitted SGI pinned to the memory-model HB (.memoryModel) ──
+    pccbst! "setThreadCpuAffinityWithMigration_sgi_happensBefore: the composite's emitted SGI targets the new home, is a .reschedule, and the state write happens-before the new home observes it"
+      setThreadCpuAffinityWithMigration_sgi_happensBefore .memoryModel]
 
-/-- WS-SM SM5.H: the inventory has 109 substantive entries.  A regression that adds
-a new SM5.H theorem without registering it fails this count witness at the Tier-3
-surface check. -/
-theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 111 := by decide
+/-- WS-SM SM5.H: the inventory has 119 substantive entries (audit-pass-2: +8 for
+the SM5.H.4 D15 composite + the §18 SGI characterisation + the tightened C10 HB).
+A regression that adds a new SM5.H theorem without registering it fails this count
+witness at the Tier-3 surface check. -/
+theorem perCoreCbsTheorems_count : perCoreCbsTheorems.length = 119 := by decide
 
 /-- WS-SM SM5.H: 6 entries in the `predicate` category. -/
 theorem perCoreCbsTheorems_predicate_count :
@@ -360,15 +380,15 @@ theorem perCoreCbsTheorems_preservation_count :
 
 /-- WS-SM SM5.H: 22 entries in the `migration` category. -/
 theorem perCoreCbsTheorems_migration_count :
-    (perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 22 := by decide
+    (perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 25 := by decide
 
 /-- WS-SM SM5.H: 3 entries in the `affinityWrite` category. -/
 theorem perCoreCbsTheorems_affinityWrite_count :
-    (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 3 := by decide
+    (perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4 := by decide
 
 /-- WS-SM SM5.H: 19 entries in the `consistency` category. -/
 theorem perCoreCbsTheorems_consistency_count :
-    (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 19 := by decide
+    (perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22 := by decide
 
 /-- WS-SM SM5.H: 6 entries in the `budget` category. -/
 theorem perCoreCbsTheorems_budget_count :
@@ -384,7 +404,7 @@ theorem perCoreCbsTheorems_liveTick_count :
 
 /-- WS-SM SM5.H: 2 entries in the `memoryModel` category. -/
 theorem perCoreCbsTheorems_memoryModel_count :
-    (perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 2 := by decide
+    (perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 3 := by decide
 
 /-- WS-SM SM5.H: per-category counts sum to the total. -/
 theorem perCoreCbsTheorems_partition_sum :
@@ -408,8 +428,12 @@ theorem perCoreCbsTheorems_identifiers_nodup :
     (perCoreCbsTheorems.map (·.identifier)).Nodup := by decide
 
 set_option maxRecDepth 10000 in
+set_option maxHeartbeats 400000 in
 /-- WS-SM SM5.H: every inventory description is unique.  Kernel-sound `decide` under
-an elevated `maxRecDepth` (see `perCoreCbsTheorems_identifiers_nodup`). -/
+an elevated `maxRecDepth` + `maxHeartbeats` (the O(n²) pairwise comparison of 119
+long description strings exceeds the default heartbeat budget; still the
+kernel-checked `decide`, never `native_decide`, see
+`perCoreCbsTheorems_identifiers_nodup`). -/
 theorem perCoreCbsTheorems_descriptions_nodup :
     (perCoreCbsTheorems.map (·.description)).Nodup := by decide
 

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.55.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.56.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6140,6 +6140,55 @@ documentation lives under `docs/` and `docs/gitbook/`.
     syscall.  Replaced with the canonical drift-proof `SyscallId.all` / `SyscallId.count`
     (auto-covers every variant); the fixture gains one line (`25` → `26 variants`).
   Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.H completion audit-pass-2 + SM5.I run-loop driver pulled forward
+  (v0.31.56, same branch `claude/exciting-brahmagupta-XAFDT`)**: closes the
+  high-value SM5.H completeness gaps the post-landing review surfaced, **pulls
+  SM5.I forward** (the per-core timer entry becomes the live driver firing SGIs),
+  and fixes a pre-existing ABI off-by-one.  All Lean theorems axiom-clean; default
+  build green (324 jobs); trace byte-identical; Rust HAL 724 tests + clippy clean;
+  partition gate 58 staged-only modules.
+  - **ABI off-by-one (correctness, DoS-class)**: `min_inline_args` for
+    `TcbSetPriority` / `TcbSetMCPriority` / `TcbSetIPCBuffer` was `2`, but all three
+    decoders read exactly one inline register and their wrappers send length 1, so
+    `dispatch_svc`'s `len < min_inline_args` gate rejected every valid call —
+    unreachable on hardware.  Corrected to `1` + a regression guard.
+  - **D15 composite (§17)**:
+    `setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore`
+    — the full affinity composite preserves SM4.C run-queue↔budget consistency on
+    every core (affinity write cpuAffinity-only + replenish migration + run-queue
+    move), with the `setThreadCpuAffinity_getTcb?_self` frame.
+  - **SGI characterisation + tightened C10 (§18)**:
+    `setThreadCpuAffinityWithMigration_sgi_eq` / `_no_sgi_if_local` /
+    `_emits_reschedule_of_remote_runnable` pin the composite's cross-core SGI to its
+    exact remote-and-runnable condition; `_sgi_happensBefore` ties the emitted SGI
+    to the SM2.A memory-model happens-before.
+  - **Unconditional affinity-write NI (item 9)**:
+    `setThreadCpuAffinity_preserves_projection_unconditional` — the affinity write
+    preserves the IF projection for ANY target (high *or* low) because the
+    projection erases `cpuAffinity` (`projectKernelObject_tcb_cpuAffinity_irrelevant`
+    + the general `objects_insert_preserves_projection_of_proj_eq`).  Strictly
+    stronger than the high-target form.
+  - **SM5.I run-loop driver**: NEW staged
+    `Scheduler/Operations/PerCoreRunLoop.lean` (`perCoreTimerTickStep` — verified
+    pure core: fail-closed reductions, `_preserves_objects_invExt`,
+    `_ok_currentThreadValidOnCore`).  `Kernel.perCoreTimerTickEntry`
+    (`@[export lean_per_core_timer_tick]`) **rewired from the SM5.D `pure ()`
+    placeholder into the live driver**: atomic `modifyGetKernelState` over the step
+    (committing `timerTickOnCore`'s result) + `fireCrossCoreSgis` (the SM5.F
+    pattern).  Per the FFI fail-closed convention the entry references the
+    `ffiSendSgi` extern, so test exes exercise the FFI-free step; the entry's
+    signature + `perCoreTimerTickEntry_def` body-shape marker are tier-3 anchors.
+  - **Inventory + tests**: `PerCoreCbsInventory` 111 → 119; `SmpCbsSuite` §3.8
+    D15-composite + SGI runtime section; `SmpTimerSuite` exercises the pure step.
+  - **Tracked (explicit closure targets)**: the full-tick CBS-invariant
+    preservation chain, the budget-tick pipeline-order (needs a timeout machine-timer
+    frame), the full composite scheduler/cross-subsystem bundle preservation, the
+    unconditional `SchedLockId`-sort lock ordering, the `SchedLockId`-level
+    `withLockSet` runtime bracket (SM3.C is `LockId`-only), and the bootable
+    `[[bin]]` kernel image + live QEMU boot (the entry IS the live driver; the
+    image is the remaining item).  Items deferred past v1.0.0 with correctness
+    impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

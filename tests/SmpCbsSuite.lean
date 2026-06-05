@@ -144,6 +144,18 @@ open SeLe4n.Testing
 #check @setThreadCpuAffinityWithMigrationLockSet
 #check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le
 
+-- SM5.H.4 (D15 composite, §17) the full affinity composite preserves SM4.C
+-- run-queue↔budget consistency on every core:
+#check @setThreadCpuAffinity_getTcb?_self
+#check @setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
+#check @migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+#check @setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore
+-- SM5.H.4 (B8/SGI + C10, §18) the composite's cross-core SGI characterisation:
+#check @setThreadCpuAffinityWithMigration_sgi_eq
+#check @setThreadCpuAffinityWithMigration_no_sgi_if_local
+#check @setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable
+#check @setThreadCpuAffinityWithMigration_sgi_happensBefore
+
 -- SM5.H.2 (A2/A4, §14) the live-tick CBS bridge:
 #check @timeoutBlockedThreads_replenishQueueOnCore
 #check @timerTickBudgetOnCore_bound_exhausted_replenish_eq
@@ -532,28 +544,58 @@ private def runLiveTickScenarios : IO Unit := do
 /-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.7 SM5.H inventory partition counts ---"
-  assertBool "inventory has 111 entries"
-    (decide (perCoreCbsTheorems.length = 111))
+  assertBool "inventory has 119 entries"
+    (decide (perCoreCbsTheorems.length = 119))
   assertBool "predicate category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .predicate)).length = 6))
   assertBool "replenish category has 17 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .replenish)).length = 17))
   assertBool "preservation category has 8 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .preservation)).length = 8))
-  assertBool "migration category has 22 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 22))
-  assertBool "affinityWrite category has 3 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 3))
-  assertBool "consistency category has 19 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 19))
+  assertBool "migration category has 25 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .migration)).length = 25))
+  assertBool "affinityWrite category has 4 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .affinityWrite)).length = 4))
+  assertBool "consistency category has 22 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .consistency)).length = 22))
   assertBool "budget category has 6 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .budget)).length = 6))
   assertBool "lockSet category has 20 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .lockSet)).length = 20))
   assertBool "liveTick category has 8 entries"
     (decide ((perCoreCbsTheorems.filter (fun t => t.category == .liveTick)).length = 8))
-  assertBool "memoryModel category has 2 entries"
-    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 2))
+  assertBool "memoryModel category has 3 entries"
+    (decide ((perCoreCbsTheorems.filter (fun t => t.category == .memoryModel)).length = 3))
+
+/-- §3.8 (SM5.H.4 §17/§18): the D15 composite + the cross-core SGI characterisation
+on real states.  Exercises the new completion theorems' content non-vacuously: the
+remote-runnable composite emits exactly the `.reschedule` SGI to the new home (and a
+local re-home emits none), and the migrated thread satisfies the SM4.C
+run-queue↔budget consistency on its new core. -/
+private def runSm5hCompletionScenarios : IO Unit := do
+  IO.println "--- §3.8 SM5.H.4 D15 composite + SGI characterisation ---"
+  -- tid0 runnable on core 1, re-homed to the (remote, from core 1) boot core.
+  let stRq : SystemState :=
+    let rq := RunQueue.empty.insert tid0 ⟨5⟩
+    { stCbs with scheduler := stCbs.scheduler.setRunQueueOnCore core1 rq }
+  match setThreadCpuAffinityWithMigration stRq tid0 (some bootCoreId) core1 with
+  | .ok (st', sgi) =>
+      -- §18 `_emits_reschedule_of_remote_runnable`: remote (boot ≠ core1) + runnable
+      -- (tid0 landed in the boot core's run queue) ⇒ exactly one `.reschedule` SGI.
+      assertBool "§18: remote+runnable composite emits the .reschedule SGI to the new home"
+        (sgi == some (bootCoreId, SgiKind.reschedule))
+      -- §17 D15 (composite): the migrated thread satisfies run-queue↔budget consistency
+      -- on its new core — present in the boot core's run queue AND positive SC budget.
+      assertBool "§17 D15 composite: migrated thread is in the new core's run queue with positive SC budget"
+        (((st'.scheduler.runQueueOnCore bootCoreId).contains tid0) &&
+         (match st'.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
+  | .error _ => assertBool "remote-runnable composite succeeds" false
+  -- §18 `_no_sgi_if_local`: a local re-home (new home == executing core) emits no SGI.
+  match setThreadCpuAffinityWithMigration stRq tid0 (some core1) core1 with
+  | .ok (_, sgi) =>
+      assertBool "§18: a local re-home (new home = executing core) emits no cross-core SGI"
+        (sgi == none)
+  | .error _ => assertBool "local re-home composite succeeds" false
 
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
@@ -564,6 +606,7 @@ def main : IO Unit := do
   runAffinityScenarios
   runRunQueueMigrationScenarios
   runLiveTickScenarios
+  runSm5hCompletionScenarios
   runInventoryChecks
   IO.println "=== SM5.H suite: all assertions passed ==="
 

@@ -1915,4 +1915,212 @@ theorem migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent
             exact hAll c' x hxMem tcb hTcb scId hBind
       · intro hxMem; exact hAll c' x hxMem tcb hTcb scId hBind
 
+-- ============================================================================
+-- §17  SM5.H.4 (D15, composite) — the **full** affinity-change composite
+--      (`setThreadCpuAffinityWithMigration`) preserves the SM4.C scheduler
+--      invariant `schedContextRunQueueConsistent_perCore` on every core.
+--
+-- §16 proved this for the run-queue *move* in isolation; the composite also
+-- performs the affinity write (`setThreadCpuAffinity`, which touches only the
+-- target TCB's `cpuAffinity` field — never the binding, the SchedContext store,
+-- or any run queue) and the optional SchedContext-replenishment migration
+-- (`migrateSchedContextReplenishment`, which touches only replenish queues).
+-- Neither disturbs the run-queue↔budget consistency, so the composite preserves
+-- it.  This is the standalone companion of the run-queue-move helper D15 — the
+-- whole-transition obligation a future SM5.I scheduler-bundle preservation
+-- consumes.
+-- ============================================================================
+
+/-- WS-SM SM5.H.4 (frame): `setThreadCpuAffinity targetTid` reads back the
+target's TCB with only `cpuAffinity` rewritten — its `schedContextBinding`,
+`priority`, run-queue membership, etc. are untouched.  AK7-clean. -/
+theorem setThreadCpuAffinity_getTcb?_self (st : SystemState)
+    (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId) (st' : SystemState)
+    (tcb : TCB) (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
+    (h : setThreadCpuAffinity st targetTid affinity = .ok st') :
+    st'.getTcb? targetTid = some { tcb with cpuAffinity := affinity } := by
+  unfold setThreadCpuAffinity at h
+  rw [hTcb] at h
+  simp only [Except.ok.injEq] at h
+  subst h
+  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+  rw [RobinHood.RHTable.getElem?_insert_self st.objects targetTid.toObjId _ hInv]
+
+/-- WS-SM SM5.H.4 (D15 helper): the affinity write preserves the SM4.C per-core
+run-queue↔budget consistency.  It touches only the target TCB's `cpuAffinity`
+(leaving every binding and every SchedContext budget intact) and no run queue, so
+each queued thread keeps the same binding and the same (positive-budget) witness. -/
+theorem setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hCons : schedContextRunQueueConsistent_perCore st c)
+    (h : setThreadCpuAffinity st targetTid affinity = .ok st') :
+    schedContextRunQueueConsistent_perCore st' c := by
+  -- The target TCB exists (else the write would have errored).
+  obtain ⟨tcbT, hTcbT⟩ : ∃ tcb, st.getTcb? targetTid = some tcb := by
+    cases hT : st.getTcb? targetTid with
+    | none => unfold setThreadCpuAffinity at h; rw [hT] at h; simp at h
+    | some tcb => exact ⟨tcb, rfl⟩
+  have hSched : st'.scheduler = st.scheduler :=
+    setThreadCpuAffinity_preserves_scheduler st targetTid affinity st' h
+  have hScFrame : ∀ scId'', st'.getSchedContext? scId'' = st.getSchedContext? scId'' :=
+    fun scId'' => setThreadCpuAffinity_getSchedContext? st targetTid affinity st' tcbT hTcbT hInv h scId''
+  intro x hxMem tcb' hTcb' scId hBind
+  rw [hSched] at hxMem
+  by_cases hx : x = targetTid
+  · rw [hx] at hxMem hTcb'
+    rw [setThreadCpuAffinity_getTcb?_self st targetTid affinity st' tcbT hTcbT hInv h] at hTcb'
+    injection hTcb' with hEq
+    subst hEq
+    -- `{tcbT with cpuAffinity := _}.schedContextBinding = tcbT.schedContextBinding`
+    have hBindSt : tcbT.schedContextBinding.scId? = some scId := hBind
+    obtain ⟨sc, hsc, hbud⟩ := hCons targetTid hxMem tcbT hTcbT scId hBindSt
+    exact ⟨sc, by rw [hScFrame]; exact hsc, hbud⟩
+  · have hNe := setThreadCpuAffinity_getTcb?_ne st targetTid affinity x st' hInv hx h
+    rw [hNe] at hTcb'
+    obtain ⟨sc, hsc, hbud⟩ := hCons x hxMem tcb' hTcb' scId hBind
+    exact ⟨sc, by rw [hScFrame]; exact hsc, hbud⟩
+
+/-- WS-SM SM5.H.4 (D15 helper): the SchedContext-replenishment migration preserves
+the SM4.C per-core run-queue↔budget consistency.  It writes only replenish queues,
+so every run queue, every TCB, and every SchedContext is framed. -/
+theorem migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+    (st : SystemState) (scId : SchedContextId) (fromCore toCore c' : CoreId)
+    (hCons : schedContextRunQueueConsistent_perCore st c') :
+    schedContextRunQueueConsistent_perCore
+      (migrateSchedContextReplenishment st scId fromCore toCore) c' := by
+  intro x hxMem tcb hTcb scId' hBind
+  rw [migrateSchedContextReplenishment_runQueueOnCore] at hxMem
+  have hTcbFrame : (migrateSchedContextReplenishment st scId fromCore toCore).getTcb? x
+      = st.getTcb? x := by
+    unfold SystemState.getTcb?; rw [migrateSchedContextReplenishment_objects]
+  rw [hTcbFrame] at hTcb
+  obtain ⟨sc, hsc, hbud⟩ := hCons x hxMem tcb hTcb scId' hBind
+  exact ⟨sc, by rw [migrateSchedContextReplenishment_getSchedContext?]; exact hsc, hbud⟩
+
+/-- WS-SM SM5.H.4 (D15, composite — the whole-transition obligation): the full
+affinity-change composite preserves the SM4.C per-core run-queue↔budget
+consistency on **every** core.  Composes the three step preservations: the
+affinity write (cpuAffinity-only), the optional replenishment migration
+(replenish-queues-only), and the run-queue move (§16). -/
+theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsistent_perCore
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore c' : CoreId) (tcb : TCB)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
+    (hCons : ∀ c, schedContextRunQueueConsistent_perCore st c)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    schedContextRunQueueConsistent_perCore st'.1 c' := by
+  unfold setThreadCpuAffinityWithMigration at hStep
+  rw [hTcb] at hStep
+  cases hSet : setThreadCpuAffinity st targetTid affinity with
+  | error e => rw [hSet] at hStep; simp at hStep
+  | ok stSet =>
+      rw [hSet] at hStep
+      simp only [Except.ok.injEq] at hStep
+      have hConsSet : ∀ c, schedContextRunQueueConsistent_perCore stSet c :=
+        fun c => setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
+          st targetTid affinity stSet c hInv (hCons c) hSet
+      subst hStep
+      apply migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+      intro c
+      cases hb : tcb.schedContextBinding.scId? with
+      | none => exact hConsSet c
+      | some scId =>
+          exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+            stSet scId _ _ c (hConsSet c)
+
+-- ============================================================================
+-- §18  SM5.H.4 (B8/SGI) — the cross-core `.reschedule` SGI the composite emits
+--      is exactly characterised: it fires iff the new home is **remote** from
+--      the executing core AND the migrated thread is now **runnable** there.
+--      (The whole point of the full-thread-migration composite — the run loop
+--      reads this to decide whether to poke a remote core.)
+-- ============================================================================
+
+/-- WS-SM SM5.H.4 (SGI characterisation): the composite's emitted SGI is exactly
+the def's `if`-expression — `none` when the new home is the executing core (local,
+no cross-core poke), and otherwise a `.reschedule` SGI to the new home iff the
+migrated thread is runnable there (its run-queue entry landed on the new home). -/
+theorem setThreadCpuAffinityWithMigration_sgi_eq
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB) (stSet : SystemState)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
+    st'.2 =
+      (if determineTargetCore stSet targetTid == executingCore then none
+       else if (st'.1.scheduler.runQueueOnCore (determineTargetCore stSet targetTid)).contains targetTid then
+         some (determineTargetCore stSet targetTid, SgiKind.reschedule)
+       else none) := by
+  unfold setThreadCpuAffinityWithMigration at hStep
+  rw [hTcb, hSet] at hStep
+  simp only [Except.ok.injEq] at hStep
+  subst hStep
+  rfl
+
+/-- WS-SM SM5.H.4: a local affinity change (new home = executing core) emits no
+cross-core SGI. -/
+theorem setThreadCpuAffinityWithMigration_no_sgi_if_local
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB) (stSet : SystemState)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st')
+    (hLocal : (determineTargetCore stSet targetTid == executingCore) = true) :
+    st'.2 = none := by
+  rw [setThreadCpuAffinityWithMigration_sgi_eq st targetTid affinity executingCore tcb stSet st'
+        hTcb hSet hStep, if_pos hLocal]
+
+/-- WS-SM SM5.H.4: a remote affinity change whose migrated thread is runnable on
+the new home emits exactly one `.reschedule` SGI to that new home — the cross-core
+poke the run loop fires after the state write is visible. -/
+theorem setThreadCpuAffinityWithMigration_emits_reschedule_of_remote_runnable
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB) (stSet : SystemState)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st')
+    (hRemote : (determineTargetCore stSet targetTid == executingCore) = false)
+    (hRun : (st'.1.scheduler.runQueueOnCore (determineTargetCore stSet targetTid)).contains targetTid = true) :
+    st'.2 = some (determineTargetCore stSet targetTid, SgiKind.reschedule) := by
+  rw [setThreadCpuAffinityWithMigration_sgi_eq st targetTid affinity executingCore tcb stSet st'
+        hTcb hSet hStep, if_neg (by simp [hRemote]), if_pos hRun]
+
+/-- WS-SM SM5.H.4 (C10, tightened to the composite): whenever the affinity-change
+composite emits an SGI `some (newHome, k)`, that SGI necessarily targets the
+migrated thread's new home core, is a `.reschedule`, and — modelling the SM5.I FFI
+firing in SM2.A's operational memory model — the executing core's release-store
+(the state write) **happens-before** the new home's acquire-load (its SGI handler
+reads the updated run queue).  This pins the generic
+`affinityMigrationOrdering_happensBefore` to the composite's actual emission. -/
+theorem setThreadCpuAffinityWithMigration_sgi_happensBefore
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB) (stSet : SystemState)
+    (st' : SystemState × Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hSet : setThreadCpuAffinity st targetTid affinity = .ok stSet)
+    (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st')
+    (newHome : CoreId) (k : SgiKind) (hEmit : st'.2 = some (newHome, k))
+    (loc : SeLe4n.Kernel.Concurrency.AtomicLocation) (v : Nat) :
+    newHome = determineTargetCore stSet targetTid ∧ k = SgiKind.reschedule ∧
+    SeLe4n.Kernel.Concurrency.happensBefore
+      (SeLe4n.Kernel.Concurrency.wakeOrderingTrace executingCore newHome loc v)
+      (SeLe4n.Kernel.Concurrency.wakeReleaseEvent executingCore loc v)
+      (SeLe4n.Kernel.Concurrency.wakeAcquireEvent newHome loc v) := by
+  rw [setThreadCpuAffinityWithMigration_sgi_eq st targetTid affinity executingCore tcb stSet st'
+        hTcb hSet hStep] at hEmit
+  -- Reduce the emission to determine `newHome` and `k`.
+  split at hEmit
+  · exact absurd hEmit (by simp)
+  · split at hEmit
+    · simp only [Option.some.injEq, Prod.mk.injEq] at hEmit
+      obtain ⟨hHome, hK⟩ := hEmit
+      subst hHome; subst hK
+      exact ⟨rfl, rfl, affinityMigrationOrdering_happensBefore executingCore _ loc v⟩
+    · exact absurd hEmit (by simp)
+
 end SeLe4n.Kernel

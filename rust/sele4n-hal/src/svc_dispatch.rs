@@ -215,9 +215,17 @@ impl SyscallId {
             Self::SchedContextUnbind => 1,
             Self::TcbSuspend => 1,
             Self::TcbResume => 1,
-            Self::TcbSetPriority => 2,
-            Self::TcbSetMCPriority => 2,
-            Self::TcbSetIPCBuffer => 2,
+            // Each of these reads exactly ONE inline register (`requireMsgReg
+            // decoded.msgRegs 0` in `decodeSet{Priority,MCPriority,IPCBuffer}Args`,
+            // whose docstrings state "Requires 1 message register").  The matching
+            // `sele4n-sys` wrappers send `MessageInfo::new_const(1, 0, 0)` (length 1),
+            // so a minimum of 2 rejected every valid call at `dispatch_svc`'s
+            // `len < min_inline_args` gate (`1 < 2`), making these three TCB
+            // management syscalls unreachable on hardware before reaching the
+            // verified kernel.  The ABI contract is one inline register.
+            Self::TcbSetPriority => 1,
+            Self::TcbSetMCPriority => 1,
+            Self::TcbSetIPCBuffer => 1,
             // WS-SM SM5.H.4: x2 = the raw affinity word (1 inline register).
             Self::TcbSetAffinity => 1,
         }
@@ -576,11 +584,50 @@ mod tests {
         assert_eq!(SyscallId::ServiceRegister.min_inline_args(), 4);
         assert_eq!(SyscallId::TcbSuspend.min_inline_args(), 1);
         assert_eq!(SyscallId::Send.min_inline_args(), 0);
-        // WS-SM SM5.H.4: tcbSetAffinity reads exactly 1 inline register (the raw
-        // affinity word, msgReg[0]) — matching `decodeSetAffinityArgs` (requireMsgReg 0)
-        // and the `tcb_set_affinity` wrapper's `MessageInfo::new_const(1, 0, 0)`.  A
-        // larger minimum would reject the (valid, length-1) wrapper call at the trap
-        // boundary, re-introducing the unreachable-on-hardware defect.
+        // The four single-register TCB-management syscalls each read exactly ONE
+        // inline register (`requireMsgReg decoded.msgRegs 0` in their decoders;
+        // docstrings "Requires 1 message register") and their `sele4n-sys`
+        // wrappers all send `MessageInfo::new_const(1, 0, 0)` (length 1).  The
+        // minimum MUST be 1: a minimum of 2 rejected every valid call at
+        // `dispatch_svc`'s `len < min_inline_args` gate (`1 < 2`), making the
+        // syscall unreachable on hardware before reaching the verified kernel.
+        assert_eq!(SyscallId::TcbSetPriority.min_inline_args(), 1);
+        assert_eq!(SyscallId::TcbSetMCPriority.min_inline_args(), 1);
+        assert_eq!(SyscallId::TcbSetIPCBuffer.min_inline_args(), 1);
+        // WS-SM SM5.H.4: tcbSetAffinity follows the same one-register contract
+        // (the raw affinity word, msgReg[0]) — matching `decodeSetAffinityArgs`
+        // (requireMsgReg 0) and the `tcb_set_affinity` wrapper.
         assert_eq!(SyscallId::TcbSetAffinity.min_inline_args(), 1);
+    }
+
+    /// Regression guard for the off-by-one ABI bug: a valid length-1
+    /// `tcbSetPriority` / `tcbSetMCPriority` / `tcbSetIPCBuffer` call must
+    /// pass the `dispatch_svc` argument-count gate, not be rejected at the
+    /// trap boundary.  Pre-fix these three required 2 inline registers while
+    /// the wrappers sent 1, so every call returned `InvalidArgument`.
+    #[test]
+    fn dispatch_svc_accepts_single_register_tcb_management_syscalls() {
+        for sid in [
+            SyscallId::TcbSetPriority,
+            SyscallId::TcbSetMCPriority,
+            SyscallId::TcbSetIPCBuffer,
+            SyscallId::TcbSetAffinity,
+        ] {
+            // A length-1 message (exactly what the `sele4n-sys` wrappers send).
+            let args = SyscallArgs {
+                msg_info: 1,
+                msg_regs: [0; 6],
+                ipc_buffer_addr: None,
+            };
+            // Must clear the argument-count gate (any result other than the
+            // count-mismatch rejection is acceptable here; in test builds the
+            // inner symbol is a stub).
+            let result = dispatch_svc(sid as u32, &args);
+            assert_ne!(
+                result,
+                Err(DispatchError::InvalidArgument),
+                "length-1 call to {sid:?} must not be rejected by the arg-count gate",
+            );
+        }
     }
 }
