@@ -1,3 +1,50 @@
+## v0.31.59 — WS-SM SM5.I: pull forward two Codex-flagged affinity-syscall safety items (PR #813)
+
+Addresses the two safety-relevant findings from the automated Codex review of PR
+#813 on the SM5.H `tcbSetAffinity` / `setThreadCpuAffinityWithMigration` path —
+maintainer-directed "pull the safety items forward now".  The other three findings
+(authority gate `.write` decision; the cross-core SGI firing; the per-syscall vs
+`SchedLockId` lock-set distinction) remain the established design / documented SM5.I
+FFI-seam tracked debt.
+
+- **#2 (Codex P1) — reject rebinding a *running* thread to a forbidden core.**
+  When `tcbSetAffinity` targets a thread currently `currentOnCore c`, dequeue-on-
+  dispatch means it is in **no** run queue, so `migrateRunQueueOnAffinityChange`
+  could not move it off `c`; the pre-fix composite left it `currentOnCore c` after
+  rebinding to a remote core, executing on a core `affinityAdmitsCore` /
+  `switchToThreadOnCore` would reject.  `setThreadCpuAffinityWithMigration` now
+  **rejects fail-closed** with `.threadOnDifferentCore` when the target is running on
+  a core its new affinity forbids (the review's explicitly-permitted "or reject"
+  resolution; a caller holding `.write` suspends the thread first if it must be
+  rebound while running).  New witness
+  `setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core`.  The reject
+  is a guard *before* the affinity write, so the ~16 downstream migration theorems
+  (preservation / SGI characterisation / NI) are unchanged — only the four proofs
+  that unfold the composite directly (`_bound_state_eq`, `_unbound_state_eq`,
+  `_sgi_eq`, `_preserves_schedContextRunQueueConsistent_perCore`) and the NI
+  `setThreadCpuAffinityWithMigration_preserves_projection` gain the guard-split.
+
+- **#5 (Codex P2) — sort the migration lock-set so its order is deadlock-free in
+  both directions.**  `setThreadCpuAffinityWithMigrationLockSet` listed `oldCore`'s
+  run-queue / replenish-queue locks before `newCore`'s, and the ordering theorem only
+  proved ascending keys under `oldCore.val ≤ newCore.val` — a reverse-direction
+  migration (e.g. core 3 → boot core) would acquire the same queue locks in the
+  *opposite* order, deadlocking against a concurrent forward migration in a
+  `withLockSet` caller.  The footprint now orders the per-core locks **lower-core
+  first** (`min`/`max` by `core.val`) regardless of direction, so the new
+  `setThreadCpuAffinityWithMigrationLockSet_pairwise_le` proves the keys ascending
+  **unconditionally** (the conditional `_pairwise_le_of_core_le` is retained, now
+  immediate from it).  The set is unchanged (same five write locks), so
+  `_length` / `_write_only` / `_contains_objStore_write` are unaffected.
+
+All changes axiom-clean; default build green (324 jobs); `smp_cbs_suite` green
+(+ the #2 reject runtime scenario + the #5 unconditional-ordering example + surface
+anchors); Tier-3 SM5.H anchor block extended.  AK7 `RAW_LOOKUP_TID` at the 814 floor
+(the new guard reads `currentOnCore` / `affinityAdmitsCore`, not raw `tid`-keyed
+brackets).  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: #813 (Codex review findings #2, #5)
+
 ## v0.31.58 — WS-SM SM5.I affinity discharge: the live tick derives replenish-queue affinity-consistency
 
 An audit-driven strengthening of the v0.31.57 SM5.I aggregate.  The v0.31.57

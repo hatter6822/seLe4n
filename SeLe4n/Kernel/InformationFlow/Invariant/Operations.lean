@@ -3547,19 +3547,22 @@ theorem setThreadCpuAffinityWithMigration_preserves_projection
   unfold setThreadCpuAffinityWithMigration at hStep
   split at hStep
   · rename_i tcb _
+    -- #2 (Codex P1): the running-on-forbidden-core reject guard.
     split at hStep
-    · rename_i stSet hSet
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨hst, _⟩ := hStep
-      subst hst
-      rw [migrateRunQueueOnAffinityChange_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh]
-      have hSetProj : projectState ctx observer stSet = projectState ctx observer st :=
-        setThreadCpuAffinity_preserves_projection ctx observer st targetTid affinity stSet
-          hTargetObjHigh hObjInv hSet
-      split
-      · rw [migrateSchedContextReplenishment_preserves_projection]; exact hSetProj
-      · exact hSetProj
     · simp at hStep
+    · split at hStep
+      · rename_i stSet hSet
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨hst, _⟩ := hStep
+        subst hst
+        rw [migrateRunQueueOnAffinityChange_preserves_projection ctx observer _ targetTid _ _ hTargetThreadHigh]
+        have hSetProj : projectState ctx observer stSet = projectState ctx observer st :=
+          setThreadCpuAffinity_preserves_projection ctx observer st targetTid affinity stSet
+            hTargetObjHigh hObjInv hSet
+        split
+        · rw [migrateSchedContextReplenishment_preserves_projection]; exact hSetProj
+        · exact hSetProj
+      · simp at hStep
   · simp at hStep
 
 /-- WS-SM SM5.H.4 (NI, the syscall op): `setThreadCpuAffinityOp` (the production op the

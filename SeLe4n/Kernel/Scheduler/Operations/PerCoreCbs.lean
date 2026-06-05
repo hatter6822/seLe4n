@@ -911,7 +911,9 @@ theorem setThreadCpuAffinityWithMigration_bound_state_eq (st : SystemState)
         (determineTargetCore st targetTid) (determineTargetCore stSet targetTid))
       targetTid (determineTargetCore st targetTid) (determineTargetCore stSet targetTid) := by
   simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind] at hStep
-  rw [← Except.ok.inj hStep]
+  split at hStep
+  · simp at hStep
+  · rw [← Except.ok.inj hStep]
 
 /-- WS-SM SM5.H.4: for an **unbound** target (no SchedContext), the full composite's
 state component is the affinity write `stSet` followed by the run-queue migration —
@@ -926,7 +928,32 @@ theorem setThreadCpuAffinityWithMigration_unbound_state_eq (st : SystemState)
     st'.1 = migrateRunQueueOnAffinityChange stSet
       targetTid (determineTargetCore st targetTid) (determineTargetCore stSet targetTid) := by
   simp only [setThreadCpuAffinityWithMigration, hTcb, hSet, hBind] at hStep
-  rw [← Except.ok.inj hStep]
+  split at hStep
+  · simp at hStep
+  · rw [← Except.ok.inj hStep]
+
+/-- WS-SM SM5.I (#2, Codex P1 safety witness): the affinity-change-with-migration
+composite **rejects** rebinding a thread currently *running* on a core `c` that its
+new affinity would forbid — fail-closed with `.threadOnDifferentCore`.  Such a target
+is `currentOnCore c` and therefore (dequeue-on-dispatch) in no run queue, so the
+run-queue migration could not move it off `c`; rejecting guarantees a *successful*
+migration never leaves the target executing on a core `affinityAdmitsCore` /
+`switchToThreadOnCore` reject.  The caller (holding `.write`) suspends the thread
+first if it must be rebound while running. -/
+theorem setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
+    (st : SystemState) (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (executingCore : CoreId) (tcb : TCB) (c : CoreId)
+    (hTcb : st.getTcb? targetTid = some tcb)
+    (hRun : st.scheduler.currentOnCore c = some targetTid)
+    (hForbid : affinityAdmitsCore { tcb with cpuAffinity := affinity } c = false) :
+    setThreadCpuAffinityWithMigration st targetTid affinity executingCore
+      = .error .threadOnDifferentCore := by
+  have hAny : ((SeLe4n.Kernel.Concurrency.allCores).any (fun c' =>
+      st.scheduler.currentOnCore c' == some targetTid
+      && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c')) = true := by
+    refine List.any_eq_true.mpr ⟨c, List.mem_finRange c, ?_⟩
+    simp [hRun, hForbid]
+  simp only [setThreadCpuAffinityWithMigration, hTcb, hAny, if_true]
 
 /-- WS-SM SM5.H.4 (plan §6.1 `schedContextMigration_consistent`, the headline): the
 **full** affinity-change-with-migration composite (for **any** affinity — bind or
@@ -1248,11 +1275,19 @@ replenishQueue, then by `core.val`).  This is the footprint a `withLockSet`
 caller (the SM5.I `tcbSetAffinity` runtime path) acquires. -/
 def setThreadCpuAffinityWithMigrationLockSet (oldCore newCore : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
+  -- #5 (Codex P2 review): order the per-core run-queue / replenish-queue locks by
+  -- core (lower-numbered core first) regardless of the old→new migration direction,
+  -- so the footprint's keys are `SchedLockId`-ascending **unconditionally** (a valid
+  -- `withLockSet` acquisition sequence — a concurrent opposite-direction migration
+  -- acquires the same queue locks in the same order, so no reverse-direction
+  -- deadlock; see `setThreadCpuAffinityWithMigrationLockSet_pairwise_le`).
+  let loCore := if oldCore.val ≤ newCore.val then oldCore else newCore
+  let hiCore := if oldCore.val ≤ newCore.val then newCore else oldCore
   [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨oldCore⟩, .write)
-  , (SchedLockId.runQueue ⟨newCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨oldCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨newCore⟩, .write) ]
+  , (SchedLockId.runQueue ⟨loCore⟩, .write)
+  , (SchedLockId.runQueue ⟨hiCore⟩, .write)
+  , (SchedLockId.replenishQueue ⟨loCore⟩, .write)
+  , (SchedLockId.replenishQueue ⟨hiCore⟩, .write) ]
 
 /-- SM5.H.4: the composite footprint has the five cross-domain write locks. -/
 @[simp] theorem setThreadCpuAffinityWithMigrationLockSet_length (oldCore newCore : CoreId) :
@@ -1273,11 +1308,13 @@ theorem setThreadCpuAffinityWithMigrationLockSet_contains_objStore_write (oldCor
       ∈ setThreadCpuAffinityWithMigrationLockSet oldCore newCore := by
   simp [setThreadCpuAffinityWithMigrationLockSet]
 
-/-- SM5.H.4 (plan §4.4 / SM3.D ladder): under the canonical core order
-`oldCore.val ≤ newCore.val`, the composite footprint's keys form an ascending
-acquisition sequence (object < runQueue < replenishQueue, then by core). -/
-theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore newCore : CoreId)
-    (h : oldCore.val ≤ newCore.val) :
+/-- SM5.H.4 (#5, Codex P2 — plan §4.4 / SM3.D ladder): the composite footprint's keys
+form an ascending acquisition sequence **unconditionally** (object < runQueue <
+replenishQueue, then by core) — the lock-set lists the per-core queue locks
+lower-core-first regardless of the old→new migration direction, so a `withLockSet`
+caller acquires them in canonical order and cannot deadlock against a concurrent
+opposite-direction migration. -/
+theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le (oldCore newCore : CoreId) :
     ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) := by
   have hObjRq : ∀ (r : RunQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.runQueue r :=
     fun r => (SchedLockId.object_lt_runQueue _ _).1
@@ -1285,6 +1322,11 @@ theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore
     fun r => (SchedLockId.object_lt_replenishQueue _ _).1
   have hRqRpq : ∀ (q : RunQueueLockId) (r : ReplenishQueueLockId),
       SchedLockId.runQueue q ≤ SchedLockId.replenishQueue r := fun q r => (SchedLockId.runQueue_lt_replenishQueue _ _).1
+  have hLoHi : (if oldCore.val ≤ newCore.val then oldCore else newCore).val
+             ≤ (if oldCore.val ≤ newCore.val then newCore else oldCore).val := by
+    by_cases hc : oldCore.val ≤ newCore.val
+    · simp only [hc, if_true]
+    · simp only [hc, if_false]; omega
   simp only [setThreadCpuAffinityWithMigrationLockSet, List.map_cons, List.map_nil]
   refine List.Pairwise.cons (fun a ha => ?_) (List.Pairwise.cons (fun a ha => ?_)
     (List.Pairwise.cons (fun a ha => ?_) (List.Pairwise.cons (fun a ha => ?_)
@@ -1297,14 +1339,21 @@ theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore
     · exact hObjRpq _
     rcases List.mem_singleton.mp ha with rfl; exact hObjRpq _
   · rcases List.mem_cons.mp ha with rfl | ha
-    · exact h
+    · exact hLoHi
     rcases List.mem_cons.mp ha with rfl | ha
     · exact hRqRpq _ _
     rcases List.mem_singleton.mp ha with rfl; exact hRqRpq _ _
   · rcases List.mem_cons.mp ha with rfl | ha
     · exact hRqRpq _ _
     rcases List.mem_singleton.mp ha with rfl; exact hRqRpq _ _
-  · rcases List.mem_singleton.mp ha with rfl; exact h
+  · rcases List.mem_singleton.mp ha with rfl; exact hLoHi
+
+/-- SM5.H.4 (retained): the conditional form, now immediate from the unconditional
+`setThreadCpuAffinityWithMigrationLockSet_pairwise_le`. -/
+theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore newCore : CoreId)
+    (_h : oldCore.val ≤ newCore.val) :
+    ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) :=
+  setThreadCpuAffinityWithMigrationLockSet_pairwise_le oldCore newCore
 
 /-- SM5.H.4 (WCRT): the composite footprint (5 locks) is within the SM3.D
 `maxLockSetSize` (= 8) cap — so its worst-case lock-wait is bounded. -/
@@ -2011,24 +2060,26 @@ theorem setThreadCpuAffinityWithMigration_preserves_schedContextRunQueueConsiste
     (hCons : ∀ c, schedContextRunQueueConsistent_perCore st c)
     (hStep : setThreadCpuAffinityWithMigration st targetTid affinity executingCore = .ok st') :
     schedContextRunQueueConsistent_perCore st'.1 c' := by
-  unfold setThreadCpuAffinityWithMigration at hStep
-  rw [hTcb] at hStep
   cases hSet : setThreadCpuAffinity st targetTid affinity with
-  | error e => rw [hSet] at hStep; simp at hStep
+  | error e =>
+      simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
+      split at hStep <;> simp at hStep
   | ok stSet =>
-      rw [hSet] at hStep
-      simp only [Except.ok.injEq] at hStep
+      simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
       have hConsSet : ∀ c, schedContextRunQueueConsistent_perCore stSet c :=
         fun c => setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
           st targetTid affinity stSet c hInv (hCons c) hSet
-      subst hStep
-      apply migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
-      intro c
-      cases hb : tcb.schedContextBinding.scId? with
-      | none => exact hConsSet c
-      | some scId =>
-          exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
-            stSet scId _ _ c (hConsSet c)
+      split at hStep
+      · simp at hStep
+      · simp only [Except.ok.injEq] at hStep
+        subst hStep
+        apply migrateRunQueueOnAffinityChange_preserves_schedContextRunQueueConsistent_perCore
+        intro c
+        cases hb : tcb.schedContextBinding.scId? with
+        | none => exact hConsSet c
+        | some scId =>
+            exact migrateSchedContextReplenishment_preserves_schedContextRunQueueConsistent_perCore
+              stSet scId _ _ c (hConsSet c)
 
 -- ============================================================================
 -- §18  SM5.H.4 (B8/SGI) — the cross-core `.reschedule` SGI the composite emits
@@ -2054,11 +2105,12 @@ theorem setThreadCpuAffinityWithMigration_sgi_eq
        else if (st'.1.scheduler.runQueueOnCore (determineTargetCore stSet targetTid)).contains targetTid then
          some (determineTargetCore stSet targetTid, SgiKind.reschedule)
        else none) := by
-  unfold setThreadCpuAffinityWithMigration at hStep
-  rw [hTcb, hSet] at hStep
-  simp only [Except.ok.injEq] at hStep
-  subst hStep
-  rfl
+  simp only [setThreadCpuAffinityWithMigration, hTcb, hSet] at hStep
+  split at hStep
+  · simp at hStep
+  · simp only [Except.ok.injEq] at hStep
+    subst hStep
+    rfl
 
 /-- WS-SM SM5.H.4: a local affinity change (new home = executing core) emits no
 cross-core SGI. -/

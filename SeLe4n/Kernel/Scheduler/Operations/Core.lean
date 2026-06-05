@@ -1604,6 +1604,14 @@ cross-core `.reschedule` SGI when the new home is remote from the executing core
 and the thread is now runnable there (mirroring SM5.C's `wakeThread` cross-core
 protocol).
 
+**Reject (#2, Codex P1):** rebinding a thread currently *running*
+(`currentOnCore c`) on a core `c` its new affinity would forbid is rejected
+fail-closed with `.threadOnDifferentCore`.  Such a target is, by dequeue-on-dispatch,
+in no run queue, so the run-queue migration could not move it off `c`; rejecting
+guarantees a *successful* migration never leaves the target executing on a core
+`affinityAdmitsCore` / `switchToThreadOnCore` reject
+(`setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core`).
+
 `oldCore` / `newCore` are the thread's home core before / after the affinity
 write (`determineTargetCore`).  Unbound threads (`schedContextBinding.scId? =
 none`) have no replenishments to migrate, so only the affinity write + run-queue
@@ -1622,7 +1630,17 @@ def setThreadCpuAffinityWithMigration (st : SystemState) (targetTid : SeLe4n.Thr
     Except KernelError (SystemState × Option (CoreId × SgiKind)) :=
   match st.getTcb? targetTid with
   | some tcb =>
-      match setThreadCpuAffinity st targetTid affinity with
+      -- #2 (Codex P1 review): reject rebinding a thread currently RUNNING on a core
+      -- its new affinity would forbid.  Dequeue-on-dispatch means such a target is in
+      -- no run queue, so `migrateRunQueueOnAffinityChange` cannot move it off the old
+      -- core; fail-closed (`.threadOnDifferentCore`) rather than leave it executing on
+      -- a core `affinityAdmitsCore` / `switchToThreadOnCore` rejects.  A caller holding
+      -- `.write` suspends the thread first if it must be rebound while running.
+      if (SeLe4n.Kernel.Concurrency.allCores).any (fun c =>
+            st.scheduler.currentOnCore c == some targetTid
+            && !affinityAdmitsCore { tcb with cpuAffinity := affinity } c) then
+        .error .threadOnDifferentCore
+      else match setThreadCpuAffinity st targetTid affinity with
       | .ok stSet =>
           let oldCore := determineTargetCore st targetTid
           let newCore := determineTargetCore stSet targetTid

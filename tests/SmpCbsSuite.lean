@@ -145,6 +145,16 @@ open SeLe4n.Testing
 #check @migrateRunQueueOnAffinityChangeLockSet
 #check @setThreadCpuAffinityWithMigrationLockSet
 #check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le
+-- #5 (Codex P2): the migration footprint's keys are ascending UNCONDITIONALLY (the
+-- per-core queue locks are sorted lower-core-first), so a reverse-direction migration
+-- (e.g. core 1 → boot core 0) acquires in canonical order — no deadlock.
+#check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le
+example (oldCore newCore : SeLe4n.Kernel.Concurrency.CoreId) :
+    ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) :=
+  setThreadCpuAffinityWithMigrationLockSet_pairwise_le oldCore newCore
+-- #2 (Codex P1): rebinding a thread RUNNING on a core its new affinity forbids is
+-- rejected fail-closed (`.threadOnDifferentCore`).
+#check @setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
 
 -- SM5.H.4 (D15 composite, §17) the full affinity composite preserves SM4.C
 -- run-queue↔budget consistency on every core:
@@ -509,6 +519,19 @@ private def runRunQueueMigrationScenarios : IO Unit := do
   assertBool "D15: a migrated runnable thread carries its positive SC budget to the new core"
     (((stMoved.scheduler.runQueueOnCore bootCoreId).contains tid0) &&
      (match stMoved.getSchedContext? scId0 with | some sc => sc.budgetRemaining.val > 0 | none => false))
+  -- #2 (Codex P1): rebinding a thread RUNNING on a core its new affinity forbids is
+  -- rejected fail-closed.  Put tid0 as `currentOnCore core1` (running ⇒ dequeue-on-
+  -- dispatch, in no run queue), then try to rebind it to the boot core (forbidden).
+  let stRunning : SystemState :=
+    { stCbs with scheduler := stCbs.scheduler.setCurrentOnCore core1 (some tid0) }
+  match setThreadCpuAffinityWithMigration stRunning tid0 (some bootCoreId) bootCoreId with
+  | .error .threadOnDifferentCore =>
+      assertBool "#2: rebinding a thread running on core 1 to the boot core is rejected (.threadOnDifferentCore)" true
+  | _ => assertBool "#2: running-on-forbidden-core rebind is rejected" false
+  -- rebinding the SAME running thread to its current (admitted) core 1 still succeeds.
+  match setThreadCpuAffinityWithMigration stRunning tid0 (some core1) bootCoreId with
+  | .ok _ => assertBool "#2: rebinding a running thread to its own (admitted) core 1 succeeds" true
+  | .error _ => assertBool "#2: rebind a running thread to its own core succeeds" false
 
 /-- §3.7 (A2/A4): the live per-core budget tick's bound-exhausted replenish write IS
 the abstract `replenishOnCore` primitive's (A2), and the tick preserves replenish-queue

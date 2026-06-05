@@ -3856,6 +3856,11 @@ open SeLe4n.Kernel
 #check @migrateRunQueueOnAffinityChangeLockSet
 #check @setThreadCpuAffinityWithMigrationLockSet
 #check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le
+-- Codex review safety items pulled forward: #5 (unconditional ascending lock order,
+-- no reverse-direction migration deadlock) + #2 (reject rebinding a running thread to
+-- a core its new affinity forbids).
+#check @setThreadCpuAffinityWithMigrationLockSet_pairwise_le
+#check @setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core
 -- SM5.H.2 (A2/A4, §14) the live-tick CBS bridge.
 #check @timeoutBlockedThreads_replenishQueueOnCore
 #check @timerTickBudgetOnCore_bound_exhausted_replenish_eq

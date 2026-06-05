@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.58.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.59.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6300,6 +6300,32 @@ documentation lives under `docs/` and `docs/gitbook/`.
   the existing call surface with its docstring corrected (audit Finding 1);
   `smp_cbs_suite` + tier-3 SM5.I affinity anchors added; trace byte-identical.  Items
   deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM PR #813 Codex-review safety items LANDED at v0.31.59 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (maintainer-directed "pull the safety items
+  forward now" — two of the five automated Codex findings on the SM5.H
+  `tcbSetAffinity` / `setThreadCpuAffinityWithMigration` path; the other three are the
+  established `.write`-authority decision, the cross-core SGI firing, and the
+  per-syscall-vs-`SchedLockId` lock-set distinction — documented SM5.I FFI-seam
+  tracked debt).  **#2 (P1)**: `setThreadCpuAffinityWithMigration` now **rejects
+  fail-closed** (`.threadOnDifferentCore`) when the target is currently *running*
+  (`currentOnCore c`) on a core its new affinity forbids — dequeue-on-dispatch means
+  such a target is in no run queue, so the run-queue migration could not move it off
+  `c`, and the pre-fix composite left it executing on a core `affinityAdmitsCore` /
+  `switchToThreadOnCore` would reject.  The guard precedes the affinity write, so the
+  ~16 downstream migration theorems are unchanged; only the four direct-unfold proofs
+  + the NI projection theorem gain a guard-split.  New witness
+  `setThreadCpuAffinityWithMigration_rejects_running_on_forbidden_core`.  **#5 (P2)**:
+  `setThreadCpuAffinityWithMigrationLockSet` now orders its per-core run-queue /
+  replenish-queue locks **lower-core-first** (regardless of the old→new direction), so
+  `setThreadCpuAffinityWithMigrationLockSet_pairwise_le` proves the keys
+  `SchedLockId`-ascending **unconditionally** — a reverse-direction migration acquires
+  in canonical order, no deadlock against a concurrent forward migration (the
+  conditional `_pairwise_le_of_core_le` is retained, now immediate from it; the lock
+  set is the same five write locks).  All axiom-clean; default build green (324 jobs);
+  `smp_cbs_suite` green (+ #2 reject scenario + #5 unconditional-ordering example);
+  Tier-3 anchors extended; AK7 `RAW_LOOKUP_TID` at the 814 floor.  Items deferred past
+  v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
