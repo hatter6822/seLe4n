@@ -1,3 +1,69 @@
+## v0.31.58 — WS-SM SM5.I affinity discharge: the live tick derives replenish-queue affinity-consistency
+
+An audit-driven strengthening of the v0.31.57 SM5.I aggregate.  The v0.31.57
+`timerTickOnCore_preserves_perCoreCbsInvariant` discharged the CBS **validity** +
+**pipeline-order** conjuncts unconditionally but took the third conjunct —
+replenish-queue **affinity-consistency** (every queued SchedContext's bound thread is
+homed on the core) — *verbatim* as `hAffinity`, covering the whole post-state (an
+assume-the-conclusion input; a deep audit flagged the docstring overclaim).  This cut
+**derives** the carried-over entries' affinity instead, narrowing the residual to a
+single budget-phase frame.
+
+NEW staged module `Scheduler/Operations/PerCoreTickCbsAffinity.lean` (~30 theorems,
+**all axiom-clean** — `propext` / `Classical.choice` / `Quot.sound`; **zero
+warnings**):
+
+- **Object-store insert atoms** + the `affinityConsistent_transfer` keystone: a
+  single `insert` of a TCB (resp. SchedContext) at a TCB- (resp. SchedContext-)
+  occupied slot preserves every thread's `determineTargetCore` home core and every
+  SchedContext's `boundThread` projection (off-key via `RHTable.insert_ne`; on-key via
+  the field hypothesis or the kind-mismatch `getTcb?_none_of_schedContext` /
+  `getSchedContext?_none_of_tcb`).  The transfer keystone lifts these to:
+  affinity-consistency transfers across any state change that only *shrinks* the
+  replenish queue (subset) and preserves `determineTargetCore` + `boundThread`.
+- **Per-op frames**: `enqueueRunnableOnCore` / `refillSchedContext` /
+  `saveOutgoingContextOnCore` / `scheduleEffectiveOnCore` each preserve
+  `determineTargetCore` + `boundThread`; the per-step
+  `processOneReplenishmentOnCore` frame folds over the due-list into
+  `processReplenishmentsDueOnCore` frames.
+- **Per-phase affinity (PROVEN)**: the **prepared** phase
+  (`timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore` — popDue
+  shrinks core `c`'s queue, every other core's unchanged) and the **schedule** phase
+  (`scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore` — every
+  replenish queue framed) both preserve affinity-consistency, via the transfer
+  helper.
+- **Headline + strengthened aggregate**:
+  `timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore` composes the
+  prepared / budget / schedule phases;
+  `timerTickOnCore_preserves_perCoreCbsInvariant_discharged` **supersedes** the
+  v0.31.57 aggregate — affinity is *derived* for the carried entries (prepared +
+  schedule proven), replacing the whole-state assume-conclusion `hAffinity` with the
+  budget-phase frame `hBudgetAffinity` plus the maintained `invExt`.
+
+**The single tracked-debt residual** is `hBudgetAffinity` — the **budget phase's**
+affinity preservation.  Its *exhausted* arm runs the IPC `timeoutBlockedThreads`,
+whose `determineTargetCore` / `getSchedContext?` object-frame reduces to
+`endpointQueueRemove`'s object-store **key-distinctness** of the endpoint vs. its
+queue members (a `dualQueueSystemInvariant` consequence).  It is **true** (the timeout
+path writes only thread-state / IPC-state / queue-links / `pipBoost`, never
+`cpuAffinity` or `boundThread`) and is exposed as an explicit, universally-quantified,
+non-circular input rather than assumed pointwise — a strict improvement over the
+whole-state `hAffinity` it replaces.  The v0.31.57 `hAffinity` aggregate is retained
+for the existing call surface, with its docstring corrected (audit Finding 1).
+
+The new budget insert's affinity is handled separately by the existing SM5.H
+`replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore` under the
+affinity-placement invariant (a thread current on core `c` is homed on `c`) +
+`schedContextBindingConsistent`.
+
+Default + staged builds green; partition gate **60** staged-only modules (was 59);
+trace byte-identical (purely additive, staged); `smp_cbs_suite` green (+ SM5.I
+affinity surface anchors + the `default_replenishQueueAffinityConsistentOnCore`
+non-vacuity witness); Tier-3 SM5.I affinity anchor block added.  Items deferred past
+v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md (SM5.I)
+
 ## v0.31.57 — WS-SM SM5.I: the live per-core timer tick preserves the per-core CBS invariant
 
 A focused SM5.I slice: proves that the **live per-core timer tick**

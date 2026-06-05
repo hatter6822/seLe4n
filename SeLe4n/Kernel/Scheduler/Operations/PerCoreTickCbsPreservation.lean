@@ -618,13 +618,18 @@ the tick only `popDue`-removes replenish entries and re-inserts one strictly-fut
 entry, and never advances `machine.timer`.
 
 The **affinity-consistency** conjunct (every queued SchedContext's bound thread is
-homed on the core) is supplied as `hAffinity`.  It is the one conjunct genuinely
-gated on the SM5.I *affinity-placement invariant* (a thread current on core `c` is
-homed on `c`) that the per-core scheduler maintains, together with the
-determineTargetCore / `boundThread`-through-tick frames — infrastructure that lands
-with the per-core scheduler.  Here the budget insert's affinity-consistency reduces
-exactly to that placement fact, so it is exposed as an explicit input rather than
-assumed silently. -/
+homed on the core) is supplied here verbatim as `hAffinity` — covering the *entire*
+post-state replenish queue, both the carried-over `popDue` entries and the single new
+budget insert.  **This is a strictly weaker form than necessary** (it assumes the
+conclusion): the tick provably never writes a TCB's `cpuAffinity` nor a SchedContext's
+`boundThread`, so the carried entries' affinity is *derivable* from the pre-tick
+affinity via per-phase `determineTargetCore` / `boundThread` frames, and only the new
+budget insert genuinely needs the *affinity-placement invariant* (a thread current on
+core `c` is homed on `c`).  The strengthened
+`PerCoreTickCbsAffinity.timerTickOnCore_preserves_perCoreCbsInvariant_discharged`
+**supersedes** this: it derives the carried-entries affinity (prepared + schedule
+phases proven) and narrows the residual to the budget-phase frame
+`hBudgetAffinity`.  This `hAffinity` form is retained for the existing call surface. -/
 theorem timerTickOnCore_preserves_perCoreCbsInvariant (st : SystemState) (c : CoreId)
     (st' : SystemState) (sgis : List (CoreId × SgiKind)) (c' : CoreId)
     (hInv : ∀ c'', perCoreCbsInvariant st c'')

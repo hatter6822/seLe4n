@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.57.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.58.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6263,6 +6263,43 @@ documentation lives under `docs/` and `docs/gitbook/`.
     headline theorems + machine chain + aggregate.  **Tracked**: the affinity conjunct's
     full discharge lands with the per-core scheduler that enforces affinity placement.
     Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I affinity discharge LANDED at v0.31.58 on branch
+  `claude/exciting-brahmagupta-XAFDT`** (audit-driven strengthening of the
+  v0.31.57 aggregate).  The v0.31.57 aggregate took the CBS **affinity-consistency**
+  conjunct verbatim as `hAffinity` — covering the whole post-state (an
+  assume-the-conclusion input; a deep audit flagged the docstring overclaim).  This
+  cut **derives** the carried-over entries' affinity instead, narrowing the residual
+  to a single budget-phase frame.  NEW staged module
+  `Scheduler/Operations/PerCoreTickCbsAffinity.lean` (~30 theorems, **all
+  axiom-clean** — `propext` / `Classical.choice` / `Quot.sound`; zero warnings):
+  object-store insert atoms (`determineTargetCore_insert_tcb` /
+  `getSchedContext?_insert_tcb_eq` / `getTcb?_insert_schedContext_eq` /
+  `getSchedContext?_boundThread_insert_schedContext`, on the AK7 `.get?` method form)
+  + the `affinityConsistent_transfer` keystone (affinity transfers across any
+  queue-shrinking, `determineTargetCore`/`boundThread`-preserving change); per-op
+  frames (`enqueueRunnableOnCore` / `refillSchedContext` /
+  `saveOutgoingContextOnCore` / `scheduleEffectiveOnCore` + the
+  `processReplenishmentsDueOnCore` fold); the **prepared** + **schedule** per-phase
+  affinity preservation (PROVEN via the transfer helper); the headline
+  `timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore` + the
+  strengthened aggregate
+  `timerTickOnCore_preserves_perCoreCbsInvariant_discharged` that **supersedes** the
+  v0.31.57 form — affinity DERIVED for the carried entries, replacing the whole-state
+  `hAffinity` with the budget-phase frame `hBudgetAffinity` + the maintained `invExt`.
+  **Single tracked-debt residual**: `hBudgetAffinity` — the budget phase's affinity
+  preservation, whose *exhausted* arm runs the IPC `timeoutBlockedThreads` whose
+  `determineTargetCore` / `getSchedContext?` object-frame reduces to
+  `endpointQueueRemove`'s object-store key-distinctness (a `dualQueueSystemInvariant`
+  consequence; TRUE — the timeout path writes only thread-state / IPC-state /
+  queue-links / `pipBoost`, never `cpuAffinity` or `boundThread`).  The new budget
+  insert's affinity uses the existing SM5.H
+  `replenishOnCore_preserves_replenishQueueAffinityConsistentOnCore` under the
+  affinity-placement invariant + `schedContextBindingConsistent`.  Partition gate
+  **60** staged-only modules (was 59); the v0.31.57 `hAffinity` aggregate retained for
+  the existing call surface with its docstring corrected (audit Finding 1);
+  `smp_cbs_suite` + tier-3 SM5.I affinity anchors added; trace byte-identical.  Items
+  deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

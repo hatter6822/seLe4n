@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
 import SeLe4n.Testing.StateBuilder
 
@@ -597,6 +598,30 @@ private def runSm5hCompletionScenarios : IO Unit := do
       assertBool "§18: a local re-home (new home = executing core) emits no cross-core SGI"
         (sgi == none)
   | .error _ => assertBool "local re-home composite succeeds" false
+
+-- §3.9b (SM5.I affinity discharge): surface anchors for the affinity-consistency
+-- discharge.  The carried-entries affinity is DERIVED via the proven prepared /
+-- schedule per-phase frames; the strengthened aggregate replaces the v0.31.57
+-- whole-state assume-conclusion `hAffinity` with the budget-phase frame
+-- `hBudgetAffinity` (the single tracked-debt residual).  Hypothesis-carrying
+-- theorems, so surface-anchored (not runtime-decidable).
+section Sm5iAffinityAnchors
+open SeLe4n.Kernel
+#check @affinityConsistent_transfer
+#check @determineTargetCore_insert_tcb
+#check @getSchedContext?_boundThread_insert_schedContext
+#check @processReplenishmentsDueOnCore_determineTargetCore
+#check @processReplenishmentsDueOnCore_boundThread
+#check @timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore
+#check @scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @timerTickOnCore_preserves_perCoreCbsInvariant_discharged
+-- non-vacuity: the freshly-booted system is affinity-consistent on every core, so the
+-- pre-state `hCons` hypothesis of the headline is satisfiable.
+example (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    replenishQueueAffinityConsistentOnCore (default : SystemState) c :=
+  default_replenishQueueAffinityConsistentOnCore c
+end Sm5iAffinityAnchors
 
 /-- §3.9 (SM5.I): the live per-core timer tick preserves the per-core CBS invariant's
 **validity** + **pipeline-order** conjuncts — verified on a concrete tick result

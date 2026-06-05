@@ -3913,4 +3913,30 @@ open SeLe4n.Kernel
 EOF
 lake env lean /tmp/sm5i_tick_cbs.lean'
 
+# WS-SM SM5.I affinity discharge: timerTickOnCore preserves replenish-queue affinity-consistency.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5i_tick_affinity.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
+open SeLe4n.Kernel
+-- foundation: object-store insert atoms + the affinity-transfer keystone.
+#check @affinityConsistent_transfer
+#check @determineTargetCore_insert_tcb
+#check @getSchedContext?_insert_tcb_eq
+#check @getTcb?_insert_schedContext_eq
+#check @getSchedContext?_boundThread_insert_schedContext
+-- per-op determineTargetCore + boundThread frames.
+#check @enqueueRunnableOnCore_determineTargetCore
+#check @refillSchedContext_boundThread
+#check @scheduleEffectiveOnCore_determineTargetCore
+#check @processReplenishmentsDueOnCore_determineTargetCore
+#check @processReplenishmentsDueOnCore_boundThread
+-- the proven prepared + schedule per-phase affinity preservation.
+#check @timerTickOnCorePrepared_preserves_replenishQueueAffinityConsistentOnCore
+#check @scheduleEffectiveOnCore_preserves_replenishQueueAffinityConsistentOnCore
+-- the headline + the strengthened aggregate (affinity DERIVED, budget-phase frame the residual).
+#check @timerTickOnCore_preserves_replenishQueueAffinityConsistentOnCore
+#check @timerTickOnCore_preserves_perCoreCbsInvariant_discharged
+EOF
+lake env lean /tmp/sm5i_tick_affinity.lean'
+
 finalize_report

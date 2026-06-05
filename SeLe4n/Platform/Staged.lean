@@ -337,6 +337,12 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- `timerTickOnCore_preserves_perCoreCbsInvariant` (affinity-consistency supplied as the
 -- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+-- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
+-- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
+-- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried
+-- entries proven via the prepared/schedule per-phase frames; only the budget-phase
+-- frame (timeoutBlockedThreads object-frame) remains as tracked-debt residual.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
