@@ -297,4 +297,11 @@ run_check_with_timeout "TRACE" lake exe smp_domain_suite
 # affinity-consistency witnesses, and the SM5.H theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_cbs_suite
 
+# WS-SM SM5.I — Per-core invariant suite runtime checks.  Exercises the actual
+# transition computation on concrete fixtures: the structural-invariant safety
+# facts on the freshly-booted system, the advanceDomainOnCore frame + the
+# enqueueRunnableOnCore wake maintaining runnable-are-TCBs with sibling-core
+# framing, and the SM5.I theorem-inventory partition counts.
+run_check_with_timeout "TRACE" lake exe smp_invariant_suite
+
 finalize_report

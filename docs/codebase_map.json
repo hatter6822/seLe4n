@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/exciting-brahmagupta-XAFDT",
-      "commit_sha": "2ed190fd1f4059f44835f69dffbaef9ae1079fd9",
-      "tree_sha": "3877123134711d74976cc31f6c00639777182cad",
-      "committed_at_utc": "2026-06-05T05:17:19+00:00"
+      "branch": "claude/focused-goodall-dji73",
+      "commit_sha": "a0d67364a5ed1c30c0c61b421bf741c592eca27a",
+      "tree_sha": "ee9013904b9be6d48d15cb425bd37a6425579efd",
+      "committed_at_utc": "2026-06-05T03:13:09-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d2613c0e5a95b2e258675e9eaeaf70791a122cb6d9e02557b4da7ba7a9361762"
+    "source_digest": "f0c50351b84310eb472cb5927bc0d7892a88982a42996e2ea07ac521b9eb0eb2"
   },
   "summary": {
-    "module_count": 284,
-    "declaration_count": 10479
+    "module_count": 287,
+    "declaration_count": 10555
   },
   "readme_sync": {
-    "version": "0.31.59",
+    "version": "0.31.60",
     "lean_toolchain": "v4.28.0",
-    "production_files": 229,
-    "production_loc": 164866,
-    "test_files": 55,
-    "test_loc": 36224,
-    "proved_theorem_lemma_decls": 5426,
+    "production_files": 231,
+    "production_loc": 165969,
+    "test_files": 56,
+    "test_loc": 36482,
+    "proved_theorem_lemma_decls": 5470,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -65036,6 +65036,804 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite",
+      "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean",
+      "declaration_count": 40,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 115,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "schedulerInvariantStructural_perCore",
+          "line": 131,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadValidOnCore",
+            "queueCurrentConsistentOnCore",
+            "runQueueOnCoreWellFormed",
+            "runnableThreadsAreTCBsOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedulerInvariantStructural_smp",
+          "line": 142,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariantStructural_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_to_queueCurrentConsistent",
+          "line": 147,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "queueCurrentConsistentOnCore",
+            "schedulerInvariantStructural_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_to_currentThreadValid",
+          "line": 151,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentThreadValidOnCore",
+            "schedulerInvariantStructural_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs",
+          "line": 155,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "runnableThreadsAreTCBsOnCore",
+            "schedulerInvariantStructural_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed",
+          "line": 159,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "runQueueOnCoreWellFormed",
+            "schedulerInvariantStructural_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_aggregateForall",
+          "line": 165,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_smp_at",
+          "line": 170,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_perCore_to_structural",
+          "line": 181,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariant_perCore",
+            "schedulerInvariant_perCore_to_currentThreadValid",
+            "schedulerInvariant_perCore_to_queueCurrentConsistent",
+            "schedulerInvariant_perCore_to_runQueueOnCoreWellFormed",
+            "schedulerInvariant_perCore_to_runnableThreadsAreTCBs",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_smp_to_structural",
+          "line": 189,
+          "called": [
+            "SystemState",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariant_perCore_to_structural",
+            "schedulerInvariant_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedulerInvariantStructural_perCore",
+          "line": 199,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "default",
+            "default_schedulerInvariant_perCore",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariant_perCore_to_structural"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_schedulerInvariantStructural_smp",
+          "line": 205,
+          "called": [
+            "SystemState",
+            "default",
+            "default_schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_frame",
+          "line": 230,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "currentThreadValidOnCore",
+            "getTcb",
+            "none",
+            "queueCurrentConsistentOnCore",
+            "runQueueOnCore",
+            "runQueueOnCoreWellFormed",
+            "runnableThreadsAreTCBsOnCore",
+            "schedulerInvariantStructural_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_smp_of_establish_and_frame",
+          "line": 280,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "getTcb",
+            "runQueueOnCore",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_perCore_frame",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "advanceDomainOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 316,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "advanceDomainOnCore",
+            "advanceDomainOnCore_currentOnCore",
+            "advanceDomainOnCore_getTcb",
+            "advanceDomainOnCore_runQueueOnCore",
+            "schedulerInvariantStructural_perCore_frame",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore",
+          "line": 335,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "effectiveRunQueuePriority",
+            "enqueueRunnableOnCore",
+            "enqueueRunnableOnCore_eq_self_of_runnable",
+            "enqueueRunnableOnCore_getTcb",
+            "enqueueRunnableOnCore_no_tcb_noop",
+            "getTcb",
+            "insert",
+            "invExt",
+            "mem_insert",
+            "mem_toList_iff_mem",
+            "none",
+            "runQueueOnCore",
+            "runnableOnSomeCore",
+            "runnableThreadsAreTCBsOnCore",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 378,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "enqueueRunnableOnCore",
+            "enqueueRunnableOnCore_currentOnCore",
+            "enqueueRunnableOnCore_getTcb",
+            "enqueueRunnableOnCore_preserves_currentThreadValidOnCore",
+            "enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self",
+            "enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed",
+            "enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "enqueueRunnableOnCore_runQueueOnCore_ne",
+            "invExt",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wakeThread_preserves_schedulerInvariantStructural_smp",
+          "line": 405,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "determineTargetCore",
+            "enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp",
+            "invExt",
+            "schedulerInvariantStructural_smp",
+            "st",
+            "wakeThread",
+            "wakeThread_state_eq_enqueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleFallbackOnCore_currentOnCore_ne",
+          "line": 420,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "dispatchIdleOnCore",
+            "idleFallbackOnCore",
+            "restoreIncomingContext_scheduler",
+            "setCurrentOnCore_currentOnCore_ne",
+            "setRunQueueOnCore_currentOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idleFallbackOnCore_runQueueOnCore_ne",
+          "line": 431,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "dispatchIdleOnCore",
+            "idleFallbackOnCore",
+            "restoreIncomingContext_scheduler",
+            "runQueueOnCore",
+            "setCurrentOnCore_runQueueOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleEffectiveOnCore_independent_of_other_core",
+          "line": 447,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "chooseThreadEffectiveOnCore",
+            "currentOnCore",
+            "getTcb",
+            "idleFallbackOnCore_currentOnCore_ne",
+            "idleFallbackOnCore_runQueueOnCore_ne",
+            "none",
+            "restoreIncomingContext_scheduler",
+            "runQueueOnCore",
+            "saveOutgoingContextOnCore_scheduler_eq",
+            "scheduleEffectiveOnCore",
+            "setCurrentOnCore_currentOnCore_ne",
+            "setCurrentOnCore_runQueueOnCore",
+            "setRunQueueOnCore_currentOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 491,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "invExt",
+            "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_establishes_currentThreadValidOnCore",
+            "scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore",
+            "scheduleEffectiveOnCore_getTcb",
+            "scheduleEffectiveOnCore_independent_of_other_core",
+            "scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed",
+            "scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "scheduleOrIdleOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 514,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "invExt",
+            "scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp",
+            "scheduleOrIdleOnCore",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "preemptCurrentOnCore_getTcb",
+          "line": 527,
+          "called": [
+            "CoreId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "currentOnCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "preemptCurrentOnCore",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "preemptCurrentOnCore_runQueue_resolves",
+          "line": 571,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "currentThreadValidOnCore",
+            "getTcb",
+            "mem_insert",
+            "mem_toList_iff_mem",
+            "none",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_runQueueOnCore_self_active",
+            "runQueueOnCore",
+            "runnableThreadsAreTCBsOnCore",
+            "st",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_getTcb",
+          "line": 610,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_getTcb",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_objects_eq_preempt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore",
+          "line": 627,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "affinityAdmitsCore",
+            "currentThreadValidOnCore",
+            "getTcb",
+            "invExt",
+            "mem_remove",
+            "mem_toList_iff_mem",
+            "none",
+            "preemptCurrentOnCore",
+            "preemptCurrentOnCore_runQueue_resolves",
+            "remove",
+            "restoreIncomingContext_scheduler",
+            "runQueueOnCore",
+            "runnableThreadsAreTCBsOnCore",
+            "setCurrentOnCore_runQueueOnCore",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_getTcb",
+            "toList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "switchToThreadOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 663,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_establishes_currentThreadValidOnCore",
+            "switchToThreadOnCore_establishes_queueCurrentConsistentOnCore",
+            "switchToThreadOnCore_getTcb",
+            "switchToThreadOnCore_independent_of_other_core",
+            "switchToThreadOnCore_preserves_runQueueOnCore_wellFormed",
+            "switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 690,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "handleRescheduleSgiOnCore",
+            "invExt",
+            "schedulerInvariantStructural_smp",
+            "st",
+            "switchToThreadOnCore_preserves_schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 713,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "enqueueIdleThreadOnCore",
+            "enqueueIdleThreadOnCore_currentOnCore",
+            "enqueueIdleThreadOnCore_getTcb",
+            "enqueueIdleThreadOnCore_preserves_currentThreadValidOnCore",
+            "enqueueIdleThreadOnCore_preserves_queueCurrentConsistentOnCore",
+            "enqueueIdleThreadOnCore_preserves_runQueueOnCore_wellFormed",
+            "enqueueIdleThreadOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "enqueueIdleThreadOnCore_runQueueOnCore_ne",
+            "idleThreadId",
+            "invExt",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 740,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "replenishOnCore",
+            "replenishOnCore_currentOnCore",
+            "replenishOnCore_getTcb",
+            "replenishOnCore_runQueueOnCore",
+            "scId",
+            "schedulerInvariantStructural_perCore_frame",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp",
+          "line": 759,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "decrementDomainTimeOnCore",
+            "decrementDomainTimeOnCore_currentOnCore",
+            "decrementDomainTimeOnCore_objects_eq",
+            "decrementDomainTimeOnCore_runQueueOnCore",
+            "getTcb",
+            "schedulerInvariantStructural_perCore_frame",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "currentOnCore_validThreadIfSome",
+          "line": 816,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "currentOnCore",
+            "currentThreadValidOnCore",
+            "getTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runQueueOnCore_wellFormed_of_structural",
+          "line": 824,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "runQueueOnCore",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed",
+            "st",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextRunQueueConsistent_perCore_of_crossSubsystem",
+          "line": 832,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "crossSubsystemInvariant_perCore",
+            "crossSubsystemInvariant_perCore_to_schedContextRunQueueConsistent",
+            "schedContextRunQueueConsistent_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "priorityInheritance_perCore_iff_blockingAcyclic",
+          "line": 841,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "blockingAcyclic",
+            "priorityInheritance_perCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariant_smp_dominates_structural",
+          "line": 849,
+          "called": [
+            "SystemState",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariant_smp",
+            "schedulerInvariant_smp_to_structural",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedulerInvariantStructural_perCore_pairwise",
+          "line": 858,
+          "called": [
+            "CoreId",
+            "RunQueue",
+            "SystemState",
+            "ThreadId",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_perCore_frame",
+            "setCurrentOnCore",
+            "setCurrentOnCore_currentOnCore_ne",
+            "setRunQueueOnCore",
+            "setRunQueueOnCore_currentOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "crossSubsystemInvariant_smp_dominates_structural",
+          "line": 873,
+          "called": [
+            "Kernel",
+            "SystemState",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariant_perCore_crossSubsystem_to_extended",
+            "schedulerInvariant_perCore_extended_to_base",
+            "schedulerInvariant_perCore_to_structural",
+            "schedulerInvariant_smp_crossSubsystem",
+            "st"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory",
+      "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuiteInventory.lean",
+      "declaration_count": 13,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 44,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "PerCoreInvariantSuiteCategory",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "PerCoreInvariantSuiteTheorem",
+          "line": 60,
+          "called": [
+            "PerCoreInvariantSuiteCategory"
+          ]
+        },
+        {
+          "kind": "syntax",
+          "name": "\"pcist!\"",
+          "line": 69,
+          "called": []
+        },
+        {
+          "kind": "macro_rules",
+          "name": "<anonymous:macro_rules:71>",
+          "line": 71,
+          "called": [
+            "PerCoreInvariantSuiteTheorem"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreInvariantSuiteTheorems",
+          "line": 83,
+          "called": [
+            "PerCoreInvariantSuiteTheorem",
+            "advanceDomainOnCore_preserves_schedulerInvariantStructural_smp",
+            "crossSubsystemInvariant_smp_dominates_structural",
+            "currentOnCore_validThreadIfSome",
+            "decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp",
+            "default_schedulerInvariantStructural_perCore",
+            "default_schedulerInvariantStructural_smp",
+            "enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp",
+            "enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp",
+            "handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp",
+            "idleFallbackOnCore_currentOnCore_ne",
+            "idleFallbackOnCore_runQueueOnCore_ne",
+            "preemptCurrentOnCore_getTcb",
+            "preemptCurrentOnCore_runQueue_resolves",
+            "priorityInheritance_perCore_iff_blockingAcyclic",
+            "replenishOnCore_preserves_schedulerInvariantStructural_smp",
+            "runQueueOnCore_wellFormed_of_structural",
+            "schedContextRunQueueConsistent_perCore_of_crossSubsystem",
+            "scheduleEffectiveOnCore_independent_of_other_core",
+            "scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp",
+            "scheduleOrIdleOnCore_preserves_schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_perCore_aggregateForall",
+            "schedulerInvariantStructural_perCore_frame",
+            "schedulerInvariantStructural_perCore_pairwise",
+            "schedulerInvariantStructural_perCore_to_currentThreadValid",
+            "schedulerInvariantStructural_perCore_to_queueCurrentConsistent",
+            "schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed",
+            "schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_at",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "schedulerInvariant_perCore_to_structural",
+            "schedulerInvariant_smp_dominates_structural",
+            "schedulerInvariant_smp_to_structural",
+            "switchToThreadOnCore_getTcb",
+            "switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "switchToThreadOnCore_preserves_schedulerInvariantStructural_smp",
+            "wakeThread_preserves_schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_count",
+          "line": 167,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_structural_count",
+          "line": 170,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_preservation_count",
+          "line": 174,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_suite_count",
+          "line": 178,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_partition_sum",
+          "line": 182,
+          "called": [
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_identifiers_nodup",
+          "line": 192,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreInvariantSuiteTheorems_descriptions_nodup",
+          "line": 197,
+          "called": [
+            "Kernel"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation",
       "path": "SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean",
       "declaration_count": 59,
@@ -108138,13 +108936,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 395,
+          "line": 419,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 401,
+          "line": 425,
           "called": []
         }
       ]
@@ -136565,6 +137363,341 @@
           "line": 423,
           "called": [
             "runSmpIdleChecks"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.SmpInvariantSuite",
+      "path": "tests/SmpInvariantSuite.lean",
+      "declaration_count": 23,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SmpInvariant",
+          "line": 36,
+          "called": [
+            "advanceDomainOnCore_preserves_schedulerInvariantStructural_smp",
+            "crossSubsystemInvariant_smp_dominates_structural",
+            "currentOnCore_validThreadIfSome",
+            "decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp",
+            "default_schedulerInvariantStructural_perCore",
+            "default_schedulerInvariantStructural_smp",
+            "enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp",
+            "enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp",
+            "handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp",
+            "idleFallbackOnCore_currentOnCore_ne",
+            "idleFallbackOnCore_runQueueOnCore_ne",
+            "perCoreInvariantSuiteTheorems",
+            "perCoreInvariantSuiteTheorems_count",
+            "perCoreInvariantSuiteTheorems_identifiers_nodup",
+            "perCoreInvariantSuiteTheorems_partition_sum",
+            "preemptCurrentOnCore_getTcb",
+            "preemptCurrentOnCore_runQueue_resolves",
+            "priorityInheritance_perCore_iff_blockingAcyclic",
+            "replenishOnCore_preserves_schedulerInvariantStructural_smp",
+            "runQueueOnCore_wellFormed_of_structural",
+            "schedContextRunQueueConsistent_perCore_of_crossSubsystem",
+            "scheduleEffectiveOnCore_independent_of_other_core",
+            "scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp",
+            "scheduleOrIdleOnCore_preserves_schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_perCore_aggregateForall",
+            "schedulerInvariantStructural_perCore_frame",
+            "schedulerInvariantStructural_perCore_pairwise",
+            "schedulerInvariantStructural_perCore_to_currentThreadValid",
+            "schedulerInvariantStructural_perCore_to_queueCurrentConsistent",
+            "schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed",
+            "schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_at",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "schedulerInvariant_perCore_to_structural",
+            "schedulerInvariant_smp_dominates_structural",
+            "schedulerInvariant_smp_to_structural",
+            "switchToThreadOnCore_getTcb",
+            "switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore",
+            "switchToThreadOnCore_preserves_schedulerInvariantStructural_smp",
+            "wakeThread_preserves_schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:103>",
+          "line": 103,
+          "called": [
+            "SystemState",
+            "default",
+            "default_schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:108>",
+          "line": 108,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "advanceDomainOnCore",
+            "advanceDomainOnCore_preserves_schedulerInvariantStructural_smp",
+            "default",
+            "default_schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:115>",
+          "line": 115,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "default",
+            "default_schedulerInvariantStructural_smp",
+            "replenishOnCore",
+            "replenishOnCore_preserves_schedulerInvariantStructural_smp",
+            "scId",
+            "schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:122>",
+          "line": 122,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "decrementDomainTimeOnCore",
+            "decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp",
+            "default",
+            "default_schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:128>",
+          "line": 128,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "currentOnCore",
+            "getTcb",
+            "runQueueOnCore",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp_of_establish_and_frame",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:138>",
+          "line": 138,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "schedulerInvariantStructural_smp",
+            "st",
+            "switchToThreadOnCore",
+            "switchToThreadOnCore_preserves_schedulerInvariantStructural_smp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:144>",
+          "line": 144,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "invExt",
+            "scheduleEffectiveOnCore",
+            "scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp",
+            "schedulerInvariantStructural_smp",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:150>",
+          "line": 150,
+          "called": [
+            "SystemState",
+            "schedulerInvariantStructural_smp",
+            "schedulerInvariant_smp",
+            "schedulerInvariant_smp_dominates_structural",
+            "st"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:154>",
+          "line": 154,
+          "called": [
+            "CoreId",
+            "RunQueue",
+            "SystemState",
+            "ThreadId",
+            "schedulerInvariantStructural_perCore",
+            "schedulerInvariantStructural_perCore_pairwise",
+            "setCurrentOnCore",
+            "setRunQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core1",
+          "line": 166,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tidA",
+          "line": 167,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 169,
+          "called": [
+            "TCB",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stEmpty",
+          "line": 175,
+          "called": [
+            "SystemState",
+            "build"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stRun",
+          "line": 178,
+          "called": [
+            "SystemState",
+            "build",
+            "mkTcb",
+            "tidA",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stRunRotated",
+          "line": 183,
+          "called": [
+            "SystemState",
+            "advanceDomainOnCore",
+            "bootCoreId",
+            "stRun"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 185,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runDefaultChecks",
+          "line": 195,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "core1",
+            "currentOnCore",
+            "none",
+            "runQueueOnCore",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runFramingChecks",
+          "line": 207,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "core1",
+            "currentOnCore",
+            "getTcb",
+            "none",
+            "runQueueOnCore",
+            "tidA",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runWakeChecks",
+          "line": 221,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "assertBool",
+            "bootCoreId",
+            "build",
+            "core1",
+            "enqueueRunnableOnCore",
+            "getTcb",
+            "mkTcb",
+            "ofNat",
+            "runQueueOnCore",
+            "stBlocked",
+            "tidB",
+            "toList",
+            "toObjId",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runInventoryChecks",
+          "line": 236,
+          "called": [
+            "assertBool",
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAllChecks",
+          "line": 248,
+          "called": [
+            "runDefaultChecks",
+            "runFramingChecks",
+            "runInventoryChecks",
+            "runWakeChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 258,
+          "called": [
+            "runAllChecks"
           ]
         }
       ]

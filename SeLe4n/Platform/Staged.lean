@@ -136,6 +136,30 @@ import SeLe4n.Kernel.Scheduler.Invariant.PerCore
 -- base-aggregate bridge for `chooseThread`.  Composes existing single-
 -- core preservation theorems with the SM4.C SMP-preservation skeleton.
 import SeLe4n.Kernel.Scheduler.Invariant.PerCorePreservation
+-- WS-SM SM5.I: per-core invariant suite (plan `SMP_PER_CORE_SCHEDULER_PLAN.md`
+-- §5 SM5.I, §6.1).  Assembles the SM4.C/SM4.D per-core predicates into the
+-- coherent suite and proves SM5.I.8 — preservation by every SM5 per-core
+-- transition — via the `schedulerInvariantStructural_perCore` / `_smp` safety
+-- invariant (the four register-bank-independent, transition-stable conjuncts:
+-- queueCurrentConsistent ∧ currentThreadValid ∧ runnableThreadsAreTCBs ∧
+-- runQueueWellFormed) and the per-arbitrary-core SMP-preservation engine
+-- `schedulerInvariantStructural_smp_of_establish_and_frame`.  Transitions
+-- proven to preserve `schedulerInvariantStructural_smp`: advanceDomainOnCore,
+-- enqueueRunnableOnCore, wakeThread, scheduleEffectiveOnCore / scheduleOrIdleOnCore,
+-- switchToThreadOnCore, handleRescheduleSgiOnCore, enqueueIdleThreadOnCore,
+-- replenishOnCore, decrementDomainTimeOnCore.  Plus the suite index (SM5.I.1–I.7,
+-- I.9) bridging the structural core to the full SM4.C aggregate and the SM4.D
+-- cross-subsystem suite.  Every theorem depends only on the standard
+-- foundational axioms.  SM5's live per-core run loop is the first runtime
+-- exerciser (which will move it production-reached).
+import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite
+-- WS-SM SM5.I: the per-core invariant suite theorem inventory — a 39-entry typed
+-- inventory (3 categories: structural / preservation / suite) with the `pcist!`
+-- compile-time identifier-validation macro + per-category count witnesses +
+-- partition-sum + kernel-sound Nodup-on-identifiers/descriptions; mirrors the
+-- SM5.E `PerCoreIdleInventory`.  A renamed/removed SM5.I theorem fails this
+-- module's elaboration.
+import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory
 -- WS-SM SM4.D: cross-subsystem per-core invariant migration (plan §5.4).
 -- The capstone `CrossSubsystemPerCore` transitively imports the four
 -- per-subsystem per-core slices: `IPC.Invariant.PerCore` (the twelve

@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.59"
+version = "0.31.60"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -449,3 +449,14 @@ root = "tests.SmpDomainSuite"
 [[lean_exe]]
 name = "smp_cbs_suite"
 root = "tests.SmpCbsSuite"
+
+# WS-SM SM5.I — Per-core invariant suite test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses (the SM5.I.8 "preservation by
+# every transition" surface + non-vacuity witnesses on the freshly-booted system)
+# + runtime assertions: the structural-invariant safety facts on the default
+# state, the advanceDomainOnCore frame + the enqueueRunnableOnCore wake
+# maintaining runnable-are-TCBs with sibling-core framing, and the SM5.I inventory
+# partition counts.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_invariant_suite"
+root = "tests.SmpInvariantSuite"
