@@ -2545,4 +2545,97 @@ theorem timeoutThread_preserves_schedulerInvariantStructuralRegNodup_smp
                   _ _ _ hInv3 hPre3
               | exact hPre3
 
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8 (timeout atom): `timeoutThread` preserves the boot core's
+current thread.  Every step leaves `currentOnCore bootCoreId` fixed
+(`endpointQueueRemove` / `storeObject` don't touch the scheduler;
+`ensureRunnable` and `revertPriorityInheritance` only rebucket the run queue).
+This is the invariant the `timeoutBlockedThreads` fold maintains so each step's
+timed-out thread stays distinct from the (unchanging) boot current. -/
+theorem timeoutThread_currentOnCore_bootCore_eq
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hStep : timeoutThread endpointId isReceiveQ tid st = .ok st') :
+    st'.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId := by
+  unfold timeoutThread at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st1 hEQR
+    have h1 := endpointQueueRemove_scheduler_eq _ _ _ _ _ hEQR
+    split at hStep
+    · simp at hStep
+    · rename_i tcb hLook
+      simp only [] at hStep
+      split at hStep
+      · simp at hStep
+      · rename_i st2 heq
+        have h2 := storeObject_scheduler_eq _ _ _ _ heq
+        split at hStep <;>
+          · simp only [Except.ok.injEq] at hStep
+            subst hStep
+            first
+              | rw [revert_preserves_current, ensureRunnable_scheduler_current, h2, h1]
+              | rw [ensureRunnable_scheduler_current, h2, h1]
+
+/-- WS-SM SM5.I.8 (timeout atom): `timeoutBlockedThreads` preserves the base
+safety invariant.  It folds `timeoutThread` over the SchedContext's blocked
+threads; each step preserves the invariant (atom above) provided the timed-out
+thread is not the boot core's current thread.  `hNotCur` (the boot current is
+not among the SchedContext's indexed threads) supplies that for every step —
+it holds because a blocked thread is never the running thread, discharged from
+the IPC↔scheduler contract at the integration site. -/
+theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (hInv : st.objects.invExt)
+    (hNotCur : ∀ t, st.scheduler.currentOnCore bootCoreId = some t →
+      t ∉ (st.scThreadIndex[scId]?.getD []))
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (timeoutBlockedThreads st scId).1 := by
+  unfold timeoutBlockedThreads
+  suffices H : ∀ (L : List SeLe4n.ThreadId)
+      (acc : SystemState × List (SeLe4n.ThreadId × KernelError)),
+      schedulerInvariantStructuralRegNodup_smp acc.1 →
+      acc.1.objects.invExt →
+      acc.1.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId →
+      (∀ t ∈ L, st.scheduler.currentOnCore bootCoreId ≠ some t) →
+      schedulerInvariantStructuralRegNodup_smp
+        (L.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+          let (st', errs) := acc
+          match st'.getTcb? tid with
+          | some tcb =>
+            match tcbBlockingInfo tcb with
+            | some (epId, isReceiveQ) =>
+              match timeoutThread epId isReceiveQ tid st' with
+              | .ok st'' => (st'', errs)
+              | .error e => (st', errs ++ [(tid, e)])
+            | none => (st', errs)
+          | none => (st', errs)) acc).1 by
+    refine H (st.scThreadIndex[scId]?.getD []) (st, []) hPre hInv rfl ?_
+    intro t ht hc
+    exact hNotCur t hc ht
+  intro L
+  induction L with
+  | nil => intro acc hP _ _ _; exact hP
+  | cons hd tl ih =>
+    intro acc hP hI hC hN
+    rw [List.foldl_cons]
+    obtain ⟨st', errs⟩ := acc
+    simp only []
+    split
+    · rename_i tcb _
+      rcases hbi : tcbBlockingInfo tcb with _ | ⟨epId, isReceiveQ⟩
+      · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
+      · dsimp only
+        split
+        · rename_i st'' heqT
+          apply ih
+          · exact timeoutThread_preserves_schedulerInvariantStructuralRegNodup_smp
+              epId isReceiveQ hd st' st'' hI
+              (by rw [hC]; exact hN hd List.mem_cons_self) heqT hP
+          · exact timeoutThread_preserves_objects_invExt epId isReceiveQ hd st' st'' hI heqT
+          · rw [timeoutThread_currentOnCore_bootCore_eq epId isReceiveQ hd st' st'' heqT]
+            exact hC
+          · intro t ht; exact hN t (List.mem_cons_of_mem hd ht)
+        · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
+    · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
+
 end SeLe4n.Kernel
