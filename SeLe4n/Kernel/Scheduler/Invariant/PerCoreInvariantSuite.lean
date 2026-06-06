@@ -2975,6 +2975,212 @@ theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
         · exact ih _ hP hI
     · exact ih _ hP hI
 
+/-- WS-SM SM5.I.8: `replenishOnCore` preserves the qcc-free run-queue safety bundle
+on every core (it writes only the replenish queue — run queue and objects framed). -/
+theorem replenishOnCore_preserves_runQueueSafetyOnCore (st : SystemState) (c : CoreId)
+    (scId : SeLe4n.SchedContextId) (eligibleAt : Nat) (c' : CoreId)
+    (h : runQueueSafetyOnCore st c') :
+    runQueueSafetyOnCore (replenishOnCore st c scId eligibleAt) c' := by
+  refine runQueue_frame_preserves_runQueueSafetyOnCore st _ c'
+    (replenishOnCore_runQueueOnCore st c c' scId eligibleAt) (fun x hx => ?_) h
+  rw [replenishOnCore_getTcb? st c scId eligibleAt x]; exact hx
+
+/-- WS-SM SM5.I.8 (budget tick): `timerTickBudgetOnCore` preserves the qcc-free
+run-queue safety bundle on core `c` for ALL four `.ok` outcomes — the two
+not-preempted object inserts, the unbound-preempt re-enqueue, AND the
+bound-budget-exhausted `timeoutBlockedThreads` path (the former SM5.F gap).  The
+preempt paths re-enqueue the current thread (breaking qcc, which this bundle
+deliberately excludes).  `hTid` (the current thread resolves to `tcb`) discharges
+the re-enqueued thread's TCB-ness on the budget-exhausted path. -/
+theorem timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st3 : SystemState) (b : Bool) (hInv : st.objects.invExt)
+    (hTid : st.getTcb? tid = some tcb)
+    (h : runQueueSafetyOnCore st c)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b)) :
+    runQueueSafetyOnCore st3 c := by
+  -- The bound/donated bodies are identical; both bind `scId`.  `boundAux`
+  -- (below) factors them — it re-unfolds `timerTickBudgetOnCore`, so the
+  -- `match`-aux is shared (no matcher mismatch).
+  unfold timerTickBudgetOnCore at hStep
+  split at hStep
+  · -- unbound
+    split at hStep
+    · -- case #1: time-slice exhausted, preempt (re-enqueue tid into core c)
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep
+      generalize ({ tcb with timeSlice := st.scheduler.configDefaultTimeSlice } : TCB) = tcbR
+      have hst' : runQueueSafetyOnCore
+          { st with objects := st.objects.insert tid.toObjId (.tcb tcbR) } c :=
+        objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
+          (fun x hx => getTcb?_isSome_insert_tcb st tid tcbR hInv x hx) h
+      have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcbR) }
+          : SystemState).getTcb? tid = some tcbR := by
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      refine ⟨?_, ?_, ?_⟩
+      · intro t ht
+        simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+        rcases (RunQueue.mem_insert _ tid _ t).mp
+          ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
+        · exact hst'.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+        · exact ⟨_, by rw [heqt]; exact hself⟩
+      · show runQueueOnCoreWellFormed _ c
+        simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_wellFormed _ hst'.2.1 _ _
+      · show runQueueUniqueOnCore _ c
+        simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_toList_nodup _ _ _ hst'.2.2
+    · -- case #2: not preempted, decrement time-slice (object insert only)
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep
+      exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
+        (fun x hx => getTcb?_isSome_insert_tcb st tid _ hInv x hx) h
+  · -- bound
+    rename_i scId heqB
+    split at hStep
+    · -- some sc
+      rename_i sc hSc
+      have hOldSc : st.objects.get? scId.toObjId = some (.schedContext sc) := by
+        rw [← RHTable_getElem?_eq_get?]
+        exact (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
+      split at hStep
+      · -- case #3: budget exhausted → replenish + re-enqueue + timeoutBlockedThreads
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
+            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        have h1 : runQueueSafetyOnCore
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } c :=
+          objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
+            (fun x hx => by
+              rw [getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl x]; exact hx) h
+        have hInv1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            : SystemState).objects.invExt :=
+          RobinHood.RHTable.insert_preserves_invExt st.objects scId.toObjId _ hInv
+        have h2 := replenishOnCore_preserves_runQueueSafetyOnCore
+          { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+          c scId (st.machine.timer + sc.period.val) c h1
+        have hInv2 := replenishOnCore_preserves_objects_invExt
+          { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+          c scId (st.machine.timer + sc.period.val) hInv1
+        have hTidR : (replenishOnCore
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            c scId (st.machine.timer + sc.period.val)).getTcb? tid = some tcb := by
+          rw [replenishOnCore_getTcb?,
+            getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl tid]; exact hTid
+        have h3 : runQueueSafetyOnCore
+            { replenishOnCore
+                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val) with
+              scheduler := (replenishOnCore
+                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
+                (((replenishOnCore
+                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
+                  (resolveInsertPriority
+                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                    tid sc)) } c := by
+          refine ⟨?_, ?_, ?_⟩
+          · intro t ht
+            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+            rcases (RunQueue.mem_insert _ tid _ t).mp
+              ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
+            · exact h2.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+            · exact ⟨tcb, by rw [heqt]; exact hTidR⟩
+          · show runQueueOnCoreWellFormed _ c
+            simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.insert_preserves_wellFormed _ h2.2.1 _ _
+          · show runQueueUniqueOnCore _ c
+            simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.insert_preserves_toList_nodup _ _ _ h2.2.2
+        have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c (by exact hInv2) h3
+        refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c
+          (by simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore])
+          (fun x hx => hx) h4
+      · -- case #4: not preempted, consume budget (schedContext insert only)
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
+          (fun x hx => by
+            rw [getTcb?_insert_schedContext_eq st _ scId sc (consumeBudget sc 1) hInv hOldSc rfl x]
+            exact hx) h
+    · -- .error .missingSchedContext
+      simp at hStep
+  · -- donated (identical body to bound; binds scId + an unused owner)
+    rename_i scId _o heqB
+    split at hStep
+    · -- some sc
+      rename_i sc hSc
+      have hOldSc : st.objects.get? scId.toObjId = some (.schedContext sc) := by
+        rw [← RHTable_getElem?_eq_get?]
+        exact (SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSc
+      split at hStep
+      · -- case #3
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
+            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        have h1 : runQueueSafetyOnCore
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } c :=
+          objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
+            (fun x hx => by
+              rw [getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl x]; exact hx) h
+        have hInv1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            : SystemState).objects.invExt :=
+          RobinHood.RHTable.insert_preserves_invExt st.objects scId.toObjId _ hInv
+        have h2 := replenishOnCore_preserves_runQueueSafetyOnCore
+          { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+          c scId (st.machine.timer + sc.period.val) c h1
+        have hInv2 := replenishOnCore_preserves_objects_invExt
+          { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+          c scId (st.machine.timer + sc.period.val) hInv1
+        have hTidR : (replenishOnCore
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            c scId (st.machine.timer + sc.period.val)).getTcb? tid = some tcb := by
+          rw [replenishOnCore_getTcb?,
+            getTcb?_insert_schedContext_eq st _ scId sc scNew hInv hOldSc rfl tid]; exact hTid
+        have h3 : runQueueSafetyOnCore
+            { replenishOnCore
+                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val) with
+              scheduler := (replenishOnCore
+                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
+                (((replenishOnCore
+                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
+                  (resolveInsertPriority
+                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                    tid sc)) } c := by
+          refine ⟨?_, ?_, ?_⟩
+          · intro t ht
+            simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+            rcases (RunQueue.mem_insert _ tid _ t).mp
+              ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
+            · exact h2.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+            · exact ⟨tcb, by rw [heqt]; exact hTidR⟩
+          · show runQueueOnCoreWellFormed _ c
+            simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.insert_preserves_wellFormed _ h2.2.1 _ _
+          · show runQueueUniqueOnCore _ c
+            simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.insert_preserves_toList_nodup _ _ _ h2.2.2
+        have h4 := timeoutBlockedThreads_preserves_runQueueSafetyOnCore _ scId c (by exact hInv2) h3
+        refine runQueue_frame_preserves_runQueueSafetyOnCore _ _ c
+          (by simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore])
+          (fun x hx => hx) h4
+      · -- case #4
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        exact objects_frame_preserves_runQueueSafetyOnCore st _ c rfl
+          (fun x hx => by
+            rw [getTcb?_insert_schedContext_eq st _ scId sc (consumeBudget sc 1) hInv hOldSc rfl x]
+            exact hx) h
+    · -- .error .missingSchedContext
+      simp at hStep
+
 -- ── §8.3d  Prepared-phase discharge of the getTcb?-reading conjuncts
 --           (`runnableThreadsAreTCBs`) — placed here for `refillSchedContext_getTcb?_eq`. ──
 
@@ -3270,5 +3476,52 @@ theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_o
     (timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore st c hInv hCtx)
     (timerTickOnCorePrepared_preserves_runQueueUnique st c hNd)
     hBudgetRqWf hBudgetRat hBudgetNd hStep
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves the qcc-free
+run-queue safety bundle on core `c` — bundles the three prepared dischargers (rat /
+rqWf / Nodup). -/
+theorem timerTickOnCorePrepared_preserves_runQueueSafetyOnCore (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt) (h : runQueueSafetyOnCore st c) :
+    runQueueSafetyOnCore (timerTickOnCorePrepared st c).1 c :=
+  ⟨timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore st c hInv h.1,
+   timerTickOnCorePrepared_runQueueOnCore_wellFormed st c h.2.1,
+   timerTickOnCorePrepared_preserves_runQueueUnique st c h.2.2⟩
+
+/-- WS-SM SM5.I.8 (capstone, FULLY CLOSED): the per-core timer tick preserves the
+full register-bank+Nodup base safety invariant on the operated core `c`, taking
+ONLY the bundled pre-state invariant `schedulerInvariantStructuralRegNodup_perCore
+st c` (and `hInv`) — **no budget hypotheses**.
+
+The three budget-tick obligations (`hBudget*` of `…_of_pre`) are discharged by
+`timerTickBudgetOnCore_preserves_runQueueSafetyOnCore`, which covers ALL four
+`timerTickBudgetOnCore` outcomes — including the bound-budget-exhausted
+`timeoutBlockedThreads` path that was the SM5.F per-core-PIP tracked gap.  The
+qcc-free `runQueueSafetyOnCore` sub-bundle is what makes this work: the budget
+tick's preempt paths re-enqueue the current thread (breaking `qcc`), but the three
+run-queue conjuncts (rat / rqWf / Nodup) never read `current`, so they survive —
+and the dispatch phase re-establishes `qcc`.  This is the unconditional per-core
+SM5.I.8 preservation result. -/
+theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
+    (st : SystemState) (c : CoreId) (st' : SystemState)
+    (sgis : List (CoreId × Concurrency.SgiKind))
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    schedulerInvariantStructuralRegNodup_perCore st' c := by
+  have hPrepInv := timerTickOnCorePrepared_objects_invExt st c hInv
+  have hPrepSafe : runQueueSafetyOnCore (timerTickOnCorePrepared st c).1 c :=
+    timerTickOnCorePrepared_preserves_runQueueSafetyOnCore st c hInv
+      (schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety hPre)
+  refine timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
+    st c st' sgis hInv hPre ?_ ?_ ?_ hStep
+  · intro tid tcb st3 b _hCur hTid hBud
+    exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+      (timerTickOnCorePrepared st c).1 c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.1
+  · intro tid tcb st3 b _hCur hTid hBud
+    exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+      (timerTickOnCorePrepared st c).1 c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).1
+  · intro tid tcb st3 b _hCur hTid hBud
+    exact (timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+      (timerTickOnCorePrepared st c).1 c tid tcb st3 b hPrepInv hTid hPrepSafe hBud).2.2
 
 end SeLe4n.Kernel
