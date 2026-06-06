@@ -18,6 +18,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 
 /-!
 # WS-SM SM5.I — Per-core invariant suite
@@ -1956,5 +1957,129 @@ theorem scheduleDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
   · -- non-boundary: pure domain-time decrement.
     simp only [Except.ok.injEq] at h; subst h
     exact decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hPre
+
+-- ── §8.3  `timerTickOnCore` base preservation (the genuinely multi-core tick) ──
+--
+-- Unlike the domain composites, `timerTickOnCore`'s CBS replenishment fold can
+-- `wakeThread` onto a *remote* core, so it threads the per-step `wakeThread`
+-- preservation through the fold rather than framing siblings.  Phases:
+--   (0) clear `lastTimeoutErrors` on `c`  — pure scheduler frame
+--   (1) `processReplenishmentsDueOnCore` — fold of `refillSchedContext` + wakes
+--   (2) `timerTickBudgetOnCore` (+ `scheduleEffectiveOnCore` on preempt)
+
+/-- `refillSchedContext` leaves every thread's `getTcb?` unchanged — its only
+write replaces a `.schedContext` at `scId`, which `getTcb?` never reads. -/
+theorem refillSchedContext_getTcb?_eq (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (now : Nat) (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (refillSchedContext st scId now).getTcb? tid = st.getTcb? tid := by
+  unfold refillSchedContext
+  split
+  · rename_i sc hsc
+    exact getTcb?_insert_schedContext_eq st _ scId sc _ hInv
+      (by rw [← RHTable_getElem?_eq_get?]; exact hsc) rfl tid
+  · rfl
+
+/-- WS-SM SM5.I.8 (tick phase 1 atom): `refillSchedContext` preserves the base
+safety invariant on every core — it touches only a SchedContext, leaving the
+scheduler, the register banks, and every `getTcb?` unchanged. -/
+theorem refillSchedContext_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (refillSchedContext st scId now) := by
+  have hsch := refillSchedContext_scheduler_eq st scId now
+  have hmac := refillSchedContext_machine_eq st scId now
+  have hgt := fun tid => refillSchedContext_getTcb?_eq st scId now hInv tid
+  intro c
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · refine schedulerInvariantStructural_perCore_frame ?_ ?_ ?_ (hPre c).1.1
+    · rw [hsch]
+    · rw [hsch]
+    · intro tid hh; rw [hgt tid]; exact hh
+  · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c).1.1.2.1) ((hPre c).1.2)
+    · rw [hsch]
+    · rw [hmac]
+    · intro tid tcb _hcur htcb
+      exact ⟨tcb, by rw [hgt tid]; exact htcb, RegisterFile.beq_self _⟩
+  · exact (runQueueUniqueOnCore_frame (by rw [hsch])).mpr (hPre c).2
+
+/-- From a failed single-placement guard: a thread not running on *any* core is
+not the current thread of *any* core (in particular its wake target). -/
+theorem currentOnCore_ne_of_not_runningOnSomeCore {st : SystemState}
+    {tid : SeLe4n.ThreadId} (h : runningOnSomeCore st tid = false) (c : CoreId) :
+    st.scheduler.currentOnCore c ≠ some tid := by
+  intro hc
+  have hrun : runningOnSomeCore st tid = true := by
+    unfold runningOnSomeCore
+    rw [List.any_eq_true]
+    exact ⟨c, List.mem_finRange c, by simp [hc]⟩
+  rw [hrun] at h; exact absurd h (by simp)
+
+/-- WS-SM SM5.I.8 (tick phase 1 step): one CBS replenishment step preserves the
+base safety invariant — `refillSchedContext` preserves it (phase-1 atom) and the
+optional cross-core `wakeThread` preserves it (the per-step single-placement
+guard discharges `wakeThread`'s no-self-current precondition). -/
+theorem processOneReplenishmentOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (execCore : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp
+      (processOneReplenishmentOnCore st execCore scId now).1 := by
+  have hRefillPre := refillSchedContext_preserves_schedulerInvariantStructuralRegNodup_smp
+    st scId now hInv hPre
+  have hRefillInv := refillSchedContext_preserves_objects_invExt st scId now hInv
+  simp only [processOneReplenishmentOnCore]
+  split
+  · split
+    · exact hRefillPre
+    · rename_i tid _hwt hr
+      exact wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
+        (refillSchedContext st scId now) tid execCore hRefillInv
+        (currentOnCore_ne_of_not_runningOnSomeCore (by simpa using hr) _) hRefillPre
+  · exact hRefillPre
+
+/-- WS-SM SM5.I.8 (tick phase 1 fold): the CBS replenishment fold preserves the
+base safety invariant (and `objects.invExt`), by induction over the due list —
+each step is `processOneReplenishmentOnCore`. -/
+theorem foldl_processOneReplenishment_preserves (c : CoreId) (now : Nat)
+    (dueIds : List SeLe4n.SchedContextId) :
+    ∀ acc : SystemState × List (CoreId × Concurrency.SgiKind),
+      acc.1.objects.invExt → schedulerInvariantStructuralRegNodup_smp acc.1 →
+      ((dueIds.foldl (fun acc scId =>
+          let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+          (s, acc.2 ++ sgi?.toList)) acc).1.objects.invExt ∧
+        schedulerInvariantStructuralRegNodup_smp
+          (dueIds.foldl (fun acc scId =>
+            let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+            (s, acc.2 ++ sgi?.toList)) acc).1) := by
+  induction dueIds with
+  | nil => intro acc h1 h2; exact ⟨h1, h2⟩
+  | cons hd tl ih =>
+      intro acc h1 h2
+      refine ih _ ?_ ?_
+      · exact processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now h1
+      · exact processOneReplenishmentOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+          acc.1 c hd now h1 h2
+
+/-- WS-SM SM5.I.8 (tick phase 1): `processReplenishmentsDueOnCore` preserves the
+base safety invariant on every core. -/
+theorem processReplenishmentsDueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c : CoreId) (now : Nat)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (processReplenishmentsDueOnCore st c now).1 := by
+  simp only [processReplenishmentsDueOnCore]
+  refine (foldl_processOneReplenishment_preserves c now _ _ ?_ ?_).2
+  · exact hInv
+  · intro c'
+    refine ⟨⟨?_, ?_⟩, ?_⟩
+    · refine schedulerInvariantStructural_perCore_frame ?_ ?_ (fun _ hh => hh) (hPre c').1.1
+      · simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore]
+      · simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore]
+    · refine contextMatchesCurrentOnCore_frame_at ?_ rfl
+        (fun tid tcb _ htcb => ⟨tcb, htcb, RegisterFile.beq_self _⟩) ((hPre c').1.1.2.1) ((hPre c').1.2)
+      · simp only [SchedulerState.setReplenishQueueOnCore_currentOnCore]
+    · exact (runQueueUniqueOnCore_frame
+        (by simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore])).mpr (hPre c').2
 
 end SeLe4n.Kernel
