@@ -1939,6 +1939,76 @@ theorem timerTickOnCorePrepared_runQueueOnCore_wellFormed (st : SystemState) (c 
   apply processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
   simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hwf
 
+-- ── §6c  Prepared-phase (cross-core replenishment-wake) discharge of the
+--          per-core invariant conjuncts [SM5.I] — `queueCurrentConsistent` ──
+
+/-- A thread not running on **any** core is not the current thread of any
+particular core (the elementwise reading of `runningOnSomeCore = false`). -/
+theorem runningOnSomeCore_eq_false_currentOnCore_ne {st : SystemState}
+    {tid : SeLe4n.ThreadId} (h : runningOnSomeCore st tid = false) (c : CoreId) :
+    st.scheduler.currentOnCore c ≠ some tid := by
+  simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores, List.any_eq_false] at h
+  intro hc
+  have hcc := h c (List.mem_finRange c)
+  rw [hc] at hcc
+  simp at hcc
+
+/-- `processOneReplenishmentOnCore` preserves dequeue-on-dispatch consistency on
+**every** core `c'`: the refill frames the scheduler, and the wake fires only when
+the woken thread is not running anywhere (so it is not `c'`'s current thread) —
+exactly `wakeThread_preserves_queueCurrentConsistentOnCore`'s precondition. -/
+theorem processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hcons : queueCurrentConsistentOnCore st.scheduler c') :
+    queueCurrentConsistentOnCore (processOneReplenishmentOnCore st execCore scId now).1.scheduler c' := by
+  have hRef : queueCurrentConsistentOnCore (refillSchedContext st scId now).scheduler c' := by
+    rw [refillSchedContext_scheduler_eq]; exact hcons
+  simp only [processOneReplenishmentOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next hcond =>
+      exact wakeThread_preserves_queueCurrentConsistentOnCore (refillSchedContext st scId now)
+        tid execCore c'
+        (runningOnSomeCore_eq_false_currentOnCore_ne (Bool.not_eq_true _ |>.mp hcond) _) hRef
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState × List (CoreId × SgiKind))
+    (hcons : queueCurrentConsistentOnCore acc.1.scheduler c') :
+    queueCurrentConsistentOnCore
+      (dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1.scheduler c' := by
+  induction dueIds generalizing acc with
+  | nil => exact hcons
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore
+        acc.1 c c' hd now hcons)
+
+/-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
+dequeue-on-dispatch consistency on core `c`. -/
+theorem processReplenishmentsDueOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (now : Nat) (hcons : queueCurrentConsistentOnCore st.scheduler c) :
+    queueCurrentConsistentOnCore (processReplenishmentsDueOnCore st c now).1.scheduler c := by
+  simp only [processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore
+  simpa only [queueCurrentConsistentOnCore, SchedulerState.setReplenishQueueOnCore_currentOnCore,
+    SchedulerState.setReplenishQueueOnCore_runQueueOnCore] using hcons
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves
+`queueCurrentConsistentOnCore` — discharges the capstone's `hPrepQcc`. -/
+theorem timerTickOnCorePrepared_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (hcons : queueCurrentConsistentOnCore st.scheduler c) :
+    queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).1.scheduler c := by
+  simp only [timerTickOnCorePrepared]
+  apply processReplenishmentsDueOnCore_preserves_queueCurrentConsistentOnCore
+  simpa only [queueCurrentConsistentOnCore, SchedulerState.setLastTimeoutErrorsOnCore_currentOnCore,
+    SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hcons
+
 /-- WS-SM SM5.D.5 (B2 discharge, clean path): a *not-preempted* budget tick
 preserves per-core run-queue well-formedness — its scheduler is unchanged
 (`timerTickBudgetOnCore_notPreempted_scheduler_eq`).  This discharges the B2
