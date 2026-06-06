@@ -2638,6 +2638,139 @@ theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
         · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
     · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
 
+-- ════════════════════════════════════════════════════════════════════════════
+-- §8.4  Budget-tick discharge — the qcc-free run-queue safety sub-bundle
+-- ════════════════════════════════════════════════════════════════════════════
+--
+-- The capstone's `hBudget*` hypotheses are the three run-queue conjuncts (rat /
+-- rqWf / Nodup) of the budget-tick result on core `c`.  `timerTickBudgetOnCore`'s
+-- preempt paths RE-ENQUEUE the current thread — breaking `queueCurrentConsistent`
+-- (current ∈ run queue) but NOT the three run-queue conjuncts (none read
+-- `current`).  This section bundles exactly those three qcc-free conjuncts and
+-- proves the budget tick — *including* the budget-exhausted `timeoutBlockedThreads`
+-- path (the former SM5.F tracked gap) — preserves them UNCONDITIONALLY (no
+-- `hNotCur`), so the capstone needs no budget hypotheses.
+
+/-- WS-SM SM5.I.8: the qcc-free run-queue safety conjuncts on core `c` —
+runnable-threads-are-TCBs, run-queue well-formedness, run-queue uniqueness.
+These three conjuncts of the base structural invariant never read `current`, so
+they survive the budget tick's current-thread re-enqueue (which breaks `qcc`). -/
+def runQueueSafetyOnCore (st : SystemState) (c : CoreId) : Prop :=
+  runnableThreadsAreTCBsOnCore st c ∧
+  runQueueOnCoreWellFormed st.scheduler c ∧
+  runQueueUniqueOnCore st.scheduler c
+
+/-- Project the qcc-free run-queue safety bundle out of the full base invariant. -/
+theorem schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore st c) :
+    runQueueSafetyOnCore st c :=
+  ⟨h.1.1.2.2.1, h.1.1.2.2.2, h.2⟩
+
+/-- WS-SM SM5.I.8 (objects frame): an objects-only change that fixes the scheduler
+and keeps every `getTcb?` resolvable preserves the qcc-free run-queue safety
+bundle (run queue unchanged ⇒ wellFormed/Nodup; members still resolve ⇒ rat). -/
+theorem objects_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c : CoreId)
+    (hsch : st'.scheduler = st.scheduler)
+    (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
+  obtain ⟨hRat, hWf, hNd⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro t ht
+    rw [hsch] at ht
+    obtain ⟨tcbt, htcbt⟩ := hRat t ht
+    have hs : (st'.getTcb? t).isSome = true := hSome t (by simp [htcbt])
+    cases h' : st'.getTcb? t with
+    | none => rw [h'] at hs; exact absurd hs (by simp)
+    | some tcb' => exact ⟨tcb', rfl⟩
+  · show runQueueOnCoreWellFormed st'.scheduler c
+    rw [hsch]; exact hWf
+  · show runQueueUniqueOnCore st'.scheduler c
+    rw [hsch]; exact hNd
+
+/-- WS-SM SM5.I.8 (TCB-insert getTcb? frame): inserting a TCB at `tid` keeps every
+`getTcb?` resolvable — `tid` resolves to the inserted TCB; every other key is
+unchanged. -/
+theorem getTcb?_isSome_insert_tcb (st : SystemState) (tid : SeLe4n.ThreadId) (v : TCB)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) (hx : (st.getTcb? x).isSome) :
+    (({ st with objects := st.objects.insert tid.toObjId (.tcb v) } : SystemState).getTcb? x).isSome := by
+  by_cases hxt : x = tid
+  · rw [hxt]
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?,
+      RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv, Option.isSome_some]
+  · have hNe : ¬ (tid.toObjId == x.toObjId) = true :=
+      fun hh => hxt (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq hh)).symm
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+    rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
+    exact hx
+
+/-- WS-SM SM5.I.8 (general run-queue frame): if core `c`'s run queue is unchanged
+and every `getTcb?` stays resolvable, the qcc-free run-queue safety bundle on core
+`c` is preserved.  The workhorse for the bootCoreId-pinned timeout sub-ops on a
+`c ≠ bootCoreId` (the run queue on `c` is framed). -/
+theorem runQueue_frame_preserves_runQueueSafetyOnCore (st st' : SystemState) (c : CoreId)
+    (hrq : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
+  obtain ⟨hRat, hWf, hNd⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro t ht
+    rw [hrq] at ht
+    obtain ⟨tcbt, htcbt⟩ := hRat t ht
+    have hs : (st'.getTcb? t).isSome = true := hSome t (by simp [htcbt])
+    cases h' : st'.getTcb? t with
+    | none => rw [h'] at hs; exact absurd hs (by simp)
+    | some tcb' => exact ⟨tcb', rfl⟩
+  · show runQueueOnCoreWellFormed st'.scheduler c
+    simp only [runQueueOnCoreWellFormed, hrq]; exact hWf
+  · show runQueueUniqueOnCore st'.scheduler c
+    simp only [runQueueUniqueOnCore, hrq]; exact hNd
+
+/-- `ensureRunnable` frames core `c`'s run queue when `c ≠ bootCoreId` (it writes
+only the boot run queue). -/
+theorem ensureRunnable_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (hc : c ≠ bootCoreId) :
+    (ensureRunnable st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
+  unfold ensureRunnable
+  split
+  · rfl
+  · split
+    · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
+    · rfl
+
+/-- WS-SM SM5.I.8: `ensureRunnable` preserves the qcc-free run-queue safety bundle
+on core `c`.  Objects are untouched (`getTcb?` fixed); on `bootCoreId` the
+re-enqueue is an `insert` (preserves wellFormed/Nodup; the inserted thread is a
+TCB); on any other core the run queue is framed. -/
+theorem ensureRunnable_preserves_runQueueSafetyOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) (h : runQueueSafetyOnCore st c) :
+    runQueueSafetyOnCore (ensureRunnable st tid) c := by
+  by_cases hc : c = bootCoreId
+  · subst hc
+    unfold ensureRunnable
+    split
+    · exact h
+    · split
+      · rename_i tcb htcb
+        obtain ⟨hRat, hWf, hNd⟩ := h
+        refine ⟨?_, ?_, ?_⟩
+        · intro t ht
+          simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+          rcases (RunQueue.mem_insert _ tid _ t).mp
+            ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heq
+          · exact hRat t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+          · exact ⟨tcb, by rw [heq]; exact htcb⟩
+        · show runQueueOnCoreWellFormed _ bootCoreId
+          simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+        · show runQueueUniqueOnCore _ bootCoreId
+          simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact RunQueue.insert_preserves_toList_nodup _ _ _ hNd
+      · exact h
+  · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
+      (ensureRunnable_runQueueOnCore_ne st tid c hc)
+      (fun x hx => by rw [show (ensureRunnable st tid).getTcb? x = st.getTcb? x from by
+        unfold SystemState.getTcb?; rw [ensureRunnable_objects_eq_local]]; exact hx) h
+
 -- ── §8.3d  Prepared-phase discharge of the getTcb?-reading conjuncts
 --           (`runnableThreadsAreTCBs`) — placed here for `refillSchedContext_getTcb?_eq`. ──
 
