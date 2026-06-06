@@ -2330,4 +2330,73 @@ theorem revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup
     · exact ih (updatePipBoost st tid) _ hInv' hst'
     · exact hst'
 
+/-- WS-SM SM5.I.8 (general object atom): any objects-only change that leaves the
+scheduler and register banks fixed, keeps every `getTcb?` resolvable, and
+preserves the current thread's saved `registerContext`, preserves the base safety
+invariant.  Subsumes the TCB-insert atom; reused for `storeObject` and
+`endpointQueueRemove`. -/
+theorem objects_change_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st st' : SystemState)
+    (hsch : st'.scheduler = st.scheduler)
+    (hmac : st'.machine = st.machine)
+    (hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (st'.getTcb? x).isSome)
+    (hReg : ∀ (x : SeLe4n.ThreadId) (txcb : TCB), st.getTcb? x = some txcb →
+       ∃ tcb', st'.getTcb? x = some tcb' ∧ txcb.registerContext = tcb'.registerContext)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  intro c
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · refine schedulerInvariantStructural_perCore_frame ?_ ?_ hSome (hPre c).1.1
+    · rw [hsch]
+    · rw [hsch]
+  · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c).1.1.2.1) ((hPre c).1.2)
+    · rw [hsch]
+    · rw [hmac]
+    · intro x txcb _hcur htcb
+      obtain ⟨tcb', htcb', hr⟩ := hReg x txcb htcb
+      exact ⟨tcb', htcb', by rw [hr]; exact RegisterFile.beq_self _⟩
+  · exact (runQueueUniqueOnCore_frame (by rw [hsch])).mpr (hPre c).2
+
+/-- WS-SM SM5.I.8 (timeout atom): `storeObject` of a TCB with the same
+`registerContext` preserves the base safety invariant (objects insert + index /
+lifecycle changes the invariant never reads; scheduler + machine fixed). -/
+theorem storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb tcb' : TCB) (st2 : SystemState)
+    (hInv : st.objects.invExt) (hOld : st.getTcb? tid = some tcb)
+    (hReg : tcb'.registerContext = tcb.registerContext)
+    (hStore : storeObject tid.toObjId (.tcb tcb') st = .ok ((), st2))
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st2 := by
+  have hobj : st2.objects = st.objects.insert tid.toObjId (.tcb tcb') := by
+    have h := hStore; unfold storeObject at h
+    simp only [Except.ok.injEq, Prod.mk.injEq] at h
+    rw [← h.2]
+  refine objects_change_preserves_schedulerInvariantStructuralRegNodup_smp st st2
+    (storeObject_scheduler_eq st st2 _ _ hStore) (storeObject_machine_eq st st2 _ _ hStore)
+    ?_ ?_ hPre
+  · intro x hx
+    by_cases hEq : x = tid
+    · subst hEq
+      simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
+      rw [RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv]; rfl
+    · have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun h =>
+        hEq (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h)).symm
+      simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
+      rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
+      simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
+  · intro x txcb htcb
+    by_cases hEq : x = tid
+    · subst hEq
+      rw [hOld] at htcb
+      have hxt : txcb = tcb := (Option.some.injEq _ _).mp htcb.symm
+      refine ⟨tcb', ?_, by rw [hReg, hxt]⟩
+      simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
+      rw [RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv]
+    · have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun h =>
+        hEq (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h)).symm
+      refine ⟨txcb, ?_, rfl⟩
+      simp only [SystemState.getTcb?, hobj, RHTable_getElem?_eq_get?]
+      rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
+      simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using htcb
+
 end SeLe4n.Kernel
