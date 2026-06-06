@@ -2771,6 +2771,210 @@ theorem ensureRunnable_preserves_runQueueSafetyOnCore (st : SystemState)
       (fun x hx => by rw [show (ensureRunnable st tid).getTcb? x = st.getTcb? x from by
         unfold SystemState.getTcb?; rw [ensureRunnable_objects_eq_local]]; exact hx) h
 
+open SeLe4n.Kernel.PriorityInheritance in
+/-- `updatePipBoost` frames core `c`'s run queue when `c ≠ bootCoreId` (its only
+run-queue write is the boot-core rebucket). -/
+theorem updatePipBoost_runQueueOnCore_ne (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (hc : c ≠ bootCoreId) :
+    (updatePipBoost st tid).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c := by
+  simp only [updatePipBoost]
+  repeat' split
+  all_goals simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- `updatePipBoost` keeps every `getTcb?` resolvable (its only object write is the
+boosted TCB's `pipBoost`, a TCB→TCB update). -/
+theorem updatePipBoost_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) (hx : (st.getTcb? x).isSome) :
+    ((updatePipBoost st tid).getTcb? x).isSome := by
+  simp only [updatePipBoost]
+  repeat' split
+  all_goals first
+    | exact hx
+    | exact getTcb?_isSome_insert_tcb st tid _ hInv x hx
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8: `updatePipBoost` preserves the qcc-free run-queue safety bundle
+on core `c`.  On `bootCoreId` the boot rebucket is `remove`+`insert`
+(membership-preserving, the boosted thread stays a TCB); on any other core the run
+queue is framed and the `pipBoost` object write keeps `getTcb?` resolvable. -/
+theorem updatePipBoost_preserves_runQueueSafetyOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) (hInv : st.objects.invExt)
+    (h : runQueueSafetyOnCore st c) :
+    runQueueSafetyOnCore (updatePipBoost st tid) c := by
+  by_cases hc : c = bootCoreId
+  · subst hc
+    simp only [updatePipBoost]
+    split
+    · rename_i tcb heq
+      split
+      · exact h
+      · -- boost changed; generalise the boosted TCB to dodge nested-record parsing.
+        generalize ({ tcb with pipBoost := computeMaxWaiterPriority st tid } : TCB) = tcb'
+        have hst' : runQueueSafetyOnCore
+            { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } bootCoreId :=
+          objects_frame_preserves_runQueueSafetyOnCore st _ bootCoreId rfl
+            (fun x hx => getTcb?_isSome_insert_tcb st tid tcb' hInv x hx) h
+        have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+            : SystemState).getTcb? tid = some tcb' := by
+          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+          rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+        split
+        · split
+          · rename_i hmemRq _hprio
+            refine ⟨?_, ?_, ?_⟩
+            · intro t ht
+              simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+              rcases (RunQueue.mem_insert _ tid _ t).mp
+                ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
+              · rw [RunQueue.mem_remove] at hold
+                exact hst'.1 t ((RunQueue.mem_toList_iff_mem _ t).mpr hold.1)
+              · exact ⟨_, by rw [heqt]; exact hself⟩
+            · show runQueueOnCoreWellFormed _ bootCoreId
+              simp only [runQueueOnCoreWellFormed,
+                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+              exact RunQueue.insert_preserves_wellFormed _
+                (RunQueue.remove_preserves_wellFormed _ hst'.2.1 tid) _ _
+            · show runQueueUniqueOnCore _ bootCoreId
+              simp only [runQueueUniqueOnCore,
+                SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+              exact RunQueue.insert_preserves_toList_nodup _ _ _
+                (RunQueue.remove_preserves_toList_nodup _ tid hst'.2.2)
+          · exact hst'
+        · exact hst'
+    · exact h
+  · exact runQueue_frame_preserves_runQueueSafetyOnCore st _ c
+      (updatePipBoost_runQueueOnCore_ne st tid c hc)
+      (fun x hx => updatePipBoost_getTcb?_isSome st tid hInv x hx) h
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8: `revertPriorityInheritance` preserves the qcc-free run-queue
+safety bundle on core `c` — a fuel-bounded fold of `updatePipBoost`. -/
+theorem revertPriorityInheritance_preserves_runQueueSafetyOnCore (fuel : Nat) :
+    ∀ (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId),
+      st.objects.invExt → runQueueSafetyOnCore st c →
+      runQueueSafetyOnCore (revertPriorityInheritance st tid fuel) c := by
+  induction fuel with
+  | zero => intro st tid c _ h; simp only [revertPriorityInheritance]; exact h
+  | succ fuel' ih =>
+    intro st tid c hInv h
+    simp only [revertPriorityInheritance]
+    have h' := updatePipBoost_preserves_runQueueSafetyOnCore st tid c hInv h
+    have hInv' := updatePipBoost_preserves_objects_invExt st tid hInv
+    split
+    · exact ih (updatePipBoost st tid) _ c hInv' h'
+    · exact h'
+
+/-- WS-SM SM5.I.8 (objects frame, storeObject): storing a `.tcb v` keeps every
+`getTcb?` resolvable (`tid` ↦ the stored TCB; every other key unchanged). -/
+theorem storeObject_tcb_getTcb?_isSome (st1 st2 : SystemState) (tid : SeLe4n.ThreadId)
+    (v : TCB) (hInv1 : st1.objects.invExt)
+    (heq : storeObject tid.toObjId (.tcb v) st1 = .ok ((), st2))
+    (x : SeLe4n.ThreadId) (hx : (st1.getTcb? x).isSome) : (st2.getTcb? x).isSome := by
+  by_cases hxt : x = tid
+  · rw [hxt]
+    unfold SystemState.getTcb?
+    simp only [storeObject_objects_eq st1 st2 tid.toObjId (.tcb v) hInv1 heq, Option.isSome_some]
+  · unfold SystemState.getTcb? at hx ⊢
+    rw [storeObject_objects_ne st1 st2 tid.toObjId x.toObjId (.tcb v)
+      (fun hh => hxt (SeLe4n.ThreadId.toObjId_injective _ _ hh)) hInv1 heq]
+    exact hx
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8 (timeout atom): `timeoutThread` preserves the qcc-free run-queue
+safety bundle on core `c`, UNCONDITIONALLY (no `hNotCur` — the three conjuncts
+never read `current`).  Composes the `endpointQueueRemove` / `storeObject`
+objects-frames with the `ensureRunnable` re-enqueue and the optional PIP-chain
+`revertPriorityInheritance`, each of which preserves run-queue safety. -/
+theorem timeoutThread_preserves_runQueueSafetyOnCore
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (c : CoreId) (hInv : st.objects.invExt)
+    (hStep : timeoutThread endpointId isReceiveQ tid st = .ok st')
+    (h : runQueueSafetyOnCore st c) : runQueueSafetyOnCore st' c := by
+  unfold timeoutThread at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st1 hEQR
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
+    have h1 : runQueueSafetyOnCore st1 c :=
+      objects_frame_preserves_runQueueSafetyOnCore st st1 c
+        (endpointQueueRemove_scheduler_eq endpointId isReceiveQ tid st st1 hEQR)
+        (fun x hx => by
+          cases hgt : st.getTcb? x with
+          | none => rw [hgt] at hx; exact absurd hx (by simp)
+          | some t =>
+            obtain ⟨t', ht', _⟩ :=
+              endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st1 hInv hEQR x t hgt
+            simp [ht']) h
+    split at hStep
+    · simp at hStep
+    · rename_i tcb hLook
+      simp only [] at hStep
+      split at hStep
+      · simp at hStep
+      · rename_i st2 heq
+        have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
+        have h2 : runQueueSafetyOnCore st2 c :=
+          objects_frame_preserves_runQueueSafetyOnCore st1 st2 c
+            (storeObject_scheduler_eq st1 st2 _ _ heq)
+            (fun x hx => storeObject_tcb_getTcb?_isSome st1 st2 tid _ hInv1 heq x hx) h1
+        have h3 := ensureRunnable_preserves_runQueueSafetyOnCore st2 tid c h2
+        have hInv3 : (ensureRunnable st2 tid).objects.invExt := by
+          rw [ensureRunnable_objects_eq_local]; exact hInv2
+        split at hStep <;>
+          · simp only [Except.ok.injEq] at hStep
+            subst hStep
+            first
+              | exact revertPriorityInheritance_preserves_runQueueSafetyOnCore _ _ _ _ hInv3 h3
+              | exact h3
+
+/-- WS-SM SM5.I.8 (timeout fold): `timeoutBlockedThreads` preserves the qcc-free
+run-queue safety bundle on core `c` UNCONDITIONALLY.  Folds the `timeoutThread`
+atom over the SchedContext's blocked threads — no `hNotCur` needed, since the
+three conjuncts never read `current`.  This closes the budget-exhausted path
+(the former SM5.F tracked gap) for the run-queue conjuncts. -/
+theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (c : CoreId) (hInv : st.objects.invExt)
+    (h : runQueueSafetyOnCore st c) :
+    runQueueSafetyOnCore (timeoutBlockedThreads st scId).1 c := by
+  unfold timeoutBlockedThreads
+  suffices H : ∀ (L : List SeLe4n.ThreadId)
+      (acc : SystemState × List (SeLe4n.ThreadId × KernelError)),
+      runQueueSafetyOnCore acc.1 c → acc.1.objects.invExt →
+      runQueueSafetyOnCore
+        (L.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+          let (st', errs) := acc
+          match st'.getTcb? tid with
+          | some tcb =>
+            match tcbBlockingInfo tcb with
+            | some (epId, isReceiveQ) =>
+              match timeoutThread epId isReceiveQ tid st' with
+              | .ok st'' => (st'', errs)
+              | .error e => (st', errs ++ [(tid, e)])
+            | none => (st', errs)
+          | none => (st', errs)) acc).1 c by
+    exact H (st.scThreadIndex[scId]?.getD []) (st, []) h hInv
+  intro L
+  induction L with
+  | nil => intro acc hP _; exact hP
+  | cons hd tl ih =>
+    intro acc hP hI
+    rw [List.foldl_cons]
+    obtain ⟨st', errs⟩ := acc
+    simp only []
+    split
+    · rename_i tcb _
+      rcases hbi : tcbBlockingInfo tcb with _ | ⟨epId, isReceiveQ⟩
+      · exact ih _ hP hI
+      · dsimp only
+        split
+        · rename_i st'' heqT
+          apply ih
+          · exact timeoutThread_preserves_runQueueSafetyOnCore epId isReceiveQ hd st' st'' c hI heqT hP
+          · exact timeoutThread_preserves_objects_invExt epId isReceiveQ hd st' st'' hI heqT
+        · exact ih _ hP hI
+    · exact ih _ hP hI
+
 -- ── §8.3d  Prepared-phase discharge of the getTcb?-reading conjuncts
 --           (`runnableThreadsAreTCBs`) — placed here for `refillSchedContext_getTcb?_eq`. ──
 
