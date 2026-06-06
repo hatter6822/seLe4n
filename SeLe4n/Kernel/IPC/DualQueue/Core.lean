@@ -538,6 +538,217 @@ theorem endpointQueueRemove_preserves_objects_invExt
         repeat (first | exact hObjInv | apply ins | split)
 
 -- ============================================================================
+-- SM5.I: endpointQueueRemove preserves every pre-state TCB's registerContext
+--
+-- `timeoutThread` (the IPC timeout path the per-core timer tick drives) needs
+-- that the queue-remove leaves every pre-existing TCB present with an unchanged
+-- `registerContext`.  The four conditional `RHTable.insert`s only touch queue
+-- link fields (or clear them), so `registerContext` (a separate TCB field) is
+-- preserved by `rfl` on every insert; no queue-distinctness hypothesis is
+-- required (key collisions are absorbed by the refinement reasoning below).
+--
+-- The proof mirrors `endpointQueueRemove_preserves_objects_invExt`: it splits
+-- the definition's OWN matchers (so no foreign `match_N` aux is referenced),
+-- then discharges a registerContext-refinement of the four-insert chain.  Two
+-- private helpers factor the per-insert step so the anonymous intermediate
+-- tables never need naming (`apply` unifies them; each intermediate `invExt`
+-- side goal is closed by the same automation the `invExt` lemma uses).
+-- ============================================================================
+
+section EndpointQueueRemoveRegCtx
+open SeLe4n.Kernel.RobinHood
+
+/-- `T` registerContext-refines `base`: every TCB key in `base` has a TCB in
+    `T` with equal `registerContext`. -/
+private def RegCtxRefines (base T : RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  ∀ k x, base.get? k = some (.tcb x) →
+    ∃ x', T.get? k = some (.tcb x') ∧ x.registerContext = x'.registerContext
+
+private theorem RegCtxRefines.rfl_self
+    (base : RHTable SeLe4n.ObjId KernelObject) : RegCtxRefines base base :=
+  fun _ x h => ⟨x, h, rfl⟩
+
+/-- Inserting a FIXED value preserves refinement, given: if `base` holds a TCB
+    at the inserted key, the value is a TCB with equal `registerContext`.
+    Used for the removed-TCB link clear; the endpoint head/tail update is
+    vacuous (base holds a non-TCB at `endpointId`). -/
+private theorem RegCtxRefines.insert_step
+    (base T : RHTable SeLe4n.ObjId KernelObject)
+    (k₀ : SeLe4n.ObjId) (v₀ : KernelObject)
+    (hT : T.invExt) (hR : RegCtxRefines base T)
+    (hSide : ∀ x, base.get? k₀ = some (.tcb x) →
+      ∃ y, v₀ = .tcb y ∧ x.registerContext = y.registerContext) :
+    RegCtxRefines base (T.insert k₀ v₀) := by
+  intro k x hk
+  rw [RHTable_getElem?_insert _ _ _ hT k]
+  split
+  · rename_i hc
+    have hkk : k₀ = k := eq_of_beq hc
+    subst hkk
+    obtain ⟨y, hv, hreg⟩ := hSide x hk
+    exact ⟨y, by rw [hv], hreg⟩
+  · exact hR k x hk
+
+/-- Inserting a LINK-ONLY update of `T`'s own TCB at `k₀` preserves refinement
+    (`registerContext` unchanged).  Used for the predecessor / successor queue
+    patches; `hR` + `hTk` absorb any key collision with a prior insert. -/
+private theorem RegCtxRefines.insert_link_update
+    (base T : RHTable SeLe4n.ObjId KernelObject)
+    (k₀ : SeLe4n.ObjId) (w w' : TCB)
+    (hT : T.invExt) (hR : RegCtxRefines base T)
+    (hTk : T.get? k₀ = some (.tcb w))
+    (hreg : w.registerContext = w'.registerContext) :
+    RegCtxRefines base (T.insert k₀ (.tcb w')) := by
+  intro k x hk
+  rw [RHTable_getElem?_insert _ _ _ hT k]
+  split
+  · rename_i hc
+    have hkk : k₀ = k := eq_of_beq hc
+    subst hkk
+    obtain ⟨x'', hx'', hxreg⟩ := hR k₀ x hk
+    rw [hTk] at hx''
+    injection hx'' with hx2
+    injection hx2 with hwx
+    exact ⟨w', rfl, by rw [hxreg, ← hwx]; exact hreg⟩
+  · exact hR k x hk
+
+/-- SM5.I: `endpointQueueRemove` preserves every pre-state TCB at its key with
+    an unchanged `registerContext`. -/
+theorem endpointQueueRemove_getTcb_upToReg
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (a : SeLe4n.ObjId) (ot : TCB) (ha : st.objects.get? a = some (.tcb ot)) :
+    ∃ ot', st'.objects.get? a = some (.tcb ot') ∧
+      ot.registerContext = ot'.registerContext := by
+  unfold endpointQueueRemove at h
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at h
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+      simp [hObj] at h
+    | endpoint ep =>
+      simp only [hObj] at h
+      cases hTcb : lookupTcb st tid with
+      | none => simp [hTcb] at h
+      | some tcb =>
+        simp only [hTcb] at h
+        simp only [Except.ok.injEq] at h
+        rw [← h]; simp only []
+        -- Goal: ∃ ot', CHAIN.get? a = some (.tcb ot') ∧ ot.reg = ot'.reg
+        refine (?_ : RegCtxRefines st.objects _) a ot ha
+        -- Step 4 (outermost): removed-TCB link clear.
+        apply RegCtxRefines.insert_step st.objects _ tid.toObjId _
+        · repeat (first | exact hInv | apply RHTable.insert_preserves_invExt | split)
+        · -- Step 3: endpoint head/tail update.
+          apply RegCtxRefines.insert_step st.objects _ endpointId _
+          · repeat (first | exact hInv | apply RHTable.insert_preserves_invExt | split)
+          · -- Steps 1 & 2: predecessor / successor link patches.
+            -- `simp only [hX]` reduces each patch match in the goal (and
+            -- substitutes the projection into the goal's record values), so the
+            -- link-update value `w'` is passed as `_` (inferred from the goal;
+            -- `hreg := rfl` holds for any link-only update).
+            cases hPrev : tcb.queuePrev with
+            | none =>
+              simp only []
+              -- objs₁ = st.objects
+              cases hNext : tcb.queueNext with
+              | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+              | some nextTid =>
+                simp only []
+                cases hN1 : st.objects[nextTid.toObjId]? with
+                | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                | some nobj => cases nobj with
+                  | tcb nt =>
+                    simp only []
+                    exact RegCtxRefines.insert_link_update st.objects st.objects
+                      nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                    simp only []; exact RegCtxRefines.rfl_self st.objects
+            | some prevTid =>
+              simp only []
+              cases hNext : tcb.queueNext with
+              | none =>
+                simp only []
+                -- objs₂ = objs₁ (predecessor patch only)
+                cases hP1 : st.objects[prevTid.toObjId]? with
+                | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                | some pobj => cases pobj with
+                  | tcb pt =>
+                    simp only []
+                    exact RegCtxRefines.insert_link_update st.objects st.objects
+                      prevTid.toObjId pt _ hInv (RegCtxRefines.rfl_self st.objects) hP1 rfl
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                    simp only []; exact RegCtxRefines.rfl_self st.objects
+              | some nextTid =>
+                simp only []
+                cases hP1 : st.objects[prevTid.toObjId]? with
+                | none =>
+                  simp only []
+                  -- objs₁ = st.objects
+                  cases hN1 : st.objects[nextTid.toObjId]? with
+                  | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                  | some nobj => cases nobj with
+                    | tcb nt =>
+                      simp only []
+                      exact RegCtxRefines.insert_link_update st.objects st.objects
+                        nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
+                    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                      simp only []; exact RegCtxRefines.rfl_self st.objects
+                | some pobj => cases pobj with
+                  | tcb pt =>
+                    simp only []
+                    -- objs₁ = st.objects.insert prevTid (.tcb {pt with queueNext := some nextTid})
+                    have hR1 : RegCtxRefines st.objects
+                        (st.objects.insert prevTid.toObjId
+                          (.tcb { pt with queueNext := some nextTid })) :=
+                      RegCtxRefines.insert_link_update st.objects st.objects prevTid.toObjId
+                        pt _ hInv (RegCtxRefines.rfl_self st.objects) hP1 rfl
+                    have hT1 : (st.objects.insert prevTid.toObjId
+                        (.tcb { pt with queueNext := some nextTid })).invExt :=
+                      RHTable.insert_preserves_invExt _ _ _ hInv
+                    cases hN1 : (st.objects.insert prevTid.toObjId
+                        (.tcb { pt with queueNext := some nextTid }))[nextTid.toObjId]? with
+                    | none => simp only []; exact hR1
+                    | some nobj => cases nobj with
+                      | tcb nt =>
+                        simp only []
+                        exact RegCtxRefines.insert_link_update st.objects
+                          (st.objects.insert prevTid.toObjId
+                            (.tcb { pt with queueNext := some nextTid }))
+                          nextTid.toObjId nt _ hT1 hR1 hN1 rfl
+                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                        simp only []; exact hR1
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                    simp only []
+                    -- objs₁ = st.objects (predecessor lookup is not a TCB)
+                    cases hN1 : st.objects[nextTid.toObjId]? with
+                    | none => simp only []; exact RegCtxRefines.rfl_self st.objects
+                    | some nobj => cases nobj with
+                      | tcb nt =>
+                        simp only []
+                        exact RegCtxRefines.insert_link_update st.objects st.objects
+                          nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
+                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                        simp only []; exact RegCtxRefines.rfl_self st.objects
+          · -- hSide (endpoint update): vacuous, base holds .endpoint at endpointId.
+            intro x hx
+            rw [← RHTable_getElem?_eq_get?, hObj] at hx
+            simp at hx
+        · -- hSide (removed-TCB clear): the pre-state TCB at tid is `tcb`.
+          intro x hx
+          have htid := lookupTcb_some_objects st tid tcb hTcb
+          rw [RHTable_getElem?_eq_get?] at htid
+          rw [htid] at hx
+          injection hx with hx2
+          injection hx2 with hxt
+          subst hxt
+          exact ⟨{ tcb with queuePrev := none, queuePPrev := none, queueNext := none },
+                 rfl, rfl⟩
+
+end EndpointQueueRemoveRegCtx
+
+-- ============================================================================
 -- AE4-E (U-24/IPC-02): endpointQueueRemove fallback unreachability
 -- ============================================================================
 
