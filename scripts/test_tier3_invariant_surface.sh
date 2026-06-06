@@ -3998,9 +3998,26 @@ open SeLe4n.Kernel
 #check @schedulerInvariant_smp_dominates_structural
 #check @schedulerInvariantStructural_perCore_pairwise
 #check @crossSubsystemInvariant_smp_dominates_structural
+-- SM5.I.8 / SM5.F budget-tick closure: the qcc-free run-queue safety sub-bundle
+-- preserved through timerTickBudgetOnCore (incl. the bound-budget-exhausted
+-- timeoutBlockedThreads path) + the FULLY CLOSED per-core timer-tick capstone.
+#check @runQueueSafetyOnCore
+#check @schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety
+#check @ensureRunnable_preserves_runQueueSafetyOnCore
+#check @updatePipBoost_preserves_runQueueSafetyOnCore
+#check @revertPriorityInheritance_preserves_runQueueSafetyOnCore
+#check @timeoutThread_preserves_runQueueSafetyOnCore
+#check @timeoutBlockedThreads_preserves_runQueueSafetyOnCore
+#check @replenishOnCore_preserves_runQueueSafetyOnCore
+#check @timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+#check @timerTickOnCorePrepared_preserves_runQueueSafetyOnCore
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
 -- SM5.I inventory witnesses.
 #check @perCoreInvariantSuiteTheorems_count
 #check @perCoreInvariantSuiteTheorems_partition_sum
+#check @perCoreInvariantSuiteTheorems_budgetClosure_count
 #check @perCoreInvariantSuiteTheorems_identifiers_nodup
 EOF
 lake env lean /tmp/sm5i_suite.lean'

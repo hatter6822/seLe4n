@@ -140,6 +140,23 @@ open SeLe4n.Testing
 #check @decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
 #check @perCoreInvariantSuiteTheorems_registerBank_count
 
+-- §7 SM5.I.8 timer-tick budget closure (no-qcc run-queue safety sub-bundle +
+--    the FULLY CLOSED per-core capstone — closes the SM5.F per-core-PIP gap):
+#check @runQueueSafetyOnCore
+#check @schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety
+#check @objects_frame_preserves_runQueueSafetyOnCore
+#check @ensureRunnable_preserves_runQueueSafetyOnCore
+#check @updatePipBoost_preserves_runQueueSafetyOnCore
+#check @revertPriorityInheritance_preserves_runQueueSafetyOnCore
+#check @timeoutThread_preserves_runQueueSafetyOnCore
+#check @timeoutBlockedThreads_preserves_runQueueSafetyOnCore
+#check @replenishOnCore_preserves_runQueueSafetyOnCore
+#check @timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+#check @timerTickOnCorePrepared_preserves_runQueueSafetyOnCore
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
+
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): apply each headline theorem
 -- ============================================================================
@@ -247,6 +264,27 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
 the algebra the dispatch sibling-frame idempotency argument rests on. -/
 example (a b c : RegisterFile) (hab : (a == b) = true) (hbc : (b == c) = true) :
     (c == a) = true := SeLe4n.RegisterFile.beq_symm (SeLe4n.RegisterFile.beq_trans hab hbc)
+
+/-- SM5.I.8 (the closed capstone applies): the per-core timer tick preserves the
+full register-bank+Nodup base invariant given ONLY the bundled pre-state invariant
+— no budget hypotheses (the SM5.F per-core-PIP gap is discharged internally). -/
+example (st st' : SystemState) (c : CoreId) (sgis : List (CoreId × Concurrency.SgiKind))
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_perCore st c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    schedulerInvariantStructuralRegNodup_perCore st' c :=
+  timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
+    st c st' sgis hInv hPre hStep
+
+/-- SM5.I.8 (the qcc-free run-queue safety sub-bundle survives the budget tick):
+`timerTickBudgetOnCore` — including the bound-budget-exhausted timeoutBlockedThreads
+path — preserves rat / rqWf / Nodup on core `c`. -/
+example (st st3 : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (b : Bool)
+    (hInv : st.objects.invExt) (hTid : st.getTcb? tid = some tcb)
+    (h : runQueueSafetyOnCore st c)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b)) :
+    runQueueSafetyOnCore st3 c :=
+  timerTickBudgetOnCore_preserves_runQueueSafetyOnCore st c tid tcb st3 b hInv hTid h hStep
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): `lake exe smp_invariant_suite`
@@ -374,8 +412,8 @@ private def runMultiCoreRegisterBankChecks : IO Unit := do
 /-- §3.4: the SM5.I inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.4 SM5.I inventory partition counts ---"
-  assertBool "inventory has 79 entries"
-    (decide (perCoreInvariantSuiteTheorems.length = 79))
+  assertBool "inventory has 95 entries"
+    (decide (perCoreInvariantSuiteTheorems.length = 95))
   assertBool "structural category has 14 entries"
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length = 14))
   assertBool "preservation category has 18 entries"
@@ -384,6 +422,22 @@ private def runInventoryChecks : IO Unit := do
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 8))
   assertBool "registerBank category has 39 entries (SM4.B payoff)"
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .registerBank)).length = 39))
+  assertBool "budgetClosure category has 16 entries (SM5.I.8 / SM5.F gap closure)"
+    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .budgetClosure)).length = 16))
+
+/-- §3.5: the per-core timer tick (idle path) runs and leaves the boot core's
+run queue + current in the safety-satisfying shape — exercising the FULLY CLOSED
+capstone's computation end-to-end (no budget hypotheses needed). -/
+private def runTimerTickChecks : IO Unit := do
+  IO.println "--- §3.5 timer-tick budget closure (idle path, no budget hyps) ---"
+  match timerTickOnCore stEmpty bootCoreId with
+  | .ok (st', _) =>
+    assertBool "idle timer tick succeeds; post-tick boot run queue stays empty"
+      (decide ((st'.scheduler.runQueueOnCore bootCoreId).toList = []))
+    assertBool "idle timer tick: post-tick boot current stays none"
+      (decide ((st'.scheduler.currentOnCore bootCoreId) = none))
+  | .error _ =>
+    assertBool "idle timer tick should succeed (.ok)" false
 
 /-- Run all SM5.I runtime checks. -/
 def runAllChecks : IO Unit := do
@@ -392,6 +446,7 @@ def runAllChecks : IO Unit := do
   runFramingChecks
   runWakeChecks
   runMultiCoreRegisterBankChecks
+  runTimerTickChecks
   runInventoryChecks
   IO.println "=== all SM5.I suite checks passed ==="
 

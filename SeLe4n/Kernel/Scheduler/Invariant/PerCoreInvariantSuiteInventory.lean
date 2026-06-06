@@ -55,6 +55,12 @@ inductive PerCoreInvariantSuiteCategory where
   (+ `contextMatchesCurrentOnCore` / `runQueueUniqueOnCore`) and their
   system-wide preservation by every transition. -/
   | registerBank
+  /-- SM5.I.8 / SM5.F: the qcc-free `runQueueSafetyOnCore` sub-bundle preserved
+  through `timerTickBudgetOnCore` (incl. the bound-budget-exhausted
+  `timeoutBlockedThreads` path — the former SM5.F per-core-PIP gap), and the
+  FULLY CLOSED per-core timer-tick capstone that discharges the budget
+  obligations internally (no `hBudget*`). -/
+  | budgetClosure
   deriving Repr, DecidableEq, Inhabited
 
 /-- WS-SM SM5.I: a theorem entry in the suite inventory.  Records a description,
@@ -246,10 +252,43 @@ def perCoreInvariantSuiteTheorems : List PerCoreInvariantSuiteTheorem :=
     pcist! "replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the CBS replenishment preserves the Nodup invariant"
       replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
     pcist! "decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp: the domain decrement preserves the Nodup invariant"
-      decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank]
+      decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp .registerBank,
+    -- ── SM5.I.8 / SM5.F budget-tick closure (.budgetClosure) ──
+    pcist! "schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety: project the qcc-free run-queue safety sub-bundle"
+      schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety .budgetClosure,
+    pcist! "objects_frame_preserves_runQueueSafetyOnCore: an objects-only change preserves run-queue safety"
+      objects_frame_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "runQueue_frame_preserves_runQueueSafetyOnCore: a run-queue-on-c frame preserves run-queue safety"
+      runQueue_frame_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "getTcb?_isSome_insert_tcb: a TCB insert keeps every getTcb? resolvable"
+      getTcb?_isSome_insert_tcb .budgetClosure,
+    pcist! "storeObject_tcb_getTcb?_isSome: storeObject of a TCB keeps every getTcb? resolvable"
+      storeObject_tcb_getTcb?_isSome .budgetClosure,
+    pcist! "ensureRunnable_preserves_runQueueSafetyOnCore: the re-enqueue preserves run-queue safety"
+      ensureRunnable_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "updatePipBoost_preserves_runQueueSafetyOnCore: the PIP boost preserves run-queue safety"
+      updatePipBoost_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "revertPriorityInheritance_preserves_runQueueSafetyOnCore: the PIP chain preserves run-queue safety"
+      revertPriorityInheritance_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "timeoutThread_preserves_runQueueSafetyOnCore: the IPC timeout preserves run-queue safety (no hNotCur)"
+      timeoutThread_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "timeoutBlockedThreads_preserves_runQueueSafetyOnCore: the timeout fold preserves run-queue safety (closes SM5.F gap)"
+      timeoutBlockedThreads_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "replenishOnCore_preserves_runQueueSafetyOnCore: the CBS replenishment preserves run-queue safety"
+      replenishOnCore_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "timerTickBudgetOnCore_preserves_runQueueSafetyOnCore: the budget tick preserves run-queue safety (all 4 outcomes)"
+      timerTickBudgetOnCore_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "timerTickOnCorePrepared_preserves_runQueueSafetyOnCore: the prepared phase preserves run-queue safety"
+      timerTickOnCorePrepared_preserves_runQueueSafetyOnCore .budgetClosure,
+    pcist! "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore: the per-core capstone (parameterized)"
+      timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore .budgetClosure,
+    pcist! "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre: the capstone from the bundled pre-state"
+      timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre .budgetClosure,
+    pcist! "timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed: the FULLY CLOSED per-core capstone (no budget hyps)"
+      timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed .budgetClosure]
 
-/-- WS-SM SM5.I: the inventory has 79 entries. -/
-theorem perCoreInvariantSuiteTheorems_count : perCoreInvariantSuiteTheorems.length = 79 := by decide
+/-- WS-SM SM5.I: the inventory has 95 entries. -/
+theorem perCoreInvariantSuiteTheorems_count : perCoreInvariantSuiteTheorems.length = 95 := by decide
 
 /-- WS-SM SM5.I: 14 entries in the `structural` category. -/
 theorem perCoreInvariantSuiteTheorems_structural_count :
@@ -267,12 +306,17 @@ theorem perCoreInvariantSuiteTheorems_suite_count :
 theorem perCoreInvariantSuiteTheorems_registerBank_count :
     (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .registerBank)).length = 39 := by decide
 
+/-- WS-SM SM5.I.8 / SM5.F: 16 entries in the `budgetClosure` category. -/
+theorem perCoreInvariantSuiteTheorems_budgetClosure_count :
+    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .budgetClosure)).length = 16 := by decide
+
 /-- WS-SM SM5.I: per-category counts sum to the total. -/
 theorem perCoreInvariantSuiteTheorems_partition_sum :
     (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length +
     (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .preservation)).length +
     (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length +
-    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .registerBank)).length =
+    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .registerBank)).length +
+    (perCoreInvariantSuiteTheorems.filter (fun t => t.category == .budgetClosure)).length =
     perCoreInvariantSuiteTheorems.length := by decide
 
 set_option maxRecDepth 10000 in
