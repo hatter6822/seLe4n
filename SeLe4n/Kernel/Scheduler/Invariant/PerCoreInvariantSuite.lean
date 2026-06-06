@@ -2441,4 +2441,108 @@ theorem condTcbPatch_get? (objs objs' : RobinHood.RHTable SeLe4n.ObjId KernelObj
       | untyped _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
       | schedContext _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
 
+-- ── §8.3c  endpointQueueRemove → timeoutThread → timeoutBlockedThreads
+--           base-safety preservation (the IPC dequeue feeding the budget tick) ──
+
+/-- WS-SM SM5.I.8 (bridge): `endpointQueueRemove`'s `registerContext`-preservation
+lifted from the raw object store (`endpointQueueRemove_getTcb_upToReg`) to the
+typed `getTcb?` accessor the base-safety invariant reads. -/
+theorem endpointQueueRemove_getTcb?_upToReg
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (x : SeLe4n.ThreadId) (t : TCB) (hx : st.getTcb? x = some t) :
+    ∃ t', st'.getTcb? x = some t' ∧ t.registerContext = t'.registerContext := by
+  rw [SystemState.getTcb?_eq_some_iff] at hx
+  obtain ⟨t', ht', hreg⟩ :=
+    endpointQueueRemove_getTcb_upToReg endpointId isReceiveQ tid st st' hInv hStep x.toObjId t hx
+  exact ⟨t', by rw [SystemState.getTcb?_eq_some_iff]; exact ht', hreg⟩
+
+/-- WS-SM SM5.I.8 (timeout atom): `endpointQueueRemove` preserves the base safety
+invariant.  It writes only the object store (scheduler + register banks framed by
+`endpointQueueRemove_scheduler_eq` / `_machine`), and keeps every TCB resolvable
+with an unchanged `registerContext` (`endpointQueueRemove_getTcb_upToReg`), so the
+generic objects-change atom discharges it. -/
+theorem endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  refine objects_change_preserves_schedulerInvariantStructuralRegNodup_smp st st'
+    (endpointQueueRemove_scheduler_eq endpointId isReceiveQ tid st st' hStep)
+    (endpointQueueRemove_machine endpointId isReceiveQ tid st st' hStep)
+    ?_ ?_ hPre
+  · intro x hx
+    cases hgt : st.getTcb? x with
+    | none => simp [hgt] at hx
+    | some t =>
+      obtain ⟨t', ht', _⟩ :=
+        endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x t hgt
+      simp [ht']
+  · intro x txcb htcb
+    exact endpointQueueRemove_getTcb?_upToReg endpointId isReceiveQ tid st st' hInv hStep x txcb htcb
+
+/-- `ensureRunnable` leaves the object store untouched (it writes only the boot
+run queue).  Thin local copy — the `Lifecycle.Suspend` original is outside this
+module's import closure (mirrors `PerCoreTimerTick`'s `_local` copy). -/
+private theorem ensureRunnable_objects_eq_local (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objects = st.objects := by
+  unfold ensureRunnable; split
+  · rfl
+  · split <;> rfl
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8 (timeout atom): `timeoutThread` preserves the base safety
+invariant.  It composes `endpointQueueRemove` (preserves — atom above), the
+`storeObject` of the unblocked TCB (same `registerContext`; `ipcState` / state
+fields change, which the base invariant never reads), `ensureRunnable` (re-enqueue
+of the timed-out thread, which is not the boot core's current thread — `hNotCur`),
+and the optional `revertPriorityInheritance` (PIP chain).  `hNotCur` propagates
+unchanged across the object writes (neither `endpointQueueRemove` nor `storeObject`
+touches the scheduler). -/
+theorem timeoutThread_preserves_schedulerInvariantStructuralRegNodup_smp
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore bootCoreId ≠ some tid)
+    (hStep : timeoutThread endpointId isReceiveQ tid st = .ok st')
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  unfold timeoutThread at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st1 hEQR
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
+    have hPre1 := endpointQueueRemove_preserves_schedulerInvariantStructuralRegNodup_smp
+      _ _ _ _ _ hInv hEQR hPre
+    have hSch1 := endpointQueueRemove_scheduler_eq _ _ _ _ _ hEQR
+    split at hStep
+    · simp at hStep
+    · rename_i tcb hLook
+      have hOld1 : st1.getTcb? tid = some tcb :=
+        (SystemState.getTcb?_eq_some_iff st1 tid tcb).mpr (lookupTcb_some_objects st1 tid tcb hLook)
+      simp only [] at hStep
+      split at hStep
+      · simp at hStep
+      · rename_i st2 heq
+        have hPre2 := by
+          refine storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
+            st1 tid tcb _ st2 hInv1 hOld1 ?_ heq hPre1
+          rfl
+        have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
+        have hSch2 := storeObject_scheduler_eq st1 st2 tid.toObjId _ heq
+        have hNotCur2 : st2.scheduler.currentOnCore bootCoreId ≠ some tid := by
+          rw [hSch2, hSch1]; exact hNotCur
+        have hPre3 := ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
+          st2 tid hInv2 hNotCur2 hPre2
+        have hInv3 : (ensureRunnable st2 tid).objects.invExt := by
+          rw [ensureRunnable_objects_eq_local]; exact hInv2
+        split at hStep <;>
+          · simp only [Except.ok.injEq] at hStep
+            subst hStep
+            first
+              | exact revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup_smp
+                  _ _ _ hInv3 hPre3
+              | exact hPre3
+
 end SeLe4n.Kernel
