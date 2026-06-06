@@ -2143,6 +2143,168 @@ theorem timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState
           obtain ⟨h1, _⟩ := hStep
           rw [← h1]; exact hst3rat
 
+-- ── §7g  contextMatchesCurrentOnCore per-core preservation [SM5.I] ──
+--
+--   The register-bank conjunct.  `scheduleEffectiveOnCore` already *establishes*
+--   it (the dispatch restores the incoming thread's context into core `c`'s
+--   bank); the missing piece is the not-preempted budget tick, which leaves the
+--   register bank untouched (`tick` advances only the timer) and the running
+--   thread's `registerContext` unchanged (the time-slice / budget write is
+--   register-free).
+
+/-- A not-preempted budget tick leaves core `c`'s register bank unchanged
+(`tick` advances only `machine.timer`). -/
+theorem timerTickBudgetOnCore_notPreempted_regsOnCore_eq (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    st'.machine.regsOnCore c = st.machine.regsOnCore c := by
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.1]
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.1]
+
+/-- A not-preempted budget tick keeps the running thread resolvable with an
+unchanged `registerContext` (the time-slice / budget write is register-free). -/
+theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid_reg (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    ∃ t', st'.getTcb? tid = some t' ∧ t'.registerContext = tcb.registerContext := by
+  have hDisj : ∀ scId : SeLe4n.SchedContextId, (∃ s, st.getSchedContext? scId = some s) →
+      ¬ (scId.toObjId == tid.toObjId) = true := by
+    rintro scId ⟨s, hSc⟩ he
+    have he' : scId.toObjId = tid.toObjId := by simpa using he
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?] at hTcb
+    simp only [SystemState.getSchedContext?, RHTable_getElem?_eq_get?] at hSc
+    rw [he'] at hSc
+    revert hTcb hSc; cases st.objects.get? tid.toObjId with
+    | none => simp
+    | some o => cases o <;> simp
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?,
+        RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      exact ⟨_, rfl, rfl⟩
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_, rfl⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hTcb
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_, rfl⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hTcb
+
+/-- A not-preempted budget tick preserves `contextMatchesCurrentOnCore`, given the
+running thread is core `c`'s current (`hCur` / `hTcb` — true in the tick flow): the
+register bank is unchanged and the running thread's `registerContext` is unchanged. -/
+theorem timerTickBudgetOnCore_notPreempted_preserves_contextMatchesCurrentOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hInv : st.objects.invExt) (hCur : st.scheduler.currentOnCore c = some tid)
+    (hTcb : st.getTcb? tid = some tcb) (h : contextMatchesCurrentOnCore st c)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    contextMatchesCurrentOnCore st' c := by
+  have hsch := timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep
+  have hregs := timerTickBudgetOnCore_notPreempted_regsOnCore_eq st c tid tcb st' hStep
+  obtain ⟨t', ht', htr⟩ :=
+    timerTickBudgetOnCore_notPreempted_getTcb?_tid_reg st c tid tcb st' hInv hTcb hStep
+  -- the pre-state regs==tcb.reg fact from `h` at current = tid
+  simp only [contextMatchesCurrentOnCore, hCur, hTcb] at h
+  simp only [contextMatchesCurrentOnCore, hsch, hCur, ht']
+  rw [hregs, htr]; exact h
+
+/-- WS-SM SM5.I.8: the per-core timer tick preserves `contextMatchesCurrentOnCore`,
+given the prepared state satisfies it (`hPrepCtx`).  Idle path = prepared; preempted
+path *re-establishes* it via `scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore`
+(no hypothesis); not-preempted path preserves it (register bank + running thread's
+`registerContext` unchanged). -/
+theorem timerTickOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hPrepInv : (timerTickOnCorePrepared st c).1.objects.invExt)
+    (hPrepCtx : contextMatchesCurrentOnCore (timerTickOnCorePrepared st c).1 c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    contextMatchesCurrentOnCore st' c := by
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepCtx
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            have hst3inv := timerTickBudgetOnCore_preserves_objects_invExt
+              (timerTickOnCorePrepared st c).1 c tid tcb st3 preempted hPrepInv hbud
+            exact scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore st3 c st4 hst3inv hsch
+        · rename_i hpre
+          have hpf : preempted = false := Bool.not_eq_true _ |>.mp hpre
+          subst hpf
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]
+          exact timerTickBudgetOnCore_notPreempted_preserves_contextMatchesCurrentOnCore
+            (timerTickOnCorePrepared st c).1 c tid tcb st3 hPrepInv hCur hTcb hPrepCtx hbud
+
 -- ── §7e  Nodup (runQueueUnique) per-core preservation [SM5.I] ──
 --
 --   The `runQueueUniqueOnCore` (run-queue `toList.Nodup`) conjunct of the SM5.I
