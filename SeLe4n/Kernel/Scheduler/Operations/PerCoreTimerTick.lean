@@ -2009,6 +2009,57 @@ theorem timerTickOnCorePrepared_preserves_queueCurrentConsistentOnCore (st : Sys
   simpa only [queueCurrentConsistentOnCore, SchedulerState.setLastTimeoutErrorsOnCore_currentOnCore,
     SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hcons
 
+-- ── §6d  Prepared-phase discharge — `runQueueUnique` (Nodup) ──
+
+/-- `processOneReplenishmentOnCore` preserves run-queue `Nodup` on every core `c'`
+(refill frames the scheduler; the wake's `RunQueue.insert` preserves `Nodup`). -/
+theorem processOneReplenishmentOnCore_preserves_runQueueUnique (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hnd : (st.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((processOneReplenishmentOnCore st execCore scId now).1.scheduler.runQueueOnCore c').toList.Nodup := by
+  have hRef : ((refillSchedContext st scId now).scheduler.runQueueOnCore c').toList.Nodup := by
+    rw [refillSchedContext_scheduler_eq]; exact hnd
+  simp only [processOneReplenishmentOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next _hcond =>
+      exact wakeThread_preserves_runQueueUniqueOnCore (refillSchedContext st scId now)
+        tid execCore c' hRef
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_runQueueUnique
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState × List (CoreId × SgiKind))
+    (hnd : (acc.1.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1.scheduler.runQueueOnCore c').toList.Nodup := by
+  induction dueIds generalizing acc with
+  | nil => exact hnd
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_runQueueUnique acc.1 c c' hd now hnd)
+
+/-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
+run-queue `Nodup` on core `c`. -/
+theorem processReplenishmentsDueOnCore_preserves_runQueueUnique (st : SystemState)
+    (c : CoreId) (now : Nat) (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((processReplenishmentsDueOnCore st c now).1.scheduler.runQueueOnCore c).toList.Nodup := by
+  simp only [processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_runQueueUnique
+  simpa only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore] using hnd
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves run-queue
+`Nodup` — discharges the capstone's `hPrepNd`. -/
+theorem timerTickOnCorePrepared_preserves_runQueueUnique (st : SystemState) (c : CoreId)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup := by
+  simp only [timerTickOnCorePrepared]
+  apply processReplenishmentsDueOnCore_preserves_runQueueUnique
+  simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hnd
+
 /-- WS-SM SM5.D.5 (B2 discharge, clean path): a *not-preempted* budget tick
 preserves per-core run-queue well-formedness — its scheduler is unchanged
 (`timerTickBudgetOnCore_notPreempted_scheduler_eq`).  This discharges the B2
