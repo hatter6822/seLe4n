@@ -2093,7 +2093,7 @@ thread (so the boot `queueCurrentConsistent` survives the insert).  `ensureRunna
 writes only the boot run queue (objects unchanged), so siblings frame and boot
 takes a `RunQueue.insert`. -/
 theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
-    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (_hInv : st.objects.invExt)
     (hNotCur : st.scheduler.currentOnCore bootCoreId ≠ some tid)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
     schedulerInvariantStructuralRegNodup_smp (ensureRunnable st tid) := by
