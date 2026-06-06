@@ -2006,6 +2006,111 @@ theorem timerTickOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c
           obtain ⟨h1, _⟩ := hStep
           rw [← h1]; exact hst3
 
+-- ── §7e  Nodup (runQueueUnique) per-core preservation [SM5.I] ──
+--
+--   The `runQueueUniqueOnCore` (run-queue `toList.Nodup`) conjunct of the SM5.I
+--   register-bank+Nodup invariant.  Mirrors the `runQueueOnCoreWellFormed` chain
+--   above one-for-one (`RunQueue.remove`/`insert` preserve `toList.Nodup` exactly
+--   as they preserve `wellFormed`).  Parameterized by `hPrepNd` (the prepared
+--   state's Nodup) like the `queueCurrentConsistent` preservation, since the
+--   prepared-phase (cross-core replenishment-wake) Nodup discharger is the SM5
+--   cross-core follow-on.
+
+/-- The idle fallback preserves per-core run-queue `Nodup` (idle dispatch only
+`remove`s the idle thread; the `current = none` arm leaves the queue unchanged). -/
+theorem idleFallbackOnCore_preserves_runQueueOnCore_nodup (st : SystemState) (c : CoreId)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((idleFallbackOnCore st c).scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold idleFallbackOnCore
+  split
+  · rw [dispatchIdleOnCore_runQueueOnCore]
+    exact RunQueue.remove_preserves_toList_nodup _ _ hnd
+  · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hnd
+
+/-- `scheduleEffectiveOnCore` preserves per-core run-queue `Nodup` — dispatch
+dequeues (`remove`), the idle case is the identity. -/
+theorem scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    (st'.scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      apply idleFallbackOnCore_preserves_runQueueOnCore_nodup
+      rw [saveOutgoingContextOnCore_scheduler_eq]; exact hnd
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          rw [saveOutgoingContextOnCore_scheduler_eq]
+          exact RunQueue.remove_preserves_toList_nodup _ tid hnd
+        · simp at hStep
+
+/-- A not-preempted budget tick preserves per-core run-queue `Nodup` — its
+scheduler is unchanged (`timerTickBudgetOnCore_notPreempted_scheduler_eq`). -/
+theorem timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCore_nodup
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    (st'.scheduler.runQueueOnCore c).toList.Nodup := by
+  rw [timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep]; exact hnd
+
+/-- WS-SM SM5.I.8: the per-core timer tick preserves `runQueueUniqueOnCore`, given
+the prepared state is `Nodup` (`hPrepNd`) and the budget tick preserves it
+(`hBudgetNd`).  Idle path = prepared; preempted path dequeues-on-dispatch via
+`scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup`; not-preempted path leaves
+the scheduler unchanged.  `hBudgetNd` is discharged on every clean path by
+`timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCore_nodup`. -/
+theorem timerTickOnCore_preserves_runQueueUniqueOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hPrepNd : ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup)
+    (hBudgetNd : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       (st3.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    runQueueUniqueOnCore st'.scheduler c := by
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepNd
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        have hst3 := hBudgetNd tid tcb st3 preempted hCur hTcb hbud
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup st3 c st4 hst3 hsch
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]; exact hst3
+
 /-- WS-SM SM5.D.5/.6 (preservation): the per-core timer tick preserves per-core
 dequeue-on-dispatch consistency, given that the *prepared* state satisfies it
 (`hPrepQcc`).  The idle path is the prepared state; the preempted path
