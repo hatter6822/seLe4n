@@ -20,6 +20,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
 
 /-!
 # WS-SM SM5.I — Per-core invariant suite
@@ -2309,5 +2310,24 @@ theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
         · exact hst'
       · exact hst'
   · exact hPre
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8 (PIP chain): `revertPriorityInheritance` preserves the base
+safety invariant — a fuel-bounded chain of `updatePipBoost`, each step preserving
+both the invariant (the atom above) and `objects.invExt`. -/
+theorem revertPriorityInheritance_preserves_schedulerInvariantStructuralRegNodup_smp
+    (fuel : Nat) : ∀ (st : SystemState) (tid : SeLe4n.ThreadId),
+      st.objects.invExt → schedulerInvariantStructuralRegNodup_smp st →
+      schedulerInvariantStructuralRegNodup_smp (revertPriorityInheritance st tid fuel) := by
+  induction fuel with
+  | zero => intro st tid _ hPre; simp only [revertPriorityInheritance]; exact hPre
+  | succ fuel' ih =>
+    intro st tid hInv hPre
+    simp only [revertPriorityInheritance]
+    have hst' := updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp st tid hInv hPre
+    have hInv' := updatePipBoost_preserves_objects_invExt st tid hInv
+    split
+    · exact ih (updatePipBoost st tid) _ hInv' hst'
+    · exact hst'
 
 end SeLe4n.Kernel
