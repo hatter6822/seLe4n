@@ -117,7 +117,7 @@ theorem dispatchIdleOnCore_replenishQueueOnCore (st : SystemState) (c c' : CoreI
     (dispatchIdleOnCore st c).scheduler.replenishQueueOnCore c'
       = st.scheduler.replenishQueueOnCore c' := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-    restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
 
 /-- WS-SM SM5.I: `idleFallbackOnCore` leaves every core's replenish-queue slot
 unchanged (both arms — idle dispatch and `current = none`). -/
@@ -152,7 +152,7 @@ theorem scheduleEffectiveOnCore_replenishQueueOnCore (st : SystemState) (c : Cor
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
           simp only [SchedulerState.setCurrentOnCore_replenishQueueOnCore,
-            restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
 
@@ -362,7 +362,7 @@ restores the idle thread's register context — `machine.regs` — but never the
 global timer). -/
 theorem dispatchIdleOnCore_machine_timer (st : SystemState) (c : CoreId) :
     (dispatchIdleOnCore st c).machine.timer = st.machine.timer := by
-  simp [dispatchIdleOnCore, restoreIncomingContext_machine_timer]
+  simp [dispatchIdleOnCore, restoreIncomingContextOnCore_machine_timer]
 
 /-- WS-SM SM5.I: `idleFallbackOnCore` leaves the machine timer unchanged. -/
 theorem idleFallbackOnCore_machine_timer (st : SystemState) (c : CoreId) :
@@ -394,7 +394,7 @@ theorem scheduleEffectiveOnCore_machine_timer (st : SystemState) (c : CoreId)
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           subst hStep
-          simp [restoreIncomingContext_machine_timer, saveOutgoingContextOnCore_machine]
+          simp [restoreIncomingContextOnCore_machine_timer, saveOutgoingContextOnCore_machine]
         · simp at hStep
 
 /-- WS-SM SM5.I (machine substrate): the **live per-core timer tick** leaves the

@@ -1,3 +1,47 @@
+## v0.31.61 — WS-SM SM5.I: per-core register banks (SM4.B) + the `contextMatchesCurrentOnCore` and `runQueueUniqueOnCore` conjuncts
+
+Closes the two SM5.I conjuncts the v0.31.60 landing deferred, by completing the
+**SM4.B per-core register banks** the structural invariant was waiting on.
+
+**SM4.B per-core register banks (the machine-model rewrite).**
+`SeLe4n/Machine.lean` replaces the single shared `MachineState.regs :
+RegisterFile` with a per-core bank `coreRegs : Vector RegisterFile
+Concurrency.numCores` (the SM4.B `Vector α numCores` path-a pattern), with
+accessors `regsOnCore (c : CoreId)` / `setRegsOnCore c v` and the store/load
+algebra.  `MachineState.regs` survives as a **def-accessor** (`= regsOnCore
+bootCoreId`), so the ~120 single-core read sites are untouched and only the ~18
+register *write* sites flip to `setRegsOnCore bootCoreId`.  The two per-core
+dispatch transitions restore into core `c`'s **own** bank via the new
+`restoreIncomingContextOnCore c`.  Trace fixture **byte-identical**; production
+build green (324 jobs) + staged (215).
+
+**`contextMatchesCurrentOnCore` is now a genuine ∀-core invariant.**  Its body
+reads `st.machine.regsOnCore c`, so a dispatch on `c₀` (writing only
+`setRegsOnCore c₀`) frames every sibling bank.  The two dispatch transitions
+*establish* it on the operated core; the new `RegisterFile.beq_symm` / `beq_trans`
+partial-equivalence lemmas discharge the sole non-trivial sibling case (a thread
+pathologically current on two cores — the outgoing-save is `==`-idempotent by the
+sibling's pre-state `contextMatchesCurrent`, so no cross-core current-disjointness
+invariant is needed).  `schedulerInvariantStructuralReg_perCore` / `_smp` (the 4
+structural conjuncts **+ `contextMatchesCurrentOnCore`**) is proved preserved
+**system-wide by all 10 SM5 per-core transitions**.
+
+**`runQueueUniqueOnCore` 6th conjunct.**  `schedulerInvariantStructuralRegNodup`
+adds the run-queue `toList.Nodup` conjunct (register-bank-independent +
+transition-stable), preserved by all 10 transitions via the new public
+`RunQueue.{insert,remove}_preserves_toList_nodup` — closing the conjunct the
+SM5.I landing deferred "to bound the cut".
+
+**Also:** `schedulerInvariantStructural_perCore_pairwise_iff` (the SM5.I.6
+cross-core independence strengthened to a biconditional); the SM5.I inventory
+grows 39 → 79 (new `.registerBank` category + the `pairwise_iff`);
+`tests/SmpInvariantSuite.lean` adds a genuinely **multi-core** runtime fixture
+witnessing `contextMatchesCurrentOnCore` on two cores simultaneously plus
+cross-core register-bank isolation.  All new theorems axiom-clean (verified via
+`#print axioms`).  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §5 SM5.I
+
 ## v0.31.60 — WS-SM SM5.I: per-core invariant suite (preservation by every transition)
 
 Lands the WS-SM Phase SM5.I "Per-core invariant suite" deliverable

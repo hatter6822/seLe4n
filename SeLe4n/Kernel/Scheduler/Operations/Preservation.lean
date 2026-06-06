@@ -2951,7 +2951,7 @@ private theorem schedule_preserves_contextMatchesCurrent
               have ⟨tcb', hTcb'⟩ := saveOutgoingContext_preserves_tcb stChoose tid.toObjId tcb hObj hObjInvC
               simp only [contextMatchesCurrent, SchedulerState.setCurrentOnCore_currentOnCore_self, hTcb']
               -- restoreIncomingContext sets machine.regs = tcb'.registerContext
-              simp only [restoreIncomingContext, hTcb']
+              simp only [restoreIncomingContext, hTcb', MachineState.regs_setRegsOnCore_bootCore]
               exact RegisterFile.beq_self _
             · have hOk' : ¬((stChoose.scheduler.runQueueOnCore bootCoreId).contains tid = true ∧
                   tcb.domain = (stChoose.scheduler.activeDomainOnCore bootCoreId)) := by

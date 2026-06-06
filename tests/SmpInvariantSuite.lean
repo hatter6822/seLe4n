@@ -87,6 +87,7 @@ open SeLe4n.Testing
 #check @priorityInheritance_perCore_iff_blockingAcyclic
 #check @schedulerInvariant_smp_dominates_structural
 #check @schedulerInvariantStructural_perCore_pairwise
+#check @schedulerInvariantStructural_perCore_pairwise_iff
 #check @crossSubsystemInvariant_smp_dominates_structural
 
 -- inventory:
@@ -94,6 +95,50 @@ open SeLe4n.Testing
 #check @perCoreInvariantSuiteTheorems_count
 #check @perCoreInvariantSuiteTheorems_partition_sum
 #check @perCoreInvariantSuiteTheorems_identifiers_nodup
+
+-- §5 SM4.B register-bank payoff: the `…Reg` invariant + contextMatches establishment +
+-- the 10 Reg-extended preservations + the PER lemmas:
+#check @SeLe4n.RegisterFile.beq_symm
+#check @SeLe4n.RegisterFile.beq_trans
+#check @contextMatchesCurrentOnCore_frame_at
+#check @contextMatchesCurrentOnCore_of_machine_eq_and_regContext
+#check @scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore
+#check @switchToThreadOnCore_establishes_contextMatchesCurrentOnCore
+#check @schedulerInvariantStructuralReg_perCore
+#check @schedulerInvariantStructuralReg_smp
+#check @schedulerInvariantStructuralReg_smp_of_base_and_ctx
+#check @default_schedulerInvariantStructuralReg_smp
+#check @scheduleEffectiveOnCore_preserves_contextMatchesCurrentOnCore_sibling
+#check @switchToThreadOnCore_preserves_contextMatchesCurrentOnCore_sibling
+#check @advanceDomainOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @enqueueRunnableOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @wakeThread_preserves_schedulerInvariantStructuralReg_smp
+#check @scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @replenishOnCore_preserves_schedulerInvariantStructuralReg_smp
+#check @decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralReg_smp
+
+-- §6 Nodup-extended invariant + the 10 RegNodup-extended preservations:
+#check @SeLe4n.Kernel.RunQueue.insert_preserves_toList_nodup
+#check @SeLe4n.Kernel.RunQueue.remove_preserves_toList_nodup
+#check @schedulerInvariantStructuralRegNodup_perCore
+#check @schedulerInvariantStructuralRegNodup_smp
+#check @runQueueUniqueOnCore_smp_of_operated_and_frame
+#check @default_schedulerInvariantStructuralRegNodup_smp
+#check @advanceDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+#check @perCoreInvariantSuiteTheorems_registerBank_count
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): apply each headline theorem
@@ -157,6 +202,51 @@ example (st : SystemState) (c₁ c₂ : CoreId) (hne : c₁ ≠ c₂)
     schedulerInvariantStructural_perCore
       { st with scheduler := (st.scheduler.setCurrentOnCore c₂ vc).setRunQueueOnCore c₂ vrq } c₁ :=
   schedulerInvariantStructural_perCore_pairwise hne vc vrq h
+
+/-- SM4.B register-bank payoff: the full SM4.C aggregate dominates the
+register-bank-extended invariant (so every full witness yields it). -/
+example (st : SystemState) (h : schedulerInvariant_smp st) :
+    schedulerInvariantStructuralReg_smp st := schedulerInvariant_smp_to_structuralReg h
+
+/-- SM4.B register-bank payoff: the freshly-booted system satisfies the
+register-bank-extended SMP invariant (the contextMatches conjunct holds on every
+core — vacuously, since no core has a current thread at boot). -/
+example : schedulerInvariantStructuralReg_smp (default : SystemState) :=
+  default_schedulerInvariantStructuralReg_smp
+
+/-- SM4.B register-bank payoff: the live per-core dispatch preserves the
+register-bank-extended invariant (the keystone — the dispatch *establishes*
+`contextMatchesCurrentOnCore` on the operated core). -/
+example (st st' : SystemState) (c₀ : CoreId)
+    (hInv : st.objects.invExt) (hPre : schedulerInvariantStructuralReg_smp st)
+    (h : scheduleEffectiveOnCore st c₀ = .ok st') : schedulerInvariantStructuralReg_smp st' :=
+  scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ st' hInv hPre h
+
+/-- SM4.B register-bank payoff: the per-core preemptive switch preserves the
+register-bank-extended invariant. -/
+example (st st' : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt) (hPre : schedulerInvariantStructuralReg_smp st)
+    (h : switchToThreadOnCore st c₀ tid = .ok st') : schedulerInvariantStructuralReg_smp st' :=
+  switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ tid st' hInv hPre h
+
+/-- The Nodup-extended invariant (6th conjunct) is preserved by the live dispatch. -/
+example (st st' : SystemState) (c₀ : CoreId)
+    (hInv : st.objects.invExt) (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (h : scheduleEffectiveOnCore st c₀ = .ok st') : schedulerInvariantStructuralRegNodup_smp st' :=
+  scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre h
+
+/-- The Nodup-extended invariant is preserved by the cross-core wake. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId)
+    (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st tid) ≠ some tid)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (wakeThread st tid ec).1 :=
+  wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp st tid ec hInv hNotCur hPre
+
+/-- The `RegisterFile` structural `BEq` is a partial equivalence (symm + trans),
+the algebra the dispatch sibling-frame idempotency argument rests on. -/
+example (a b c : RegisterFile) (hab : (a == b) = true) (hbc : (b == c) = true) :
+    (c == a) = true := SeLe4n.RegisterFile.beq_symm (SeLe4n.RegisterFile.beq_trans hab hbc)
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): `lake exe smp_invariant_suite`
@@ -232,17 +322,68 @@ private def runWakeChecks : IO Unit := do
   assertBool "the wake leaves sibling core 1's run queue empty (cross-core frame)"
     (decide ((stWoken.scheduler.runQueueOnCore core1).toList = []))
 
+private def tidB1 : SeLe4n.ThreadId := ThreadId.ofNat 101
+
+/-- A genuinely **multi-core** state: core 0 (boot) runs `tidA`, core 1 runs
+`tidB1`, each TCB carrying the default `registerContext` and each core's register
+bank holding the default `RegisterFile` — so `contextMatchesCurrentOnCore` holds
+on *both* cores simultaneously, which a single shared register file could never
+do.  This is the SM4.B per-core-register-bank payoff, exercised at runtime. -/
+private def stMultiCore : SystemState :=
+  let base : SystemState :=
+    ((BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10))).withObject
+      tidB1.toObjId (.tcb (mkTcb 101 10))).build
+  { base with
+      scheduler :=
+        (base.scheduler.setCurrentOnCore bootCoreId (some tidA)).setCurrentOnCore core1 (some tidB1),
+      -- pin each core's bank to its current thread's saved context (contextMatches holds on both)
+      machine :=
+        (base.machine.setRegsOnCore bootCoreId (mkTcb 100 10).registerContext).setRegsOnCore
+          core1 (mkTcb 101 10).registerContext }
+
+/-- `stMultiCore` with core 1's register bank overwritten by a non-default value
+(`pc = 1`).  Core 0's bank is untouched (the SM4.B `Vector` indexing isolates
+per-core banks), so core 0's `contextMatchesCurrentOnCore` survives a core-1 bank
+write — the genuine cross-core register isolation. -/
+private def stMultiCoreBank1Written : SystemState :=
+  { stMultiCore with machine :=
+      stMultiCore.machine.setRegsOnCore core1 { (default : RegisterFile) with pc := ⟨1⟩ } }
+
+/-- §3.5: the SM4.B register-bank payoff exercised on a genuinely multi-core
+fixture — `contextMatchesCurrentOnCore` holds on *two* cores at once (witnessed by
+the structural `RegisterFile` `BEq`, since the file has no `DecidableEq`), and a
+per-core bank write on one core is isolated from the other. -/
+private def runMultiCoreRegisterBankChecks : IO Unit := do
+  IO.println "--- §3.5 multi-core register-bank payoff (SM4.B) ---"
+  assertBool "core 0's bank matches tidA's saved context (contextMatches witness on core 0)"
+    (stMultiCore.machine.regsOnCore bootCoreId == (mkTcb 100 10).registerContext)
+  assertBool "core 1's bank matches tidB1's saved context SIMULTANEOUSLY (impossible with one shared regs)"
+    (stMultiCore.machine.regsOnCore core1 == (mkTcb 101 10).registerContext)
+  assertBool "core 0 and core 1 carry distinct current threads"
+    (decide (stMultiCore.scheduler.currentOnCore bootCoreId = some tidA ∧
+             stMultiCore.scheduler.currentOnCore core1 = some tidB1))
+  -- After overwriting core 1's bank with a non-default value:
+  assertBool "core 0's bank is byte-identical after a core-1 bank write (Vector cross-core isolation)"
+    (stMultiCoreBank1Written.machine.regsOnCore bootCoreId
+      == stMultiCore.machine.regsOnCore bootCoreId)
+  assertBool "core 0's contextMatches witness STILL holds after the core-1 bank write (per-core isolation)"
+    (stMultiCoreBank1Written.machine.regsOnCore bootCoreId == (mkTcb 100 10).registerContext)
+  assertBool "core 1's bank genuinely changed (pc = 1)"
+    ((stMultiCoreBank1Written.machine.regsOnCore core1).pc == ⟨1⟩)
+
 /-- §3.4: the SM5.I inventory partition counts. -/
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §3.4 SM5.I inventory partition counts ---"
-  assertBool "inventory has 39 entries"
-    (decide (perCoreInvariantSuiteTheorems.length = 39))
+  assertBool "inventory has 79 entries"
+    (decide (perCoreInvariantSuiteTheorems.length = 79))
   assertBool "structural category has 14 entries"
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .structural)).length = 14))
   assertBool "preservation category has 18 entries"
     (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .preservation)).length = 18))
-  assertBool "suite category has 7 entries"
-    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 7))
+  assertBool "suite category has 8 entries"
+    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .suite)).length = 8))
+  assertBool "registerBank category has 39 entries (SM4.B payoff)"
+    (decide ((perCoreInvariantSuiteTheorems.filter (fun t => t.category == .registerBank)).length = 39))
 
 /-- Run all SM5.I runtime checks. -/
 def runAllChecks : IO Unit := do
@@ -250,6 +391,7 @@ def runAllChecks : IO Unit := do
   runDefaultChecks
   runFramingChecks
   runWakeChecks
+  runMultiCoreRegisterBankChecks
   runInventoryChecks
   IO.println "=== all SM5.I suite checks passed ==="
 

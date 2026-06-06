@@ -168,16 +168,20 @@ def edfCurrentHasEarliestDeadlineOnCore (st : SystemState) (c : CoreId) : Prop :
             | none => True
       | none => True
 
-/-- SM4.C: per-core register-context match.  Per-core form of
-`contextMatchesCurrent`: when core `c` has a current thread, the machine
-register file matches that thread's saved context.  (At SM4.C the machine
-register file is still system-wide; SM5 introduces per-core register
-banks, at which point this reads core `c`'s bank.) -/
+/-- SM4.C / WS-SM SM5.I: per-core register-context match.  Per-core form of
+`contextMatchesCurrent`: when core `c` has a current thread, **core `c`'s
+register bank** (`machine.regsOnCore c` — the SM5.I per-core register banks)
+matches that thread's saved context.  Because each core reads its *own* bank,
+this is a genuine `∀ c` invariant under per-core dispatch: a dispatch on core
+`c₀` writes only `c₀`'s bank, establishing the match on `c₀` and framing every
+sibling core's match.  At the boot core `regsOnCore bootCoreId` is the
+single-core `machine.regs` view, so the bridge to single-core
+`contextMatchesCurrent` holds. -/
 def contextMatchesCurrentOnCore (st : SystemState) (c : CoreId) : Prop :=
   match st.scheduler.currentOnCore c with
   | some tid =>
       match st.getTcb? tid with
-      | some tcb => (st.machine.regs == tcb.registerContext) = true
+      | some tcb => (st.machine.regsOnCore c == tcb.registerContext) = true
       | none => True
   | none => True
 
@@ -369,11 +373,14 @@ theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
 
 theorem contextMatchesCurrentOnCore_bootCore_iff (st : SystemState) :
     contextMatchesCurrentOnCore st bootCoreId ↔ contextMatchesCurrent st := by
+  -- WS-SM SM5.I: at the boot core `regsOnCore bootCoreId` *is* the single-core
+  -- `machine.regs` view (`MachineState.regs` def), so the per-core and single-core
+  -- conjuncts coincide definitionally.
   unfold contextMatchesCurrentOnCore contextMatchesCurrent
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none => simp
   | some tid =>
-    simp only
+    simp only [MachineState.regs]
     unfold SystemState.getTcb?
     cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
     | none => simp
@@ -1041,7 +1048,7 @@ theorem edfCurrentHasEarliestDeadlineOnCore_frame {st st' : SystemState} {c : Co
 
 theorem contextMatchesCurrentOnCore_frame {st st' : SystemState} {c : CoreId}
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj : st'.objects = st.objects) :
     contextMatchesCurrentOnCore st' c ↔ contextMatchesCurrentOnCore st c := by
   have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
@@ -1123,7 +1130,7 @@ theorem schedulerInvariant_perCore_frame {st st' : SystemState} {c : CoreId}
     (hCur  : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
     (hRQ   : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
     (hDTR  : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj  : st'.objects = st.objects) :
     schedulerInvariant_perCore st' c ↔ schedulerInvariant_perCore st c := by
   -- The aggregate predicates of §3 read only through `getTcb?` (not
@@ -1309,7 +1316,7 @@ theorem schedulerInvariant_perCore_extended_frame {st st' : SystemState} {c : Co
     (hRQ   : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
     (hDTR  : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
     (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj  : st'.objects = st.objects) :
     schedulerInvariant_perCore_extended st' c ↔ schedulerInvariant_perCore_extended st c := by
   unfold schedulerInvariant_perCore_extended

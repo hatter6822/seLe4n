@@ -494,6 +494,33 @@ theorem toList_rotateToBack_nodup (rq : RunQueue) (tid : ThreadId)
     subst this; intro hEq; subst hEq
     exact hNotMemErase hx
 
+/-- WS-SM SM5.I: `RunQueue.remove` preserves `toList.Nodup` (`toList = flat`, and
+`remove` filters `flat`, so the result is a sublist — hence still `Nodup`).  Public
+companion to the `private remove_preserves_nodup` in `Operations/Preservation.lean`,
+exposed for the SM5.I per-core `runQueueUnique` structural conjunct. -/
+theorem remove_preserves_toList_nodup (rq : RunQueue) (tid : ThreadId)
+    (hNodup : rq.toList.Nodup) : (rq.remove tid).toList.Nodup := by
+  simp only [toList]
+  unfold remove
+  exact hNodup.sublist List.filter_sublist
+
+/-- WS-SM SM5.I: `RunQueue.insert` preserves `toList.Nodup`.  `insert` is
+idempotent (`if contains tid then rq`), so the already-member case is the
+identity; the not-member case appends `tid` to a list it is not in.  Public
+companion to the `private insert_preserves_nodup`, for the SM5.I per-core
+`runQueueUnique` structural conjunct. -/
+theorem insert_preserves_toList_nodup (rq : RunQueue) (tid : ThreadId) (prio : Priority)
+    (hNodup : rq.toList.Nodup) : (rq.insert tid prio).toList.Nodup := by
+  by_cases hc : tid ∈ rq
+  · rwa [show rq.insert tid prio = rq from by
+      unfold insert; rw [if_pos (mem_iff_contains.mp hc)]]
+  · rw [toList_insert_not_mem rq tid prio hc]
+    exact List.nodup_append.2 ⟨hNodup, List.pairwise_singleton _ _,
+      fun x hx y hy => by
+        have : y = tid := by simpa using hy
+        subst this; intro hEq; subst hEq
+        exact hc ((mem_toList_iff_mem rq x).mp hx)⟩
+
 /-- WS-H9: Erasing an element with `p a = false` preserves the filtered list. -/
 private theorem filter_erase_of_false {α : Type} [DecidableEq α] [BEq α] [LawfulBEq α]
     (xs : List α) (a : α) (p : α → Bool) (hp : p a = false) :

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.60.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.61.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6411,6 +6411,89 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `timerTickOnCore_preserves_{currentThreadValid,queueCurrentConsistent,runQueueOnCoreWellFormed}OnCore`;
   the mechanical fold composition is the SM5.I follow-on (the plan's "5 PRs").
   Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I register-bank payoff + Nodup extension LANDED at v0.31.61 on
+  branch `claude/focused-goodall-dji73`** (SM4.B per-core register banks make
+  `contextMatchesCurrentOnCore` a genuine ∀-core invariant; the run-queue
+  `Nodup` conjunct lands too).  Every new theorem is axiom-clean (`propext` /
+  `Quot.sound` / `Classical.choice`, verified via `#print axioms`); the full
+  production build (324 jobs) + staged (215) are green, the trace fixture is
+  **byte-identical**, and the production/staged partition gate verifies 62
+  staged-only modules.
+
+  - **SM4.B per-core register banks (the machine-model rewrite)**:
+    `SeLe4n/Machine.lean` replaces the single shared `MachineState.regs :
+    RegisterFile` with a per-core bank `coreRegs : Vector RegisterFile
+    Concurrency.numCores` (path-a, the SM4.B `Vector α numCores` pattern), with
+    accessors `regsOnCore (c : CoreId)` / `setRegsOnCore c v` and the store/load
+    algebra (`regsOnCore_setRegsOnCore_self` / `_ne`, `setRegsOnCore_{memory,
+    timer,interruptsEnabled,systemRegisters}`).  `MachineState.regs` survives as
+    a **def-accessor** (`= regsOnCore bootCoreId`) so the ~120 single-core read
+    sites are untouched; only the ~18 register *write* sites flip to
+    `setRegsOnCore bootCoreId` (Architecture/Adapter, FrozenOps, MainTraceHarness,
+    `setPC`).  The two per-core dispatch transitions restore into core `c`'s own
+    bank via the new `restoreIncomingContextOnCore c` (Selection.lean), and
+    `preemptCurrentOnCore` / `saveOutgoingContextOnCore` save into `regsOnCore c`.
+    AK7 cascade baseline re-anchored by the structural minimum (`raw_match_tcb`
+    48 → 49, `raw_match_total` 125 → 126, `raw_lookup_tid` 814 → 815): the new
+    `restoreIncomingContextOnCore` def necessarily mirrors the single-core
+    `restoreIncomingContext`'s raw `match objects[tid.toObjId]? | some (.tcb _)`
+    to keep the `_bootCore = restoreIncomingContext` `rfl` bridge (same precedent
+    as SM5.F); every other register-context lemma routes through the typed
+    `getTcb?` accessor (`getTcb?_eq_some_iff`).
+  - **`contextMatchesCurrentOnCore` is now a genuine ∀-core invariant**: its body
+    reads `st.machine.regsOnCore c` (not the shared `machine.regs`), so a
+    dispatch on `c₀` — writing only `setRegsOnCore c₀` — frames every sibling
+    core's bank.  The two dispatch transitions *establish* it on the operated
+    core (`scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore`,
+    `switchToThreadOnCore_establishes_contextMatchesCurrentOnCore` via the new
+    `restoreThenSetCurrent_establishes_contextMatchesCurrentOnCore`).
+  - **`RegisterFile` partial-equivalence lemmas** (`Machine.lean`):
+    `RegisterFile.beq_symm` / `beq_trans` (the structural `BEq` is a PER even
+    though it is not `LawfulBEq` — each component is a `LawfulBEq RegValue`
+    test).  These discharge the sole non-trivial sibling case: a thread
+    *pathologically* current on two cores, where the dispatch's outgoing-save is
+    `==`-idempotent on the shared thread's `registerContext` by the sibling's
+    pre-state `contextMatchesCurrent` (no cross-core current-disjointness
+    invariant needed — the idempotency is self-contained in the carried
+    conjunct).
+  - **`schedulerInvariantStructuralReg_perCore` / `_smp`** (the 4 structural
+    conjuncts **+ `contextMatchesCurrentOnCore`**) in
+    `Scheduler/Invariant/PerCoreInvariantSuite.lean` §2b/§4, proved preserved
+    **system-wide by all 10 SM5 per-core transitions** (dispatch:
+    `scheduleEffectiveOnCore` / `scheduleOrIdleOnCore` / `switchToThreadOnCore` /
+    `handleRescheduleSgiOnCore`; non-dispatch: `advanceDomainOnCore` /
+    `enqueueRunnableOnCore` / `wakeThread` / `replenishOnCore` /
+    `decrementDomainTimeOnCore` / `enqueueIdleThreadOnCore`).  The dispatch
+    sibling frame uses `saveOutgoingContextOnCore_getTcb?_regContext` /
+    `preemptCurrentOnCore_getTcb?_regContext` + the per-core bank frame
+    (`scheduleEffectiveOnCore_machine_regsOnCore_ne` /
+    `switchToThreadOnCore_machine_regsOnCore_ne`) + the helper
+    `contextMatchesCurrentOnCore_frame_at`; the machine-neutral non-dispatch ops
+    use `contextMatchesCurrentOnCore_of_machine_eq_and_regContext`.
+    `enqueueIdleThreadOnCore` (which overwrites the idle TCB to
+    `createIdleThread`, register context `default`) carries the honest seL4-
+    faithful `∀ c', currentOnCore c' ≠ idleThreadId c₀` precondition.
+  - **`schedulerInvariantStructuralRegNodup` (6th conjunct,
+    `runQueueUniqueOnCore`)** (§4.4): the run-queue `toList.Nodup` conjunct — both
+    register-bank-independent and transition-stable — preserved by all 10
+    transitions via the new public `RunQueue.insert_preserves_toList_nodup` /
+    `remove_preserves_toList_nodup` (`Scheduler/RunQueue.lean`), mirroring the
+    `runQueueOnCoreWellFormed` preservation.  Closes the conjunct the SM5.I
+    landing explicitly deferred "to bound the cut".
+  - **`schedulerInvariantStructural_perCore_pairwise_iff`**: strengthens the
+    one-directional SM5.I.6 cross-core independence to a biconditional (per the
+    implement-the-improvement rule — genuine per-core isolation is an `↔`).
+  - **Inventory + tests**: the SM5.I inventory grows 39 → 79 (new
+    `.registerBank` category, 39 entries; `+1` `pairwise_iff` in `.suite`);
+    `tests/SmpInvariantSuite.lean` adds 40 surface anchors, 7 elaboration
+    examples, and the **genuinely multi-core** §3.5 runtime fixture
+    (`contextMatchesCurrentOnCore` witnessed on *two* cores simultaneously via
+    the structural `RegisterFile` `BEq`, plus the cross-core bank-write isolation
+    — `lake exe smp_invariant_suite` reports all checks PASS).  The stale "single
+    `machine.regs`" docstrings (`switchToThreadOnCore`, the module header's
+    register-bank tracked debt) are corrected to the per-core-bank reality.
+    Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

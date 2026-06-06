@@ -8,8 +8,16 @@
 -/
 
 import SeLe4n.Prelude
+import SeLe4n.Kernel.Concurrency.Types
 
 namespace SeLe4n
+
+-- WS-SM SM5.I (per-core register banks): `MachineState` carries one register
+-- file *per core* (`Vector RegisterFile numCores`).  `numCores` / `CoreId` /
+-- `bootCoreId` come from `Kernel.Concurrency.Types` (a leaf-ish module whose
+-- import closure — `Prelude`, `BarrierComposition`, `RobinHood.*` — never
+-- reaches `Machine`, so this import introduces no cycle).
+open Kernel.Concurrency (numCores CoreId bootCoreId)
 
 /-- Bounded general-purpose register index.
     ARM64: 31 GPRs (x0–x30), plus pc and sp as separate fields.
@@ -287,6 +295,48 @@ instance : BEq RegisterFile where
 theorem RegisterFile.beq_self (a : RegisterFile) : (a == a) = true := by
   simp [BEq.beq]
 
+/-- WS-SM SM5.I: the structural `BEq` on `RegisterFile` unfolded — the conjunction
+of the `pc` / `sp` / 32-GPR-index `RegValue` comparisons.  Lets the partial-
+equivalence lemmas below reduce to component `RegValue` equalities (which *are*
+`LawfulBEq`) without unfolding the inner `==` to raw `decide`. -/
+theorem RegisterFile.beq_def (a b : RegisterFile) :
+    (a == b) = (a.pc == b.pc && a.sp == b.sp &&
+      (List.range registerFileGPRCount).all fun i => a.gpr ⟨i⟩ == b.gpr ⟨i⟩) := rfl
+
+/-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **symmetric**.  Although it
+is not `LawfulBEq` (the `gpr` function may differ beyond index 31), each component
+comparison is a `LawfulBEq RegValue` test, so the finite conjunction is symmetric.
+Needed for the per-core register-bank `contextMatchesCurrentOnCore` sibling frame:
+when a thread is (pathologically) current on two cores whose banks both match its
+saved context, the two banks agree with each other. -/
+theorem RegisterFile.beq_symm {a b : RegisterFile} (h : (a == b) = true) :
+    (b == a) = true := by
+  rw [RegisterFile.beq_def] at h
+  rw [RegisterFile.beq_def]
+  simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at h ⊢
+  obtain ⟨⟨hpc, hsp⟩, hgpr⟩ := h
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rw [beq_iff_eq] at hpc ⊢; exact hpc.symm
+  · rw [beq_iff_eq] at hsp ⊢; exact hsp.symm
+  · intro i hi; have hgi := hgpr i hi; rw [beq_iff_eq] at hgi ⊢; exact hgi.symm
+
+/-- WS-SM SM5.I: `RegisterFile`'s structural `BEq` is **transitive** (companion to
+`beq_symm` / `beq_self`: it is a partial equivalence relation, sufficient for the
+register-bank `contextMatchesCurrentOnCore` reasoning even without `LawfulBEq`). -/
+theorem RegisterFile.beq_trans {a b c : RegisterFile}
+    (hab : (a == b) = true) (hbc : (b == c) = true) : (a == c) = true := by
+  rw [RegisterFile.beq_def] at hab hbc
+  rw [RegisterFile.beq_def]
+  simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at hab hbc ⊢
+  obtain ⟨⟨hpcab, hspab⟩, hgprab⟩ := hab
+  obtain ⟨⟨hpcbc, hspbc⟩, hgprbc⟩ := hbc
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · rw [beq_iff_eq] at hpcab hpcbc ⊢; exact hpcab.trans hpcbc
+  · rw [beq_iff_eq] at hspab hspbc ⊢; exact hspab.trans hspbc
+  · intro i hi
+    have h1 := hgprab i hi; have h2 := hgprbc i hi
+    rw [beq_iff_eq] at h1 h2 ⊢; exact h1.trans h2
+
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `RegisterFile`.
     `BEq RegisterFile` checks equality at 32 GPR indices but cannot prove
     `a == b = true → a = b` because `gpr` is a function — two extensionally
@@ -374,7 +424,18 @@ instance : Inhabited SystemRegisterFile where
     so that kernel transitions can reference platform parameters without
     requiring a separate config parameter. -/
 structure MachineState where
-  regs : RegisterFile
+  /-- WS-SM SM5.I (per-core register banks): one `RegisterFile` per core,
+      indexed by `CoreId`.  Replaces the former single `regs : RegisterFile`.
+      The boot core's bank (`coreRegs.get bootCoreId`) is the executing-core /
+      single-core view exposed by the `MachineState.regs` accessor below, so all
+      existing single-core code (FFI, boot, the trace harness, `setPC`,
+      `wordBounded`, the scheduler's single-core context save/restore) is
+      behaviourally unchanged; the per-core scheduler's context save/restore
+      (SM5.B/SM5.D) writes the *operated* core's bank via `setRegsOnCore c`,
+      which is what makes `contextMatchesCurrentOnCore` a genuine `∀ c`
+      invariant under per-core dispatch (each core's bank matches its own
+      current thread; a dispatch on core `c₀` touches only `c₀`'s bank). -/
+  coreRegs : _root_.Vector RegisterFile numCores
   memory : Memory
   timer : Nat
   /-- X2-D: Physical address width carried in machine state so that kernel
@@ -451,7 +512,67 @@ structure MachineState where
   lastTlbBarrierKind : Nat := 0x05
 
 instance : Inhabited MachineState where
-  default := { regs := default, memory := (fun _ => 0), timer := 0 }
+  default := { coreRegs := _root_.Vector.replicate numCores default, memory := (fun _ => 0), timer := 0 }
+
+-- ============================================================================
+-- WS-SM SM5.I — per-core register-bank accessors + store/load algebra
+-- ============================================================================
+
+/-- WS-SM SM5.I: core `c`'s register file. -/
+@[inline] def MachineState.regsOnCore (ms : MachineState) (c : CoreId) : RegisterFile :=
+  ms.coreRegs.get c
+
+/-- WS-SM SM5.I: write core `c`'s register file. -/
+@[inline] def MachineState.setRegsOnCore (ms : MachineState) (c : CoreId)
+    (v : RegisterFile) : MachineState :=
+  { ms with coreRegs := ms.coreRegs.set c.val v c.isLt }
+
+/-- WS-SM SM5.I: the executing-core / single-core register view — the **boot
+core's** bank.  This is the back-compatible accessor every pre-SM5 single-core
+code path reads as `ms.regs`; flipping the field to a per-core `Vector` keeps
+this view byte-identical (the boot core's bank replaces the former single
+field).  Per-core code uses `regsOnCore c` instead. -/
+@[inline] def MachineState.regs (ms : MachineState) : RegisterFile :=
+  ms.regsOnCore bootCoreId
+
+/-- WS-SM SM5.I: `regs` is the boot core's bank by definition. -/
+theorem MachineState.regs_eq_regsOnCore_bootCore (ms : MachineState) :
+    ms.regs = ms.regsOnCore bootCoreId := rfl
+
+/-- WS-SM SM5.I (store/load algebra): read-after-write at the same core. -/
+@[simp] theorem MachineState.regsOnCore_setRegsOnCore_self (ms : MachineState)
+    (c : CoreId) (v : RegisterFile) : (ms.setRegsOnCore c v).regsOnCore c = v := by
+  simp only [MachineState.regsOnCore, MachineState.setRegsOnCore]
+  exact SeLe4n.PerCoreVector.get_set_eq ms.coreRegs c v
+
+/-- WS-SM SM5.I (store/load algebra): a per-core write frames every other core's
+register bank. -/
+@[simp] theorem MachineState.regsOnCore_setRegsOnCore_ne (ms : MachineState)
+    (c c' : CoreId) (v : RegisterFile) (h : c ≠ c') :
+    (ms.setRegsOnCore c v).regsOnCore c' = ms.regsOnCore c' := by
+  simp only [MachineState.regsOnCore, MachineState.setRegsOnCore]
+  exact SeLe4n.PerCoreVector.get_set_ne ms.coreRegs c c' v h
+
+/-- WS-SM SM5.I: writing the boot-core bank via `setRegsOnCore bootCoreId`
+updates the single-core `regs` view. -/
+@[simp] theorem MachineState.regs_setRegsOnCore_bootCore (ms : MachineState)
+    (v : RegisterFile) : (ms.setRegsOnCore bootCoreId v).regs = v := by
+  simp only [MachineState.regs]
+  exact MachineState.regsOnCore_setRegsOnCore_self ms bootCoreId v
+
+/-- WS-SM SM5.I: `setRegsOnCore` frames all per-core fields except `coreRegs`
+(it touches only the register banks). -/
+@[simp] theorem MachineState.setRegsOnCore_memory (ms : MachineState) (c : CoreId)
+    (v : RegisterFile) : (ms.setRegsOnCore c v).memory = ms.memory := rfl
+
+@[simp] theorem MachineState.setRegsOnCore_timer (ms : MachineState) (c : CoreId)
+    (v : RegisterFile) : (ms.setRegsOnCore c v).timer = ms.timer := rfl
+
+@[simp] theorem MachineState.setRegsOnCore_interruptsEnabled (ms : MachineState) (c : CoreId)
+    (v : RegisterFile) : (ms.setRegsOnCore c v).interruptsEnabled = ms.interruptsEnabled := rfl
+
+@[simp] theorem MachineState.setRegsOnCore_systemRegisters (ms : MachineState) (c : CoreId)
+    (v : RegisterFile) : (ms.setRegsOnCore c v).systemRegisters = ms.systemRegisters := rfl
 
 /-- R7-C/L-03: Machine-state word-boundedness invariant.
     Asserts that all register values (PC, SP, and all GPRs) fit in one machine
@@ -571,7 +692,7 @@ theorem writeMemChecked_preserves_timer
   · cases h
 
 def setPC (ms : MachineState) (pc : RegValue) : MachineState :=
-  { ms with regs := { ms.regs with pc } }
+  ms.setRegsOnCore bootCoreId { ms.regs with pc }
 
 def tick (ms : MachineState) : MachineState :=
   { ms with timer := ms.timer + 1 }

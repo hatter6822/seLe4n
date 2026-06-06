@@ -17,6 +17,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreDomain
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 
 /-!
 # WS-SM SM5.I — Per-core invariant suite
@@ -42,21 +43,23 @@ preserved by every SM5 per-core transition:
 * `runQueueOnCoreWellFormed` — the run queue's internal `byPriority` ↔
   `membership` ↔ `threadPriority` indices are consistent.
 
-The other **seven** conjuncts are excluded from this core, for three distinct
-reasons (the first two genuinely-mathematical, the third a scope-bounding
-deferral — none is a soundness gap):
+**`contextMatchesCurrentOnCore` is no longer excluded** (SM4.B per-core register
+banks).  SM4.B replaced the single shared `machine.regs` with a per-core register
+bank `Vector RegisterFile numCores` (accessor `regsOnCore c`), and
+`contextMatchesCurrentOnCore` now reads core `c`'s **own** bank.  A per-core
+dispatch on `c₀` writes only `setRegsOnCore c₀`, framing every sibling bank, so
+the conjunct holds on *every* core simultaneously.  §2b/§4 below define the
+**register-bank-extended** invariant `schedulerInvariantStructuralReg_perCore` /
+`_smp` (the four structural conjuncts **+** `contextMatchesCurrentOnCore`) and
+prove it preserved system-wide by *every* SM5 per-core transition — the SM4.B
+payoff: the contextMatches conjunct that one shared register file could maintain
+on at most one core is now a genuine ∀-core invariant.
 
-1. **`contextMatchesCurrentOnCore`** asserts the *system-wide* `machine.regs`
-   equals core `c`'s current thread's saved context.  With one shared register
-   file this holds for **at most one** non-idle core at a time, so a per-core
-   dispatch on core `c₀` — which writes `machine.regs` to `c₀`'s new current's
-   context — necessarily *invalidates* every other non-idle core's conjunct.
-   It is faithful only once SM5 introduces **per-core register banks** (the
-   deferred context-bank migration the predicate's own docstring notes); until
-   then the system-wide `schedulerInvariant_smp` (∀ c, full aggregate) is
-   preserved only in the single-active-core regime.
+The remaining **six** conjuncts are excluded from the structural core for two
+distinct reasons (the first genuinely-mathematical, the second a scope-bounding
+deferral — neither is a soundness gap):
 
-2. **`edfCurrentHasEarliestDeadlineOnCore`**, `timeSlicePositiveOnCore`,
+1. **`edfCurrentHasEarliestDeadlineOnCore`**, `timeSlicePositiveOnCore`,
    `currentTimeSlicePositiveOnCore`, and `domainTimeRemainingPositiveOnCore`
    are **dispatch/tick-established**, not transition-stable: a *bare* wake
    enqueuing an earlier-deadline thread in the running thread's bucket
@@ -65,22 +68,23 @@ deferral — none is a soundness gap):
    holds — `ensureRunnable` preserves only the base invariant, `schedule`
    re-establishes EDF.
 
-3. **`schedulerPriorityMatchOnCore`** is register-bank-independent but coupled to
+2. **`schedulerPriorityMatchOnCore`** is register-bank-independent but coupled to
    dispatch via the **PIP-boost run-queue bucket migration**: a `pipBoost` change
    alters a thread's `effectiveRunQueuePriority`, and the matching run-queue index
    is re-bucketed only on the thread's home core (`updatePipBoostOnCore`), so the
    conjunct is not frame-stable across an arbitrary objects mutation.
-   **`runQueueUniqueOnCore`** (run-queue `Nodup`) *is* both register-bank-
-   independent and transition-stable — a clean extension of this structural core
-   — but is deferred here to bound the cut (its wake/dispatch `RunQueue.insert` /
-   `remove` `Nodup`-preservation lemmas, distinct from the SM4.C single-core
-   `runQueueUnique` proofs, are the natural follow-on).
+   (**`runQueueUniqueOnCore`** — run-queue `Nodup` — *is* both register-bank-
+   independent and transition-stable, and is included in the further-extended
+   `schedulerInvariantStructuralRegNodup` invariant below.)
 
-Crucially, its frame on a sibling core `c' ≠ c₀` needs **no `machine.regs`
-agreement** (no `contextMatchesCurrent` conjunct), so a per-core dispatch on
-`c₀` — which *does* rewrite `machine.regs` — preserves the structural
-invariant on **every** core.  This is what makes `schedulerInvariantStructural_smp`
-a genuine, register-bank-free, system-wide SMP invariant.
+The base `schedulerInvariantStructural_perCore` frame on a sibling core
+`c' ≠ c₀` needs **no register-bank agreement** (it carries none of the
+register-reading conjuncts), so a per-core dispatch on `c₀` — which *does*
+rewrite core `c₀`'s bank — trivially preserves it on **every** core.  The
+register-bank-extended frame (§2b) additionally carries per-core `regsOnCore c'`
+agreement (which the per-core banks deliver for free on a sibling), so
+`schedulerInvariantStructuralReg_smp` is likewise a genuine system-wide SMP
+invariant.
 
 ## What this module proves (plan §5 SM5.I)
 
@@ -95,21 +99,39 @@ a genuine, register-bank-free, system-wide SMP invariant.
   independence; recapped) + the structural pairwise form.
 * **SM5.I.8** — **preservation by every transition**: the per-core
   SMP-preservation engine plus `<op>_preserves_schedulerInvariantStructural_smp`
-  for every SM5 per-core transition (wake, switch, dispatch, timer tick,
-  domain rotate, idle enqueue, …), and — on the *operated* core — the
-  strongest per-core establishment each transition delivers.
+  (and the register-bank-extended `…StructuralReg_smp` and the
+  Nodup-extended `…StructuralRegNodup_smp`) for every SM5 per-core transition
+  (wake, switch, dispatch, timer tick, domain rotate, idle enqueue, …), and — on
+  the *operated* core — the strongest per-core establishment each transition
+  delivers (including, for the two dispatch transitions, the
+  `contextMatchesCurrentOnCore` *establishment* the per-core register banks
+  unlock).
 * **SM5.I.9** — `crossSubsystemInvariant_smp` (recapped from SM4.D).
+* **§2b/§4 (SM4.B register-bank payoff)** — the register-bank-extended
+  invariant `schedulerInvariantStructuralReg_perCore` / `_smp` (the four
+  structural conjuncts + `contextMatchesCurrentOnCore`) and its system-wide
+  preservation by every SM5 per-core transition.  §4.4 further extends it with
+  the run-queue `Nodup` conjunct (`…StructuralRegNodup`).
 
 Axiom-clean: every theorem depends only on the standard foundational axioms
 (`propext` / `Quot.sound` / `Classical.choice`).
 
-**Tracked debt (per-core register banks)**: the full `schedulerInvariant_smp`
-(∀ c, including `contextMatchesCurrentOnCore`) preservation by a per-core
-dispatch with *multiple* non-idle cores is gated on the SM5 per-core register
-bank (the system-wide `machine.regs` makes multi-active-core
-`contextMatchesCurrent` unsatisfiable).  The structural invariant is the
-register-bank-free system-wide guarantee SM5.I delivers now; the full
-aggregate's system-wide preservation lands with the per-core register banks.
+**Per-core register banks (SM4.B) — LANDED.**  The system-wide
+`schedulerInvariant_smp` (∀ c, including `contextMatchesCurrentOnCore`)
+preservation by a per-core dispatch with *multiple* non-idle cores was
+previously gated on the single shared `machine.regs` (which made multi-active-
+core `contextMatchesCurrent` unsatisfiable).  SM4.B's per-core register banks
+(`MachineState.coreRegs : Vector RegisterFile numCores`) close that gap: the
+register-bank-extended `schedulerInvariantStructuralReg_smp` carries the
+`contextMatchesCurrentOnCore` conjunct on *every* core and is preserved
+system-wide by every transition (§4).  The only `registerContext` write any
+transition makes — the outgoing-thread save — is `==`-idempotent on a thread
+(pathologically) current on a sibling core, discharged by that sibling's
+pre-state `contextMatchesCurrent` and the `RegisterFile` partial equivalence
+(`RegisterFile.beq_symm` / `beq_trans`).  The remaining six full-aggregate
+conjuncts (EDF / two time-slice / domain-time — dispatch/tick-established;
+`schedulerPriorityMatch` — PIP-bucket-coupled) are excluded for reasons
+*unrelated* to register banks.
 -/
 
 namespace SeLe4n.Kernel
@@ -294,6 +316,111 @@ theorem schedulerInvariantStructural_smp_of_establish_and_frame
       (hFrameCur c' hc) (hFrameRQ c' hc) hTcbSome (hPre c')
 
 -- ============================================================================
+-- §2b  The register-bank-extended structural invariant (the SM4.B per-core
+--      register-bank payoff: `contextMatchesCurrentOnCore` becomes system-wide)
+-- ============================================================================
+--
+-- SM4.B replaced the single shared `machine.regs` with a per-core register bank
+-- `Vector RegisterFile numCores` (accessor `regsOnCore c` / `setRegsOnCore c`).
+-- `contextMatchesCurrentOnCore` now reads core `c`'s *own* bank, so a per-core
+-- dispatch on core `c₀` — which writes only `setRegsOnCore c₀` — leaves every
+-- sibling core's `contextMatchesCurrent` untouched.  This is exactly the
+-- conjunct the old module header flagged as register-bank-gated; with the banks
+-- it is a genuine system-wide invariant, proved preserved by every transition.
+
+/-- WS-SM SM5.I (register-bank payoff): `contextMatchesCurrentOnCore` is preserved
+on core `c` when (a) core `c`'s `current` slot is unchanged, (b) core `c`'s
+register bank is unchanged, and (c) the current thread's saved `registerContext`
+is `==`-preserved.  `currentThreadValidOnCore st c` rules out the (vacuous)
+non-TCB-current case where a fresh TCB could appear under the current pointer.
+The `==`-preservation (rather than `=`) is what lets the dispatch sibling frame
+discharge the pathological "current on two cores" case via the
+`RegisterFile` partial-equivalence (`beq_trans`). -/
+theorem contextMatchesCurrentOnCore_frame_at
+    {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
+    (hRC : ∀ tid tcb, st.scheduler.currentOnCore c = some tid → st.getTcb? tid = some tcb →
+       ∃ tcb', st'.getTcb? tid = some tcb' ∧ (tcb.registerContext == tcb'.registerContext) = true)
+    (hValid : currentThreadValidOnCore st c)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore st' c := by
+  unfold contextMatchesCurrentOnCore at h ⊢
+  rw [hCur]
+  cases hcur : st.scheduler.currentOnCore c with
+  | none => exact trivial
+  | some tid =>
+      have hvalid' := hValid
+      unfold currentThreadValidOnCore at hvalid'
+      simp only [hcur] at hvalid'
+      obtain ⟨tcb, htcb⟩ := hvalid'
+      simp only [hcur, htcb] at h
+      obtain ⟨tcb', htcb', hrc⟩ := hRC tid tcb hcur htcb
+      simp only [htcb', hRegs]
+      -- h : (regsOnCore c == tcb.registerContext) = true;
+      -- hrc : (tcb.registerContext == tcb'.registerContext) = true
+      exact RegisterFile.beq_trans h hrc
+
+/-- WS-SM SM5.I: the **register-bank-extended** structural per-core invariant —
+the four register-bank-independent safety conjuncts plus
+`contextMatchesCurrentOnCore` (sound system-wide now that SM4.B gives per-core
+register banks).  This is the maximal *register-bank-sound* per-core scheduler
+invariant (the remaining six conjuncts — EDF / the two time-slice conjuncts /
+domain-time, which are dispatch/tick-established; `schedulerPriorityMatch`, which
+is PIP-bucket-coupled; and `runQueueUnique` — are excluded for reasons unrelated
+to register banks). -/
+def schedulerInvariantStructuralReg_perCore (st : SystemState) (c : CoreId) : Prop :=
+  schedulerInvariantStructural_perCore st c ∧ contextMatchesCurrentOnCore st c
+
+/-- WS-SM SM5.I: the system-wide register-bank-extended structural SMP invariant —
+the extended per-core invariant on *every* core.  Unlike the pre-SM4.B situation,
+this **is** preserved by genuine multi-core dispatch: a dispatch on `c₀` writes
+`setRegsOnCore c₀`, framing every sibling's bank, so no shared-register conflict
+arises. -/
+def schedulerInvariantStructuralReg_smp (st : SystemState) : Prop :=
+  ∀ c : CoreId, schedulerInvariantStructuralReg_perCore st c
+
+theorem schedulerInvariantStructuralReg_perCore_to_structural
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralReg_perCore st c) :
+    schedulerInvariantStructural_perCore st c := h.1
+
+theorem schedulerInvariantStructuralReg_perCore_to_contextMatches
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralReg_perCore st c) :
+    contextMatchesCurrentOnCore st c := h.2
+
+theorem schedulerInvariantStructuralReg_smp_to_structural {st : SystemState}
+    (h : schedulerInvariantStructuralReg_smp st) : schedulerInvariantStructural_smp st :=
+  fun c => (h c).1
+
+/-- The full SM4.C per-core aggregate implies the register-bank-extended structural
+invariant (its `contextMatchesCurrent` conjunct is the 5th here). -/
+theorem schedulerInvariant_perCore_to_structuralReg {st : SystemState} {c : CoreId}
+    (h : schedulerInvariant_perCore st c) : schedulerInvariantStructuralReg_perCore st c :=
+  ⟨schedulerInvariant_perCore_to_structural h,
+   schedulerInvariant_perCore_to_contextMatchesCurrent h⟩
+
+theorem schedulerInvariant_smp_to_structuralReg {st : SystemState}
+    (h : schedulerInvariant_smp st) : schedulerInvariantStructuralReg_smp st :=
+  fun c => schedulerInvariant_perCore_to_structuralReg (h c)
+
+/-- WS-SM SM5.I: the freshly-booted system satisfies the register-bank-extended
+structural SMP invariant on every core. -/
+theorem default_schedulerInvariantStructuralReg_smp :
+    schedulerInvariantStructuralReg_smp (default : SystemState) :=
+  fun c => schedulerInvariant_perCore_to_structuralReg (default_schedulerInvariant_perCore c)
+
+/-- WS-SM SM5.I: lift a base structural SMP preservation plus a system-wide
+`contextMatchesCurrentOnCore` proof into the extended invariant.  Every
+`<op>_preserves_schedulerInvariantStructuralReg_smp` below is this combinator
+applied to the (already-proved) base structural preservation and the per-op
+`contextMatches` establishment/frame. -/
+theorem schedulerInvariantStructuralReg_smp_of_base_and_ctx {st' : SystemState}
+    (hBase : schedulerInvariantStructural_smp st')
+    (hCtx : ∀ c, contextMatchesCurrentOnCore st' c) :
+    schedulerInvariantStructuralReg_smp st' :=
+  fun c => ⟨hBase c, hCtx c⟩
+
+-- ============================================================================
 -- §3  Preservation by every SM5 per-core transition (SM5.I.8)
 -- ============================================================================
 --
@@ -423,7 +550,7 @@ theorem idleFallbackOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
   unfold idleFallbackOnCore
   split
   · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h,
-      restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore]
+      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore]
   · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ h]
 
 /-- WS-SM SM5.I (frame helper): the idle fallback frames every *sibling* core's
@@ -434,7 +561,7 @@ theorem idleFallbackOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
   unfold idleFallbackOnCore
   split
   · simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-      restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
+      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ h]
   · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore]
 
 /-- WS-SM SM5.I.8 (other-core frame for the dispatcher): a per-core dispatch on
@@ -469,10 +596,10 @@ theorem scheduleEffectiveOnCore_independent_of_other_core (st : SystemState)
         · simp only [Except.ok.injEq] at hStep; subst hStep
           refine ⟨?_, ?_⟩
           · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
-              restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+              restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
               saveOutgoingContextOnCore_scheduler_eq]
           · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-              restoreIncomingContext_scheduler,
+              restoreIncomingContextOnCore_scheduler,
               SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
               saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -549,7 +676,7 @@ theorem preemptCurrentOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
               -- active branch: `objects := insert prevTid (.tcb { prevTcb with regs })`.
               by_cases hT : t = prevTid
               · subst hT
-                refine ⟨{ prevTcb with registerContext := st.machine.regs }, ?_⟩
+                refine ⟨{ prevTcb with registerContext := st.machine.regsOnCore c }, ?_⟩
                 simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
                 simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
                 rw [RobinHood.RHTable.getElem?_insert_self st.objects t.toObjId _ hInv]
@@ -639,7 +766,7 @@ theorem switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore (st : System
       simp only [hTcb] at h
       by_cases hAff : affinityAdmitsCore tidTcb c = true
       · rw [if_pos hAff, Except.ok.injEq] at h; subst h
-        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContext_scheduler,
+        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContextOnCore_scheduler,
           SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       · rw [if_neg hAff] at h; simp at h
   intro x hx
@@ -867,6 +994,27 @@ theorem schedulerInvariantStructural_perCore_pairwise
   · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hne)]
   · intro tid hsome; exact hsome
 
+/-- WS-SM SM5.I.6 (cross-core independence, **biconditional**): overwriting a
+*different* core `c₂`'s `current` and `runQueue` slots leaves core `c₁`'s
+structural invariant **unchanged in both directions** — the modification is
+scheduler-only on `c₂`'s slots (so `c₁`'s `current` / `runQueue` and the whole
+object store are untouched), hence the property is equivalent on the two states.
+The forward direction strengthens the one-directional `_pairwise` per the
+implement-the-improvement rule: genuine per-core isolation is an `↔`, not just a
+one-way frame. -/
+theorem schedulerInvariantStructural_perCore_pairwise_iff
+    {st : SystemState} {c₁ c₂ : CoreId} (hne : c₁ ≠ c₂)
+    (vc : Option SeLe4n.ThreadId) (vrq : RunQueue) :
+    schedulerInvariantStructural_perCore
+      { st with scheduler := (st.scheduler.setCurrentOnCore c₂ vc).setRunQueueOnCore c₂ vrq } c₁
+    ↔ schedulerInvariantStructural_perCore st c₁ := by
+  refine ⟨fun h => ?_, schedulerInvariantStructural_perCore_pairwise hne vc vrq⟩
+  refine schedulerInvariantStructural_perCore_frame ?_ ?_ ?_ h
+  · simp [SchedulerState.setRunQueueOnCore_currentOnCore,
+      SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (Ne.symm hne)]
+  · simp [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hne)]
+  · intro tid hsome; exact hsome
+
 /-- WS-SM SM5.I.9 (`crossSubsystemInvariant_smp`): the system-wide cross-subsystem
 SMP invariant (SM4.D) dominates the structural suite — every cross-subsystem
 witness contains the per-core scheduler invariant, hence the structural core. -/
@@ -875,5 +1023,639 @@ theorem crossSubsystemInvariant_smp_dominates_structural {st : SystemState}
   fun c => schedulerInvariant_perCore_to_structural
     (schedulerInvariant_perCore_extended_to_base
       (schedulerInvariant_perCore_crossSubsystem_to_extended (h c)))
+
+-- ============================================================================
+-- §4  Register-bank-extended preservation (SM5.I.8, the SM4.B payoff)
+-- ============================================================================
+--
+-- Each `<op>_preserves_schedulerInvariantStructuralReg_smp` lifts the (already
+-- proved) base structural preservation with a system-wide
+-- `contextMatchesCurrentOnCore` proof: on the operated core via the new
+-- establishment lemmas (dispatch) or a register-bank frame (non-dispatch), and on
+-- every sibling core via the register-bank frame.  The crux is that a dispatch on
+-- `c₀` writes `setRegsOnCore c₀` (framing sibling banks) and saves only `c₀`'s
+-- outgoing thread's register context — so the sole `registerContext` write is
+-- `==`-idempotent on any thread (pathologically) current on a sibling, by that
+-- sibling's pre-state `contextMatchesCurrent` (`RegisterFile.beq_*`).
+
+-- ── §4.1  Dispatch register-bank sibling frames ──
+
+/-- WS-SM SM5.I (register-bank sibling frame): the idle fallback on core `c` leaves
+every *sibling* core's register bank untouched — both arms write at most core
+`c`'s bank (`dispatchIdle`'s restore) or nothing (`current = none`). -/
+theorem idleFallbackOnCore_machine_regsOnCore_ne (st : SystemState) (c c' : CoreId)
+    (h : c ≠ c') :
+    (idleFallbackOnCore st c).machine.regsOnCore c' = st.machine.regsOnCore c' := by
+  unfold idleFallbackOnCore
+  split
+  · show (restoreIncomingContextOnCore _ c (idleThreadId c)).machine.regsOnCore c' = _
+    exact restoreIncomingContextOnCore_regsOnCore_ne _ c c' (idleThreadId c) h
+  · rfl
+
+/-- WS-SM SM5.I (register-bank sibling frame): a per-core dispatch on core `c₀`
+leaves every *sibling* core's register bank untouched — the only machine write is
+the restore's `setRegsOnCore c₀`. -/
+theorem scheduleEffectiveOnCore_machine_regsOnCore_ne (st : SystemState) (c₀ c' : CoreId)
+    (st' : SystemState) (hcc : c₀ ≠ c') (hStep : scheduleEffectiveOnCore st c₀ = .ok st') :
+    st'.machine.regsOnCore c' = st.machine.regsOnCore c' := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c₀ with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      rw [idleFallbackOnCore_machine_regsOnCore_ne _ c₀ c' hcc, saveOutgoingContextOnCore_machine]
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          show (restoreIncomingContextOnCore _ c₀ tid).machine.regsOnCore c' = _
+          rw [restoreIncomingContextOnCore_regsOnCore_ne _ c₀ c' tid hcc]
+          show (saveOutgoingContextOnCore st c₀).machine.regsOnCore c' = _
+          rw [saveOutgoingContextOnCore_machine]
+        · simp at hStep
+
+/-- WS-SM SM5.I (register-bank sibling frame): a per-core dispatch on core `c₀`
+either leaves any thread's saved register context unchanged, or — when that thread
+is `c₀`'s outgoing current — sets it to `machine.regsOnCore c₀` (the only
+`registerContext` write, via `saveOutgoingContextOnCore`). -/
+theorem scheduleEffectiveOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
+    (st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c₀ = .ok st') (ht : st.getTcb? tid = some tcb) :
+    ∃ tcb', st'.getTcb? tid = some tcb' ∧
+      (tcb'.registerContext = tcb.registerContext ∨
+        (st.scheduler.currentOnCore c₀ = some tid ∧
+          tcb'.registerContext = st.machine.regsOnCore c₀)) := by
+  have hobj : st'.objects = (saveOutgoingContextOnCore st c₀).objects :=
+    scheduleEffectiveOnCore_objects_eq st c₀ st' hStep
+  have hgt : st'.getTcb? tid = (saveOutgoingContextOnCore st c₀).getTcb? tid := by
+    simp only [SystemState.getTcb?, hobj]
+  rw [hgt]
+  exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv ht
+
+/-- WS-SM SM5.I (register-bank payoff): a per-core dispatch on `c₀` preserves
+`contextMatchesCurrentOnCore` on every **sibling** core `c'`.  The bank is framed
+(`_machine_regsOnCore_ne`); the only `registerContext` write is `==`-idempotent on
+`c'`'s current thread — either it does not touch it, or that thread is also `c₀`'s
+outgoing current and the saved value equals its old context by the pre-state
+`contextMatchesCurrent` on `c₀` (`RegisterFile.beq_symm`). -/
+theorem scheduleEffectiveOnCore_preserves_contextMatchesCurrentOnCore_sibling
+    (st : SystemState) (c₀ c' : CoreId) (st' : SystemState) (hcc : c₀ ≠ c')
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st)
+    (hStep : scheduleEffectiveOnCore st c₀ = .ok st') :
+    contextMatchesCurrentOnCore st' c' := by
+  refine contextMatchesCurrentOnCore_frame_at
+    (scheduleEffectiveOnCore_independent_of_other_core st c₀ c' st' hcc hStep).1
+    (scheduleEffectiveOnCore_machine_regsOnCore_ne st c₀ c' st' hcc hStep)
+    ?_ (hPre c').1.2.1 (hPre c').2
+  intro tid tcb hcurc' htcb
+  obtain ⟨tcb', ht', hdisj⟩ :=
+    scheduleEffectiveOnCore_getTcb?_regContext st c₀ st' tid tcb hInv hStep htcb
+  refine ⟨tcb', ht', ?_⟩
+  cases hdisj with
+  | inl heq => rw [heq]; exact RegisterFile.beq_self _
+  | inr hr =>
+      obtain ⟨hcurc0, hrc⟩ := hr
+      have hcm0 := (hPre c₀).2
+      unfold contextMatchesCurrentOnCore at hcm0
+      simp only [hcurc0, htcb] at hcm0
+      rw [hrc]
+      exact RegisterFile.beq_symm hcm0
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the per-core budget-aware dispatch
+`scheduleEffectiveOnCore` preserves the **register-bank-extended** structural SMP
+invariant.  Lifts the base structural preservation with the system-wide
+`contextMatchesCurrentOnCore`: established on the operated core
+(`scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore`), framed on
+every sibling (`…_sibling`). -/
+theorem scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st)
+    (hStep : scheduleEffectiveOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralReg_smp st' := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp st c₀ st' hInv
+      (fun c => (hPre c).1) hStep) ?_
+  intro c'
+  by_cases hc : c₀ = c'
+  · subst hc
+    exact scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore st c₀ st' hInv hStep
+  · exact scheduleEffectiveOnCore_preserves_contextMatchesCurrentOnCore_sibling
+      st c₀ c' st' hc hInv hPre hStep
+
+/-- WS-SM SM5.I.8: `scheduleOrIdleOnCore` (definitionally `scheduleEffectiveOnCore`)
+preserves the register-bank-extended structural SMP invariant. -/
+theorem scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st)
+    (hStep : scheduleOrIdleOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralReg_smp st' :=
+  scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ st' hInv hPre hStep
+
+-- ── §4.2  Switch register-bank preservation ──
+
+/-- WS-SM SM5.I (register-bank sibling frame): the switch's `getTcb?` register-
+context characterisation (via `switchToThreadOnCore_objects_eq_preempt` and the
+preempt's `registerContext` write). -/
+theorem switchToThreadOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
+    (tid t : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
+    (h : switchToThreadOnCore st c₀ tid = .ok st') (ht : st.getTcb? t = some tcb) :
+    ∃ tcb', st'.getTcb? t = some tcb' ∧
+      (tcb'.registerContext = tcb.registerContext ∨
+        (st.scheduler.currentOnCore c₀ = some t ∧
+          tcb'.registerContext = st.machine.regsOnCore c₀)) := by
+  have hobj := switchToThreadOnCore_objects_eq_preempt st c₀ tid st' h
+  have hgt : st'.getTcb? t = (preemptCurrentOnCore st c₀ tid).getTcb? t := by
+    unfold SystemState.getTcb?; rw [hobj]
+  rw [hgt]
+  exact preemptCurrentOnCore_getTcb?_regContext st c₀ tid t tcb hInv ht
+
+/-- WS-SM SM5.I (register-bank payoff): the per-core switch on `c₀` preserves
+`contextMatchesCurrentOnCore` on every sibling core (same idempotent-save argument
+as the dispatch). -/
+theorem switchToThreadOnCore_preserves_contextMatchesCurrentOnCore_sibling
+    (st : SystemState) (c₀ c' : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hcc : c₀ ≠ c') (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st)
+    (h : switchToThreadOnCore st c₀ tid = .ok st') :
+    contextMatchesCurrentOnCore st' c' := by
+  refine contextMatchesCurrentOnCore_frame_at
+    (switchToThreadOnCore_independent_of_other_core st c₀ c' tid st' hcc h).1
+    (switchToThreadOnCore_machine_regsOnCore_ne st c₀ c' tid st' hcc h)
+    ?_ (hPre c').1.2.1 (hPre c').2
+  intro t tcb hcurc' htcb
+  obtain ⟨tcb', ht', hdisj⟩ :=
+    switchToThreadOnCore_getTcb?_regContext st c₀ tid t tcb st' hInv h htcb
+  refine ⟨tcb', ht', ?_⟩
+  cases hdisj with
+  | inl heq => rw [heq]; exact RegisterFile.beq_self _
+  | inr hr =>
+      obtain ⟨hcurc0, hrc⟩ := hr
+      have hcm0 := (hPre c₀).2
+      unfold contextMatchesCurrentOnCore at hcm0
+      simp only [hcurc0, htcb] at hcm0
+      rw [hrc]
+      exact RegisterFile.beq_symm hcm0
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the per-core preemptive switch
+`switchToThreadOnCore` preserves the register-bank-extended structural SMP
+invariant — established on the operated core
+(`switchToThreadOnCore_establishes_contextMatchesCurrentOnCore`), framed on every
+sibling. -/
+theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st)
+    (h : switchToThreadOnCore st c₀ tid = .ok st') :
+    schedulerInvariantStructuralReg_smp st' := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (switchToThreadOnCore_preserves_schedulerInvariantStructural_smp st c₀ tid st' hInv
+      (fun c => (hPre c).1) h) ?_
+  intro c'
+  by_cases hc : c₀ = c'
+  · subst hc
+    exact switchToThreadOnCore_establishes_contextMatchesCurrentOnCore st c₀ tid st' hInv h
+  · exact switchToThreadOnCore_preserves_contextMatchesCurrentOnCore_sibling
+      st c₀ c' tid st' hc hInv hPre h
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the reschedule-SGI handler preserves the
+register-bank-extended structural SMP invariant — switch (the SM5.B Reg
+preservation) or no-op (`st' = st`, carries the pre-state invariant). -/
+theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralReg_smp st)
+    (h : handleRescheduleSgiOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralReg_smp st' := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hPre
+  · split at h
+    · exact switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
+        st c₀ _ st' hInv hPre h
+    · rw [Except.ok.injEq] at h; subst h; exact hPre
+
+-- ── §4.3  Non-dispatch register-bank preservation (machine-neutral ops) ──
+
+/-- WS-SM SM5.I (register-bank payoff, machine-neutral): `contextMatchesCurrentOnCore`
+is preserved on core `c` by any transition that leaves the *whole* machine
+(`hMach` — hence every register bank) and the current slot (`hCur`) unchanged and
+preserves the current thread's `registerContext` (`hRC`, given pointwise as an
+equality).  Covers every non-dispatch per-core transition (domain rotation, wake,
+CBS replenishment, domain-time decrement). -/
+theorem contextMatchesCurrentOnCore_of_machine_eq_and_regContext
+    {st st' : SystemState} {c : CoreId}
+    (hMach : st'.machine = st.machine)
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRC : ∀ tid tcb, st.getTcb? tid = some tcb →
+       ∃ tcb', st'.getTcb? tid = some tcb' ∧ tcb'.registerContext = tcb.registerContext)
+    (hValid : currentThreadValidOnCore st c)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore st' c := by
+  refine contextMatchesCurrentOnCore_frame_at hCur (by rw [hMach]) ?_ hValid h
+  intro tid tcb _ htcb
+  obtain ⟨tcb', ht', hrc⟩ := hRC tid tcb htcb
+  exact ⟨tcb', ht', by rw [hrc]; exact RegisterFile.beq_self _⟩
+
+/-- WS-SM SM5.I (register-bank frame): `enqueueRunnableOnCore` preserves every
+thread's saved `registerContext` (its only object write sets the woken thread's
+`ipcState`, never its registers). -/
+theorem enqueueRunnableOnCore_getTcb?_regContext (st : SystemState) (c : CoreId)
+    (tid other : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (ht : st.getTcb? other = some tcb) :
+    ∃ tcb', (enqueueRunnableOnCore st c tid).getTcb? other = some tcb' ∧
+      tcb'.registerContext = tcb.registerContext := by
+  by_cases hot : other = tid
+  · subst hot
+    cases hFresh : runnableOnSomeCore st other with
+    | true =>
+        refine ⟨tcb, ?_, rfl⟩
+        rw [enqueueRunnableOnCore_eq_self_of_runnable st c other hFresh]; exact ht
+    | false =>
+        exact ⟨{ tcb with ipcState := .ready },
+          enqueueRunnableOnCore_makes_ready st c other tcb ht hInv hFresh, rfl⟩
+  · exact ⟨tcb, by rw [enqueueRunnableOnCore_getTcb?_ne st c tid other hInv hot]; exact ht, rfl⟩
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the pure per-core domain rotation
+preserves the register-bank-extended structural SMP invariant — it touches no
+register bank and no `registerContext`. -/
+theorem advanceDomainOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (advanceDomainOnCore st c₀) := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (advanceDomainOnCore_preserves_schedulerInvariantStructural_smp st c₀ (fun c => (hPre c).1)) ?_
+  intro c'
+  refine contextMatchesCurrentOnCore_of_machine_eq_and_regContext
+    (show (advanceDomainOnCore st c₀).machine = st.machine by
+      unfold advanceDomainOnCore; split <;> rfl)
+    (advanceDomainOnCore_currentOnCore st c₀ c') ?_ (hPre c').1.2.1 (hPre c').2
+  intro tid tcb ht; exact ⟨tcb, by rw [advanceDomainOnCore_getTcb?]; exact ht, rfl⟩
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the per-core wake `enqueueRunnableOnCore`
+preserves the register-bank-extended structural SMP invariant — machine-neutral,
+and its only object write preserves every thread's `registerContext`. -/
+theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore c₀ ≠ some tid)
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (enqueueRunnableOnCore st c₀ tid) := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp st c₀ tid hInv hNotCur
+      (fun c => (hPre c).1)) ?_
+  intro c'
+  refine contextMatchesCurrentOnCore_of_machine_eq_and_regContext
+    (enqueueRunnableOnCore_machine_eq st c₀ tid)
+    (enqueueRunnableOnCore_currentOnCore st c₀ tid c') ?_ (hPre c').1.2.1 (hPre c').2
+  intro t tcb ht; exact enqueueRunnableOnCore_getTcb?_regContext st c₀ tid t tcb hInv ht
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the cross-core wake `wakeThread`
+preserves the register-bank-extended structural SMP invariant.  Direct corollary
+of the `enqueueRunnableOnCore` register-bank preservation (the state component is
+exactly the enqueue on the target core). -/
+theorem wakeThread_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st tid) ≠ some tid)
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (wakeThread st tid executingCore).1 := by
+  rw [wakeThread_state_eq_enqueue]
+  exact enqueueRunnableOnCore_preserves_schedulerInvariantStructuralReg_smp
+    st (determineTargetCore st tid) tid hInv hNotCur hPre
+
+/-- WS-SM SM5.I.8 (register-bank payoff): scheduling a per-core CBS replenishment
+preserves the register-bank-extended structural SMP invariant — machine-neutral,
+object-store-neutral. -/
+theorem replenishOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (replenishOnCore st c₀ scId eligibleAt) := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (replenishOnCore_preserves_schedulerInvariantStructural_smp st c₀ scId eligibleAt
+      (fun c => (hPre c).1)) ?_
+  intro c'
+  refine contextMatchesCurrentOnCore_of_machine_eq_and_regContext
+    (replenishOnCore_machine st c₀ scId eligibleAt)
+    (replenishOnCore_currentOnCore st c₀ c' scId eligibleAt) ?_ (hPre c').1.2.1 (hPre c').2
+  intro tid tcb ht; exact ⟨tcb, by rw [replenishOnCore_getTcb?]; exact ht, rfl⟩
+
+/-- WS-SM SM5.I.8 (register-bank payoff): the non-boundary per-core domain-time
+decrement preserves the register-bank-extended structural SMP invariant —
+machine-neutral, object-store-neutral. -/
+theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (decrementDomainTimeOnCore st c₀) := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp st c₀
+      (fun c => (hPre c).1)) ?_
+  intro c'
+  refine contextMatchesCurrentOnCore_of_machine_eq_and_regContext
+    (decrementDomainTimeOnCore_machine_eq st c₀)
+    (decrementDomainTimeOnCore_currentOnCore st c₀ c') ?_ (hPre c').1.2.1 (hPre c').2
+  intro tid tcb ht
+  exact ⟨tcb, by rw [show (decrementDomainTimeOnCore st c₀).getTcb? tid = st.getTcb? tid from by
+    unfold SystemState.getTcb?; rw [decrementDomainTimeOnCore_objects_eq]]; exact ht, rfl⟩
+
+/-- WS-SM SM5.I.8 (register-bank payoff): making core `c₀`'s idle thread available
+preserves the register-bank-extended structural SMP invariant.  The enqueue
+overwrites the idle TCB (`createIdleThread c₀`, register context `default`), so —
+unlike the other non-dispatch transitions — `contextMatches` is preserved only
+when the idle thread is **not current on any core** (`hNotCurAny`).  This is the
+seL4-faithful "make idle available while it is not running" precondition (idle is
+core-`c₀`-pinned, so it can only be current on `c₀`; the `∀ c'` form states the
+invariant the dispatch maintains without appealing to affinity placement). -/
+theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hInv : st.objects.invExt)
+    (hNotCurAny : ∀ c', st.scheduler.currentOnCore c' ≠ some (idleThreadId c₀))
+    (hPre : schedulerInvariantStructuralReg_smp st) :
+    schedulerInvariantStructuralReg_smp (enqueueIdleThreadOnCore st c₀) := by
+  refine schedulerInvariantStructuralReg_smp_of_base_and_ctx
+    (enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp st c₀ hInv
+      (hNotCurAny c₀) (fun c => (hPre c).1)) ?_
+  intro c'
+  refine contextMatchesCurrentOnCore_frame_at
+    (enqueueIdleThreadOnCore_currentOnCore st c₀ c')
+    rfl ?_ (hPre c').1.2.1 (hPre c').2
+  intro tid tcb hcur htcb
+  -- `tid = current c' ≠ idleThreadId c₀`, so the enqueue's only object write frames it.
+  have hne : tid ≠ idleThreadId c₀ := by
+    intro he; subst he; exact hNotCurAny c' hcur
+  refine ⟨tcb, ?_, RegisterFile.beq_self _⟩
+  rw [enqueueIdleThreadOnCore_getTcb?_ne st c₀ tid hInv hne]; exact htcb
+
+-- ============================================================================
+-- §4.4  The Nodup-extended structural invariant (`runQueueUniqueOnCore` 6th conjunct)
+-- ============================================================================
+--
+-- `runQueueUniqueOnCore` (run-queue `toList.Nodup`) is both register-bank-
+-- independent and transition-stable.  The `RunQueue` API maintains it
+-- structurally (`insert` guards on `contains`, `remove` filters), so every SM5
+-- per-core transition preserves it — mirroring the `runQueueOnCoreWellFormed`
+-- preservation with `RunQueue.{insert,remove}_preserves_toList_nodup`.
+
+/-- WS-SM SM5.I: the idle fallback preserves core `c`'s run-queue `Nodup` (idle arm
+`remove`s, `none` arm frames).  Mirror of `idleFallbackOnCore_preserves_runQueueOnCoreWellFormed`. -/
+theorem idleFallbackOnCore_preserves_runQueueUniqueOnCore_self (st : SystemState) (c : CoreId)
+    (hN : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((idleFallbackOnCore st c).scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold idleFallbackOnCore
+  split
+  · rw [dispatchIdleOnCore_runQueueOnCore]
+    exact RunQueue.remove_preserves_toList_nodup _ _ hN
+  · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hN
+
+/-- WS-SM SM5.I: the preempt preserves core `c`'s run-queue `Nodup` (the re-enqueue
+is a `RunQueue.insert`).  Mirror of `preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed`. -/
+theorem preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self (st : SystemState)
+    (c : CoreId) (incoming : SeLe4n.ThreadId)
+    (hN : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold preemptCurrentOnCore
+  split
+  · exact hN
+  · split
+    · exact hN
+    · split
+      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_toList_nodup _ _ _ hN
+      · exact hN
+
+/-- WS-SM SM5.I: the register-bank-and-Nodup-extended structural per-core
+invariant — the five `…Reg` conjuncts plus `runQueueUniqueOnCore`. -/
+def schedulerInvariantStructuralRegNodup_perCore (st : SystemState) (c : CoreId) : Prop :=
+  schedulerInvariantStructuralReg_perCore st c ∧ runQueueUniqueOnCore st.scheduler c
+
+/-- WS-SM SM5.I: the system-wide Nodup-extended structural SMP invariant. -/
+def schedulerInvariantStructuralRegNodup_smp (st : SystemState) : Prop :=
+  ∀ c : CoreId, schedulerInvariantStructuralRegNodup_perCore st c
+
+theorem schedulerInvariantStructuralRegNodup_perCore_to_reg
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore st c) :
+    schedulerInvariantStructuralReg_perCore st c := h.1
+
+theorem schedulerInvariantStructuralRegNodup_perCore_to_runQueueUnique
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralRegNodup_perCore st c) :
+    runQueueUniqueOnCore st.scheduler c := h.2
+
+theorem schedulerInvariantStructuralRegNodup_smp_to_reg {st : SystemState}
+    (h : schedulerInvariantStructuralRegNodup_smp st) : schedulerInvariantStructuralReg_smp st :=
+  fun c => (h c).1
+
+/-- The full SM4.C per-core aggregate implies the Nodup-extended structural
+invariant (its `runQueueUniqueOnCore` conjunct is the 6th here). -/
+theorem schedulerInvariant_perCore_to_structuralRegNodup {st : SystemState} {c : CoreId}
+    (h : schedulerInvariant_perCore st c) : schedulerInvariantStructuralRegNodup_perCore st c :=
+  ⟨schedulerInvariant_perCore_to_structuralReg h, schedulerInvariant_perCore_to_runQueueUnique h⟩
+
+theorem schedulerInvariant_smp_to_structuralRegNodup {st : SystemState}
+    (h : schedulerInvariant_smp st) : schedulerInvariantStructuralRegNodup_smp st :=
+  fun c => schedulerInvariant_perCore_to_structuralRegNodup (h c)
+
+/-- WS-SM SM5.I: the freshly-booted system satisfies the Nodup-extended structural
+SMP invariant on every core. -/
+theorem default_schedulerInvariantStructuralRegNodup_smp :
+    schedulerInvariantStructuralRegNodup_smp (default : SystemState) :=
+  fun c => schedulerInvariant_perCore_to_structuralRegNodup (default_schedulerInvariant_perCore c)
+
+/-- WS-SM SM5.I: lift a register-bank-extended SMP preservation plus a system-wide
+`runQueueUniqueOnCore` proof into the Nodup-extended invariant. -/
+theorem schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup {st' : SystemState}
+    (hReg : schedulerInvariantStructuralReg_smp st')
+    (hN : ∀ c, runQueueUniqueOnCore st'.scheduler c) :
+    schedulerInvariantStructuralRegNodup_smp st' :=
+  fun c => ⟨hReg c, hN c⟩
+
+/-- WS-SM SM5.I: discharge system-wide `runQueueUniqueOnCore` from the operated
+core's preservation and the sibling-core run-queue frame. -/
+theorem runQueueUniqueOnCore_smp_of_operated_and_frame
+    {st st' : SystemState} {c₀ : CoreId}
+    (hPre : ∀ c, runQueueUniqueOnCore st.scheduler c)
+    (hC0 : runQueueUniqueOnCore st'.scheduler c₀)
+    (hFrame : ∀ c', c₀ ≠ c' →
+      st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c') :
+    ∀ c, runQueueUniqueOnCore st'.scheduler c := by
+  intro c
+  by_cases hc : c₀ = c
+  · subst hc; exact hC0
+  · exact (runQueueUniqueOnCore_frame (hFrame c hc)).mpr (hPre c)
+
+-- Per-transition Nodup-extended preservation.
+
+theorem advanceDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (advanceDomainOnCore st c₀) := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (advanceDomainOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ (fun c => (hPre c).1)) ?_
+  intro c
+  exact (runQueueUniqueOnCore_frame (advanceDomainOnCore_runQueueOnCore st c₀ c)).mpr (hPre c).2
+
+theorem replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (replenishOnCore st c₀ scId eligibleAt) := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (replenishOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ scId eligibleAt
+      (fun c => (hPre c).1)) ?_
+  intro c
+  exact (runQueueUniqueOnCore_frame (replenishOnCore_runQueueOnCore st c₀ c scId eligibleAt)).mpr (hPre c).2
+
+theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (decrementDomainTimeOnCore st c₀) := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀
+      (fun c => (hPre c).1)) ?_
+  intro c
+  exact (runQueueUniqueOnCore_frame
+    (decrementDomainTimeOnCore_runQueueOnCore st c₀ c)).mpr (hPre c).2
+
+theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
+    (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore c₀ ≠ some tid)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (enqueueRunnableOnCore st c₀ tid) := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (enqueueRunnableOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ tid hInv hNotCur
+      (fun c => (hPre c).1)) ?_
+  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀) (fun c => (hPre c).2) ?_
+    (fun c' hc => enqueueRunnableOnCore_runQueueOnCore_ne st c₀ c' tid hc)
+  -- operated core: the wake is a `RunQueue.insert`.
+  unfold runQueueUniqueOnCore
+  cases hTcb : st.getTcb? tid with
+  | none => simp only [enqueueRunnableOnCore, hTcb]; exact (hPre c₀).2
+  | some tcb =>
+      simp only [enqueueRunnableOnCore, hTcb]
+      split
+      · exact (hPre c₀).2
+      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_toList_nodup _ _ _ (hPre c₀).2
+
+theorem wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st tid) ≠ some tid)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (wakeThread st tid executingCore).1 := by
+  rw [wakeThread_state_eq_enqueue]
+  exact enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    st (determineTargetCore st tid) tid hInv hNotCur hPre
+
+theorem scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (hStep : scheduleEffectiveOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ st' hInv
+      (fun c => (hPre c).1) hStep) ?_
+  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀) (fun c => (hPre c).2) ?_
+    (fun c' hc => (scheduleEffectiveOnCore_independent_of_other_core st c₀ c' st' hc hStep).2)
+  -- operated core: dispatch dequeues (`remove`), idle case is the idle fallback.
+  unfold runQueueUniqueOnCore
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c₀ with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      apply idleFallbackOnCore_preserves_runQueueUniqueOnCore_self
+      rw [saveOutgoingContextOnCore_scheduler_eq]; exact (hPre c₀).2
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          rw [saveOutgoingContextOnCore_scheduler_eq]
+          exact RunQueue.remove_preserves_toList_nodup _ tid (hPre c₀).2
+        · simp at hStep
+
+theorem scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (hStep : scheduleOrIdleOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralRegNodup_smp st' :=
+  scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre hStep
+
+theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (h : switchToThreadOnCore st c₀ tid = .ok st') :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ tid st' hInv
+      (fun c => (hPre c).1) h) ?_
+  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀) (fun c => (hPre c).2) ?_
+    (fun c' hc => (switchToThreadOnCore_independent_of_other_core st c₀ c' tid st' hc h).2)
+  -- operated core: preempt re-enqueue (`insert`) then dequeue (`remove`).
+  unfold runQueueUniqueOnCore
+  unfold switchToThreadOnCore at h
+  cases hTcb : st.getTcb? tid with
+  | none => simp [hTcb] at h
+  | some tidTcb =>
+    simp only [hTcb] at h
+    by_cases hAff : affinityAdmitsCore tidTcb c₀ = true
+    · rw [if_pos hAff, Except.ok.injEq] at h
+      subst h
+      simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+        restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact RunQueue.remove_preserves_toList_nodup _ tid
+        (preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self st c₀ tid (hPre c₀).2)
+    · rw [if_neg hAff] at h; simp at h
+
+theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (h : handleRescheduleSgiOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  unfold handleRescheduleSgiOnCore at h
+  split at h
+  · exact absurd h (by simp)
+  · rw [Except.ok.injEq] at h; subst h; exact hPre
+  · split at h
+    · exact switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+        st c₀ _ st' hInv hPre h
+    · rw [Except.ok.injEq] at h; subst h; exact hPre
+
+theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hInv : st.objects.invExt)
+    (hNotCurAny : ∀ c', st.scheduler.currentOnCore c' ≠ some (idleThreadId c₀))
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (enqueueIdleThreadOnCore st c₀) := by
+  refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+    (enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralReg_smp st c₀ hInv hNotCurAny
+      (fun c => (hPre c).1)) ?_
+  refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀) (fun c => (hPre c).2) ?_
+    (fun c' hc => enqueueIdleThreadOnCore_runQueueOnCore_ne st c₀ c' hc)
+  -- operated core: the enqueue rebuckets idle (`remove` then `insert`).
+  unfold runQueueUniqueOnCore
+  rw [enqueueIdleThreadOnCore_runQueueOnCore_self]
+  exact RunQueue.insert_preserves_toList_nodup _ _ _
+    (RunQueue.remove_preserves_toList_nodup _ _ (hPre c₀).2)
 
 end SeLe4n.Kernel
