@@ -19,6 +19,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerTick
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbs
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 
 /-!
 # WS-SM SM5.I — Per-core invariant suite
@@ -2152,5 +2153,161 @@ theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
             (by simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)])).mpr
             (hPre c').2
     · exact hPre
+
+/-- WS-SM SM5.I.8 (reusable object atom): inserting a TCB whose `registerContext`
+equals the displaced TCB's at the same key preserves the base safety invariant.
+The scheduler and register banks are untouched (objects-only write); `getTcb?`
+stays resolvable everywhere and the current thread's saved context is unchanged,
+so `contextMatchesCurrent` survives.  Used by `updatePipBoost` (pipBoost write)
+and `timeoutThread` (`storeObject` of the unblocked TCB). -/
+theorem objects_insert_tcb_sameReg_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb tcb' : TCB) (hInv : st.objects.invExt)
+    (hOld : st.getTcb? tid = some tcb)
+    (hReg : tcb'.registerContext = tcb.registerContext)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp
+      { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } := by
+  -- getTcb? at the inserted key, and the frame for every other key.
+  have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? tid = some tcb' := by
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+    rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+  have hne : ∀ x : SeLe4n.ThreadId, x ≠ tid → ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? x = st.getTcb? x := by
+    intro x hx
+    have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun h => hx (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h)).symm
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+    rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
+  have hSome : ∀ x : SeLe4n.ThreadId, (st.getTcb? x).isSome → (({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? x).isSome := by
+    intro x hx
+    by_cases hEq : x = tid
+    · subst hEq; rw [hself]; rfl
+    · rw [hne x hEq]; exact hx
+  intro c
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · refine schedulerInvariantStructural_perCore_frame ?_ ?_ hSome (hPre c).1.1
+    · rfl
+    · rfl
+  · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c).1.1.2.1) ((hPre c).1.2)
+    · rfl
+    · rfl
+    · intro x txcb _hcur htcb
+      by_cases hEq : x = tid
+      · subst hEq
+        rw [hOld] at htcb
+        have hxt : txcb = tcb := (Option.some.injEq _ _).mp htcb.symm
+        exact ⟨tcb', hself, by rw [hReg, hxt]; exact RegisterFile.beq_self _⟩
+      · exact ⟨txcb, by rw [hne x hEq]; exact htcb, RegisterFile.beq_self _⟩
+  · exact (runQueueUniqueOnCore_frame (rfl : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)).mpr (hPre c).2
+
+/-- WS-SM SM5.I.8 (reusable run-queue atom): replacing core `c₀`'s run queue with
+a well-formed, duplicate-free, all-TCB queue that excludes `c₀`'s current thread
+preserves the base safety invariant.  Objects/registers untouched; siblings frame.
+Used by `updatePipBoost`'s priority-bucket migration. -/
+theorem setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (newRq : SeLe4n.Kernel.RunQueue)
+    (hWf : newRq.wellFormed) (hNod : newRq.toList.Nodup)
+    (hTcbs : ∀ t : SeLe4n.ThreadId, t ∈ newRq.toList → ∃ tcb, st.getTcb? t = some tcb)
+    (hQCC : ∀ t : SeLe4n.ThreadId, st.scheduler.currentOnCore c₀ = some t → t ∉ newRq.toList)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp
+      { st with scheduler := st.scheduler.setRunQueueOnCore c₀ newRq } := by
+  intro c
+  by_cases hc : c₀ = c
+  · subst hc
+    refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
+    · simp only [queueCurrentConsistentOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      cases hcur : st.scheduler.currentOnCore c₀ with
+      | none => exact trivial
+      | some t => exact hQCC t hcur
+    · simp only [currentThreadValidOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
+      exact (hPre c₀).1.1.2.1
+    · intro tid htid
+      simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at htid
+      exact hTcbs tid htid
+    · simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact hWf
+    · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c₀).1.1.2.1) ((hPre c₀).1.2)
+      · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
+      · rfl
+      · exact fun x t _ ht => ⟨t, ht, RegisterFile.beq_self _⟩
+    · simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+      exact hNod
+  · refine ⟨⟨?_, ?_⟩, ?_⟩
+    · refine schedulerInvariantStructural_perCore_frame ?_ ?_ ?_ (hPre c).1.1
+      · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
+      · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+      · exact fun _ hh => hh
+    · refine contextMatchesCurrentOnCore_frame_at ?_ ?_ ?_ ((hPre c).1.1.2.1) ((hPre c).1.2)
+      · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
+      · rfl
+      · exact fun x t _ ht => ⟨t, ht, RegisterFile.beq_self _⟩
+    · exact (runQueueUniqueOnCore_frame
+        (by simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc])).mpr
+        (hPre c).2
+
+open SeLe4n.Kernel.PriorityInheritance in
+/-- WS-SM SM5.I.8 (PIP atom): `updatePipBoost` preserves the base safety invariant
+on every core.  Its only object write is the boosted thread's `pipBoost` (same
+`registerContext` — atom 1); its only scheduler write is the boot-core priority
+rebucket (`remove`+`insert`, membership-preserving — atom 2). -/
+theorem updatePipBoost_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (updatePipBoost st tid) := by
+  simp only [updatePipBoost]
+  split
+  · rename_i tcb heq
+    have hOld : st.getTcb? tid = some tcb := by simp only [SystemState.getTcb?, heq]
+    split
+    · exact hPre
+    · -- the boost changed: `st' = insert tid {tcb with pipBoost := newBoost}`.
+      let tcb' : TCB := { tcb with pipBoost := computeMaxWaiterPriority st tid }
+      have hst' : schedulerInvariantStructuralRegNodup_smp
+          { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } :=
+        objects_insert_tcb_sameReg_preserves_schedulerInvariantStructuralRegNodup_smp
+          st tid tcb tcb' hInv hOld rfl hPre
+      split
+      · -- tid ∈ runQueue boot
+        split
+        · -- oldPrio ≠ newPrio: rebucket the boot run queue.
+          rename_i hmemRq _hprio
+          -- getTcb? facts for `st'` (the objects insert).
+          have hself : ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? tid = some tcb' := by
+            simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+          have hne : ∀ x : SeLe4n.ThreadId, x ≠ tid → ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') } : SystemState).getTcb? x = st.getTcb? x := by
+            intro x hx
+            have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun h => hx (SeLe4n.ThreadId.toObjId_injective _ _ (eq_of_beq h)).symm
+            simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+            rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
+          -- The rebucket: remove tid then re-insert at the new priority.
+          refine setRunQueueOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+            { st with objects := st.objects.insert tid.toObjId (.tcb tcb') } bootCoreId _ ?_ ?_ ?_ ?_ hst'
+          · exact RunQueue.insert_preserves_wellFormed _
+              (RunQueue.remove_preserves_wellFormed _ (hPre bootCoreId).1.1.2.2.2 tid) _ _
+          · exact RunQueue.insert_preserves_toList_nodup _ _ _
+              (RunQueue.remove_preserves_toList_nodup _ tid (hPre bootCoreId).2)
+          · -- members are TCBs
+            intro t ht
+            rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp ht) with hold | heqt
+            · -- t ∈ (rq.remove tid): t ∈ rq ∧ t ≠ tid
+              rw [RunQueue.mem_remove] at hold
+              obtain ⟨hmem, hnetid⟩ := hold
+              obtain ⟨tcbt, htcbt⟩ := (hPre bootCoreId).1.1.2.2.1 t
+                ((RunQueue.mem_toList_iff_mem _ t).mpr hmem)
+              exact ⟨tcbt, by rw [hne t hnetid]; exact htcbt⟩
+            · exact ⟨tcb', by rw [heqt]; exact hself⟩
+          · -- current ∉ rebucketed queue
+            intro t hcur hmem
+            have hcur0 : st.scheduler.currentOnCore bootCoreId = some t := hcur
+            have hqcc := (hPre bootCoreId).1.1.1
+            simp only [queueCurrentConsistentOnCore, hcur0] at hqcc
+            rcases (RunQueue.mem_insert _ tid _ t).mp ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heqt
+            · rw [RunQueue.mem_remove] at hold
+              exact hqcc ((RunQueue.mem_toList_iff_mem _ t).mpr hold.1)
+            · subst heqt; exact absurd ((RunQueue.mem_toList_iff_mem _ t).mpr hmemRq) hqcc
+        · exact hst'
+      · exact hst'
+  · exact hPre
 
 end SeLe4n.Kernel
