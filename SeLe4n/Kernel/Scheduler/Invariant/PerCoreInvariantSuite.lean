@@ -2638,6 +2638,80 @@ theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
         · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
     · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
 
+-- ── §8.3d  Prepared-phase discharge of the getTcb?-reading conjuncts
+--           (`runnableThreadsAreTCBs`) — placed here for `refillSchedContext_getTcb?_eq`. ──
+
+/-- `refillSchedContext` preserves runnable-threads-are-TCBs on every core (it
+frames the scheduler and every `getTcb?`). -/
+theorem refillSchedContext_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) (hInv : st.objects.invExt)
+    (h : runnableThreadsAreTCBsOnCore st c') :
+    runnableThreadsAreTCBsOnCore (refillSchedContext st scId now) c' := by
+  intro t ht
+  rw [refillSchedContext_scheduler_eq] at ht
+  obtain ⟨tcbt, htcbt⟩ := h t ht
+  exact ⟨tcbt, by rw [refillSchedContext_getTcb?_eq st scId now hInv]; exact htcbt⟩
+
+/-- `processOneReplenishmentOnCore` preserves runnable-threads-are-TCBs on every
+core `c'` (refill frames it; the wake preserves it). -/
+theorem processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt)
+    (h : runnableThreadsAreTCBsOnCore st c') :
+    runnableThreadsAreTCBsOnCore (processOneReplenishmentOnCore st execCore scId now).1 c' := by
+  have hRefInv : (refillSchedContext st scId now).objects.invExt :=
+    refillSchedContext_preserves_objects_invExt st scId now hInv
+  have hRef : runnableThreadsAreTCBsOnCore (refillSchedContext st scId now) c' :=
+    refillSchedContext_preserves_runnableThreadsAreTCBsOnCore st scId now c' hInv h
+  simp only [processOneReplenishmentOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next _hcond =>
+      exact wakeThread_preserves_runnableThreadsAreTCBsOnCore (refillSchedContext st scId now)
+        tid execCore c' hRefInv hRef
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_runnableThreadsAreTCBs
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState × List (CoreId × Concurrency.SgiKind))
+    (hInv : acc.1.objects.invExt) (h : runnableThreadsAreTCBsOnCore acc.1 c') :
+    runnableThreadsAreTCBsOnCore
+      (dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1 c' := by
+  induction dueIds generalizing acc with
+  | nil => exact h
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now hInv)
+        (processOneReplenishmentOnCore_preserves_runnableThreadsAreTCBsOnCore acc.1 c c' hd now hInv h)
+
+/-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
+runnable-threads-are-TCBs on core `c`. -/
+theorem processReplenishmentsDueOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
+    (h : runnableThreadsAreTCBsOnCore st c) :
+    runnableThreadsAreTCBsOnCore (processReplenishmentsDueOnCore st c now).1 c := by
+  simp only [processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_runnableThreadsAreTCBs
+  · exact hInv
+  · intro t ht
+    simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore] at ht
+    exact h t ht
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves
+runnable-threads-are-TCBs — discharges the capstone's `hPrepRat`. -/
+theorem timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt) (h : runnableThreadsAreTCBsOnCore st c) :
+    runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c).1 c := by
+  simp only [timerTickOnCorePrepared]
+  apply processReplenishmentsDueOnCore_preserves_runnableThreadsAreTCBsOnCore
+  · exact hInv
+  · intro t ht
+    simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] at ht
+    exact h t ht
+
 /-- WS-SM SM5.I.8 (capstone): the per-core timer tick preserves the full
 register-bank+Nodup base safety invariant on the operated core `c`, composing the
 six per-conjunct `timerTickOnCore_preserves_*` lemmas.  `currentThreadValid` is
