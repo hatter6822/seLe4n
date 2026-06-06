@@ -2638,4 +2638,49 @@ theorem timeoutBlockedThreads_preserves_schedulerInvariantStructuralRegNodup_smp
         · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
     · exact ih _ hP hI hC (fun t ht => hN t (List.mem_cons_of_mem hd ht))
 
+/-- WS-SM SM5.I.8 (capstone): the per-core timer tick preserves the full
+register-bank+Nodup base safety invariant on the operated core `c`, composing the
+six per-conjunct `timerTickOnCore_preserves_*` lemmas.  `currentThreadValid` is
+unconditional; the other five are supplied their `prepared`-state conjunct
+(`hPrep*`) — the prepared (cross-core replenishment-wake) discharge is the SM5
+cross-core follow-on — and `wellFormed` / `runnableTCBs` / `Nodup` additionally
+take their budget-tick preservation (`hBudget*`), discharged on every clean path by
+the `timerTickBudgetOnCore_notPreempted_preserves_*` lemmas; the budget-exhausted
+`timeoutBlockedThreads` path is the SM5.F per-core-PIP tracked gap. -/
+theorem timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
+    (st : SystemState) (c : CoreId) (st' : SystemState)
+    (sgis : List (CoreId × Concurrency.SgiKind))
+    (hInv : st.objects.invExt)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hPrepQcc : queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).1.scheduler c)
+    (hPrepRat : runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c).1 c)
+    (hPrepCtx : contextMatchesCurrentOnCore (timerTickOnCorePrepared st c).1 c)
+    (hPrepNd : ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup)
+    (hBudgetRqWf : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       (st3.scheduler.runQueueOnCore c).wellFormed)
+    (hBudgetRat : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       runnableThreadsAreTCBsOnCore st3 c)
+    (hBudgetNd : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       (st3.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    schedulerInvariantStructuralRegNodup_perCore st' c := by
+  have hPrepInv := timerTickOnCorePrepared_objects_invExt st c hInv
+  exact ⟨⟨⟨timerTickOnCore_preserves_queueCurrentConsistentOnCore st c st' sgis hPrepQcc hStep,
+            timerTickOnCore_preserves_currentThreadValidOnCore st c st' sgis hInv hStep,
+            timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore st c st' sgis
+              hPrepInv hPrepRat hBudgetRat hStep,
+            timerTickOnCore_preserves_runQueueOnCoreWellFormed st c st' sgis hwf hBudgetRqWf hStep⟩,
+           timerTickOnCore_preserves_contextMatchesCurrentOnCore st c st' sgis
+             hPrepInv hPrepCtx hStep⟩,
+          timerTickOnCore_preserves_runQueueUniqueOnCore st c st' sgis hPrepNd hBudgetNd hStep⟩
+
 end SeLe4n.Kernel
