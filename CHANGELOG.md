@@ -1,3 +1,61 @@
+## v0.31.62 — WS-SM SM5.I: fully-closed per-core timer-tick capstone (closes the SM5.F per-core-PIP gap for the run-queue conjuncts)
+
+Discharges the budget-tick obligations the v0.31.61 per-core capstone left as
+parameters (`hBudget*`), yielding an **unconditional** per-core timer-tick
+preservation result.  The pivotal insight is a qcc-free run-queue safety
+sub-bundle: `timerTickBudgetOnCore`'s preempt paths re-enqueue the current
+thread (breaking `queueCurrentConsistent`), but the three run-queue conjuncts
+— `runnableThreadsAreTCBs`, `runQueueWellFormed`, `runQueueUnique` (Nodup) —
+never read `current`, so they survive, and the dispatch phase re-establishes
+`qcc`.
+
+**`runQueueSafetyOnCore` (the qcc-free sub-bundle).**  A new predicate bundling
+the three current-free run-queue conjuncts on a core, proved preserved through
+every step of the budget tick — single-core on an arbitrary `c`, casing
+`c = bootCoreId` (the op touches `c`) vs `c ≠ bootCoreId` (the op frames `c`),
+**unconditionally** (no `hNotCur`, since none of the three conjuncts reads
+`current`):
+
+- `objects_frame` / `runQueue_frame` preservation helpers + the TCB-insert /
+  storeObject `getTcb?`-resolvability frames;
+- `ensureRunnable` / `updatePipBoost` / `revertPriorityInheritance` (the
+  bootCoreId-pinned PIP sub-ops) preservation;
+- `timeoutThread` and the `timeoutBlockedThreads` fold preservation — **this
+  closes the former SM5.F per-core-PIP tracked gap** for the run-queue
+  conjuncts: the bound-budget-exhausted timeout path provably preserves
+  run-queue safety;
+- `replenishOnCore` preservation + the full
+  `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` covering all four `.ok`
+  outcomes (unbound preempt / unbound not-preempt / bound budget-exhausted /
+  bound not-preempt).
+
+**Fully-closed capstone.**
+`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed`
+takes ONLY the bundled pre-state invariant (+ `objects.invExt`) — **no budget
+hypotheses** — and proves the per-core timer tick preserves the full
+register-bank+Nodup base safety invariant, discharging the `hBudget*`
+obligations internally via the run-queue-safety sub-bundle.  The
+`…_of_pre` ergonomic form (bundled pre-state, prepared obligations
+auto-discharged) is retained.
+
+**Coverage.**  The SM5.I inventory grows to **95 entries** (new
+`.budgetClosure` category, 16 entries; counts + partition-sum + Nodup witnesses
+updated, kernel-sound `decide`).  `tests/SmpInvariantSuite.lean` gains §7
+surface anchors, two inhabitation examples (the closed capstone + the budget
+run-queue-safety preservation), and a §3.5 runtime check exercising the idle
+timer-tick path.  Tier-3 invariant surface anchors added.
+
+All new theorems are **axiom-clean** (`propext` / `Classical.choice` /
+`Quot.sound`); default build green (324 jobs) + staged (215); full smoke
+(Tier 0–2) green; trace fixture byte-identical (the additions are staged /
+proof-only).  The AK7 `RAW_LOOKUP_TID` baseline was re-anchored 815 → 821: the
+`endpointQueueRemove_getTcb_upToReg` direct-split proof necessarily mirrors
+`endpointQueueRemove`'s own raw `[·.toObjId]?` matchers (the technique itself),
+and the register-bank `restoreIncomingContextOnCore` mirrors the single-core
+raw match — both structural; adoption floors tightened
+(`GETTCB` 894 → 1069, `GETSCHEDCTX` 246 → 258).  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
 ## v0.31.61 — WS-SM SM5.I: per-core register banks (SM4.B) + the `contextMatchesCurrentOnCore` and `runQueueUniqueOnCore` conjuncts
 
 Closes the two SM5.I conjuncts the v0.31.60 landing deferred, by completing the

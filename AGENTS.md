@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.61.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.62.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -6493,6 +6493,69 @@ documentation lives under `docs/` and `docs/gitbook/`.
     — `lake exe smp_invariant_suite` reports all checks PASS).  The stale "single
     `machine.regs`" docstrings (`switchToThreadOnCore`, the module header's
     register-bank tracked debt) are corrected to the per-core-bank reality.
+    Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I fully-closed timer-tick capstone LANDED at v0.31.62 on branch
+  `claude/focused-goodall-dji73`** (discharges the v0.31.61 capstone's budget
+  obligations — an UNCONDITIONAL per-core timer-tick preservation; closes the
+  SM5.F per-core-PIP tracked gap for the run-queue conjuncts).  Every new
+  theorem is axiom-clean (`propext` / `Classical.choice` / `Quot.sound`);
+  default build green (324 jobs) + staged (215); full smoke (Tier 0–2) green;
+  trace fixture byte-identical (the additions are staged / proof-only).
+
+  The v0.31.61 per-core capstone
+  (`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore`)
+  took the three budget-tick obligations (`hBudget*` — rat / rqWf / Nodup of the
+  budget-tick result) as *parameters*, with the bound-budget-exhausted
+  `timeoutBlockedThreads` path documented as the SM5.F per-core-PIP gap.  This
+  cut discharges them.
+
+  - **The qcc-free `runQueueSafetyOnCore` sub-bundle (the keystone)**: a new
+    predicate bundling exactly the three current-free run-queue conjuncts
+    (`runnableThreadsAreTCBs ∧ runQueueOnCoreWellFormed ∧ runQueueUnique`).
+    `timerTickBudgetOnCore`'s preempt paths re-enqueue the current thread
+    (breaking `queueCurrentConsistent`), but these three never read `current`,
+    so they survive — and the dispatch phase re-establishes `qcc`.  Proved
+    preserved through every budget-tick step, **single-core on an arbitrary
+    `c`**, casing `c = bootCoreId` (the bootCoreId-pinned op touches `c`) vs
+    `c ≠ bootCoreId` (the op frames `c`'s run queue), and crucially
+    **UNCONDITIONAL** — no `hNotCur`, since the three conjuncts are
+    current-free:
+    - `objects_frame` / `runQueue_frame` preservation + `getTcb?_isSome_insert_tcb`
+      / `storeObject_tcb_getTcb?_isSome` resolvability frames;
+    - `ensureRunnable` / `updatePipBoost` /
+      `revertPriorityInheritance` (the bootCoreId-pinned PIP sub-ops) — each
+      with a run-queue-on-`c≠boot` frame (`updatePipBoost_runQueueOnCore_ne`) +
+      a `getTcb?`-isSome frame;
+    - `timeoutThread_preserves_runQueueSafetyOnCore` +
+      `timeoutBlockedThreads_preserves_runQueueSafetyOnCore` (the fold) — **this
+      closes the former SM5.F per-core-PIP tracked gap** for the run-queue
+      conjuncts;
+    - `replenishOnCore_preserves_runQueueSafetyOnCore` +
+      `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` covering all four
+      `.ok` outcomes (case #3, the bound-budget-exhausted path, uses
+      `getTcb?_insert_schedContext_eq` for the schedContext-insert frame +
+      `hTid` for the re-enqueued thread's TCB-ness).
+  - **`timerTickOnCorePrepared_preserves_runQueueSafetyOnCore`**: bundles the
+    three prepared-phase dischargers (rat / rqWf / Nodup) so the prepared
+    cross-core-wake state carries run-queue safety into the budget tick.
+  - **`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed`**
+    (the FULLY CLOSED capstone): takes ONLY the bundled pre-state invariant
+    (+ `objects.invExt`) — **no budget hypotheses** — and proves the per-core
+    timer tick preserves the full register-bank+Nodup base safety invariant,
+    discharging the `hBudget*` obligations internally.  The `…_of_pre`
+    ergonomic form (bundled pre-state, prepared obligations auto-discharged) is
+    retained.
+  - **Coverage**: the SM5.I inventory grows to **95 entries** (new
+    `.budgetClosure` category, 16 entries; counts + partition-sum + Nodup
+    witnesses updated, kernel-sound `decide`).  `tests/SmpInvariantSuite.lean`
+    gains §7 surface anchors, two inhabitation examples, and a §3.5 runtime
+    idle-timer-tick check; Tier-3 invariant-surface anchors added.
+  - **AK7**: `RAW_LOOKUP_TID` baseline re-anchored 815 → 821 (structural — the
+    `endpointQueueRemove_getTcb_upToReg` direct-split proof mirrors
+    `endpointQueueRemove`'s own raw `[·.toObjId]?` matchers, which IS the
+    technique; plus the register-bank `restoreIncomingContextOnCore` mirror);
+    adoption floors tightened (`GETTCB` 894 → 1069, `GETSCHEDCTX` 246 → 258).
     Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
