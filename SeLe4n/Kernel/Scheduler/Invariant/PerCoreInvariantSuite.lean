@@ -2712,6 +2712,140 @@ theorem timerTickOnCorePrepared_preserves_runnableThreadsAreTCBsOnCore (st : Sys
     simp only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] at ht
     exact h t ht
 
+-- ── §8.3e  Prepared-phase discharge — `contextMatchesCurrentOnCore` (register bank) ──
+
+/-- A wake keeps any pre-state thread resolvable with an unchanged
+`registerContext` (it changes only the woken thread's `ipcState`). -/
+theorem enqueueRunnableOnCore_getTcb?_upToReg (st : SystemState) (c : CoreId)
+    (tid x : SeLe4n.ThreadId) (t : TCB) (hInv : st.objects.invExt)
+    (hres : st.getTcb? x = some t) :
+    ∃ t', (enqueueRunnableOnCore st c tid).getTcb? x = some t' ∧
+      t.registerContext = t'.registerContext := by
+  cases hFresh : runnableOnSomeCore st tid with
+  | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact ⟨t, hres, rfl⟩
+  | false =>
+    by_cases hEq : x = tid
+    · subst hEq
+      exact ⟨_, enqueueRunnableOnCore_makes_ready st c x t hres hInv hFresh, rfl⟩
+    · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]; exact ⟨t, hres, rfl⟩
+
+/-- A wake keeps a non-TCB slot non-resolvable (it cannot turn a non-TCB into a
+TCB). -/
+theorem enqueueRunnableOnCore_getTcb?_eq_none (st : SystemState) (c : CoreId)
+    (tid x : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hres : st.getTcb? x = none) :
+    (enqueueRunnableOnCore st c tid).getTcb? x = none := by
+  cases hFresh : runnableOnSomeCore st tid with
+  | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hres
+  | false =>
+    by_cases hEq : x = tid
+    · subst hEq; rw [enqueueRunnableOnCore_no_tcb_noop st c x hres]; exact hres
+    · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]; exact hres
+
+/-- WS-SM SM5.I.8 (preservation, SM4.C `contextMatchesCurrentOnCore`): a wake on
+core `c` preserves the register-bank match on **every** core `c'` — it writes no
+`current` slot and no register bank, and the current thread's `registerContext`
+survives (the wake touches only `ipcState`). -/
+theorem enqueueRunnableOnCore_preserves_contextMatchesCurrentOnCore_anyCore (st : SystemState)
+    (c c' : CoreId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c') :
+    contextMatchesCurrentOnCore (enqueueRunnableOnCore st c tid) c' := by
+  unfold contextMatchesCurrentOnCore at h ⊢
+  rw [enqueueRunnableOnCore_currentOnCore st c tid c', enqueueRunnableOnCore_machine_eq]
+  cases hCur : st.scheduler.currentOnCore c' with
+  | none => exact True.intro
+  | some cur =>
+    simp only [hCur] at h ⊢
+    cases hCurTcb : st.getTcb? cur with
+    | none => simp only [enqueueRunnableOnCore_getTcb?_eq_none st c tid cur hInv hCurTcb]
+    | some curTcb =>
+      simp only [hCurTcb] at h
+      obtain ⟨t', ht', hreg⟩ :=
+        enqueueRunnableOnCore_getTcb?_upToReg st c tid cur curTcb hInv hCurTcb
+      rw [ht']
+      show (st.machine.regsOnCore c' == t'.registerContext) = true
+      rw [← hreg]; exact h
+
+/-- WS-SM SM5.I.8: a wake preserves the register-bank match on every core `c'`. -/
+theorem wakeThread_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (executingCore c' : CoreId) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c') :
+    contextMatchesCurrentOnCore (wakeThread st tid executingCore).1 c' := by
+  rw [wakeThread_state_eq_enqueue]
+  exact enqueueRunnableOnCore_preserves_contextMatchesCurrentOnCore_anyCore st
+    (determineTargetCore st tid) c' tid hInv h
+
+/-- `refillSchedContext` preserves the register-bank match (it frames the
+scheduler, the machine, and every `getTcb?`). -/
+theorem refillSchedContext_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (now : Nat) (c' : CoreId) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c') :
+    contextMatchesCurrentOnCore (refillSchedContext st scId now) c' := by
+  unfold contextMatchesCurrentOnCore at h ⊢
+  rw [refillSchedContext_scheduler_eq, refillSchedContext_machine_eq]
+  cases hCur : st.scheduler.currentOnCore c' with
+  | none => exact True.intro
+  | some cur =>
+    simp only [hCur] at h ⊢
+    rw [refillSchedContext_getTcb?_eq st scId now hInv cur]; exact h
+
+/-- `processOneReplenishmentOnCore` preserves the register-bank match on every
+core `c'`. -/
+theorem processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c') :
+    contextMatchesCurrentOnCore (processOneReplenishmentOnCore st execCore scId now).1 c' := by
+  have hRefInv : (refillSchedContext st scId now).objects.invExt :=
+    refillSchedContext_preserves_objects_invExt st scId now hInv
+  have hRef : contextMatchesCurrentOnCore (refillSchedContext st scId now) c' :=
+    refillSchedContext_preserves_contextMatchesCurrentOnCore st scId now c' hInv h
+  simp only [processOneReplenishmentOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next _hcond =>
+      exact wakeThread_preserves_contextMatchesCurrentOnCore (refillSchedContext st scId now)
+        tid execCore c' hRefInv hRef
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_contextMatchesCurrentOnCore
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState × List (CoreId × Concurrency.SgiKind))
+    (hInv : acc.1.objects.invExt) (h : contextMatchesCurrentOnCore acc.1 c') :
+    contextMatchesCurrentOnCore
+      (dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1 c' := by
+  induction dueIds generalizing acc with
+  | nil => exact h
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_objects_invExt acc.1 c hd now hInv)
+        (processOneReplenishmentOnCore_preserves_contextMatchesCurrentOnCore acc.1 c c' hd now hInv h)
+
+/-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
+the register-bank match on core `c`. -/
+theorem processReplenishmentsDueOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (c : CoreId) (now : Nat) (hInv : st.objects.invExt)
+    (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (processReplenishmentsDueOnCore st c now).1 c := by
+  simp only [processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_contextMatchesCurrentOnCore
+  · exact hInv
+  · simpa only [contextMatchesCurrentOnCore, SchedulerState.setReplenishQueueOnCore_currentOnCore]
+      using h
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves the
+register-bank match — discharges the capstone's `hPrepCtx`. -/
+theorem timerTickOnCorePrepared_preserves_contextMatchesCurrentOnCore (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt) (h : contextMatchesCurrentOnCore st c) :
+    contextMatchesCurrentOnCore (timerTickOnCorePrepared st c).1 c := by
+  simp only [timerTickOnCorePrepared]
+  apply processReplenishmentsDueOnCore_preserves_contextMatchesCurrentOnCore
+  · exact hInv
+  · simpa only [contextMatchesCurrentOnCore, SchedulerState.setLastTimeoutErrorsOnCore_currentOnCore]
+      using h
+
 /-- WS-SM SM5.I.8 (capstone): the per-core timer tick preserves the full
 register-bank+Nodup base safety invariant on the operated core `c`, composing the
 six per-conjunct `timerTickOnCore_preserves_*` lemmas.  `currentThreadValid` is
