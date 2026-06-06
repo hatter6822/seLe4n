@@ -16,12 +16,12 @@ raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
 raw_match_total          = 126
-raw_lookup_tid           = 815
+raw_lookup_tid           = 821
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 894
-getschedctx_adoption     = 246
+gettcb_adoption          = 1069
+getschedctx_adoption     = 258
 getendpoint_adoption     = 42
 getnotification_adoption = 27
 getuntyped_adoption      = 14
@@ -56,9 +56,9 @@ RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
 RAW_MATCH_TOTAL=126
-RAW_LOOKUP_TID=815
-GETTCB_ADOPTION=894
-GETSCHEDCTX_ADOPTION=246
+RAW_LOOKUP_TID=821
+GETTCB_ADOPTION=1069
+GETSCHEDCTX_ADOPTION=258
 GETENDPOINT_ADOPTION=42
 GETNOTIFICATION_ADOPTION=27
 GETUNTYPED_ADOPTION=14
