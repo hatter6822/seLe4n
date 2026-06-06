@@ -2082,4 +2082,75 @@ theorem processReplenishmentsDueOnCore_preserves_schedulerInvariantStructuralReg
     · exact (runQueueUniqueOnCore_frame
         (by simp only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore])).mpr (hPre c').2
 
+-- ── §8.3b  The IPC timeout-path base preservation (ensureRunnable / timeoutThread
+--           / timeoutBlockedThreads), feeding the budget phase of the tick ──
+
+/-- WS-SM SM5.I.8 (timeout atom): `ensureRunnable` preserves the base safety
+invariant on every core, given the enqueued thread is not the boot core's current
+thread (so the boot `queueCurrentConsistent` survives the insert).  `ensureRunnable`
+writes only the boot run queue (objects unchanged), so siblings frame and boot
+takes a `RunQueue.insert`. -/
+theorem ensureRunnable_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore bootCoreId ≠ some tid)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st) :
+    schedulerInvariantStructuralRegNodup_smp (ensureRunnable st tid) := by
+  unfold ensureRunnable
+  split
+  · exact hPre
+  · split
+    · rename_i tcb htcb
+      intro c'
+      by_cases hc : c' = bootCoreId
+      · subst hc
+        obtain ⟨⟨⟨hQCC, hCTV, hRAT, hWf⟩, hCtx⟩, hNod⟩ := hPre bootCoreId
+        refine ⟨⟨⟨?_, ?_, ?_, ?_⟩, ?_⟩, ?_⟩
+        · -- queueCurrentConsistent on boot: current ∉ (oldRq.insert tid)
+          simp only [queueCurrentConsistentOnCore,
+            SchedulerState.setRunQueueOnCore_currentOnCore,
+            SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          simp only [queueCurrentConsistentOnCore] at hQCC
+          cases hcur : st.scheduler.currentOnCore bootCoreId with
+          | none => exact trivial
+          | some t =>
+              rw [hcur] at hQCC
+              intro hmem
+              rcases (RunQueue.mem_insert _ tid _ t).mp
+                ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
+              · exact hQCC ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+              · exact hNotCur (by rw [hcur, heq])
+        · -- currentThreadValid: current + objects unchanged
+          simp only [currentThreadValidOnCore, SchedulerState.setRunQueueOnCore_currentOnCore]
+          exact hCTV
+        · -- runnableThreadsAreTCBs: members are old TCBs ∪ {tid}, objects unchanged
+          intro t hmem
+          simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hmem
+          rcases (RunQueue.mem_insert _ tid _ t).mp
+            ((RunQueue.mem_toList_iff_mem _ t).mp hmem) with hold | heq
+          · exact hRAT t ((RunQueue.mem_toList_iff_mem _ t).mpr hold)
+          · exact ⟨tcb, by rw [heq]; exact htcb⟩
+        · -- runQueueWellFormed: insert preserves
+          simp only [runQueueOnCoreWellFormed, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+        · -- contextMatches: current + regs + objects unchanged
+          refine contextMatchesCurrentOnCore_frame_at ?_ rfl
+            (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) hCTV hCtx
+          simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
+        · -- Nodup: insert preserves
+          simp only [runQueueUniqueOnCore, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          exact RunQueue.insert_preserves_toList_nodup _ _ _ hNod
+      · -- sibling c' ≠ boot: run queue + current framed, objects unchanged
+        refine ⟨⟨?_, ?_⟩, ?_⟩
+        · refine schedulerInvariantStructural_perCore_frame ?_ ?_ ?_ (hPre c').1.1
+          · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
+          · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)]
+          · exact fun _ hh => hh
+        · refine contextMatchesCurrentOnCore_frame_at ?_ rfl
+            (fun t tcb' _ ht => ⟨tcb', ht, RegisterFile.beq_self _⟩) ((hPre c').1.1.2.1) ((hPre c').1.2)
+          · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
+        · exact (runQueueUniqueOnCore_frame
+            (by simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (Ne.symm hc)])).mpr
+            (hPre c').2
+    · exact hPre
+
 end SeLe4n.Kernel
