@@ -2399,4 +2399,46 @@ theorem storeObject_tcb_preserves_schedulerInvariantStructuralRegNodup_smp
       rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
       simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using htcb
 
+/-- WS-SM SM5.I.8 (IPC dual-queue atom): a *conditional* TCB link-patch — insert
+`.tcb (f o)` at `k` only when `k` already holds a TCB `o` — has a clean get?
+characterisation: every slot is unchanged, except the patched TCB key whose value
+becomes `.tcb (f o)`.  The patch is self-guarding (it never touches a non-TCB
+slot), so it preserves `invExt` and the object kind everywhere.  This is the
+building block for `endpointQueueRemove`'s ≤4 conditional inserts. -/
+theorem condTcbPatch_get? (objs objs' : RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (hInv : objs.invExt) (k? : Option SeLe4n.ThreadId) (f : TCB → TCB)
+    (hNew : objs' = (match k? with
+      | none => objs
+      | some k => match objs.get? k.toObjId with
+        | some (.tcb o) => objs.insert k.toObjId (.tcb (f o))
+        | _ => objs)) :
+    objs'.invExt ∧ ∀ (a : SeLe4n.ObjId) (obj0 : KernelObject), objs.get? a = some obj0 →
+      ∃ obj1, objs'.get? a = some obj1 ∧
+        (obj1 = obj0 ∨ ∃ ot, obj0 = .tcb ot ∧ obj1 = .tcb (f ot)) := by
+  cases k? with
+  | none => subst hNew; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+  | some k =>
+    cases hk : objs.get? k.toObjId with
+    | none => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+    | some o =>
+      cases o with
+      | tcb ot =>
+        simp only [hNew, hk]
+        refine ⟨RobinHood.RHTable.insert_preserves_invExt objs k.toObjId (.tcb (f ot)) hInv, ?_⟩
+        intro a obj0 ha
+        rw [RHTable_getElem?_insert objs k.toObjId (.tcb (f ot)) hInv a]
+        split
+        · rename_i hak
+          have hka : k.toObjId = a := eq_of_beq hak
+          rw [← hka, hk] at ha
+          have hobj0 : obj0 = .tcb ot := (Option.some.injEq _ _).mp ha.symm
+          exact ⟨.tcb (f ot), rfl, Or.inr ⟨ot, hobj0, rfl⟩⟩
+        · exact ⟨obj0, ha, Or.inl rfl⟩
+      | endpoint _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+      | notification _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+      | cnode _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+      | vspaceRoot _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+      | untyped _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+      | schedContext _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+
 end SeLe4n.Kernel
