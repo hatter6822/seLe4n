@@ -1658,4 +1658,303 @@ theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_s
   exact RunQueue.insert_preserves_toList_nodup _ _ _
     (RunQueue.remove_preserves_toList_nodup _ _ (hPre c₀).2)
 
+-- ============================================================================
+-- §8  Composite live-tick transition preservation (SM5.I.8 completion)
+--
+-- The 10 primitive per-core transitions above are proved to preserve the base
+-- safety invariant (`schedulerInvariantStructuralRegNodup`).  This section adds
+-- the THREE *composite* transitions the live `perCoreTimerTickEntry` driver
+-- actually runs: `switchDomainOnCore`, `scheduleDomainOnCore` (domain-boundary
+-- tick) and `timerTickOnCore` (per-core CNTP tick).  Without these, "preservation
+-- by every transition" (SM5.I.8) literally excludes the transitions the running
+-- kernel executes.
+--
+-- `switchDomainOnCore` / `scheduleDomainOnCore` are single-core (the engine
+-- applies via sibling framing).  `timerTickOnCore` is genuinely multi-core (its
+-- CBS replenish-wake can `wakeThread` onto a *remote* core), so it threads the
+-- `wakeThread` preservation through the replenishment fold rather than framing
+-- siblings (handled in §8.3).
+-- ============================================================================
+
+-- ── §8.1  `switchDomainOnCore` frame + characterisation helpers ──
+
+/-- `switchDomainOnCore` on core `c` frames a sibling core `c'`'s run queue. -/
+theorem switchDomainOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreId)
+    (st' : SystemState) (hc : c ≠ c') (h : switchDomainOnCore st c = .ok st') :
+    st'.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c' := by
+  unfold switchDomainOnCore at h
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at h; simp only [Except.ok.injEq] at h; subst h; rfl
+  | cons hd tl =>
+    rw [hcase] at h; dsimp only at h
+    split at h
+    · simp at h
+    · simp only [Except.ok.injEq] at h; subst h
+      simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
+        SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
+        SchedulerState.setActiveDomainOnCore_runQueueOnCore,
+        SchedulerState.setCurrentOnCore_runQueueOnCore,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hc]
+
+/-- `switchDomainOnCore` on core `c` frames a sibling core `c'`'s current thread. -/
+theorem switchDomainOnCore_currentOnCore_ne (st : SystemState) (c c' : CoreId)
+    (st' : SystemState) (hc : c ≠ c') (h : switchDomainOnCore st c = .ok st') :
+    st'.scheduler.currentOnCore c' = st.scheduler.currentOnCore c' := by
+  unfold switchDomainOnCore at h
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at h; simp only [Except.ok.injEq] at h; subst h; rfl
+  | cons hd tl =>
+    rw [hcase] at h; dsimp only at h
+    split at h
+    · simp at h
+    · simp only [Except.ok.injEq] at h; subst h
+      simp only [SchedulerState.setDomainScheduleIndexOnCore_currentOnCore,
+        SchedulerState.setDomainTimeRemainingOnCore_currentOnCore,
+        SchedulerState.setActiveDomainOnCore_currentOnCore,
+        SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hc,
+        SchedulerState.setRunQueueOnCore_currentOnCore]
+
+/-- `switchDomainOnCore` preserves TCB-resolvability of every thread (its only
+object write is the outgoing-context save, which keeps the outgoing thread a
+TCB). -/
+theorem switchDomainOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt) (h : switchDomainOnCore st c = .ok st') :
+    ∀ tid, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome := by
+  unfold switchDomainOnCore at h
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at h; simp only [Except.ok.injEq] at h; subst h; exact fun _ hh => hh
+  | cons hd tl =>
+    rw [hcase] at h; dsimp only at h
+    split at h
+    · simp at h
+    · simp only [Except.ok.injEq] at h; subst h
+      intro tid hSome
+      have : ∃ t, (saveOutgoingContextOnCore st c).getTcb? tid = some t :=
+        saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv
+          (Option.isSome_iff_exists.mp hSome)
+      exact Option.isSome_iff_exists.mpr this
+
+/-- The operated core is **idle** (no current thread) after `switchDomainOnCore`
+on a non-empty domain schedule — it sets `current := none` before re-dispatch.
+The current-dependent base conjuncts (`queueCurrentConsistent`,
+`currentThreadValid`, `contextMatchesCurrent`) are thereby vacuous on `c`. -/
+theorem switchDomainOnCore_operated_currentOnCore_none (st : SystemState) (c : CoreId)
+    (st' : SystemState) (h : switchDomainOnCore st c = .ok st')
+    (hSched : st.scheduler.domainSchedule ≠ []) :
+    st'.scheduler.currentOnCore c = none :=
+  switchDomainOnCore_sets_currentOnCore_none st c st' h hSched
+
+/-- The operated core's run queue after `switchDomainOnCore` is well-formed,
+duplicate-free, and all-TCB whenever the pre-state base safety invariant held on
+`c`: the only change is re-enqueuing the (TCB) current thread, which `RunQueue.insert`
+preserves; all members stay TCBs across the outgoing-context save. -/
+theorem switchDomainOnCore_operated_runQueue_props (st : SystemState) (c : CoreId)
+    (st' : SystemState) (hInv : st.objects.invExt) (h : switchDomainOnCore st c = .ok st')
+    (hSched : st.scheduler.domainSchedule ≠ [])
+    (hPre : schedulerInvariantStructuralRegNodup_perCore st c) :
+    (st'.scheduler.runQueueOnCore c).wellFormed ∧
+      (st'.scheduler.runQueueOnCore c).toList.Nodup ∧
+      runnableThreadsAreTCBsOnCore st' c := by
+  -- Pre-state base conjuncts on `c`.
+  obtain ⟨⟨⟨_hQCC, _hCTV, hRAT, hWf⟩, _hCtx⟩, hNodup⟩ := hPre
+  -- TCB preservation across the step (derived from the *original* `h` before it
+  -- is consumed by the unfold/subst below).
+  have hgoal : ∀ tid, (st.getTcb? tid).isSome = true → ∃ tcb, st'.getTcb? tid = some tcb :=
+    fun tid hh =>
+      Option.isSome_iff_exists.mp (switchDomainOnCore_getTcb?_isSome st c st' hInv h tid hh)
+  -- Unfold once and reduce per-conjunct.
+  unfold switchDomainOnCore at h
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => exact absurd hcase hSched
+  | cons hd tl =>
+    rw [hcase] at h; dsimp only at h
+    split at h
+    · simp at h
+    · simp only [Except.ok.injEq] at h; subst h
+      refine ⟨?_, ?_, ?_⟩
+      · -- wellFormed
+        simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
+          SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
+          SchedulerState.setActiveDomainOnCore_runQueueOnCore,
+          SchedulerState.setCurrentOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        split
+        · exact hWf
+        · split
+          · exact RunQueue.insert_preserves_wellFormed _ hWf _ _
+          · exact hWf
+      · -- Nodup
+        simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
+          SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
+          SchedulerState.setActiveDomainOnCore_runQueueOnCore,
+          SchedulerState.setCurrentOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        split
+        · exact hNodup
+        · split
+          · exact RunQueue.insert_preserves_toList_nodup _ _ _ hNodup
+          · exact hNodup
+      · -- runnableThreadsAreTCBs on the post state
+        intro tid htid
+        simp only [SchedulerState.setDomainScheduleIndexOnCore_runQueueOnCore,
+          SchedulerState.setDomainTimeRemainingOnCore_runQueueOnCore,
+          SchedulerState.setActiveDomainOnCore_runQueueOnCore,
+          SchedulerState.setCurrentOnCore_runQueueOnCore,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at htid
+        cases hcur : st.scheduler.currentOnCore c with
+        | none =>
+            simp only [hcur] at htid
+            obtain ⟨tcb, htcb⟩ := hRAT tid htid
+            exact hgoal tid (by rw [htcb]; rfl)
+        | some tid0 =>
+            simp only [hcur] at htid
+            cases htcb0 : st.getTcb? tid0 with
+            | none =>
+                simp only [htcb0] at htid
+                obtain ⟨tcb, htcb⟩ := hRAT tid htid
+                exact hgoal tid (by rw [htcb]; rfl)
+            | some tcb0 =>
+                simp only [htcb0] at htid
+                rcases (RunQueue.mem_insert _ tid0 _ tid).mp
+                    ((RunQueue.mem_toList_iff_mem _ tid).mp htid) with hold | heq
+                · obtain ⟨tcb, htcb⟩ := hRAT tid ((RunQueue.mem_toList_iff_mem _ tid).mpr hold)
+                  exact hgoal tid (by rw [htcb]; rfl)
+                · subst heq
+                  exact hgoal tid (by rw [htcb0]; rfl)
+
+/-- `switchDomainOnCore` leaves the machine register banks unchanged (its only
+object write is the outgoing-context save, which reads `regsOnCore c₀` and writes
+a TCB; it never writes `machine.coreRegs`). -/
+theorem switchDomainOnCore_machine_eq (st : SystemState) (c : CoreId)
+    (st' : SystemState) (h : switchDomainOnCore st c = .ok st') :
+    st'.machine = st.machine := by
+  unfold switchDomainOnCore at h
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at h; simp only [Except.ok.injEq] at h; subst h; rfl
+  | cons hd tl =>
+    rw [hcase] at h; dsimp only at h
+    split at h
+    · simp at h
+    · simp only [Except.ok.injEq] at h; subst h
+      exact saveOutgoingContextOnCore_machine st c
+
+/-- `switchDomainOnCore`'s only `registerContext` write is the outgoing-context
+save: a thread's saved context is left unchanged, or — when it is core `c₀`'s
+outgoing current — set to `regsOnCore c₀`.  (Lifts `saveOutgoingContextOnCore_getTcb?_regContext`
+through the scheduler-only record update.) -/
+theorem switchDomainOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
+    (st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (h : switchDomainOnCore st c₀ = .ok st') (htcb : st.getTcb? tid = some tcb) :
+    ∃ tcb', st'.getTcb? tid = some tcb' ∧
+      (tcb'.registerContext = tcb.registerContext ∨
+        (st.scheduler.currentOnCore c₀ = some tid ∧
+          tcb'.registerContext = st.machine.regsOnCore c₀)) := by
+  unfold switchDomainOnCore at h
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at h; simp only [Except.ok.injEq] at h; subst h; exact ⟨tcb, htcb, Or.inl rfl⟩
+  | cons hd tl =>
+    rw [hcase] at h; dsimp only at h
+    split at h
+    · simp at h
+    · simp only [Except.ok.injEq] at h; subst h
+      exact saveOutgoingContextOnCore_getTcb?_regContext st c₀ tid tcb hInv htcb
+
+/-- `switchDomainOnCore` on core `c₀` preserves `contextMatchesCurrentOnCore` on a
+*sibling* core `c'`: its current pointer is framed, its register bank is
+unchanged, and the only saved-context write `==`-matches via the operated core's
+own `contextMatchesCurrent` (the pathological "current on two cores" case is
+closed by `RegisterFile` partial-equivalence). -/
+theorem switchDomainOnCore_preserves_contextMatchesCurrentOnCore_sibling
+    (st : SystemState) (c₀ c' : CoreId) (st' : SystemState) (hc : c₀ ≠ c')
+    (hInv : st.objects.invExt)
+    (hValid : currentThreadValidOnCore st c')
+    (hCtx0 : contextMatchesCurrentOnCore st c₀)
+    (hCtx' : contextMatchesCurrentOnCore st c')
+    (h : switchDomainOnCore st c₀ = .ok st') :
+    contextMatchesCurrentOnCore st' c' := by
+  refine contextMatchesCurrentOnCore_frame_at
+    (switchDomainOnCore_currentOnCore_ne st c₀ c' st' hc h) ?_ ?_ hValid hCtx'
+  · rw [switchDomainOnCore_machine_eq st c₀ st' h]
+  · intro tid tcb hcur' htcb
+    obtain ⟨tcb', htcb', hrc⟩ :=
+      switchDomainOnCore_getTcb?_regContext st c₀ st' tid tcb hInv h htcb
+    refine ⟨tcb', htcb', ?_⟩
+    rcases hrc with hEq | ⟨hcur0, hEq⟩
+    · rw [hEq]; exact RegisterFile.beq_self _
+    · rw [hEq]
+      simp only [contextMatchesCurrentOnCore, hcur0, htcb] at hCtx0
+      exact RegisterFile.beq_symm hCtx0
+
+/-- WS-SM SM5.I.8 (composite, single-core): the per-core **domain switch** — the
+boundary half of the live domain tick — preserves the base safety invariant on
+every core.  Single-domain mode (`domainSchedule = []`) is a no-op; otherwise the
+operated core becomes idle (current `none`) with its current thread re-enqueued,
+and every sibling is framed. -/
+theorem switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (h : switchDomainOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  by_cases hDS : st.scheduler.domainSchedule = []
+  · -- single-domain: `switchDomainOnCore` is the identity.
+    have heq : st' = st := by
+      unfold switchDomainOnCore at h
+      rw [hDS] at h; simp only [Except.ok.injEq] at h; exact h.symm
+    subst heq; exact hPre
+  · -- rotate path.
+    have hCurNone := switchDomainOnCore_sets_currentOnCore_none st c₀ st' h hDS
+    obtain ⟨hWf', hNodup', hRAT'⟩ :=
+      switchDomainOnCore_operated_runQueue_props st c₀ st' hInv h hDS (hPre c₀)
+    have hFrameCur := fun c' (hc : c₀ ≠ c') =>
+      switchDomainOnCore_currentOnCore_ne st c₀ c' st' hc h
+    have hFrameRQ := fun c' (hc : c₀ ≠ c') =>
+      switchDomainOnCore_runQueueOnCore_ne st c₀ c' st' hc h
+    have hTcbSome := switchDomainOnCore_getTcb?_isSome st c₀ st' hInv h
+    -- operated-core structural establishment (current = none).
+    have hC0Struct : schedulerInvariantStructural_perCore st' c₀ := by
+      refine ⟨?_, ?_, hRAT', hWf'⟩
+      · simp only [queueCurrentConsistentOnCore, hCurNone]
+      · simp only [currentThreadValidOnCore, hCurNone]
+    have hBase : schedulerInvariantStructural_smp st' :=
+      schedulerInvariantStructural_smp_of_establish_and_frame
+        (fun c => (hPre c).1.1) hC0Struct hFrameCur hFrameRQ hTcbSome
+    -- contextMatchesCurrent on every core.
+    have hCtx : ∀ c', contextMatchesCurrentOnCore st' c' := by
+      intro c'
+      by_cases hc : c₀ = c'
+      · subst hc; simp only [contextMatchesCurrentOnCore, hCurNone]
+      · exact switchDomainOnCore_preserves_contextMatchesCurrentOnCore_sibling
+          st c₀ c' st' hc hInv ((hPre c').1.1.2.1) ((hPre c₀).1.2) ((hPre c').1.2) h
+    refine schedulerInvariantStructuralRegNodup_smp_of_reg_and_nodup
+      (schedulerInvariantStructuralReg_smp_of_base_and_ctx hBase hCtx) ?_
+    refine runQueueUniqueOnCore_smp_of_operated_and_frame (c₀ := c₀)
+      (fun c => (hPre c).2) hNodup' (fun c' hc => hFrameRQ c' hc)
+
+/-- WS-SM SM5.I.8 (composite, single-core): the per-core **domain tick** preserves
+the base safety invariant on every core.  At a domain boundary it composes the
+domain switch with the budget-aware re-dispatch (`scheduleEffectiveOnCore`); off a
+boundary it is the pure domain-time decrement. -/
+theorem scheduleDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hPre : schedulerInvariantStructuralRegNodup_smp st)
+    (h : scheduleDomainOnCore st c₀ = .ok st') :
+    schedulerInvariantStructuralRegNodup_smp st' := by
+  unfold scheduleDomainOnCore at h
+  split at h
+  · -- domain boundary: switch then re-dispatch.
+    cases hsw : switchDomainOnCore st c₀ with
+    | error e => rw [hsw] at h; simp at h
+    | ok stMid =>
+        rw [hsw] at h
+        have hMid := switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+          st c₀ stMid hInv hPre hsw
+        have hMidInv := switchDomainOnCore_preserves_objects_invExt st c₀ stMid hInv hsw
+        exact scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
+          stMid c₀ st' hMidInv hMid h
+  · -- non-boundary: pure domain-time decrement.
+    simp only [Except.ok.injEq] at h; subst h
+    exact decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hPre
+
 end SeLe4n.Kernel
