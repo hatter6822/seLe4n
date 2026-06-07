@@ -1417,6 +1417,74 @@ theorem wakeThread_preserves_queueCurrentConsistentOnCore (st : SystemState)
   · exact enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_ne st
       (determineTargetCore st tid) c' tid hcc hcons
 
+/-- WS-SM SM5.I.8 (preservation, SM5.I `runQueueUniqueOnCore`): a wake on core `c`
+preserves run-queue `Nodup` on **every** core `c'` — a sibling's queue is framed;
+the target's queue takes a `RunQueue.insert` (or a no-op), both `Nodup`-preserving. -/
+theorem enqueueRunnableOnCore_preserves_runQueueUniqueOnCore (st : SystemState)
+    (c c' : CoreId) (tid : SeLe4n.ThreadId)
+    (hnd : (st.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c').toList.Nodup := by
+  by_cases hcc : c = c'
+  · subst hcc
+    cases hTcb : st.getTcb? tid with
+    | none => rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact hnd
+    | some tcb =>
+      cases hFresh : runnableOnSomeCore st tid with
+      | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hnd
+      | false =>
+        simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        exact RunQueue.insert_preserves_toList_nodup _ _ _ hnd
+  · rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid hcc]; exact hnd
+
+/-- WS-SM SM5.I.8: a wake preserves run-queue `Nodup` on every core `c'`. -/
+theorem wakeThread_preserves_runQueueUniqueOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore c' : CoreId)
+    (hnd : (st.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((wakeThread st tid executingCore).1.scheduler.runQueueOnCore c').toList.Nodup := by
+  rw [wakeThread_state_eq_enqueue]
+  exact enqueueRunnableOnCore_preserves_runQueueUniqueOnCore st
+    (determineTargetCore st tid) c' tid hnd
+
+/-- WS-SM SM5.I.8 (preservation, SM4.C `runnableThreadsAreTCBsOnCore`): a wake on
+core `c` preserves runnable-threads-are-TCBs on **every** core `c'`.  A sibling's
+queue is framed (members resolve via `getTcb?_isSome`); the target's queue gains at
+most the woken thread, which `enqueueRunnableOnCore_makes_ready` resolves to a TCB. -/
+theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore_anyCore (st : SystemState)
+    (c c' : CoreId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : runnableThreadsAreTCBsOnCore st c') :
+    runnableThreadsAreTCBsOnCore (enqueueRunnableOnCore st c tid) c' := by
+  by_cases hcc : c = c'
+  · subst hcc
+    cases hTcb : st.getTcb? tid with
+    | none => rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]; exact h
+    | some tcb =>
+      cases hFresh : runnableOnSomeCore st tid with
+      | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact h
+      | false =>
+        intro t ht
+        simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+          SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
+        rw [RunQueue.mem_toList_iff_mem] at ht
+        rcases (RunQueue.mem_insert _ _ _ _).mp ht with hold | heq
+        · obtain ⟨tcbt, htcbt⟩ := h t ((RunQueue.mem_toList_iff_mem _ _).mpr hold)
+          exact enqueueRunnableOnCore_getTcb?_isSome st c tid t tcbt hInv htcbt
+        · subst heq
+          exact ⟨_, enqueueRunnableOnCore_makes_ready st c t tcb hTcb hInv hFresh⟩
+  · intro t ht
+    rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid hcc] at ht
+    obtain ⟨tcbt, htcbt⟩ := h t ht
+    exact enqueueRunnableOnCore_getTcb?_isSome st c tid t tcbt hInv htcbt
+
+/-- WS-SM SM5.I.8: a wake preserves runnable-threads-are-TCBs on every core `c'`. -/
+theorem wakeThread_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (executingCore c' : CoreId) (hInv : st.objects.invExt)
+    (h : runnableThreadsAreTCBsOnCore st c') :
+    runnableThreadsAreTCBsOnCore (wakeThread st tid executingCore).1 c' := by
+  rw [wakeThread_state_eq_enqueue]
+  exact enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore_anyCore st
+    (determineTargetCore st tid) c' tid hInv h
+
 -- ============================================================================
 -- §11  SM5.C.4 — Memory-model happens-before for the wake (audit-pass-1, gap e)
 -- ============================================================================

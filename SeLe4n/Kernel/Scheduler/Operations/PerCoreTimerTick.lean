@@ -909,6 +909,38 @@ theorem idleFallbackOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState)
     exact RunQueue.remove_preserves_wellFormed _ hwf _
   · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hwf
 
+/-- WS-SM SM5.I (the register-bank payoff, idle case): dispatching idle
+**establishes** `contextMatchesCurrentOnCore` — core `c`'s bank holds the (just
+dispatched) idle thread's register context.  The `idleDispatchableOnCore` gate
+guarantees the idle thread resolves to a TCB, which the per-core restore writes
+into core `c`'s bank. -/
+theorem dispatchIdleOnCore_establishes_contextMatchesCurrentOnCore (st : SystemState) (c : CoreId)
+    (hd : idleDispatchableOnCore st c = true) :
+    contextMatchesCurrentOnCore (dispatchIdleOnCore st c) c := by
+  unfold idleDispatchableOnCore at hd
+  cases hres : st.getTcb? (idleThreadId c) with
+  | none => rw [hres] at hd; simp at hd
+  | some idleTcb =>
+    unfold contextMatchesCurrentOnCore
+    rw [dispatchIdleOnCore_currentOnCore]
+    simp only [dispatchIdleOnCore_getTcb?, hres]
+    rw [dispatchIdleOnCore_machine_regsOnCore_self st c idleTcb hres]
+    exact RegisterFile.beq_self _
+
+/-- WS-SM SM5.I (the register-bank payoff, fallback): the idle fallback
+**establishes** `contextMatchesCurrentOnCore` — the idle arm dispatches the
+(installed) idle thread into core `c`'s bank, the `none` arm leaves `current =
+none` (vacuously matching).  This is the `none`-branch companion of
+`switchToThreadOnCore_establishes_contextMatchesCurrentOnCore`. -/
+theorem idleFallbackOnCore_establishes_contextMatchesCurrentOnCore (st : SystemState) (c : CoreId) :
+    contextMatchesCurrentOnCore (idleFallbackOnCore st c) c := by
+  unfold idleFallbackOnCore
+  split
+  · rename_i hd
+    exact dispatchIdleOnCore_establishes_contextMatchesCurrentOnCore st c hd
+  · unfold contextMatchesCurrentOnCore
+    simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+
 /-- WS-SM SM5.D.5 (preservation): the per-core budget-aware reschedule preserves
 the object-store invariant (save-outgoing insert + restore-incoming register-only
 write). -/
@@ -926,7 +958,7 @@ theorem scheduleEffectiveOnCore_preserves_objects_invExt (st : SystemState) (c :
   · split at hStep
     · split at hStep
       · simp only [Except.ok.injEq] at hStep; subst hStep
-        rw [restoreIncomingContext_objects_eq]
+        rw [restoreIncomingContextOnCore_objects]
         exact saveOutgoingContextOnCore_preserves_objects_invExt st c hInv
       · simp at hStep
     · simp at hStep
@@ -1448,7 +1480,7 @@ theorem saveOutgoingContextOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
       obtain ⟨t, ht⟩ := h
       by_cases hEq : tid = outTid
       · subst hEq
-        refine ⟨{ outTcb with registerContext := st.machine.regs }, ?_⟩
+        refine ⟨{ outTcb with registerContext := st.machine.regsOnCore c }, ?_⟩
         simp only [saveOutgoingContextOnCore, hcur, hout]
         simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
         rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
@@ -1460,6 +1492,48 @@ theorem saveOutgoingContextOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId
           _ hNeO hInv]
         simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using ht
+
+/-- WS-SM SM5.I (register-bank sibling-frame foundation): `saveOutgoingContextOnCore`
+on core `c₀` either leaves a thread's saved register context **unchanged**, or —
+when that thread is exactly core `c₀`'s outgoing current — sets it to
+`machine.regsOnCore c₀`.  This is the only `registerContext` write any per-core
+transition makes; the dispatch sibling `contextMatchesCurrentOnCore` frame uses it
+together with the pre-state `contextMatchesCurrentOnCore c₀` to show the write is
+`==`-idempotent on a thread (pathologically) current on two cores. -/
+theorem saveOutgoingContextOnCore_getTcb?_regContext (st : SystemState) (c₀ : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (hInv : st.objects.invExt)
+    (htcb : st.getTcb? tid = some tcb) :
+    ∃ tcb', (saveOutgoingContextOnCore st c₀).getTcb? tid = some tcb' ∧
+      (tcb'.registerContext = tcb.registerContext ∨
+        (st.scheduler.currentOnCore c₀ = some tid ∧
+          tcb'.registerContext = st.machine.regsOnCore c₀)) := by
+  cases hcur : st.scheduler.currentOnCore c₀ with
+  | none =>
+      refine ⟨tcb, ?_, Or.inl rfl⟩
+      rw [show saveOutgoingContextOnCore st c₀ = st from by
+        simp only [saveOutgoingContextOnCore, hcur]]; exact htcb
+  | some outTid =>
+      cases hout : st.getTcb? outTid with
+      | none =>
+          refine ⟨tcb, ?_, Or.inl rfl⟩
+          rw [show saveOutgoingContextOnCore st c₀ = st from by
+            simp only [saveOutgoingContextOnCore, hcur, hout]]; exact htcb
+      | some outTcb =>
+          by_cases hEq : tid = outTid
+          · subst hEq
+            refine ⟨{ outTcb with registerContext := st.machine.regsOnCore c₀ }, ?_, ?_⟩
+            · simp only [saveOutgoingContextOnCore, hcur, hout]
+              simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+              rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+            · exact Or.inr ⟨rfl, rfl⟩
+          · refine ⟨tcb, ?_, Or.inl rfl⟩
+            have hNeO : ¬ (outTid.toObjId == tid.toObjId) = true := fun he =>
+              hEq (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
+            simp only [saveOutgoingContextOnCore, hcur, hout]
+            simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+            rw [RobinHood.RHTable.getElem?_insert_ne st.objects outTid.toObjId tid.toObjId
+              _ hNeO hInv]
+            simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using htcb
 
 -- ── §7c  `scheduleEffectiveOnCore` preservation / establishment ──
 
@@ -1486,7 +1560,7 @@ theorem scheduleEffectiveOnCore_objects_eq (st : SystemState) (c : CoreId)
         simp only [hTcb] at hStep
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
-          simp only [restoreIncomingContext_objects]
+          simp only [restoreIncomingContextOnCore_objects]
         · simp at hStep
 
 /-- WS-SM SM5.D.5 (frame): `scheduleEffectiveOnCore` preserves TCB-resolvability of
@@ -1525,7 +1599,7 @@ theorem scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed (st : SystemS
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
           simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-            restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.remove_preserves_wellFormed _ hwf tid
         · simp at hStep
@@ -1585,10 +1659,80 @@ theorem scheduleEffectiveOnCore_establishes_queueCurrentConsistentOnCore (st : S
         · simp only [Except.ok.injEq] at hStep; subst hStep
           unfold queueCurrentConsistentOnCore
           simp only [SchedulerState.setCurrentOnCore_currentOnCore_self,
-            SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContext_scheduler,
+            SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContextOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
           rw [saveOutgoingContextOnCore_scheduler_eq]
           exact RunQueue.not_mem_remove_toList _ tid
+        · simp at hStep
+
+/-- WS-SM SM5.I (register-bank payoff, dispatch post-state): the canonical
+"restore `tid`'s context then set it current" post-state satisfies
+`contextMatchesCurrentOnCore` whenever `tid` resolves to a TCB in the (already
+context-saved + dequeued) state.  Both the bank value and `getTcb? tid` are read
+from the *same* dequeued state via the per-core restore, so they agree by
+construction — no `tid ≠ outgoing` side condition is needed (the self-reschedule
+case is covered too).  Shared by `switchToThreadOnCore` and
+`scheduleEffectiveOnCore`'s dispatch branches. -/
+theorem restoreThenSetCurrent_establishes_contextMatchesCurrentOnCore
+    (stDeq : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (deqTcb : TCB)
+    (hTcb : stDeq.getTcb? tid = some deqTcb) :
+    contextMatchesCurrentOnCore
+      { restoreIncomingContextOnCore stDeq c tid with
+        scheduler :=
+          (restoreIncomingContextOnCore stDeq c tid).scheduler.setCurrentOnCore c (some tid) } c := by
+  unfold contextMatchesCurrentOnCore
+  simp only [SchedulerState.setCurrentOnCore_currentOnCore_self]
+  -- `getTcb? tid` is read through the scheduler-only record update + the
+  -- object-preserving restore, so it resolves to `deqTcb` (from `hTcb`, typed).
+  have hgt : ({ restoreIncomingContextOnCore stDeq c tid with
+      scheduler := (restoreIncomingContextOnCore stDeq c tid).scheduler.setCurrentOnCore c
+        (some tid) } : SystemState).getTcb? tid = some deqTcb := by
+    show (restoreIncomingContextOnCore stDeq c tid).getTcb? tid = some deqTcb
+    rw [restoreIncomingContextOnCore_getTcb?]; exact hTcb
+  rw [hgt]
+  -- the per-core restore wrote core `c`'s bank to `deqTcb.registerContext`.
+  have hregs : ({ restoreIncomingContextOnCore stDeq c tid with
+      scheduler := (restoreIncomingContextOnCore stDeq c tid).scheduler.setCurrentOnCore c
+        (some tid) } : SystemState).machine.regsOnCore c = deqTcb.registerContext := by
+    show (restoreIncomingContextOnCore stDeq c tid).machine.regsOnCore c = deqTcb.registerContext
+    exact restoreIncomingContextOnCore_regsOnCore_self stDeq c tid deqTcb hTcb
+  rw [hregs]
+  exact RegisterFile.beq_self _
+
+/-- WS-SM SM5.I (the register-bank payoff, dispatch): a successful per-core
+budget-aware reschedule **establishes** `contextMatchesCurrentOnCore` on the
+operated core — after the dispatch, core `c`'s register bank holds its new current
+thread's context.  This is the dispatch-transition keystone the SM5.I.8
+"preservation by every transition" obligation rests on: with the SM4.B per-core
+register banks, the per-core dispatch makes the match hold on the dispatched core
+*regardless of the other cores*, where a single shared register file admitted the
+match on at most one core.  The idle branch is discharged by
+`idleFallbackOnCore_establishes_contextMatchesCurrentOnCore`. -/
+theorem scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    contextMatchesCurrentOnCore st' c := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      exact idleFallbackOnCore_establishes_contextMatchesCurrentOnCore _ c
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          -- `tid` resolves to a TCB in the context-saved (hence dequeued) state
+          -- (typed `getTcb?` form — AK7-clean, no raw `[·]?` derivation needed).
+          obtain ⟨deqTcb, hDeqGt⟩ :=
+            saveOutgoingContextOnCore_getTcb?_isSome st c tid hInv ⟨tcb, hTcb⟩
+          exact restoreThenSetCurrent_establishes_contextMatchesCurrentOnCore _ c tid deqTcb hDeqGt
         · simp at hStep
 
 /-- WS-SM SM5.D.5 (frame): every thread in `scheduleEffectiveOnCore`'s post run
@@ -1617,7 +1761,7 @@ theorem scheduleEffectiveOnCore_runQueue_toList_subset (st : SystemState) (c : C
         split at hStep
         · simp only [Except.ok.injEq] at hStep; subst hStep
           simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-            restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hx
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hx
           rw [saveOutgoingContextOnCore_scheduler_eq] at hx
           rw [RunQueue.mem_toList_iff_mem] at hx ⊢
           exact (RunQueue.mem_remove _ tid x |>.mp hx).1
@@ -1795,6 +1939,127 @@ theorem timerTickOnCorePrepared_runQueueOnCore_wellFormed (st : SystemState) (c 
   apply processReplenishmentsDueOnCore_preserves_runQueueOnCore_wellFormed
   simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hwf
 
+-- ── §6c  Prepared-phase (cross-core replenishment-wake) discharge of the
+--          per-core invariant conjuncts [SM5.I] — `queueCurrentConsistent` ──
+
+/-- A thread not running on **any** core is not the current thread of any
+particular core (the elementwise reading of `runningOnSomeCore = false`). -/
+theorem runningOnSomeCore_eq_false_currentOnCore_ne {st : SystemState}
+    {tid : SeLe4n.ThreadId} (h : runningOnSomeCore st tid = false) (c : CoreId) :
+    st.scheduler.currentOnCore c ≠ some tid := by
+  simp only [runningOnSomeCore, SeLe4n.Kernel.Concurrency.allCores, List.any_eq_false] at h
+  intro hc
+  have hcc := h c (List.mem_finRange c)
+  rw [hc] at hcc
+  simp at hcc
+
+/-- `processOneReplenishmentOnCore` preserves dequeue-on-dispatch consistency on
+**every** core `c'`: the refill frames the scheduler, and the wake fires only when
+the woken thread is not running anywhere (so it is not `c'`'s current thread) —
+exactly `wakeThread_preserves_queueCurrentConsistentOnCore`'s precondition. -/
+theorem processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hcons : queueCurrentConsistentOnCore st.scheduler c') :
+    queueCurrentConsistentOnCore (processOneReplenishmentOnCore st execCore scId now).1.scheduler c' := by
+  have hRef : queueCurrentConsistentOnCore (refillSchedContext st scId now).scheduler c' := by
+    rw [refillSchedContext_scheduler_eq]; exact hcons
+  simp only [processOneReplenishmentOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next hcond =>
+      exact wakeThread_preserves_queueCurrentConsistentOnCore (refillSchedContext st scId now)
+        tid execCore c'
+        (runningOnSomeCore_eq_false_currentOnCore_ne (Bool.not_eq_true _ |>.mp hcond) _) hRef
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState × List (CoreId × SgiKind))
+    (hcons : queueCurrentConsistentOnCore acc.1.scheduler c') :
+    queueCurrentConsistentOnCore
+      (dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1.scheduler c' := by
+  induction dueIds generalizing acc with
+  | nil => exact hcons
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_queueCurrentConsistentOnCore
+        acc.1 c c' hd now hcons)
+
+/-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
+dequeue-on-dispatch consistency on core `c`. -/
+theorem processReplenishmentsDueOnCore_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (now : Nat) (hcons : queueCurrentConsistentOnCore st.scheduler c) :
+    queueCurrentConsistentOnCore (processReplenishmentsDueOnCore st c now).1.scheduler c := by
+  simp only [processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_queueCurrentConsistentOnCore
+  simpa only [queueCurrentConsistentOnCore, SchedulerState.setReplenishQueueOnCore_currentOnCore,
+    SchedulerState.setReplenishQueueOnCore_runQueueOnCore] using hcons
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves
+`queueCurrentConsistentOnCore` — discharges the capstone's `hPrepQcc`. -/
+theorem timerTickOnCorePrepared_preserves_queueCurrentConsistentOnCore (st : SystemState)
+    (c : CoreId) (hcons : queueCurrentConsistentOnCore st.scheduler c) :
+    queueCurrentConsistentOnCore (timerTickOnCorePrepared st c).1.scheduler c := by
+  simp only [timerTickOnCorePrepared]
+  apply processReplenishmentsDueOnCore_preserves_queueCurrentConsistentOnCore
+  simpa only [queueCurrentConsistentOnCore, SchedulerState.setLastTimeoutErrorsOnCore_currentOnCore,
+    SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hcons
+
+-- ── §6d  Prepared-phase discharge — `runQueueUnique` (Nodup) ──
+
+/-- `processOneReplenishmentOnCore` preserves run-queue `Nodup` on every core `c'`
+(refill frames the scheduler; the wake's `RunQueue.insert` preserves `Nodup`). -/
+theorem processOneReplenishmentOnCore_preserves_runQueueUnique (st : SystemState)
+    (execCore c' : CoreId) (scId : SeLe4n.SchedContextId) (now : Nat)
+    (hnd : (st.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((processOneReplenishmentOnCore st execCore scId now).1.scheduler.runQueueOnCore c').toList.Nodup := by
+  have hRef : ((refillSchedContext st scId now).scheduler.runQueueOnCore c').toList.Nodup := by
+    rw [refillSchedContext_scheduler_eq]; exact hnd
+  simp only [processOneReplenishmentOnCore]
+  split
+  next tid _heq =>
+    split
+    next _hrun => exact hRef
+    next _hcond =>
+      exact wakeThread_preserves_runQueueUniqueOnCore (refillSchedContext st scId now)
+        tid execCore c' hRef
+  next _heq => exact hRef
+
+private theorem foldl_processOneReplenishment_preserves_runQueueUnique
+    (dueIds : List SeLe4n.SchedContextId) (c c' : CoreId) (now : Nat)
+    (acc : SystemState × List (CoreId × SgiKind))
+    (hnd : (acc.1.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((dueIds.foldl (fun acc scId =>
+        let (s, sgi?) := processOneReplenishmentOnCore acc.1 c scId now
+        (s, acc.2 ++ sgi?.toList)) acc).1.scheduler.runQueueOnCore c').toList.Nodup := by
+  induction dueIds generalizing acc with
+  | nil => exact hnd
+  | cons hd tl ih =>
+      rw [List.foldl_cons]
+      exact ih _ (processOneReplenishmentOnCore_preserves_runQueueUnique acc.1 c c' hd now hnd)
+
+/-- WS-SM SM5.I.8 (prepared discharge): `processReplenishmentsDueOnCore` preserves
+run-queue `Nodup` on core `c`. -/
+theorem processReplenishmentsDueOnCore_preserves_runQueueUnique (st : SystemState)
+    (c : CoreId) (now : Nat) (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((processReplenishmentsDueOnCore st c now).1.scheduler.runQueueOnCore c).toList.Nodup := by
+  simp only [processReplenishmentsDueOnCore]
+  apply foldl_processOneReplenishment_preserves_runQueueUnique
+  simpa only [SchedulerState.setReplenishQueueOnCore_runQueueOnCore] using hnd
+
+/-- WS-SM SM5.I.8 (prepared discharge): the prepared phase preserves run-queue
+`Nodup` — discharges the capstone's `hPrepNd`. -/
+theorem timerTickOnCorePrepared_preserves_runQueueUnique (st : SystemState) (c : CoreId)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup := by
+  simp only [timerTickOnCorePrepared]
+  apply processReplenishmentsDueOnCore_preserves_runQueueUnique
+  simpa only [SchedulerState.setLastTimeoutErrorsOnCore_runQueueOnCore] using hnd
+
 /-- WS-SM SM5.D.5 (B2 discharge, clean path): a *not-preempted* budget tick
 preserves per-core run-queue well-formedness — its scheduler is unchanged
 (`timerTickBudgetOnCore_notPreempted_scheduler_eq`).  This discharges the B2
@@ -1858,6 +2123,410 @@ theorem timerTickOnCore_preserves_runQueueOnCoreWellFormed (st : SystemState) (c
             obtain ⟨h1, _⟩ := hStep
             rw [← h1]
             exact scheduleEffectiveOnCore_preserves_runQueueOnCoreWellFormed st3 c st4 hst3 hsch
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]; exact hst3
+
+-- ── §7f  runnableThreadsAreTCBs per-core preservation [SM5.I] ──
+--
+--   The `runnableThreadsAreTCBsOnCore` conjunct.  `scheduleEffectiveOnCore`
+--   already preserves it; the missing piece is the not-preempted budget tick,
+--   which changes only the object store (the running thread's time-slice, or the
+--   bound SchedContext's budget).  A getTcb?-forward frame shows every pre-state
+--   TCB stays resolvable across that object write.
+
+/-- A not-preempted budget tick keeps every pre-state TCB resolvable: its only
+object write is the running thread's time-slice (a TCB→TCB update) or the bound
+SchedContext's budget (a non-TCB slot, distinct from any TCB key). -/
+theorem timerTickBudgetOnCore_notPreempted_getTcb?_forward (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false))
+    (x : SeLe4n.ThreadId) (t : TCB) (hx : st.getTcb? x = some t) :
+    ∃ t', st'.getTcb? x = some t' := by
+  -- the bound/donated SchedContext key is distinct from any resolvable TCB key
+  have hDisj : ∀ scId : SeLe4n.SchedContextId, (∃ s, st.getSchedContext? scId = some s) →
+      ¬ (scId.toObjId == x.toObjId) = true := by
+    rintro scId ⟨s, hSc⟩ he
+    have he' : scId.toObjId = x.toObjId := by simpa using he
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?] at hx
+    simp only [SystemState.getSchedContext?, RHTable_getElem?_eq_get?] at hSc
+    rw [he'] at hSc
+    revert hx hSc; cases st.objects.get? x.toObjId with
+    | none => simp
+    | some o => cases o <;> simp
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+      by_cases hxt : x = tid
+      · subst hxt
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?,
+          RobinHood.RHTable.getElem?_insert_self st.objects x.toObjId _ hInv]
+        exact ⟨_, rfl⟩
+      · have hNe : ¬ (tid.toObjId == x.toObjId) = true := fun he =>
+          hxt (ThreadId.toObjId_injective _ _ (eq_of_beq he)).symm
+        refine ⟨t, ?_⟩
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId x.toObjId _ hNe hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨t, ?_⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId x.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨t, ?_⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId x.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
+
+/-- A not-preempted budget tick preserves per-core runnable-threads-are-TCBs: the
+run queue is unchanged (scheduler frame) and every member stays resolvable. -/
+theorem timerTickBudgetOnCore_notPreempted_preserves_runnableThreadsAreTCBsOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hInv : st.objects.invExt) (h : runnableThreadsAreTCBsOnCore st c)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    runnableThreadsAreTCBsOnCore st' c := by
+  intro x hx
+  have hsch := timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep
+  rw [hsch] at hx
+  obtain ⟨t, ht⟩ := h x hx
+  exact timerTickBudgetOnCore_notPreempted_getTcb?_forward st c tid tcb st' hInv hStep x t ht
+
+/-- WS-SM SM5.I.8: the per-core timer tick preserves `runnableThreadsAreTCBsOnCore`,
+given the prepared state satisfies it (`hPrepRat`) and the budget tick preserves it
+(`hBudgetRat`).  Idle path = prepared; preempted path via
+`scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore` (the dispatched
+state's invExt is the budget result's, via `timerTickBudgetOnCore_preserves_objects_invExt`);
+not-preempted path = budget result.  `hBudgetRat` is discharged on every clean path
+by `timerTickBudgetOnCore_notPreempted_preserves_runnableThreadsAreTCBsOnCore`. -/
+theorem timerTickOnCore_preserves_runnableThreadsAreTCBsOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hPrepInv : (timerTickOnCorePrepared st c).1.objects.invExt)
+    (hPrepRat : runnableThreadsAreTCBsOnCore (timerTickOnCorePrepared st c).1 c)
+    (hBudgetRat : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       runnableThreadsAreTCBsOnCore st3 c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    runnableThreadsAreTCBsOnCore st' c := by
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepRat
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        have hst3inv := timerTickBudgetOnCore_preserves_objects_invExt
+          (timerTickOnCorePrepared st c).1 c tid tcb st3 preempted hPrepInv hbud
+        have hst3rat := hBudgetRat tid tcb st3 preempted hCur hTcb hbud
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_preserves_runnableThreadsAreTCBsOnCore st3 c st4 hst3inv hsch hst3rat
+        · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]; exact hst3rat
+
+-- ── §7g  contextMatchesCurrentOnCore per-core preservation [SM5.I] ──
+--
+--   The register-bank conjunct.  `scheduleEffectiveOnCore` already *establishes*
+--   it (the dispatch restores the incoming thread's context into core `c`'s
+--   bank); the missing piece is the not-preempted budget tick, which leaves the
+--   register bank untouched (`tick` advances only the timer) and the running
+--   thread's `registerContext` unchanged (the time-slice / budget write is
+--   register-free).
+
+/-- A not-preempted budget tick leaves core `c`'s register bank unchanged
+(`tick` advances only `machine.timer`). -/
+theorem timerTickBudgetOnCore_notPreempted_regsOnCore_eq (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    st'.machine.regsOnCore c = st.machine.regsOnCore c := by
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.1]
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.1]
+
+/-- A not-preempted budget tick keeps the running thread resolvable with an
+unchanged `registerContext` (the time-slice / budget write is register-free). -/
+theorem timerTickBudgetOnCore_notPreempted_getTcb?_tid_reg (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (hInv : st.objects.invExt)
+    (hTcb : st.getTcb? tid = some tcb)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    ∃ t', st'.getTcb? tid = some t' ∧ t'.registerContext = tcb.registerContext := by
+  have hDisj : ∀ scId : SeLe4n.SchedContextId, (∃ s, st.getSchedContext? scId = some s) →
+      ¬ (scId.toObjId == tid.toObjId) = true := by
+    rintro scId ⟨s, hSc⟩ he
+    have he' : scId.toObjId = tid.toObjId := by simpa using he
+    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?] at hTcb
+    simp only [SystemState.getSchedContext?, RHTable_getElem?_eq_get?] at hSc
+    rw [he'] at hSc
+    revert hTcb hSc; cases st.objects.get? tid.toObjId with
+    | none => simp
+    | some o => cases o <;> simp
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    by_cases hsl : tcb.timeSlice ≤ 1
+    · simp only [timerTickBudgetOnCore, hb, if_pos hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact absurd hStep.2 (by decide)
+    · simp only [timerTickBudgetOnCore, hb, if_neg hsl, Except.ok.injEq, Prod.mk.injEq] at hStep
+      rw [← hStep.1]
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?,
+        RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      exact ⟨_, rfl, rfl⟩
+  | bound scId =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_, rfl⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hTcb
+  | donated scId orig =>
+    cases hSc : st.getSchedContext? scId with
+    | none => simp only [timerTickBudgetOnCore, hb, hSc] at hStep; exact absurd hStep (by simp)
+    | some sc =>
+      by_cases hbg : sc.budgetRemaining.val ≤ 1
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_pos hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact absurd hStep.2 (by decide)
+      · simp only [timerTickBudgetOnCore, hb, hSc, if_neg hbg, Except.ok.injEq, Prod.mk.injEq] at hStep
+        refine ⟨tcb, ?_, rfl⟩
+        rw [← hStep.1]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        rw [RobinHood.RHTable.getElem?_insert_ne st.objects scId.toObjId tid.toObjId _
+          (hDisj scId ⟨sc, hSc⟩) hInv]
+        simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hTcb
+
+/-- A not-preempted budget tick preserves `contextMatchesCurrentOnCore`, given the
+running thread is core `c`'s current (`hCur` / `hTcb` — true in the tick flow): the
+register bank is unchanged and the running thread's `registerContext` is unchanged. -/
+theorem timerTickBudgetOnCore_notPreempted_preserves_contextMatchesCurrentOnCore
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hInv : st.objects.invExt) (hCur : st.scheduler.currentOnCore c = some tid)
+    (hTcb : st.getTcb? tid = some tcb) (h : contextMatchesCurrentOnCore st c)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    contextMatchesCurrentOnCore st' c := by
+  have hsch := timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep
+  have hregs := timerTickBudgetOnCore_notPreempted_regsOnCore_eq st c tid tcb st' hStep
+  obtain ⟨t', ht', htr⟩ :=
+    timerTickBudgetOnCore_notPreempted_getTcb?_tid_reg st c tid tcb st' hInv hTcb hStep
+  -- the pre-state regs==tcb.reg fact from `h` at current = tid
+  simp only [contextMatchesCurrentOnCore, hCur, hTcb] at h
+  simp only [contextMatchesCurrentOnCore, hsch, hCur, ht']
+  rw [hregs, htr]; exact h
+
+/-- WS-SM SM5.I.8: the per-core timer tick preserves `contextMatchesCurrentOnCore`,
+given the prepared state satisfies it (`hPrepCtx`).  Idle path = prepared; preempted
+path *re-establishes* it via `scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore`
+(no hypothesis); not-preempted path preserves it (register bank + running thread's
+`registerContext` unchanged). -/
+theorem timerTickOnCore_preserves_contextMatchesCurrentOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hPrepInv : (timerTickOnCorePrepared st c).1.objects.invExt)
+    (hPrepCtx : contextMatchesCurrentOnCore (timerTickOnCorePrepared st c).1 c)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    contextMatchesCurrentOnCore st' c := by
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepCtx
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            have hst3inv := timerTickBudgetOnCore_preserves_objects_invExt
+              (timerTickOnCorePrepared st c).1 c tid tcb st3 preempted hPrepInv hbud
+            exact scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore st3 c st4 hst3inv hsch
+        · rename_i hpre
+          have hpf : preempted = false := Bool.not_eq_true _ |>.mp hpre
+          subst hpf
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨h1, _⟩ := hStep
+          rw [← h1]
+          exact timerTickBudgetOnCore_notPreempted_preserves_contextMatchesCurrentOnCore
+            (timerTickOnCorePrepared st c).1 c tid tcb st3 hPrepInv hCur hTcb hPrepCtx hbud
+
+-- ── §7e  Nodup (runQueueUnique) per-core preservation [SM5.I] ──
+--
+--   The `runQueueUniqueOnCore` (run-queue `toList.Nodup`) conjunct of the SM5.I
+--   register-bank+Nodup invariant.  Mirrors the `runQueueOnCoreWellFormed` chain
+--   above one-for-one (`RunQueue.remove`/`insert` preserve `toList.Nodup` exactly
+--   as they preserve `wellFormed`).  Parameterized by `hPrepNd` (the prepared
+--   state's Nodup) like the `queueCurrentConsistent` preservation, since the
+--   prepared-phase (cross-core replenishment-wake) Nodup discharger is the SM5
+--   cross-core follow-on.
+
+/-- The idle fallback preserves per-core run-queue `Nodup` (idle dispatch only
+`remove`s the idle thread; the `current = none` arm leaves the queue unchanged). -/
+theorem idleFallbackOnCore_preserves_runQueueOnCore_nodup (st : SystemState) (c : CoreId)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup) :
+    ((idleFallbackOnCore st c).scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold idleFallbackOnCore
+  split
+  · rw [dispatchIdleOnCore_runQueueOnCore]
+    exact RunQueue.remove_preserves_toList_nodup _ _ hnd
+  · simpa [SchedulerState.setCurrentOnCore_runQueueOnCore] using hnd
+
+/-- `scheduleEffectiveOnCore` preserves per-core run-queue `Nodup` — dispatch
+dequeues (`remove`), the idle case is the identity. -/
+theorem scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : scheduleEffectiveOnCore st c = .ok st') :
+    (st'.scheduler.runQueueOnCore c).toList.Nodup := by
+  unfold scheduleEffectiveOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok res =>
+    rw [hCh] at hStep
+    cases res with
+    | none =>
+      simp only [Except.ok.injEq] at hStep; subst hStep
+      apply idleFallbackOnCore_preserves_runQueueOnCore_nodup
+      rw [saveOutgoingContextOnCore_scheduler_eq]; exact hnd
+    | some tid =>
+      cases hTcb : st.getTcb? tid with
+      | none => simp [hTcb] at hStep
+      | some tcb =>
+        simp only [hTcb] at hStep
+        split at hStep
+        · simp only [Except.ok.injEq] at hStep; subst hStep
+          simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+            restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+          rw [saveOutgoingContextOnCore_scheduler_eq]
+          exact RunQueue.remove_preserves_toList_nodup _ tid hnd
+        · simp at hStep
+
+/-- A not-preempted budget tick preserves per-core run-queue `Nodup` — its
+scheduler is unchanged (`timerTickBudgetOnCore_notPreempted_scheduler_eq`). -/
+theorem timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCore_nodup
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState)
+    (hnd : (st.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', false)) :
+    (st'.scheduler.runQueueOnCore c).toList.Nodup := by
+  rw [timerTickBudgetOnCore_notPreempted_scheduler_eq st c tid tcb st' hStep]; exact hnd
+
+/-- WS-SM SM5.I.8: the per-core timer tick preserves `runQueueUniqueOnCore`, given
+the prepared state is `Nodup` (`hPrepNd`) and the budget tick preserves it
+(`hBudgetNd`).  Idle path = prepared; preempted path dequeues-on-dispatch via
+`scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup`; not-preempted path leaves
+the scheduler unchanged.  `hBudgetNd` is discharged on every clean path by
+`timerTickBudgetOnCore_notPreempted_preserves_runQueueOnCore_nodup`. -/
+theorem timerTickOnCore_preserves_runQueueUniqueOnCore (st : SystemState) (c : CoreId)
+    (st' : SystemState) (sgis : List (CoreId × SgiKind))
+    (hPrepNd : ((timerTickOnCorePrepared st c).1.scheduler.runQueueOnCore c).toList.Nodup)
+    (hBudgetNd : ∀ tid tcb st3 b,
+       (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
+       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b) →
+       (st3.scheduler.runQueueOnCore c).toList.Nodup)
+    (hStep : timerTickOnCore st c = .ok (st', sgis)) :
+    runQueueUniqueOnCore st'.scheduler c := by
+  rw [timerTickOnCore_eq_prepared] at hStep
+  cases hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c with
+  | none =>
+    simp only [hCur, Except.ok.injEq] at hStep
+    have h1 : (timerTickOnCorePrepared st c).1 = st' := by rw [hStep]
+    rw [← h1]; exact hPrepNd
+  | some tid =>
+    simp only [hCur] at hStep
+    cases hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid with
+    | none => simp [hTcb] at hStep
+    | some tcb =>
+      simp only [hTcb] at hStep
+      cases hbud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb with
+      | error e => simp [hbud] at hStep
+      | ok r =>
+        obtain ⟨st3, preempted⟩ := r
+        simp only [hbud] at hStep
+        have hst3 := hBudgetNd tid tcb st3 preempted hCur hTcb hbud
+        split at hStep
+        · cases hsch : scheduleEffectiveOnCore st3 c with
+          | error e => simp [hsch] at hStep
+          | ok st4 =>
+            simp only [hsch, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨h1, _⟩ := hStep
+            rw [← h1]
+            exact scheduleEffectiveOnCore_preserves_runQueueOnCore_nodup st3 c st4 hst3 hsch
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨h1, _⟩ := hStep
           rw [← h1]; exact hst3
@@ -1938,7 +2607,7 @@ theorem saveOutgoingContextOnCore_getTcb?_domain (st : SystemState) (c : CoreId)
     | some outTcb =>
       by_cases heq : tid = outTid
       · subst heq
-        refine ⟨{ outTcb with registerContext := st.machine.regs }, ?_, ?_⟩
+        refine ⟨{ outTcb with registerContext := st.machine.regsOnCore c }, ?_, ?_⟩
         · simp only [saveOutgoingContextOnCore, hc, ho]
           simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
           rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
@@ -1988,7 +2657,7 @@ theorem scheduleEffectiveOnCore_establishes_currentThreadInActiveDomainOnCore (s
             rw [← hStep]; simp [SchedulerState.setCurrentOnCore_currentOnCore_self]
           have hact : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c := by
             rw [← hStep]
-            simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContext_scheduler,
+            simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
               SchedulerState.setRunQueueOnCore_activeDomainOnCore]
             rw [saveOutgoingContextOnCore_scheduler_eq]
           obtain ⟨tcb', hg, hdom⟩ := scheduleEffectiveOnCore_getTcb?_domain st c st' tid tcb hInv hCopy hTcb

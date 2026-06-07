@@ -2293,7 +2293,7 @@ theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.timer = (default : SystemState).machine.timer ∧
     (bootFromPlatform config).state.machine.systemRegisters = (default : SystemState).machine.systemRegisters ∧
     (bootFromPlatform config).state.machine.interruptsEnabled = (default : SystemState).machine.interruptsEnabled := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default])
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (show _ = _; unfold bootFromPlatform; simp [applyMachineConfig, foldObjects_machine, foldIrqs_machine, mkEmpty_state_eq_default, MachineState.regs, MachineState.regsOnCore])
 
 /-- **WS-SM SM4.G**: the idle-thread boot state's boot-core current thread is in
     the active domain — the idle thread's domain `⟨0⟩` equals the boot active

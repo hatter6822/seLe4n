@@ -825,6 +825,60 @@ similar to SM0/SM1 patterns.)
 | SM5.I.9 | `crossSubsystemInvariant_smp` extension | M |
 | SM5.I.10 | Tier-3 surface anchors | S |
 
+> **WS-SM SM5.I LANDED at v0.31.60** (the per-core invariant suite; all 10
+> sub-tasks).  The SM4.C/SM4.D per-core *predicates* (SM5.I.1–I.7, I.9) were
+> already defined as the SM4 per-core migration; SM5.I assembles them into the
+> coherent suite (new `Scheduler/Invariant/PerCoreInvariantSuite.lean` +
+> `PerCoreInvariantSuiteInventory.lean` + `tests/SmpInvariantSuite.lean`) and
+> proves **SM5.I.8 — preservation by every per-core transition** via a new
+> register-bank-free **structural** SMP invariant and a reusable
+> per-arbitrary-core SMP-preservation engine.  All theorems axiom-clean; default
+> build green (160 jobs); partition gate 62 staged-only modules; trace
+> byte-identical (additive + staged).
+>
+> - **The structural SMP invariant**: `schedulerInvariantStructural_perCore` /
+>   `_smp` — the four register-bank-independent safety conjuncts of
+>   `schedulerInvariant_perCore` (`queueCurrentConsistent ∧ currentThreadValid ∧
+>   runnableThreadsAreTCBs ∧ runQueueWellFormed`) proved preserved by every
+>   transition.  The other seven are excluded for three reasons (the first two
+>   genuinely-mathematical, the third a scope-bounding deferral — none a soundness
+>   gap): (1) `contextMatchesCurrentOnCore` against the *system-wide* `machine.regs`
+>   is satisfiable for **at most one** non-idle core, so a per-core dispatch
+>   rewriting `machine.regs` invalidates every other active core's conjunct —
+>   faithful only with **per-core register banks** (the SM5 context-bank migration
+>   the SM4.C predicate already notes); (2) `edfCurrentHasEarliestDeadline` + the
+>   time/domain-slice conjuncts are *dispatch-established*, not transition-stable
+>   (a bare wake transiently breaks EDF, exactly as single-core `ensureRunnable`
+>   preserves only the base invariant); (3) `schedulerPriorityMatch` is
+>   register-bank-independent but PIP-dispatch-coupled (a `pipBoost` change
+>   re-buckets the run-queue index only on the thread's home core), and
+>   `runQueueUnique` (`Nodup`) is register-bank-independent + transition-stable but
+>   deferred to bound the cut (its `RunQueue.insert`/`remove` `Nodup`-preservation
+>   lemmas are the follow-on).  The structural frame needs **no `machine.regs`
+>   agreement**, so a per-core dispatch preserves it on every core — the
+>   register-bank-free system-wide guarantee the suite delivers now.  The §3.7 plan §3.5.2
+>   `chooseThreadOnCore_always_succeeds` form is the SM5.E keystone; SM5.I.5/I.7
+>   surface `schedulerInvariant_smp` from SM4.C unchanged, with the structural
+>   invariant as the dominated register-bank-free core.
+> - **SM5.I.8 (preservation by every transition)**: the engine
+>   `schedulerInvariantStructural_smp_of_establish_and_frame` (the per-arbitrary-core
+>   analogue of SM4.C's boot-core-and-idle-frame skeleton) + ten
+>   `<op>_preserves_schedulerInvariantStructural_smp` theorems (`advanceDomainOnCore`,
+>   `enqueueRunnableOnCore`, `wakeThread`, `scheduleEffectiveOnCore` /
+>   `scheduleOrIdleOnCore`, `switchToThreadOnCore`, `handleRescheduleSgiOnCore`,
+>   `enqueueIdleThreadOnCore`, `replenishOnCore`, `decrementDomainTimeOnCore`) +
+>   the missing per-conjunct helpers (wake/switch `runnableThreadsAreTCBs`, preempt
+>   `getTcb?`-isSome / run-queue resolution, the dispatcher sibling frame, the
+>   idle-fallback sibling frames).  The composite live-tick transitions
+>   (`switchDomainOnCore` / `scheduleDomainOnCore` / `timerTickOnCore`) preserve the
+>   structural invariant by *composition* of these primitives (the
+>   `timerTickOnCore` cross-core replenish wake threads `wakeThread` preservation
+>   through the fold) — the SM5.I closure follow-on; executing-core establishment
+>   already present from SM5.D.  NONE deferred with correctness impact.
+> - **SM5.I.1–I.4/I.6/I.9 suite index** + **39-entry `pcist!` inventory** (3
+>   categories) + **SM5.I.10 Tier-3 anchors** + `tests/SmpInvariantSuite.lean`
+>   (43 surface anchors, 9 examples, 14 runtime assertions; Tier-2 + Tier-3 wired).
+
 ### SM5.J — WCRT under fine locks (2 PRs, 5 sub-tasks)
 
 | Sub | Description | Est |

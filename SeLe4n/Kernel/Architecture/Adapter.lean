@@ -31,7 +31,7 @@ def advanceTimerState (ticks : Nat) (st : SystemState) : SystemState :=
 
 /-- Deterministic pure register projection used by runtime-boundary adapters. -/
 def writeRegisterState (reg : SeLe4n.RegName) (value : SeLe4n.RegValue) (st : SystemState) : SystemState :=
-  { st with machine := { st.machine with regs := SeLe4n.writeReg st.machine.regs reg value } }
+  { st with machine := st.machine.setRegsOnCore bootCoreId (SeLe4n.writeReg st.machine.regs reg value) }
 
 /-- Runtime adapter: advance timer only for non-zero ticks and when contract monotonicity admits the step. -/
 def adapterAdvanceTimer (contract : RuntimeBoundaryContract) (ticks : Nat) : Kernel Unit :=
@@ -147,7 +147,7 @@ theorem adapterReadMemory_error_unsupportedBinding
 def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
     (st : SystemState) : SystemState :=
   { st with
-      machine := { st.machine with regs := newRegs }
+      machine := st.machine.setRegsOnCore bootCoreId newRegs
       scheduler := st.scheduler.setCurrentOnCore bootCoreId (some newTid) }
 
 /-- X1-F: Context-switch adapter operation. Performs an atomic context switch

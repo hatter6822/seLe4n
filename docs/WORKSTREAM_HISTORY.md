@@ -24,6 +24,20 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
+**Current sub-phase: SM5.I per-core invariant suite + SM4.B register-bank
+payoff COMPLETE (v0.31.60 → v0.31.61).** SM4.B per-core register banks
+(`MachineState.coreRegs : Vector RegisterFile numCores`) make
+`contextMatchesCurrentOnCore` (now reading core `c`'s own bank) a genuine
+∀-core invariant: the register-bank-extended `schedulerInvariantStructuralReg_smp`
+(the structural safety core + `contextMatchesCurrentOnCore`) and the
+Nodup-extended `schedulerInvariantStructuralRegNodup_smp` (+ `runQueueUniqueOnCore`)
+are proved preserved system-wide by every one of the ten SM5 per-core
+transitions.  The dispatch sibling frame is discharged by the `RegisterFile`
+partial-equivalence (`beq_symm` / `beq_trans`) idempotent-save argument (no
+cross-core current-disjointness invariant needed).  Axiom-clean; trace
+byte-identical; 79-entry inventory (new `.registerBank` category).  Full
+per-phase detail in `CLAUDE.md`.
+
 **WS-SM SM0 closure at v0.31.3 (this cut).** 21 sub-tasks across 6
 categories landed as one cut: foundational types
 (`Concurrency.Types`/`Locks/Kind`/`Locks`/`Sgi`), AN12-B inventory

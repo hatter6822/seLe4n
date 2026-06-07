@@ -89,12 +89,14 @@ def projectDomainScheduleIndexOnCore (_ctx : LabelingContext) (_observer : IfObs
 
 /-- SM4.D: per-core form of `projectMachineRegs` — core `c`'s machine
 register file, visible only when core `c`'s current thread is observable.
-(At SM4.D the machine register file is still system-wide; SM5 introduces
-per-core register banks, at which point this reads core `c`'s bank.) -/
+WS-SM SM5.I (per-core banks, now live): reads core `c`'s **own** register bank
+(`regsOnCore c`), so for a non-boot core the projection exposes that core's
+registers rather than the boot core's — the SMP-correct information-flow
+observation. -/
 def projectMachineRegsOnCore (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (c : CoreId) : Option RegisterFile :=
   match (st.scheduler.currentOnCore c) with
-  | some tid => if threadObservable ctx observer tid then some st.machine.regs else none
+  | some tid => if threadObservable ctx observer tid then some (st.machine.regsOnCore c) else none
   | none => none
 
 /-- SM4.D: per-core form of `projectState` — the IF-M1 observable state
@@ -151,8 +153,9 @@ theorem projectStateOnCore_bootCore (ctx : LabelingContext) (observer : IfObserv
 -- ============================================================================
 --
 -- Each per-core projection at core `c` reads only core `c`'s relevant
--- scheduler slot (`projectMachineRegsOnCore` additionally reads
--- `machine.regs`).  Hence a write to a *different* core's scheduler slot
+-- scheduler slot (`projectMachineRegsOnCore` additionally reads core `c`'s
+-- own register bank `regsOnCore c`).  Hence a write to a *different* core's
+-- scheduler slot (or a different core's register bank)
 -- leaves core `c`'s projection unchanged — the per-core observability
 -- locality the SMP non-interference proofs require.  SM5 discharges the
 -- per-slot equality hypotheses from the SM4.B `set…OnCore_…OnCore_ne`
@@ -193,7 +196,7 @@ theorem projectDomainScheduleIndexOnCore_frame (ctx : LabelingContext) (observer
 theorem projectMachineRegsOnCore_frame (ctx : LabelingContext) (observer : IfObserver)
     {st st' : SystemState} {c : CoreId}
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs) :
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c) :
     projectMachineRegsOnCore ctx observer st' c = projectMachineRegsOnCore ctx observer st c := by
   unfold projectMachineRegsOnCore; rw [hCur, hRegs]
 
@@ -211,7 +214,7 @@ theorem projectStateOnCore_congr (ctx : LabelingContext) (observer : IfObserver)
     (hAD : st'.scheduler.activeDomainOnCore c = st.scheduler.activeDomainOnCore c)
     (hDTR : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
     (hDSI : st'.scheduler.domainScheduleIndexOnCore c = st.scheduler.domainScheduleIndexOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs) :
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c) :
     projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
   unfold projectStateOnCore
   rw [hBase,

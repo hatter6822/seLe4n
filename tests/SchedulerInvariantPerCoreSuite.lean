@@ -329,7 +329,7 @@ example (s s' : SchedulerState) (c : CoreId)
 
 example (st st' : SystemState) (c : CoreId)
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj : st'.objects = st.objects) :
     contextMatchesCurrentOnCore st' c ↔ contextMatchesCurrentOnCore st c :=
   contextMatchesCurrentOnCore_frame hCur hRegs hObj

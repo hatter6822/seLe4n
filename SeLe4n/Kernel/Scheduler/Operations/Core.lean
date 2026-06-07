@@ -278,7 +278,7 @@ theorem restoreIncomingContext_establishes_context
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     (restoreIncomingContext st tid).machine.regs = tcb.registerContext := by
-  simp only [restoreIncomingContext, hTcb]
+  simp only [restoreIncomingContext, hTcb, MachineState.regs_setRegsOnCore_bootCore]
 
 /-- WS-H12c: `restoreIncomingContext` does not change the machine state when
 the given thread ID does not correspond to a TCB in the object store. -/
@@ -1054,7 +1054,7 @@ def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
   | some outTid =>
       match st.getTcb? outTid with
       | some outTcb =>
-          let savedTcb : KernelObject := .tcb { outTcb with registerContext := st.machine.regs }
+          let savedTcb : KernelObject := .tcb { outTcb with registerContext := st.machine.regsOnCore c }
           { st with objects := st.objects.insert outTid.toObjId savedTcb }
       | none => st
 
@@ -1084,7 +1084,7 @@ store). -/
 def dispatchIdleOnCore (st : SystemState) (c : CoreId) : SystemState :=
   let stDeq := { st with scheduler :=
     st.scheduler.setRunQueueOnCore c ((st.scheduler.runQueueOnCore c).remove (idleThreadId c)) }
-  let stRestored := restoreIncomingContext stDeq (idleThreadId c)
+  let stRestored := restoreIncomingContextOnCore stDeq c (idleThreadId c)
   { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some (idleThreadId c)) }
 
 /-- WS-SM SM5.E: dispatching idle sets core `c`'s current thread to the idle thread. -/
@@ -1095,7 +1095,7 @@ def dispatchIdleOnCore (st : SystemState) (c : CoreId) : SystemState :=
 /-- WS-SM SM5.E: dispatching idle does not touch the object store. -/
 @[simp] theorem dispatchIdleOnCore_objects (st : SystemState) (c : CoreId) :
     (dispatchIdleOnCore st c).objects = st.objects := by
-  simp only [dispatchIdleOnCore, restoreIncomingContext_objects]
+  simp only [dispatchIdleOnCore, restoreIncomingContextOnCore_objects]
 
 /-- WS-SM SM5.E: after dispatching idle, core `c`'s run queue is the old one with
 the idle thread removed (dequeue-on-dispatch). -/
@@ -1103,20 +1103,30 @@ theorem dispatchIdleOnCore_runQueueOnCore (st : SystemState) (c : CoreId) :
     (dispatchIdleOnCore st c).scheduler.runQueueOnCore c
       = (st.scheduler.runQueueOnCore c).remove (idleThreadId c) := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-    restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
 
 /-- WS-SM SM5.E: dispatching idle frames core `c`'s active domain. -/
 @[simp] theorem dispatchIdleOnCore_activeDomainOnCore (st : SystemState) (c : CoreId) :
     (dispatchIdleOnCore st c).scheduler.activeDomainOnCore c
       = st.scheduler.activeDomainOnCore c := by
   simp only [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_activeDomainOnCore,
-    restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_activeDomainOnCore]
+    restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_activeDomainOnCore]
 
 /-- WS-SM SM5.E: dispatching idle leaves every thread's TCB resolution unchanged. -/
 theorem dispatchIdleOnCore_getTcb? (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
     (dispatchIdleOnCore st c).getTcb? tid = st.getTcb? tid := by
   unfold SystemState.getTcb?
   rw [dispatchIdleOnCore_objects]
+
+/-- WS-SM SM5.I (per-core register banks): dispatching idle restores the idle
+thread's register context into **core `c`'s** bank.  The dequeue is scheduler-only
+(so `stDeq.objects = st.objects`), the per-core restore writes `setRegsOnCore c
+idleTcb.registerContext`, and the trailing `setCurrentOnCore` frames `machine`. -/
+theorem dispatchIdleOnCore_machine_regsOnCore_self (st : SystemState) (c : CoreId)
+    (idleTcb : TCB) (hTcb : st.getTcb? (idleThreadId c) = some idleTcb) :
+    (dispatchIdleOnCore st c).machine.regsOnCore c = idleTcb.registerContext := by
+  unfold dispatchIdleOnCore
+  exact restoreIncomingContextOnCore_regsOnCore_self _ c (idleThreadId c) idleTcb hTcb
 
 /-- WS-SM SM5.E: the per-core idle fallback applied to an already-context-saved
 state — run core `c`'s idle thread if dispatchable, else leave `current = none`.
@@ -1195,7 +1205,7 @@ def scheduleEffectiveOnCore (st : SystemState) (c : CoreId) :
             let stSaved := saveOutgoingContextOnCore st c
             let stDequeued := { stSaved with scheduler :=
               stSaved.scheduler.setRunQueueOnCore c ((stSaved.scheduler.runQueueOnCore c).remove tid) }
-            let stRestored := restoreIncomingContext stDequeued tid
+            let stRestored := restoreIncomingContextOnCore stDequeued c tid
             .ok { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some tid) }
           else
             .error .schedulerInvariantViolation
@@ -1380,13 +1390,18 @@ which the tick reads but does not advance — see the SM5.D section header):
 2. **SM5.D.4**: process core `c`'s due CBS replenishments
    (`processReplenishmentsDueOnCore`), collecting the cross-core `.reschedule`
    SGIs the remote-targeted wakes emit.
-3. **SM5.D.6**: advance core `c`'s domain accounting
-   (`decrementDomainTimeOnCore`).
-4. **SM5.D.5**: charge the running thread one tick (`timerTickBudgetOnCore`); if
+3. **SM5.D.5**: charge the running thread one tick (`timerTickBudgetOnCore`); if
    that exhausts its budget / time-slice (preemption), re-select and dispatch the
    highest-priority budget-eligible runnable thread on core `c`
    (`scheduleEffectiveOnCore`).  An idle core (`currentOnCore c = none`) skips the
    budget charge.
+
+The tick does **budget accounting only** and never writes
+`domainTimeRemainingOnCore` (audit-pass-2 domain-rotation faithfulness, mirroring
+single-core `timerTickWithBudget`); per-core *domain* rotation is the separate
+atomic `scheduleDomainOnCore`.  Its `domainTimeRemainingPositiveOnCore`
+preservation is therefore a pure frame on that untouched slot (formalised in the
+SM5.I per-core tick invariant capstone).
 
 Returns the post-tick state paired with the list of cross-core SGIs to emit
 (from the replenish wakes).  The pure single-state-plus-SGIs form mirrors

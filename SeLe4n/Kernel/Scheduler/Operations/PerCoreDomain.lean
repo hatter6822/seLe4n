@@ -955,7 +955,7 @@ theorem idleFallbackOnCore_domainSchedule (st : SystemState) (c : CoreId) :
   unfold idleFallbackOnCore
   split
   · simp [dispatchIdleOnCore, SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore,
-      restoreIncomingContext_scheduler]
+      restoreIncomingContextOnCore_scheduler]
   · simp [SchedulerState.setCurrentOnCore]
 
 /-- WS-SM SM5.G.3 helper: a successful per-core reschedule frames core `c`'s active
@@ -983,7 +983,7 @@ theorem scheduleEffectiveOnCore_activeDomainOnCore (st : SystemState) (c : CoreI
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
-          simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContext_scheduler,
+          simp only [SchedulerState.setCurrentOnCore_activeDomainOnCore, restoreIncomingContextOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_activeDomainOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
@@ -1010,7 +1010,7 @@ theorem scheduleEffectiveOnCore_domainSchedule (st : SystemState) (c : CoreId)
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
           simp only [SchedulerState.setCurrentOnCore, SchedulerState.setRunQueueOnCore,
-            restoreIncomingContext_scheduler]
+            restoreIncomingContextOnCore_scheduler]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep
 
@@ -1153,7 +1153,7 @@ theorem idleFallbackOnCore_domainScheduleIndexOnCore (st : SystemState) (c : Cor
   unfold idleFallbackOnCore
   split
   · simp [dispatchIdleOnCore, SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore,
-      restoreIncomingContext_scheduler, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
+      restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
   · simp [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore]
 
 /-- WS-SM SM5.G.2 helper: a successful per-core reschedule frames core `c`'s schedule
@@ -1178,7 +1178,7 @@ theorem scheduleEffectiveOnCore_domainScheduleIndexOnCore (st : SystemState) (c 
         split at hStep
         · simp only [Except.ok.injEq] at hStep
           rw [← hStep]
-          simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContext_scheduler,
+          simp only [SchedulerState.setCurrentOnCore_domainScheduleIndexOnCore, restoreIncomingContextOnCore_scheduler,
             SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
           rw [saveOutgoingContextOnCore_scheduler_eq]
         · simp at hStep

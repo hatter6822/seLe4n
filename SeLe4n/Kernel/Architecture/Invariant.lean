@@ -912,7 +912,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
   obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
   -- writeRegisterState only changes machine.regs — establish definitional equalities
   have hEq : writeRegisterState reg value st =
-      { st with machine := { st.machine with regs := SeLe4n.writeReg st.machine.regs reg value } } :=
+      { st with machine := st.machine.setRegsOnCore bootCoreId (SeLe4n.writeReg st.machine.regs reg value) } :=
     rfl
   -- Most predicates transfer via `by exact` since objects/scheduler/services are unchanged
   -- at the struct level; others need the rewrite for Lean to see through the record update

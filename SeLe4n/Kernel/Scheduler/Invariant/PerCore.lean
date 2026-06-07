@@ -168,16 +168,20 @@ def edfCurrentHasEarliestDeadlineOnCore (st : SystemState) (c : CoreId) : Prop :
             | none => True
       | none => True
 
-/-- SM4.C: per-core register-context match.  Per-core form of
-`contextMatchesCurrent`: when core `c` has a current thread, the machine
-register file matches that thread's saved context.  (At SM4.C the machine
-register file is still system-wide; SM5 introduces per-core register
-banks, at which point this reads core `c`'s bank.) -/
+/-- SM4.C / WS-SM SM5.I: per-core register-context match.  Per-core form of
+`contextMatchesCurrent`: when core `c` has a current thread, **core `c`'s
+register bank** (`machine.regsOnCore c` — the SM5.I per-core register banks)
+matches that thread's saved context.  Because each core reads its *own* bank,
+this is a genuine `∀ c` invariant under per-core dispatch: a dispatch on core
+`c₀` writes only `c₀`'s bank, establishing the match on `c₀` and framing every
+sibling core's match.  At the boot core `regsOnCore bootCoreId` is the
+single-core `machine.regs` view, so the bridge to single-core
+`contextMatchesCurrent` holds. -/
 def contextMatchesCurrentOnCore (st : SystemState) (c : CoreId) : Prop :=
   match st.scheduler.currentOnCore c with
   | some tid =>
       match st.getTcb? tid with
-      | some tcb => (st.machine.regs == tcb.registerContext) = true
+      | some tcb => (st.machine.regsOnCore c == tcb.registerContext) = true
       | none => True
   | none => True
 
@@ -369,11 +373,14 @@ theorem edfCurrentHasEarliestDeadlineOnCore_bootCore_iff (st : SystemState) :
 
 theorem contextMatchesCurrentOnCore_bootCore_iff (st : SystemState) :
     contextMatchesCurrentOnCore st bootCoreId ↔ contextMatchesCurrent st := by
+  -- WS-SM SM5.I: at the boot core `regsOnCore bootCoreId` *is* the single-core
+  -- `machine.regs` view (`MachineState.regs` def), so the per-core and single-core
+  -- conjuncts coincide definitionally.
   unfold contextMatchesCurrentOnCore contextMatchesCurrent
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none => simp
   | some tid =>
-    simp only
+    simp only [MachineState.regs]
     unfold SystemState.getTcb?
     cases hObj : (st.objects[tid.toObjId]? : Option KernelObject) with
     | none => simp
@@ -1041,7 +1048,7 @@ theorem edfCurrentHasEarliestDeadlineOnCore_frame {st st' : SystemState} {c : Co
 
 theorem contextMatchesCurrentOnCore_frame {st st' : SystemState} {c : CoreId}
     (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj : st'.objects = st.objects) :
     contextMatchesCurrentOnCore st' c ↔ contextMatchesCurrentOnCore st c := by
   have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
@@ -1123,7 +1130,7 @@ theorem schedulerInvariant_perCore_frame {st st' : SystemState} {c : CoreId}
     (hCur  : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
     (hRQ   : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
     (hDTR  : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj  : st'.objects = st.objects) :
     schedulerInvariant_perCore st' c ↔ schedulerInvariant_perCore st c := by
   -- The aggregate predicates of §3 read only through `getTcb?` (not
@@ -1309,7 +1316,7 @@ theorem schedulerInvariant_perCore_extended_frame {st st' : SystemState} {c : Co
     (hRQ   : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
     (hDTR  : st'.scheduler.domainTimeRemainingOnCore c = st.scheduler.domainTimeRemainingOnCore c)
     (hRepl : st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
-    (hRegs : st'.machine.regs = st.machine.regs)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
     (hObj  : st'.objects = st.objects) :
     schedulerInvariant_perCore_extended st' c ↔ schedulerInvariant_perCore_extended st c := by
   unfold schedulerInvariant_perCore_extended
@@ -1808,5 +1815,179 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
   by_cases hc : c = bootCoreId
   · subst hc; exact hBoot'
   · exact hNonBootIdle' c hc
+
+-- ============================================================================
+-- §9  AK2-B carrier: bound-thread base-priority consistency (SM5.I)
+-- ============================================================================
+--
+-- The SchedContext-bound / -donated effective-priority resolver
+-- `resolveEffectivePrioDeadline` (Selection.lean) reads the *SchedContext's*
+-- base priority, whereas `effectiveRunQueuePriority` — the bucket that
+-- `schedulerPriorityMatchOnCore` records — reads the *TCB's* base priority.
+-- They coincide exactly when a bound thread's base priority equals its
+-- SchedContext's base priority: the "Option B propagation" agreement that
+-- `schedContextBind` / `schedContextConfigure` establish (see the
+-- `effectiveBucketPriority` docstring in `Scheduler/Invariant.lean`).
+--
+-- `boundThreadPriorityConsistent` packages that agreement.  It is the discharge
+-- for preserving `schedulerPriorityMatchOnCore` through the SchedContext-priced
+-- run-queue inserts (`updatePipBoostOnCore` and the bound budget re-enqueue,
+-- both at `resolveInsertPriority = (resolveEffectivePrioDeadline st tcb).1`):
+-- under this agreement that inserted bucket equals the TCB-based
+-- `effectiveRunQueuePriority tcb` that `schedulerPriorityMatch` records.
+--
+-- It is stated system-wide (a property of the object store, core-independent)
+-- and over *both* `.bound` and `.donated` bindings via `SchedContextBinding.scId?`,
+-- since `resolveEffectivePrioDeadline` reads the SchedContext base priority for
+-- both.  It frames through every scheduler transition (none touch a TCB's base
+-- `priority` / `schedContextBinding` or a SchedContext's `priority`) and is
+-- established / maintained by the SchedContext propagation ops; the default
+-- state satisfies it vacuously.
+
+/-- Local helper: the default object store is empty, so every `ObjId` lookup is
+`none`.  Stated over a generic `ObjId` (no `tid`-keyed raw-lookup text). -/
+private theorem default_objects_getElem_none (oid : SeLe4n.ObjId) :
+    (default : SystemState).objects[oid]? = none := by
+  simp only [RHTable_getElem?_eq_get?]
+  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+
+/-- Local helper: `getTcb?` is `none` for every thread on the default state. -/
+private theorem default_getTcb?_none (tid : SeLe4n.ThreadId) :
+    (default : SystemState).getTcb? tid = none := by
+  unfold SystemState.getTcb?
+  rw [default_objects_getElem_none]
+
+/-- SM5.I (AK2-B carrier).  A SchedContext-bound or -donated thread's base
+priority agrees with its bound SchedContext's base priority.  System-wide (an
+object-store property, core-independent); covers both `.bound` and `.donated`
+via `SchedContextBinding.scId?` because `resolveEffectivePrioDeadline` reads the
+SchedContext base priority for both.  Uses the typed `getTcb?` /
+`getSchedContext?` accessors. -/
+def boundThreadPriorityConsistent (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
+    ∀ scId, tcb.schedContextBinding.scId? = some scId →
+      ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority
+
+/-- `boundThreadPriorityConsistent` depends only on the object store, so it is
+preserved by any transition leaving `objects` unchanged (the pure
+scheduler-field ops: `advanceDomainOnCore`, `decrementDomainTimeOnCore`, the
+run-queue / current / domain writes). -/
+theorem boundThreadPriorityConsistent_of_objects_eq {st st' : SystemState}
+    (hObj : st'.objects = st.objects) (h : boundThreadPriorityConsistent st) :
+    boundThreadPriorityConsistent st' := by
+  intro tid tcb' htcb' scId hbind sc' hsc'
+  rw [getTcb?_congr_objects hObj] at htcb'
+  rw [getSchedContext?_congr_objects hObj] at hsc'
+  exact h tid tcb' htcb' scId hbind sc' hsc'
+
+/-- General frame lemma: `boundThreadPriorityConsistent` is preserved by any
+transition whose object writes preserve, for every thread, its base `priority`
+and `schedContextBinding`, and for every SchedContext, its base `priority`.
+Every SM5 scheduler transition satisfies this — writes to `timeSlice` /
+`registerContext` / `ipcState` / `pipBoost` / `budgetRemaining` / replenishments
+never touch base `priority` or `schedContextBinding`. -/
+theorem boundThreadPriorityConsistent_frame {st st' : SystemState}
+    (hTcb : ∀ tid tcb', st'.getTcb? tid = some tcb' →
+       ∃ tcb, st.getTcb? tid = some tcb ∧
+         tcb'.schedContextBinding = tcb.schedContextBinding ∧
+         tcb'.priority = tcb.priority)
+    (hSc : ∀ scId sc', st'.getSchedContext? scId = some sc' →
+       ∃ sc, st.getSchedContext? scId = some sc ∧ sc'.priority = sc.priority)
+    (h : boundThreadPriorityConsistent st) :
+    boundThreadPriorityConsistent st' := by
+  intro tid tcb' htcb' scId hbind sc' hsc'
+  obtain ⟨tcb, hTcbPre, hBind, hPrio⟩ := hTcb tid tcb' htcb'
+  obtain ⟨sc, hScPre, hScPrio⟩ := hSc scId sc' hsc'
+  rw [hPrio, hScPrio]
+  exact h tid tcb hTcbPre scId (hBind ▸ hbind) sc hScPre
+
+/-- The default state's object store is empty, so `boundThreadPriorityConsistent`
+holds vacuously. -/
+theorem default_boundThreadPriorityConsistent :
+    boundThreadPriorityConsistent (default : SystemState) := by
+  intro tid tcb htcb
+  rw [default_getTcb?_none] at htcb
+  simp at htcb
+
+-- ============================================================================
+-- §10  Global time-slice positivity (SM5.I — global-invariant strengthening)
+-- ============================================================================
+--
+-- The per-core, run-queue-scoped `timeSlicePositiveOnCore` is *not* preserved by
+-- the wake (`enqueueRunnableOnCore`): the wake inserts a thread into the run
+-- queue without resetting its `timeSlice`, so the newly-runnable thread (which
+-- was not previously a run-queue member) must already carry a positive slice —
+-- a fact the run-queue-scoped invariant cannot supply.
+--
+-- `allThreadsTimeSlicePositive` is the genuine, global invariant the SM5
+-- scheduler maintains: *every* TCB in the object store has a positive time
+-- slice.  In the model `timeSlice` is only ever written by the budget tick —
+-- decremented under a strict `> 1` guard (so the result stays `≥ 1`) or reset
+-- to `configDefaultTimeSlice` (`> 0`) — and set at creation (`> 0`, e.g. the
+-- idle thread's `5`); no transition can drive it to `0`.  It is established at
+-- boot, preserved by every transition, and implies *both* per-core slice
+-- conjuncts (`timeSlicePositiveOnCore`, `currentTimeSlicePositiveOnCore`), so
+-- the wake's slice preservation becomes unconditional.  System-wide
+-- (core-independent); mirrors the `boundThreadPriorityConsistent` carrier.
+
+/-- SM5.I (global-invariant strengthening).  Every TCB in the object store has a
+positive time slice.  The genuine global invariant behind the run-queue-scoped
+`timeSlicePositiveOnCore` / `currentTimeSlicePositiveOnCore`; preserved by every
+SM5 transition (only the budget tick writes `timeSlice`, and it stays `> 0`). -/
+def allThreadsTimeSlicePositive (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb → tcb.timeSlice > 0
+
+/-- `allThreadsTimeSlicePositive` is an object-store property, so it is preserved
+by any transition leaving `objects` unchanged. -/
+theorem allThreadsTimeSlicePositive_of_objects_eq {st st' : SystemState}
+    (hObj : st'.objects = st.objects) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro tid tcb htcb
+  rw [getTcb?_congr_objects hObj] at htcb
+  exact h tid tcb htcb
+
+/-- General frame lemma: `allThreadsTimeSlicePositive` is preserved by any
+transition whose object writes preserve every thread's `timeSlice` field.  Every
+SM5 transition *except* the budget tick satisfies this (writes to `ipcState` /
+`registerContext` / `pipBoost` / `schedContextBinding` / SchedContext fields
+never touch `timeSlice`); the budget tick has its own dedicated preservation. -/
+theorem allThreadsTimeSlicePositive_frame {st st' : SystemState}
+    (hTcb : ∀ tid tcb', st'.getTcb? tid = some tcb' →
+       ∃ tcb, st.getTcb? tid = some tcb ∧ tcb'.timeSlice = tcb.timeSlice)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro tid tcb' htcb'
+  obtain ⟨tcb, hTcbPre, hSlice⟩ := hTcb tid tcb' htcb'
+  rw [hSlice]; exact h tid tcb hTcbPre
+
+/-- Bridge: the global slice invariant implies the per-core run-queue-scoped one
+(every run-queue member resolves to a TCB, and every TCB has a positive slice). -/
+theorem timeSlicePositiveOnCore_of_allThreads {st : SystemState} {c : CoreId}
+    (h : allThreadsTimeSlicePositive st) : timeSlicePositiveOnCore st c := by
+  intro tid _
+  cases htcb : st.getTcb? tid with
+  | none => trivial
+  | some tcb => exact h tid tcb htcb
+
+/-- Bridge: the global slice invariant implies the per-core current-thread slice
+invariant (the current thread, if any, resolves to a TCB with a positive slice). -/
+theorem currentTimeSlicePositiveOnCore_of_allThreads {st : SystemState} {c : CoreId}
+    (h : allThreadsTimeSlicePositive st) : currentTimeSlicePositiveOnCore st c := by
+  unfold currentTimeSlicePositiveOnCore
+  split
+  · trivial
+  · rename_i tid hcur
+    split
+    · rename_i tcb htcb
+      exact h tid tcb htcb
+    · trivial
+
+/-- The default state's object store is empty, so `allThreadsTimeSlicePositive`
+holds vacuously. -/
+theorem default_allThreadsTimeSlicePositive :
+    allThreadsTimeSlicePositive (default : SystemState) := by
+  intro tid tcb htcb
+  rw [default_getTcb?_none] at htcb
+  simp at htcb
 
 end SeLe4n.Kernel

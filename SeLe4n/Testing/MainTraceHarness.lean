@@ -1209,7 +1209,7 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
   -- Thread 1 is current, thread 12 is in run queue — schedule should switch to 12
   let stCtx : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ outgoingTcb |>.insert ⟨12⟩ incomingTcb,
-    machine := { st1.machine with regs := outgoingRegs },
+    machine := st1.machine.setRegsOnCore SeLe4n.Kernel.Concurrency.bootCoreId outgoingRegs,
     scheduler := setBootRqCur st1.scheduler
       (SeLe4n.Kernel.RunQueue.ofList [(⟨12⟩, inPrio)]) (some ⟨1⟩) }
   -- Yield triggers re-enqueue + schedule

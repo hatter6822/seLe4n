@@ -3944,4 +3944,136 @@ open SeLe4n.Kernel
 EOF
 lake env lean /tmp/sm5i_tick_affinity.lean'
 
+# WS-SM SM5.I — per-core invariant suite surface anchors (SM5.I.10).  Covers the
+# schedulerInvariantStructural_perCore / _smp safety invariant + its projections /
+# bridges / default-state / frame, the per-arbitrary-core SMP-preservation engine,
+# the ten <op>_preserves_schedulerInvariantStructural_smp theorems (SM5.I.8
+# "preservation by every transition") + the helper lemmas, and the SM5.I.1–I.7/I.9
+# suite index.  A rename / removal of any SM5.I symbol fails here at elaboration
+# time before the test suite.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/sm5i_suite.lean <<EOF
+import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuite
+import SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory
+open SeLe4n.Kernel
+-- §1 structural invariant + engine (SM5.I.5/I.7).
+#check @schedulerInvariantStructural_perCore
+#check @schedulerInvariantStructural_smp
+#check @schedulerInvariantStructural_perCore_to_queueCurrentConsistent
+#check @schedulerInvariantStructural_perCore_to_currentThreadValid
+#check @schedulerInvariantStructural_perCore_to_runnableThreadsAreTCBs
+#check @schedulerInvariantStructural_perCore_to_runQueueOnCoreWellFormed
+#check @schedulerInvariantStructural_perCore_aggregateForall
+#check @schedulerInvariantStructural_smp_at
+#check @schedulerInvariant_perCore_to_structural
+#check @schedulerInvariant_smp_to_structural
+#check @default_schedulerInvariantStructural_perCore
+#check @default_schedulerInvariantStructural_smp
+#check @schedulerInvariantStructural_perCore_frame
+#check @schedulerInvariantStructural_smp_of_establish_and_frame
+-- §3 preservation by every transition (SM5.I.8).
+#check @advanceDomainOnCore_preserves_schedulerInvariantStructural_smp
+#check @enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @enqueueRunnableOnCore_preserves_schedulerInvariantStructural_smp
+#check @wakeThread_preserves_schedulerInvariantStructural_smp
+#check @idleFallbackOnCore_currentOnCore_ne
+#check @idleFallbackOnCore_runQueueOnCore_ne
+#check @scheduleEffectiveOnCore_independent_of_other_core
+#check @scheduleEffectiveOnCore_preserves_schedulerInvariantStructural_smp
+#check @scheduleOrIdleOnCore_preserves_schedulerInvariantStructural_smp
+#check @preemptCurrentOnCore_getTcb?_isSome
+#check @preemptCurrentOnCore_runQueue_resolves
+#check @switchToThreadOnCore_getTcb?_isSome
+#check @switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore
+#check @switchToThreadOnCore_preserves_schedulerInvariantStructural_smp
+#check @handleRescheduleSgiOnCore_preserves_schedulerInvariantStructural_smp
+#check @enqueueIdleThreadOnCore_preserves_schedulerInvariantStructural_smp
+#check @replenishOnCore_preserves_schedulerInvariantStructural_smp
+#check @decrementDomainTimeOnCore_preserves_schedulerInvariantStructural_smp
+-- §4 suite index (SM5.I.1–I.4/I.6/I.9).
+#check @currentOnCore_validThreadIfSome
+#check @runQueueOnCore_wellFormed_of_structural
+#check @schedContextRunQueueConsistent_perCore_of_crossSubsystem
+#check @priorityInheritance_perCore_iff_blockingAcyclic
+#check @schedulerInvariant_smp_dominates_structural
+#check @schedulerInvariantStructural_perCore_pairwise
+#check @crossSubsystemInvariant_smp_dominates_structural
+-- SM5.I.8 / SM5.F budget-tick closure: the qcc-free run-queue safety sub-bundle
+-- preserved through timerTickBudgetOnCore (incl. the bound-budget-exhausted
+-- timeoutBlockedThreads path) + the FULLY CLOSED per-core timer-tick capstone.
+#check @runQueueSafetyOnCore
+#check @schedulerInvariantStructuralRegNodup_perCore_to_runQueueSafety
+#check @ensureRunnable_preserves_runQueueSafetyOnCore
+#check @updatePipBoost_preserves_runQueueSafetyOnCore
+#check @revertPriorityInheritance_preserves_runQueueSafetyOnCore
+#check @timeoutThread_preserves_runQueueSafetyOnCore
+#check @timeoutBlockedThreads_preserves_runQueueSafetyOnCore
+#check @replenishOnCore_preserves_runQueueSafetyOnCore
+#check @timerTickBudgetOnCore_preserves_runQueueSafetyOnCore
+#check @timerTickOnCorePrepared_preserves_runQueueSafetyOnCore
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_of_pre
+#check @timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed
+-- SM5.I inventory witnesses.
+#check @perCoreInvariantSuiteTheorems_count
+#check @perCoreInvariantSuiteTheorems_partition_sum
+#check @perCoreInvariantSuiteTheorems_budgetClosure_count
+#check @perCoreInvariantSuiteTheorems_identifiers_nodup
+-- §5 global slice-invariant strengthening (allThreadsTimeSlicePositive) + the
+-- Strong SMP invariant + the AK2-B priority carrier (PR-A) / alignment (PR-C).
+#check @allThreadsTimeSlicePositive
+#check @timeSlicePositiveOnCore_of_allThreads
+#check @currentTimeSlicePositiveOnCore_of_allThreads
+#check @default_allThreadsTimeSlicePositive
+#check @enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive
+#check @wakeThread_preserves_allThreadsTimeSlicePositive
+#check @updatePipBoost_preserves_allThreadsTimeSlicePositive
+#check @revertPriorityInheritance_preserves_allThreadsTimeSlicePositive
+#check @endpointQueueRemove_preserves_allThreadsTimeSlicePositive
+#check @timeoutThread_preserves_allThreadsTimeSlicePositive
+#check @timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive
+#check @timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
+#check @processReplenishmentsDueOnCore_preserves_allThreadsTimeSlicePositive
+#check @timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive
+#check @saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive
+#check @scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive
+#check @timerTickOnCore_preserves_allThreadsTimeSlicePositive
+#check @preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive
+#check @switchToThreadOnCore_preserves_allThreadsTimeSlicePositive
+#check @handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive
+#check @enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive
+#check @switchDomainOnCore_preserves_allThreadsTimeSlicePositive
+#check @scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive
+#check @scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive
+-- the Strong SMP invariant (RegNodup + global slice → 8 of 11 conjuncts).
+#check @schedulerInvariantStrong_smp
+#check @schedulerInvariantStrong_smp_to_regNodup_smp
+#check @schedulerInvariantStrong_smp_to_allThreads
+#check @schedulerInvariantStrong_smp_to_timeSlicePositive
+#check @schedulerInvariantStrong_smp_to_currentTimeSlicePositive
+#check @schedulerInvariant_smp_and_allThreads_to_strong
+#check @default_schedulerInvariantStrong_smp
+#check @advanceDomainOnCore_preserves_schedulerInvariantStrong_smp
+#check @replenishOnCore_preserves_schedulerInvariantStrong_smp
+#check @decrementDomainTimeOnCore_preserves_schedulerInvariantStrong_smp
+#check @enqueueRunnableOnCore_preserves_schedulerInvariantStrong_smp
+#check @wakeThread_preserves_schedulerInvariantStrong_smp
+#check @scheduleEffectiveOnCore_preserves_schedulerInvariantStrong_smp
+#check @scheduleOrIdleOnCore_preserves_schedulerInvariantStrong_smp
+#check @switchToThreadOnCore_preserves_schedulerInvariantStrong_smp
+#check @handleRescheduleSgiOnCore_preserves_schedulerInvariantStrong_smp
+#check @enqueueIdleThreadOnCore_preserves_schedulerInvariantStrong_smp
+#check @switchDomainOnCore_preserves_schedulerInvariantStrong_smp
+#check @scheduleDomainOnCore_preserves_schedulerInvariantStrong_smp
+-- AK2-B priority carrier (PR-A) + the SC↔TCB priority alignment (PR-C).
+#check @boundThreadPriorityConsistent
+#check @boundThreadPriorityConsistent_frame
+#check @default_boundThreadPriorityConsistent
+#check @resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
+EOF
+lake env lean /tmp/sm5i_suite.lean'
+# WS-SM SM5.I: build the SM5.I theorem inventory so a renamed / removed SM5.I
+# theorem fails at the inventory's elaboration.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Scheduler.Invariant.PerCoreInvariantSuiteInventory'
+
 finalize_report

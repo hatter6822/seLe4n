@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.59.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.62.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -182,19 +182,19 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~23349 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~7956 lines)
+- `CHANGELOG.md` (~24758 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~8436 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~6631 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~4154 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/NegativeStateSuite.lean` (~4016 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3922 lines)
+- `tests/NegativeStateSuite.lean` (~4017 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3906 lines)
 - `docs/spec/SELE4N_SPEC.md` (~3806 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3392 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
-- `SeLe4n/Platform/Boot.lean` (~3263 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3153 lines)
+- `SeLe4n/Platform/Boot.lean` (~3234 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3175 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~3057 lines)
@@ -205,24 +205,25 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
-- `SeLe4n/Kernel/API.lean` (~2375 lines)
+- `SeLe4n/Kernel/API.lean` (~2396 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2369 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
 - `tests/OperationChainSuite.lean` (~2201 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2178 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~2103 lines)
 - `docs/planning/SMP_PER_OBJECT_LOCKS_PLAN.md` (~2073 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `tests/ModelIntegritySuite.lean` (~2052 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~2037 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~2022 lines)
 - `SeLe4n/Prelude.lean` (~1992 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1985 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1892 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1896 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1885 lines)
@@ -238,26 +239,28 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1754 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1687 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1670 lines)
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1665 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~1652 lines)
-- `tests/InformationFlowSuite.lean` (~1622 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~1619 lines)
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1538 lines)
+- `tests/InformationFlowSuite.lean` (~1638 lines)
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1622 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1558 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~1529 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~1488 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1403 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `docs/planning/SMP_PANIC_HANG_REMEDIATION_PLAN.md` (~1342 lines)
-- `tests/LockSetSuite.lean` (~1307 lines)
-- `SeLe4n/Platform/FFI.lean` (~1297 lines)
+- `tests/LockSetSuite.lean` (~1309 lines)
+- `SeLe4n/Platform/FFI.lean` (~1306 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1267 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1244 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1237 lines)
@@ -269,7 +272,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1181 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~1172 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1161 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1162 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
@@ -282,7 +285,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1023 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1000 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1005 lines)
+- `docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` (~987 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~983 lines)
 - `SeLe4n/Machine.lean` (~977 lines)
@@ -296,9 +300,10 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~868 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~848 lines)
-- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~827 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~829 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~821 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `tests/TwoPhaseArchSuite.lean` (~812 lines)
@@ -6326,6 +6331,232 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `smp_cbs_suite` green (+ #2 reject scenario + #5 unconditional-ordering example);
   Tier-3 anchors extended; AK7 `RAW_LOOKUP_TID` at the 814 floor.  Items deferred past
   v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I LANDED at v0.31.60 on branch
+  `claude/focused-goodall-dji73`** (per-core invariant suite; all 10 sub-tasks).
+  The SM4.C/SM4.D per-core scheduler invariant *predicates* (SM5.I.1–I.7, I.9)
+  were already defined as the SM4 per-core migration; SM5.I assembles them into a
+  coherent suite (new `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean`
+  + `PerCoreInvariantSuiteInventory.lean` + `tests/SmpInvariantSuite.lean`) and
+  proves **SM5.I.8 — preservation by every SM5 per-core transition** via a new
+  register-bank-free **structural** SMP invariant + a reusable per-arbitrary-core
+  SMP-preservation engine.  All theorems axiom-clean (`propext` / `Quot.sound` /
+  `Classical.choice`); default build green (160 jobs); partition gate 62
+  staged-only modules; trace byte-identical (additive + staged).
+
+  - **The structural SMP invariant (a register-bank-free safety core)**:
+    `schedulerInvariantStructural_perCore` / `_smp` — the four register-bank-
+    independent safety conjuncts of `schedulerInvariant_perCore`
+    (`queueCurrentConsistent ∧ currentThreadValid ∧ runnableThreadsAreTCBs ∧
+    runQueueWellFormed`) proved preserved by every transition.  The other seven are
+    excluded for three reasons (the first two genuinely-mathematical, the third a
+    scope-bounding deferral — none a soundness gap): (1)
+    `contextMatchesCurrentOnCore` against the *system-wide* `machine.regs` is
+    satisfiable for **at most one** non-idle core, so a per-core dispatch rewriting
+    `machine.regs` invalidates every other active core's conjunct — faithful only
+    with **per-core register banks** (the SM5 context-bank migration the SM4.C
+    predicate already notes); (2) `edfCurrentHasEarliestDeadline` + the
+    time/domain-slice conjuncts are *dispatch-established*, not transition-stable
+    (a bare wake transiently breaks EDF, exactly as single-core `ensureRunnable`
+    preserves only the base invariant and `schedule` re-establishes EDF); (3)
+    `schedulerPriorityMatch` is register-bank-independent but PIP-dispatch-coupled
+    (a `pipBoost` change re-buckets the run-queue index only on the thread's home
+    core), and `runQueueUnique` (`Nodup`) is register-bank-independent +
+    transition-stable but deferred to bound the cut (its `RunQueue.insert`/`remove`
+    `Nodup`-preservation lemmas are the follow-on).  The structural frame
+    `schedulerInvariantStructural_perCore_frame` needs **no `machine.regs`
+    agreement** (no `contextMatchesCurrent`), so a per-core dispatch — which *does*
+    rewrite the shared register file — preserves the structural invariant on
+    **every** core; this is what makes `schedulerInvariantStructural_smp` a genuine,
+    register-bank-free, system-wide SMP invariant where the full aggregate cannot
+    be.  Bridges `schedulerInvariant_{perCore,smp}_to_structural` /
+    `…_smp_dominates_structural` / `crossSubsystemInvariant_smp_dominates_structural`
+    keep it the dominated core of the SM4.C / SM4.D aggregates (SM5.I.5/I.7/I.9).
+  - **SM5.I.8 (preservation by every transition)**: the engine
+    `schedulerInvariantStructural_smp_of_establish_and_frame` (the
+    per-arbitrary-core analogue of SM4.C's `schedulerInvariant_smp_of_bootCore_and_idle_frame`:
+    discharge the operated core by establishment, every sibling by the structural
+    frame) + ten `<op>_preserves_schedulerInvariantStructural_smp` theorems
+    (`advanceDomainOnCore`, `enqueueRunnableOnCore`, `wakeThread`,
+    `scheduleEffectiveOnCore` / `scheduleOrIdleOnCore` — the live per-core dispatch
+    keystone, `switchToThreadOnCore` — the preemptive context switch across the
+    preempt re-enqueue, `handleRescheduleSgiOnCore`, `enqueueIdleThreadOnCore`,
+    `replenishOnCore`, `decrementDomainTimeOnCore`) + the missing per-conjunct
+    helpers they compose (`enqueueRunnableOnCore` / `switchToThreadOnCore`
+    `runnableThreadsAreTCBs`, `preemptCurrentOnCore` `getTcb?`-isSome /
+    `_runQueue_resolves`, `scheduleEffectiveOnCore_independent_of_other_core`,
+    `idleFallbackOnCore_{currentOnCore,runQueueOnCore}_ne`).
+  - **SM5.I.1–I.4/I.6/I.9 suite index** (`currentOnCore_validThreadIfSome`,
+    `runQueueOnCore_wellFormed_of_structural`,
+    `schedContextRunQueueConsistent_perCore_of_crossSubsystem`,
+    `priorityInheritance_perCore_iff_blockingAcyclic`, the dominance bridges, and
+    the **structural cross-core independence**
+    `schedulerInvariantStructural_perCore_pairwise`) + **39-entry `pcist!`
+    inventory** (3 categories structural/preservation/suite; per-category counts +
+    partition-sum + kernel-sound Nodup) + **SM5.I.10 Tier-3 anchors** +
+    `tests/SmpInvariantSuite.lean` (`lake exe smp_invariant_suite` — 43 surface
+    anchors, 9 elaboration-time / non-vacuity examples, 14 runtime assertions;
+    Tier-2 + Tier-3 wired).
+
+  **Composite live-tick transitions — tracked SM5.I closure**: the composite
+  `switchDomainOnCore` / `scheduleDomainOnCore` (domain-boundary tick) and
+  `timerTickOnCore` (per-core CNTP tick) preserve the structural SMP invariant by
+  **composition** of the primitives proved here (`scheduleDomainOnCore` =
+  `switchDomainOnCore` + `scheduleEffectiveOnCore`, non-boundary =
+  `decrementDomainTimeOnCore`; `timerTickOnCore` is the one genuinely *multi-core*
+  transition — a cross-core replenish wake enqueues onto a remote core's run queue
+  — so its system-wide preservation threads the `wakeThread` preservation through
+  the replenishment fold rather than framing siblings).  The executing-core
+  establishment is already provided by SM5.D's
+  `timerTickOnCore_preserves_{currentThreadValid,queueCurrentConsistent,runQueueOnCoreWellFormed}OnCore`;
+  the mechanical fold composition is the SM5.I follow-on (the plan's "5 PRs").
+  Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I register-bank payoff + Nodup extension LANDED at v0.31.61 on
+  branch `claude/focused-goodall-dji73`** (SM4.B per-core register banks make
+  `contextMatchesCurrentOnCore` a genuine ∀-core invariant; the run-queue
+  `Nodup` conjunct lands too).  Every new theorem is axiom-clean (`propext` /
+  `Quot.sound` / `Classical.choice`, verified via `#print axioms`); the full
+  production build (324 jobs) + staged (215) are green, the trace fixture is
+  **byte-identical**, and the production/staged partition gate verifies 62
+  staged-only modules.
+
+  - **SM4.B per-core register banks (the machine-model rewrite)**:
+    `SeLe4n/Machine.lean` replaces the single shared `MachineState.regs :
+    RegisterFile` with a per-core bank `coreRegs : Vector RegisterFile
+    Concurrency.numCores` (path-a, the SM4.B `Vector α numCores` pattern), with
+    accessors `regsOnCore (c : CoreId)` / `setRegsOnCore c v` and the store/load
+    algebra (`regsOnCore_setRegsOnCore_self` / `_ne`, `setRegsOnCore_{memory,
+    timer,interruptsEnabled,systemRegisters}`).  `MachineState.regs` survives as
+    a **def-accessor** (`= regsOnCore bootCoreId`) so the ~120 single-core read
+    sites are untouched; only the ~18 register *write* sites flip to
+    `setRegsOnCore bootCoreId` (Architecture/Adapter, FrozenOps, MainTraceHarness,
+    `setPC`).  The two per-core dispatch transitions restore into core `c`'s own
+    bank via the new `restoreIncomingContextOnCore c` (Selection.lean), and
+    `preemptCurrentOnCore` / `saveOutgoingContextOnCore` save into `regsOnCore c`.
+    AK7 cascade baseline re-anchored by the structural minimum (`raw_match_tcb`
+    48 → 49, `raw_match_total` 125 → 126, `raw_lookup_tid` 814 → 815): the new
+    `restoreIncomingContextOnCore` def necessarily mirrors the single-core
+    `restoreIncomingContext`'s raw `match objects[tid.toObjId]? | some (.tcb _)`
+    to keep the `_bootCore = restoreIncomingContext` `rfl` bridge (same precedent
+    as SM5.F); every other register-context lemma routes through the typed
+    `getTcb?` accessor (`getTcb?_eq_some_iff`).
+  - **`contextMatchesCurrentOnCore` is now a genuine ∀-core invariant**: its body
+    reads `st.machine.regsOnCore c` (not the shared `machine.regs`), so a
+    dispatch on `c₀` — writing only `setRegsOnCore c₀` — frames every sibling
+    core's bank.  The two dispatch transitions *establish* it on the operated
+    core (`scheduleEffectiveOnCore_establishes_contextMatchesCurrentOnCore`,
+    `switchToThreadOnCore_establishes_contextMatchesCurrentOnCore` via the new
+    `restoreThenSetCurrent_establishes_contextMatchesCurrentOnCore`).
+  - **`RegisterFile` partial-equivalence lemmas** (`Machine.lean`):
+    `RegisterFile.beq_symm` / `beq_trans` (the structural `BEq` is a PER even
+    though it is not `LawfulBEq` — each component is a `LawfulBEq RegValue`
+    test).  These discharge the sole non-trivial sibling case: a thread
+    *pathologically* current on two cores, where the dispatch's outgoing-save is
+    `==`-idempotent on the shared thread's `registerContext` by the sibling's
+    pre-state `contextMatchesCurrent` (no cross-core current-disjointness
+    invariant needed — the idempotency is self-contained in the carried
+    conjunct).
+  - **`schedulerInvariantStructuralReg_perCore` / `_smp`** (the 4 structural
+    conjuncts **+ `contextMatchesCurrentOnCore`**) in
+    `Scheduler/Invariant/PerCoreInvariantSuite.lean` §2b/§4, proved preserved
+    **system-wide by all 10 SM5 per-core transitions** (dispatch:
+    `scheduleEffectiveOnCore` / `scheduleOrIdleOnCore` / `switchToThreadOnCore` /
+    `handleRescheduleSgiOnCore`; non-dispatch: `advanceDomainOnCore` /
+    `enqueueRunnableOnCore` / `wakeThread` / `replenishOnCore` /
+    `decrementDomainTimeOnCore` / `enqueueIdleThreadOnCore`).  The dispatch
+    sibling frame uses `saveOutgoingContextOnCore_getTcb?_regContext` /
+    `preemptCurrentOnCore_getTcb?_regContext` + the per-core bank frame
+    (`scheduleEffectiveOnCore_machine_regsOnCore_ne` /
+    `switchToThreadOnCore_machine_regsOnCore_ne`) + the helper
+    `contextMatchesCurrentOnCore_frame_at`; the machine-neutral non-dispatch ops
+    use `contextMatchesCurrentOnCore_of_machine_eq_and_regContext`.
+    `enqueueIdleThreadOnCore` (which overwrites the idle TCB to
+    `createIdleThread`, register context `default`) carries the honest seL4-
+    faithful `∀ c', currentOnCore c' ≠ idleThreadId c₀` precondition.
+  - **`schedulerInvariantStructuralRegNodup` (6th conjunct,
+    `runQueueUniqueOnCore`)** (§4.4): the run-queue `toList.Nodup` conjunct — both
+    register-bank-independent and transition-stable — preserved by all 10
+    transitions via the new public `RunQueue.insert_preserves_toList_nodup` /
+    `remove_preserves_toList_nodup` (`Scheduler/RunQueue.lean`), mirroring the
+    `runQueueOnCoreWellFormed` preservation.  Closes the conjunct the SM5.I
+    landing explicitly deferred "to bound the cut".
+  - **`schedulerInvariantStructural_perCore_pairwise_iff`**: strengthens the
+    one-directional SM5.I.6 cross-core independence to a biconditional (per the
+    implement-the-improvement rule — genuine per-core isolation is an `↔`).
+  - **Inventory + tests**: the SM5.I inventory grows 39 → 79 (new
+    `.registerBank` category, 39 entries; `+1` `pairwise_iff` in `.suite`);
+    `tests/SmpInvariantSuite.lean` adds 40 surface anchors, 7 elaboration
+    examples, and the **genuinely multi-core** §3.5 runtime fixture
+    (`contextMatchesCurrentOnCore` witnessed on *two* cores simultaneously via
+    the structural `RegisterFile` `BEq`, plus the cross-core bank-write isolation
+    — `lake exe smp_invariant_suite` reports all checks PASS).  The stale "single
+    `machine.regs`" docstrings (`switchToThreadOnCore`, the module header's
+    register-bank tracked debt) are corrected to the per-core-bank reality.
+    Items deferred past v1.0.0 with correctness impact: NONE.
+
+  **WS-SM SM5.I fully-closed timer-tick capstone LANDED at v0.31.62 on branch
+  `claude/focused-goodall-dji73`** (discharges the v0.31.61 capstone's budget
+  obligations — an UNCONDITIONAL per-core timer-tick preservation; closes the
+  SM5.F per-core-PIP tracked gap for the run-queue conjuncts).  Every new
+  theorem is axiom-clean (`propext` / `Classical.choice` / `Quot.sound`);
+  default build green (324 jobs) + staged (215); full smoke (Tier 0–2) green;
+  trace fixture byte-identical (the additions are staged / proof-only).
+
+  The v0.31.61 per-core capstone
+  (`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore`)
+  took the three budget-tick obligations (`hBudget*` — rat / rqWf / Nodup of the
+  budget-tick result) as *parameters*, with the bound-budget-exhausted
+  `timeoutBlockedThreads` path documented as the SM5.F per-core-PIP gap.  This
+  cut discharges them.
+
+  - **The qcc-free `runQueueSafetyOnCore` sub-bundle (the keystone)**: a new
+    predicate bundling exactly the three current-free run-queue conjuncts
+    (`runnableThreadsAreTCBs ∧ runQueueOnCoreWellFormed ∧ runQueueUnique`).
+    `timerTickBudgetOnCore`'s preempt paths re-enqueue the current thread
+    (breaking `queueCurrentConsistent`), but these three never read `current`,
+    so they survive — and the dispatch phase re-establishes `qcc`.  Proved
+    preserved through every budget-tick step, **single-core on an arbitrary
+    `c`**, casing `c = bootCoreId` (the bootCoreId-pinned op touches `c`) vs
+    `c ≠ bootCoreId` (the op frames `c`'s run queue), and crucially
+    **UNCONDITIONAL** — no `hNotCur`, since the three conjuncts are
+    current-free:
+    - `objects_frame` / `runQueue_frame` preservation + `getTcb?_isSome_insert_tcb`
+      / `storeObject_tcb_getTcb?_isSome` resolvability frames;
+    - `ensureRunnable` / `updatePipBoost` /
+      `revertPriorityInheritance` (the bootCoreId-pinned PIP sub-ops) — each
+      with a run-queue-on-`c≠boot` frame (`updatePipBoost_runQueueOnCore_ne`) +
+      a `getTcb?`-isSome frame;
+    - `timeoutThread_preserves_runQueueSafetyOnCore` +
+      `timeoutBlockedThreads_preserves_runQueueSafetyOnCore` (the fold) — **this
+      closes the former SM5.F per-core-PIP tracked gap** for the run-queue
+      conjuncts;
+    - `replenishOnCore_preserves_runQueueSafetyOnCore` +
+      `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` covering all four
+      `.ok` outcomes (case #3, the bound-budget-exhausted path, uses
+      `getTcb?_insert_schedContext_eq` for the schedContext-insert frame +
+      `hTid` for the re-enqueued thread's TCB-ness).
+  - **`timerTickOnCorePrepared_preserves_runQueueSafetyOnCore`**: bundles the
+    three prepared-phase dischargers (rat / rqWf / Nodup) so the prepared
+    cross-core-wake state carries run-queue safety into the budget tick.
+  - **`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed`**
+    (the FULLY CLOSED capstone): takes ONLY the bundled pre-state invariant
+    (+ `objects.invExt`) — **no budget hypotheses** — and proves the per-core
+    timer tick preserves the full register-bank+Nodup base safety invariant,
+    discharging the `hBudget*` obligations internally.  The `…_of_pre`
+    ergonomic form (bundled pre-state, prepared obligations auto-discharged) is
+    retained.
+  - **Coverage**: the SM5.I inventory grows to **95 entries** (new
+    `.budgetClosure` category, 16 entries; counts + partition-sum + Nodup
+    witnesses updated, kernel-sound `decide`).  `tests/SmpInvariantSuite.lean`
+    gains §7 surface anchors, two inhabitation examples, and a §3.5 runtime
+    idle-timer-tick check; Tier-3 invariant-surface anchors added.
+  - **AK7**: `RAW_LOOKUP_TID` baseline re-anchored 815 → 821 (structural — the
+    `endpointQueueRemove_getTcb_upToReg` direct-split proof mirrors
+    `endpointQueueRemove`'s own raw `[·.toObjId]?` matchers, which IS the
+    technique; plus the register-bank `restoreIncomingContextOnCore` mirror);
+    adoption floors tightened (`GETTCB` 894 → 1069, `GETSCHEDCTX` 246 → 258).
+    Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

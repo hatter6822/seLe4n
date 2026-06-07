@@ -275,7 +275,7 @@ def frozenRestoreIncomingContext (st : FrozenSystemState) (tid : SeLe4n.ThreadId
     : Except KernelError FrozenSystemState :=
   match st.objects.get? tid.toObjId with
   | some (.tcb tcb) =>
-      .ok { st with machine := { st.machine with regs := tcb.registerContext } }
+      .ok { st with machine := st.machine.setRegsOnCore bootCoreId tcb.registerContext }
   | _ => .error .objectNotFound
 
 /-- Q7-A: Set the current thread in frozen scheduler state. -/

@@ -263,10 +263,10 @@ theorem saveOutgoingContextOnCore_determineTargetCore (st : SystemState) (c : Co
     | some outTcb =>
       have hRaw := (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp ho
       have hObj : (saveOutgoingContextOnCore st c).objects
-          = st.objects.insert outTid.toObjId (.tcb { outTcb with registerContext := st.machine.regs }) := by
+          = st.objects.insert outTid.toObjId (.tcb { outTcb with registerContext := st.machine.regsOnCore c }) := by
         simp only [saveOutgoingContextOnCore, hc, ho]
       exact determineTargetCore_insert_tcb st _ outTid outTcb
-        { outTcb with registerContext := st.machine.regs } hInv hRaw rfl hObj t
+        { outTcb with registerContext := st.machine.regsOnCore c } hInv hRaw rfl hObj t
 
 /-- WS-SM SM5.I: `saveOutgoingContextOnCore` preserves every SchedContext's
 `boundThread` projection. -/
@@ -283,10 +283,10 @@ theorem saveOutgoingContextOnCore_boundThread (st : SystemState) (c : CoreId)
     | some outTcb =>
       have hRaw := (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp ho
       have hObj : (saveOutgoingContextOnCore st c).objects
-          = st.objects.insert outTid.toObjId (.tcb { outTcb with registerContext := st.machine.regs }) := by
+          = st.objects.insert outTid.toObjId (.tcb { outTcb with registerContext := st.machine.regsOnCore c }) := by
         simp only [saveOutgoingContextOnCore, hc, ho]
       rw [getSchedContext?_insert_tcb_eq st _ outTid outTcb
-        { outTcb with registerContext := st.machine.regs } hInv hRaw hObj scId]
+        { outTcb with registerContext := st.machine.regsOnCore c } hInv hRaw hObj scId]
 
 /-- WS-SM SM5.I: a successful `scheduleEffectiveOnCore` preserves every thread's home
 core (its only object write is the outgoing register-context save). -/

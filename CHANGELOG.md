@@ -1,3 +1,212 @@
+## v0.31.62 — WS-SM SM5.I: fully-closed per-core timer-tick capstone (closes the SM5.F per-core-PIP gap for the run-queue conjuncts)
+
+Discharges the budget-tick obligations the v0.31.61 per-core capstone left as
+parameters (`hBudget*`), yielding an **unconditional** per-core timer-tick
+preservation result.  The pivotal insight is a qcc-free run-queue safety
+sub-bundle: `timerTickBudgetOnCore`'s preempt paths re-enqueue the current
+thread (breaking `queueCurrentConsistent`), but the three run-queue conjuncts
+— `runnableThreadsAreTCBs`, `runQueueWellFormed`, `runQueueUnique` (Nodup) —
+never read `current`, so they survive, and the dispatch phase re-establishes
+`qcc`.
+
+**`runQueueSafetyOnCore` (the qcc-free sub-bundle).**  A new predicate bundling
+the three current-free run-queue conjuncts on a core, proved preserved through
+every step of the budget tick — single-core on an arbitrary `c`, casing
+`c = bootCoreId` (the op touches `c`) vs `c ≠ bootCoreId` (the op frames `c`),
+**unconditionally** (no `hNotCur`, since none of the three conjuncts reads
+`current`):
+
+- `objects_frame` / `runQueue_frame` preservation helpers + the TCB-insert /
+  storeObject `getTcb?`-resolvability frames;
+- `ensureRunnable` / `updatePipBoost` / `revertPriorityInheritance` (the
+  bootCoreId-pinned PIP sub-ops) preservation;
+- `timeoutThread` and the `timeoutBlockedThreads` fold preservation — **this
+  closes the former SM5.F per-core-PIP tracked gap** for the run-queue
+  conjuncts: the bound-budget-exhausted timeout path provably preserves
+  run-queue safety;
+- `replenishOnCore` preservation + the full
+  `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` covering all four `.ok`
+  outcomes (unbound preempt / unbound not-preempt / bound budget-exhausted /
+  bound not-preempt).
+
+**Fully-closed capstone.**
+`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed`
+takes ONLY the bundled pre-state invariant (+ `objects.invExt`) — **no budget
+hypotheses** — and proves the per-core timer tick preserves the full
+register-bank+Nodup base safety invariant, discharging the `hBudget*`
+obligations internally via the run-queue-safety sub-bundle.  The
+`…_of_pre` ergonomic form (bundled pre-state, prepared obligations
+auto-discharged) is retained.
+
+**Coverage.**  The SM5.I inventory grows to **95 entries** (new
+`.budgetClosure` category, 16 entries; counts + partition-sum + Nodup witnesses
+updated, kernel-sound `decide`).  `tests/SmpInvariantSuite.lean` gains §7
+surface anchors, two inhabitation examples (the closed capstone + the budget
+run-queue-safety preservation), and a §3.5 runtime check exercising the idle
+timer-tick path.  Tier-3 invariant surface anchors added.
+
+All new theorems are **axiom-clean** (`propext` / `Classical.choice` /
+`Quot.sound`); default build green (324 jobs) + staged (215); full smoke
+(Tier 0–2) green; trace fixture byte-identical (the additions are staged /
+proof-only).  The AK7 `RAW_LOOKUP_TID` baseline was re-anchored 815 → 821: the
+`endpointQueueRemove_getTcb_upToReg` direct-split proof necessarily mirrors
+`endpointQueueRemove`'s own raw `[·.toObjId]?` matchers (the technique itself),
+and the register-bank `restoreIncomingContextOnCore` mirrors the single-core
+raw match — both structural; adoption floors tightened
+(`GETTCB` 894 → 1069, `GETSCHEDCTX` 246 → 258).  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
+## v0.31.61 — WS-SM SM5.I: per-core register banks (SM4.B) + the `contextMatchesCurrentOnCore` and `runQueueUniqueOnCore` conjuncts
+
+Closes the two SM5.I conjuncts the v0.31.60 landing deferred, by completing the
+**SM4.B per-core register banks** the structural invariant was waiting on.
+
+**SM4.B per-core register banks (the machine-model rewrite).**
+`SeLe4n/Machine.lean` replaces the single shared `MachineState.regs :
+RegisterFile` with a per-core bank `coreRegs : Vector RegisterFile
+Concurrency.numCores` (the SM4.B `Vector α numCores` path-a pattern), with
+accessors `regsOnCore (c : CoreId)` / `setRegsOnCore c v` and the store/load
+algebra.  `MachineState.regs` survives as a **def-accessor** (`= regsOnCore
+bootCoreId`), so the ~120 single-core read sites are untouched and only the ~18
+register *write* sites flip to `setRegsOnCore bootCoreId`.  The two per-core
+dispatch transitions restore into core `c`'s **own** bank via the new
+`restoreIncomingContextOnCore c`.  Trace fixture **byte-identical**; production
+build green (324 jobs) + staged (215).
+
+**`contextMatchesCurrentOnCore` is now a genuine ∀-core invariant.**  Its body
+reads `st.machine.regsOnCore c`, so a dispatch on `c₀` (writing only
+`setRegsOnCore c₀`) frames every sibling bank.  The two dispatch transitions
+*establish* it on the operated core; the new `RegisterFile.beq_symm` / `beq_trans`
+partial-equivalence lemmas discharge the sole non-trivial sibling case (a thread
+pathologically current on two cores — the outgoing-save is `==`-idempotent by the
+sibling's pre-state `contextMatchesCurrent`, so no cross-core current-disjointness
+invariant is needed).  `schedulerInvariantStructuralReg_perCore` / `_smp` (the 4
+structural conjuncts **+ `contextMatchesCurrentOnCore`**) is proved preserved
+**system-wide by all 10 SM5 per-core transitions**.
+
+**`runQueueUniqueOnCore` 6th conjunct.**  `schedulerInvariantStructuralRegNodup`
+adds the run-queue `toList.Nodup` conjunct (register-bank-independent +
+transition-stable), preserved by all 10 transitions via the new public
+`RunQueue.{insert,remove}_preserves_toList_nodup` — closing the conjunct the
+SM5.I landing deferred "to bound the cut".
+
+**Also:** `schedulerInvariantStructural_perCore_pairwise_iff` (the SM5.I.6
+cross-core independence strengthened to a biconditional); the SM5.I inventory
+grows 39 → 79 (new `.registerBank` category + the `pairwise_iff`);
+`tests/SmpInvariantSuite.lean` adds a genuinely **multi-core** runtime fixture
+witnessing `contextMatchesCurrentOnCore` on two cores simultaneously plus
+cross-core register-bank isolation.  All new theorems axiom-clean (verified via
+`#print axioms`).  Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §5 SM5.I
+
+## v0.31.60 — WS-SM SM5.I: per-core invariant suite (preservation by every transition)
+
+Lands the WS-SM Phase SM5.I "Per-core invariant suite" deliverable
+(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §5 SM5.I, §6.1).  Assembles the
+SM4.C/SM4.D per-core scheduler invariant *predicates* into a coherent suite and
+proves **SM5.I.8 — preservation by every SM5 per-core transition** via a new
+register-bank-free structural SMP invariant and a reusable per-arbitrary-core
+SMP-preservation engine.  All theorems axiom-clean (`propext` / `Quot.sound` /
+`Classical.choice`); default build green (160 jobs); partition gate 62
+staged-only modules; trace fixture byte-identical (the suite is additive +
+staged).  New files
+`SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` +
+`PerCoreInvariantSuiteInventory.lean` + `tests/SmpInvariantSuite.lean`.
+
+**The structural SMP invariant (a register-bank-free safety core).**  The full
+SM4.C aggregate `schedulerInvariant_perCore` has eleven conjuncts; the structural
+core is the four register-bank-independent conjuncts proved preserved by every
+transition.  The other seven are excluded for three reasons — the first two
+genuinely-mathematical, the third a scope-bounding deferral (none a soundness
+gap):
+
+- **`contextMatchesCurrentOnCore`** asserts the *system-wide* `machine.regs`
+  equals core `c`'s current thread's saved context.  With one shared register
+  file this holds for **at most one** non-idle core at a time, so a per-core
+  dispatch on core `c₀` — which rewrites `machine.regs` to `c₀`'s new current's
+  context — necessarily invalidates every other non-idle core's
+  `contextMatchesCurrentOnCore`.  The conjunct is faithful only once SM5
+  introduces **per-core register banks** (the deferred context-bank migration the
+  SM4.C predicate already notes).
+- **`edfCurrentHasEarliestDeadlineOnCore`** + the time-slice / domain-time
+  conjuncts are **dispatch/tick-established**, not transition-stable: a *bare* wake
+  enqueuing an earlier-deadline thread transiently breaks EDF until the next
+  dispatch re-establishes it (precisely when the wake fires a preemption SGI), as
+  in the single-core model where `ensureRunnable` preserves only the base
+  invariant and `schedule` re-establishes EDF.
+- **`schedulerPriorityMatchOnCore`** is register-bank-independent but coupled to
+  dispatch via the **PIP-boost run-queue bucket migration** (a `pipBoost` change
+  alters a thread's `effectiveRunQueuePriority`, re-bucketed only on its home core),
+  so it is not frame-stable across an arbitrary objects mutation; and
+  **`runQueueUniqueOnCore`** (run-queue `Nodup`) *is* register-bank-independent and
+  transition-stable — a clean extension of this core, deferred here to bound the
+  cut (its `RunQueue.insert` / `remove` `Nodup`-preservation lemmas are the natural
+  follow-on).
+
+`schedulerInvariantStructural_perCore` is the four-conjunct register-bank-free
+safety core: `queueCurrentConsistentOnCore` (dequeue-on-dispatch),
+`currentThreadValidOnCore` (no dangling current),
+`runnableThreadsAreTCBsOnCore` (run queue holds only real TCBs),
+`runQueueOnCoreWellFormed` (run-queue index consistency).  Crucially its frame on
+a sibling core needs **no `machine.regs` agreement** (no `contextMatchesCurrent`),
+so a per-core dispatch — which *does* rewrite the shared register file — preserves
+the structural invariant on **every** core; this is what makes
+`schedulerInvariantStructural_smp` a genuine, register-bank-free, system-wide SMP
+invariant where the full aggregate cannot be.
+
+- **§1 structural invariant + engine**: `schedulerInvariantStructural_perCore` /
+  `_smp` + projections + the bridges from the full SM4.C aggregate
+  (`schedulerInvariant_{perCore,smp}_to_structural`) + default-state + the
+  register-bank-free frame `schedulerInvariantStructural_perCore_frame` (needs
+  only `current`/`runQueue` agreement + `getTcb?`-isSome preservation) + the
+  **per-arbitrary-core SMP-preservation engine**
+  `schedulerInvariantStructural_smp_of_establish_and_frame` (the per-core analogue
+  of SM4.C's boot-core-and-idle-frame skeleton: discharge the operated core by
+  establishment, every sibling by the structural frame).
+- **§3 preservation by every transition (SM5.I.8)**: ten
+  `<op>_preserves_schedulerInvariantStructural_smp` theorems —
+  `advanceDomainOnCore`, `enqueueRunnableOnCore`, `wakeThread`,
+  `scheduleEffectiveOnCore` / `scheduleOrIdleOnCore` (the live per-core dispatch
+  keystone), `switchToThreadOnCore` (the preemptive context switch, across the
+  preempt re-enqueue), `handleRescheduleSgiOnCore`, `enqueueIdleThreadOnCore`,
+  `replenishOnCore`, `decrementDomainTimeOnCore` — plus the missing per-conjunct
+  helpers they compose (`enqueueRunnableOnCore` / `switchToThreadOnCore`
+  `runnableThreadsAreTCBs`, the preempt `getTcb?`-isSome / run-queue resolution,
+  the dispatcher `scheduleEffectiveOnCore_independent_of_other_core` sibling frame,
+  the idle-fallback sibling frames).
+- **§4 suite index (SM5.I.1–I.7/I.9)**: `currentOnCore_validThreadIfSome` (I.1),
+  `runQueueOnCore_wellFormed_of_structural` (I.2),
+  `schedContextRunQueueConsistent_perCore_of_crossSubsystem` (I.3),
+  `priorityInheritance_perCore_iff_blockingAcyclic` (I.4), the
+  `schedulerInvariant_smp` / `crossSubsystemInvariant_smp` dominance bridges
+  (I.5/I.7/I.9), and the **structural cross-core independence**
+  `schedulerInvariantStructural_perCore_pairwise` (I.6).
+- **39-entry inventory** (`pcist!` macro, 3 categories structural/preservation/
+  suite, per-category counts + partition-sum + kernel-sound Nodup witnesses).
+- **Tests (SM5.I.10)**: `tests/SmpInvariantSuite.lean` (`lake exe
+  smp_invariant_suite`) — 43 surface anchors, 9 elaboration-time
+  theorem-application + non-vacuity examples, 14 runtime assertions exercising the
+  actual transition computation on concrete fixtures (structural safety facts on
+  the empty boot state; the `advanceDomainOnCore` frame; the `enqueueRunnableOnCore`
+  wake maintaining runnable-are-TCBs with sibling-core framing; the inventory
+  counts).  Tier-2 (negative) + Tier-3 (invariant surface) wired.
+
+**Composite live-tick transitions — tracked SM5.I closure.**  The composite
+`switchDomainOnCore` / `scheduleDomainOnCore` (domain-boundary tick) and
+`timerTickOnCore` (per-core CNTP tick) preserve the structural SMP invariant by
+**composition** of the primitives proved here (`scheduleDomainOnCore` =
+`switchDomainOnCore` + `scheduleEffectiveOnCore`, non-boundary =
+`decrementDomainTimeOnCore`; `timerTickOnCore` folds cross-core `wakeThread`s +
+re-dispatches via `scheduleEffectiveOnCore`).  `timerTickOnCore` is the one
+genuinely *multi-core* transition (a cross-core replenish wake enqueues onto a
+remote core's run queue), so its system-wide preservation threads the
+`wakeThread` preservation through the replenishment fold rather than framing
+siblings; the executing-core establishment is already provided by SM5.D's
+`timerTickOnCore_preserves_{currentThreadValid,queueCurrentConsistent,runQueueOnCoreWellFormed}OnCore`.
+These are the SM5.I follow-on (the plan's "5 PRs"); the structural safety core is
+established.  Items deferred past v1.0.0 with correctness impact: NONE.
+
 ## v0.31.59 — WS-SM SM5.I: pull forward two Codex-flagged affinity-syscall safety items (PR #813)
 
 Addresses the two safety-relevant findings from the automated Codex review of PR
