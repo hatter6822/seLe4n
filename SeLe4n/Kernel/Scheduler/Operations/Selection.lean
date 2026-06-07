@@ -297,6 +297,44 @@ theorem effectiveRunQueuePriority_eq_resolve_unbound (st : SystemState) (tcb : T
   simp [effectiveRunQueuePriority, resolveEffectivePrioDeadline, hUnbound]
   cases tcb.pipBoost <;> simp_all
 
+/-- SM5.I (AK2-B alignment).  When a thread's SchedContext base priority agrees
+with its TCB base priority — the `boundThreadPriorityConsistent` agreement
+specialised to this thread — the SchedContext-aware effective priority
+`(resolveEffectivePrioDeadline st tcb).1` equals the TCB-based
+`effectiveRunQueuePriority tcb` (the bucket `schedulerPriorityMatch` records).
+This is the bridge that lets the SchedContext-priced run-queue inserts
+(`resolveInsertPriority`, used by `updatePipBoostOnCore` and the bound budget
+re-enqueue) preserve `schedulerPriorityMatchOnCore`.  Generalises
+`effectiveRunQueuePriority_eq_resolve_unbound` to the `.bound` / `.donated`
+cases under the agreement hypothesis. -/
+theorem resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
+    (st : SystemState) (tcb : TCB)
+    (h : ∀ scId, tcb.schedContextBinding.scId? = some scId →
+          ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority) :
+    (resolveEffectivePrioDeadline st tcb).1 = effectiveRunQueuePriority tcb := by
+  cases hb : tcb.schedContextBinding with
+  | unbound =>
+    cases hboost : tcb.pipBoost <;>
+      simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hboost]
+  | bound scId =>
+    cases hsc : st.getSchedContext? scId with
+    | none =>
+      cases hboost : tcb.pipBoost <;>
+        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost]
+    | some sc =>
+      have hp : sc.priority = tcb.priority := h scId (by rw [hb]; rfl) sc hsc
+      cases hboost : tcb.pipBoost <;>
+        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost, hp]
+  | donated scId owner =>
+    cases hsc : st.getSchedContext? scId with
+    | none =>
+      cases hboost : tcb.pipBoost <;>
+        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost]
+    | some sc =>
+      have hp : sc.priority = tcb.priority := h scId (by rw [hb]; rfl) sc hsc
+      cases hboost : tcb.pipBoost <;>
+        simp [resolveEffectivePrioDeadline, effectiveRunQueuePriority, hb, hsc, hboost, hp]
+
 -- ============================================================================
 -- R5.C (DEEP-SCH-02): Total effective-scheduling-parameter resolution
 -- ============================================================================
