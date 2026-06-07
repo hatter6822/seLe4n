@@ -3564,6 +3564,148 @@ theorem timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive (st : System
         · exact ih _ hP hI
     · exact ih _ hP hI
 
+/-- Inserting a TCB with a positive `timeSlice` preserves `allThreadsTimeSlicePositive`
+(the budget-tick reset / decrement cases). -/
+private theorem allThreadsTimeSlicePositive_of_insert_pos {st result : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb' : TCB} (hInv : st.objects.invExt)
+    (hobj : result.objects = st.objects.insert tid.toObjId (.tcb tcb'))
+    (hpos : tcb'.timeSlice > 0) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive result := by
+  intro x t hx
+  rw [SystemState.getTcb?_eq_some_iff, hobj, RHTable_getElem?_eq_get?] at hx
+  by_cases hxtid : x.toObjId = tid.toObjId
+  · rw [hxtid, RobinHood.RHTable.getElem?_insert_self _ _ _ hInv] at hx
+    simp only [Option.some.injEq, KernelObject.tcb.injEq] at hx
+    rw [← hx]; exact hpos
+  · rw [RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+        (by intro he; exact hxtid (eq_of_beq he).symm) hInv] at hx
+    exact h x t (by rw [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hx)
+
+/-- Inserting a SchedContext (a non-TCB object) preserves `allThreadsTimeSlicePositive`
+(the budget-tick SchedContext-write cases). -/
+private theorem allThreadsTimeSlicePositive_of_insert_schedContext {st result : SystemState}
+    {scId : SeLe4n.SchedContextId} {sc : SeLe4n.Kernel.SchedContext} (hInv : st.objects.invExt)
+    (hobj : result.objects = st.objects.insert scId.toObjId (.schedContext sc))
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive result := by
+  refine allThreadsTimeSlicePositive_of_tsAgree (st := st) ?_ h
+  rw [hobj]
+  exact tsAgree_insert_nontcb (tsAgree_rfl _) hInv (by intro t; simp)
+
+/-- WS-SM SM5.I global strengthening (step 2f): `timerTickBudgetOnCore` — the only
+`timeSlice`-writer — preserves `allThreadsTimeSlicePositive`.  Four cases:
+unbound reset (`configDefaultTimeSlice > 0`, via `hConfigTS`) / unbound decrement
+(`timeSlice - 1 > 0` under the `> 1` guard) — both `_of_insert_pos`; bound budget
+exhausted (SchedContext insert + replenish + re-enqueue + `timeoutBlockedThreads`,
+all objects-`timeSlice`-preserving) / bound budget>1 (SchedContext consume) — both
+via the SchedContext-insert and timeout-chain frames.  Mirrors the case structure
+of `timerTickBudgetOnCore_preserves_runQueueSafetyOnCore` (the run-queue reasoning
+drops out — `allThreads` reads only `objects`). -/
+theorem timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (st3 : SystemState) (b : Bool) (hInv : st.objects.invExt)
+    (hConfigTS : st.scheduler.configDefaultTimeSlice > 0)
+    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st3, b))
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st3 := by
+  unfold timerTickBudgetOnCore at hStep
+  split at hStep
+  · -- unbound
+    split at hStep
+    · -- case #1: reset to configDefaultTimeSlice
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep
+      exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl hConfigTS h
+    · -- case #2: decrement (guard: timeSlice > 1)
+      rename_i hnotle
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨rfl, _⟩ := hStep
+      exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl (by simp only []; omega) h
+  · -- bound
+    rename_i scId heqB
+    split at hStep
+    · rename_i sc hSc
+      split at hStep
+      · -- case #3: budget exhausted
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
+            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        have h1 : allThreadsTimeSlicePositive
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } :=
+          allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
+        have hInv1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            : SystemState).objects.invExt :=
+          RobinHood.RHTable.insert_preserves_invExt st.objects scId.toObjId _ hInv
+        have h2 : allThreadsTimeSlicePositive (replenishOnCore
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            c scId (st.machine.timer + sc.period.val)) :=
+          allThreadsTimeSlicePositive_of_objects_eq (replenishOnCore_objects _ c scId _) h1
+        have hInv2 := replenishOnCore_preserves_objects_invExt
+          { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+          c scId (st.machine.timer + sc.period.val) hInv1
+        have h3 : allThreadsTimeSlicePositive
+            { replenishOnCore { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val) with
+              scheduler := (replenishOnCore
+                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
+                (((replenishOnCore
+                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
+                  (resolveInsertPriority
+                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                    tid sc)) } :=
+          allThreadsTimeSlicePositive_of_objects_eq rfl h2
+        have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId (by exact hInv2) h3
+        exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
+      · -- case #4: consume budget (SchedContext insert only)
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        exact allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
+    · simp at hStep
+  · -- donated (identical body to bound)
+    rename_i scId _o heqB
+    split at hStep
+    · rename_i sc hSc
+      split at hStep
+      · -- case #3: budget exhausted
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        generalize (cbsUpdateDeadline (scheduleReplenishment (consumeBudget sc 1) st.machine.timer
+            ⟨sc.budgetRemaining.val⟩) st.machine.timer true : SeLe4n.Kernel.SchedContext) = scNew
+        have h1 : allThreadsTimeSlicePositive
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) } :=
+          allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
+        have hInv1 : ({ st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            : SystemState).objects.invExt :=
+          RobinHood.RHTable.insert_preserves_invExt st.objects scId.toObjId _ hInv
+        have h2 : allThreadsTimeSlicePositive (replenishOnCore
+            { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+            c scId (st.machine.timer + sc.period.val)) :=
+          allThreadsTimeSlicePositive_of_objects_eq (replenishOnCore_objects _ c scId _) h1
+        have hInv2 := replenishOnCore_preserves_objects_invExt
+          { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+          c scId (st.machine.timer + sc.period.val) hInv1
+        have h3 : allThreadsTimeSlicePositive
+            { replenishOnCore { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val) with
+              scheduler := (replenishOnCore
+                { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                c scId (st.machine.timer + sc.period.val)).scheduler.setRunQueueOnCore c
+                (((replenishOnCore
+                  { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                  c scId (st.machine.timer + sc.period.val)).scheduler.runQueueOnCore c).insert tid
+                  (resolveInsertPriority
+                    { st with objects := st.objects.insert scId.toObjId (.schedContext scNew) }
+                    tid sc)) } :=
+          allThreadsTimeSlicePositive_of_objects_eq rfl h2
+        have h4 := timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive _ scId (by exact hInv2) h3
+        exact allThreadsTimeSlicePositive_of_objects_eq rfl h4
+      · -- case #4
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨rfl, _⟩ := hStep
+        exact allThreadsTimeSlicePositive_of_insert_schedContext hInv rfl h
+    · simp at hStep
+
 /-- WS-SM SM5.I.8: `replenishOnCore` preserves the qcc-free run-queue safety bundle
 on every core (it writes only the replenish queue — run queue and objects framed). -/
 theorem replenishOnCore_preserves_runQueueSafetyOnCore (st : SystemState) (c : CoreId)
