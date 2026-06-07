@@ -1611,6 +1611,28 @@ theorem advanceDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
   intro c
   exact (runQueueUniqueOnCore_frame (advanceDomainOnCore_runQueueOnCore st c₀ c)).mpr (hPre c).2
 
+/-- WS-SM SM5.I PR1b: `advanceDomainOnCore` (the per-core domain rotation)
+preserves the Tier-A extended structural SMP invariant.  The rotation writes
+only core `c₀`'s domain-accounting slots (`activeDomain` / `domainScheduleIndex` /
+`domainTimeRemaining`), which **no** `Extended` conjunct reads, so the three
+new conjuncts frame on every core via the `@[simp]` object / run-queue / current
+frames, and `RegNodup` is the existing preservation.  This is the simplest PR1b
+transition (no object writes) and the template for the rest. -/
+theorem advanceDomainOnCore_preserves_schedulerInvariantStructuralExtended_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hPre : schedulerInvariantStructuralExtended_smp st) :
+    schedulerInvariantStructuralExtended_smp (advanceDomainOnCore st c₀) := by
+  intro c
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact advanceDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀
+      (fun c' => (hPre c').1) c
+  · exact (timeSlicePositiveOnCore_frame (advanceDomainOnCore_runQueueOnCore st c₀ c)
+      (advanceDomainOnCore_objects st c₀)).mpr (hPre c).2.1
+  · exact (currentTimeSlicePositiveOnCore_frame (advanceDomainOnCore_currentOnCore st c₀ c)
+      (advanceDomainOnCore_objects st c₀)).mpr (hPre c).2.2.1
+  · exact (schedulerPriorityMatchOnCore_frame (advanceDomainOnCore_runQueueOnCore st c₀ c)
+      (advanceDomainOnCore_objects st c₀)).mpr (hPre c).2.2.2
+
 theorem replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
     (hPre : schedulerInvariantStructuralRegNodup_smp st) :
@@ -1631,6 +1653,46 @@ theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup
   intro c
   exact (runQueueUniqueOnCore_frame
     (decrementDomainTimeOnCore_runQueueOnCore st c₀ c)).mpr (hPre c).2
+
+/-- WS-SM SM5.I PR1b: `replenishOnCore` (schedule a CBS replenishment) preserves
+the Tier-A extended structural SMP invariant.  It writes only the replenish
+queue (a scheduler field) — leaving objects / run-queue / current untouched on
+every core — so the three new conjuncts frame and `RegNodup` is the existing
+preservation. -/
+theorem replenishOnCore_preserves_schedulerInvariantStructuralExtended_smp
+    (st : SystemState) (c₀ : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (hPre : schedulerInvariantStructuralExtended_smp st) :
+    schedulerInvariantStructuralExtended_smp (replenishOnCore st c₀ scId eligibleAt) := by
+  intro c
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ scId eligibleAt
+      (fun c' => (hPre c').1) c
+  · exact (timeSlicePositiveOnCore_frame (replenishOnCore_runQueueOnCore st c₀ c scId eligibleAt)
+      (replenishOnCore_objects st c₀ scId eligibleAt)).mpr (hPre c).2.1
+  · exact (currentTimeSlicePositiveOnCore_frame (replenishOnCore_currentOnCore st c₀ c scId eligibleAt)
+      (replenishOnCore_objects st c₀ scId eligibleAt)).mpr (hPre c).2.2.1
+  · exact (schedulerPriorityMatchOnCore_frame (replenishOnCore_runQueueOnCore st c₀ c scId eligibleAt)
+      (replenishOnCore_objects st c₀ scId eligibleAt)).mpr (hPre c).2.2.2
+
+/-- WS-SM SM5.I PR1b: `decrementDomainTimeOnCore` (the non-boundary per-core
+domain-time decrement) preserves the Tier-A extended structural SMP invariant.
+It writes only core `c₀`'s `domainTimeRemaining` slot — which no `Extended`
+conjunct reads — so the three new conjuncts frame and `RegNodup` is the existing
+preservation. -/
+theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralExtended_smp
+    (st : SystemState) (c₀ : CoreId)
+    (hPre : schedulerInvariantStructuralExtended_smp st) :
+    schedulerInvariantStructuralExtended_smp (decrementDomainTimeOnCore st c₀) := by
+  intro c
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · exact decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀
+      (fun c' => (hPre c').1) c
+  · exact (timeSlicePositiveOnCore_frame (decrementDomainTimeOnCore_runQueueOnCore st c₀ c)
+      (decrementDomainTimeOnCore_objects_eq st c₀)).mpr (hPre c).2.1
+  · exact (currentTimeSlicePositiveOnCore_frame (decrementDomainTimeOnCore_currentOnCore st c₀ c)
+      (decrementDomainTimeOnCore_objects_eq st c₀)).mpr (hPre c).2.2.1
+  · exact (schedulerPriorityMatchOnCore_frame (decrementDomainTimeOnCore_runQueueOnCore st c₀ c)
+      (decrementDomainTimeOnCore_objects_eq st c₀)).mpr (hPre c).2.2.2
 
 theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
