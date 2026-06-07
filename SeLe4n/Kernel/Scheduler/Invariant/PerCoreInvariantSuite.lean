@@ -1694,6 +1694,27 @@ theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralExtended
   · exact (schedulerPriorityMatchOnCore_frame (decrementDomainTimeOnCore_runQueueOnCore st c₀ c)
       (decrementDomainTimeOnCore_objects_eq st c₀)).mpr (hPre c).2.2.2
 
+-- ----------------------------------------------------------------------------
+-- WS-SM SM5.I global strengthening (step 2a): allThreadsTimeSlicePositive
+-- preserved by the object-preserving transitions (objects unchanged).
+-- ----------------------------------------------------------------------------
+
+theorem advanceDomainOnCore_preserves_allThreadsTimeSlicePositive
+    (st : SystemState) (c₀ : CoreId) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (advanceDomainOnCore st c₀) :=
+  allThreadsTimeSlicePositive_of_objects_eq (advanceDomainOnCore_objects st c₀) h
+
+theorem replenishOnCore_preserves_allThreadsTimeSlicePositive
+    (st : SystemState) (c₀ : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (replenishOnCore st c₀ scId eligibleAt) :=
+  allThreadsTimeSlicePositive_of_objects_eq (replenishOnCore_objects st c₀ scId eligibleAt) h
+
+theorem decrementDomainTimeOnCore_preserves_allThreadsTimeSlicePositive
+    (st : SystemState) (c₀ : CoreId) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (decrementDomainTimeOnCore st c₀) :=
+  allThreadsTimeSlicePositive_of_objects_eq (decrementDomainTimeOnCore_objects_eq st c₀) h
+
 theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt)
