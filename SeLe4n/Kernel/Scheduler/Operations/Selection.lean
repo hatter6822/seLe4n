@@ -844,6 +844,78 @@ theorem restoreIncomingContextOnCore_regsOnCore_ne (st : SystemState) (c c' : Co
   · exact MachineState.regsOnCore_setRegsOnCore_ne _ c c' _ h
   · rfl
 
+/-- WS-SM SM5.B (PR #814 review P2-1, self-switch guard): restore `tid`'s saved
+register context into core `c`'s bank **unless** `tid` is already core `c`'s
+current (running) thread.  A running thread's authoritative registers live in
+`regsOnCore c`; its saved `registerContext` may be stale until the next context
+save, so restoring it on a self-switch would roll the running context back at the
+hardware/FFI refinement boundary.  In the abstract model the two agree for the
+current thread (the maintained `contextMatchesCurrentOnCore` invariant gives
+`regsOnCore c == registerContext`), so the guard changes no reachable model
+behaviour — it makes the transition hardware-faithful.  Writes only
+`machine.coreRegs` (and only off the self-switch). -/
+def restoreIncomingContextOnCoreUnlessCurrent (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) : SystemState :=
+  if st.scheduler.currentOnCore c == some tid then st
+  else restoreIncomingContextOnCore st c tid
+
+/-- The self-switch case: when `tid` is already current, the conditional restore is
+the identity (no register roll-back). -/
+theorem restoreIncomingContextOnCoreUnlessCurrent_self (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (h : st.scheduler.currentOnCore c = some tid) :
+    restoreIncomingContextOnCoreUnlessCurrent st c tid = st := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent; rw [if_pos (by simp [h])]
+
+/-- The non-self-switch case: the conditional restore coincides with the plain
+restore. -/
+theorem restoreIncomingContextOnCoreUnlessCurrent_of_ne (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (h : st.scheduler.currentOnCore c ≠ some tid) :
+    restoreIncomingContextOnCoreUnlessCurrent st c tid = restoreIncomingContextOnCore st c tid := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent
+  rw [if_neg (by simp only [beq_iff_eq]; exact h)]
+
+@[simp] theorem restoreIncomingContextOnCoreUnlessCurrent_scheduler (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).scheduler = st.scheduler := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent; split
+  · rfl
+  · exact restoreIncomingContextOnCore_scheduler st c tid
+
+@[simp] theorem restoreIncomingContextOnCoreUnlessCurrent_objects (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).objects = st.objects := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent; split
+  · rfl
+  · exact restoreIncomingContextOnCore_objects st c tid
+
+theorem restoreIncomingContextOnCoreUnlessCurrent_getTcb? (st : SystemState) (c : CoreId)
+    (tid t : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).getTcb? t = st.getTcb? t := by
+  unfold SystemState.getTcb?; rw [restoreIncomingContextOnCoreUnlessCurrent_objects]
+
+@[simp] theorem restoreIncomingContextOnCoreUnlessCurrent_machine_timer (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).machine.timer = st.machine.timer := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent; split
+  · rfl
+  · exact restoreIncomingContextOnCore_machine_timer st c tid
+
+theorem restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_ne (st : SystemState) (c c' : CoreId)
+    (tid : SeLe4n.ThreadId) (h : c ≠ c') :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).machine.regsOnCore c' = st.machine.regsOnCore c' := by
+  unfold restoreIncomingContextOnCoreUnlessCurrent; split
+  · rfl
+  · exact restoreIncomingContextOnCore_regsOnCore_ne st c c' tid h
+
+/-- Off the self-switch, the conditional restore sets core `c`'s bank to `tid`'s
+saved context (as the plain restore does) — the contextMatches-establishment path. -/
+theorem restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_self_of_ne (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    (hNe : st.scheduler.currentOnCore c ≠ some tid) :
+    (restoreIncomingContextOnCoreUnlessCurrent st c tid).machine.regsOnCore c = tcb.registerContext := by
+  rw [restoreIncomingContextOnCoreUnlessCurrent_of_ne st c tid hNe]
+  exact restoreIncomingContextOnCore_regsOnCore_self st c tid tcb hTcb
+
 /-- Z4-D/E: For a system with all unbound threads, the effective selection
 reduces to the original selection. -/
 theorem chooseBestRunnableEffective_unbound_equiv
@@ -1007,7 +1079,17 @@ def switchToThreadOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
       let stPreempt := preemptCurrentOnCore st c tid
       let dequeuedRq := (stPreempt.scheduler.runQueueOnCore c).remove tid
       let stDequeued := { stPreempt with scheduler := stPreempt.scheduler.setRunQueueOnCore c dequeuedRq }
-      let stRestored := restoreIncomingContextOnCore stDequeued c tid
+      -- WS-SM SM5.B (PR #814 review P2-1, self-switch guard): restore `tid`'s
+      -- context into core `c`'s bank UNLESS `tid` is already current — a running
+      -- thread's live registers in `regsOnCore c` are authoritative, and
+      -- restoring its (possibly stale) saved context would roll it back at the
+      -- hardware/FFI boundary.  `stDequeued.currentOnCore c = st.currentOnCore c`
+      -- (preempt + dequeue preserve `current`), so the helper detects the
+      -- self-switch correctly.  The preempt no-ops (never re-enqueues the
+      -- incoming thread), the dequeue no-ops for the current thread
+      -- (dequeue-on-dispatch ⇒ not queued), and set-current is the identity, so a
+      -- self-switch is observably a no-op.
+      let stRestored := restoreIncomingContextOnCoreUnlessCurrent stDequeued c tid
       .ok { stRestored with scheduler := stRestored.scheduler.setCurrentOnCore c (some tid) }
     else
       .error .threadOnDifferentCore

@@ -377,8 +377,8 @@ theorem switchToThreadOnCore_machine_regsOnCore_ne (st : SystemState) (c c' : Co
       by_cases hAff : affinityAdmitsCore tidTcb c = true
       · rw [if_pos hAff, Except.ok.injEq] at h
         subst h
-        show (restoreIncomingContextOnCore _ c tid).machine.regsOnCore c' = _
-        rw [restoreIncomingContextOnCore_regsOnCore_ne _ c c' tid hcc]
+        show (restoreIncomingContextOnCoreUnlessCurrent _ c tid).machine.regsOnCore c' = _
+        rw [restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_ne _ c c' tid hcc]
         show (preemptCurrentOnCore st c tid).machine.regsOnCore c' = _
         rw [preemptCurrentOnCore_machine]
       · rw [if_neg hAff] at h; simp at h
@@ -448,7 +448,7 @@ theorem switchToThreadOnCore_runQueueOnCore_excludes_current (st : SystemState)
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCore_scheduler,
+        restoreIncomingContextOnCoreUnlessCurrent_scheduler,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       exact RunQueue.not_mem_remove_toList _ tid
     · rw [if_neg hAff] at h; simp at h
@@ -476,7 +476,7 @@ theorem switchToThreadOnCore_preempts_previous (st : SystemState) (c : CoreId)
       have hPreempt := preemptCurrentOnCore_runQueueOnCore_self_active st c tid
         prevTid prevTcb hCur hBeq hPrevTcb
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCore_scheduler,
+        restoreIncomingContextOnCoreUnlessCurrent_scheduler,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self, hPreempt]
       rw [RunQueue.mem_toList_iff_mem, RunQueue.mem_remove]
       exact ⟨(RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl), hNe⟩
@@ -505,10 +505,10 @@ theorem switchToThreadOnCore_independent_of_other_core (st : SystemState)
       subst h
       refine ⟨?_, ?_⟩
       · simp only [SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ hcc,
-          restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
+          restoreIncomingContextOnCoreUnlessCurrent_scheduler, SchedulerState.setRunQueueOnCore_currentOnCore,
           preemptCurrentOnCore_currentOnCore]
       · simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-          restoreIncomingContextOnCore_scheduler,
+          restoreIncomingContextOnCoreUnlessCurrent_scheduler,
           SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ hcc,
           preemptCurrentOnCore_runQueueOnCore_ne _ _ _ _ hcc]
     · rw [if_neg hAff] at h; simp at h
@@ -544,7 +544,7 @@ theorem switchToThreadOnCore_preserves_objects_invExt (st : SystemState)
     by_cases hAff : affinityAdmitsCore tidTcb c = true
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
-      simp only [restoreIncomingContextOnCore_objects]
+      simp only [restoreIncomingContextOnCoreUnlessCurrent_objects]
       exact preemptCurrentOnCore_preserves_objects_invExt st c tid hInv
     · rw [if_neg hAff] at h; simp at h
 
@@ -567,7 +567,7 @@ theorem switchToThreadOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSta
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCore_scheduler,
+        restoreIncomingContextOnCoreUnlessCurrent_scheduler,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       exact RunQueue.remove_preserves_wellFormed _
         (preemptCurrentOnCore_preserves_runQueueOnCore_wellFormed st c tid hwf) tid
@@ -606,7 +606,7 @@ theorem switchToThreadOnCore_objects_eq_preempt (st : SystemState) (c : CoreId)
     by_cases hAff : affinityAdmitsCore tidTcb c = true
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
-      simp only [restoreIncomingContextOnCore_objects]
+      simp only [restoreIncomingContextOnCoreUnlessCurrent_objects]
     · rw [if_neg hAff] at h; simp at h
 
 /-- WS-SM SM5.F.6 (PR #811 P2-5 support): `preemptCurrentOnCore` frames out **any**
@@ -710,6 +710,7 @@ pre-state context, and the per-core restore writes it into core `c`'s bank. -/
 theorem switchToThreadOnCore_machine_regsOnCore_self
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (tidTcb : TCB) (hTcb : st.getTcb? tid = some tidTcb) (hInv : st.objects.invExt)
+    (hNe : st.scheduler.currentOnCore c ≠ some tid)
     (h : switchToThreadOnCore st c tid = .ok st') :
     st'.machine.regsOnCore c = tidTcb.registerContext := by
   -- `stDeq.getTcb? tid = some tidTcb`: the dequeue is scheduler-only and the
@@ -721,11 +722,41 @@ theorem switchToThreadOnCore_machine_regsOnCore_self
   by_cases hAff : affinityAdmitsCore tidTcb c = true
   · rw [if_pos hAff, Except.ok.injEq] at h
     subst h
-    -- `{ restore… with scheduler := … }.machine = restore….machine`; the restore
-    -- writes core `c`'s bank to the dequeued thread's `registerContext = tidTcb…`.
-    show (restoreIncomingContextOnCore _ c tid).machine.regsOnCore c = tidTcb.registerContext
-    exact restoreIncomingContextOnCore_regsOnCore_self _ c tid tidTcb hDeqObj
+    -- Not a self-switch (`hNe`), so the conditional restore is the plain restore,
+    -- which writes core `c`'s bank to the dequeued thread's
+    -- `registerContext = tidTcb…`.  `stDeq.currentOnCore c = st.currentOnCore c`
+    -- (preempt + dequeue preserve `current`), so `hNe` discharges the guard.
+    show (restoreIncomingContextOnCoreUnlessCurrent _ c tid).machine.regsOnCore c = tidTcb.registerContext
+    exact restoreIncomingContextOnCoreUnlessCurrent_regsOnCore_self_of_ne _ c tid tidTcb hDeqObj
+      (by simp only [SchedulerState.setRunQueueOnCore_currentOnCore,
+            preemptCurrentOnCore_currentOnCore]; exact hNe)
   · rw [if_neg hAff] at h; simp at h
+
+/-- WS-SM SM5.B (self-switch register-bank no-op): when `tid` is already core `c`'s
+current thread, a successful switch leaves core `c`'s register bank **unchanged**
+(the conditional restore is the identity, the preempt no-ops, and the dequeue /
+set-current are scheduler-only).  Used to discharge the self-switch case of
+`switchToThreadOnCore_establishes_contextMatchesCurrentOnCore`. -/
+theorem switchToThreadOnCore_self_regsOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hself : st.scheduler.currentOnCore c = some tid)
+    (h : switchToThreadOnCore st c tid = .ok st') :
+    st'.machine.regsOnCore c = st.machine.regsOnCore c := by
+  unfold switchToThreadOnCore at h
+  cases hTcb : st.getTcb? tid with
+  | none => simp [hTcb] at h
+  | some tidTcb =>
+    simp only [hTcb] at h
+    by_cases hAff : affinityAdmitsCore tidTcb c = true
+    · rw [if_pos hAff, Except.ok.injEq] at h
+      subst h
+      show (restoreIncomingContextOnCoreUnlessCurrent _ c tid).machine.regsOnCore c = _
+      rw [restoreIncomingContextOnCoreUnlessCurrent_self _ c tid
+        (by simp only [SchedulerState.setRunQueueOnCore_currentOnCore,
+              preemptCurrentOnCore_currentOnCore]; exact hself)]
+      show (preemptCurrentOnCore st c tid).machine.regsOnCore c = _
+      rw [preemptCurrentOnCore_machine]
+    · rw [if_neg hAff] at h; simp at h
 
 /-- WS-SM SM5.I (the register-bank payoff): a successful switch **establishes**
 `contextMatchesCurrentOnCore` on the operated core — after the switch, core `c`'s
@@ -736,6 +767,7 @@ could hold on at most one core.  Mirrors `switchToThreadOnCore_establishes_curre
 theorem switchToThreadOnCore_establishes_contextMatchesCurrentOnCore
     (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hInv : st.objects.invExt)
+    (hCtx : contextMatchesCurrentOnCore st c)
     (h : switchToThreadOnCore st c tid = .ok st') :
     contextMatchesCurrentOnCore st' c := by
   have hPre : ∃ tidTcb, st.getTcb? tid = some tidTcb := by
@@ -753,8 +785,17 @@ theorem switchToThreadOnCore_establishes_contextMatchesCurrentOnCore
   unfold contextMatchesCurrentOnCore
   rw [switchToThreadOnCore_sets_current st c tid st' h]
   simp only [hgt]
-  rw [switchToThreadOnCore_machine_regsOnCore_self st c tid st' tidTcb hTcb hInv h]
-  exact RegisterFile.beq_self _
+  by_cases hself : st.scheduler.currentOnCore c = some tid
+  · -- self-switch (PR #814 P2-1 guard): the restore is skipped, so core `c`'s bank
+    -- is unchanged; `contextMatchesCurrentOnCore` is inherited from the pre-state
+    -- (`hCtx`), where `tid` is already current.
+    rw [switchToThreadOnCore_self_regsOnCore st c tid st' hself h]
+    unfold contextMatchesCurrentOnCore at hCtx
+    rw [hself] at hCtx; simp only [hTcb] at hCtx
+    exact hCtx
+  · -- normal switch: the restore establishes core `c`'s bank = `tid`'s context.
+    rw [switchToThreadOnCore_machine_regsOnCore_self st c tid st' tidTcb hTcb hInv hself h]
+    exact RegisterFile.beq_self _
 
 -- ============================================================================
 -- §3c  Acquisition-order completeness (SM5.B.2, plan §4.4)

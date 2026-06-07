@@ -769,7 +769,8 @@ theorem switchToThreadOnCore_preserves_runnableThreadsAreTCBsOnCore (st : System
       simp only [hTcb] at h
       by_cases hAff : affinityAdmitsCore tidTcb c = true
       · rw [if_pos hAff, Except.ok.injEq] at h; subst h
-        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore, restoreIncomingContextOnCore_scheduler,
+        simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          restoreIncomingContextOnCoreUnlessCurrent_scheduler,
           SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       · rw [if_neg hAff] at h; simp at h
   intro x hx
@@ -1225,7 +1226,8 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralReg_smp
   intro c'
   by_cases hc : c₀ = c'
   · subst hc
-    exact switchToThreadOnCore_establishes_contextMatchesCurrentOnCore st c₀ tid st' hInv h
+    exact switchToThreadOnCore_establishes_contextMatchesCurrentOnCore st c₀ tid st' hInv
+      (hPre c₀).2 h
   · exact switchToThreadOnCore_preserves_contextMatchesCurrentOnCore_sibling
       st c₀ c' tid st' hc hInv hPre h
 
@@ -1853,7 +1855,8 @@ theorem switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     · rw [if_pos hAff, Except.ok.injEq] at h
       subst h
       simp only [SchedulerState.setCurrentOnCore_runQueueOnCore,
-        restoreIncomingContextOnCore_scheduler, SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+        restoreIncomingContextOnCoreUnlessCurrent_scheduler,
+        SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
       exact RunQueue.remove_preserves_toList_nodup _ tid
         (preemptCurrentOnCore_preserves_runQueueUniqueOnCore_self st c₀ tid (hPre c₀).2)
     · rw [if_neg hAff] at h; simp at h

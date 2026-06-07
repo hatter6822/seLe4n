@@ -260,6 +260,15 @@ private def stSelfCurrent : SystemState :=
   let base := (BootstrapBuilder.empty.withObject tidA.toObjId (.tcb (mkTcb 100 10 0))).build
   { base with scheduler := base.scheduler.setCurrentOnCore bootCoreId (some tidA) }
 
+/-- Like `stSelfCurrent`, but the boot core's **live** register bank holds a marker
+(`pc = 99`) that DIFFERS from `tidA`'s saved `registerContext` (default `pc = 0`).
+A self-switch must NOT restore the stale saved context — the running thread's live
+registers are authoritative (PR #814 review P2-1, the self-switch guard). -/
+private def stSelfCurrentLiveRegs : SystemState :=
+  { stSelfCurrent with
+    machine := stSelfCurrent.machine.setRegsOnCore bootCoreId
+      { (default : RegisterFile) with pc := ⟨99⟩ } }
+
 /-- `tidR` is a TCB bound to core 1 (`cpuAffinity = some core1`), sitting in the
 boot core's run queue.  A switch on the boot core must reject it; a switch on
 core 1 (its affinity) must succeed. -/
@@ -384,6 +393,13 @@ private def runSwitchScenarios : IO Unit := do
   assertBool "scenario 9: self-switch leaves tidA dequeued (not in the run queue)"
     (switchOkAnd stSelfCurrent bootCoreId tidA
       (fun st' => !decide (tidA ∈ (st'.scheduler.runQueueOnCore bootCoreId).toList)))
+  -- PR #814 review P2-1 (self-switch guard): the switch does NOT restore the stale
+  -- saved context — the boot core's live registers (pc = 99) are preserved, not
+  -- rolled back to tidA's saved `registerContext` (pc = 0).  Without the guard this
+  -- assertion would fail (the live pc would be clobbered to 0).
+  assertBool "scenario 9: self-switch preserves the live register bank (no rollback)"
+    (switchOkAnd stSelfCurrentLiveRegs bootCoreId tidA
+      (fun st' => (st'.machine.regsOnCore bootCoreId).pc == ⟨99⟩))
 
 /-- §3.9: the SM5.B.2 cross-domain lock-set witnesses. -/
 private def runLockSetChecks : IO Unit := do
