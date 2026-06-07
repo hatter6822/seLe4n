@@ -47,7 +47,7 @@ def registerContextStableCheckOnCore (_st st' : SystemState) (c : CoreId) : Bool
   | some tid =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      st'.machine.regs == tcb.registerContext &&
+      st'.machine.regsOnCore c == tcb.registerContext &&
       !(st'.scheduler.runQueueOnCore c).toList.contains tid &&
       (tcb.timeSlice > 0) &&
       (tcb.ipcState == .ready) &&

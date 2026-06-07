@@ -586,15 +586,22 @@ updates the single-core `regs` view. -/
     If CPSR is added in future hardware-binding work (WS-T), this invariant
     must be extended accordingly. -/
 def machineWordBounded (ms : MachineState) : Prop :=
-  ms.regs.pc.valid ∧ ms.regs.sp.valid ∧
-  ∀ (r : RegName), r.isValid → (ms.regs.gpr r).valid
+  ∀ (c : CoreId),
+    (ms.regsOnCore c).pc.valid ∧ (ms.regsOnCore c).sp.valid ∧
+    ∀ (r : RegName), r.isValid → ((ms.regsOnCore c).gpr r).valid
 
 /-- R7-C/L-03: The default machine state satisfies word-boundedness.
-    All registers are initialized to 0, which is trivially word-bounded. -/
+    Every core's register bank is initialized to 0 (the default `coreRegs` is
+    `Vector.replicate numCores default`), which is trivially word-bounded —
+    WS-SM SM5.I (per-core banks): the invariant quantifies over **every** core's
+    bank, not just the boot core's. -/
 theorem machineWordBounded_default : machineWordBounded (default : MachineState) := by
-  constructor
+  intro c
+  have hr : (default : MachineState).regsOnCore c = (default : RegisterFile) :=
+    PerCoreVector.replicate_get numCores (default : RegisterFile) c
+  rw [hr]
+  refine ⟨?_, ?_, ?_⟩
   · show (0 : Nat) < 2 ^ 64; omega
-  constructor
   · show (0 : Nat) < 2 ^ 64; omega
   · intro _ _; show (0 : Nat) < 2 ^ 64; omega
 
