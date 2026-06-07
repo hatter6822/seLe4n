@@ -1786,6 +1786,72 @@ theorem chooseBestRunnableEffective_none_no_eligible
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
         | schedContext _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
 
+/-- WS-SM SM5.I (PR-B capstone): the budget-aware analogue of
+`chooseThreadOnCore_selects_highest`.  The thread the *effective* (CBS-budget-
+aware) selector dispatches is not `isBetterCandidate`-beaten — on **effective**
+`resolveEffectivePrioDeadline` priority/deadline — by any domain-matching,
+budget-sufficient thread in core `c`'s maximum-priority bucket (where the
+selection genuinely competes).  Non-vacuous in the bucket-success path; vacuous
+in the full-scan fallback.  Assembles `chooseBestRunnableEffective_result_fields`
+(result = effective params of the selected TCB) with
+`chooseBestRunnableEffective_optimal` (no eligible+budget thread beats it). -/
+theorem chooseThreadEffectiveOnCore_selects_highest
+    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (selTcb : TCB)
+    (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
+    (hRunnable : runnableThreadsAreTCBsOnCore st c)
+    (hSel : chooseThreadEffectiveOnCore st c = .ok (some tid))
+    (hSelTcb : st.getTcb? tid = some selTcb) :
+    ∀ t ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket, ∀ tcb : TCB,
+      st.getTcb? t = some tcb →
+      tcb.domain = st.scheduler.activeDomainOnCore c →
+      hasSufficientBudget st tcb = true →
+        isBetterCandidate
+          (resolveEffectivePrioDeadline st selTcb).1 (resolveEffectivePrioDeadline st selTcb).2
+          (resolveEffectivePrioDeadline st tcb).1 (resolveEffectivePrioDeadline st tcb).2 = false := by
+  intro t ht tcb htTcb htDom hBudget
+  obtain ⟨resPrio, resDl, hbucket⟩ := chooseThreadEffectiveOnCore_eq_some_imp_bucket_some st c tid hSel
+  have hSelObj : st.objects.get? tid.toObjId = some (.tcb selTcb) :=
+    (SystemState.getTcb?_eq_some_iff st tid selTcb).mp hSelTcb
+  have hTObj : st.objects.get? t.toObjId = some (.tcb tcb) :=
+    (SystemState.getTcb?_eq_some_iff st t tcb).mp htTcb
+  have hMaxAll : ∀ u ∈ (st.scheduler.runQueueOnCore c).maxPriorityBucket,
+      ∃ utcb : TCB, st.objects.get? u.toObjId = some (.tcb utcb) := by
+    intro u hu
+    exact runnableThreadsAreTCBs_objects_get? st c hRunnable u
+      (RunQueue.membership_implies_flat _ u
+        (RunQueue.maxPriorityBucket_subset _ hwf u hu))
+  have hElig : (fun tc : TCB => tc.domain == st.scheduler.activeDomainOnCore c) tcb = true := by
+    simp [htDom]
+  rw [bucketFirstEffective_fullScan_equivalence] at hbucket
+  cases hMax : chooseBestRunnableInDomainEffective st
+      (st.scheduler.runQueueOnCore c).maxPriorityBucket
+      (st.scheduler.activeDomainOnCore c) none with
+  | error e => rw [hMax] at hbucket; simp at hbucket
+  | ok val =>
+    cases val with
+    | some r =>
+      rw [hMax] at hbucket
+      simp only [Except.ok.injEq, Option.some.injEq] at hbucket
+      rw [hbucket] at hMax
+      obtain ⟨resTcb, hResTcb, hResP, hResD⟩ :=
+        chooseBestRunnableEffective_result_fields st
+          (fun tc => tc.domain == st.scheduler.activeDomainOnCore c)
+          (st.scheduler.runQueueOnCore c).maxPriorityBucket none tid resPrio resDl hMax
+          (by intro _ _ _ h; simp at h)
+      rw [hSelObj] at hResTcb; cases hResTcb
+      have hOpt := chooseBestRunnableEffective_optimal st
+        (fun tc => tc.domain == st.scheduler.activeDomainOnCore c)
+        (st.scheduler.runQueueOnCore c).maxPriorityBucket tid resPrio resDl hMax hMaxAll
+      have hNoBeat := hOpt t ht tcb hTObj hElig hBudget
+      rw [hResP, hResD]
+      exact hNoBeat
+    | none =>
+      rw [hMax] at hbucket
+      have hNoElig := chooseBestRunnableEffective_none_no_eligible st
+        (fun tc => tc.domain == st.scheduler.activeDomainOnCore c)
+        (st.scheduler.runQueueOnCore c).maxPriorityBucket hMax t ht tcb hTObj
+      simp [htDom, hBudget] at hNoElig
+
 /-- SM5.A budget helper: a `.ok none` from the bucket-first effective selector
 forces the full-list fallback scan to also be `.ok none`. -/
 theorem chooseBestInBucketEffective_none_imp_toList_none
