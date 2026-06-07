@@ -1966,21 +1966,21 @@ theorem timeSlicePositiveOnCore_of_allThreads {st : SystemState} {c : CoreId}
     (h : allThreadsTimeSlicePositive st) : timeSlicePositiveOnCore st c := by
   intro tid _
   cases htcb : st.getTcb? tid with
-  | none => simp only [htcb]
-  | some tcb => simp only [htcb]; exact h tid tcb htcb
+  | none => trivial
+  | some tcb => exact h tid tcb htcb
 
 /-- Bridge: the global slice invariant implies the per-core current-thread slice
 invariant (the current thread, if any, resolves to a TCB with a positive slice). -/
 theorem currentTimeSlicePositiveOnCore_of_allThreads {st : SystemState} {c : CoreId}
     (h : allThreadsTimeSlicePositive st) : currentTimeSlicePositiveOnCore st c := by
   unfold currentTimeSlicePositiveOnCore
-  cases hcur : st.scheduler.currentOnCore c with
-  | none => simp only [hcur]
-  | some tid =>
-    simp only [hcur]
-    cases htcb : st.getTcb? tid with
-    | none => simp only [htcb]
-    | some tcb => simp only [htcb]; exact h tid tcb htcb
+  split
+  · trivial
+  · rename_i tid hcur
+    split
+    · rename_i tcb htcb
+      exact h tid tcb htcb
+    · trivial
 
 /-- The default state's object store is empty, so `allThreadsTimeSlicePositive`
 holds vacuously. -/
