@@ -1715,6 +1715,46 @@ theorem decrementDomainTimeOnCore_preserves_allThreadsTimeSlicePositive
     allThreadsTimeSlicePositive (decrementDomainTimeOnCore st c₀) :=
   allThreadsTimeSlicePositive_of_objects_eq (decrementDomainTimeOnCore_objects_eq st c₀) h
 
+/-- WS-SM SM5.I (global strengthening, step 2b): the **wake** preserves
+`allThreadsTimeSlicePositive` — the motivating case for the global strengthening.
+`enqueueRunnableOnCore` writes a TCB only via `{tcb with ipcState := .ready}`,
+which preserves `timeSlice`; the woken thread therefore keeps its (positive)
+slice, so the global invariant — hence the per-core `timeSlicePositiveOnCore`
+through the wake — holds unconditionally (no per-call woken-slice precondition). -/
+theorem enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (enqueueRunnableOnCore st c₀ tid) := by
+  refine allThreadsTimeSlicePositive_frame ?_ h
+  intro x tcb' hx
+  by_cases hxtid : x = tid
+  · rw [hxtid] at hx ⊢
+    cases hTcb : st.getTcb? tid with
+    | none =>
+      exfalso
+      rw [enqueueRunnableOnCore_no_tcb_noop st c₀ tid hTcb] at hx
+      rw [hTcb] at hx; exact absurd hx (by simp)
+    | some tcb =>
+      refine ⟨tcb, rfl, ?_⟩
+      by_cases hrun : runnableOnSomeCore st tid = true
+      · have heq : enqueueRunnableOnCore st c₀ tid = st := by
+          simp only [enqueueRunnableOnCore, hTcb, hrun, if_true]
+        rw [heq, hTcb, Option.some.injEq] at hx
+        rw [← hx]
+      · rw [Bool.not_eq_true] at hrun
+        have hpost : (enqueueRunnableOnCore st c₀ tid).getTcb? tid
+            = some { tcb with ipcState := .ready } := by
+          simp only [enqueueRunnableOnCore, hTcb]
+          split
+          · rename_i hr; rw [hrun] at hr; exact absurd hr (by simp)
+          · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+            rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
+              (.tcb { tcb with ipcState := .ready }) hInv]
+        rw [hpost, Option.some.injEq] at hx
+        rw [← hx]
+  · rw [enqueueRunnableOnCore_getTcb?_ne st c₀ tid x hInv hxtid] at hx
+    exact ⟨tcb', hx, rfl⟩
+
 theorem enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
     (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId)
     (hInv : st.objects.invExt)
