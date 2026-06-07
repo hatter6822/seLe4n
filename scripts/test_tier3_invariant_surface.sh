@@ -4019,6 +4019,57 @@ open SeLe4n.Kernel
 #check @perCoreInvariantSuiteTheorems_partition_sum
 #check @perCoreInvariantSuiteTheorems_budgetClosure_count
 #check @perCoreInvariantSuiteTheorems_identifiers_nodup
+-- §5 global slice-invariant strengthening (allThreadsTimeSlicePositive) + the
+-- Strong SMP invariant + the AK2-B priority carrier (PR-A) / alignment (PR-C).
+#check @allThreadsTimeSlicePositive
+#check @timeSlicePositiveOnCore_of_allThreads
+#check @currentTimeSlicePositiveOnCore_of_allThreads
+#check @default_allThreadsTimeSlicePositive
+#check @enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive
+#check @wakeThread_preserves_allThreadsTimeSlicePositive
+#check @updatePipBoost_preserves_allThreadsTimeSlicePositive
+#check @revertPriorityInheritance_preserves_allThreadsTimeSlicePositive
+#check @endpointQueueRemove_preserves_allThreadsTimeSlicePositive
+#check @timeoutThread_preserves_allThreadsTimeSlicePositive
+#check @timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive
+#check @timerTickBudgetOnCore_preserves_allThreadsTimeSlicePositive
+#check @processReplenishmentsDueOnCore_preserves_allThreadsTimeSlicePositive
+#check @timerTickOnCorePrepared_preserves_allThreadsTimeSlicePositive
+#check @saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive
+#check @scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive
+#check @timerTickOnCore_preserves_allThreadsTimeSlicePositive
+#check @preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive
+#check @switchToThreadOnCore_preserves_allThreadsTimeSlicePositive
+#check @handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive
+#check @enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive
+#check @switchDomainOnCore_preserves_allThreadsTimeSlicePositive
+#check @scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive
+#check @scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive
+-- the Strong SMP invariant (RegNodup + global slice → 8 of 11 conjuncts).
+#check @schedulerInvariantStrong_smp
+#check @schedulerInvariantStrong_smp_to_regNodup_smp
+#check @schedulerInvariantStrong_smp_to_allThreads
+#check @schedulerInvariantStrong_smp_to_timeSlicePositive
+#check @schedulerInvariantStrong_smp_to_currentTimeSlicePositive
+#check @schedulerInvariant_smp_and_allThreads_to_strong
+#check @default_schedulerInvariantStrong_smp
+#check @advanceDomainOnCore_preserves_schedulerInvariantStrong_smp
+#check @replenishOnCore_preserves_schedulerInvariantStrong_smp
+#check @decrementDomainTimeOnCore_preserves_schedulerInvariantStrong_smp
+#check @enqueueRunnableOnCore_preserves_schedulerInvariantStrong_smp
+#check @wakeThread_preserves_schedulerInvariantStrong_smp
+#check @scheduleEffectiveOnCore_preserves_schedulerInvariantStrong_smp
+#check @scheduleOrIdleOnCore_preserves_schedulerInvariantStrong_smp
+#check @switchToThreadOnCore_preserves_schedulerInvariantStrong_smp
+#check @handleRescheduleSgiOnCore_preserves_schedulerInvariantStrong_smp
+#check @enqueueIdleThreadOnCore_preserves_schedulerInvariantStrong_smp
+#check @switchDomainOnCore_preserves_schedulerInvariantStrong_smp
+#check @scheduleDomainOnCore_preserves_schedulerInvariantStrong_smp
+-- AK2-B priority carrier (PR-A) + the SC↔TCB priority alignment (PR-C).
+#check @boundThreadPriorityConsistent
+#check @boundThreadPriorityConsistent_frame
+#check @default_boundThreadPriorityConsistent
+#check @resolveEffectivePrioDeadline_fst_eq_effectiveRunQueuePriority_of_agree
 EOF
 lake env lean /tmp/sm5i_suite.lean'
 # WS-SM SM5.I: build the SM5.I theorem inventory so a renamed / removed SM5.I

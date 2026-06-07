@@ -439,6 +439,36 @@ private def runTimerTickChecks : IO Unit := do
   | .error _ =>
     assertBool "idle timer tick should succeed (.ok)" false
 
+-- §3.6 (elaboration-time, non-vacuity): the Strong SMP invariant's timeslice
+-- projections applied to a verified input.  The default boot state satisfies the
+-- Strong invariant, and the bridges yield the per-core timeslice conjuncts on
+-- every core — exercising `schedulerInvariantStrong_smp` end-to-end.
+example : schedulerInvariantStrong_smp (default : SystemState) :=
+  default_schedulerInvariantStrong_smp
+example (c : CoreId) : timeSlicePositiveOnCore (default : SystemState) c :=
+  schedulerInvariantStrong_smp_to_timeSlicePositive default_schedulerInvariantStrong_smp c
+example (c : CoreId) : currentTimeSlicePositiveOnCore (default : SystemState) c :=
+  schedulerInvariantStrong_smp_to_currentTimeSlicePositive default_schedulerInvariantStrong_smp c
+
+/-- §3.6: the global slice-invariant strengthening + the Strong SMP invariant.
+Non-vacuity: a populated state (`stRun` holds a real TCB) carries a positive
+slice, and the wake — the motivating case — provably keeps every TCB's slice
+positive (the runtime witness of `enqueueRunnableOnCore_preserves_allThreads…`). -/
+private def runStrongInvariantChecks : IO Unit := do
+  IO.println "--- §3.6 global slice strengthening + Strong SMP invariant ---"
+  -- non-vacuous allThreads witness: the populated state's lone TCB has slice > 0.
+  assertBool "stRun's TCB has a positive time slice (non-vacuous allThreads)"
+    (match stRun.getTcb? tidA with | some t => decide (0 < t.timeSlice) | none => false)
+  -- the wake preserves the global slice invariant: the woken thread keeps its slice.
+  assertBool "a wake onto core 1 keeps tidA's time slice positive (allThreads preserved)"
+    (match (enqueueRunnableOnCore stRun core1 tidA).getTcb? tidA with
+     | some t => decide (0 < t.timeSlice) | none => false)
+  -- the timer tick (the only timeSlice writer) preserves it on a populated state.
+  assertBool "the idle timer tick keeps every TCB's slice positive (tick capstone)"
+    (match timerTickOnCore stRun bootCoreId with
+     | .ok (st', _) => match st'.getTcb? tidA with | some t => decide (0 < t.timeSlice) | none => false
+     | .error _ => false)
+
 /-- Run all SM5.I runtime checks. -/
 def runAllChecks : IO Unit := do
   IO.println "=== WS-SM SM5.I — Per-core invariant suite runtime checks ==="
@@ -447,6 +477,7 @@ def runAllChecks : IO Unit := do
   runWakeChecks
   runMultiCoreRegisterBankChecks
   runTimerTickChecks
+  runStrongInvariantChecks
   runInventoryChecks
   IO.println "=== all SM5.I suite checks passed ==="
 
