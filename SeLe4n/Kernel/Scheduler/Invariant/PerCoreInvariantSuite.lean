@@ -3439,6 +3439,131 @@ theorem endpointQueueRemove_preserves_allThreadsTimeSlicePositive
     rw [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact h0
   rw [hts]; exact h x t0 h0'
 
+/-- Derive `allThreadsTimeSlicePositive` of the post-state from a `tsAgree`
+relation (post→pre timeSlice agreement) and the pre-state invariant. -/
+private theorem allThreadsTimeSlicePositive_of_tsAgree {st st' : SystemState}
+    (hA : tsAgree st.objects st'.objects) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro x tcb' hx
+  have hx' : st'.objects.get? x.toObjId = some (.tcb tcb') := by
+    rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st' x tcb').mp hx
+  obtain ⟨t0, h0, hts⟩ := hA x.toObjId tcb' hx'
+  have h0' : st.getTcb? x = some t0 := by
+    rw [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact h0
+  rw [hts]; exact h x t0 h0'
+
+/-- `storeObject` of a `timeSlice`-preserving TCB update preserves
+`allThreadsTimeSlicePositive`. -/
+private theorem storeObject_tcb_preserves_allThreads {st st' : SystemState}
+    {tid : SeLe4n.ThreadId} {tcb tcb' : TCB} (hInv : st.objects.invExt)
+    (hpre : st.getTcb? tid = some tcb)
+    (hStore : storeObject tid.toObjId (.tcb tcb') st = .ok ((), st'))
+    (hts : tcb'.timeSlice = tcb.timeSlice)
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st' := by
+  refine allThreadsTimeSlicePositive_of_tsAgree (st := st) ?_ h
+  intro k t hk
+  by_cases hktid : k = tid.toObjId
+  · subst hktid
+    have hself : st'.objects.get? tid.toObjId = some (.tcb tcb') := by
+      rw [← RHTable_getElem?_eq_get?]
+      exact storeObject_objects_eq st st' tid.toObjId (.tcb tcb') hInv hStore
+    rw [hself] at hk
+    simp only [Option.some.injEq, KernelObject.tcb.injEq] at hk
+    refine ⟨tcb, ?_, ?_⟩
+    · rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hpre
+    · rw [← hk]; exact hts
+  · have hne : st'.objects.get? k = st.objects.get? k := by
+      rw [← RHTable_getElem?_eq_get?, ← RHTable_getElem?_eq_get?]
+      exact storeObject_objects_ne st st' tid.toObjId k (.tcb tcb') hktid hInv hStore
+    rw [hne] at hk
+    exact ⟨t, hk, rfl⟩
+
+/-- WS-SM SM5.I global strengthening: `timeoutThread` preserves
+`allThreadsTimeSlicePositive`.  Composes the four sub-ops: endpointQueueRemove
+(step 2d), the TCB `storeObject` (`{tcb with ipcState/threadState/… := …}`,
+timeSlice-preserving), `ensureRunnable` (objects-neutral), and
+`revertPriorityInheritance` (step 2c).  Mirrors
+`timeoutThread_preserves_runQueueSafetyOnCore`. -/
+theorem timeoutThread_preserves_allThreadsTimeSlicePositive
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : timeoutThread endpointId isReceiveQ tid st = .ok st')
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st' := by
+  unfold timeoutThread at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i st1 hEQR
+    have hInv1 := endpointQueueRemove_preserves_objects_invExt _ _ _ _ _ hInv hEQR
+    have h1 : allThreadsTimeSlicePositive st1 :=
+      endpointQueueRemove_preserves_allThreadsTimeSlicePositive _ _ _ st st1 hInv hEQR h
+    split at hStep
+    · simp at hStep
+    · rename_i tcb hLook
+      simp only [] at hStep
+      split at hStep
+      · simp at hStep
+      · rename_i st2 heq
+        have hInv2 := storeObject_preserves_objects_invExt st1 st2 tid.toObjId _ hInv1 heq
+        have hpre : st1.getTcb? tid = some tcb :=
+          (SystemState.getTcb?_eq_some_iff st1 tid tcb).mpr (lookupTcb_some_objects st1 tid tcb hLook)
+        have h2 : allThreadsTimeSlicePositive st2 :=
+          storeObject_tcb_preserves_allThreads hInv1 hpre heq rfl h1
+        have h3 : allThreadsTimeSlicePositive (ensureRunnable st2 tid) :=
+          allThreadsTimeSlicePositive_of_objects_eq (ensureRunnable_objects_eq_local st2 tid) h2
+        have hInv3 : (ensureRunnable st2 tid).objects.invExt := by
+          rw [ensureRunnable_objects_eq_local]; exact hInv2
+        split at hStep <;>
+          · simp only [Except.ok.injEq] at hStep
+            subst hStep
+            first
+              | exact revertPriorityInheritance_preserves_allThreadsTimeSlicePositive _ _ _ hInv3 h3
+              | exact h3
+
+/-- WS-SM SM5.I global strengthening: `timeoutBlockedThreads` preserves
+`allThreadsTimeSlicePositive` (folds the `timeoutThread` atom).  Mirrors
+`timeoutBlockedThreads_preserves_runQueueSafetyOnCore`. -/
+theorem timeoutBlockedThreads_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (hInv : st.objects.invExt)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (timeoutBlockedThreads st scId).1 := by
+  unfold timeoutBlockedThreads
+  suffices H : ∀ (L : List SeLe4n.ThreadId)
+      (acc : SystemState × List (SeLe4n.ThreadId × KernelError)),
+      allThreadsTimeSlicePositive acc.1 → acc.1.objects.invExt →
+      allThreadsTimeSlicePositive
+        (L.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
+          let (st', errs) := acc
+          match st'.getTcb? tid with
+          | some tcb =>
+            match tcbBlockingInfo tcb with
+            | some (epId, isReceiveQ) =>
+              match timeoutThread epId isReceiveQ tid st' with
+              | .ok st'' => (st'', errs)
+              | .error e => (st', errs ++ [(tid, e)])
+            | none => (st', errs)
+          | none => (st', errs)) acc).1 by
+    exact H (st.scThreadIndex[scId]?.getD []) (st, []) h hInv
+  intro L
+  induction L with
+  | nil => intro acc hP _; exact hP
+  | cons hd tl ih =>
+    intro acc hP hI
+    rw [List.foldl_cons]
+    obtain ⟨st', errs⟩ := acc
+    simp only []
+    split
+    · rename_i tcb _
+      rcases hbi : tcbBlockingInfo tcb with _ | ⟨epId, isReceiveQ⟩
+      · exact ih _ hP hI
+      · dsimp only
+        split
+        · rename_i st'' heqT
+          apply ih
+          · exact timeoutThread_preserves_allThreadsTimeSlicePositive epId isReceiveQ hd st' st'' hI heqT hP
+          · exact timeoutThread_preserves_objects_invExt epId isReceiveQ hd st' st'' hI heqT
+        · exact ih _ hP hI
+    · exact ih _ hP hI
+
 /-- WS-SM SM5.I.8: `replenishOnCore` preserves the qcc-free run-queue safety bundle
 on every core (it writes only the replenish queue — run queue and objects framed). -/
 theorem replenishOnCore_preserves_runQueueSafetyOnCore (st : SystemState) (c : CoreId)
