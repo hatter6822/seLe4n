@@ -4507,4 +4507,113 @@ theorem timerTickOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
                       exact scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive
                         st3 c st4 hBudInv hsched hBudAll
 
+-- ── §8.6  allThreadsTimeSlicePositive through the remaining per-core transitions
+--          (the dispatch / domain family) — completing the global slice invariant
+--          as preserved by *every* SM5 per-core transition.                       ──
+
+/-- `preemptCurrentOnCore` preserves `allThreadsTimeSlicePositive` — its only
+object write is the preempted thread's register-context save (timeSlice-preserving),
+exactly as `saveOutgoingContextOnCore`, with the extra `prevTid == incoming`
+no-op guard. -/
+theorem preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (incoming : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (preemptCurrentOnCore st c incoming) := by
+  unfold preemptCurrentOnCore
+  split
+  · exact h
+  · next prevTid hcur =>
+    split
+    · exact h
+    · split
+      · next prevTcb hprev =>
+        -- the saved TCB is `{ prevTcb with registerContext := … }`, whose
+        -- `timeSlice` is `prevTcb`'s — positive by `h` on the preempted thread.
+        exact allThreadsTimeSlicePositive_of_insert_pos hInv rfl (h prevTid prevTcb hprev) h
+      · exact h
+
+/-- `switchToThreadOnCore` preserves `allThreadsTimeSlicePositive` — its only
+object write is the preempt's register-context save (its objects equal the
+preempt's, via `switchToThreadOnCore_objects_eq_preempt`). -/
+theorem switchToThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : switchToThreadOnCore st c tid = .ok st')
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' :=
+  allThreadsTimeSlicePositive_of_objects_eq (switchToThreadOnCore_objects_eq_preempt st c tid st' hStep)
+    (preemptCurrentOnCore_preserves_allThreadsTimeSlicePositive st c tid hInv h)
+
+/-- `handleRescheduleSgiOnCore` preserves `allThreadsTimeSlicePositive` — it either
+keeps `st` (idle / no-preempt) or switches (`switchToThreadOnCore`). -/
+theorem handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : handleRescheduleSgiOnCore st c = .ok st')
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  unfold handleRescheduleSgiOnCore at hStep
+  cases hCh : chooseThreadEffectiveOnCore st c with
+  | error e => rw [hCh] at hStep; simp at hStep
+  | ok r =>
+      rw [hCh] at hStep
+      cases r with
+      | none => simp only [Except.ok.injEq] at hStep; subst hStep; exact h
+      | some tid =>
+          simp only at hStep
+          split at hStep
+          · exact switchToThreadOnCore_preserves_allThreadsTimeSlicePositive st c tid st' hInv hStep h
+          · simp only [Except.ok.injEq] at hStep; subst hStep; exact h
+
+/-- `enqueueIdleThreadOnCore` preserves `allThreadsTimeSlicePositive` — it inserts
+the idle TCB (`createIdleThread c`, `timeSlice` the positive TCB default). -/
+theorem enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (hInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (enqueueIdleThreadOnCore st c) :=
+  allThreadsTimeSlicePositive_of_insert_pos hInv (enqueueIdleThreadOnCore_objects st c)
+    (by show 0 < 5; decide) h
+
+/-- `switchDomainOnCore` preserves `allThreadsTimeSlicePositive` — its only object
+write is the outgoing register-context save (`saveOutgoingContextOnCore`); the
+re-enqueue and domain-slot writes are object-neutral. -/
+theorem switchDomainOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : switchDomainOnCore st c = .ok st') (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  unfold switchDomainOnCore at hStep
+  cases hcase : st.scheduler.domainSchedule with
+  | nil => rw [hcase] at hStep; simp only [Except.ok.injEq] at hStep; subst hStep; exact h
+  | cons hd tl =>
+    rw [hcase] at hStep; dsimp only at hStep
+    split at hStep
+    · simp at hStep
+    · simp only [Except.ok.injEq] at hStep; subst hStep
+      exact allThreadsTimeSlicePositive_of_objects_eq rfl
+        (saveOutgoingContextOnCore_preserves_allThreadsTimeSlicePositive st c hInv h)
+
+/-- `scheduleDomainOnCore` preserves `allThreadsTimeSlicePositive` — boundary:
+`switchDomainOnCore` then `scheduleEffectiveOnCore`; non-boundary:
+`decrementDomainTimeOnCore` (object-neutral). -/
+theorem scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleDomainOnCore st c = .ok st') (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  unfold scheduleDomainOnCore at hStep
+  split at hStep
+  · cases hsw : switchDomainOnCore st c with
+    | error e => rw [hsw] at hStep; simp at hStep
+    | ok stMid =>
+        rw [hsw] at hStep
+        have hMidAll := switchDomainOnCore_preserves_allThreadsTimeSlicePositive st c stMid hInv hsw h
+        have hMidInv := switchDomainOnCore_preserves_objects_invExt st c stMid hInv hsw
+        exact scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive stMid c st' hMidInv hStep hMidAll
+  · simp only [Except.ok.injEq] at hStep; subst hStep
+    exact decrementDomainTimeOnCore_preserves_allThreadsTimeSlicePositive st c h
+
+/-- `scheduleOrIdleOnCore` preserves `allThreadsTimeSlicePositive` (definitionally
+`scheduleEffectiveOnCore`). -/
+theorem scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (c : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleOrIdleOnCore st c = .ok st') (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' :=
+  scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive st c st' hInv hStep h
+
 end SeLe4n.Kernel
