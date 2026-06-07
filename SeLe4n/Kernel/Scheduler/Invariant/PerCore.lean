@@ -1909,4 +1909,85 @@ theorem default_boundThreadPriorityConsistent :
   rw [default_getTcb?_none] at htcb
   simp at htcb
 
+-- ============================================================================
+-- §10  Global time-slice positivity (SM5.I — global-invariant strengthening)
+-- ============================================================================
+--
+-- The per-core, run-queue-scoped `timeSlicePositiveOnCore` is *not* preserved by
+-- the wake (`enqueueRunnableOnCore`): the wake inserts a thread into the run
+-- queue without resetting its `timeSlice`, so the newly-runnable thread (which
+-- was not previously a run-queue member) must already carry a positive slice —
+-- a fact the run-queue-scoped invariant cannot supply.
+--
+-- `allThreadsTimeSlicePositive` is the genuine, global invariant the SM5
+-- scheduler maintains: *every* TCB in the object store has a positive time
+-- slice.  In the model `timeSlice` is only ever written by the budget tick —
+-- decremented under a strict `> 1` guard (so the result stays `≥ 1`) or reset
+-- to `configDefaultTimeSlice` (`> 0`) — and set at creation (`> 0`, e.g. the
+-- idle thread's `5`); no transition can drive it to `0`.  It is established at
+-- boot, preserved by every transition, and implies *both* per-core slice
+-- conjuncts (`timeSlicePositiveOnCore`, `currentTimeSlicePositiveOnCore`), so
+-- the wake's slice preservation becomes unconditional.  System-wide
+-- (core-independent); mirrors the `boundThreadPriorityConsistent` carrier.
+
+/-- SM5.I (global-invariant strengthening).  Every TCB in the object store has a
+positive time slice.  The genuine global invariant behind the run-queue-scoped
+`timeSlicePositiveOnCore` / `currentTimeSlicePositiveOnCore`; preserved by every
+SM5 transition (only the budget tick writes `timeSlice`, and it stays `> 0`). -/
+def allThreadsTimeSlicePositive (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb → tcb.timeSlice > 0
+
+/-- `allThreadsTimeSlicePositive` is an object-store property, so it is preserved
+by any transition leaving `objects` unchanged. -/
+theorem allThreadsTimeSlicePositive_of_objects_eq {st st' : SystemState}
+    (hObj : st'.objects = st.objects) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro tid tcb htcb
+  rw [getTcb?_congr_objects hObj] at htcb
+  exact h tid tcb htcb
+
+/-- General frame lemma: `allThreadsTimeSlicePositive` is preserved by any
+transition whose object writes preserve every thread's `timeSlice` field.  Every
+SM5 transition *except* the budget tick satisfies this (writes to `ipcState` /
+`registerContext` / `pipBoost` / `schedContextBinding` / SchedContext fields
+never touch `timeSlice`); the budget tick has its own dedicated preservation. -/
+theorem allThreadsTimeSlicePositive_frame {st st' : SystemState}
+    (hTcb : ∀ tid tcb', st'.getTcb? tid = some tcb' →
+       ∃ tcb, st.getTcb? tid = some tcb ∧ tcb'.timeSlice = tcb.timeSlice)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive st' := by
+  intro tid tcb' htcb'
+  obtain ⟨tcb, hTcbPre, hSlice⟩ := hTcb tid tcb' htcb'
+  rw [hSlice]; exact h tid tcb hTcbPre
+
+/-- Bridge: the global slice invariant implies the per-core run-queue-scoped one
+(every run-queue member resolves to a TCB, and every TCB has a positive slice). -/
+theorem timeSlicePositiveOnCore_of_allThreads {st : SystemState} {c : CoreId}
+    (h : allThreadsTimeSlicePositive st) : timeSlicePositiveOnCore st c := by
+  intro tid _
+  cases htcb : st.getTcb? tid with
+  | none => simp only [htcb]
+  | some tcb => simp only [htcb]; exact h tid tcb htcb
+
+/-- Bridge: the global slice invariant implies the per-core current-thread slice
+invariant (the current thread, if any, resolves to a TCB with a positive slice). -/
+theorem currentTimeSlicePositiveOnCore_of_allThreads {st : SystemState} {c : CoreId}
+    (h : allThreadsTimeSlicePositive st) : currentTimeSlicePositiveOnCore st c := by
+  unfold currentTimeSlicePositiveOnCore
+  cases hcur : st.scheduler.currentOnCore c with
+  | none => simp only [hcur]
+  | some tid =>
+    simp only [hcur]
+    cases htcb : st.getTcb? tid with
+    | none => simp only [htcb]
+    | some tcb => simp only [htcb]; exact h tid tcb htcb
+
+/-- The default state's object store is empty, so `allThreadsTimeSlicePositive`
+holds vacuously. -/
+theorem default_allThreadsTimeSlicePositive :
+    allThreadsTimeSlicePositive (default : SystemState) := by
+  intro tid tcb htcb
+  rw [default_getTcb?_none] at htcb
+  simp at htcb
+
 end SeLe4n.Kernel
