@@ -1390,13 +1390,18 @@ which the tick reads but does not advance — see the SM5.D section header):
 2. **SM5.D.4**: process core `c`'s due CBS replenishments
    (`processReplenishmentsDueOnCore`), collecting the cross-core `.reschedule`
    SGIs the remote-targeted wakes emit.
-3. **SM5.D.6**: advance core `c`'s domain accounting
-   (`decrementDomainTimeOnCore`).
-4. **SM5.D.5**: charge the running thread one tick (`timerTickBudgetOnCore`); if
+3. **SM5.D.5**: charge the running thread one tick (`timerTickBudgetOnCore`); if
    that exhausts its budget / time-slice (preemption), re-select and dispatch the
    highest-priority budget-eligible runnable thread on core `c`
    (`scheduleEffectiveOnCore`).  An idle core (`currentOnCore c = none`) skips the
    budget charge.
+
+The tick does **budget accounting only** and never writes
+`domainTimeRemainingOnCore` (audit-pass-2 domain-rotation faithfulness, mirroring
+single-core `timerTickWithBudget`); per-core *domain* rotation is the separate
+atomic `scheduleDomainOnCore`.  Its `domainTimeRemainingPositiveOnCore`
+preservation is therefore a pure frame on that untouched slot (formalised in the
+SM5.I per-core tick invariant capstone).
 
 Returns the post-tick state paired with the list of cross-core SGIs to emit
 (from the replenish wakes).  The pure single-state-plus-SGIs form mirrors
