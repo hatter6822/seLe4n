@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/focused-goodall-dji73",
-      "commit_sha": "c4ac180f497d6153b26ee1df750f06478046e86e",
-      "tree_sha": "27555f1215b9581c0cd2e50c43b83b5412d72337",
-      "committed_at_utc": "2026-06-07T17:49:18+00:00"
+      "commit_sha": "ef06c1c0aa60d3662c6b1efebe521e103009f1b8",
+      "tree_sha": "ff1a312c2ca4925431a6401dcc6b60b95e2d34aa",
+      "committed_at_utc": "2026-06-07T18:38:05+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0e553dfcf87579fcb4326032d8132cb9dfe5b1fd386e86f05a51b1646c5395b"
+    "source_digest": "cccd963604c1608efee6e32426609ff7b7ed96473d57447458dec8d971bd43ad"
   },
   "summary": {
     "module_count": 287,
@@ -27,7 +27,7 @@
     "version": "0.31.62",
     "lean_toolchain": "v4.28.0",
     "production_files": 231,
-    "production_loc": 171769,
+    "production_loc": 171779,
     "test_files": 56,
     "test_loc": 36710,
     "proved_theorem_lemma_decls": 5730,
@@ -53369,7 +53369,7 @@
         {
           "kind": "def",
           "name": "projectMachineRegsOnCore",
-          "line": 94,
+          "line": 96,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53378,7 +53378,7 @@
             "SystemState",
             "currentOnCore",
             "none",
-            "regs",
+            "regsOnCore",
             "st",
             "threadObservable"
           ]
@@ -53386,7 +53386,7 @@
         {
           "kind": "def",
           "name": "projectStateOnCore",
-          "line": 103,
+          "line": 105,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53407,7 +53407,7 @@
         {
           "kind": "theorem",
           "name": "projectRunnableOnCore_bootCore",
-          "line": 117,
+          "line": 119,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53421,7 +53421,7 @@
         {
           "kind": "theorem",
           "name": "projectCurrentOnCore_bootCore",
-          "line": 121,
+          "line": 123,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53435,7 +53435,7 @@
         {
           "kind": "theorem",
           "name": "projectActiveDomainOnCore_bootCore",
-          "line": 125,
+          "line": 127,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53449,7 +53449,7 @@
         {
           "kind": "theorem",
           "name": "projectDomainTimeRemainingOnCore_bootCore",
-          "line": 130,
+          "line": 132,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53463,7 +53463,7 @@
         {
           "kind": "theorem",
           "name": "projectDomainScheduleIndexOnCore_bootCore",
-          "line": 135,
+          "line": 137,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53477,7 +53477,7 @@
         {
           "kind": "theorem",
           "name": "projectMachineRegsOnCore_bootCore",
-          "line": 140,
+          "line": 142,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53491,7 +53491,7 @@
         {
           "kind": "theorem",
           "name": "projectStateOnCore_bootCore",
-          "line": 145,
+          "line": 147,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53505,7 +53505,7 @@
         {
           "kind": "theorem",
           "name": "projectRunnableOnCore_frame",
-          "line": 161,
+          "line": 164,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53519,7 +53519,7 @@
         {
           "kind": "theorem",
           "name": "projectCurrentOnCore_frame",
-          "line": 167,
+          "line": 170,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53533,7 +53533,7 @@
         {
           "kind": "theorem",
           "name": "projectActiveDomainOnCore_frame",
-          "line": 173,
+          "line": 176,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53547,7 +53547,7 @@
         {
           "kind": "theorem",
           "name": "projectDomainTimeRemainingOnCore_frame",
-          "line": 179,
+          "line": 182,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53561,7 +53561,7 @@
         {
           "kind": "theorem",
           "name": "projectDomainScheduleIndexOnCore_frame",
-          "line": 186,
+          "line": 189,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53575,7 +53575,7 @@
         {
           "kind": "theorem",
           "name": "projectMachineRegsOnCore_frame",
-          "line": 193,
+          "line": 196,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53583,14 +53583,14 @@
             "SystemState",
             "currentOnCore",
             "projectMachineRegsOnCore",
-            "regs",
+            "regsOnCore",
             "st"
           ]
         },
         {
           "kind": "theorem",
           "name": "projectStateOnCore_congr",
-          "line": 206,
+          "line": 209,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53608,7 +53608,7 @@
             "projectRunnableOnCore_frame",
             "projectState",
             "projectStateOnCore",
-            "regs",
+            "regsOnCore",
             "runQueueOnCore",
             "st"
           ]
@@ -53616,7 +53616,7 @@
         {
           "kind": "def",
           "name": "lowEquivalentOnCore",
-          "line": 238,
+          "line": 241,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53628,7 +53628,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalentOnCore_bootCore",
-          "line": 242,
+          "line": 245,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -53641,7 +53641,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalentOnCore_refl",
-          "line": 247,
+          "line": 250,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53654,7 +53654,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalentOnCore_symm",
-          "line": 251,
+          "line": 254,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53666,7 +53666,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalentOnCore_trans",
-          "line": 256,
+          "line": 259,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53679,7 +53679,7 @@
         {
           "kind": "def",
           "name": "lowEquivalent_smp",
-          "line": 264,
+          "line": 267,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53691,7 +53691,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_smp_aggregateForall",
-          "line": 268,
+          "line": 271,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53704,7 +53704,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_smp_at",
-          "line": 273,
+          "line": 276,
           "called": [
             "CoreId",
             "IfObserver",
@@ -53717,7 +53717,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_smp_to_singleCore",
-          "line": 280,
+          "line": 283,
           "called": [
             "IfObserver",
             "Kernel",
@@ -96496,26 +96496,32 @@
           "name": "machineWordBounded",
           "line": 588,
           "called": [
+            "CoreId",
             "MachineState",
             "RegName",
             "isValid",
+            "regsOnCore",
             "valid"
           ]
         },
         {
           "kind": "theorem",
           "name": "machineWordBounded_default",
-          "line": 594,
+          "line": 598,
           "called": [
             "MachineState",
+            "RegisterFile",
             "default",
-            "machineWordBounded"
+            "machineWordBounded",
+            "numCores",
+            "regsOnCore",
+            "replicate_get"
           ]
         },
         {
           "kind": "def",
           "name": "readReg",
-          "line": 601,
+          "line": 608,
           "called": [
             "RegName",
             "RegValue",
@@ -96525,7 +96531,7 @@
         {
           "kind": "def",
           "name": "writeReg",
-          "line": 604,
+          "line": 611,
           "called": [
             "RegName",
             "RegValue",
@@ -96535,7 +96541,7 @@
         {
           "kind": "def",
           "name": "readMem",
-          "line": 607,
+          "line": 614,
           "called": [
             "MachineState",
             "PAddr"
@@ -96544,7 +96550,7 @@
         {
           "kind": "def",
           "name": "writeMem",
-          "line": 610,
+          "line": 617,
           "called": [
             "MachineState",
             "PAddr"
@@ -96553,7 +96559,7 @@
         {
           "kind": "def",
           "name": "MachineState.addrInRange",
-          "line": 631,
+          "line": 638,
           "called": [
             "MachineState",
             "PAddr",
@@ -96565,7 +96571,7 @@
         {
           "kind": "def",
           "name": "readMemChecked",
-          "line": 639,
+          "line": 646,
           "called": [
             "MachineState",
             "PAddr",
@@ -96576,7 +96582,7 @@
         {
           "kind": "def",
           "name": "writeMemChecked",
-          "line": 644,
+          "line": 651,
           "called": [
             "MachineState",
             "PAddr",
@@ -96588,7 +96594,7 @@
         {
           "kind": "theorem",
           "name": "readMemChecked_eq_readMem_of_inRange",
-          "line": 649,
+          "line": 656,
           "called": [
             "MachineState",
             "PAddr",
@@ -96600,7 +96606,7 @@
         {
           "kind": "theorem",
           "name": "readMemChecked_none_of_outRange",
-          "line": 655,
+          "line": 662,
           "called": [
             "MachineState",
             "PAddr",
@@ -96612,7 +96618,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_eq_writeMem_of_inRange",
-          "line": 661,
+          "line": 668,
           "called": [
             "MachineState",
             "PAddr",
@@ -96624,7 +96630,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_none_of_outRange",
-          "line": 668,
+          "line": 675,
           "called": [
             "MachineState",
             "PAddr",
@@ -96636,7 +96642,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_preserves_regs",
-          "line": 675,
+          "line": 682,
           "called": [
             "MachineState",
             "PAddr",
@@ -96647,7 +96653,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_preserves_timer",
-          "line": 685,
+          "line": 692,
           "called": [
             "MachineState",
             "PAddr",
@@ -96657,7 +96663,7 @@
         {
           "kind": "def",
           "name": "setPC",
-          "line": 694,
+          "line": 701,
           "called": [
             "MachineState",
             "RegValue",
@@ -96669,7 +96675,7 @@
         {
           "kind": "def",
           "name": "tick",
-          "line": 697,
+          "line": 704,
           "called": [
             "MachineState"
           ]
@@ -96677,7 +96683,7 @@
         {
           "kind": "def",
           "name": "disableInterrupts",
-          "line": 706,
+          "line": 713,
           "called": [
             "MachineState"
           ]
@@ -96685,7 +96691,7 @@
         {
           "kind": "def",
           "name": "enableInterrupts",
-          "line": 711,
+          "line": 718,
           "called": [
             "MachineState"
           ]
@@ -96693,15 +96699,6 @@
         {
           "kind": "def",
           "name": "withInterruptsDisabled",
-          "line": 719,
-          "called": [
-            "MachineState",
-            "disableInterrupts"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "disableInterrupts_sets_false",
           "line": 726,
           "called": [
             "MachineState",
@@ -96710,8 +96707,17 @@
         },
         {
           "kind": "theorem",
+          "name": "disableInterrupts_sets_false",
+          "line": 733,
+          "called": [
+            "MachineState",
+            "disableInterrupts"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "enableInterrupts_sets_true",
-          "line": 730,
+          "line": 737,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -96720,7 +96726,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_timer",
-          "line": 734,
+          "line": 741,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -96729,7 +96735,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_regs",
-          "line": 738,
+          "line": 745,
           "called": [
             "MachineState",
             "disableInterrupts",
@@ -96739,7 +96745,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_memory",
-          "line": 742,
+          "line": 749,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -96748,7 +96754,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_timer",
-          "line": 746,
+          "line": 753,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -96757,7 +96763,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_regs",
-          "line": 750,
+          "line": 757,
           "called": [
             "MachineState",
             "enableInterrupts",
@@ -96767,7 +96773,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_memory",
-          "line": 754,
+          "line": 761,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -96776,7 +96782,7 @@
         {
           "kind": "theorem",
           "name": "withInterruptsDisabled_restores",
-          "line": 759,
+          "line": 766,
           "called": [
             "MachineState",
             "withInterruptsDisabled"
@@ -96785,7 +96791,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_interruptsEnabled",
-          "line": 764,
+          "line": 771,
           "called": [
             "MachineState",
             "tick"
@@ -96794,7 +96800,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_eq",
-          "line": 771,
+          "line": 778,
           "called": [
             "RegName",
             "RegValue",
@@ -96806,7 +96812,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_ne",
-          "line": 775,
+          "line": 782,
           "called": [
             "RegName",
             "RegValue",
@@ -96819,7 +96825,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_eq",
-          "line": 782,
+          "line": 789,
           "called": [
             "MachineState",
             "PAddr",
@@ -96830,7 +96836,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_ne",
-          "line": 786,
+          "line": 793,
           "called": [
             "MachineState",
             "PAddr",
@@ -96841,7 +96847,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_pc",
-          "line": 791,
+          "line": 798,
           "called": [
             "RegName",
             "RegValue",
@@ -96852,7 +96858,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_sp",
-          "line": 794,
+          "line": 801,
           "called": [
             "RegName",
             "RegValue",
@@ -96863,7 +96869,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_regs",
-          "line": 797,
+          "line": 804,
           "called": [
             "MachineState",
             "PAddr",
@@ -96874,7 +96880,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_timer",
-          "line": 800,
+          "line": 807,
           "called": [
             "MachineState",
             "PAddr",
@@ -96884,7 +96890,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_memory",
-          "line": 803,
+          "line": 810,
           "called": [
             "MachineState",
             "RegValue",
@@ -96894,7 +96900,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_timer",
-          "line": 806,
+          "line": 813,
           "called": [
             "MachineState",
             "RegValue",
@@ -96904,7 +96910,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_regs",
-          "line": 809,
+          "line": 816,
           "called": [
             "MachineState",
             "regs",
@@ -96914,7 +96920,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_memory",
-          "line": 812,
+          "line": 819,
           "called": [
             "MachineState",
             "tick"
@@ -96923,7 +96929,7 @@
         {
           "kind": "theorem",
           "name": "tick_timer_succ",
-          "line": 815,
+          "line": 822,
           "called": [
             "MachineState",
             "tick"
@@ -96932,7 +96938,7 @@
         {
           "kind": "theorem",
           "name": "default_memory_returns_zero",
-          "line": 824,
+          "line": 831,
           "called": [
             "MachineState",
             "PAddr",
@@ -96942,7 +96948,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_pc_zero",
-          "line": 829,
+          "line": 836,
           "called": [
             "RegisterFile",
             "default"
@@ -96951,7 +96957,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_sp_zero",
-          "line": 833,
+          "line": 840,
           "called": [
             "RegisterFile",
             "default"
@@ -96960,7 +96966,7 @@
         {
           "kind": "theorem",
           "name": "default_timer_zero",
-          "line": 837,
+          "line": 844,
           "called": [
             "MachineState",
             "default"
@@ -96969,7 +96975,7 @@
         {
           "kind": "def",
           "name": "zeroMemoryRange",
-          "line": 858,
+          "line": 865,
           "called": [
             "MachineState",
             "PAddr",
@@ -96980,7 +96986,7 @@
         {
           "kind": "def",
           "name": "memoryZeroed",
-          "line": 865,
+          "line": 872,
           "called": [
             "MachineState",
             "PAddr",
@@ -96991,7 +96997,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_establishes_memoryZeroed",
-          "line": 870,
+          "line": 877,
           "called": [
             "MachineState",
             "PAddr",
@@ -97003,7 +97009,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_frame",
-          "line": 880,
+          "line": 887,
           "called": [
             "MachineState",
             "PAddr",
@@ -97015,7 +97021,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_regs",
-          "line": 890,
+          "line": 897,
           "called": [
             "MachineState",
             "PAddr",
@@ -97027,7 +97033,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_timer",
-          "line": 895,
+          "line": 902,
           "called": [
             "MachineState",
             "PAddr",
@@ -97038,7 +97044,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_zero_size_memory",
-          "line": 900,
+          "line": 907,
           "called": [
             "MachineState",
             "PAddr",
@@ -97048,13 +97054,13 @@
         {
           "kind": "inductive",
           "name": "SystemRegisterIndex",
-          "line": 913,
+          "line": 920,
           "called": []
         },
         {
           "kind": "def",
           "name": "readSystemRegister",
-          "line": 919,
+          "line": 926,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -97063,7 +97069,7 @@
         {
           "kind": "def",
           "name": "writeSystemRegister",
-          "line": 933,
+          "line": 940,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -97072,7 +97078,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_regs",
-          "line": 952,
+          "line": 959,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -97083,7 +97089,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_memory",
-          "line": 958,
+          "line": 965,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -97093,7 +97099,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_timer",
-          "line": 964,
+          "line": 971,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -97103,7 +97109,7 @@
         {
           "kind": "theorem",
           "name": "readSystemRegister_writeSystemRegister_eq",
-          "line": 970,
+          "line": 977,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -97114,7 +97120,7 @@
         {
           "kind": "structure",
           "name": "MachineConfig",
-          "line": 991,
+          "line": 998,
           "called": [
             "MemoryRegion"
           ]
@@ -97122,7 +97128,7 @@
         {
           "kind": "def",
           "name": "defaultMachineConfig",
-          "line": 1023,
+          "line": 1030,
           "called": [
             "MachineConfig"
           ]
@@ -97130,7 +97136,7 @@
         {
           "kind": "theorem",
           "name": "registerFileGPRCount_eq_registerCount_default",
-          "line": 1034,
+          "line": 1041,
           "called": [
             "registerFileGPRCount"
           ]
@@ -97138,13 +97144,13 @@
         {
           "kind": "namespace",
           "name": "MachineConfig",
-          "line": 1037,
+          "line": 1044,
           "called": []
         },
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 1043,
+          "line": 1050,
           "called": [
             "MemoryRegion",
             "all",
@@ -97154,13 +97160,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 1049,
+          "line": 1056,
           "called": []
         },
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 1059,
+          "line": 1066,
           "called": [
             "MachineConfig",
             "all",
@@ -97173,7 +97179,7 @@
         {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 1080,
+          "line": 1087,
           "called": [
             "RegName"
           ]
@@ -97181,7 +97187,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 1092,
+          "line": 1099,
           "called": [
             "SyscallRegisterLayout"
           ]
@@ -112893,7 +112899,7 @@
             "contains",
             "currentOnCore",
             "none",
-            "regs",
+            "regsOnCore",
             "runQueueOnCore",
             "toNat",
             "toObjId"
