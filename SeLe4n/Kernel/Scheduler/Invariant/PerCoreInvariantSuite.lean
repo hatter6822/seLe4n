@@ -4616,4 +4616,146 @@ theorem scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive (st : SystemS
     allThreadsTimeSlicePositive st' :=
   scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive st c st' hInv hStep h
 
+-- ── §8.7  The Strong per-core SMP invariant: `RegNodup` + the global slice
+--          invariant.  Makes 8 of the 11 `schedulerInvariant_perCore` conjuncts
+--          (the 6 RegNodup + timeSlice + currentTimeSlice) inductive — the
+--          timeslice pair discharged from `allThreadsTimeSlicePositive` via the
+--          SM4.C bridges (no per-call woken-slice precondition).                ──
+
+/-- WS-SM SM5.I (global strengthening): the **Strong** structural SMP invariant —
+the register-bank+Nodup base safety invariant paired with the global
+`allThreadsTimeSlicePositive` slice invariant.  `allThreads` is the carrier that
+discharges `timeSlicePositiveOnCore` / `currentTimeSlicePositiveOnCore` on every
+core (the SM4.C bridges), so this bundle captures 8 of the 11
+`schedulerInvariant_perCore` conjuncts and — unlike the per-core run-queue-scoped
+`timeSlicePositiveOnCore` — is preserved by the wake / budget tick / dispatch
+**unconditionally** (the motivation for the global strengthening).  The three
+remaining conjuncts (`schedulerPriorityMatch`, budget-EDF, `domainTimeRemaining`)
+are the Tier-B / AK2-B follow-on. -/
+def schedulerInvariantStrong_smp (st : SystemState) : Prop :=
+  schedulerInvariantStructuralRegNodup_smp st ∧ allThreadsTimeSlicePositive st
+
+theorem schedulerInvariantStrong_smp_to_regNodup_smp {st : SystemState}
+    (h : schedulerInvariantStrong_smp st) : schedulerInvariantStructuralRegNodup_smp st := h.1
+
+theorem schedulerInvariantStrong_smp_to_allThreads {st : SystemState}
+    (h : schedulerInvariantStrong_smp st) : allThreadsTimeSlicePositive st := h.2
+
+/-- The Strong invariant yields per-core run-queue time-slice positivity on every
+core (via the `allThreadsTimeSlicePositive` bridge). -/
+theorem schedulerInvariantStrong_smp_to_timeSlicePositive {st : SystemState}
+    (h : schedulerInvariantStrong_smp st) (c : CoreId) : timeSlicePositiveOnCore st c :=
+  timeSlicePositiveOnCore_of_allThreads h.2
+
+/-- The Strong invariant yields per-core current-thread time-slice positivity on
+every core. -/
+theorem schedulerInvariantStrong_smp_to_currentTimeSlicePositive {st : SystemState}
+    (h : schedulerInvariantStrong_smp st) (c : CoreId) : currentTimeSlicePositiveOnCore st c :=
+  currentTimeSlicePositiveOnCore_of_allThreads h.2
+
+/-- The full SM4.C per-core aggregate (∀ c) plus the global slice invariant gives
+the Strong invariant — the non-orphan connection to the live SM4.C surface. -/
+theorem schedulerInvariant_smp_and_allThreads_to_strong {st : SystemState}
+    (hInv : schedulerInvariant_smp st) (hTS : allThreadsTimeSlicePositive st) :
+    schedulerInvariantStrong_smp st :=
+  ⟨fun c => schedulerInvariant_perCore_to_structuralRegNodup (hInv c), hTS⟩
+
+/-- The freshly-booted system satisfies the Strong SMP invariant. -/
+theorem default_schedulerInvariantStrong_smp :
+    schedulerInvariantStrong_smp (default : SystemState) :=
+  ⟨fun c => schedulerInvariant_perCore_to_structuralRegNodup (default_schedulerInvariant_perCore c),
+   default_allThreadsTimeSlicePositive⟩
+
+-- Per-transition Strong-invariant preservation (every per-core transition except
+-- the genuinely-multi-core `timerTickOnCore`, whose ∀-core `RegNodup` fold is the
+-- SM5.I follow-on; the tick's `allThreads` half is already complete above).  Each
+-- is the pairing of the existing `RegNodup_smp` preservation with the matching
+-- `allThreadsTimeSlicePositive` preservation.
+
+theorem advanceDomainOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp (advanceDomainOnCore st c₀) :=
+  ⟨advanceDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hPre.1,
+   advanceDomainOnCore_preserves_allThreadsTimeSlicePositive st c₀ hPre.2⟩
+
+theorem replenishOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (scId : SchedContextId) (eligibleAt : Nat)
+    (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp (replenishOnCore st c₀ scId eligibleAt) :=
+  ⟨replenishOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ scId eligibleAt hPre.1,
+   replenishOnCore_preserves_allThreadsTimeSlicePositive st c₀ scId eligibleAt hPre.2⟩
+
+theorem decrementDomainTimeOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp (decrementDomainTimeOnCore st c₀) :=
+  ⟨decrementDomainTimeOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hPre.1,
+   decrementDomainTimeOnCore_preserves_allThreadsTimeSlicePositive st c₀ hPre.2⟩
+
+theorem enqueueRunnableOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore c₀ ≠ some tid)
+    (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp (enqueueRunnableOnCore st c₀ tid) :=
+  ⟨enqueueRunnableOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ tid hInv hNotCur hPre.1,
+   enqueueRunnableOnCore_preserves_allThreadsTimeSlicePositive st c₀ tid hInv hPre.2⟩
+
+theorem wakeThread_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (tid : SeLe4n.ThreadId) (executingCore : CoreId) (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st tid) ≠ some tid)
+    (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp (wakeThread st tid executingCore).1 :=
+  ⟨wakeThread_preserves_schedulerInvariantStructuralRegNodup_smp st tid executingCore hInv hNotCur hPre.1,
+   wakeThread_preserves_allThreadsTimeSlicePositive st tid executingCore hInv hPre.2⟩
+
+theorem scheduleEffectiveOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleEffectiveOnCore st c₀ = .ok st') (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp st' :=
+  ⟨scheduleEffectiveOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre.1 hStep,
+   scheduleEffectiveOnCore_preserves_allThreadsTimeSlicePositive st c₀ st' hInv hStep hPre.2⟩
+
+theorem scheduleOrIdleOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleOrIdleOnCore st c₀ = .ok st') (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp st' :=
+  ⟨scheduleOrIdleOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre.1 hStep,
+   scheduleOrIdleOnCore_preserves_allThreadsTimeSlicePositive st c₀ st' hInv hStep hPre.2⟩
+
+theorem switchToThreadOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hInv : st.objects.invExt) (hStep : switchToThreadOnCore st c₀ tid = .ok st')
+    (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp st' :=
+  ⟨switchToThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ tid st' hInv hPre.1 hStep,
+   switchToThreadOnCore_preserves_allThreadsTimeSlicePositive st c₀ tid st' hInv hStep hPre.2⟩
+
+theorem handleRescheduleSgiOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : handleRescheduleSgiOnCore st c₀ = .ok st') (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp st' :=
+  ⟨handleRescheduleSgiOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre.1 hStep,
+   handleRescheduleSgiOnCore_preserves_allThreadsTimeSlicePositive st c₀ st' hInv hStep hPre.2⟩
+
+theorem enqueueIdleThreadOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (hInv : st.objects.invExt)
+    (hNotCurAny : ∀ c', st.scheduler.currentOnCore c' ≠ some (idleThreadId c₀))
+    (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp (enqueueIdleThreadOnCore st c₀) :=
+  ⟨enqueueIdleThreadOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ hInv hNotCurAny hPre.1,
+   enqueueIdleThreadOnCore_preserves_allThreadsTimeSlicePositive st c₀ hInv hPre.2⟩
+
+theorem switchDomainOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : switchDomainOnCore st c₀ = .ok st') (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp st' :=
+  ⟨switchDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre.1 hStep,
+   switchDomainOnCore_preserves_allThreadsTimeSlicePositive st c₀ st' hInv hStep hPre.2⟩
+
+theorem scheduleDomainOnCore_preserves_schedulerInvariantStrong_smp
+    (st : SystemState) (c₀ : CoreId) (st' : SystemState) (hInv : st.objects.invExt)
+    (hStep : scheduleDomainOnCore st c₀ = .ok st') (hPre : schedulerInvariantStrong_smp st) :
+    schedulerInvariantStrong_smp st' :=
+  ⟨scheduleDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp st c₀ st' hInv hPre.1 hStep,
+   scheduleDomainOnCore_preserves_allThreadsTimeSlicePositive st c₀ st' hInv hStep hPre.2⟩
+
 end SeLe4n.Kernel
