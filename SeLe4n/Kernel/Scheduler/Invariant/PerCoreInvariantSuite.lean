@@ -3286,6 +3286,159 @@ theorem revertPriorityInheritance_preserves_allThreadsTimeSlicePositive (st : Sy
       · exact ih _ _ hst' h'
       · exact h'
 
+-- ----------------------------------------------------------------------------
+-- WS-SM SM5.I global strengthening (step 2d): allThreadsTimeSlicePositive through
+-- endpointQueueRemove — the last sub-op of the budget-tick timeout chain.
+--
+-- `tsAgree base T` is the post→pre timeSlice-agreement relation: every TCB in `T`
+-- has the same `timeSlice` as the object at its key in `base`.  It is reflexive
+-- and preserved by timeSlice-preserving TCB inserts and by non-TCB inserts; since
+-- each obligation is discharged against the FIXED base (`st.objects`), it threads
+-- through endpointQueueRemove's four conditional inserts with no key-distinctness
+-- assumptions (coincidences handled automatically).
+-- ----------------------------------------------------------------------------
+
+private def tsAgree (base T : RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  ∀ k t, T.get? k = some (.tcb t) → ∃ t0, base.get? k = some (.tcb t0) ∧ t.timeSlice = t0.timeSlice
+
+private theorem tsAgree_rfl (base : RobinHood.RHTable SeLe4n.ObjId KernelObject) : tsAgree base base :=
+  fun _ t h => ⟨t, h, rfl⟩
+
+private theorem tsAgree_insert_tcb {base T : RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    {K : SeLe4n.ObjId} {v t0 : TCB}
+    (hA : tsAgree base T) (hInvT : T.invExt)
+    (hbase : base.get? K = some (.tcb t0)) (hv : v.timeSlice = t0.timeSlice) :
+    tsAgree base (T.insert K (.tcb v)) := by
+  intro k t hk
+  by_cases hkK : (K == k) = true
+  · have hKk : K = k := eq_of_beq hkK
+    subst hKk
+    rw [RobinHood.RHTable.getElem?_insert_self T K (.tcb v) hInvT] at hk
+    simp only [Option.some.injEq, KernelObject.tcb.injEq] at hk
+    exact ⟨t0, hbase, by rw [← hk]; exact hv⟩
+  · rw [RobinHood.RHTable.getElem?_insert_ne T K k (.tcb v) hkK hInvT] at hk
+    exact hA k t hk
+
+private theorem tsAgree_insert_nontcb {base T : RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    {K : SeLe4n.ObjId} {V : KernelObject}
+    (hA : tsAgree base T) (hInvT : T.invExt) (hV : ∀ t, V ≠ .tcb t) :
+    tsAgree base (T.insert K V) := by
+  intro k t hk
+  by_cases hkK : (K == k) = true
+  · have hKk : K = k := eq_of_beq hkK
+    subst hKk
+    rw [RobinHood.RHTable.getElem?_insert_self T K V hInvT] at hk
+    simp only [Option.some.injEq] at hk
+    exact absurd hk (hV t)
+  · rw [RobinHood.RHTable.getElem?_insert_ne T K k V hkK hInvT] at hk
+    exact hA k t hk
+
+/-- Peel `endpointQueueRemove`'s two outer (unconditional) inserts — the endpoint
+head/tail update (non-TCB) and the removed-thread link clear (a `timeSlice`-
+preserving TCB update). -/
+private theorem tsAgree_peel_ep_tid {base T : RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    {ep : SeLe4n.ObjId} {e : Endpoint} {tidObj : SeLe4n.ObjId} {cleared t0 : TCB}
+    (hA : tsAgree base T) (hI : T.invExt)
+    (hbase : base.get? tidObj = some (.tcb t0)) (hv : cleared.timeSlice = t0.timeSlice) :
+    tsAgree base ((T.insert ep (.endpoint e)).insert tidObj (.tcb cleared)) :=
+  tsAgree_insert_tcb (tsAgree_insert_nontcb hA hI (by intro t; simp))
+    (RobinHood.RHTable.insert_preserves_invExt _ _ _ hI) hbase hv
+
+/-- Thread `tsAgree` through `endpointQueueRemove`'s conditional successor-patch
+insert (`queueNext`): the inserted `{nextTcb with queuePrev := …}` preserves
+`timeSlice`, and the base agreement is supplied by `ha1` at `nextTid`. -/
+private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
+    (objs1 : RobinHood.RHTable SeLe4n.ObjId KernelObject)
+    (ha1 : tsAgree st.objects objs1) (hi1 : objs1.invExt) :
+    tsAgree st.objects (match tcb.queueNext with
+      | none => objs1
+      | some nextTid => match objs1[nextTid.toObjId]? with
+        | some (.tcb nextTcb) =>
+          objs1.insert nextTid.toObjId (.tcb { nextTcb with queuePrev := tcb.queuePrev })
+        | _ => objs1) := by
+  cases tcb.queueNext with
+  | none => simpa only [] using ha1
+  | some nextTid =>
+    simp only []
+    cases hnl : objs1[nextTid.toObjId]? with
+    | none => simpa only [] using ha1
+    | some obj =>
+      cases obj with
+      | tcb nextTcb =>
+        simp only []
+        obtain ⟨t0, hst, hts⟩ :=
+          ha1 nextTid.toObjId nextTcb (by rw [← RHTable_getElem?_eq_get?]; exact hnl)
+        exact tsAgree_insert_tcb ha1 hi1 hst hts
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+      | schedContext _ => simpa only [] using ha1
+
+/-- WS-SM SM5.I global strengthening: `endpointQueueRemove` preserves
+`allThreadsTimeSlicePositive`.  Its four object writes are all `timeSlice`-
+preserving (queue-link-only TCB updates + an endpoint update), established via
+`tsAgree`. -/
+theorem endpointQueueRemove_preserves_allThreadsTimeSlicePositive
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (hInv : st.objects.invExt)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st')
+    (h : allThreadsTimeSlicePositive st) : allThreadsTimeSlicePositive st' := by
+  have hAgree : tsAgree st.objects st'.objects := by
+    unfold endpointQueueRemove at hStep
+    cases hep : st.objects[endpointId]? with
+    | none => simp [hep] at hStep
+    | some obj =>
+      cases obj with
+      | endpoint ep =>
+        simp only [hep] at hStep
+        cases hlk : lookupTcb st tid with
+        | none => simp [hlk] at hStep
+        | some tcb =>
+          simp only [hlk] at hStep
+          simp only [Except.ok.injEq] at hStep
+          rw [← hStep]; simp only []
+          have hlk_get : st.objects.get? tid.toObjId = some (.tcb tcb) := by
+            rw [← RHTable_getElem?_eq_get?]; exact lookupTcb_some_objects st tid tcb hlk
+          refine tsAgree_peel_ep_tid ?_ ?_ hlk_get rfl
+          · -- tsAgree st.objects (next-conditional over prev-conditional)
+            have hprev : tsAgree st.objects
+                (match tcb.queuePrev with
+                  | none => st.objects
+                  | some prevTid => match st.objects[prevTid.toObjId]? with
+                    | some (.tcb prevTcb) =>
+                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                    | _ => st.objects) ∧
+                (match tcb.queuePrev with
+                  | none => st.objects
+                  | some prevTid => match st.objects[prevTid.toObjId]? with
+                    | some (.tcb prevTcb) =>
+                      st.objects.insert prevTid.toObjId (.tcb { prevTcb with queueNext := tcb.queueNext })
+                    | _ => st.objects).invExt := by
+              cases tcb.queuePrev with
+              | none => exact ⟨tsAgree_rfl _, hInv⟩
+              | some prevTid =>
+                simp only []
+                cases hpl : st.objects[prevTid.toObjId]? with
+                | none => exact ⟨tsAgree_rfl _, hInv⟩
+                | some pobj =>
+                  cases pobj with
+                  | tcb prevTcb =>
+                    exact ⟨tsAgree_insert_tcb (t0 := prevTcb) (tsAgree_rfl _) hInv
+                        (by rw [← RHTable_getElem?_eq_get?]; exact hpl) rfl,
+                      RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv⟩
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+                  | schedContext _ => exact ⟨tsAgree_rfl _, hInv⟩
+            exact tsAgree_next_step st tcb _ hprev.1 hprev.2
+          · -- objs2.invExt
+            repeat (first | exact hInv | apply RobinHood.RHTable.insert_preserves_invExt | split)
+      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp [hep] at hStep
+  intro x tcb' hx
+  have hx' : st'.objects.get? x.toObjId = some (.tcb tcb') := by
+    rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st' x tcb').mp hx
+  obtain ⟨t0, h0, hts⟩ := hAgree x.toObjId tcb' hx'
+  have h0' : st.getTcb? x = some t0 := by
+    rw [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact h0
+  rw [hts]; exact h x t0 h0'
+
 /-- WS-SM SM5.I.8: `replenishOnCore` preserves the qcc-free run-queue safety bundle
 on every core (it writes only the replenish queue — run queue and objects framed). -/
 theorem replenishOnCore_preserves_runQueueSafetyOnCore (st : SystemState) (c : CoreId)
