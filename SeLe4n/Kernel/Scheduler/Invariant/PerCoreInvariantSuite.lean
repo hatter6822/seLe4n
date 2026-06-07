@@ -3204,6 +3204,88 @@ theorem timeoutBlockedThreads_preserves_runQueueSafetyOnCore (st : SystemState)
         · exact ih _ hP hI
     · exact ih _ hP hI
 
+-- ----------------------------------------------------------------------------
+-- WS-SM SM5.I global strengthening (step 2c): allThreadsTimeSlicePositive through
+-- the PIP-revert path (updatePipBoost / revertPriorityInheritance), needed for the
+-- budget-tick timeout chain.  Both write TCBs only via `{tcb with pipBoost := …}`,
+-- which preserves `timeSlice`.
+-- ----------------------------------------------------------------------------
+
+/-- `updatePipBoost` at the target thread preserves its `timeSlice` (the
+`{tcb with pipBoost := …}` record-update touches only `pipBoost`).  Mirrors
+`updatePipBoost_self_ipcState`. -/
+private theorem updatePipBoost_self_timeSlice (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (tcb : TCB)
+    (hObj : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    match (PriorityInheritance.updatePipBoost st tid).objects[tid.toObjId]? with
+    | some (.tcb tcb') => tcb'.timeSlice = tcb.timeSlice
+    | _ => True := by
+  suffices h : ∃ tcb',
+      (PriorityInheritance.updatePipBoost st tid).objects[tid.toObjId]? = some (.tcb tcb') ∧
+      tcb'.timeSlice = tcb.timeSlice by
+    obtain ⟨tcb', hLook, hTS⟩ := h; simp only [hLook, hTS]
+  unfold PriorityInheritance.updatePipBoost
+  simp only [hObj]
+  split
+  · exact ⟨tcb, hObj, rfl⟩
+  · have hSelf : (st.objects.insert tid.toObjId
+        (.tcb { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }))[tid.toObjId]? =
+        some (.tcb { tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }) :=
+      RHTable_get?_insert_self st.objects tid.toObjId _ hObjInv
+    refine ⟨{ tcb with pipBoost := PriorityInheritance.computeMaxWaiterPriority st tid }, ?_, rfl⟩
+    by_cases hRQ : tid ∈ (st.scheduler.runQueueOnCore bootCoreId)
+    · simp only [hRQ, ite_true]; split <;> exact hSelf
+    · simp only [hRQ, ite_false]; exact hSelf
+
+/-- WS-SM SM5.I global strengthening: `updatePipBoost` preserves
+`allThreadsTimeSlicePositive` (it writes a TCB only at `tid`, via the
+`pipBoost`-only update, leaving every `timeSlice` unchanged). -/
+theorem updatePipBoost_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hObjInv : st.objects.invExt) (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (PriorityInheritance.updatePipBoost st tid) := by
+  refine allThreadsTimeSlicePositive_frame ?_ h
+  intro x tcb' hx
+  by_cases hxtid : x = tid
+  · rw [hxtid] at hx ⊢
+    rw [SystemState.getTcb?_eq_some_iff] at hx
+    by_cases hc : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)
+    · obtain ⟨tcb, hpre⟩ := hc
+      refine ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hpre, ?_⟩
+      have hself := updatePipBoost_self_timeSlice st tid hObjInv tcb hpre
+      rw [hx] at hself; exact hself
+    · exfalso
+      have heq : PriorityInheritance.updatePipBoost st tid = st := by
+        unfold PriorityInheritance.updatePipBoost
+        cases hpre : st.objects[tid.toObjId]? with
+        | none => rfl
+        | some obj =>
+          cases obj with
+          | tcb t => exact absurd ⟨t, hpre⟩ hc
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+          | schedContext _ => rfl
+      rw [heq] at hx
+      exact hc ⟨tcb', hx⟩
+  · have hEq : (PriorityInheritance.updatePipBoost st tid).getTcb? x = st.getTcb? x := by
+      unfold SystemState.getTcb?
+      rw [PriorityInheritance.updatePipBoost_ipcState_frame st tid hObjInv x hxtid]
+    rw [hEq] at hx; exact ⟨tcb', hx, rfl⟩
+
+/-- WS-SM SM5.I global strengthening: `revertPriorityInheritance` preserves
+`allThreadsTimeSlicePositive`.  Fuel induction over the blocking-chain walk; each
+step is `updatePipBoost` (which preserves it). -/
+theorem revertPriorityInheritance_preserves_allThreadsTimeSlicePositive (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fuel : Nat) (hInv : st.objects.invExt)
+    (h : allThreadsTimeSlicePositive st) :
+    allThreadsTimeSlicePositive (PriorityInheritance.revertPriorityInheritance st tid fuel) := by
+  induction fuel generalizing st tid with
+  | zero => simpa [PriorityInheritance.revertPriorityInheritance] using h
+  | succ f ih =>
+      have hst' := PriorityInheritance.updatePipBoost_preserves_objects_invExt st tid hInv
+      have h' := updatePipBoost_preserves_allThreadsTimeSlicePositive st tid hInv h
+      rw [PriorityInheritance.revertPriorityInheritance]; split
+      · exact ih _ _ hst' h'
+      · exact h'
+
 /-- WS-SM SM5.I.8: `replenishOnCore` preserves the qcc-free run-queue safety bundle
 on every core (it writes only the replenish queue — run queue and objects framed). -/
 theorem replenishOnCore_preserves_runQueueSafetyOnCore (st : SystemState) (c : CoreId)
