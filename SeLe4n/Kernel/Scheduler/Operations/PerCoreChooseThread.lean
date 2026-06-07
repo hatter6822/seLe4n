@@ -1395,6 +1395,193 @@ theorem chooseBestRunnableEffective_result_props
   · exact hp
   · exact absurd hb (by simp)
 
+/-- WS-SM SM5.I (PR-B): the effective analogue of `chooseBestRunnableBy_result_fields`.
+The result's recorded `(priority, deadline)` is the *effective* priority/deadline
+(`resolveEffectivePrioDeadline`) of the selected thread.  Needed to connect the
+budget-aware selection's stored priority/deadline back to the selected TCB's
+effective scheduling parameters (the budget-EDF predicate). -/
+theorem chooseBestRunnableEffective_result_fields
+    (st : SystemState) (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (init : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableEffective st eligible runnable init =
+      .ok (some (resTid, resPrio, resDl)))
+    (hInit : ∀ iTid iPrio iDl, init = some (iTid, iPrio, iDl) →
+      ∃ itcb, st.objects.get? iTid.toObjId = some (.tcb itcb) ∧
+        (resolveEffectivePrioDeadline st itcb).1 = iPrio ∧
+        (resolveEffectivePrioDeadline st itcb).2 = iDl) :
+    ∃ tcb, st.objects.get? resTid.toObjId = some (.tcb tcb) ∧
+      (resolveEffectivePrioDeadline st tcb).1 = resPrio ∧
+      (resolveEffectivePrioDeadline st tcb).2 = resDl := by
+  induction runnable generalizing init with
+  | nil =>
+      unfold chooseBestRunnableEffective at hOk
+      simp at hOk; cases hOk
+      exact hInit resTid resPrio resDl rfl
+  | cons hd tl ih =>
+      unfold chooseBestRunnableEffective at hOk
+      cases hHdObj : st.objects.get? hd.toObjId with
+      | none => rw [hHdObj] at hOk; simp at hOk
+      | some obj =>
+          cases obj with
+          | tcb hdTcb =>
+              rw [hHdObj] at hOk
+              by_cases hCond : (eligible hdTcb && hasSufficientBudget st hdTcb) = true
+              · cases init with
+                | none =>
+                    simp only [hCond, if_true] at hOk
+                    refine ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
+                      (resolveEffectivePrioDeadline st hdTcb).2)) hOk ?_
+                    intro iTid iPrio iDl hEq
+                    simp only [Option.some.injEq, Prod.mk.injEq] at hEq
+                    obtain ⟨rfl, rfl, rfl⟩ := hEq
+                    exact ⟨hdTcb, hHdObj, rfl, rfl⟩
+                | some triple =>
+                    obtain ⟨initTid, initPrio, initDl⟩ := triple
+                    by_cases hBeat : isBetterCandidate initPrio initDl
+                        (resolveEffectivePrioDeadline st hdTcb).1
+                        (resolveEffectivePrioDeadline st hdTcb).2
+                    · simp only [hCond, if_true, hBeat] at hOk
+                      refine ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
+                        (resolveEffectivePrioDeadline st hdTcb).2)) hOk ?_
+                      intro iTid iPrio iDl hEq
+                      simp only [Option.some.injEq, Prod.mk.injEq] at hEq
+                      obtain ⟨rfl, rfl, rfl⟩ := hEq
+                      exact ⟨hdTcb, hHdObj, rfl, rfl⟩
+                    · simp only [hCond, if_true, hBeat] at hOk
+                      exact ih (some (initTid, initPrio, initDl)) hOk hInit
+              · rw [Bool.not_eq_true] at hCond
+                simp only [hCond, Bool.false_eq_true, if_false] at hOk
+                exact ih init hOk hInit
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+              rw [hHdObj] at hOk; simp at hOk
+
+/-- WS-SM SM5.I (PR-B): the effective analogue of `chooseBestRunnableBy_optimal_combined`.
+The budget-aware `none`-or-`init`-seeded effective scan's result is not
+`isBetterCandidate`-beaten by any scanned domain-eligible thread that has
+sufficient budget (compared on *effective* `resolveEffectivePrioDeadline`
+priority/deadline), nor by the seed.  Mirrors the non-budget proof with the
+`&& hasSufficientBudget` filter; the `let (prio, dl) := resolveEffectivePrioDeadline`
+binding is zeta-reduced to `.1` / `.2` projections by `simp`. -/
+private theorem chooseBestRunnableEffective_optimal_combined
+    (st : SystemState) (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (init : Option (SeLe4n.ThreadId × SeLe4n.Priority × SeLe4n.Deadline))
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableEffective st eligible runnable init =
+           .ok (some (resTid, resPrio, resDl)))
+    (hAllTcb : ∀ t, t ∈ runnable → ∃ tcb, st.objects.get? t.toObjId = some (.tcb tcb)) :
+    (∀ t, t ∈ runnable →
+      ∀ tcb, st.objects.get? t.toObjId = some (.tcb tcb) →
+        eligible tcb = true → hasSufficientBudget st tcb = true →
+          isBetterCandidate resPrio resDl
+            (resolveEffectivePrioDeadline st tcb).1
+            (resolveEffectivePrioDeadline st tcb).2 = false) ∧
+    (∀ initTid ip id, init = some (initTid, ip, id) →
+       isBetterCandidate resPrio resDl ip id = false) := by
+  induction runnable generalizing init with
+  | nil =>
+    simp [chooseBestRunnableEffective] at hOk
+    constructor
+    · intro t hMem; simp at hMem
+    · intro initTid ip id hInit; subst hOk; cases hInit
+      exact isBetterCandidate_irrefl resPrio resDl
+  | cons hd tl ih =>
+    unfold chooseBestRunnableEffective at hOk
+    have hAllTl : ∀ t, t ∈ tl → ∃ tcb, st.objects.get? t.toObjId = some (.tcb tcb) :=
+      fun t hMem => hAllTcb t (List.mem_cons.mpr (Or.inr hMem))
+    obtain ⟨hdTcb, hHdObj⟩ := hAllTcb hd (List.mem_cons.mpr (Or.inl rfl))
+    rw [hHdObj] at hOk
+    cases hEligB : (eligible hdTcb && hasSufficientBudget st hdTcb) with
+    | false =>
+      simp only [hEligB] at hOk
+      have ⟨ihP1, ihP2⟩ := ih init hOk hAllTl
+      refine ⟨?_, ihP2⟩
+      intro t hMem tcb hObj hE hB
+      simp only [List.mem_cons] at hMem
+      rcases hMem with h_eq | hTl
+      · have h1 : st.objects.get? hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+        rw [hHdObj] at h1; cases h1
+        simp [hE, hB] at hEligB
+      · exact ihP1 t hTl tcb hObj hE hB
+    | true =>
+      simp only [hEligB, ↓reduceIte] at hOk
+      cases init with
+      | none =>
+        have ⟨ihP1, ihP2⟩ := ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
+          (resolveEffectivePrioDeadline st hdTcb).2)) hOk hAllTl
+        refine ⟨?_, ?_⟩
+        · intro t hMem tcb hObj hE hB
+          simp only [List.mem_cons] at hMem
+          rcases hMem with h_eq | hTl
+          · have h1 : st.objects.get? hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+            rw [hHdObj] at h1; cases h1
+            exact ihP2 hd _ _ rfl
+          · exact ihP1 t hTl tcb hObj hE hB
+        · intro _ ip id hNone; cases hNone
+      | some triple =>
+        obtain ⟨initTid, initPrio, initDl⟩ := triple
+        dsimp only at hOk
+        cases hBeatB : isBetterCandidate initPrio initDl
+            (resolveEffectivePrioDeadline st hdTcb).1
+            (resolveEffectivePrioDeadline st hdTcb).2 with
+        | true =>
+          simp only [hBeatB, ite_true] at hOk
+          have ⟨ihP1, ihP2⟩ := ih (some (hd, (resolveEffectivePrioDeadline st hdTcb).1,
+            (resolveEffectivePrioDeadline st hdTcb).2)) hOk hAllTl
+          refine ⟨?_, ?_⟩
+          · intro t hMem tcb hObj hE hB
+            simp only [List.mem_cons] at hMem
+            rcases hMem with h_eq | hTl
+            · have h1 : st.objects.get? hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+              rw [hHdObj] at h1; cases h1
+              exact ihP2 hd _ _ rfl
+            · exact ihP1 t hTl tcb hObj hE hB
+          · intro _ ip id hSome; cases hSome
+            have hHdNoBetter := ihP2 hd _ _ rfl
+            cases hResVsInit : isBetterCandidate resPrio resDl initPrio initDl with
+            | false => rfl
+            | true =>
+              exact absurd (isBetterCandidate_transitive resPrio initPrio
+                  (resolveEffectivePrioDeadline st hdTcb).1
+                  resDl initDl (resolveEffectivePrioDeadline st hdTcb).2
+                  hResVsInit hBeatB) (by rw [hHdNoBetter]; decide)
+        | false =>
+          simp only [hBeatB] at hOk
+          have ⟨ihP1, ihP2⟩ := ih (some (initTid, initPrio, initDl)) hOk hAllTl
+          refine ⟨?_, ihP2⟩
+          intro t hMem tcb hObj hE hB
+          simp only [List.mem_cons] at hMem
+          rcases hMem with h_eq | hTl
+          · have h1 : st.objects.get? hd.toObjId = some (.tcb tcb) := h_eq ▸ hObj
+            rw [hHdObj] at h1; cases h1
+            exact isBetterCandidate_not_better_trans
+              (resolveEffectivePrioDeadline st hdTcb).1 initPrio resPrio
+              (resolveEffectivePrioDeadline st hdTcb).2 initDl resDl
+              hBeatB (ihP2 initTid initPrio initDl rfl)
+          · exact ihP1 t hTl tcb hObj hE hB
+
+/-- WS-SM SM5.I (PR-B): budget-aware selection optimality (init = none).  No
+domain-eligible, budget-sufficient thread in the scanned list beats the
+selected result on effective `resolveEffectivePrioDeadline` priority/deadline.
+The effective analogue of `chooseBestRunnableBy_optimal`. -/
+theorem chooseBestRunnableEffective_optimal
+    (st : SystemState) (eligible : TCB → Bool)
+    (runnable : List SeLe4n.ThreadId)
+    (resTid : SeLe4n.ThreadId) (resPrio : SeLe4n.Priority) (resDl : SeLe4n.Deadline)
+    (hOk : chooseBestRunnableEffective st eligible runnable none =
+      .ok (some (resTid, resPrio, resDl)))
+    (hAllTcb : ∀ t, t ∈ runnable → ∃ tcb, st.objects.get? t.toObjId = some (.tcb tcb)) :
+    ∀ t, t ∈ runnable →
+      ∀ tcb, st.objects.get? t.toObjId = some (.tcb tcb) →
+        eligible tcb = true → hasSufficientBudget st tcb = true →
+          isBetterCandidate resPrio resDl
+            (resolveEffectivePrioDeadline st tcb).1
+            (resolveEffectivePrioDeadline st tcb).2 = false :=
+  (chooseBestRunnableEffective_optimal_combined st eligible runnable none
+    resTid resPrio resDl hOk hAllTcb).1
+
 /-- SM5.A budget helper: a selected candidate of the bucket-first effective
 scan over a well-formed run queue is a genuine run-queue member that is
 in-domain and has sufficient budget. -/

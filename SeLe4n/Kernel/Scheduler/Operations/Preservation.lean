@@ -808,7 +808,11 @@ theorem timerTick_preserves_schedulerInvariantBundle
 -- WS-H6: Bucket-first scheduling helpers
 -- ============================================================================
 
-private theorem isBetterCandidate_not_better_trans
+/-- WS-H6 helper (made public for WS-SM SM5.I PR-B's effective-selection
+optimality, which reuses it for the budget-aware fold).  Non-strict transitivity
+of "does not beat": if `p2/d2` does not beat `p1/d1` and `p3/d3` does not beat
+`p2/d2`, then `p3/d3` does not beat `p1/d1`. -/
+theorem isBetterCandidate_not_better_trans
     (p1 p2 p3 : SeLe4n.Priority) (d1 d2 d3 : SeLe4n.Deadline)
     (h12 : isBetterCandidate p2 d2 p1 d1 = false)
     (h23 : isBetterCandidate p3 d3 p2 d2 = false) :
