@@ -1494,6 +1494,112 @@ theorem runQueueUniqueOnCore_smp_of_operated_and_frame
   · subst hc; exact hC0
   · exact (runQueueUniqueOnCore_frame (hFrame c hc)).mpr (hPre c)
 
+-- ============================================================================
+-- §4.5  WS-SM SM5.I PR1 — the Tier-A extended structural invariant
+-- ============================================================================
+--
+-- `schedulerInvariantStructuralExtended_perCore` adds the three register-bank-
+-- independent, *every-transition* (Tier A) conjuncts that `RegNodup` omits:
+-- `timeSlicePositiveOnCore`, `currentTimeSlicePositiveOnCore`, and
+-- `schedulerPriorityMatchOnCore`.  Together with the two dispatch-established
+-- (Tier B) conjuncts (`edf` / `domainTimeRemaining`) this is the full
+-- `schedulerInvariant_perCore`.  Like `RegNodup` it is preserved by genuine
+-- multi-core dispatch (no shared-register conflict beyond the `contextMatches`
+-- conjunct already in `RegNodup`).  `schedulerPriorityMatchOnCore` preservation
+-- through the SchedContext-priced run-queue inserts is gated on the
+-- `boundThreadPriorityConsistent` carrier (PR-A) — see PR1b.
+
+/-- WS-SM SM5.I PR1: the Tier-A extended structural per-core invariant —
+`RegNodup` plus the three every-transition conjuncts. -/
+def schedulerInvariantStructuralExtended_perCore (st : SystemState) (c : CoreId) : Prop :=
+  schedulerInvariantStructuralRegNodup_perCore st c ∧
+  timeSlicePositiveOnCore st c ∧
+  currentTimeSlicePositiveOnCore st c ∧
+  schedulerPriorityMatchOnCore st c
+
+/-- WS-SM SM5.I PR1: the system-wide Tier-A extended structural SMP invariant. -/
+def schedulerInvariantStructuralExtended_smp (st : SystemState) : Prop :=
+  ∀ c : CoreId, schedulerInvariantStructuralExtended_perCore st c
+
+theorem schedulerInvariantStructuralExtended_perCore_aggregateForall (st : SystemState) :
+    (∀ c : CoreId, schedulerInvariantStructuralExtended_perCore st c) ↔
+      schedulerInvariantStructuralExtended_smp st := Iff.rfl
+
+theorem schedulerInvariantStructuralExtended_smp_at (st : SystemState) (c : CoreId)
+    (h : schedulerInvariantStructuralExtended_smp st) :
+    schedulerInvariantStructuralExtended_perCore st c := h c
+
+-- Per-conjunct projections.
+
+theorem schedulerInvariantStructuralExtended_perCore_to_regNodup
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralExtended_perCore st c) :
+    schedulerInvariantStructuralRegNodup_perCore st c := h.1
+
+theorem schedulerInvariantStructuralExtended_perCore_to_timeSlicePositive
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralExtended_perCore st c) :
+    timeSlicePositiveOnCore st c := h.2.1
+
+theorem schedulerInvariantStructuralExtended_perCore_to_currentTimeSlicePositive
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralExtended_perCore st c) :
+    currentTimeSlicePositiveOnCore st c := h.2.2.1
+
+theorem schedulerInvariantStructuralExtended_perCore_to_schedulerPriorityMatch
+    {st : SystemState} {c : CoreId} (h : schedulerInvariantStructuralExtended_perCore st c) :
+    schedulerPriorityMatchOnCore st c := h.2.2.2
+
+theorem schedulerInvariantStructuralExtended_smp_to_regNodup {st : SystemState}
+    (h : schedulerInvariantStructuralExtended_smp st) :
+    schedulerInvariantStructuralRegNodup_smp st := fun c => (h c).1
+
+/-- The full SM4.C per-core aggregate implies the Tier-A extended structural
+invariant: its `timeSlicePositive` (4th), `currentTimeSlicePositive` (5th), and
+`schedulerPriorityMatch` (9th) conjuncts supply the three new entries.  This is
+the non-orphan connection to the live SM4.C surface. -/
+theorem schedulerInvariant_perCore_to_structuralExtended {st : SystemState} {c : CoreId}
+    (h : schedulerInvariant_perCore st c) :
+    schedulerInvariantStructuralExtended_perCore st c :=
+  ⟨schedulerInvariant_perCore_to_structuralRegNodup h,
+   schedulerInvariant_perCore_to_timeSlicePositive h,
+   schedulerInvariant_perCore_to_currentTimeSlicePositive h,
+   schedulerInvariant_perCore_to_schedulerPriorityMatch h⟩
+
+theorem schedulerInvariant_smp_to_structuralExtended {st : SystemState}
+    (h : schedulerInvariant_smp st) : schedulerInvariantStructuralExtended_smp st :=
+  fun c => schedulerInvariant_perCore_to_structuralExtended (h c)
+
+/-- WS-SM SM5.I PR1: the freshly-booted system satisfies the Tier-A extended
+structural SMP invariant on every core. -/
+theorem default_schedulerInvariantStructuralExtended_smp :
+    schedulerInvariantStructuralExtended_smp (default : SystemState) :=
+  fun c => schedulerInvariant_perCore_to_structuralExtended (default_schedulerInvariant_perCore c)
+
+/-- WS-SM SM5.I PR1: full-object frame lemma for the Tier-A extended invariant.
+Preserved by any transition that, at core `c`, leaves `current` / `runQueue` /
+`regsOnCore` unchanged and leaves the *whole* object store unchanged.  This is
+the operated-core-establishment / same-object-transition form; the weaker
+sibling-frame (objects change off `c`'s footprint) is handled per-transition in
+PR1b.  Composes the existing per-conjunct frames. -/
+theorem schedulerInvariantStructuralExtended_perCore_frame
+    {st st' : SystemState} {c : CoreId}
+    (hCur : st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hRQ  : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
+    (hRegs : st'.machine.regsOnCore c = st.machine.regsOnCore c)
+    (hObj : st'.objects = st.objects)
+    (h : schedulerInvariantStructuralExtended_perCore st c) :
+    schedulerInvariantStructuralExtended_perCore st' c := by
+  obtain ⟨⟨⟨hStruct, hCtx⟩, hNodup⟩, hTS, hCTS, hPM⟩ := h
+  have hTcbSome : ∀ tid, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome := by
+    intro tid hs
+    have he : st'.getTcb? tid = st.getTcb? tid := by
+      unfold SystemState.getTcb?; rw [hObj]
+    rw [he]; exact hs
+  exact ⟨⟨⟨schedulerInvariantStructural_perCore_frame hCur hRQ hTcbSome hStruct,
+        (contextMatchesCurrentOnCore_frame hCur hRegs hObj).mpr hCtx⟩,
+       (runQueueUniqueOnCore_frame hRQ).mpr hNodup⟩,
+      (timeSlicePositiveOnCore_frame hRQ hObj).mpr hTS,
+      (currentTimeSlicePositiveOnCore_frame hCur hObj).mpr hCTS,
+      (schedulerPriorityMatchOnCore_frame hRQ hObj).mpr hPM⟩
+
 -- Per-transition Nodup-extended preservation.
 
 theorem advanceDomainOnCore_preserves_schedulerInvariantStructuralRegNodup_smp
