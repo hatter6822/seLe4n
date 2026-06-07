@@ -1816,4 +1816,97 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
   · subst hc; exact hBoot'
   · exact hNonBootIdle' c hc
 
+-- ============================================================================
+-- §9  AK2-B carrier: bound-thread base-priority consistency (SM5.I)
+-- ============================================================================
+--
+-- The SchedContext-bound / -donated effective-priority resolver
+-- `resolveEffectivePrioDeadline` (Selection.lean) reads the *SchedContext's*
+-- base priority, whereas `effectiveRunQueuePriority` — the bucket that
+-- `schedulerPriorityMatchOnCore` records — reads the *TCB's* base priority.
+-- They coincide exactly when a bound thread's base priority equals its
+-- SchedContext's base priority: the "Option B propagation" agreement that
+-- `schedContextBind` / `schedContextConfigure` establish (see the
+-- `effectiveBucketPriority` docstring in `Scheduler/Invariant.lean`).
+--
+-- `boundThreadPriorityConsistent` packages that agreement.  It is the discharge
+-- for preserving `schedulerPriorityMatchOnCore` through the SchedContext-priced
+-- run-queue inserts (`updatePipBoostOnCore` and the bound budget re-enqueue,
+-- both at `resolveInsertPriority = (resolveEffectivePrioDeadline st tcb).1`):
+-- under this agreement that inserted bucket equals the TCB-based
+-- `effectiveRunQueuePriority tcb` that `schedulerPriorityMatch` records.
+--
+-- It is stated system-wide (a property of the object store, core-independent)
+-- and over *both* `.bound` and `.donated` bindings via `SchedContextBinding.scId?`,
+-- since `resolveEffectivePrioDeadline` reads the SchedContext base priority for
+-- both.  It frames through every scheduler transition (none touch a TCB's base
+-- `priority` / `schedContextBinding` or a SchedContext's `priority`) and is
+-- established / maintained by the SchedContext propagation ops; the default
+-- state satisfies it vacuously.
+
+/-- Local helper: the default object store is empty, so every `ObjId` lookup is
+`none`.  Stated over a generic `ObjId` (no `tid`-keyed raw-lookup text). -/
+private theorem default_objects_getElem_none (oid : SeLe4n.ObjId) :
+    (default : SystemState).objects[oid]? = none := by
+  simp only [RHTable_getElem?_eq_get?]
+  exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+
+/-- Local helper: `getTcb?` is `none` for every thread on the default state. -/
+private theorem default_getTcb?_none (tid : SeLe4n.ThreadId) :
+    (default : SystemState).getTcb? tid = none := by
+  unfold SystemState.getTcb?
+  rw [default_objects_getElem_none]
+
+/-- SM5.I (AK2-B carrier).  A SchedContext-bound or -donated thread's base
+priority agrees with its bound SchedContext's base priority.  System-wide (an
+object-store property, core-independent); covers both `.bound` and `.donated`
+via `SchedContextBinding.scId?` because `resolveEffectivePrioDeadline` reads the
+SchedContext base priority for both.  Uses the typed `getTcb?` /
+`getSchedContext?` accessors. -/
+def boundThreadPriorityConsistent (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
+    ∀ scId, tcb.schedContextBinding.scId? = some scId →
+      ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority
+
+/-- `boundThreadPriorityConsistent` depends only on the object store, so it is
+preserved by any transition leaving `objects` unchanged (the pure
+scheduler-field ops: `advanceDomainOnCore`, `decrementDomainTimeOnCore`, the
+run-queue / current / domain writes). -/
+theorem boundThreadPriorityConsistent_of_objects_eq {st st' : SystemState}
+    (hObj : st'.objects = st.objects) (h : boundThreadPriorityConsistent st) :
+    boundThreadPriorityConsistent st' := by
+  intro tid tcb' htcb' scId hbind sc' hsc'
+  rw [getTcb?_congr_objects hObj] at htcb'
+  rw [getSchedContext?_congr_objects hObj] at hsc'
+  exact h tid tcb' htcb' scId hbind sc' hsc'
+
+/-- General frame lemma: `boundThreadPriorityConsistent` is preserved by any
+transition whose object writes preserve, for every thread, its base `priority`
+and `schedContextBinding`, and for every SchedContext, its base `priority`.
+Every SM5 scheduler transition satisfies this — writes to `timeSlice` /
+`registerContext` / `ipcState` / `pipBoost` / `budgetRemaining` / replenishments
+never touch base `priority` or `schedContextBinding`. -/
+theorem boundThreadPriorityConsistent_frame {st st' : SystemState}
+    (hTcb : ∀ tid tcb', st'.getTcb? tid = some tcb' →
+       ∃ tcb, st.getTcb? tid = some tcb ∧
+         tcb'.schedContextBinding = tcb.schedContextBinding ∧
+         tcb'.priority = tcb.priority)
+    (hSc : ∀ scId sc', st'.getSchedContext? scId = some sc' →
+       ∃ sc, st.getSchedContext? scId = some sc ∧ sc'.priority = sc.priority)
+    (h : boundThreadPriorityConsistent st) :
+    boundThreadPriorityConsistent st' := by
+  intro tid tcb' htcb' scId hbind sc' hsc'
+  obtain ⟨tcb, hTcbPre, hBind, hPrio⟩ := hTcb tid tcb' htcb'
+  obtain ⟨sc, hScPre, hScPrio⟩ := hSc scId sc' hsc'
+  rw [hPrio, hScPrio]
+  exact h tid tcb hTcbPre scId (hBind ▸ hbind) sc hScPre
+
+/-- The default state's object store is empty, so `boundThreadPriorityConsistent`
+holds vacuously. -/
+theorem default_boundThreadPriorityConsistent :
+    boundThreadPriorityConsistent (default : SystemState) := by
+  intro tid tcb htcb
+  rw [default_getTcb?_none] at htcb
+  simp at htcb
+
 end SeLe4n.Kernel
