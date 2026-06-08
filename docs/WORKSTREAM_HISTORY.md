@@ -25,18 +25,19 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM5.I per-core invariant suite + SM4.B register-bank
-payoff COMPLETE (v0.31.60 → v0.31.61).** SM4.B per-core register banks
-(`MachineState.coreRegs : Vector RegisterFile numCores`) make
-`contextMatchesCurrentOnCore` (now reading core `c`'s own bank) a genuine
-∀-core invariant: the register-bank-extended `schedulerInvariantStructuralReg_smp`
-(the structural safety core + `contextMatchesCurrentOnCore`) and the
-Nodup-extended `schedulerInvariantStructuralRegNodup_smp` (+ `runQueueUniqueOnCore`)
-are proved preserved system-wide by every one of the ten SM5 per-core
-transitions.  The dispatch sibling frame is discharged by the `RegisterFile`
-partial-equivalence (`beq_symm` / `beq_trans`) idempotent-save argument (no
-cross-core current-disjointness invariant needed).  Axiom-clean; trace
-byte-identical; 79-entry inventory (new `.registerBank` category).  Full
-per-phase detail in `CLAUDE.md`.
+payoff + budget-closure capstone COMPLETE (v0.31.60 → v0.31.61 → v0.31.62).**
+The v0.31.62 capstone discharges the budget-tick obligations UNCONDITIONALLY
+via the `runQueueSafetyOnCore` sub-bundle (the three current-free run-queue
+conjuncts: `runnableThreadsAreTCBs ∧ runQueueOnCoreWellFormed ∧
+runQueueUnique`) — proved preserved through every budget-tick step including
+the bound-budget-exhausted `timeoutBlockedThreads` path (closing the SM5.F
+per-core-PIP tracked gap for the run-queue conjuncts).  The headline
+`timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed`
+takes ONLY the bundled pre-state invariant (+ `objects.invExt`) — no budget
+hypotheses — and proves the per-core timer tick preserves the full
+register-bank+Nodup base safety invariant.  Axiom-clean; trace byte-identical;
+95-entry inventory (5 categories: structural/preservation/suite/registerBank/
+budgetClosure).  Full per-phase detail in `CLAUDE.md`.
 
 **WS-SM SM0 closure at v0.31.3 (this cut).** 21 sub-tasks across 6
 categories landed as one cut: foundational types
@@ -3242,6 +3243,70 @@ migration genuinely moves entries between cores).  Partition gate 57 staged-only
 SM5.D `timerTickOnCore`; the affinity-migration `tcbSetAffinity` syscall is SM5.I+);
 SM5.I's per-core run loop is the first runtime exerciser.  Items deferred past v1.0.0 with
 correctness impact: NONE.
+
+**WS-SM SM5.I LANDED at v0.31.60** (per-core invariant suite; all 10 sub-tasks).
+Assembles the SM4.C/SM4.D per-core scheduler invariant predicates into a coherent
+suite and proves **SM5.I.8 — preservation by every SM5 per-core transition** via a
+register-bank-free **structural** SMP invariant + a reusable per-arbitrary-core
+SMP-preservation engine.  NEW staged modules:
+`SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` +
+`PerCoreInvariantSuiteInventory.lean` + `tests/SmpInvariantSuite.lean`.
+
+- **The structural SMP invariant**: `schedulerInvariantStructural_perCore` / `_smp` —
+  the four register-bank-independent safety conjuncts (`queueCurrentConsistent ∧
+  currentThreadValid ∧ runnableThreadsAreTCBs ∧ runQueueWellFormed`) proved preserved
+  by every transition.
+- **SM5.I.8 (preservation by every transition)**: ten
+  `<op>_preserves_schedulerInvariantStructural_smp` theorems (advanceDomainOnCore,
+  enqueueRunnableOnCore, wakeThread, scheduleEffectiveOnCore, scheduleOrIdleOnCore,
+  switchToThreadOnCore, handleRescheduleSgiOnCore, enqueueIdleThreadOnCore,
+  replenishOnCore, decrementDomainTimeOnCore).
+- **39-entry `pcist!` inventory** (3 categories: structural/preservation/suite).
+
+Tests: `lake exe smp_invariant_suite` — 43 surface anchors, 9 examples, 14 runtime
+assertions.  Axiom-clean; default build green (160 jobs); partition gate 62
+staged-only modules; trace byte-identical.  Items deferred past v1.0.0 with
+correctness impact: NONE.
+
+**WS-SM SM5.I register-bank payoff + Nodup extension LANDED at v0.31.61.**  SM4.B
+per-core register banks (`MachineState.coreRegs : Vector RegisterFile numCores`) make
+`contextMatchesCurrentOnCore` a genuine ∀-core invariant.  The full 6-conjunct
+`schedulerInvariantStructuralRegNodup_perCore` / `_smp` (structural 4 +
+contextMatchesCurrent + runQueueUnique) proved preserved system-wide by all 10
+transitions.  The dispatch sibling frame is discharged by the `RegisterFile`
+partial-equivalence (`beq_symm` / `beq_trans`) idempotent-save argument (no cross-core
+current-disjointness invariant needed).  `RunQueue.insert_preserves_toList_nodup` /
+`remove_preserves_toList_nodup` land for the Nodup conjunct.  Inventory grows 39 → 79
+(new `.registerBank` category).  AK7 re-anchored (RAW_LOOKUP_TID 815 → 821).  Trace
+byte-identical; axiom-clean.  Items deferred past v1.0.0 with correctness impact: NONE.
+
+**WS-SM SM5.I fully-closed timer-tick capstone LANDED at v0.31.62.**  Discharges the
+v0.31.61 capstone's budget obligations UNCONDITIONALLY via the `runQueueSafetyOnCore`
+sub-bundle (`runnableThreadsAreTCBs ∧ runQueueOnCoreWellFormed ∧ runQueueUnique` —
+the three current-free run-queue conjuncts).  Closes the SM5.F per-core-PIP tracked
+gap for the run-queue conjuncts via
+`timeoutBlockedThreads_preserves_runQueueSafetyOnCore`.
+
+- **The qcc-free sub-bundle**: `timerTickBudgetOnCore` re-enqueues on preempt (breaks
+  `queueCurrentConsistent`), but the three run-queue conjuncts never read `current`, so
+  they survive — proved per-core on arbitrary `c`.
+- **Machine-timer chain**: `timerTickOnCore_machine_timer_eq` + the full
+  `endpointQueueRemove_machine` / `ensureRunnable_machine` / `timeoutThread_machine` /
+  `timeoutBlockedThreads_machine` + save/restore frames.
+- **Pipeline-order preservation**: `popDue` only removes; the budget insert is
+  `now + period > now` (period > 0); machine timer unchanged.
+- **Aggregate**: `timerTickOnCore_preserves_perCoreCbsInvariant` composes validity +
+  pipeline with affinity-consistency supplied as the explicit `hAffinity` input.
+- **FULLY CLOSED capstone**:
+  `timerTickOnCore_preserves_schedulerInvariantStructuralRegNodup_perCore_closed` takes
+  ONLY the bundled pre-state invariant (+ `objects.invExt`) — no budget hypotheses.
+
+NEW staged modules: `Scheduler/Operations/PerCoreTickCbsPreservation.lean` +
+`PerCoreTickCbsAffinity.lean` + the live `PerCoreRunLoop.lean` driver.  Inventory
+grows 79 → 95 (new `.budgetClosure` category, 16 entries).  AK7 re-anchored
+(RAW_LOOKUP_TID 821; GETTCB 1069; GETSCHEDCTX 258).  Tests: `smp_invariant_suite`
+29/29 PASS.  Axiom-clean; trace byte-identical; Tier 0–2 green.  Items deferred past
+v1.0.0 with correctness impact: NONE.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
