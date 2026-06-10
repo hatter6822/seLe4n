@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.62"
+version = "0.31.63"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -460,3 +460,27 @@ root = "tests.SmpCbsSuite"
 [[lean_exe]]
 name = "smp_invariant_suite"
 root = "tests.SmpInvariantSuite"
+
+# WS-SM SM5.J — WCRT-under-fine-locks test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses (the §3.9 Theorem 3.9.1 RPi5 bound
+# wcrt_bound_rpi5_smp, the per-operation bounds, the combined WCRT_smp decomposition,
+# the no_starvation_under_smp capstone, the r5_latency_within_smp_bound R5 bridge) +
+# runtime assertions for the SM5.J.5 WCRT scenarios on concrete per-core op
+# footprints: the per-op exact lock-WCRT values, the RPi5 maxLockSetSize·3·tCs bound
+# + the typical-syscall < 1 ms tick-budget fit, the combined WCRT_smp decomposition +
+# monotonicity, the per-core idle no-stall on an idle-enqueued fixture, and the SM5.J
+# inventory partition counts.  Tier-2 + Tier-3 wired.
+[[lean_exe]]
+name = "smp_wcrt_suite"
+root = "tests.SmpWcrtSuite"
+
+# WS-SM SM5.K.1 — Aggregate SMP per-core scheduler suite (the acceptance-gate
+# "4-thread workload distributed across 4 cores" deliverable).  50+ runtime scenarios
+# exercising the full SM5 per-core scheduler surface end-to-end on a deterministic
+# 4-core / 4-thread fixture: per-core selection / switch / wake / timer / idle /
+# domain / CBS / WCRT decisions, cross-core independence + wake SGI routing, and the
+# deterministic 4-core scheduling trace verified byte-for-byte against the
+# tests/fixtures/smp_4core_scheduler.expected golden fixture (SM5.K.4).  Tier-2 wired.
+[[lean_exe]]
+name = "smp_scheduler_suite"
+root = "tests.SmpSchedulerSuite"

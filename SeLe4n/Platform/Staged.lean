@@ -367,6 +367,26 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 -- entries proven via the prepared/schedule per-phase frames; only the budget-phase
 -- frame (timeoutBlockedThreads object-frame) remains as tracked-debt residual.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
+-- WS-SM SM5.J: WCRT under fine locks (plan `SMP_PER_CORE_SCHEDULER_PLAN.md` §3.9,
+-- §5 SM5.J).  Bounds the per-core scheduler operations' worst-case response time
+-- under per-object RW fine locks, extending the R5 domain-rotation / band-exhaustion
+-- `wcrtBound` with the SMP lock-contention dimension: SM5.J.1 `WCRT_lockSet` (the
+-- §3.9 `max-lock-set-size · (coreCount−1) · WCRT_per_lock` cost), SM5.J.2 the plan
+-- §3.9 Theorem 3.9.1 `wcrt_bound_rpi5_smp` (RPi5 `coreCount = 4 ⟹ × 3`) + the
+-- combined `WCRT_smp`, SM5.J.3 the five per-operation bounds (chooseThread / switch /
+-- wake / timerTick / replenish), and SM5.J.4 no-thread-starves-under-SMP liveness
+-- (`schedulerNoStall_smp` per-core non-stall + `boundedKernelWait_smp` no-unbounded-
+-- inversion + the `no_starvation_under_smp` capstone + the R5-latency bridge).  The
+-- per-core op footprints are production-reached; SM5.I's live per-core run loop is
+-- the runtime exerciser that acquires them under `withLockSet`.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
+-- WS-SM SM5.J: the WCRT-under-fine-locks theorem inventory — a 32-entry typed
+-- inventory (4 categories: lockSetWcrt / rpi5Bound / perOp / liveness) with the
+-- `pcwt!` compile-time identifier-validation macro + per-category count witnesses +
+-- partition-sum + kernel-sound Nodup-on-identifiers/descriptions; mirrors the SM5.G
+-- `PerCoreDomainInventory`.  A renamed/removed SM5.J theorem fails this module's
+-- elaboration.
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrtInventory
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

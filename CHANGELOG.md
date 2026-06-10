@@ -1,3 +1,73 @@
+## v0.31.63 — WS-SM SM5.J + SM5.K: WCRT under fine locks + the 4-thread/4-core acceptance suite
+
+Lands the final two SM5 sub-task groups, closing the per-core scheduler phase's
+verification + test surface.
+
+**SM5.J — WCRT under fine locks (all 5 sub-tasks; plan §3.9).**  Bounds the
+per-core scheduler operations' **worst-case response time under per-object RW
+fine locks**, *extending* the R5 domain-rotation / band-exhaustion scheduling-
+latency bound (`wcrtBound`, `Scheduler/Liveness/WCRT.lean`) with the SMP lock-
+contention dimension.
+
+- **SM5.J.1** `WCRT_lockSet (lockSet) (tCs) := |lockSet| · perLockWaitCost tCs`
+  — the fine-lock-contention WCRT of a per-core op, **reusing the SM3.D
+  `perLockWaitCost` (= `(numCores − 1) · tCs`) verbatim** so the per-lock cost is
+  shared with the `boundedWait_under_2pl` model (the §3.9 `max-lock-set-size ·
+  (coreCount − 1) · WCRT_per_lock` formula).  Product / nil / monotone-in-length /
+  monotone-in-cost / uniform-`maxLockSetSize`-bound forms; the RPi5 core-count
+  grounding `rpi5OtherCoreCount` (`numCores − 1 = 3`, pinned to `coreCount` by
+  `numCores_eq_rpi5_coreCount`), `perLockWaitCost_rpi5`, `WCRT_lockSet_rpi5`.
+- **SM5.J.2** `wcrt_bound_rpi5_smp` — the plan §3.9 **Theorem 3.9.1**: for
+  `config = rpi5CanonicalConfig`, `config.wellFormed ∧ WCRT_lockSet lockSet tCs ≤
+  maxLockSetSize · 3 · tCs` (the config hypothesis load-bearing, mirroring
+  `boundedWait_under_2pl`'s conjunction shape).  Plus the **combined `WCRT_smp`**
+  (R5 scheduling latency + lock contention — the concrete "extends R5") with its
+  decomposition, component bounds, and `wcrt_smp_bound_rpi5`.
+- **SM5.J.3** the five per-operation WCRT bounds — `chooseThreadOnCore` (2 locks),
+  `switchToThreadOnCore` (2), `wakeThread` (2), `timerTickOnCore` (3),
+  `replenishOnCore` (1) — each with its exact value and `≤ maxLockSetSize · 3 ·
+  tCs` headline; plus `advanceDomainOnCore` and the generic
+  `wcrt_op_bounded_of_size`.
+- **SM5.J.4** **no thread starves under SMP**: `schedulerNoStall_smp` (the per-core
+  idle thread guarantees `chooseThreadOnCore` succeeds on every core, via the SM5.E
+  `chooseThreadOnCore_always_succeeds`), `boundedKernelWait_smp` (deadlock-free +
+  bounded WCRT, via SM3.D `boundedWait_under_2pl` — no unbounded inversion), the
+  capstone `no_starvation_under_smp`, and the R5 bridge `r5_latency_within_smp_bound`.
+
+Modules: staged `Scheduler/Operations/PerCoreWcrt.lean` + `PerCoreWcrtInventory.lean`
+(32-entry `pcwt!` inventory, 4 categories).  `wcrt_bound_rpi5_smp` /
+`WCRT_lockSet_rpi5` depend on **no** axioms; `no_starvation_under_smp` only on the
+foundational `propext` / `Quot.sound`.
+
+**SM5.K — Tests + fixtures (all 6 sub-tasks).**
+
+- **SM5.K.1** `tests/SmpSchedulerSuite.lean` — the acceptance-gate **4-thread
+  workload distributed across 4 cores** (plan §8): a deterministic fixture binding
+  one user thread to each RPi5 core, **51 runtime scenarios** covering per-core
+  selection, cross-core independence, affinity admission, cross-core wake SGI
+  routing, per-core switch (set current / reject remote), per-core WCRT bounds, the
+  idle no-stall, and the golden-trace verification.
+- **SM5.K.2 / SM5.K.3** `tests/SmpTimerSuite.lean` / `tests/SmpPipSuite.lean` —
+  re-confirmed (landed with SM5.D / SM5.F).
+- **SM5.K.4** `tests/fixtures/smp_4core_scheduler.expected` (+ `.sha256`) — the
+  deterministic 12-line 4-core scheduler trace, each line **computed** from the live
+  `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore`
+  decisions and verified byte-for-byte by the suite; the Tier-2 trace gate's
+  `*.expected.sha256` walk picks it up automatically.
+- **SM5.K.5** `scripts/test_qemu_smp_scheduler.sh` — the Tier-4 QEMU `-smp 4`
+  acceptance stub (registered in `test_tier4_smp_bootcheck.sh`), SKIP-gated on the
+  SM5.I+ per-core run-loop driver.
+- **SM5.K.6** surface anchors — the SM5.J theorem surface anchored as `#check`
+  blocks in `tests/SmpWcrtSuite.lean` + the `pcwt!`-validated inventory.
+
+Both new suites (`smp_wcrt_suite`, `smp_scheduler_suite`) wired into Tier 2.
+Partition gate: 64 staged-only modules (was 62).  Default build green; trace
+byte-identical; the SM5 acceptance gate's formal/abstract rows are closed (the live
+per-core run-loop wiring remains the tracked SM5.I+ scope).  Items deferred past
+v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.9, §5 (SM5.J), §5 (SM5.K), §8
+
 ## v0.31.62 — WS-SM SM5.I: fully-closed per-core timer-tick capstone (closes the SM5.F per-core-PIP gap for the run-queue conjuncts)
 
 Discharges the budget-tick obligations the v0.31.61 per-core capstone left as

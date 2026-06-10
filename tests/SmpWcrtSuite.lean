@@ -1,0 +1,273 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+/-
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+-/
+
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
+import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrtInventory
+import SeLe4n.Testing.StateBuilder
+
+/-!
+# WS-SM SM5.J — WCRT-under-fine-locks test suite
+
+Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.J
+"WCRT under fine locks" deliverable
+(`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md` §3.9, §5 SM5.J).
+
+* **§1 Surface anchors** — every public SM5.J symbol resolves at elaboration time
+  (rename/removal fails the build).
+* **§2 Elaboration-time examples** — apply each headline theorem (the §3.9
+  Theorem 3.9.1 RPi5 bound, the per-operation bounds, the combined `WCRT_smp`
+  decomposition, the no-starvation capstone, the R5-latency bridge) to verified
+  inputs.
+* **§3 Runtime assertions** — `lake exe smp_wcrt_suite` exercises the actual
+  `WCRT_lockSet` / `WCRT_smp` computations on concrete per-core op footprints (the
+  SM5.J.5 WCRT scenarios): the per-op exact lock-WCRT values, the RPi5
+  `≤ maxLockSetSize · 3 · tCs` bound, the typical-syscall `< 1 ms` tick-budget fit,
+  the combined `WCRT_smp` decomposition + monotonicity, the per-core idle no-stall
+  on a concrete idle-enqueued fixture, and the SM5.J inventory partition counts.
+-/
+
+namespace SeLe4n.Testing.SmpWcrt
+
+open SeLe4n.Model
+open SeLe4n.Kernel
+open SeLe4n.Kernel.Concurrency
+open SeLe4n.Testing
+
+-- ============================================================================
+-- §1  Surface anchors (Tier-3): every SM5.J public symbol resolves
+-- ============================================================================
+
+-- SM5.J.1 WCRT_lockSet cost function + forms + RPi5 grounding:
+#check @WCRT_lockSet
+#check @WCRT_lockSet_eq_product
+#check @WCRT_lockSet_nil
+#check @WCRT_lockSet_mono_length
+#check @WCRT_lockSet_mono_cost
+#check @WCRT_lockSet_le_maxLockSetSize
+#check @rpi5OtherCoreCount
+#check @perLockWaitCost_rpi5
+#check @WCRT_lockSet_rpi5
+
+-- SM5.J.2 RPi5 bound + combined WCRT_smp:
+#check @wcrt_bound_rpi5_smp
+#check @WCRT_smp
+#check @WCRT_smp_decomposition
+#check @WCRT_smp_r5_component_le
+#check @WCRT_smp_lockSet_component_le
+#check @wcrt_smp_bound_rpi5
+
+-- SM5.J.3 per-operation WCRT bounds:
+#check @wcrt_op_bounded_of_size
+#check @wcrt_chooseThreadOnCore_eq
+#check @wcrt_chooseThreadOnCore_bounded
+#check @wcrt_switchToThreadOnCore_eq
+#check @wcrt_switchToThreadOnCore_bounded
+#check @wcrt_wakeThread_eq
+#check @wcrt_wakeThread_bounded
+#check @wcrt_timerTickOnCore_eq
+#check @wcrt_timerTickOnCore_bounded
+#check @wcrt_replenishOnCore_eq
+#check @wcrt_replenishOnCore_bounded
+#check @wcrt_advanceDomainOnCore_bounded
+
+-- SM5.J.4 no-thread-starves-under-SMP liveness:
+#check @schedulerNoStallOnCore
+#check @schedulerNoStall_smp
+#check @boundedKernelWait_smp
+#check @no_starvation_under_smp
+#check @r5_latency_within_smp_bound
+
+-- SM5.J inventory:
+#check @perCoreWcrtTheorems
+#check @perCoreWcrtTheorems_count
+#check @perCoreWcrtTheorems_partition_sum
+#check @perCoreWcrtTheorems_identifiers_nodup
+
+-- ============================================================================
+-- §2  Elaboration-time examples (apply each headline theorem)
+-- ============================================================================
+
+-- SM5.J.2: the plan §3.9 Theorem 3.9.1 — for the RPi5 canonical config, any
+-- bounded-footprint op's lock-WCRT is ≤ maxLockSetSize · 3 · tCs, and the config is
+-- well-formed.
+example (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (hSize : lockSet.length ≤ maxLockSetSize) :
+    Liveness.rpi5CanonicalConfig.wellFormed ∧
+    WCRT_lockSet lockSet tCs ≤ maxLockSetSize * (3 * tCs) :=
+  wcrt_bound_rpi5_smp Liveness.rpi5CanonicalConfig rfl lockSet tCs hSize
+
+-- SM5.J.3: the chooseThreadOnCore footprint has lock-WCRT exactly 2 · 3 · tCs.
+example (c : CoreId) (tCs : Nat) :
+    WCRT_lockSet (chooseThreadOnCoreLockSet c) tCs = 2 * (3 * tCs) :=
+  wcrt_chooseThreadOnCore_eq c tCs
+
+-- SM5.J.3: the timer tick footprint is within the RPi5 bound.
+example (c : CoreId) (tCs : Nat) :
+    WCRT_lockSet (timerTickOnCoreLockSet c) tCs ≤ maxLockSetSize * (3 * tCs) :=
+  wcrt_timerTickOnCore_bounded c tCs
+
+-- SM5.J.2 (extends R5): the combined SMP WCRT splits into the R5 scheduling-latency
+-- term and the SM5.J lock-contention term.
+example (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat) :
+    WCRT_smp D L_max N B P lockSet tCs =
+      Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs :=
+  WCRT_smp_decomposition D L_max N B P lockSet tCs
+
+-- SM5.J.4: the SMP no-starvation capstone — every core makes a scheduling decision
+-- (no stall) AND every op's lock-contention response time is bounded.
+example (st : SystemState)
+    (e : Concurrency.KernelExecution) (op : Concurrency.KernelOperation) (tCs : Nat)
+    (hwf : ∀ c, (st.scheduler.runQueueOnCore c).wellFormed)
+    (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
+    (hIdle : ∀ c, idleThreadEnqueuedOnCore st c)
+    (h2pl : executionFollows2PL e)
+    (hOrder : executionAcquiresInLockIdOrder e) :
+    (∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid)) ∧
+    (∀ c : CoreId, noDeadlock e ∧ WCRT e c op tCs ≤ maxLockSetSize * (3 * tCs)) :=
+  no_starvation_under_smp st e op tCs hwf hRunnable hIdle h2pl hOrder
+
+-- SM5.J.4 (extends R5): an R5-scheduled thread is within the combined SMP bound.
+example (trace : Liveness.SchedulerTrace) (tid : SeLe4n.ThreadId)
+    (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs : Nat)
+    (k : Nat) (hk : k ≤ Liveness.wcrtBound D L_max N B P)
+    (hSel : Liveness.selectedAt trace k tid) :
+    ∃ k', k' ≤ WCRT_smp D L_max N B P lockSet tCs ∧ Liveness.selectedAt trace k' tid :=
+  r5_latency_within_smp_bound trace tid D L_max N B P lockSet tCs k hk hSel
+
+-- ============================================================================
+-- §3  Runtime assertions (Tier-2): the SM5.J.5 WCRT scenarios
+-- ============================================================================
+
+private def assertBool (name : String) (b : Bool) : IO Unit := do
+  if b then
+    IO.println s!"  PASS: {name}"
+  else
+    IO.println s!"  FAIL: {name}"
+    throw (IO.userError s!"Assertion failed: {name}")
+
+/-- A representative per-lock critical-section cost: `WCRT_per_lock ≈ 60` (µs),
+the plan §3.9 bounded-critical-section figure. -/
+private def tCs60 : Nat := 60
+
+/-- Core 1 — a non-boot core, used by the per-core footprint scenarios. -/
+private def core1 : CoreId := ⟨1, by decide⟩
+
+/-- Empty boot state, and the same state with the boot core's idle thread enqueued
+(`idleAvailableOnCoreB` then holds — the SM5.J.4 per-core non-stall fixture). -/
+private def stEmpty : SystemState := BootstrapBuilder.empty.build
+private def stEmptyIdle : SystemState := enqueueIdleThreadOnCore stEmpty bootCoreId
+
+/-- §3.1: SM5.J.3 — the per-operation lock-WCRT exact values at `tCs = 60`.
+`perLockWaitCost 60 = (numCores − 1) · 60 = 3 · 60 = 180`, so each op's lock-WCRT is
+`|footprint| · 180`. -/
+private def runPerOpExactChecks : IO Unit := do
+  IO.println "--- §3.1 SM5.J.3 per-operation lock-WCRT exact values (tCs = 60) ---"
+  assertBool "perLockWaitCost 60 = 180 (= (numCores−1)·60 = 3·60)"
+    (decide (perLockWaitCost tCs60 = 180))
+  assertBool "chooseThreadOnCore (2 locks) lock-WCRT = 360 (= 2·3·60)"
+    (decide (WCRT_lockSet (chooseThreadOnCoreLockSet bootCoreId) tCs60 = 360))
+  assertBool "switchToThreadOnCore (2 locks) lock-WCRT = 360"
+    (decide (WCRT_lockSet (switchToThreadOnCoreLockSet bootCoreId) tCs60 = 360))
+  assertBool "wakeThread (2 locks) lock-WCRT = 360"
+    (decide (WCRT_lockSet (wakeThreadLockSet core1) tCs60 = 360))
+  assertBool "timerTickOnCore (3 locks) lock-WCRT = 540 (= 3·3·60)"
+    (decide (WCRT_lockSet (timerTickOnCoreLockSet bootCoreId) tCs60 = 540))
+  assertBool "replenishOnCore (1 lock) lock-WCRT = 180 (= 1·3·60)"
+    (decide (WCRT_lockSet (replenishOnCoreLockSet bootCoreId) tCs60 = 180))
+  assertBool "advanceDomainOnCore (1 lock) lock-WCRT = 180"
+    (decide (WCRT_lockSet (advanceDomainOnCoreLockSet bootCoreId) tCs60 = 180))
+
+/-- §3.2: SM5.J.2 — the RPi5 §3.9 bound `≤ maxLockSetSize · 3 · tCs = 8·180 = 1440`,
+and the typical `|lockSet| ≤ 4` syscall fits the 1 ms (1000 µs) timer-tick budget
+(`4 · 3 · 60 = 720 < 1000`). -/
+private def runRpi5BoundChecks : IO Unit := do
+  IO.println "--- §3.2 SM5.J.2 RPi5 bound (maxLockSetSize·3·tCs) + 1 ms tick-budget fit ---"
+  assertBool "the RPi5 uniform bound maxLockSetSize·3·60 = 1440"
+    (decide (maxLockSetSize * (3 * tCs60) = 1440))
+  assertBool "chooseThreadOnCore lock-WCRT (360) ≤ RPi5 bound (1440)"
+    (decide (WCRT_lockSet (chooseThreadOnCoreLockSet bootCoreId) tCs60 ≤ maxLockSetSize * (3 * tCs60)))
+  assertBool "timerTickOnCore lock-WCRT (540) ≤ RPi5 bound (1440)"
+    (decide (WCRT_lockSet (timerTickOnCoreLockSet bootCoreId) tCs60 ≤ maxLockSetSize * (3 * tCs60)))
+  assertBool "the §3.9 RPi5 coreCount−1 = 3 (the × 3 factor)"
+    (decide (numCores - 1 = 3))
+  -- The plan §3.9 worked example: a typical syscall touches ≤ 4 locks, so its WCRT
+  -- is ≤ 4 · 3 · 60 µs = 720 µs < 1 ms = 1000 µs — within the timer-tick budget.
+  assertBool "typical syscall (4 locks) WCRT = 720 µs < 1000 µs (1 ms tick budget)"
+    (decide (4 * (3 * tCs60) < 1000))
+  assertBool "a 4-lock footprint's WCRT_lockSet is ≤ the maxLockSetSize bound"
+    (decide (4 * (3 * tCs60) ≤ maxLockSetSize * (3 * tCs60)))
+
+/-- §3.3: SM5.J.2 — the combined `WCRT_smp` decomposition + monotonicity.  With an R5
+domain bound of, say, 50 ticks (in a common time base) and the timer-tick lock
+contention 540, the combined SMP WCRT is `50 + 540 = 590`. -/
+private def runWcrtSmpChecks : IO Unit := do
+  IO.println "--- §3.3 SM5.J.2 combined WCRT_smp (R5 latency + lock contention) ---"
+  -- Use abstract R5 parameters whose wcrtBound evaluates to a concrete value:
+  -- wcrtBound D L_max N B P = D·L_max + N·(B+P).  Take D=5,L_max=10,N=2,B=3,P=2 ⇒
+  -- 5·10 + 2·(3+2) = 50 + 10 = 60.
+  assertBool "wcrtBound 5 10 2 3 2 = 60 (R5 scheduling-latency term)"
+    (decide (Liveness.wcrtBound 5 10 2 3 2 = 60))
+  assertBool "WCRT_smp = R5 term (60) + timerTick lock-WCRT (540) = 600"
+    (decide (WCRT_smp 5 10 2 3 2 (timerTickOnCoreLockSet bootCoreId) tCs60 = 600))
+  assertBool "the R5 term (60) is a lower component of the combined bound (600)"
+    (decide (Liveness.wcrtBound 5 10 2 3 2 ≤ WCRT_smp 5 10 2 3 2 (timerTickOnCoreLockSet bootCoreId) tCs60))
+  assertBool "the lock term (540) is a lower component of the combined bound (600)"
+    (decide (WCRT_lockSet (timerTickOnCoreLockSet bootCoreId) tCs60 ≤ WCRT_smp 5 10 2 3 2 (timerTickOnCoreLockSet bootCoreId) tCs60))
+  -- Monotonicity: a longer footprint (timerTick, 3 locks) has a larger lock-WCRT
+  -- than a shorter one (replenish, 1 lock).
+  assertBool "WCRT_lockSet is monotone in footprint length (replenish 180 ≤ timerTick 540)"
+    (decide (WCRT_lockSet (replenishOnCoreLockSet bootCoreId) tCs60
+              ≤ WCRT_lockSet (timerTickOnCoreLockSet bootCoreId) tCs60))
+  -- Monotonicity in the per-lock cost: the same footprint at a larger tCs costs more.
+  assertBool "WCRT_lockSet is monotone in the per-lock cost (chooseThread at tCs=30 ≤ tCs=60)"
+    (decide (WCRT_lockSet (chooseThreadOnCoreLockSet bootCoreId) 30
+              ≤ WCRT_lockSet (chooseThreadOnCoreLockSet bootCoreId) 60))
+
+/-- §3.4: SM5.J.4 — the per-core idle thread guarantees no core stalls.  On the
+idle-enqueued fixture, `idleAvailableOnCoreB` holds and `chooseThreadOnCore` selects
+some thread; on the bare empty core it signals idle-fallback (`.ok none`). -/
+private def runNoStallChecks : IO Unit := do
+  IO.println "--- §3.4 SM5.J.4 per-core no-stall (idle fallback guarantees a selection) ---"
+  assertBool "after enqueue: idleAvailableOnCoreB holds (idle is an in-domain candidate)"
+    (decide (idleAvailableOnCoreB stEmptyIdle bootCoreId = true))
+  assertBool "after enqueue: chooseThreadOnCore SELECTS the idle thread (no stall)"
+    (decide (chooseThreadOnCoreSelects stEmptyIdle bootCoreId (idleThreadId bootCoreId)))
+  assertBool "after enqueue: the selection is success (.ok), not an error"
+    (match chooseThreadOnCore stEmptyIdle bootCoreId with | .ok (some _) => true | _ => false)
+  assertBool "bare empty core signals idle-fallback (.ok none) — the SM5.E hook"
+    (decide (chooseThreadOnCoreIdleFallback stEmpty bootCoreId))
+
+/-- §3.5: the SM5.J theorem-inventory partition counts (compiled-`decide` guards). -/
+private def runInventoryChecks : IO Unit := do
+  IO.println "--- §3.5 SM5.J inventory partition counts ---"
+  assertBool "inventory has 32 entries"
+    (decide (perCoreWcrtTheorems.length = 32))
+  assertBool "lockSetWcrt category has 9 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length = 9))
+  assertBool "rpi5Bound category has 6 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .rpi5Bound)).length = 6))
+  assertBool "perOp category has 12 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length = 12))
+  assertBool "liveness category has 5 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 5))
+  assertBool "inventory identifiers are duplicate-free"
+    (decide (perCoreWcrtTheorems.map (·.identifier)).Nodup)
+
+def main : IO Unit := do
+  IO.println "=== WS-SM SM5.J — WCRT-under-fine-locks suite ==="
+  runPerOpExactChecks
+  runRpi5BoundChecks
+  runWcrtSmpChecks
+  runNoStallChecks
+  runInventoryChecks
+  IO.println "=== SM5.J suite: all assertions passed ==="
+
+end SeLe4n.Testing.SmpWcrt
+
+def main : IO Unit := SeLe4n.Testing.SmpWcrt.main

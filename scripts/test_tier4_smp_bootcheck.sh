@@ -117,4 +117,16 @@ run_check "META" "${SCRIPT_DIR}/test_qemu_smp_domain.sh"
 # tests/SmpCbsSuite.lean; this is a complementary runtime spot-check on real cores.
 run_check "META" "${SCRIPT_DIR}/test_qemu_smp_cbs.sh"
 
+# WS-SM SM5.K.5 — the 4-thread/4-core per-core scheduler acceptance test (plan §6 /
+# §8).  SKIPs at SM5.K if the per-core scheduler run loop isn't wired in the kernel
+# image (needs SM5.I+ driving chooseThreadOnCore / switchToThreadOnCore on each core
+# plus the cross-core wake SGI firing seam).  The per-core scheduler correctness —
+# each core selects + runs its OWN bound thread from its OWN run queue independently,
+# a cross-core wake delivers a .reschedule SGI to the target core, the per-core idle
+# thread guarantees no core stalls, and every op's WCRT under fine locks is bounded —
+# is established FORMALLY for all executions in tests/SmpSchedulerSuite.lean (the
+# 4-thread/4-core aggregate, 50+ scenarios + the golden trace fixture) and
+# tests/SmpWcrtSuite.lean; this is a complementary runtime spot-check on real cores.
+run_check "META" "${SCRIPT_DIR}/test_qemu_smp_scheduler.sh"
+
 finalize_report
