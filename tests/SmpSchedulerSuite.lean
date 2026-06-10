@@ -39,8 +39,13 @@ its own per-core run queue.  The 50+ runtime scenarios cover:
   `maxLockSetSize · 3 · tCs` bound (SM5.J);
 * **§7** idle fallback — an empty core with its idle thread enqueued never stalls
   (SM5.E / SM5.J.4);
-* **§8** the **deterministic 4-core scheduler trace** verified byte-for-byte against
-  the `tests/fixtures/smp_4core_scheduler.expected` golden fixture (SM5.K.4).
+* **§8** the **multi-step dynamic simulation** — concurrent two-core dispatch
+  threaded through the state, then a full cross-core wake → `.reschedule` SGI →
+  target-core-handler round-trip on a genuinely blocked thread, with cross-core
+  framing observed across the four transitions (SM5.K.1 completion);
+* **§9** the **deterministic 4-core scheduler trace** (including the §8 round-trip's
+  wake-SGI + handler-dispatch lines) verified byte-for-byte against the
+  `tests/fixtures/smp_4core_scheduler.expected` golden fixture (SM5.K.4).
 
 `lake exe smp_scheduler_suite` runs all scenarios; a scheduling-logic regression
 flips a decidable check or diverges the golden trace.
@@ -332,25 +337,38 @@ private def runDynamicSimulation : IO Unit := do
         assertBool "step 4: core 3's handler frames core 1's current (still B)"
           (st4.scheduler.currentOnCore c1 == some tB)
 
-/-- The label of the woken thread's SGI + the post-handler current, computed from the
-multi-step round-trip on `stWithBlocked` — for the §9 golden trace's round-trip lines. -/
-private def roundTripSgiLabel : String := wakeSgiLabel (
-    match switchToThreadOnCore stWithBlocked c0 tA with
-    | .ok st1 => match switchToThreadOnCore st1 c1 tB with | .ok st2 => st2 | .error _ => stWithBlocked
-    | .error _ => stWithBlocked) tE c0
-
-private def roundTripDispatchLabel : String :=
+/-- The §8 round-trip chain computed **once** (dispatch A on core 0 → dispatch B on
+core 1 → wake blocked E from core 0 → handle the SGI on core 3): the emitted SGI
+paired with the target-core handler's outcome.  Single source of truth for the §9
+golden trace's round-trip labels (`none` = a dispatch step failed; the inner
+`Except` = the handler's own outcome). -/
+private def roundTripOutcome :
+    Option (Option (CoreId × SgiKind) × Except KernelError SystemState) :=
   match switchToThreadOnCore stWithBlocked c0 tA with
-  | .ok st1 => match switchToThreadOnCore st1 c1 tB with
+  | .error _ => none
+  | .ok st1 =>
+    match switchToThreadOnCore st1 c1 tB with
+    | .error _ => none
     | .ok st2 =>
-      let (st3, _) := wakeThread st2 tE c0
-      match handleRescheduleSgiOnCore st3 c3 with
-      | .ok st4 => match st4.scheduler.currentOnCore c3 with
-                   | some t => if t == tE then "thread E" else threadLabel t
-                   | none => "none"
-      | .error _ => "handler-error"
-    | .error _ => "dispatch-error"
-  | .error _ => "dispatch-error"
+      let (st3, sgi) := wakeThread st2 tE c0
+      some (sgi, handleRescheduleSgiOnCore st3 c3)
+
+/-- The label of the SGI the §8 round-trip's wake emits. -/
+private def roundTripSgiLabel : String :=
+  match roundTripOutcome with
+  | some (some (tgt, _), _) => s!"SGI reschedule to core {tgt.val}"
+  | some (none, _)          => "no SGI (local)"
+  | none                    => "dispatch-error"
+
+/-- The label of core 3's current thread after the §8 round-trip's SGI handler. -/
+private def roundTripDispatchLabel : String :=
+  match roundTripOutcome with
+  | some (_, .ok st4) =>
+      match st4.scheduler.currentOnCore c3 with
+      | some t => if t == tE then "thread E" else threadLabel t
+      | none   => "none"
+  | some (_, .error _) => "handler-error"
+  | none               => "dispatch-error"
 
 -- ============================================================================
 -- §9  The deterministic 4-core scheduler trace (SM5.K.4 golden fixture)
@@ -380,9 +398,11 @@ private def fourCoreTraceLines : List String :=
 
 private def fixturePath : String := "tests/fixtures/smp_4core_scheduler.expected"
 
-/-- §8: print the deterministic 4-core trace and verify it byte-for-byte against the
+/-- §9: print the deterministic 4-core trace and verify it byte-for-byte against the
 golden fixture.  The lines print before the (strict) verification, so the fixture is
-regenerable via `lake exe smp_scheduler_suite | grep '^\[smp-4core\]'`. -/
+regenerable via `lake exe smp_scheduler_suite | grep '^\[smp-4core\]'` (the brackets
+MUST be escaped — unescaped they form a regex character class that also matches the
+suite's `---` section headers, corrupting the regenerated fixture). -/
 private def runTraceFixtureCheck : IO Unit := do
   IO.println "--- §9 deterministic 4-core scheduler trace (SM5.K.4 fixture) ---"
   for l in fourCoreTraceLines do
@@ -391,7 +411,7 @@ private def runTraceFixtureCheck : IO Unit := do
   let fixtureExists ← System.FilePath.pathExists fixturePath
   if !fixtureExists then
     IO.println s!"  FAIL: golden fixture {fixturePath} not found"
-    IO.println s!"        regenerate: lake exe smp_scheduler_suite | grep '^[smp-4core]' > {fixturePath}"
+    IO.println s!"        regenerate: lake exe smp_scheduler_suite | grep '^\\[smp-4core\\]' > {fixturePath}"
     throw (IO.userError s!"missing fixture {fixturePath}")
   let actual ← IO.FS.readFile fixturePath
   if actual == expectedContent then
@@ -399,7 +419,7 @@ private def runTraceFixtureCheck : IO Unit := do
   else
     IO.println s!"  FAIL: 4-core scheduler trace differs from golden fixture {fixturePath}"
     IO.println s!"        the live trace is printed above; regenerate the golden fixture with:"
-    IO.println s!"          lake exe smp_scheduler_suite | grep '^[smp-4core]' > {fixturePath}"
+    IO.println s!"          lake exe smp_scheduler_suite | grep '^\\[smp-4core\\]' > {fixturePath}"
     IO.println s!"          (then refresh {fixturePath}.sha256 — see tests/fixtures/README.md)"
     throw (IO.userError "4-core scheduler trace fixture mismatch")
 

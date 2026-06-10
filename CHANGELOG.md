@@ -54,6 +54,30 @@ surface.
 for the `rfl` bridges (documented in `AL0_baseline.txt`); no typed-accessor adoption was
 removed.
 
+**Deep-audit pass (same v0.31.64 cut).**  A code-first audit (reading the
+implementation, not its docstrings) of the full SM5.J/SM5.K PR diff verified: the four
+production Liveness modules are purely additive (the only modified lines are the four
+`open` lists), every `*OnCore` body is an exact copy of its original modulo
+`bootCoreId → c` (mechanically diffed, on top of the kernel-checked `rfl` bridges),
+every proof is axiom-clean, and no forbidden construct (`sorry` / `native_decide` /
+`partial` / `unsafe`) appears anywhere in the diff.  Findings fixed: (1) the
+fixture-regeneration command printed by `SmpSchedulerSuite`'s failure paths and
+documented in `tests/fixtures/README.md` used an **unescaped** `grep '^[smp-4core]'`
+— a regex character class that also matches the suite's `---` section headers and
+would have corrupted a regenerated fixture (now `'^\[smp-4core\]'`, with the pitfall
+documented); (2) the §8 round-trip chain was computed twice for the trace labels —
+now a single `roundTripOutcome` source of truth (fixture verified byte-identical);
+(3) a genuine ∀-core non-vacuity gap — `schedulerNoStall_smp_of_idleAvailableB`'s
+premise is now demonstrated satisfiable on a concrete idle-on-all-4-cores fixture
+(`stAllIdle`, 3 new assertions: every core's idle available, every core selects its
+own idle, no cross-core idle leak); (4) stale "32-entry / 4 categories" comments in
+`staged_module_allowlist.txt` + `Platform/Staged.lean` and the stale `PerCoreWcrt.lean`
+module-header contents (all now describe the 44-entry / 5-category completion
+surface); (5) `docs/DEVELOPMENT.md`'s active-workstream line (stale since WS-AJ /
+v0.29) now points at WS-SM with the canonical `WORKSTREAM_HISTORY.md` record.
+Suites: `smp_wcrt_suite` 38 runtime assertions, `smp_scheduler_suite` 59; the tier-4
+`test_tier4_smp_bootcheck.sh` orchestrator runs the new SM5.K.5 stub green.
+
 Refs: docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md §3.9, §5 (SM5.J/SM5.K completion)
 
 ## v0.31.63 — WS-SM SM5.J + SM5.K: WCRT under fine locks + the 4-thread/4-core acceptance suite

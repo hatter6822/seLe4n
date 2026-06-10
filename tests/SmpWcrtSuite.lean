@@ -29,7 +29,11 @@ Tier-2 (runtime) + Tier-3 (surface anchor) coverage for the WS-SM Phase SM5.J
   SM5.J.5 WCRT scenarios): the per-op exact lock-WCRT values, the RPi5
   `≤ maxLockSetSize · 3 · tCs` bound, the typical-syscall `< 1 ms` tick-budget fit,
   the combined `WCRT_smp` decomposition + monotonicity, the per-core idle no-stall
-  on a concrete idle-enqueued fixture, and the SM5.J inventory partition counts.
+  on a concrete idle-enqueued fixture **including the ∀-core form on an
+  idle-on-all-4-cores fixture** (the non-vacuity witness for
+  `schedulerNoStall_smp_of_idleAvailableB`'s premise), the completion-pass
+  refinement checks (execution bridge / cycle-commensurate units / access-mode
+  soundness), and the SM5.J inventory partition counts.
 -/
 
 namespace SeLe4n.Testing.SmpWcrt
@@ -212,6 +216,12 @@ private def core1 : CoreId := ⟨1, by decide⟩
 private def stEmpty : SystemState := BootstrapBuilder.empty.build
 private def stEmptyIdle : SystemState := enqueueIdleThreadOnCore stEmpty bootCoreId
 
+/-- The empty boot state with **every** core's idle thread enqueued — the concrete
+∀-core witness for `schedulerNoStall_smp_of_idleAvailableB`'s premise (idle
+available on all `numCores` cores simultaneously). -/
+private def stAllIdle : SystemState :=
+  allCores.foldl (fun st c => enqueueIdleThreadOnCore st c) stEmpty
+
 /-- §3.1: SM5.J.3 — the per-operation lock-WCRT exact values at `tCs = 60`.
 `perLockWaitCost 60 = (numCores − 1) · 60 = 3 · 60 = 180`, so each op's lock-WCRT is
 `|footprint| · 180`. -/
@@ -291,6 +301,16 @@ private def runNoStallChecks : IO Unit := do
     (match chooseThreadOnCore stEmptyIdle bootCoreId with | .ok (some _) => true | _ => false)
   assertBool "bare empty core signals idle-fallback (.ok none) — the SM5.E hook"
     (decide (chooseThreadOnCoreIdleFallback stEmpty bootCoreId))
+  -- The ∀-CORE non-vacuity witness: `schedulerNoStall_smp_of_idleAvailableB`'s premise
+  -- (every core's idle available) is genuinely satisfiable — enqueue idle on ALL 4
+  -- cores and `decide` the premise + per-core selection on the concrete state.
+  assertBool "all-cores fixture: idleAvailableOnCoreB holds on EVERY core (the ∀-core premise)"
+    (allCores.all (fun c => idleAvailableOnCoreB stAllIdle c))
+  assertBool "all-cores fixture: EVERY core selects its own idle thread (no core stalls)"
+    (allCores.all (fun c => decide (chooseThreadOnCoreSelects stAllIdle c (idleThreadId c))))
+  assertBool "all-cores fixture: each core's idle stays on its own queue (no cross-core leak)"
+    (allCores.all (fun c => allCores.all (fun c' =>
+      c == c' || !decide (idleThreadId c ∈ (stAllIdle.scheduler.runQueueOnCore c').toList))))
 
 /-- §3.5: the completion-pass refinements — the execution-sensitive bridge formula,
 the cycle-commensurate combined bound, and the access-mode soundness. -/

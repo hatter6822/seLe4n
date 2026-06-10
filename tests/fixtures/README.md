@@ -40,10 +40,13 @@ fixture fails CI with a uniform remediation message.
    ```
 
    For the SMP 4-core scheduler trace fixture (WS-SM SM5.K.4), extract only
-   the `[smp-4core]` trace lines the aggregate suite emits:
+   the `[smp-4core]` trace lines the aggregate suite emits.  The brackets
+   MUST be escaped — unescaped, `[smp-4core]` is a regex character class
+   that also matches the suite's `---` section headers and would corrupt
+   the regenerated fixture:
 
    ```bash
-   lake exe smp_scheduler_suite | grep '^[smp-4core]' \
+   lake exe smp_scheduler_suite | grep '^\[smp-4core\]' \
      > tests/fixtures/smp_4core_scheduler.expected
    ```
 

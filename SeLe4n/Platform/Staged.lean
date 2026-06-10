@@ -373,19 +373,26 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 -- `wcrtBound` with the SMP lock-contention dimension: SM5.J.1 `WCRT_lockSet` (the
 -- §3.9 `max-lock-set-size · (coreCount−1) · WCRT_per_lock` cost), SM5.J.2 the plan
 -- §3.9 Theorem 3.9.1 `wcrt_bound_rpi5_smp` (RPi5 `coreCount = 4 ⟹ × 3`) + the
--- combined `WCRT_smp`, SM5.J.3 the five per-operation bounds (chooseThread / switch /
--- wake / timerTick / replenish), and SM5.J.4 no-thread-starves-under-SMP liveness
--- (`schedulerNoStall_smp` per-core non-stall + `boundedKernelWait_smp` no-unbounded-
--- inversion + the `no_starvation_under_smp` capstone + the R5-latency bridge).  The
--- per-core op footprints are production-reached; SM5.I's live per-core run loop is
--- the runtime exerciser that acquires them under `withLockSet`.
+-- combined `WCRT_smp` (+ the v0.31.64 completion: the execution-sensitive bridge
+-- `kernelWait_le_WCRT_lockSet_of_length_eq`, the config-free `wcrt_bound_smp`, the
+-- cycle-commensurate `WCRT_smp_cycles`, and `WCRT_lockSet_mode_independent`),
+-- SM5.J.3 the per-operation bounds (chooseThread / switch / wake / timerTick /
+-- replenish + advanceDomain / SGI handler / complete tick), and SM5.J.4
+-- no-thread-starves-under-SMP liveness — the genuine 3-way `no_starvation_under_smp`
+-- capstone: `schedulerNoStall_smp` per-core non-stall (+ the decidable
+-- `schedulerNoStall_smp_of_idleAvailableB` discharge), the eventually-scheduled
+-- keystone `thread_eventually_scheduled_onCore` (via the production per-core R5
+-- generalisation `Liveness.bounded_scheduling_latency_exists_onCore`), and
+-- `boundedKernelWait_smp` no-unbounded-inversion.  The per-core op footprints are
+-- production-reached; SM5.I's live per-core run loop is the runtime exerciser that
+-- acquires them under `withLockSet`.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
--- WS-SM SM5.J: the WCRT-under-fine-locks theorem inventory — a 32-entry typed
--- inventory (4 categories: lockSetWcrt / rpi5Bound / perOp / liveness) with the
--- `pcwt!` compile-time identifier-validation macro + per-category count witnesses +
--- partition-sum + kernel-sound Nodup-on-identifiers/descriptions; mirrors the SM5.G
--- `PerCoreDomainInventory`.  A renamed/removed SM5.J theorem fails this module's
--- elaboration.
+-- WS-SM SM5.J: the WCRT-under-fine-locks theorem inventory — a 44-entry typed
+-- inventory (5 categories: lockSetWcrt / rpi5Bound / perOp / executionBridge /
+-- liveness) with the `pcwt!` compile-time identifier-validation macro +
+-- per-category count witnesses + partition-sum + kernel-sound
+-- Nodup-on-identifiers/descriptions; mirrors the SM5.G `PerCoreDomainInventory`.
+-- A renamed/removed SM5.J theorem fails this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrtInventory
 
 /-!

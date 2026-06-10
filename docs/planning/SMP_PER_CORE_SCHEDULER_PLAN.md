@@ -1027,6 +1027,24 @@ similar to SM0/SM1 patterns.)
 > the SM5.J completion surface + the per-core R5 generalisation; `LivenessSuite` anchors
 > the production `*OnCore` R5 forms.  Items deferred past v1.0.0 with correctness impact:
 > NONE.
+>
+> **Deep-audit pass (same v0.31.64 cut)** — a code-first audit of the full SM5.J/K
+> diff confirmed the production Liveness generalisation purely additive (only the four
+> `open` lines modified; every `*OnCore` body mechanically diffed as an exact copy
+> modulo `bootCoreId → c`), all proofs axiom-clean, and no forbidden construct in the
+> diff.  Fixed: the unescaped `grep '^[smp-4core]'` regeneration command (a character
+> class that would corrupt a regenerated fixture — suite failure-paths + fixtures
+> README); the §8 round-trip labels' duplicated chain (now the single
+> `roundTripOutcome`, fixture byte-identical); the missing ∀-core non-vacuity witness
+> for `schedulerNoStall_smp_of_idleAvailableB` (the `stAllIdle` idle-on-all-4-cores
+> fixture, +3 assertions — `smp_wcrt_suite` 38, `smp_scheduler_suite` 59); stale
+> 32-entry/4-category comments (allowlist, `Staged.lean`, the `PerCoreWcrt.lean`
+> header); and `docs/DEVELOPMENT.md`'s WS-AJ-era active-workstream line (now WS-SM,
+> pointing at the canonical `WORKSTREAM_HISTORY.md`).  The note that the single-core
+> `SchedulerStep`/`ValidTrace` step alphabet is deliberately unchanged stands: the
+> per-core bound is observational (its `_hValid` is carried for API parity, exactly
+> as in the single-core original), so the SM6+ multi-core step semantics can later
+> strengthen `ValidTrace` without touching the bound.
 
 ## 6. Verification strategy for SM5
 

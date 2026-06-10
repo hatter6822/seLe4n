@@ -42,13 +42,27 @@ respects the SM3.D static `maxLockSetSize` (= 8) bound has lock-WCRT
 * **SM5.J.2** `wcrt_bound_rpi5_smp` — the plan §3.9 Theorem 3.9.1 RPi5 bound, plus
   the combined `WCRT_smp` (R5 scheduling latency + lock contention) that *extends*
   the R5 `wcrtBound`.
-* **SM5.J.3** the five per-operation WCRT bounds (`chooseThreadOnCore`,
-  `switchToThreadOnCore`, `wakeThread`, `timerTickOnCore`, `replenishOnCore`), each
-  with its exact value and its `≤ maxLockSetSize · 3 · tCs` headline.
-* **SM5.J.4** liveness — no thread starves under SMP: the per-core idle fallback
-  guarantees no core stalls (`schedulerNoStall_smp`), the SM3.D bounded-wait gives
-  no unbounded lock-contention inversion (`boundedKernelWait_smp`), the capstone
-  `no_starvation_under_smp`, and the R5-latency bridge `r5_latency_within_smp_bound`.
+* **SM5.J.3** the per-operation WCRT bounds (`chooseThreadOnCore`,
+  `switchToThreadOnCore`, `wakeThread`, `timerTickOnCore`, `replenishOnCore`, plus
+  `advanceDomainOnCore`, `handleRescheduleSgiOnCore`, and the complete variable-length
+  tick footprint), each with its exact value and/or `≤ maxLockSetSize · 3 · tCs`
+  headline.
+* **§3b modeling refinements** — access-mode soundness
+  (`WCRT_lockSet_mode_independent`: the worst case is all-writers), the
+  execution-sensitive bridge (`kernelWait_le_WCRT_lockSet_of_length_eq`: the static
+  ceiling dominates the per-execution `Concurrency.WCRT`), the honest config-free
+  grounding (`wcrt_bound_smp`), and the cycle-commensurate combined bound
+  (`WCRT_smp_cycles`).
+* **SM5.J.4** liveness — no thread starves under SMP, in three genuine parts:
+  (1) no core stalls (`schedulerNoStall_smp` + the decidable discharge
+  `schedulerNoStall_smp_of_idleAvailableB`); (2) **the specific runnable thread is
+  selected on its own core within `wcrtBound`**
+  (`thread_eventually_scheduled_onCore`, via the production per-core R5
+  generalisation `Liveness.bounded_scheduling_latency_exists_onCore`); (3) no
+  unbounded lock-contention inversion (`boundedKernelWait_smp`).  The 3-way
+  capstone is `no_starvation_under_smp`; `thread_eventually_scheduled_within_smp_bound`
+  and the single-core legacy bridge `r5_latency_within_smp_bound` place the
+  progress inside the combined `WCRT_smp`.
 
 `WCRT_lockSet` / `WCRT_smp` are pure cost functions on the (production-reached)
 per-core op footprints; the live per-core run loop (SM5.I) is the runtime exerciser
