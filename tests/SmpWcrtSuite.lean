@@ -61,6 +61,10 @@ open SeLe4n.Testing
 #check @WCRT_smp_r5_component_le
 #check @WCRT_smp_lockSet_component_le
 #check @wcrt_smp_bound_rpi5
+#check @wcrt_bound_smp
+#check @WCRT_smp_cycles
+#check @WCRT_smp_cycles_one
+#check @WCRT_smp_cycles_decomposition
 
 -- SM5.J.3 per-operation WCRT bounds:
 #check @wcrt_op_bounded_of_size
@@ -75,13 +79,31 @@ open SeLe4n.Testing
 #check @wcrt_replenishOnCore_eq
 #check @wcrt_replenishOnCore_bounded
 #check @wcrt_advanceDomainOnCore_bounded
+#check @wcrt_handleRescheduleSgiOnCore_bounded
+#check @wcrt_timerTickOnCoreComplete_bounded
 
--- SM5.J.4 no-thread-starves-under-SMP liveness:
+-- SM5.J access-mode soundness + execution bridge:
+#check @WCRT_lockSet_mode_independent
+#check @WCRT_lockSet_eq_totalWaitCost_of_length_eq
+#check @kernelWait_le_WCRT_lockSet_of_length_eq
+
+-- SM5.J.4 no-thread-starves-under-SMP liveness (the genuine eventually-scheduled keystone):
 #check @schedulerNoStallOnCore
 #check @schedulerNoStall_smp
+#check @schedulerNoStall_smp_of_idleAvailableB
 #check @boundedKernelWait_smp
+#check @thread_eventually_scheduled_onCore
+#check @thread_eventually_scheduled_within_smp_bound
 #check @no_starvation_under_smp
 #check @r5_latency_within_smp_bound
+
+-- SM5.J.4 production per-core R5 trace-model generalisation (the substantive backing):
+#check @Liveness.selectedAtOnCore
+#check @Liveness.WCRTHypothesesOnCore
+#check @Liveness.WCRTHypotheses.toOnCore
+#check @Liveness.bounded_scheduling_latency_exists_onCore
+#check @Liveness.wcrt_bound_rpi5_onCore
+#check @Liveness.rpi5_higherBandExhausted_from_progressesOnCore
 
 -- SM5.J inventory:
 #check @perCoreWcrtTheorems
@@ -119,18 +141,45 @@ example (D L_max N B P : Nat) (lockSet : List (SchedLockId × AccessMode)) (tCs 
       Liveness.wcrtBound D L_max N B P + WCRT_lockSet lockSet tCs :=
   WCRT_smp_decomposition D L_max N B P lockSet tCs
 
--- SM5.J.4: the SMP no-starvation capstone — every core makes a scheduling decision
--- (no stall) AND every op's lock-contention response time is bounded.
+-- SM5.J.4 (THE genuine per-core eventually-scheduled liveness): a thread runnable on
+-- core c with a bounded same-or-higher-priority band IS selected on c within wcrtBound
+-- ticks — a *specific thread makes progress* on an *arbitrary* core (not merely "the
+-- scheduler picks someone").  This is the real "no thread starves" content.
+example (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (trace : Liveness.SchedulerTrace) (hyp : Liveness.WCRTHypothesesOnCore st tid c)
+    (hValid : Liveness.ValidTrace st trace)
+    (hDom : ∃ k₁, k₁ ≤ Liveness.domainRotationBound st.scheduler.domainSchedule.length
+        (Liveness.maxDomainLength st.scheduler.domainSchedule) ∧
+      match Liveness.traceStateAt trace k₁ with
+      | some st₁ => st₁.scheduler.activeDomainOnCore c = hyp.targetDomain ∧
+                     (st₁.scheduler.runQueueOnCore c).contains tid = true
+      | none => False)
+    (hBand : ∀ k₁ st₁, Liveness.traceStateAt trace k₁ = some st₁ →
+      st₁.scheduler.activeDomainOnCore c = hyp.targetDomain →
+      (st₁.scheduler.runQueueOnCore c).contains tid = true →
+      ∃ k₂, k₂ ≤ Liveness.bandExhaustionBound hyp.N hyp.B hyp.P ∧
+        Liveness.selectedAtOnCore trace (k₁ + k₂) tid c) :
+    ∃ k, k ≤ Liveness.wcrtBound st.scheduler.domainSchedule.length
+              (Liveness.maxDomainLength st.scheduler.domainSchedule) hyp.N hyp.B hyp.P ∧
+      Liveness.selectedAtOnCore trace k tid c :=
+  thread_eventually_scheduled_onCore st tid c trace hyp hValid hDom hBand
+
+-- SM5.J (execution bridge): the execution-sensitive Concurrency.WCRT (which counts the
+-- cores actually contending each lock) is bounded by the static per-core WCRT_lockSet of
+-- an equal-size footprint — connecting the two WCRT models.
+example (e : Concurrency.KernelExecution) (c : CoreId) (op : Concurrency.KernelOperation)
+    (ls : List (SchedLockId × AccessMode)) (tCs : Nat) (hlen : ls.length = op.lockSet.size) :
+    Concurrency.WCRT e c op tCs ≤ WCRT_lockSet ls tCs :=
+  kernelWait_le_WCRT_lockSet_of_length_eq e c op ls tCs hlen
+
+-- SM5.J.4 (decidable no-stall discharge): the no-stall premise is established by `decide`
+-- on any concrete state where every core's idle is available — not assumed.
 example (st : SystemState)
-    (e : Concurrency.KernelExecution) (op : Concurrency.KernelOperation) (tCs : Nat)
     (hwf : ∀ c, (st.scheduler.runQueueOnCore c).wellFormed)
     (hRunnable : ∀ c, runnableThreadsAreTCBsOnCore st c)
-    (hIdle : ∀ c, idleThreadEnqueuedOnCore st c)
-    (h2pl : executionFollows2PL e)
-    (hOrder : executionAcquiresInLockIdOrder e) :
-    (∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid)) ∧
-    (∀ c : CoreId, noDeadlock e ∧ WCRT e c op tCs ≤ maxLockSetSize * (3 * tCs)) :=
-  no_starvation_under_smp st e op tCs hwf hRunnable hIdle h2pl hOrder
+    (hAvail : ∀ c, idleAvailableOnCoreB st c = true) :
+    ∀ c : CoreId, ∃ tid, chooseThreadOnCore st c = .ok (some tid) :=
+  schedulerNoStall_smp_of_idleAvailableB st hwf hRunnable hAvail
 
 -- SM5.J.4 (extends R5): an R5-scheduled thread is within the combined SMP bound.
 example (trace : Liveness.SchedulerTrace) (tid : SeLe4n.ThreadId)
@@ -243,19 +292,48 @@ private def runNoStallChecks : IO Unit := do
   assertBool "bare empty core signals idle-fallback (.ok none) — the SM5.E hook"
     (decide (chooseThreadOnCoreIdleFallback stEmpty bootCoreId))
 
-/-- §3.5: the SM5.J theorem-inventory partition counts (compiled-`decide` guards). -/
+/-- §3.5: the completion-pass refinements — the execution-sensitive bridge formula,
+the cycle-commensurate combined bound, and the access-mode soundness. -/
+private def runRefinementChecks : IO Unit := do
+  IO.println "--- §3.5 SM5.J completion: execution bridge + cycle units + mode soundness ---"
+  -- Bridge: WCRT_lockSet = the SM3.D uniform formula |footprint| · (numCores−1) · tCs;
+  -- here for the 3-lock timer footprint at tCs=60 ⇒ 3 · 3 · 60 = 540, the same value
+  -- Concurrency.totalWaitCost yields for a size-3 LockSet.
+  assertBool "execution bridge: WCRT_lockSet(timerTick,60)=540 matches the size·(numCores−1)·tCs formula"
+    (decide (WCRT_lockSet (timerTickOnCoreLockSet bootCoreId) tCs60
+              = (timerTickOnCoreLockSet bootCoreId).length * ((numCores - 1) * tCs60)))
+  -- Cycle-commensurate units: with cyclesPerTick=1000 (1 µs/tick = 1000 ns), the R5
+  -- term scales: WCRT_smp_cycles 1000 (wcrtBound=60) ... = 1000·60 + 540 = 60540.
+  assertBool "cycle units: WCRT_smp_cycles 1000 5 10 2 3 2 (timerTick) 60 = 1000·60 + 540 = 60540"
+    (decide (WCRT_smp_cycles 1000 5 10 2 3 2 (timerTickOnCoreLockSet bootCoreId) tCs60 = 60540))
+  assertBool "cycle units: WCRT_smp_cycles 1 = WCRT_smp (cyclesPerTick=1 collapses to the base)"
+    (decide (WCRT_smp_cycles 1 5 10 2 3 2 (timerTickOnCoreLockSet bootCoreId) tCs60
+              = WCRT_smp 5 10 2 3 2 (timerTickOnCoreLockSet bootCoreId) tCs60))
+  -- Access-mode soundness: a read footprint and a write footprint of the same shape
+  -- have the same WCRT_lockSet (the worst case is all-writers, mode-agnostic).
+  assertBool "mode soundness: read-mode and write-mode 2-lock footprints have equal WCRT_lockSet"
+    (decide (WCRT_lockSet [(SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.read)] tCs60
+              = WCRT_lockSet [(SchedLockId.runQueue ⟨bootCoreId⟩, AccessMode.write)] tCs60))
+  -- The SGI-handler footprint (= switch, 2 locks) and the complete-timer footprint are
+  -- both within the RPi5 bound (the §3 completion per-op bounds).
+  assertBool "SGI-handler lock-WCRT (= switch, 360) ≤ RPi5 bound (1440)"
+    (decide (WCRT_lockSet (handleRescheduleSgiOnCoreLockSet bootCoreId) tCs60 ≤ maxLockSetSize * (3 * tCs60)))
+
+/-- §3.6: the SM5.J theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do
-  IO.println "--- §3.5 SM5.J inventory partition counts ---"
-  assertBool "inventory has 32 entries"
-    (decide (perCoreWcrtTheorems.length = 32))
-  assertBool "lockSetWcrt category has 9 entries"
-    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length = 9))
-  assertBool "rpi5Bound category has 6 entries"
-    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .rpi5Bound)).length = 6))
-  assertBool "perOp category has 12 entries"
-    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length = 12))
-  assertBool "liveness category has 5 entries"
-    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 5))
+  IO.println "--- §3.6 SM5.J inventory partition counts ---"
+  assertBool "inventory has 44 entries"
+    (decide (perCoreWcrtTheorems.length = 44))
+  assertBool "lockSetWcrt category has 10 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length = 10))
+  assertBool "rpi5Bound category has 10 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .rpi5Bound)).length = 10))
+  assertBool "perOp category has 14 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length = 14))
+  assertBool "executionBridge category has 2 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .executionBridge)).length = 2))
+  assertBool "liveness category has 8 entries"
+    (decide ((perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 8))
   assertBool "inventory identifiers are duplicate-free"
     (decide (perCoreWcrtTheorems.map (·.identifier)).Nodup)
 
@@ -265,6 +343,7 @@ def main : IO Unit := do
   runRpi5BoundChecks
   runWcrtSmpChecks
   runNoStallChecks
+  runRefinementChecks
   runInventoryChecks
   IO.println "=== SM5.J suite: all assertions passed ==="
 

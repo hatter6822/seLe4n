@@ -936,9 +936,37 @@ similar to SM0/SM1 patterns.)
 > realised faithfully: `syscall args` ↦ the op's concrete `SchedLockId` footprint,
 > `T_per_lock` ↦ `tCs`, and the `× 3` ↦ `numCores − 1`.  Items deferred past v1.0.0
 > with correctness impact: NONE.  Follow-on: SM5.I's live per-core run loop is the
-> runtime exerciser that acquires the footprints under `withLockSet`; generalising the
-> bootCoreId-pinned R5 trace model to an arbitrary `(c : CoreId)` is the SM6+
-> multi-core trace-model scope.
+> runtime exerciser that acquires the footprints under `withLockSet`.
+>
+> **WS-SM SM5.J completion (audit-pass) LANDED at v0.31.64** — closes every
+> optimality / completeness gap from the SM5.J self-audit; the inventory grows **32 →
+> 44** (5 categories, new `executionBridge`).  Axiom-clean (`wcrt_bound_rpi5_smp`
+> axiom-free); Tier 0–3 green; partition gate unchanged at 64 (the R5 generalisation is
+> *production*, not staged); AK7 floor re-anchored for the structural-minimum raw
+> increase (see `AL0_baseline.txt`).  **(1) The genuine per-core liveness** — the
+> bootCoreId-pinned R5 trace model is **generalised to an arbitrary `(c : CoreId)` in
+> production** (`Scheduler/Liveness/{TraceModel,BandExhaustion,WCRT,RPi5CanonicalConfig}.lean`):
+> `selectedAtOnCore` / `runnableAtOnCore` / `countHigherOrEqualEffectivePriorityOnCore`
+> / `maxBudgetInBandOnCore` / `maxPeriodInBandOnCore` / `eventuallyExitsOnCore` /
+> `higherBandExhaustedOnCore` / `WCRTHypothesesOnCore` / **`bounded_scheduling_latency_exists_onCore`**
+> + the RPi5 `wcrt_bound_rpi5_onCore` / `rpi5_higherBandExhausted_from_progressesOnCore`,
+> each with the single-core form as the `c := bootCoreId` instance (`rfl` bridges, the
+> SM5.A backward-compat pattern — every existing R5 theorem + `LivenessSuite` site
+> untouched).  SM5.J's `thread_eventually_scheduled_onCore` and the strengthened
+> `no_starvation_under_smp` (now a genuine **3-way** capstone: no-stall ∧
+> *eventually-scheduled* ∧ bounded-lock-wait) prove a *specific runnable thread makes
+> progress on an arbitrary core*, replacing the prior no-stall+bounded-wait pairing.
+> **(2) The decidable no-stall discharge** `schedulerNoStall_smp_of_idleAvailableB`
+> (the no-stall premise is established by `decide`, not assumed).  **(3) The
+> execution-sensitive bridge** (`WCRT_lockSet_eq_totalWaitCost_of_length_eq` +
+> `kernelWait_le_WCRT_lockSet_of_length_eq`): the static SchedLockId `WCRT_lockSet`
+> dominates the per-execution `Concurrency.WCRT` of an equal-size op — connecting the
+> two WCRT models.  **(4) Honest grounding** (`wcrt_bound_smp`: the `× 3` is `numCores
+> − 1`, config-free) + **cycle-commensurate units** (`WCRT_smp_cycles`, parameterised
+> by `cyclesPerTick` so the R5-tick and lock-cost terms share a base) + **access-mode
+> soundness** (`WCRT_lockSet_mode_independent`: the worst case is all-writers) + the
+> **SGI-handler / complete-timer** per-op bounds.  Items deferred past v1.0.0 with
+> correctness impact: NONE.
 
 ### SM5.K — Tests + fixtures (3 PRs, 6 sub-tasks)
 
@@ -985,6 +1013,20 @@ similar to SM0/SM1 patterns.)
 >
 > Both new suites are wired into Tier 2 (`test_tier2_negative.sh`).  Items deferred past
 > v1.0.0 with correctness impact: NONE.
+>
+> **WS-SM SM5.K completion (audit-pass) LANDED at v0.31.64** — `SmpSchedulerSuite`
+> gains a **§8 multi-step dynamic simulation**: a genuine threaded run rather than the
+> prior one-shot snapshots — concurrent two-core dispatch (A on core 0 *and* B on core
+> 1 running simultaneously, threaded through two `switchToThreadOnCore`s), then a full
+> **cross-core wake → `.reschedule` SGI → target-core handler round-trip** (a blocked
+> thread E is woken from core 0, the SGI routes to core 3, and `handleRescheduleSgiOnCore`
+> on core 3 dispatches E), with the cross-core framing observed across the four
+> transitions.  The golden fixture grows **12 → 14 lines** (the round-trip's wake-SGI +
+> handler-dispatch lines, computed from the live transitions).  `SmpWcrtSuite` gains the
+> §3.5 completion checks (execution bridge / cycle units / mode soundness) and anchors
+> the SM5.J completion surface + the per-core R5 generalisation; `LivenessSuite` anchors
+> the production `*OnCore` R5 forms.  Items deferred past v1.0.0 with correctness impact:
+> NONE.
 
 ## 6. Verification strategy for SM5
 

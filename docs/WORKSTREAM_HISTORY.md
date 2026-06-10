@@ -25,7 +25,20 @@ SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
 **Current sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests
-COMPLETE (v0.31.63).**  SM5.J bounds the per-core scheduler operations'
+COMPLETE (v0.31.63; completion audit-pass v0.31.64).**  The **v0.31.64
+completion** makes "no thread starves under SMP" a *genuine* eventually-scheduled
+liveness theorem: the bootCoreId-pinned R5 trace model is generalised to an
+arbitrary `(c : CoreId)` **in production** (`selectedAtOnCore` /
+`WCRTHypothesesOnCore` / `bounded_scheduling_latency_exists_onCore` + the RPi5
+closure, each the single-core form's `rfl`-bridged `c := bootCoreId` instance), so
+`thread_eventually_scheduled_onCore` + the strengthened 3-way
+`no_starvation_under_smp` prove a *specific runnable thread is selected on an
+arbitrary core within `wcrtBound`*; plus the decidable no-stall discharge, the
+execution-sensitive bridge to `Concurrency.WCRT`, cycle-commensurate units,
+access-mode soundness, the SGI-handler / complete-timer per-op bounds, and a
+multi-step dynamic 4-core simulation + cross-core round-trip (inventory 32 → 44;
+AK7 floor re-anchored for the structural-minimum raw increase).  SM5.J bounds the
+per-core scheduler operations'
 worst-case response time under per-object RW **fine locks** (plan §3.9),
 *extending* the R5 domain-rotation / band-exhaustion `wcrtBound` with the SMP
 lock-contention dimension: `WCRT_lockSet` (the §3.9 `max-lock-set-size ·

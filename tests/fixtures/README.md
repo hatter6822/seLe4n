@@ -15,7 +15,7 @@ explicit hash refresh in the same commit.
 | `main_trace_smoke.expected` | `main_trace_smoke.expected.sha256` | `scripts/test_tier2_trace.sh` (compares `lake exe sele4n` output) |
 | `robin_hood_smoke.expected` | `robin_hood_smoke.expected.sha256` | `tests/RobinHoodSuite.lean` |
 | `two_phase_arch_smoke.expected` | `two_phase_arch_smoke.expected.sha256` | `tests/TwoPhaseArchSuite.lean` |
-| `smp_4core_scheduler.expected` | `smp_4core_scheduler.expected.sha256` | `tests/SmpSchedulerSuite.lean` (WS-SM SM5.K.4 — the deterministic 4-thread/4-core per-core scheduler trace, verified byte-for-byte against the live `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore` decisions) |
+| `smp_4core_scheduler.expected` | `smp_4core_scheduler.expected.sha256` | `tests/SmpSchedulerSuite.lean` (WS-SM SM5.K.4 — the deterministic 4-thread/4-core per-core scheduler trace + the multi-step cross-core wake→SGI→handler round-trip, verified byte-for-byte against the live `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore` / `handleRescheduleSgiOnCore` decisions) |
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on

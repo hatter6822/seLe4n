@@ -2761,7 +2761,23 @@ The `eventuallyExits` predicate (BandExhaustion.lean) is externalized for
 unbound threads; CBS-bound thread derivation from budget finiteness is future
 work. See `docs/spec/SELE4N_SPEC.md` §8.14.1 for full specification.
 
-**Test coverage**: 58 surface anchor tests in `tests/LivenessSuite.lean`.
+**WS-SM SM5.J — WCRT under fine locks + per-core liveness (v0.31.63→64)**:
+SM5.J (`Scheduler/Operations/PerCoreWcrt.lean`, staged) extends the D5 `wcrtBound`
+with the SMP lock-contention dimension — `WCRT_lockSet` (the §3.9
+`max-lock-set-size · (coreCount−1) · WCRT_per_lock` cost, reusing the SM3.D
+`perLockWaitCost`), the §3.9 Theorem 3.9.1 `wcrt_bound_rpi5_smp` (axiom-free), the
+five per-operation bounds, and the execution-sensitive bridge
+`kernelWait_le_WCRT_lockSet_of_length_eq` to `Concurrency.WCRT`.  The **v0.31.64
+completion** generalises the D5 trace model to an arbitrary `(c : CoreId)` **in
+production** (`selectedAtOnCore`, `WCRTHypothesesOnCore`,
+`bounded_scheduling_latency_exists_onCore`, the RPi5 `wcrt_bound_rpi5_onCore`
+closure — each the single-core form's `rfl`-bridged `c := bootCoreId` instance), so
+`thread_eventually_scheduled_onCore` + the strengthened 3-way
+`no_starvation_under_smp` prove a *specific runnable thread is selected on an
+arbitrary core within `wcrtBound`*.  44-entry `pcwt!` inventory.
+
+**Test coverage**: 58 surface anchor tests in `tests/LivenessSuite.lean` (+ the
+`*OnCore` per-core R5 surface); the SM5.J WCRT surface in `tests/SmpWcrtSuite.lean`.
 
 **Test coverage**: 22 tests across 10 categories (PIP-001 through PIP-022)
 in `tests/PriorityInheritanceSuite.lean`. Covers: default field values,

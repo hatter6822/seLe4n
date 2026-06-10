@@ -127,6 +127,30 @@ open SeLe4n.Model
 #check @wcrtBound_stable_across_states
 #check @countHigherOrEqual_empty
 
+-- WS-SM SM5.J.4: the per-core (∀ core) generalisation of the R5 trace model — the
+-- observational / band / WCRT layers lifted to an explicit (c : CoreId) parameter,
+-- with the boot-core forms above as the c := bootCoreId instances (rfl bridges).
+#check @selectedAtOnCore
+#check @selectedAt_eq_onCore_bootCore
+#check @runnableAtOnCore
+#check @countHigherOrEqualEffectivePriorityOnCore
+#check @maxBudgetInBandOnCore
+#check @maxPeriodInBandOnCore
+#check @bucketPositionOnCore
+#check @eventuallyExitsOnCore
+#check @higherBandExhaustedOnCore
+#check @higherBandExhaustedOnCore_when_no_higher
+#check @WCRTHypothesesOnCore
+#check @WCRTHypotheses.toOnCore
+#check @wcrtBound_unfold_onCore
+#check @bounded_scheduling_latency_exists_onCore
+#check @bounded_scheduling_latency_exists_of_onCore
+#check @eventuallyExits_of_exit_indexOnCore
+#check @CanonicalDeploymentProgressOnCore
+#check @rpi5_canonicalConfig_eventuallyExitsOnCore
+#check @rpi5_higherBandExhausted_from_progressesOnCore
+#check @wcrt_bound_rpi5_onCore
+
 -- ============================================================================
 -- Surface anchor: PIP-enhanced WCRT
 -- ============================================================================

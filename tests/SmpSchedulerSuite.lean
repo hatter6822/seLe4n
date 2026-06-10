@@ -282,7 +282,78 @@ private def runIdleScenarios : IO Unit := do
     (decide (chooseThreadOnCoreSelects stCore0Idle c1 tB))
 
 -- ============================================================================
--- §8  The deterministic 4-core scheduler trace (SM5.K.4 golden fixture)
+-- §8  Multi-step dynamic simulation (concurrent dispatch + cross-core round-trip)
+-- ============================================================================
+
+/-- A fifth thread `E` (priority 30, bound to core 3) that is **blocked** — present
+in the object store but in no run queue — used by the cross-core wake round-trip.
+Added only to `stWithBlocked` (a derived state), so the §9 golden trace computed
+from `stFourCore` is unaffected. -/
+private def tE : SeLe4n.ThreadId := ThreadId.ofNat 104
+
+/-- `stFourCore` plus the blocked thread `E` in the object store (no run-queue entry).
+`chooseThreadOnCore` / `determineTargetCore` on A–D are unchanged (E is in no queue). -/
+private def stWithBlocked : SystemState :=
+  { stFourCore with objects := stFourCore.objects.insert tE.toObjId (.tcb (mkTcb 104 30 0 c3)) }
+
+/-- §8: a genuine multi-step run — concurrent two-core dispatch threaded through the
+state, then a full cross-core wake → `.reschedule` SGI → target-core handler
+round-trip, observing the evolving per-core state across four transitions. -/
+private def runDynamicSimulation : IO Unit := do
+  IO.println "--- §8 multi-step dynamic simulation (concurrent dispatch + cross-core round-trip) ---"
+  match switchToThreadOnCore stWithBlocked c0 tA with
+  | .error _ => assertBool "step 1: core 0 dispatches A (succeeds)" false
+  | .ok st1 =>
+    assertBool "step 1: core 0 dispatches A ⇒ current(core 0) = A"
+      (st1.scheduler.currentOnCore c0 == some tA)
+    match switchToThreadOnCore st1 c1 tB with
+    | .error _ => assertBool "step 2: core 1 dispatches B (succeeds)" false
+    | .ok st2 =>
+      -- Genuine concurrent multi-core execution: BOTH cores run their own thread at once.
+      assertBool "step 2: core 1 dispatches B ⇒ current(core 1) = B AND current(core 0) STILL = A"
+        (st2.scheduler.currentOnCore c1 == some tB && st2.scheduler.currentOnCore c0 == some tA)
+      -- Step 3: cross-core wake — E (blocked, bound core 3) is woken from core 0.
+      let (st3, sgi) := wakeThread st2 tE c0
+      assertBool "step 3: wake E (bound core 3) from core 0 ⇒ .reschedule SGI to core 3"
+        (match sgi with | some (tgt, k) => tgt == c3 && k == SgiKind.reschedule | none => false)
+      assertBool "step 3: E is now runnable on core 3's run queue (was blocked)"
+        (decide (tE ∈ (st3.scheduler.runQueueOnCore c3).toList))
+      assertBool "step 3: E was NOT runnable before the wake (genuinely blocked)"
+        (!decide (tE ∈ (st2.scheduler.runQueueOnCore c3).toList))
+      -- Step 4: target core 3 handles the reschedule SGI ⇒ dispatches the woken E.
+      match handleRescheduleSgiOnCore st3 c3 with
+      | .error _ => assertBool "step 4: core 3 handles the reschedule SGI (succeeds)" false
+      | .ok st4 =>
+        assertBool "step 4: core 3's handler dispatches E (prio 30, the highest in its queue)"
+          (st4.scheduler.currentOnCore c3 == some tE)
+        -- The handler on core 3 frames the OTHER cores' dispatched threads (independence).
+        assertBool "step 4: core 3's handler frames core 0's current (still A)"
+          (st4.scheduler.currentOnCore c0 == some tA)
+        assertBool "step 4: core 3's handler frames core 1's current (still B)"
+          (st4.scheduler.currentOnCore c1 == some tB)
+
+/-- The label of the woken thread's SGI + the post-handler current, computed from the
+multi-step round-trip on `stWithBlocked` — for the §9 golden trace's round-trip lines. -/
+private def roundTripSgiLabel : String := wakeSgiLabel (
+    match switchToThreadOnCore stWithBlocked c0 tA with
+    | .ok st1 => match switchToThreadOnCore st1 c1 tB with | .ok st2 => st2 | .error _ => stWithBlocked
+    | .error _ => stWithBlocked) tE c0
+
+private def roundTripDispatchLabel : String :=
+  match switchToThreadOnCore stWithBlocked c0 tA with
+  | .ok st1 => match switchToThreadOnCore st1 c1 tB with
+    | .ok st2 =>
+      let (st3, _) := wakeThread st2 tE c0
+      match handleRescheduleSgiOnCore st3 c3 with
+      | .ok st4 => match st4.scheduler.currentOnCore c3 with
+                   | some t => if t == tE then "thread E" else threadLabel t
+                   | none => "none"
+      | .error _ => "handler-error"
+    | .error _ => "dispatch-error"
+  | .error _ => "dispatch-error"
+
+-- ============================================================================
+-- §9  The deterministic 4-core scheduler trace (SM5.K.4 golden fixture)
 -- ============================================================================
 
 /-- The deterministic 4-core scheduler trace — each line is COMPUTED from the actual
@@ -301,7 +372,11 @@ private def fourCoreTraceLines : List String :=
   , s!"[smp-4core] wake D from core 0 emits {wakeSgiLabel stFourCore tD c0}"
   , s!"[smp-4core] wake A from core 0 emits {wakeSgiLabel stFourCore tA c0}"
   , s!"[smp-4core] switch core 1 to B sets current = {switchCurrentLabel stFourCore c1 tB}"
-  , s!"[smp-4core] core 0 emptied with idle enqueued selects {selLabel stCore0Idle c0}" ]
+  , s!"[smp-4core] core 0 emptied with idle enqueued selects {selLabel stCore0Idle c0}"
+  -- The multi-step cross-core round-trip (§8): wake blocked E onto core 3, then the
+  -- target-core handler dispatches it — the dynamic counterpart of the snapshot above.
+  , s!"[smp-4core] round-trip: wake blocked E from core 0 emits {roundTripSgiLabel}"
+  , s!"[smp-4core] round-trip: core 3 handler dispatches current = {roundTripDispatchLabel}" ]
 
 private def fixturePath : String := "tests/fixtures/smp_4core_scheduler.expected"
 
@@ -309,7 +384,7 @@ private def fixturePath : String := "tests/fixtures/smp_4core_scheduler.expected
 golden fixture.  The lines print before the (strict) verification, so the fixture is
 regenerable via `lake exe smp_scheduler_suite | grep '^\[smp-4core\]'`. -/
 private def runTraceFixtureCheck : IO Unit := do
-  IO.println "--- §8 deterministic 4-core scheduler trace (SM5.K.4 fixture) ---"
+  IO.println "--- §9 deterministic 4-core scheduler trace (SM5.K.4 fixture) ---"
   for l in fourCoreTraceLines do
     IO.println l
   let expectedContent := String.intercalate "\n" fourCoreTraceLines ++ "\n"
@@ -337,6 +412,7 @@ def main : IO Unit := do
   runSwitchScenarios
   runWcrtScenarios
   runIdleScenarios
+  runDynamicSimulation
   runTraceFixtureCheck
   IO.println "=== SM5.K.1 suite: all scenarios passed ==="
 

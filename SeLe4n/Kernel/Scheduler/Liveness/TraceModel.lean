@@ -13,7 +13,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.BoundedInversion
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId)
 
 -- ============================================================================
 -- D5-A1: SchedulerStep inductive
@@ -311,5 +311,140 @@ theorem countHigherOrEqual_empty (st : SystemState)
     (hEmpty : (st.scheduler.runQueueOnCore bootCoreId).flat = []) :
     countHigherOrEqualEffectivePriority st prio dom = 0 := by
   simp [countHigherOrEqualEffectivePriority, hEmpty]
+
+-- ============================================================================
+-- WS-SM SM5.J.4 — per-core (∀ core) generalisation of the R5 observational layer
+-- ============================================================================
+--
+-- The single-core R5 trace model above reads core `bootCoreId`'s scheduler
+-- slots.  Under SMP each core runs its own scheduler over its own run queue, so
+-- the bounded-latency argument must hold for an *arbitrary* core `c`.  This
+-- section lifts every R5 observational / counting predicate to an explicit
+-- `(c : CoreId)` parameter; each `bootCoreId`-named original above is the
+-- `c := bootCoreId` instance, witnessed `rfl` by a bridge theorem (the SM5.A
+-- `chooseThread`/`chooseThreadOnCore` backward-compatibility pattern), so the
+-- single-core R5 surface and `tests/LivenessSuite.lean` are untouched.  These
+-- forms feed `WCRTHypothesesOnCore` and `bounded_scheduling_latency_exists_onCore`
+-- (WCRT.lean), which `no_starvation_under_smp` (PerCoreWcrt.lean) consumes.
+
+/-- WS-SM SM5.J.4: `tid` is the current (selected) thread on core `c` at trace
+index `k` — the per-core generalisation of `selectedAt`. -/
+def selectedAtOnCore (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) (c : CoreId) : Prop :=
+  match traceStateAt trace k with
+  | some st => (st.scheduler.currentOnCore c) = some tid
+  | none => False
+
+/-- WS-SM SM5.J.4: `selectedAt` is the boot-core instance of `selectedAtOnCore`. -/
+theorem selectedAt_eq_onCore_bootCore (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) :
+    selectedAt trace k tid = selectedAtOnCore trace k tid bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: `tid` is in core `c`'s run queue at trace index `k` — the
+per-core generalisation of `runnableAt`. -/
+def runnableAtOnCore (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) (c : CoreId) : Prop :=
+  match traceStateAt trace k with
+  | some st => (st.scheduler.runQueueOnCore c).contains tid = true
+  | none => False
+
+/-- WS-SM SM5.J.4: `runnableAt` is the boot-core instance of `runnableAtOnCore`. -/
+theorem runnableAt_eq_onCore_bootCore (trace : SchedulerTrace) (k : Nat) (tid : ThreadId) :
+    runnableAt trace k tid = runnableAtOnCore trace k tid bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: count threads in **core `c`'s** run queue with effective
+priority ≥ target's in the same domain — the per-core generalisation of
+`countHigherOrEqualEffectivePriority`. -/
+def countHigherOrEqualEffectivePriorityOnCore (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (c : CoreId) : Nat :=
+  (st.scheduler.runQueueOnCore c).flat.foldl (fun count otherTid =>
+    match resolveEffectivePriority st otherTid with
+    | some (p, _, d) =>
+      if d.val = targetDomain.val && p.val ≥ targetPrio.val then count + 1
+      else count
+    | none => count
+  ) 0
+
+/-- WS-SM SM5.J.4: `countHigherOrEqualEffectivePriority` is the boot-core instance. -/
+theorem countHigherOrEqualEffectivePriority_eq_onCore_bootCore (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) :
+    countHigherOrEqualEffectivePriority st targetPrio targetDomain =
+      countHigherOrEqualEffectivePriorityOnCore st targetPrio targetDomain bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: maximum SchedContext budget among the same-or-higher-priority
+threads in **core `c`'s** run queue — the per-core generalisation of
+`maxBudgetInBand`. -/
+def maxBudgetInBandOnCore (st : SystemState) (targetPrio : Priority)
+    (targetDomain : DomainId) (c : CoreId) : Nat :=
+  (st.scheduler.runQueueOnCore c).flat.foldl (fun maxB otherTid =>
+    match resolveEffectivePriority st otherTid with
+    | some (p, _, d) =>
+      if d.val = targetDomain.val && p.val ≥ targetPrio.val then
+        match st.objects[otherTid.toObjId]? with
+        | some (.tcb otherTcb) =>
+          match otherTcb.schedContextBinding with
+          | .bound scId | .donated scId _ =>
+            match st.objects[scId.toObjId]? with
+            | some (.schedContext sc) => Nat.max maxB sc.budget.val
+            | _ => maxB
+          | .unbound => Nat.max maxB st.scheduler.configDefaultTimeSlice
+        | _ => maxB
+      else maxB
+    | none => maxB
+  ) 0
+
+/-- WS-SM SM5.J.4: `maxBudgetInBand` is the boot-core instance. -/
+theorem maxBudgetInBand_eq_onCore_bootCore (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) :
+    maxBudgetInBand st targetPrio targetDomain =
+      maxBudgetInBandOnCore st targetPrio targetDomain bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: maximum SchedContext period among the same-or-higher-priority
+threads in **core `c`'s** run queue — the per-core generalisation of
+`maxPeriodInBand`. -/
+def maxPeriodInBandOnCore (st : SystemState) (targetPrio : Priority)
+    (targetDomain : DomainId) (c : CoreId) : Nat :=
+  (st.scheduler.runQueueOnCore c).flat.foldl (fun maxP otherTid =>
+    match resolveEffectivePriority st otherTid with
+    | some (p, _, d) =>
+      if d.val = targetDomain.val && p.val ≥ targetPrio.val then
+        match st.objects[otherTid.toObjId]? with
+        | some (.tcb otherTcb) =>
+          match otherTcb.schedContextBinding with
+          | .bound scId | .donated scId _ =>
+            match st.objects[scId.toObjId]? with
+            | some (.schedContext sc) => Nat.max maxP sc.period.val
+            | _ => maxP
+          | .unbound => maxP
+        | _ => maxP
+      else maxP
+    | none => maxP
+  ) 0
+
+/-- WS-SM SM5.J.4: `maxPeriodInBand` is the boot-core instance. -/
+theorem maxPeriodInBand_eq_onCore_bootCore (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) :
+    maxPeriodInBand st targetPrio targetDomain =
+      maxPeriodInBandOnCore st targetPrio targetDomain bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: 0-indexed position of `tid` in its priority bucket on **core
+`c`** — the per-core generalisation of `bucketPosition`. -/
+def bucketPositionOnCore (st : SystemState) (tid : ThreadId) (c : CoreId) : Option Nat :=
+  match (st.scheduler.runQueueOnCore c).threadPriority.get? tid with
+  | none => none
+  | some prio =>
+    let bucket := ((st.scheduler.runQueueOnCore c).byPriority[prio]?).getD []
+    match bucket.findIdx? (· == tid) with
+    | some idx => some idx
+    | none => none
+
+/-- WS-SM SM5.J.4: `bucketPosition` is the boot-core instance. -/
+theorem bucketPosition_eq_onCore_bootCore (st : SystemState) (tid : ThreadId) :
+    bucketPosition st tid = bucketPositionOnCore st tid bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: per-core empty-run-queue base case (the `c`-general form of
+`countHigherOrEqual_empty`). -/
+theorem countHigherOrEqualOnCore_empty (st : SystemState)
+    (prio : Priority) (dom : DomainId) (c : CoreId)
+    (hEmpty : (st.scheduler.runQueueOnCore c).flat = []) :
+    countHigherOrEqualEffectivePriorityOnCore st prio dom c = 0 := by
+  simp [countHigherOrEqualEffectivePriorityOnCore, hEmpty]
 
 end SeLe4n.Kernel.Liveness

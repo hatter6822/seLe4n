@@ -12,7 +12,7 @@ import SeLe4n.Kernel.Scheduler.Liveness.DomainRotation
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId)
 
 -- ============================================================================
 -- D5-K: CBS-aware WCRT hypotheses
@@ -320,5 +320,178 @@ theorem pip_wcrt_integration
     (wcrt chainDepth : Nat) :
     PriorityInheritance.pipSingleLinkBound wcrt chainDepth = chainDepth * wcrt :=
   rfl
+
+-- ============================================================================
+-- WS-SM SM5.J.4 — per-core (∀ core) generalisation of the R5 WCRT bound
+-- ============================================================================
+--
+-- The single-core R5 bound `bounded_scheduling_latency_exists` proves a runnable
+-- thread on core `bootCoreId` is selected within `wcrtBound` ticks.  Under SMP
+-- each core schedules its own run queue independently, so an affinity-bound
+-- thread's scheduling latency is governed by *its own* core `c`'s contention.
+-- This section lifts `WCRTHypotheses` and the bound theorem to an explicit
+-- `(c : CoreId)` parameter; the boot-core forms above are the `c := bootCoreId`
+-- instances (the SM5.A backward-compatibility pattern), witnessed by the `rfl`
+-- bridges in TraceModel/BandExhaustion and the `WCRTHypotheses.toOnCore`
+-- converter below.  `no_starvation_under_smp` (PerCoreWcrt.lean) consumes the
+-- per-core bound to prove a genuine "a runnable thread on core `c` is eventually
+-- selected within the bound" liveness statement for an arbitrary core.
+
+/-- WS-SM SM5.J.4: the per-core WCRT hypotheses — the `(c : CoreId)`
+generalisation of `WCRTHypotheses`.  Every run-queue / band field reads **core
+`c`'s** slot; the domain-schedule fields (shared across cores) are unchanged. -/
+structure WCRTHypothesesOnCore (st : SystemState) (tid : ThreadId) (c : CoreId) where
+  /-- Target thread is in core `c`'s run queue at analysis start. -/
+  threadRunnable : (st.scheduler.runQueueOnCore c).contains tid = true
+  /-- Target thread has sufficient budget (core-agnostic — a SchedContext fact). -/
+  threadHasBudget : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) →
+    hasSufficientBudget st tcb = true
+  /-- Target thread's effective priority and domain. -/
+  targetPrio : Priority
+  targetDomain : DomainId
+  /-- Thread's domain appears in the static (shared) domain schedule. -/
+  threadInDomain : ∃ i, i < st.scheduler.domainSchedule.length ∧
+    (st.scheduler.domainSchedule[i]?).map DomainScheduleEntry.domain = some targetDomain
+  /-- At most N threads with effective priority ≥ target's in core `c`'s band. -/
+  N : Nat
+  higherPriorityBound :
+    countHigherOrEqualEffectivePriorityOnCore st targetPrio targetDomain c ≤ N
+  /-- All same-or-higher-priority threads on core `c` have budget ≤ B. -/
+  B : Nat
+  maxBudgetBound : maxBudgetInBandOnCore st targetPrio targetDomain c ≤ B
+  /-- All same-or-higher-priority threads on core `c` have period ≤ P. -/
+  P : Nat
+  maxPeriodBound : maxPeriodInBandOnCore st targetPrio targetDomain c ≤ P
+  /-- Domain schedule entry for target domain has sufficient length. -/
+  domainScheduleAdequate : ∃ entry ∈ st.scheduler.domainSchedule,
+    DomainScheduleEntry.domain entry = targetDomain ∧
+    DomainScheduleEntry.length entry ≥ N * (B + P)
+  /-- All domain schedule entries have positive length. -/
+  domainEntriesPositive : ∀ e ∈ st.scheduler.domainSchedule,
+    DomainScheduleEntry.length e > 0
+  /-- Domain schedule is non-empty. -/
+  domainScheduleNonEmpty : st.scheduler.domainSchedule ≠ []
+
+/-- WS-SM SM5.J.4: the single-core `WCRTHypotheses` is exactly the boot-core
+instance of `WCRTHypothesesOnCore`.  Every field type is `rfl`-defeq (the
+run-queue / band predicates agree at `bootCoreId` via the TraceModel bridges), so
+the converter copies fields directly — the single-core R5 surface flows into the
+per-core bound unchanged. -/
+def WCRTHypotheses.toOnCore {st : SystemState} {tid : ThreadId}
+    (h : WCRTHypotheses st tid) : WCRTHypothesesOnCore st tid bootCoreId :=
+  { threadRunnable := h.threadRunnable
+    threadHasBudget := h.threadHasBudget
+    targetPrio := h.targetPrio
+    targetDomain := h.targetDomain
+    threadInDomain := h.threadInDomain
+    N := h.N
+    higherPriorityBound := h.higherPriorityBound
+    B := h.B
+    maxBudgetBound := h.maxBudgetBound
+    P := h.P
+    maxPeriodBound := h.maxPeriodBound
+    domainScheduleAdequate := h.domainScheduleAdequate
+    domainEntriesPositive := h.domainEntriesPositive
+    domainScheduleNonEmpty := h.domainScheduleNonEmpty }
+
+/-- WS-SM SM5.J.4: `wcrtBound` unfolding for the per-core hypotheses (the
+`WCRTHypothesesOnCore` companion of `wcrtBound_unfold`). -/
+theorem wcrtBound_unfold_onCore
+    (st : SystemState) (tid : ThreadId) (c : CoreId)
+    (hyp : WCRTHypothesesOnCore st tid c) :
+    let D := st.scheduler.domainSchedule.length
+    let L_max := maxDomainLength st.scheduler.domainSchedule
+    wcrtBound D L_max hyp.N hyp.B hyp.P =
+    D * L_max + hyp.N * (hyp.B + hyp.P) := by
+  simp [wcrtBound]
+
+/-- WS-SM SM5.J.4 (the genuine per-core bounded scheduling latency — the
+`(c : CoreId)` generalisation of `bounded_scheduling_latency_exists`):
+
+Given `WCRTHypothesesOnCore st tid c` and a valid trace where core `c`'s domain
+eventually activates with `tid` still runnable on `c` (within the domain-rotation
+bound) and, once active, `tid` is selected on `c` within the band-exhaustion
+bound, then `tid` is selected on core `c` within
+`wcrtBound D L_max N B P` ticks.
+
+The proof is the core-agnostic composition of the domain-rotation and
+band-exhaustion bounds — identical to the single-core argument with `bootCoreId`
+replaced by the arbitrary `c` (and `selectedAt`/`activeDomainOnCore` /
+`runQueueOnCore` reading core `c`'s slots).  This is what makes "no thread starves
+under SMP" a genuine *eventually-scheduled* statement on every core, not only the
+boot core.  The externalised `hDomainActiveRunnable` / `hBandProgress` deployment
+obligations are the per-core analogues of the single-core ones (see
+`RPi5CanonicalConfig.lean` for the canonical RPi5 discharge of the band half). -/
+theorem bounded_scheduling_latency_exists_onCore
+    (st : SystemState) (tid : ThreadId) (c : CoreId)
+    (trace : SchedulerTrace)
+    (hyp : WCRTHypothesesOnCore st tid c)
+    (_hValid : ValidTrace st trace)
+    (hDomainActiveRunnable : ∃ k₁, k₁ ≤ domainRotationBound
+        st.scheduler.domainSchedule.length
+        (maxDomainLength st.scheduler.domainSchedule) ∧
+      match traceStateAt trace k₁ with
+      | some st₁ => (st₁.scheduler.activeDomainOnCore c) = hyp.targetDomain ∧
+                     (st₁.scheduler.runQueueOnCore c).contains tid = true
+      | none => False)
+    (hBandProgress : ∀ k₁ st₁,
+      traceStateAt trace k₁ = some st₁ →
+      (st₁.scheduler.activeDomainOnCore c) = hyp.targetDomain →
+      (st₁.scheduler.runQueueOnCore c).contains tid = true →
+      ∃ k₂, k₂ ≤ bandExhaustionBound hyp.N hyp.B hyp.P ∧
+        selectedAtOnCore trace (k₁ + k₂) tid c) :
+    ∃ k, k ≤ wcrtBound
+              st.scheduler.domainSchedule.length
+              (maxDomainLength st.scheduler.domainSchedule)
+              hyp.N hyp.B hyp.P ∧
+      selectedAtOnCore trace k tid c := by
+  obtain ⟨k₁, hk₁_bound, hk₁_active⟩ := hDomainActiveRunnable
+  cases hSt₁ : traceStateAt trace k₁ with
+  | none => simp_all
+  | some st₁ =>
+    simp only [hSt₁] at hk₁_active
+    obtain ⟨hDomEq, hRunnable⟩ := hk₁_active
+    obtain ⟨k₂, hk₂_bound, hSelected⟩ := hBandProgress k₁ st₁ hSt₁ hDomEq hRunnable
+    exact ⟨k₁ + k₂, by
+      calc k₁ + k₂
+          ≤ domainRotationBound st.scheduler.domainSchedule.length
+              (maxDomainLength st.scheduler.domainSchedule) +
+            bandExhaustionBound hyp.N hyp.B hyp.P :=
+              Nat.add_le_add hk₁_bound hk₂_bound
+        _ = wcrtBound st.scheduler.domainSchedule.length
+              (maxDomainLength st.scheduler.domainSchedule) hyp.N hyp.B hyp.P := by
+              simp [wcrtBound, domainRotationBound, bandExhaustionBound],
+      hSelected⟩
+
+/-- WS-SM SM5.J.4: the single-core `bounded_scheduling_latency_exists` is the
+`c := bootCoreId` instance of the per-core bound — the boot-core latency is
+recovered from the per-core theorem via `WCRTHypotheses.toOnCore`.  (Honest
+direction note: the two are inter-derivable; this corollary witnesses that the
+generalisation strictly *subsumes* the single-core R5 result.) -/
+theorem bounded_scheduling_latency_exists_of_onCore
+    (st : SystemState) (tid : ThreadId)
+    (trace : SchedulerTrace)
+    (hyp : WCRTHypotheses st tid)
+    (hValid : ValidTrace st trace)
+    (hDomainActiveRunnable : ∃ k₁, k₁ ≤ domainRotationBound
+        st.scheduler.domainSchedule.length
+        (maxDomainLength st.scheduler.domainSchedule) ∧
+      match traceStateAt trace k₁ with
+      | some st₁ => (st₁.scheduler.activeDomainOnCore bootCoreId) = hyp.targetDomain ∧
+                     (st₁.scheduler.runQueueOnCore bootCoreId).contains tid = true
+      | none => False)
+    (hBandProgress : ∀ k₁ st₁,
+      traceStateAt trace k₁ = some st₁ →
+      (st₁.scheduler.activeDomainOnCore bootCoreId) = hyp.targetDomain →
+      (st₁.scheduler.runQueueOnCore bootCoreId).contains tid = true →
+      ∃ k₂, k₂ ≤ bandExhaustionBound hyp.N hyp.B hyp.P ∧
+        selectedAt trace (k₁ + k₂) tid) :
+    ∃ k, k ≤ wcrtBound
+              st.scheduler.domainSchedule.length
+              (maxDomainLength st.scheduler.domainSchedule)
+              hyp.N hyp.B hyp.P ∧
+      selectedAt trace k tid :=
+  bounded_scheduling_latency_exists_onCore st tid bootCoreId trace hyp.toOnCore hValid
+    hDomainActiveRunnable hBandProgress
 
 end SeLe4n.Kernel.Liveness

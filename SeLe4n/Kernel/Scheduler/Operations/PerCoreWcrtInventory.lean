@@ -50,6 +50,9 @@ inductive PerCoreWcrtCategory where
   | rpi5Bound
   /-- SM5.J.3 the per-operation WCRT bounds + exact values. -/
   | perOp
+  /-- SM5.J bridge between the static SchedLockId `WCRT_lockSet` and the
+  execution-sensitive LockId-domain `Concurrency.WCRT` / `totalWaitCost`. -/
+  | executionBridge
   /-- SM5.J.4 no-thread-starves-under-SMP liveness. -/
   | liveness
   deriving Repr, DecidableEq, Inhabited
@@ -100,6 +103,8 @@ def perCoreWcrtTheorems : List PerCoreWcrtTheorem :=
       perLockWaitCost_rpi5 .lockSetWcrt,
     pcwt! "WCRT_lockSet_rpi5: the RPi5 form |lockSet| · 3 · tCs"
       WCRT_lockSet_rpi5 .lockSetWcrt,
+    pcwt! "WCRT_lockSet_mode_independent: the worst-case bound is access-mode-agnostic (sound: all-writers case)"
+      WCRT_lockSet_mode_independent .lockSetWcrt,
     -- ── SM5.J.2 RPi5 bound + combined WCRT_smp (.rpi5Bound) ──
     pcwt! "wcrt_bound_rpi5_smp: plan §3.9 Theorem 3.9.1 — RPi5 WCRT ≤ maxLockSetSize · 3 · tCs (SM5.J.2)"
       wcrt_bound_rpi5_smp .rpi5Bound,
@@ -113,6 +118,14 @@ def perCoreWcrtTheorems : List PerCoreWcrtTheorem :=
       WCRT_smp_lockSet_component_le .rpi5Bound,
     pcwt! "wcrt_smp_bound_rpi5: the full extends-R5 bound (R5 latency + maxLockSetSize · 3 · tCs)"
       wcrt_smp_bound_rpi5 .rpi5Bound,
+    pcwt! "wcrt_bound_smp: the honest config-free numCores-grounded bound (C8)"
+      wcrt_bound_smp .rpi5Bound,
+    pcwt! "WCRT_smp_cycles: the cycle-commensurate combined bound (cyclesPerTick·wcrtBound + WCRT_lockSet) (C9)"
+      WCRT_smp_cycles .rpi5Bound,
+    pcwt! "WCRT_smp_cycles_one: WCRT_smp is the cyclesPerTick = 1 instance"
+      WCRT_smp_cycles_one .rpi5Bound,
+    pcwt! "WCRT_smp_cycles_decomposition: the cycle-commensurate bound's R5 + lock split"
+      WCRT_smp_cycles_decomposition .rpi5Bound,
     -- ── SM5.J.3 per-operation WCRT bounds (.perOp) ──
     pcwt! "wcrt_op_bounded_of_size: generic per-op RPi5 bound from a footprint-size witness"
       wcrt_op_bounded_of_size .perOp,
@@ -138,44 +151,68 @@ def perCoreWcrtTheorems : List PerCoreWcrtTheorem :=
       wcrt_replenishOnCore_bounded .perOp,
     pcwt! "wcrt_advanceDomainOnCore_bounded: advanceDomainOnCore ≤ maxLockSetSize · 3 · tCs"
       wcrt_advanceDomainOnCore_bounded .perOp,
+    pcwt! "wcrt_handleRescheduleSgiOnCore_bounded: the cross-core SGI handler ≤ maxLockSetSize · 3 · tCs"
+      wcrt_handleRescheduleSgiOnCore_bounded .perOp,
+    pcwt! "wcrt_timerTickOnCoreComplete_bounded: the complete (3-or-4-lock) tick footprint ≤ maxLockSetSize · 3 · tCs"
+      wcrt_timerTickOnCoreComplete_bounded .perOp,
+    -- ── SM5.J execution bridge to Concurrency.WCRT (.executionBridge) ──
+    pcwt! "WCRT_lockSet_eq_totalWaitCost_of_length_eq: WCRT_lockSet = SM3.D totalWaitCost (same uniform cost)"
+      WCRT_lockSet_eq_totalWaitCost_of_length_eq .executionBridge,
+    pcwt! "kernelWait_le_WCRT_lockSet_of_length_eq: the execution-sensitive Concurrency.WCRT ≤ the static WCRT_lockSet"
+      kernelWait_le_WCRT_lockSet_of_length_eq .executionBridge,
     -- ── SM5.J.4 no-thread-starves-under-SMP liveness (.liveness) ──
     pcwt! "schedulerNoStallOnCore: per-core idle fallback ⇒ chooseThreadOnCore succeeds (SM5.J.4)"
       schedulerNoStallOnCore .liveness,
     pcwt! "schedulerNoStall_smp: every core makes a scheduling decision (∀-core no-stall)"
       schedulerNoStall_smp .liveness,
+    pcwt! "schedulerNoStall_smp_of_idleAvailableB: the decidable no-stall discharge (closes the hypothesis-never-discharged gap)"
+      schedulerNoStall_smp_of_idleAvailableB .liveness,
     pcwt! "boundedKernelWait_smp: deadlock-free + WCRT ≤ maxLockSetSize · 3 · tCs (no unbounded inversion)"
       boundedKernelWait_smp .liveness,
-    pcwt! "no_starvation_under_smp: SMP no-starvation capstone (no stall ∧ bounded lock-wait)"
+    pcwt! "thread_eventually_scheduled_onCore: the GENUINE per-core eventually-scheduled liveness (SM5.J.4 keystone)"
+      thread_eventually_scheduled_onCore .liveness,
+    pcwt! "thread_eventually_scheduled_within_smp_bound: per-core progress within the combined R5 + lock bound"
+      thread_eventually_scheduled_within_smp_bound .liveness,
+    pcwt! "no_starvation_under_smp: the genuine SMP no-starvation capstone (no stall ∧ eventually-scheduled ∧ bounded lock-wait)"
       no_starvation_under_smp .liveness,
-    pcwt! "r5_latency_within_smp_bound: R5 selection is within the combined SMP bound (extends R5)"
+    pcwt! "r5_latency_within_smp_bound: single-core R5 selection within the combined SMP bound"
       r5_latency_within_smp_bound .liveness]
 
-/-- WS-SM SM5.J: the inventory has 32 substantive entries.  A regression that adds a
-new SM5.J theorem without registering it fails this count witness at the Tier-3
-surface check. -/
-theorem perCoreWcrtTheorems_count : perCoreWcrtTheorems.length = 32 := by decide
+/-- WS-SM SM5.J: the inventory has 44 substantive entries (32 at the SM5.J initial
+landing + 12 from the completion pass: the genuine per-core eventually-scheduled
+liveness, the execution-sensitive bridge, the cycle-commensurate units, the honest
+config-free grounding, the access-mode-soundness, and the SGI-handler /
+complete-timer per-op bounds).  A regression that adds a new SM5.J theorem without
+registering it fails this count witness at the Tier-3 surface check. -/
+theorem perCoreWcrtTheorems_count : perCoreWcrtTheorems.length = 44 := by decide
 
-/-- WS-SM SM5.J: 9 entries in the `lockSetWcrt` category. -/
+/-- WS-SM SM5.J: 10 entries in the `lockSetWcrt` category (+1: access-mode soundness). -/
 theorem perCoreWcrtTheorems_lockSetWcrt_count :
-    (perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length = 9 := by decide
+    (perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length = 10 := by decide
 
-/-- WS-SM SM5.J: 6 entries in the `rpi5Bound` category. -/
+/-- WS-SM SM5.J: 10 entries in the `rpi5Bound` category (+4: config-free bound + cycle units). -/
 theorem perCoreWcrtTheorems_rpi5Bound_count :
-    (perCoreWcrtTheorems.filter (fun t => t.category == .rpi5Bound)).length = 6 := by decide
+    (perCoreWcrtTheorems.filter (fun t => t.category == .rpi5Bound)).length = 10 := by decide
 
-/-- WS-SM SM5.J: 12 entries in the `perOp` category. -/
+/-- WS-SM SM5.J: 14 entries in the `perOp` category (+2: SGI handler + complete timer). -/
 theorem perCoreWcrtTheorems_perOp_count :
-    (perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length = 12 := by decide
+    (perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length = 14 := by decide
 
-/-- WS-SM SM5.J: 5 entries in the `liveness` category. -/
+/-- WS-SM SM5.J: 2 entries in the `executionBridge` category. -/
+theorem perCoreWcrtTheorems_executionBridge_count :
+    (perCoreWcrtTheorems.filter (fun t => t.category == .executionBridge)).length = 2 := by decide
+
+/-- WS-SM SM5.J: 8 entries in the `liveness` category (+3: decidable no-stall discharge +
+the genuine eventually-scheduled keystone + the combined-bound progress). -/
 theorem perCoreWcrtTheorems_liveness_count :
-    (perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 5 := by decide
+    (perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length = 8 := by decide
 
 /-- WS-SM SM5.J: per-category counts sum to the total. -/
 theorem perCoreWcrtTheorems_partition_sum :
     (perCoreWcrtTheorems.filter (fun t => t.category == .lockSetWcrt)).length +
     (perCoreWcrtTheorems.filter (fun t => t.category == .rpi5Bound)).length +
     (perCoreWcrtTheorems.filter (fun t => t.category == .perOp)).length +
+    (perCoreWcrtTheorems.filter (fun t => t.category == .executionBridge)).length +
     (perCoreWcrtTheorems.filter (fun t => t.category == .liveness)).length =
     perCoreWcrtTheorems.length := by decide
 
