@@ -12,7 +12,7 @@ import SeLe4n.Kernel.Scheduler.Liveness.Yield
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId)
 
 -- ============================================================================
 -- D5-I: Priority-band exhaustion
@@ -113,5 +113,63 @@ theorem bandExhaustionBound_zero (B P : Nat) :
 theorem bandExhaustionBound_succ (n B P : Nat) :
     bandExhaustionBound (n + 1) B P = (B + P) + bandExhaustionBound n B P := by
   simp [bandExhaustionBound, Nat.succ_mul, Nat.add_comm]
+
+-- ============================================================================
+-- WS-SM SM5.J.4 — per-core (∀ core) generalisation of band exhaustion
+-- ============================================================================
+--
+-- `eventuallyExits` / `higherBandExhausted` read core `bootCoreId`'s run queue.
+-- Under SMP the higher-priority band that the target thread waits behind is the
+-- band on *its own* core `c`.  These `*OnCore` forms parameterise by `c`; the
+-- `bootCoreId`-named originals are the `c := bootCoreId` instances (`rfl` bridges).
+-- `bandExhaustionBound` is already core-agnostic (a pure arithmetic count bound).
+
+/-- WS-SM SM5.J.4: `tid` eventually leaves **core `c`'s** run queue (and is not
+core `c`'s current thread) — the per-core generalisation of `eventuallyExits`. -/
+def eventuallyExitsOnCore (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat)
+    (c : CoreId) : Prop :=
+  ∃ k, k > startIdx ∧ match traceStateAt trace k with
+    | some st => (st.scheduler.runQueueOnCore c).contains tid = false ∧
+                 (st.scheduler.currentOnCore c) ≠ some tid
+    | none => False
+
+/-- WS-SM SM5.J.4: `eventuallyExits` is the boot-core instance of `eventuallyExitsOnCore`. -/
+theorem eventuallyExits_eq_onCore_bootCore (trace : SchedulerTrace) (tid : ThreadId)
+    (startIdx : Nat) :
+    eventuallyExits trace tid startIdx = eventuallyExitsOnCore trace tid startIdx bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: every higher-priority thread in **core `c`'s** run queue
+eventually exits — the per-core generalisation of `higherBandExhausted`. -/
+def higherBandExhaustedOnCore (trace : SchedulerTrace) (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) (c : CoreId) : Prop :=
+  ∀ tid,
+    tid ∈ (st.scheduler.runQueueOnCore c).flat →
+    (match resolveEffectivePriority st tid with
+     | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
+     | none => False) →
+    eventuallyExitsOnCore trace tid startIdx c
+
+/-- WS-SM SM5.J.4: `higherBandExhausted` is the boot-core instance. -/
+theorem higherBandExhausted_eq_onCore_bootCore (trace : SchedulerTrace) (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) :
+    higherBandExhausted trace st targetPrio targetDomain startIdx =
+      higherBandExhaustedOnCore trace st targetPrio targetDomain startIdx bootCoreId := rfl
+
+/-- WS-SM SM5.J.4: per-core form of `higherBandExhausted_when_no_higher` — when
+**core `c`'s** run queue has no strictly-higher-priority thread in the target
+domain, band exhaustion is vacuously satisfied. -/
+theorem higherBandExhaustedOnCore_when_no_higher
+    (trace : SchedulerTrace) (st : SystemState) (targetPrio : Priority)
+    (targetDomain : DomainId) (startIdx : Nat) (c : CoreId)
+    (hNoHigher : ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).flat →
+      match resolveEffectivePriority st tid with
+      | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
+      | none => True) :
+    higherBandExhaustedOnCore trace st targetPrio targetDomain startIdx c := by
+  intro tid hMem hMatch
+  exact absurd hMatch (by
+    have := hNoHigher tid hMem
+    revert this hMatch
+    split <;> simp_all)
 
 end SeLe4n.Kernel.Liveness

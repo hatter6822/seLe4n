@@ -5,22 +5,32 @@
 #
 # Should-drop metrics: every subsequent commit must keep these <= baseline.
 # Should-grow metrics: every subsequent commit must keep these >= baseline.
+#
+# Re-anchor (WS-SM SM5.J.4 completion, v0.31.64): raw_match_tcb 52->54,
+# raw_match_schedcontext 22->24, raw_match_total 129->133, raw_lookup_tid
+# 832->837, gettcb_adoption 1124->1129.  Documented additive refactor: the
+# per-core R5 trace-model generalisation adds `maxBudgetInBandOnCore` /
+# `maxPeriodInBandOnCore` (the (c : CoreId) forms of the existing band counting
+# functions).  They MUST mirror the bootCore forms' raw `st.objects[...]?` access
+# pattern so the `*_eq_onCore_bootCore` rfl bridges hold (defeq backward compat);
+# the raw floor rises by the structural minimum (+2 tcb / +2 schedcontext) with
+# gettcb adoption in lockstep (+5).  No typed-accessor adoption was removed.
 
 ## Reader-side raw patterns (should-drop)
 
-raw_match_tcb            = 52
-raw_match_schedcontext   = 22
+raw_match_tcb            = 54
+raw_match_schedcontext   = 24
 raw_match_endpoint       = 9
 raw_match_notification   = 2
 raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
-raw_match_total          = 129
-raw_lookup_tid           = 832
+raw_match_total          = 133
+raw_lookup_tid           = 837
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 1124
+gettcb_adoption          = 1129
 getschedctx_adoption     = 266
 getendpoint_adoption     = 42
 getnotification_adoption = 27
@@ -48,16 +58,16 @@ axiom_count              = 0
 
 ## Machine-diffable block
 
-RAW_MATCH_TCB=52
-RAW_MATCH_SCHEDCONTEXT=22
+RAW_MATCH_TCB=54
+RAW_MATCH_SCHEDCONTEXT=24
 RAW_MATCH_ENDPOINT=9
 RAW_MATCH_NOTIFICATION=2
 RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
-RAW_MATCH_TOTAL=129
-RAW_LOOKUP_TID=832
-GETTCB_ADOPTION=1124
+RAW_MATCH_TOTAL=133
+RAW_LOOKUP_TID=837
+GETTCB_ADOPTION=1129
 GETSCHEDCTX_ADOPTION=266
 GETENDPOINT_ADOPTION=42
 GETNOTIFICATION_ADOPTION=27

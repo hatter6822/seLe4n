@@ -304,4 +304,21 @@ run_check_with_timeout "TRACE" lake exe smp_cbs_suite
 # framing, and the SM5.I theorem-inventory partition counts.
 run_check_with_timeout "TRACE" lake exe smp_invariant_suite
 
+# WS-SM SM5.J — WCRT-under-fine-locks runtime checks.  Exercises the actual
+# WCRT_lockSet / WCRT_smp computations on concrete per-core op footprints: the
+# per-op exact lock-WCRT values (chooseThread = 2·3·tCs, timerTick = 3·3·tCs,
+# replenish = 1·3·tCs), the RPi5 maxLockSetSize·3·tCs bound + the typical-syscall
+# < 1 ms tick-budget fit, the combined WCRT_smp decomposition + monotonicity, the
+# per-core idle no-stall on an idle-enqueued fixture, and the SM5.J inventory counts.
+run_check_with_timeout "TRACE" lake exe smp_wcrt_suite
+
+# WS-SM SM5.K.1 — Aggregate SMP per-core scheduler runtime checks (the acceptance-
+# gate 4-thread/4-core workload).  Exercises the full SM5 per-core scheduler surface
+# on a single deterministic fixture: per-core selection (each core runs its own bound
+# thread), cross-core independence, affinity admission, cross-core wake SGI routing,
+# per-core switch (set current / reject remote), per-core WCRT bounds, the idle
+# no-stall, and the deterministic 4-core scheduling trace verified byte-for-byte
+# against tests/fixtures/smp_4core_scheduler.expected.
+run_check_with_timeout "TRACE" lake exe smp_scheduler_suite
+
 finalize_report

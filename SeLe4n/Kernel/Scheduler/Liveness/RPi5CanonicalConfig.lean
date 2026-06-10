@@ -12,7 +12,7 @@ import SeLe4n.Kernel.Scheduler.Liveness.WCRT
 namespace SeLe4n.Kernel.Liveness
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (bootCoreId)
+open SeLe4n.Kernel.Concurrency (bootCoreId CoreId)
 
 /-! # AN5-E — RPi5 Canonical Deployment: `eventuallyExits` closure
 
@@ -429,5 +429,117 @@ theorem rpi5_cbs_window_replenishments_bounded_concrete
               hamounts hDiscipline
   rw [hPeriod] at h
   exact h
+
+-- ============================================================================
+-- WS-SM SM5.J.4 — per-core RPi5 `eventuallyExits` closure + WCRT specialisation
+-- ============================================================================
+--
+-- The per-core (`(c : CoreId)`) analogues of AN5-E.3 / AN5-E.3b / AN5-E.4: the
+-- canonical RPi5 deployment discharges the per-core band-exhaustion obligation
+-- (`higherBandExhaustedOnCore`) of the per-core bound
+-- `bounded_scheduling_latency_exists_onCore` (WCRT.lean), so the genuine
+-- "a runnable thread on core `c` is eventually selected within the bound"
+-- liveness statement is closed for the v1.0.0 RPi5 release target on EVERY core,
+-- not only the boot core.  The boot-core forms above are the `c := bootCoreId`
+-- instances (`rfl`-bridged via the TraceModel/BandExhaustion generalisation).
+
+/-- WS-SM SM5.J.4: per-core form of `eventuallyExits_of_exit_index` — if `tid`
+reaches a state after `startIdx` in which it is neither core `c`'s current thread
+nor in core `c`'s run queue, `eventuallyExitsOnCore` holds. -/
+theorem eventuallyExits_of_exit_indexOnCore
+    (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat) (c : CoreId)
+    (k : Nat) (hk : k > startIdx)
+    (st : SystemState)
+    (hTraceAt : traceStateAt trace k = some st)
+    (hNotInRQ : (st.scheduler.runQueueOnCore c).contains tid = false)
+    (hNotCurrent : (st.scheduler.currentOnCore c) ≠ some tid) :
+    eventuallyExitsOnCore trace tid startIdx c := by
+  refine ⟨k, hk, ?_⟩
+  simp only [hTraceAt]
+  exact ⟨hNotInRQ, hNotCurrent⟩
+
+/-- WS-SM SM5.J.4: per-core deployment progress witness — the `(c : CoreId)`
+generalisation of `CanonicalDeploymentProgress`.  Captures that a canonical RPi5
+trace removes `tid` from **core `c`'s** run queue (and it is not core `c`'s
+current thread) at some future index. -/
+structure CanonicalDeploymentProgressOnCore
+    (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat) (c : CoreId) where
+  /-- The deployment uses the canonical RPi5 config. -/
+  config : DeploymentSchedulingConfig
+  /-- Config identity: this proof is specific to the RPi5 deployment. -/
+  configIsRPi5 : config = rpi5CanonicalConfig
+  /-- A future state (past `startIdx`) where the thread leaves core `c`. -/
+  exitIdx : Nat
+  exitIdxAfter : exitIdx > startIdx
+  exitState : SystemState
+  exitStateAtIdx : traceStateAt trace exitIdx = some exitState
+  /-- Thread is not in core `c`'s run queue at the exit index. -/
+  notInRunQueue : (exitState.scheduler.runQueueOnCore c).contains tid = false
+  /-- Thread is not core `c`'s current thread at the exit index. -/
+  notCurrent : (exitState.scheduler.currentOnCore c) ≠ some tid
+
+/-- WS-SM SM5.J.4: per-core main closure — a `CanonicalDeploymentProgressOnCore`
+witness discharges `eventuallyExitsOnCore` (the `c`-general form of
+`rpi5_canonicalConfig_eventuallyExits`). -/
+theorem rpi5_canonicalConfig_eventuallyExitsOnCore
+    (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat) (c : CoreId)
+    (progress : CanonicalDeploymentProgressOnCore trace tid startIdx c) :
+    eventuallyExitsOnCore trace tid startIdx c :=
+  eventuallyExits_of_exit_indexOnCore trace tid startIdx c
+    progress.exitIdx progress.exitIdxAfter
+    progress.exitState progress.exitStateAtIdx
+    progress.notInRunQueue progress.notCurrent
+
+/-- WS-SM SM5.J.4: per-core substantive bridge — given a per-core progress witness
+for every higher-priority thread in **core `c`'s** target band, discharge
+`higherBandExhaustedOnCore` (the `c`-general form of
+`rpi5_higherBandExhausted_from_progresses`).  This is the real RPi5 contribution
+to the per-core bounded-latency chain: it lifts the per-thread exit witness to the
+quantified band-exhaustion the per-core `hBandProgress` consumer expects. -/
+theorem rpi5_higherBandExhausted_from_progressesOnCore
+    (trace : SchedulerTrace) (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat) (c : CoreId)
+    (progresses :
+      ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c).flat →
+        (match resolveEffectivePriority st tid with
+         | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
+         | none => False) →
+        CanonicalDeploymentProgressOnCore trace tid startIdx c) :
+    higherBandExhaustedOnCore trace st targetPrio targetDomain startIdx c := by
+  intro tid hMem hMatch
+  exact rpi5_canonicalConfig_eventuallyExitsOnCore trace tid startIdx c
+    (progresses tid hMem hMatch)
+
+/-- WS-SM SM5.J.4: per-core RPi5 delegation of the bounded-latency bound — the
+`(c : CoreId)` generalisation of `wcrt_bound_rpi5`.  For an affinity-bound thread
+on core `c`, the RPi5 deployment's per-core `hDomainActiveRunnable` /
+`hBandProgress` obligations (the latter discharged from
+`rpi5_higherBandExhausted_from_progressesOnCore` + the FIFO machinery) yield the
+WCRT ceiling on core `c`'s own contention. -/
+theorem wcrt_bound_rpi5_onCore
+    (st : SystemState) (tid : ThreadId) (c : CoreId)
+    (trace : SchedulerTrace)
+    (hyp : WCRTHypothesesOnCore st tid c)
+    (_hValid : ValidTrace st trace)
+    (hDomainActiveRunnable : ∃ k₁, k₁ ≤ domainRotationBound
+        st.scheduler.domainSchedule.length
+        (maxDomainLength st.scheduler.domainSchedule) ∧
+      match traceStateAt trace k₁ with
+      | some st₁ => (st₁.scheduler.activeDomainOnCore c) = hyp.targetDomain ∧
+                     (st₁.scheduler.runQueueOnCore c).contains tid = true
+      | none => False)
+    (hBandProgress : ∀ k₁ st₁,
+      traceStateAt trace k₁ = some st₁ →
+      (st₁.scheduler.activeDomainOnCore c) = hyp.targetDomain →
+      (st₁.scheduler.runQueueOnCore c).contains tid = true →
+      ∃ k₂, k₂ ≤ bandExhaustionBound hyp.N hyp.B hyp.P ∧
+        selectedAtOnCore trace (k₁ + k₂) tid c) :
+    ∃ k, k ≤ wcrtBound
+              st.scheduler.domainSchedule.length
+              (maxDomainLength st.scheduler.domainSchedule)
+              hyp.N hyp.B hyp.P ∧
+      selectedAtOnCore trace k tid c :=
+  bounded_scheduling_latency_exists_onCore st tid c trace hyp _hValid
+    hDomainActiveRunnable hBandProgress
 
 end SeLe4n.Kernel.Liveness

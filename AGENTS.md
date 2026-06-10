@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.62.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.64.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -638,7 +638,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   primitives with formal mutex/fairness theorems; SGI INTID 0..4 reserved
   for kernel SMP coordination (SM0.H).
 
-  **Phase status** (current version: v0.31.62):
+  **Phase status** (current version: v0.31.64):
 
   | Phase | Status | Version | Summary |
   |-------|--------|---------|---------|
@@ -648,21 +648,25 @@ documentation lives under `docs/` and `docs/gitbook/`.
   | SM3 | CLOSED | v0.31.9 | Per-object locks, lock sets, 2PL, deadlock-freedom, serializability |
   | SM4 | LANDED | v0.31.37 | Per-core Vector, SchedulerState, register banks, invariant migration, idle bootstrap |
   | SM5.A–I | LANDED | v0.31.38–62 | Per-core scheduler: selection, switch, wake, timer, idle, PIP, domain, CBS, invariant suite |
-  | SM5.J–K | PENDING | — | Liveness, acceptance gate |
+  | SM5.J | LANDED | v0.31.63→64 | WCRT under fine locks; **completion v0.31.64**: genuine per-core eventually-scheduled liveness (R5 trace model generalized ∀-core), execution-sensitive bridge, cycle-commensurate units |
+  | SM5.K | LANDED | v0.31.63→64 | Tests + fixtures: 4-thread/4-core aggregate suite (+ multi-step dynamic simulation + cross-core round-trip), WCRT suite, golden trace fixture |
   | SM6–SM9 | PENDING | — | Cross-core IPC, TLB shootdown, info-flow, release closure (→ v1.0.0) |
 
   **Plans**: master overview at
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
   per-phase plans at `docs/planning/SMP_*.md`.
 
-  **Key AK7 metrics at v0.31.62**: `RAW_MATCH_TOTAL` 126,
-  `RAW_LOOKUP_TID` 821, `GETTCB_ADOPTION` 1069,
-  `GETSCHEDCTX_ADOPTION` 258.
+  **Key AK7 metrics at v0.31.64**: `RAW_MATCH_TOTAL` 133,
+  `RAW_LOOKUP_TID` 837, `GETTCB_ADOPTION` 1129,
+  `GETSCHEDCTX_ADOPTION` 266 (re-anchored for the SM5.J.4 per-core R5
+  generalisation — additive `maxBudgetInBandOnCore` / `maxPeriodInBandOnCore`
+  mirror the bootCore raw pattern for the `rfl` bridges; see
+  `docs/dev_history/audits/AL0_baseline.txt`).
 
   **Rust HAL at v0.31.62**: 724 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
-  **Staged modules**: 62 staged-only (via `Platform/Staged.lean` +
+  **Staged modules**: 64 staged-only (via `Platform/Staged.lean` +
   `scripts/staged_module_allowlist.txt`); production/staged partition
   gate enforced by `scripts/check_production_staging_partition.sh`.
 

@@ -24,4 +24,11 @@ This module re-exports all scheduler liveness submodules:
 - `RPi5CanonicalConfig`: AN5-E — `DeploymentSchedulingConfig` schema and
   canonical RPi5 instance discharging the `eventuallyExits` hypothesis for
   the v1.0.0 release target (closes `DEF-AK2-K.4`).
+
+WS-SM SM5.J.4: the observational / band / WCRT layers carry per-core
+`(c : CoreId)` generalisations (`selectedAtOnCore`, `eventuallyExitsOnCore`,
+`WCRTHypothesesOnCore`, `bounded_scheduling_latency_exists_onCore`, the RPi5
+`wcrt_bound_rpi5_onCore` closure, …) with each `bootCoreId`-named original as
+the `rfl`-bridged `c := bootCoreId` instance — the substance behind the SM5.J
+`no_starvation_under_smp` eventually-scheduled liveness (PerCoreWcrt.lean).
 -/

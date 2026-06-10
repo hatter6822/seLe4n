@@ -15,6 +15,7 @@ explicit hash refresh in the same commit.
 | `main_trace_smoke.expected` | `main_trace_smoke.expected.sha256` | `scripts/test_tier2_trace.sh` (compares `lake exe sele4n` output) |
 | `robin_hood_smoke.expected` | `robin_hood_smoke.expected.sha256` | `tests/RobinHoodSuite.lean` |
 | `two_phase_arch_smoke.expected` | `two_phase_arch_smoke.expected.sha256` | `tests/TwoPhaseArchSuite.lean` |
+| `smp_4core_scheduler.expected` | `smp_4core_scheduler.expected.sha256` | `tests/SmpSchedulerSuite.lean` (WS-SM SM5.K.4 — the deterministic 4-thread/4-core per-core scheduler trace + the multi-step cross-core wake→SGI→handler round-trip, verified byte-for-byte against the live `chooseThreadOnCore` / `determineTargetCore` / `wakeThread` / `switchToThreadOnCore` / `handleRescheduleSgiOnCore` decisions) |
 
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on
@@ -38,6 +39,17 @@ fixture fails CI with a uniform remediation message.
    lake exe two_phase_arch_suite  # writes to two_phase_arch_smoke.expected
    ```
 
+   For the SMP 4-core scheduler trace fixture (WS-SM SM5.K.4), extract only
+   the `[smp-4core]` trace lines the aggregate suite emits.  The brackets
+   MUST be escaped — unescaped, `[smp-4core]` is a regex character class
+   that also matches the suite's `---` section headers and would corrupt
+   the regenerated fixture:
+
+   ```bash
+   lake exe smp_scheduler_suite | grep '^\[smp-4core\]' \
+     > tests/fixtures/smp_4core_scheduler.expected
+   ```
+
 2. Recompute the SHA-256 companion in the format `sha256sum` writes by
    default (`<hash>  <basename>`):
 
@@ -46,6 +58,7 @@ fixture fails CI with a uniform remediation message.
    sha256sum main_trace_smoke.expected      > main_trace_smoke.expected.sha256
    sha256sum robin_hood_smoke.expected      > robin_hood_smoke.expected.sha256
    sha256sum two_phase_arch_smoke.expected  > two_phase_arch_smoke.expected.sha256
+   sha256sum smp_4core_scheduler.expected   > smp_4core_scheduler.expected.sha256
    ```
 
 3. Verify both files agree:

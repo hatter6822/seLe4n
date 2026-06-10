@@ -24,7 +24,42 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM5.I per-core invariant suite + SM4.B register-bank
+**Current sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests
+COMPLETE (v0.31.63; completion audit-pass v0.31.64).**  The **v0.31.64
+completion** makes "no thread starves under SMP" a *genuine* eventually-scheduled
+liveness theorem: the bootCoreId-pinned R5 trace model is generalised to an
+arbitrary `(c : CoreId)` **in production** (`selectedAtOnCore` /
+`WCRTHypothesesOnCore` / `bounded_scheduling_latency_exists_onCore` + the RPi5
+closure, each the single-core form's `rfl`-bridged `c := bootCoreId` instance), so
+`thread_eventually_scheduled_onCore` + the strengthened 3-way
+`no_starvation_under_smp` prove a *specific runnable thread is selected on an
+arbitrary core within `wcrtBound`*; plus the decidable no-stall discharge, the
+execution-sensitive bridge to `Concurrency.WCRT`, cycle-commensurate units,
+access-mode soundness, the SGI-handler / complete-timer per-op bounds, and a
+multi-step dynamic 4-core simulation + cross-core round-trip (inventory 32 → 44;
+AK7 floor re-anchored for the structural-minimum raw increase).  SM5.J bounds the
+per-core scheduler operations'
+worst-case response time under per-object RW **fine locks** (plan §3.9),
+*extending* the R5 domain-rotation / band-exhaustion `wcrtBound` with the SMP
+lock-contention dimension: `WCRT_lockSet` (the §3.9 `max-lock-set-size ·
+(coreCount − 1) · WCRT_per_lock` cost, reusing the SM3.D `perLockWaitCost`),
+the §3.9 Theorem 3.9.1 `wcrt_bound_rpi5_smp` (RPi5 `coreCount − 1 = 3` ⟹
+`≤ maxLockSetSize · 3 · tCs`, axiom-free), the combined `WCRT_smp` (R5 latency
++ lock contention), the five per-operation bounds, and **no thread starves
+under SMP** (`schedulerNoStall_smp` per-core non-stall + `boundedKernelWait_smp`
+no-unbounded-inversion + the `no_starvation_under_smp` capstone + the
+`r5_latency_within_smp_bound` R5 bridge).  SM5.K lands the acceptance-gate test
+surface: `tests/SmpSchedulerSuite.lean` (the **4-thread / 4-core** aggregate —
+51 scenarios + the golden `tests/fixtures/smp_4core_scheduler.expected` trace
+verified byte-for-byte against the live scheduling decisions),
+`tests/SmpWcrtSuite.lean`, and the `scripts/test_qemu_smp_scheduler.sh` Tier-4
+stub.  Staged `Scheduler/Operations/PerCoreWcrt.lean` + `PerCoreWcrtInventory.lean`
+(32-entry `pcwt!` inventory); partition gate 64 staged-only modules; both new
+suites wired into Tier 2; axiom-clean; default build green; trace byte-identical.
+Full per-phase detail in `CLAUDE.md` + the SM5.J / SM5.K landing notes in
+`docs/planning/SMP_PER_CORE_SCHEDULER_PLAN.md`.
+
+**Prior sub-phase: SM5.I per-core invariant suite + SM4.B register-bank
 payoff + budget-closure capstone COMPLETE (v0.31.60 → v0.31.61 → v0.31.62).**
 The v0.31.62 capstone discharges the budget-tick obligations UNCONDITIONALLY
 via the `runQueueSafetyOnCore` sub-bundle (the three current-free run-queue

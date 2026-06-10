@@ -1,0 +1,14 @@
+[smp-4core] core 0 selects thread A
+[smp-4core] core 1 selects thread B
+[smp-4core] core 2 selects thread C
+[smp-4core] core 3 selects thread D
+[smp-4core] determineTargetCore A = core 0
+[smp-4core] determineTargetCore B = core 1
+[smp-4core] determineTargetCore C = core 2
+[smp-4core] determineTargetCore D = core 3
+[smp-4core] wake D from core 0 emits SGI reschedule to core 3
+[smp-4core] wake A from core 0 emits no SGI (local)
+[smp-4core] switch core 1 to B sets current = thread B
+[smp-4core] core 0 emptied with idle enqueued selects the idle thread
+[smp-4core] round-trip: wake blocked E from core 0 emits SGI reschedule to core 3
+[smp-4core] round-trip: core 3 handler dispatches current = thread E
