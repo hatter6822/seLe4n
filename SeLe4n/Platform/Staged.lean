@@ -411,6 +411,13 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 -- projection-preservation lemmas (`enqueueRunnableOnCore_preserves_projection` /
 -- `removeRunnableOnCore_preserves_projection` / `wakeThread_preserves_projection`).
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
+-- WS-SM SM6.A.1: cross-core endpoint-call IPC invariant preservation —
+-- `endpointCallOnCore` preserves `objects.invExt` and the `ipcInvariant`
+-- notification well-formedness, via the object-invisibility keystone
+-- (`enqueueRunnableOnCore_objects_getElem_eq_of_ready`: the receiver wake's
+-- `ipcState := .ready` write is a no-op on the already-ready rendezvous
+-- receiver) composed with the single-core per-step preservation lemmas.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
