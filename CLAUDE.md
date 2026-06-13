@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.64.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.65.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -638,7 +638,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   primitives with formal mutex/fairness theorems; SGI INTID 0..4 reserved
   for kernel SMP coordination (SM0.H).
 
-  **Phase status** (current version: v0.31.64):
+  **Phase status** (current version: v0.31.65):
 
   | Phase | Status | Version | Summary |
   |-------|--------|---------|---------|
@@ -650,7 +650,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
   | SM5.A–I | LANDED | v0.31.38–62 | Per-core scheduler: selection, switch, wake, timer, idle, PIP, domain, CBS, invariant suite |
   | SM5.J | LANDED | v0.31.63→64 | WCRT under fine locks; **completion v0.31.64**: genuine per-core eventually-scheduled liveness (R5 trace model generalized ∀-core), execution-sensitive bridge, cycle-commensurate units |
   | SM5.K | LANDED | v0.31.63→64 | Tests + fixtures: 4-thread/4-core aggregate suite (+ multi-step dynamic simulation + cross-core round-trip), WCRT suite, golden trace fixture |
-  | SM6–SM9 | PENDING | — | Cross-core IPC, TLB shootdown, info-flow, release closure (→ v1.0.0) |
+  | SM6.A | LANDED | v0.31.65 | Endpoint call across cores: `endpointCallOnCore` (receiver wake via SM5.C `wakeThread`, caller block via per-core `removeRunnableOnCore`) + lock-set correctness/donation-extension/2PL-atomicity, cross-core wake SGI (Thm 3.2.1), per-core blocking, reply-state allocation, cross-core NI; staged (partition 64→66), `tests/SmpCrossCoreCallSuite.lean` |
+  | SM6.B–SM9 | PENDING | — | Cross-core notification/reply/cancellation, per-core IPC invariant bundle, TLB shootdown, info-flow, release closure (→ v1.0.0) |
 
   **Plans**: master overview at
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
@@ -666,7 +667,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Rust HAL at v0.31.62**: 724 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
-  **Staged modules**: 64 staged-only (via `Platform/Staged.lean` +
+  **Staged modules**: 66 staged-only (via `Platform/Staged.lean` +
   `scripts/staged_module_allowlist.txt`); production/staged partition
   gate enforced by `scripts/check_production_staging_partition.sh`.
 

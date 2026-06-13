@@ -164,18 +164,37 @@ replenish queue migrates per SM5.H.4.
 
 ### SM6.A — Endpoint call across cores (4 PRs, 10 sub-tasks)
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM6.A.1 | Migrate `endpointCall` to acquire lock-set | (refactor) | M |
-| SM6.A.2 | `endpointCall_lockSet_correct` | Theorem | M |
-| SM6.A.3 | Cross-core wake via wakeThread | Theorem 3.2.1 | L |
-| SM6.A.4 | `endpointCall_perCore_blocking` | Theorem | M |
-| SM6.A.5 | Donation chain lock-set extension | Theorem | M |
-| SM6.A.6 | Reply object allocation under lock-set | Theorem | M |
-| SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | Theorem | L |
-| SM6.A.8 | `endpointCallWithCaps_lockSet_correct` | Theorem | L |
-| SM6.A.9 | `endpointCall_atomic_under_lockSet` | Theorem | L |
-| SM6.A.10 | 8 cross-core call scenarios | Tests | L |
+**Status: LANDED (v0.31.65).** Axiom-clean (`propext` / `Classical.choice` /
+`Quot.sound` only); Tier 0–3 green; staged (production partition 64 → 66). The
+cross-core transition `endpointCallOnCore` and the SM6.A theorems live in
+`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (+ `EndpointCallNI.lean` for
+the non-interference slice); the 14-assertion runtime suite is
+`tests/SmpCrossCoreCallSuite.lean` (`lake exe smp_cross_core_call_suite`).
+Runtime wiring of `endpointCallOnCore` into the live syscall dispatch (under
+the `withLockSet` acquisition over `lockSet_endpointCall`) remains gated on the
+SM5.I FFI seam (the SM5.F tracked debt).
+
+| Sub | Description | Landed symbol | Status |
+|-----|-------------|---------------|--------|
+| SM6.A.1 | Migrate `endpointCall` to acquire lock-set (cross-core) | `endpointCallOnCore`, `removeRunnableOnCore` (+ bootCore bridge), `endpointCallOnCore_{rendezvous,noReceiver}_eq` | ✓ |
+| SM6.A.2 | `endpointCall_lockSet_correct` | `endpointCallOnCore_lockSet_correct` | ✓ |
+| SM6.A.3 | Cross-core wake via `wakeThread` (Theorem 3.2.1) | `endpointCallOnCore_emits_sgi_if_remote_receiver` (+ `_no_sgi_if_local_receiver`) | ✓ |
+| SM6.A.4 | `endpointCall_perCore_blocking` | `endpointCallOnCore_perCore_blocking` | ✓ |
+| SM6.A.5 | Donation chain lock-set extension | `lockSet_endpointCall_donation_extension` | ✓ |
+| SM6.A.6 | Reply state allocation under lock-set | `endpointCallOnCore_reply_linkage_under_lockSet` | ✓ |
+| SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | `endpointCallOnCore_call_path_NI` (+ `{enqueueRunnableOnCore,removeRunnableOnCore,wakeThread}_preserves_projection`) | ✓ |
+| SM6.A.8 | `endpointCallWithCaps_lockSet_correct` | `endpointCallWithCaps_lockSet_correct` (+ `lockSet_endpointCallWithCaps`) | ✓ |
+| SM6.A.9 | `endpointCall_atomic_under_lockSet` | `endpointCallOnCore_atomic_under_lockSet` | ✓ |
+| SM6.A.10 | 8 cross-core call scenarios | `tests/SmpCrossCoreCallSuite.lean` (14 runtime assertions) | ✓ |
+
+> **Model note.** This kernel has no separate Reply *object* (the `.reply`
+> lock-kind is N/A — `lockHeld` is `False` for it); the reply linkage is the
+> caller's `blockedOnReply endpointId (some receiver)` TCB state, written under
+> the caller-TCB **write** lock already in `lockSet_endpointCall`. SM6.A.6 is
+> therefore "reply *state* allocation under lock-set" rather than reply-object
+> allocation. The SGI theorem (SM6.A.3) is stated at the wake-site state
+> (`determineTargetCore st'' receiver`); `cpuAffinity` is unchanged by the
+> intervening pop+store, so this coincides with the pre-state target core.
 
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 

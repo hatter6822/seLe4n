@@ -24,7 +24,35 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests
+**Current sub-phase: SM6.A endpoint call across cores LANDED (v0.31.65).**
+The cross-core IPC phase (SM6) opens with the endpoint `Call` rendezvous lifted
+to SMP.  `endpointCallOnCore`
+([`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean))
+generalises the single-core `endpointCall` to an explicit `executingCore`:
+on rendezvous the receiver is woken through the SM5.C cross-core `wakeThread`
+(enqueued on its `determineTargetCore` home core, surfacing a `.reschedule` SGI
+when that core is remote — plan **Theorem 3.2.1**
+`endpointCallOnCore_emits_sgi_if_remote_receiver`), and the caller is descheduled
+from its own core via the new per-core `removeRunnableOnCore`
+(`… bootCoreId = removeRunnable …` by `rfl`).  All ten SM6.A sub-tasks landed
+axiom-clean: lock-set correctness (`endpointCallOnCore_lockSet_correct`,
+SM6.A.2), donation-chain extension (`lockSet_endpointCall_donation_extension`,
+SM6.A.5), 2PL atomicity (`endpointCallOnCore_atomic_under_lockSet`, SM6.A.9),
+per-core caller blocking (`endpointCallOnCore_perCore_blocking`, SM6.A.4),
+reply-state allocation under the caller-TCB lock
+(`endpointCallOnCore_reply_linkage_under_lockSet`, SM6.A.6 — this kernel has no
+separate Reply object), the WithCaps footprint
+(`endpointCallWithCaps_lockSet_correct`, SM6.A.8), and cross-core
+non-interference (`endpointCallOnCore_call_path_NI`
+([`EndpointCallNI.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCallNI.lean)),
+SM6.A.7 — built from the new per-core scheduler-step projection lemmas).  Tests:
+`tests/SmpCrossCoreCallSuite.lean` (14 runtime assertions + theorem witnesses).
+Both modules are **staged** (production/staged partition 64 → 66); wiring
+`endpointCallOnCore` into the live syscall dispatch under `withLockSet` remains
+gated on the SM5.I FFI seam.  Plan:
+[`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.A).
+
+**Prior sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests
 COMPLETE (v0.31.63; completion audit-pass v0.31.64).**  The **v0.31.64
 completion** makes "no thread starves under SMP" a *genuine* eventually-scheduled
 liveness theorem: the bootCoreId-pinned R5 trace model is generalised to an

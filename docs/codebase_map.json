@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/magical-davinci-2f1nzj",
-      "commit_sha": "663ad318a4b7e6b4fa6a752badf12e063ce3bb41",
-      "tree_sha": "a90a8e5cbde9514dd1b05a67f174fb70bc581294",
-      "committed_at_utc": "2026-06-10T05:53:45+00:00"
+      "branch": "claude/upbeat-edison-4ahj6q",
+      "commit_sha": "ff0499c0598dc0485fce5fbcd4a745c956517820",
+      "tree_sha": "a5e0b807ddeddebb193a9c0cddd13ca4cdfdadaa",
+      "committed_at_utc": "2026-06-10T02:49:54-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6d836f33afa568c7f3388992a513f3ef0398e733deec9808a38e48c46beb1403"
+    "source_digest": "f3578419e45758ecb14321d2c56613518caf32593ab2057be25ff97513cb3452"
   },
   "summary": {
-    "module_count": 291,
-    "declaration_count": 11008
+    "module_count": 294,
+    "declaration_count": 11063
   },
   "readme_sync": {
-    "version": "0.31.64",
+    "version": "0.31.65",
     "lean_toolchain": "v4.28.0",
-    "production_files": 233,
-    "production_loc": 173252,
-    "test_files": 58,
-    "test_loc": 37563,
-    "proved_theorem_lemma_decls": 5806,
+    "production_files": 235,
+    "production_loc": 174017,
+    "test_files": 59,
+    "test_loc": 37833,
+    "proved_theorem_lemma_decls": 5831,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -367,6 +367,7 @@
             "decodeSuspendArgs",
             "decodeVSpaceMapArgsChecked",
             "decodeVSpaceUnmapArgs",
+            "epId",
             "lifecycleRetypeDirectWithCleanup",
             "lookupServiceByCap",
             "none",
@@ -427,6 +428,7 @@
             "endpointReplyRecvWithDonation",
             "endpointReplyWithDonation",
             "endpointSendDualWithCaps",
+            "epId",
             "extractMessageRegisters",
             "getEndpoint",
             "head",
@@ -480,6 +482,7 @@
             "endpointReplyChecked",
             "endpointReplyRecvChecked",
             "endpointSendDualChecked",
+            "epId",
             "extractMessageRegisters",
             "getEndpoint",
             "head",
@@ -806,6 +809,7 @@
             "endpointReplyRecv",
             "endpointReplyRecvChecked",
             "endpointReplyRecvWithDonation",
+            "epId",
             "extractMessageRegisters",
             "none",
             "securityFlowsTo",
@@ -1110,6 +1114,7 @@
             "dispatchCapabilityOnly",
             "dispatchWithCap",
             "endpointSendDualWithCaps",
+            "epId",
             "extractMessageRegisters",
             "resolveExtraCaps",
             "st"
@@ -1131,6 +1136,7 @@
             "dispatchCapabilityOnly",
             "dispatchWithCap",
             "endpointCallWithCaps",
+            "epId",
             "extractMessageRegisters",
             "getEndpoint",
             "head",
@@ -3623,7 +3629,8 @@
             "cons",
             "default",
             "default_objects_absurd",
-            "dualQueueSystemInvariant"
+            "dualQueueSystemInvariant",
+            "epId"
           ]
         },
         {
@@ -3700,6 +3707,7 @@
             "SystemState",
             "default",
             "default_objects_absurd",
+            "epId",
             "queueHeadBlockedConsistent"
           ]
         },
@@ -3995,6 +4003,7 @@
             "ThreadId",
             "advanceTimerState",
             "cons",
+            "epId",
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
@@ -4083,6 +4092,7 @@
             "SystemState",
             "ThreadId",
             "cons",
+            "epId",
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
@@ -4132,6 +4142,7 @@
             "contextSwitchState",
             "currentOnCore",
             "currentThreadIpcReady",
+            "epId",
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
@@ -12659,6 +12670,7 @@
             "capabilityInvariantBundle_of_storeTcbAndEnsureRunnable",
             "endpointReply",
             "ensureRunnable",
+            "epId",
             "lookupTcb",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -20302,6 +20314,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "endpointLock",
             "lockSetExtendOpt",
@@ -20317,6 +20330,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "endpointLock",
             "lockSetExtendOpt",
@@ -20334,6 +20348,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "endpointLock",
             "lockSetExtendOpt",
@@ -20351,6 +20366,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20367,6 +20383,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "endpointLock",
             "lockSetExtendOpt",
@@ -20384,6 +20401,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20399,6 +20417,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "notificationLock",
@@ -20413,6 +20432,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20426,6 +20446,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20439,6 +20460,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20452,6 +20474,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20465,6 +20488,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock",
@@ -20479,6 +20503,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock",
@@ -20493,6 +20518,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock",
@@ -20507,6 +20533,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "endpointLock",
             "lockSetOfList",
@@ -20521,6 +20548,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20534,6 +20562,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20548,6 +20577,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20564,6 +20594,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "schedContextLock",
@@ -20579,6 +20610,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "schedContextLock",
@@ -20594,6 +20626,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "endpointLock",
             "lockSetExtendOpt",
@@ -20611,6 +20644,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetOfList",
             "tcbLock"
@@ -20625,6 +20659,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20641,6 +20676,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20656,6 +20692,7 @@
             "LockSet",
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20672,6 +20709,7 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "cnodeLock",
             "lockSetExtendOpt",
             "lockSetOfList",
@@ -20696,7 +20734,8 @@
           "called": [
             "ObjId",
             "SchedContextId",
-            "ThreadId"
+            "ThreadId",
+            "callerTid"
           ]
         },
         {
@@ -20706,7 +20745,8 @@
           "called": [
             "ObjId",
             "SchedContextId",
-            "ThreadId"
+            "ThreadId",
+            "callerTid"
           ]
         },
         {
@@ -20924,6 +20964,9 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
+            "epId",
             "lockSet_consistent_base_plus_opt",
             "lockSet_endpointSend",
             "none",
@@ -20937,6 +20980,9 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
+            "epId",
             "lockSet_consistent_base_plus_opt",
             "lockSet_endpointReceive",
             "none",
@@ -20952,6 +20998,9 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
+            "epId",
             "lockSet_consistent_base_plus_two_opts",
             "lockSet_endpointCall",
             "none",
@@ -20966,6 +21015,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_two_opts",
             "lockSet_endpointReply",
             "none",
@@ -20980,6 +21031,9 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
+            "epId",
             "lockSet_consistent_base_plus_three_opts",
             "lockSet_replyRecv",
             "none",
@@ -20994,6 +21048,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_notificationSignal",
             "none",
@@ -21008,6 +21064,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_notificationWait",
             "notificationWait",
@@ -21021,6 +21079,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cspaceMint",
             "lockSet_consistent_of_extended_base",
             "lockSet_cspaceMint",
@@ -21034,6 +21093,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cspaceCopy",
             "lockSet_consistent_of_extended_base",
             "lockSet_cspaceCopy",
@@ -21047,6 +21107,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
             "cspaceMove",
             "lockSet_consistent_of_extended_base",
             "lockSet_cspaceMove",
@@ -21060,6 +21121,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_cspaceDelete",
             "permittedKinds"
@@ -21072,6 +21135,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_lifecycleRetype",
             "permittedKinds"
@@ -21084,6 +21149,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_vspaceMap",
             "permittedKinds"
@@ -21096,6 +21163,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_vspaceUnmap",
             "permittedKinds"
@@ -21108,6 +21177,9 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
+            "epId",
             "lockSet_consistent_of_extended_base",
             "lockSet_serviceRegister",
             "permittedKinds"
@@ -21120,6 +21192,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_serviceRevoke",
             "permittedKinds"
@@ -21132,6 +21206,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_serviceQuery",
             "permittedKinds"
@@ -21145,6 +21221,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_schedContextConfigure",
             "none",
@@ -21160,6 +21238,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_schedContextBind",
             "permittedKinds",
@@ -21174,6 +21254,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_schedContextUnbind",
             "permittedKinds",
@@ -21188,6 +21270,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_four_opts",
             "lockSet_tcbSuspend",
             "none",
@@ -21201,6 +21285,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_tcbResume",
             "permittedKinds"
@@ -21214,6 +21300,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_tcbSetPriority",
             "none",
@@ -21228,6 +21316,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_tcbSetMCPriority",
             "none",
@@ -21241,6 +21331,8 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_tcbSetIPCBuffer",
             "none",
@@ -21255,6 +21347,8 @@
             "ObjId",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
+            "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_tcbSetAffinity",
             "none",
@@ -30346,6 +30440,7 @@
           "line": 1243,
           "called": [
             "SystemState",
+            "epId",
             "registryEndpointValid",
             "st"
           ]
@@ -32233,6 +32328,7 @@
             "TCB",
             "ThreadId",
             "currentOnCore",
+            "epId",
             "getTcb",
             "runQueueOnCore",
             "st"
@@ -32843,6 +32939,7 @@
             "Endpoint",
             "FrozenSystemState",
             "ObjId",
+            "epId",
             "get",
             "none",
             "st"
@@ -32907,6 +33004,7 @@
             "Endpoint",
             "FrozenKernel",
             "ObjId",
+            "epId",
             "frozenStoreObject"
           ]
         },
@@ -32943,6 +33041,7 @@
             "Endpoint",
             "FrozenKernel",
             "ObjId",
+            "epId",
             "frozenLookupEndpoint",
             "frozenStoreEndpoint",
             "none",
@@ -32986,6 +33085,7 @@
             "Endpoint",
             "FrozenSystemState",
             "ObjId",
+            "epId",
             "frozenLookupEndpoint",
             "frozenStoreEndpoint",
             "frozenStoreEndpointChecked",
@@ -33490,6 +33590,7 @@
             "TCB",
             "ThreadId",
             "endpointId",
+            "epId",
             "frozenLookupTcb",
             "frozenStoreTcb",
             "get",
@@ -33668,6 +33769,7 @@
             "FrozenKernel",
             "ObjId",
             "ServiceRegistration",
+            "epId",
             "fold",
             "none",
             "st"
@@ -33778,6 +33880,7 @@
             "FrozenKernel",
             "Priority",
             "ThreadId",
+            "callerTid",
             "frozenLookupTcb",
             "get",
             "none",
@@ -33795,6 +33898,7 @@
             "FrozenKernel",
             "Priority",
             "ThreadId",
+            "callerTid",
             "frozenLookupTcb",
             "none",
             "set",
@@ -33871,6 +33975,662 @@
       "path": "SeLe4n/Kernel/FrozenOps.lean",
       "declaration_count": 0,
       "declarations": []
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCall",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean",
+      "declaration_count": 26,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 49,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "removeRunnableOnCore",
+          "line": 65,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "none",
+            "remove",
+            "runQueueOnCore",
+            "setCurrentOnCore",
+            "setRunQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_bootCoreId",
+          "line": 75,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "removeRunnable",
+            "removeRunnableOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointCallReceiver",
+          "line": 87,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "getEndpoint",
+            "head",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointCallDonatedSc",
+          "line": 98,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "none",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lockSet_endpointCallWithCaps",
+          "line": 117,
+          "called": [
+            "LockSet",
+            "ObjId",
+            "SchedContextId",
+            "ThreadId",
+            "callerTid",
+            "cnodeLock",
+            "lockSetExtendOpt",
+            "lockSet_endpointCall"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointCallOnCore",
+          "line": 146,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "KernelError",
+            "ObjId",
+            "SgiKind",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueuePopHead",
+            "getEndpoint",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "removeRunnableOnCore",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_rendezvous_eq",
+          "line": 193,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointId",
+            "endpointQueuePopHead",
+            "getEndpoint",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "removeRunnableOnCore",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_noReceiver_eq",
+          "line": 217,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "getEndpoint",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "removeRunnableOnCore",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_emits_sgi_if_remote_receiver",
+          "line": 248,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "endpointCallOnCore",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointId",
+            "endpointQueuePopHead",
+            "getTcb",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "wakeThread",
+            "wakeThread_emits_sgi_if_remote"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_no_sgi_if_local_receiver",
+          "line": 273,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "endpointCallOnCore",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointId",
+            "endpointQueuePopHead",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "wakeThread",
+            "wakeThread_no_sgi_if_local"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_lockSet_correct",
+          "line": 303,
+          "called": [
+            "ObjId",
+            "SchedContextId",
+            "ThreadId",
+            "cnRoot",
+            "endpointId",
+            "lockSet_consistent_call",
+            "lockSet_endpointCall",
+            "permittedKinds"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_endpointCall_donation_extension",
+          "line": 323,
+          "called": [
+            "ObjId",
+            "SchedContextId",
+            "ThreadId",
+            "cnRoot",
+            "endpointId",
+            "lockSetExtendOpt",
+            "lockSet_endpointCall",
+            "none",
+            "scId",
+            "schedContextLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallWithCaps_lockSet_correct",
+          "line": 343,
+          "called": [
+            "ObjId",
+            "SchedContextId",
+            "ThreadId",
+            "cnRoot",
+            "destCnode",
+            "endpointId",
+            "lockSet_consistent_call",
+            "lockSet_consistent_extendOpt",
+            "lockSet_endpointCallWithCaps",
+            "permittedKinds"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_atomic_under_lockSet",
+          "line": 368,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "ObjId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "cnRoot",
+            "endpointCallOnCore",
+            "endpointId",
+            "lockAcquireSequence",
+            "lockSet_atomic_under_2pl",
+            "lockSet_endpointCall",
+            "releaseAll",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_preserves_objects",
+          "line": 390,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "removeRunnableOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_getTcb",
+          "line": 395,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "removeRunnableOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_runQueueOnCore_self",
+          "line": 400,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "remove",
+            "removeRunnableOnCore",
+            "runQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_currentOnCore_self",
+          "line": 407,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "none",
+            "removeRunnableOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_not_mem_self",
+          "line": 415,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "not_mem_remove_self",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_runQueueOnCore_self",
+            "runQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_currentOnCore_ne_self",
+          "line": 422,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_currentOnCore_self",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_runQueueOnCore_ne",
+          "line": 432,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "removeRunnableOnCore",
+            "runQueueOnCore",
+            "setCurrentOnCore_runQueueOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_currentOnCore_ne",
+          "line": 441,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "removeRunnableOnCore",
+            "setCurrentOnCore_currentOnCore_ne",
+            "setRunQueueOnCore_currentOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_perCore_blocking",
+          "line": 458,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "currentOnCore",
+            "endpointCallOnCore",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointId",
+            "endpointQueuePopHead",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "removeRunnableOnCore_currentOnCore_ne_self",
+            "removeRunnableOnCore_not_mem_self",
+            "runQueueOnCore",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_getTcb",
+          "line": 485,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "getTcb",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_ipcState_eq",
+            "storeTcbIpcStateAndMessage_tcb_exists_at_target"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_reply_linkage_under_lockSet",
+          "line": 511,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointId",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "getTcb",
+            "head",
+            "invExt",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_getTcb",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "wakeThread",
+            "wakeThread_preserves_objects_invExt"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallNI.lean",
+      "declaration_count": 6,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 33,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "projectObjects_insert_high",
+          "line": 44,
+          "called": [
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "RHTable.getElem",
+            "SystemState",
+            "ThreadId",
+            "insert",
+            "invExt",
+            "objectObservable",
+            "projectObjects",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_preserves_projection",
+          "line": 69,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SchedulerState.runnable",
+            "SystemState",
+            "ThreadId",
+            "activeDomainOnCore",
+            "bootCoreId",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "projectActiveDomain",
+            "projectCurrent",
+            "projectDomainSchedule",
+            "projectDomainScheduleIndex",
+            "projectDomainTimeRemaining",
+            "projectMachineRegs",
+            "projectRunnable",
+            "projectState",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_bootCoreId",
+            "removeRunnableOnCore_currentOnCore_ne",
+            "removeRunnableOnCore_runQueueOnCore_ne",
+            "removeRunnable_preserves_projection",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_preserves_projection",
+          "line": 104,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SchedulerState.runnable",
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "enqueueRunnableOnCore",
+            "getTcb",
+            "invExt",
+            "none",
+            "objectObservable",
+            "projectActiveDomain",
+            "projectCurrent",
+            "projectDomainSchedule",
+            "projectDomainScheduleIndex",
+            "projectDomainTimeRemaining",
+            "projectMachineRegs",
+            "projectObjects_insert_high",
+            "projectRunnable",
+            "projectState",
+            "setRunQueueOnCore_activeDomainOnCore",
+            "setRunQueueOnCore_currentOnCore",
+            "setRunQueueOnCore_domainSchedule",
+            "setRunQueueOnCore_domainScheduleIndexOnCore",
+            "setRunQueueOnCore_domainTimeRemainingOnCore",
+            "setRunQueueOnCore_runQueueOnCore_ne",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "threadObservable",
+            "toList_filter_insert_neg'",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wakeThread_preserves_projection",
+          "line": 143,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "enqueueRunnableOnCore_preserves_projection",
+            "invExt",
+            "objectObservable",
+            "projectState",
+            "st",
+            "threadObservable",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_state_eq_enqueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_call_path_NI",
+          "line": 166,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IfObserver",
+            "IpcMessage",
+            "Kernel",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointId",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointQueuePopHead_preserves_projection",
+            "head",
+            "invExt",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "objectObservable",
+            "projectState",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_projection",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_projection",
+            "threadObservable",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_preserves_objects_invExt",
+            "wakeThread_preserves_projection"
+          ]
+        }
+      ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.DualQueue.Core",
@@ -35558,6 +36318,7 @@
             "ensureRunnable",
             "ensureRunnable_mem_reverse",
             "ensureRunnable_preserves_objects",
+            "epId",
             "invExt",
             "ipcSchedulerContractPredicates",
             "lookupTcb",
@@ -35884,6 +36645,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "epId",
             "intrusiveQueueWellFormed",
             "st"
           ]
@@ -35897,6 +36659,7 @@
             "ObjId",
             "SystemState",
             "dualQueueEndpointWellFormed",
+            "epId",
             "st",
             "tcbQueueChainAcyclic",
             "tcbQueueLinkIntegrity"
@@ -36335,6 +37098,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "st",
             "toObjId"
           ]
@@ -36347,6 +37111,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "head",
             "st",
             "toObjId"
@@ -36399,6 +37164,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "head",
             "st",
             "toObjId"
@@ -36455,6 +37221,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "scId",
             "st",
             "toObjId"
@@ -36470,6 +37237,7 @@
             "ThreadId",
             "bootCoreId",
             "currentOnCore",
+            "epId",
             "runQueueOnCore",
             "st",
             "toObjId"
@@ -36536,7 +37304,8 @@
           "called": [
             "ObjId",
             "ThreadId",
-            "ThreadIpcState"
+            "ThreadIpcState",
+            "epId"
           ]
         },
         {
@@ -37170,6 +37939,7 @@
             "ThreadId",
             "cleanupPreReceiveDonation",
             "cleanupPreReceiveDonation_frame_helper",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "returnDonatedSchedContext_endpoint_forward",
@@ -37210,6 +37980,7 @@
             "cleanupPreReceiveDonation_frame_helper",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "intrusiveQueueWellFormed",
             "invExt",
             "returnDonatedSchedContext_endpoint_backward",
@@ -37247,6 +38018,7 @@
             "ThreadId",
             "cleanupPreReceiveDonation",
             "cleanupPreReceiveDonation_frame_helper",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "returnDonatedSchedContext_endpoint_forward",
@@ -37270,6 +38042,7 @@
             "cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "invExt",
             "st"
           ]
@@ -37406,6 +38179,7 @@
             "ensureRunnable_not_mem_of_not_mem",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_scheduler_current",
+            "epId",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -37435,6 +38209,7 @@
             "ThreadId",
             "endpointReply",
             "ensureRunnable_preserves_objects",
+            "epId",
             "invExt",
             "ipcInvariant",
             "lookupTcb",
@@ -38993,6 +39768,7 @@
             "TCB",
             "ThreadId",
             "currentOnCore",
+            "epId",
             "getTcb",
             "runQueueOnCore",
             "st"
@@ -39694,6 +40470,7 @@
             "ThreadId",
             "bootCoreId",
             "currentOnCore",
+            "epId",
             "getTcb",
             "passiveServerIdle_smp",
             "runQueueOnCore",
@@ -39866,6 +40643,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -39883,6 +40661,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "epId",
             "ipcStateQueueMembershipConsistent",
             "st"
           ]
@@ -39927,6 +40706,7 @@
             "TCB",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -39950,6 +40730,7 @@
             "TCB",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -39968,6 +40749,7 @@
             "TCB",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -39991,6 +40773,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -40014,6 +40797,7 @@
             "ObjId",
             "SystemState",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "none",
@@ -40038,6 +40822,7 @@
             "SystemState",
             "ThreadId",
             "consWithGuard",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "isReserved",
@@ -40069,6 +40854,7 @@
             "ThreadId",
             "endpointReply",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -40087,6 +40873,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -40111,6 +40898,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -40136,6 +40924,7 @@
             "TCB",
             "ThreadId",
             "endpointId",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -40155,6 +40944,7 @@
             "QueuePPrev",
             "SystemState",
             "ThreadId",
+            "epId",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -40181,6 +40971,7 @@
             "dualQueueEndpointWellFormed",
             "endpointId",
             "endpointQueueEnqueue",
+            "epId",
             "head",
             "intrusiveQueueWellFormed",
             "invExt",
@@ -40233,6 +41024,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -40351,6 +41143,7 @@
             "endpointQueuePopHead_returns_head",
             "endpointQueuePopHead_returns_pre_tcb",
             "endpointQueuePopHead_tcb_ipcState_backward",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -40579,6 +41372,7 @@
             "ThreadId",
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
+            "epId",
             "queueHeadBlockedConsistent",
             "st"
           ]
@@ -40590,6 +41384,7 @@
           "called": [
             "SystemState",
             "ThreadId",
+            "epId",
             "queueHeadBlockedConsistent",
             "removeRunnable",
             "removeRunnable_preserves_objects",
@@ -40608,6 +41403,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "epId",
             "head",
             "invExt",
             "lookupTcb",
@@ -40630,6 +41426,7 @@
             "Kernel",
             "SystemState",
             "ThreadId",
+            "epId",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -40905,6 +41702,7 @@
             "endpointQueueNoDup",
             "endpointReply",
             "ensureRunnable_preserves_endpointQueueNoDup",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -41123,6 +41921,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_endpointQueueNoDup",
+            "epId",
             "head",
             "invExt",
             "maxExtraCaps",
@@ -41168,6 +41967,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_endpointQueueNoDup",
             "ensureRunnable_preserves_objects",
+            "epId",
             "head",
             "invExt",
             "none",
@@ -41206,6 +42006,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_endpointQueueNoDup",
             "ensureRunnable_preserves_objects",
+            "epId",
             "head",
             "invExt",
             "maxExtraCaps",
@@ -41240,6 +42041,7 @@
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_endpointQueueNoDup",
             "ensureRunnable_preserves_objects",
+            "epId",
             "ext",
             "head",
             "invExt",
@@ -41283,6 +42085,7 @@
             "endpointQueuePopHead_returns_pre_tcb",
             "endpointSendDual",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "epId",
             "head",
             "invExt",
             "ipcInvariantFull",
@@ -41340,6 +42143,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
             "ensureRunnable_preserves_objects",
+            "epId",
             "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -41389,6 +42193,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
             "ensureRunnable_preserves_objects",
+            "epId",
             "head",
             "invExt",
             "ipcInvariantFull",
@@ -41432,6 +42237,7 @@
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_queueHeadBlockedConsistent",
             "ensureRunnable_preserves_queueNextBlockingConsistent",
+            "epId",
             "ext",
             "head",
             "invExt",
@@ -41735,6 +42541,7 @@
             "endpointId",
             "endpointQueueEnqueue",
             "endpointQueueEnqueue_preserves_dualQueueSystemInvariant",
+            "epId",
             "head",
             "invExt",
             "st",
@@ -41755,6 +42562,7 @@
             "endpointQueuePopHead",
             "endpointQueuePopHead_endpoint_forward",
             "endpointQueuePopHead_tcb_ipcState_backward",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "st"
@@ -41772,6 +42580,7 @@
             "endpointQueueEnqueue",
             "endpointQueueEnqueue_endpoint_forward",
             "endpointQueueEnqueue_tcb_ipcState_backward",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "st"
@@ -41812,6 +42621,7 @@
             "SystemState",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "st",
@@ -41830,6 +42640,7 @@
             "SystemState",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "st",
@@ -41848,6 +42659,7 @@
             "IpcMessage",
             "SystemState",
             "ThreadId",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "st",
@@ -41937,6 +42749,7 @@
             "ThreadId",
             "endpointReply",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "lookupTcb",
@@ -41958,6 +42771,7 @@
             "Notification",
             "ObjId",
             "SystemState",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "st",
@@ -42070,6 +42884,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "ensureRunnable_preserves_objects",
+            "epId",
             "invExt",
             "ipcStateQueueConsistent",
             "lookupTcb",
@@ -42113,6 +42928,7 @@
             "cons",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "invExt",
             "ipcUnwrapCaps",
             "ipcUnwrapCaps_preserves_cnode_at_root",
@@ -42141,6 +42957,7 @@
             "endpointSendDualWithCaps",
             "endpointSendDual_preserves_dualQueueSystemInvariant",
             "endpointSendDual_preserves_objects_invExt",
+            "epId",
             "getEndpoint",
             "head",
             "invExt",
@@ -42170,6 +42987,7 @@
             "endpointReceiveDualWithCaps",
             "endpointReceiveDual_preserves_dualQueueSystemInvariant",
             "endpointReceiveDual_preserves_objects_invExt",
+            "epId",
             "getTcb",
             "head",
             "invExt",
@@ -42398,6 +43216,7 @@
             "endpointReply",
             "ensureRunnable",
             "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "epId",
             "invExt",
             "lookupTcb",
             "maxExtraCaps",
@@ -42491,6 +43310,7 @@
             "ObjId",
             "SystemState",
             "dualQueueEndpointWellFormed",
+            "epId",
             "intrusiveQueueWellFormed_empty",
             "st"
           ]
@@ -42503,6 +43323,7 @@
             "ObjId",
             "SystemState",
             "dualQueueEndpointWellFormed",
+            "epId",
             "none",
             "st"
           ]
@@ -42558,6 +43379,7 @@
             "ThreadId",
             "dualQueueEndpointWellFormed",
             "endpointQueuePopHead_sender_exists",
+            "epId",
             "head",
             "st",
             "toObjId"
@@ -42743,6 +43565,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_intrusiveQueueWellFormed",
             "ensureRunnable_preserves_objects",
+            "epId",
             "none",
             "st"
           ]
@@ -42756,6 +43579,7 @@
             "SystemState",
             "ThreadId",
             "dualQueueEndpointWellFormed",
+            "epId",
             "none",
             "removeRunnable",
             "removeRunnable_preserves_intrusiveQueueWellFormed",
@@ -42775,6 +43599,7 @@
             "ensureRunnable_preserves_dualQueueEndpointWellFormed",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_tcbQueueLinkIntegrity",
+            "epId",
             "st",
             "tcbQueueChainAcyclic_of_objects_eq"
           ]
@@ -42787,6 +43612,7 @@
             "SystemState",
             "ThreadId",
             "dualQueueSystemInvariant",
+            "epId",
             "removeRunnable",
             "removeRunnable_preserves_dualQueueEndpointWellFormed",
             "removeRunnable_preserves_objects",
@@ -42841,6 +43667,7 @@
             "ObjId",
             "SystemState",
             "TCB",
+            "epId",
             "invExt",
             "st",
             "storeObject",
@@ -42862,6 +43689,7 @@
             "ObjId",
             "SystemState",
             "TCB",
+            "epId",
             "intrusiveQueueWellFormed",
             "invExt",
             "st",
@@ -42919,6 +43747,7 @@
             "TCB",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "invExt",
             "none",
             "st",
@@ -42941,6 +43770,7 @@
             "ThreadIpcState",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -42967,6 +43797,7 @@
             "ThreadIpcState",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -42992,6 +43823,7 @@
             "ThreadId",
             "dualQueueEndpointWellFormed",
             "dualQueueSystemInvariant",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -43267,6 +44099,7 @@
             "dualQueueSystemInvariant",
             "endpointId",
             "endpointQueueEnqueue",
+            "epId",
             "head",
             "intrusiveQueueWellFormed",
             "invExt",
@@ -43331,6 +44164,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
+            "epId",
             "head",
             "invExt",
             "maxExtraCaps",
@@ -43371,6 +44205,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_objects",
+            "epId",
             "head",
             "invExt",
             "none",
@@ -43402,6 +44237,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_objects",
+            "epId",
             "ext",
             "head",
             "invExt",
@@ -43441,6 +44277,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_objects",
+            "epId",
             "head",
             "invExt",
             "maxExtraCaps",
@@ -43903,6 +44740,7 @@
             "bounded",
             "endpointReply",
             "ensureRunnable_preserves_allPendingMessagesBounded",
+            "epId",
             "invExt",
             "lookupTcb",
             "maxExtraCaps",
@@ -45824,6 +46662,7 @@
             "SystemState",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -46360,6 +47199,7 @@
             "SystemState",
             "ThreadId",
             "ThreadIpcState",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -46518,6 +47358,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "epId",
             "invExt",
             "lookupTcb",
             "none",
@@ -46836,6 +47677,7 @@
             "endpointId",
             "endpointQueueRemove",
             "endpointQueueRemove_succeeds_under_forwardBackward",
+            "epId",
             "lookupTcb",
             "none",
             "st",
@@ -47524,6 +48366,7 @@
             "cspaceMintChecked_denied_preserves_state",
             "endpointSendDualChecked",
             "endpointSendDualChecked_denied_preserves_state",
+            "epId",
             "registerServiceChecked",
             "securityFlowsTo",
             "st"
@@ -51470,6 +52313,7 @@
             "ObjId",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "fold",
             "lookupServiceByCap",
             "none",
@@ -51486,6 +52330,7 @@
             "ObjId",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "lookupServiceByCap",
             "lookupServiceByCap_preserves_state",
             "projectState",
@@ -67719,6 +68564,7 @@
             "bootCoreId",
             "cons",
             "currentOnCore",
+            "epId",
             "getTcb",
             "invExt",
             "none",
@@ -67988,6 +68834,7 @@
             "SystemState",
             "ThreadId",
             "cons",
+            "epId",
             "getTcb",
             "invExt",
             "none",
@@ -68248,6 +69095,7 @@
             "ThreadId",
             "allThreadsTimeSlicePositive",
             "cons",
+            "epId",
             "getTcb",
             "invExt",
             "none",
@@ -73814,6 +74662,7 @@
           "called": [
             "ObjId",
             "TCB",
+            "epId",
             "none"
           ]
         },
@@ -73826,6 +74675,7 @@
             "SchedContextId",
             "SystemState",
             "ThreadId",
+            "epId",
             "getTcb",
             "none",
             "scId",
@@ -76378,6 +77228,7 @@
             "ThreadId",
             "endpointQueueRemove_scheduler_eq",
             "ensureRunnable_replenishQueueOnCore",
+            "epId",
             "replenishQueueOnCore",
             "revertPriorityInheritance_replenishQueueOnCore",
             "st",
@@ -76396,6 +77247,7 @@
             "SystemState",
             "ThreadId",
             "cons",
+            "epId",
             "getTcb",
             "none",
             "replenishQueueOnCore",
@@ -82553,6 +83405,7 @@
             "ThreadId",
             "endpointQueueRemove_machine",
             "ensureRunnable_machine",
+            "epId",
             "revert_preserves_machine",
             "st",
             "storeObject",
@@ -82569,6 +83422,7 @@
             "SystemState",
             "ThreadId",
             "cons",
+            "epId",
             "getTcb",
             "none",
             "scId",
@@ -83610,6 +84464,7 @@
             "ThreadId",
             "endpointQueueRemove_preserves_objects_invExt",
             "ensureRunnable_objects_eq_local",
+            "epId",
             "invExt",
             "revertPriorityInheritance_preserves_objects_invExt",
             "st",
@@ -83627,6 +84482,7 @@
             "SystemState",
             "ThreadId",
             "cons",
+            "epId",
             "invExt",
             "scId",
             "st",
@@ -90703,6 +91559,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "epId",
             "st",
             "toObjId"
           ]
@@ -90795,6 +91652,7 @@
             "TCB",
             "ThreadId",
             "blockingServer",
+            "epId",
             "none",
             "st",
             "toObjId"
@@ -90818,6 +91676,7 @@
             "TCB",
             "ThreadId",
             "blockingServer",
+            "epId",
             "none",
             "st",
             "toObjId"
@@ -96556,6 +97415,7 @@
             "ServiceId",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "none",
             "st"
           ]
@@ -96644,6 +97504,7 @@
             "RHTable_getElem",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "invExt",
             "none",
             "registerService",
@@ -96660,6 +97521,7 @@
             "RHTable_getElem",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "invExt",
             "none",
             "registerService",
@@ -96755,6 +97617,7 @@
             "SystemState",
             "cleanupEndpointServiceRegistrations",
             "cleanupEndpointServiceRegistrations_objects_eq",
+            "epId",
             "filter",
             "foldl_removeDependenciesOf_serviceRegistry_eq",
             "invExt",
@@ -96773,6 +97636,7 @@
             "SystemState",
             "cleanupEndpointServiceRegistrations",
             "cleanupEndpointServiceRegistrations_interfaceRegistry_eq",
+            "epId",
             "filter",
             "foldl_removeDependenciesOf_serviceRegistry_eq",
             "invExt",
@@ -96790,6 +97654,7 @@
             "cleanupEndpointServiceRegistrations",
             "cleanupEndpointServiceRegistrations_preserves_registryEndpointValid",
             "cleanupEndpointServiceRegistrations_preserves_registryInterfaceValid",
+            "epId",
             "invExt",
             "registryInvariant",
             "st"
@@ -96804,6 +97669,7 @@
             "ServiceId",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "st"
           ]
         },
@@ -96816,6 +97682,7 @@
             "RHTable_getElem",
             "SystemState",
             "default",
+            "epId",
             "get",
             "none",
             "registryEndpointUnique"
@@ -96880,6 +97747,7 @@
             "ServiceId",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "fold_or_false_all_slots",
             "hasEndpointRegistered",
             "invExt",
@@ -96894,6 +97762,7 @@
             "RHTable_getElem",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "hasEndpointRegistered",
             "hasEndpointRegistered_false_spec",
             "invExt",
@@ -96912,6 +97781,7 @@
             "RHTable_getElem",
             "ServiceId",
             "SystemState",
+            "epId",
             "invExtK",
             "registryEndpointUnique",
             "removeDependenciesOf_serviceRegistry_eq",
@@ -96930,6 +97800,7 @@
             "RHTable_getElem",
             "SystemState",
             "cleanupEndpointServiceRegistrations",
+            "epId",
             "filter",
             "foldl_removeDependenciesOf_serviceRegistry_eq",
             "invExt",
@@ -96969,6 +97840,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "epId",
             "fold",
             "st"
           ]
@@ -96980,6 +97852,7 @@
           "called": [
             "Kernel",
             "ServiceRegistration",
+            "epId",
             "hasEndpointRegistered",
             "hasRight",
             "insert",
@@ -96995,6 +97868,7 @@
             "Kernel",
             "ObjId",
             "ServiceRegistration",
+            "epId",
             "fold",
             "none",
             "st"
@@ -97021,6 +97895,7 @@
             "ObjId",
             "ServiceId",
             "SystemState",
+            "epId",
             "filter",
             "fold",
             "removeDependenciesOf",
@@ -97087,6 +97962,7 @@
             "ObjId",
             "SystemState",
             "cleanupEndpointServiceRegistrations",
+            "epId",
             "foldl_removeDependenciesOf_objects_eq",
             "st"
           ]
@@ -97099,6 +97975,7 @@
             "ObjId",
             "SystemState",
             "cleanupEndpointServiceRegistrations",
+            "epId",
             "foldl_removeDependenciesOf_scheduler_eq",
             "st"
           ]
@@ -97111,6 +97988,7 @@
             "ObjId",
             "SystemState",
             "cleanupEndpointServiceRegistrations",
+            "epId",
             "foldl_removeDependenciesOf_lifecycle_eq",
             "st"
           ]
@@ -97147,6 +98025,7 @@
             "ObjId",
             "SystemState",
             "cleanupEndpointServiceRegistrations",
+            "epId",
             "foldl_removeDependenciesOf_interfaceRegistry_eq",
             "st"
           ]
@@ -97260,6 +98139,7 @@
             "ObjId",
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "hasRight",
             "none",
             "registerService",
@@ -97273,6 +98153,7 @@
           "called": [
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "none",
             "registerService",
             "st"
@@ -97297,6 +98178,7 @@
           "called": [
             "ServiceRegistration",
             "SystemState",
+            "epId",
             "none",
             "registerService",
             "st"
@@ -111149,6 +112031,7 @@
             "empty_edgeWellFounded",
             "empty_sizeConsistent",
             "empty_sorted",
+            "epId",
             "foldIrqs",
             "foldIrqs_objects",
             "foldObjects",
@@ -115206,13 +116089,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 446,
+          "line": 463,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 452,
+          "line": 469,
           "called": []
         }
       ]
@@ -119006,6 +119889,7 @@
           "called": [
             "SystemState",
             "all",
+            "epId",
             "none",
             "st"
           ]
@@ -119564,6 +120448,7 @@
             "endpointReceiveDual",
             "endpointReply",
             "endpointSendDual",
+            "epId",
             "insert",
             "lookupTcb",
             "none",
@@ -119587,6 +120472,7 @@
             "endpointCall",
             "endpointReply",
             "endpointSendDual",
+            "epId",
             "insert",
             "none",
             "ofList",
@@ -119707,6 +120593,7 @@
             "demoEndpoint",
             "empty",
             "endpointSendDual",
+            "epId",
             "insert",
             "none",
             "ofList",
@@ -119732,6 +120619,7 @@
             "demoEndpoint",
             "demoUntyped",
             "endpointSendDual",
+            "epId",
             "insert",
             "lifecycleRetypeObject",
             "none",
@@ -119919,6 +120807,7 @@
             "endpointCall",
             "endpointReceiveDual",
             "endpointReplyRecv",
+            "epId",
             "insert",
             "lookupTcb",
             "none",
@@ -119948,6 +120837,7 @@
             "ofList",
             "ofListWF",
             "ofNat",
+            "stBase",
             "withLifecycleCapabilityRef",
             "withLifecycleObjectType",
             "withObject",
@@ -120030,6 +120920,7 @@
             "contains",
             "empty",
             "endpointQueueRemove",
+            "epId",
             "head",
             "insert",
             "isEmpty",
@@ -120060,6 +120951,7 @@
             "applyCallDonation",
             "applyReplyDonation",
             "bootCoreId",
+            "callerTid",
             "cleanupDonatedSchedContext",
             "cleanupPreReceiveDonation",
             "currentOnCore",
@@ -122267,6 +123159,7 @@
             "cancelIpcBlocking",
             "cancelIpcBlockingValid",
             "default",
+            "epId",
             "insert",
             "mkTcb",
             "ofNat",
@@ -122415,6 +123308,7 @@
             "ThreadId",
             "ValidThreadId",
             "applyCallDonation",
+            "callerTid",
             "default",
             "insert",
             "mkEmptySchedContext",
@@ -123451,6 +124345,7 @@
             "TCB",
             "ThreadId",
             "currentOnCore",
+            "epId",
             "getTcb",
             "passiveServerIdle_smp",
             "passiveServerIdle_smp_not_scheduled_anywhere",
@@ -125964,6 +126859,7 @@
             "RHTable.empty",
             "cnodeId",
             "emptyFrozenState",
+            "epId",
             "expect",
             "freezeMap",
             "frozenCspaceLookup",
@@ -126570,6 +127466,7 @@
             "bibaIntegrityFlowsTo",
             "bootCoreId",
             "buildChecked",
+            "callerTid",
             "chooseThread",
             "contains",
             "cspaceCopy",
@@ -126592,6 +127489,7 @@
             "endpointSendDualChecked",
             "enforcementBoundary",
             "enforcementBoundaryExtended",
+            "epId",
             "erase",
             "expect",
             "fieldsDisjoint",
@@ -127525,7 +128423,8 @@
             "none",
             "ofNat",
             "runUnit",
-            "st"
+            "st",
+            "stBase"
           ]
         },
         {
@@ -133022,6 +133921,7 @@
             "cnodeId",
             "empty",
             "endpointSendDual",
+            "epId",
             "expectErr",
             "hasRight",
             "none",
@@ -133257,6 +134157,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDual",
+            "epId",
             "expectErr",
             "expectOkSt",
             "insert",
@@ -133467,6 +134368,7 @@
             "buildChecked",
             "cleanupEndpointServiceRegistrations",
             "empty",
+            "epId",
             "expectErr",
             "none",
             "ofList",
@@ -134020,6 +134922,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDual",
+            "epId",
             "expect",
             "expectOkSt",
             "ofNat",
@@ -134154,6 +135057,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDual",
+            "epId",
             "expect",
             "expectOkSt",
             "head",
@@ -134284,6 +135188,7 @@
             "buildChecked",
             "cnodeId",
             "empty",
+            "epId",
             "expect",
             "none",
             "ofList",
@@ -134315,6 +135220,7 @@
             "buildChecked",
             "cnodeId",
             "empty",
+            "epId",
             "expect",
             "none",
             "ofList",
@@ -134344,6 +135250,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDualWithCaps",
+            "epId",
             "expect",
             "expectOkSt",
             "lookup",
@@ -134372,6 +135279,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDualWithCaps",
+            "epId",
             "expect",
             "expectOkSt",
             "isEmpty",
@@ -134400,6 +135308,7 @@
             "empty",
             "endpointReceiveDual",
             "endpointSendDualWithCaps",
+            "epId",
             "expect",
             "expectOkSt",
             "lookup",
@@ -134706,6 +135615,7 @@
             "bootFromPlatform_valid",
             "config",
             "empty",
+            "epId",
             "expect",
             "none"
           ]
@@ -134750,6 +135660,7 @@
             "cspaceCopy",
             "cspaceMint",
             "cspaceMove",
+            "epId",
             "expect",
             "none",
             "ofList",
@@ -134802,6 +135713,7 @@
             "arm64DefaultLayout",
             "bootCoreId",
             "buildSyscallState",
+            "epId",
             "length",
             "ofList",
             "setCurrentOnCore",
@@ -134820,6 +135732,7 @@
             "buildChecked",
             "cnodeId",
             "empty",
+            "epId",
             "expect",
             "none",
             "ofList",
@@ -134842,6 +135755,7 @@
             "ObjId",
             "arm64DefaultLayout",
             "buildSyscallState",
+            "epId",
             "ofList",
             "syscallEntry"
           ]
@@ -137226,6 +138140,7 @@
           "line": 57,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137241,6 +138156,7 @@
           "line": 73,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137255,6 +138171,7 @@
           "line": 89,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137269,6 +138186,7 @@
           "line": 102,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137283,6 +138201,7 @@
           "line": 112,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137297,6 +138216,7 @@
           "line": 126,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137312,6 +138232,7 @@
           "line": 142,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137326,6 +138247,7 @@
           "line": 155,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137343,6 +138265,7 @@
             "SchedContext",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137359,6 +138282,7 @@
           "line": 202,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137376,6 +138300,7 @@
             "SchedContext",
             "SchedContextId",
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137453,6 +138378,7 @@
           "line": 335,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "frozenSetPriority",
             "get",
@@ -137468,6 +138394,7 @@
           "line": 351,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "frozenSetPriority",
             "mkFrozenState",
@@ -137481,6 +138408,7 @@
           "line": 364,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "frozenSetMCPriority",
             "get",
@@ -137550,6 +138478,7 @@
             "schedContextConfigure",
             "setRunQueueOnCore",
             "st",
+            "stBase",
             "throw",
             "toObjId"
           ]
@@ -137691,6 +138620,7 @@
           "line": 672,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137705,6 +138635,7 @@
           "line": 686,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -137719,6 +138650,7 @@
           "line": 700,
           "called": [
             "ThreadId",
+            "callerTid",
             "expect",
             "mkState",
             "mkTcb",
@@ -141770,6 +142702,348 @@
           "name": "main",
           "line": 684,
           "called": []
+        }
+      ]
+    },
+    {
+      "module": "tests.SmpCrossCoreCallSuite",
+      "path": "tests/SmpCrossCoreCallSuite.lean",
+      "declaration_count": 23,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SmpCrossCoreCall",
+          "line": 33,
+          "called": [
+            "endpointCallDonatedSc",
+            "endpointCallOnCore",
+            "endpointCallOnCore_atomic_under_lockSet",
+            "endpointCallOnCore_call_path_NI",
+            "endpointCallOnCore_emits_sgi_if_remote_receiver",
+            "endpointCallOnCore_lockSet_correct",
+            "endpointCallOnCore_noReceiver_eq",
+            "endpointCallOnCore_no_sgi_if_local_receiver",
+            "endpointCallOnCore_perCore_blocking",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointCallOnCore_reply_linkage_under_lockSet",
+            "endpointCallReceiver",
+            "endpointCallWithCaps_lockSet_correct",
+            "enqueueRunnableOnCore_preserves_projection",
+            "lockSet_endpointCallWithCaps",
+            "lockSet_endpointCall_donation_extension",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_bootCoreId",
+            "removeRunnableOnCore_preserves_projection",
+            "wakeThread_preserves_projection"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:81>",
+          "line": 81,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "endpointCallOnCore",
+            "endpointCallOnCore_emits_sgi_if_remote_receiver",
+            "endpointId",
+            "endpointQueuePopHead",
+            "getTcb",
+            "head",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:101>",
+          "line": 101,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "ObjId",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "cnRoot",
+            "endpointCallOnCore",
+            "endpointCallOnCore_atomic_under_lockSet",
+            "endpointId",
+            "lockAcquireSequence",
+            "lockSet_endpointCall",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:112>",
+          "line": 112,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IfObserver",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointCallOnCore_call_path_NI",
+            "endpointId",
+            "endpointQueuePopHead",
+            "head",
+            "invExt",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "objectObservable",
+            "projectState",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "threadObservable",
+            "toObjId",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 142,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core1",
+          "line": 148,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "epId",
+          "line": 150,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cnRoot",
+          "line": 151,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "destCnode",
+          "line": 152,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "scId",
+          "line": 153,
+          "called": [
+            "SchedContextId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "callerTid",
+          "line": 154,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "recvLocalTid",
+          "line": 155,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "recvRemoteTid",
+          "line": 156,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 158,
+          "called": [
+            "CoreId",
+            "TCB",
+            "cnRoot",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stBase",
+          "line": 164,
+          "called": [
+            "SystemState",
+            "build",
+            "callerTid",
+            "core1",
+            "empty",
+            "epId",
+            "mkTcb",
+            "none",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stWithReceiver",
+          "line": 174,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "endpointReceiveDual",
+            "epId",
+            "none",
+            "st",
+            "stBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "callSgi",
+          "line": 180,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "callerTid",
+            "empty",
+            "endpointCallOnCore",
+            "epId",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runLockSetChecks",
+          "line": 185,
+          "called": [
+            "assertBool",
+            "callerTid",
+            "cnRoot",
+            "destCnode",
+            "epId",
+            "lockSetExtendOpt",
+            "lockSet_endpointCall",
+            "lockSet_endpointCallWithCaps",
+            "none",
+            "permittedKinds",
+            "recvRemoteTid",
+            "scId",
+            "schedContextLock"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runBlockingChecks",
+          "line": 205,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "callerTid",
+            "contains",
+            "core1",
+            "removeRunnable",
+            "removeRunnableOnCore",
+            "runQueueOnCore",
+            "stBase",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runNoReceiverChecks",
+          "line": 220,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "callerTid",
+            "contains",
+            "empty",
+            "endpointCallOnCore",
+            "epId",
+            "getTcb",
+            "none",
+            "runQueueOnCore",
+            "stBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRendezvousChecks",
+          "line": 234,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "callSgi",
+            "callerTid",
+            "core1",
+            "empty",
+            "endpointCallOnCore",
+            "epId",
+            "getTcb",
+            "none",
+            "recvLocalTid",
+            "recvRemoteTid",
+            "st",
+            "stWithReceiver"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSmpCrossCoreCallChecks",
+          "line": 257,
+          "called": [
+            "runBlockingChecks",
+            "runLockSetChecks",
+            "runNoReceiverChecks",
+            "runRendezvousChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 269,
+          "called": [
+            "runSmpCrossCoreCallChecks"
+          ]
         }
       ]
     },
@@ -148848,6 +150122,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "epId",
             "expect",
             "mkState",
             "mkTcb",
@@ -148864,6 +150139,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "epId",
             "expect",
             "mkState",
             "mkTcb",
@@ -148880,6 +150156,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "epId",
             "expect",
             "mkState",
             "mkTcb",
@@ -148896,6 +150173,7 @@
           "called": [
             "ObjId",
             "ThreadId",
+            "epId",
             "expect",
             "mkState",
             "mkTcb",

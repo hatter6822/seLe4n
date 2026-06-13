@@ -394,6 +394,23 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
 -- Nodup-on-identifiers/descriptions; mirrors the SM5.G `PerCoreDomainInventory`.
 -- A renamed/removed SM5.J theorem fails this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrtInventory
+-- WS-SM SM6.A: cross-core endpoint call — the `endpointCallOnCore` transition
+-- (the single-core `endpointCall` rendezvous lifted to an explicit executing
+-- core, routing the receiver wake through the SM5.C cross-core `wakeThread` and
+-- blocking the caller via the per-core `removeRunnableOnCore`), the
+-- `lockSet_endpointCallWithCaps` footprint, the path-reduction lemmas, and the
+-- SM6.A theorems: lock-set correctness (.2/.8), donation-chain extension (.5),
+-- 2PL atomicity (.9), the cross-core wake SGI emission (Thm 3.2.1, .3), per-core
+-- caller blocking (.4), and reply-state allocation (.6).  Staged until the SM5.I
+-- FFI seam wires `endpointCallOnCore` into the live syscall dispatch under the
+-- `withLockSet` acquisition over `lockSet_endpointCall`.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+-- WS-SM SM6.A.7: the cross-core endpoint-call non-interference slice —
+-- `endpointCallOnCore_call_path_NI` (a high-principal cross-core call is
+-- invisible to a low observer), composed from the new per-core scheduler-step
+-- projection-preservation lemmas (`enqueueRunnableOnCore_preserves_projection` /
+-- `removeRunnableOnCore_preserves_projection` / `wakeThread_preserves_projection`).
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

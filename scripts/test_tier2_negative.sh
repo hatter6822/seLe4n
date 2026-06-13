@@ -321,4 +321,13 @@ run_check_with_timeout "TRACE" lake exe smp_wcrt_suite
 # against tests/fixtures/smp_4core_scheduler.expected.
 run_check_with_timeout "TRACE" lake exe smp_scheduler_suite
 
+# WS-SM SM6.A — Cross-core endpoint call runtime checks.  Exercises the actual
+# endpointCallOnCore / removeRunnableOnCore / lockSet_endpointCall computations:
+# the SM6.A.2/.5/.8 lock-set footprint (kinds permitted, keys nodup, donation
+# extension, WithCaps dest-CNode), the SM6.A.1/.4 per-core caller blocking
+# (removeRunnableOnCore bridge + descheduling + sibling-core locality), the
+# SM6.A.1 no-receiver path (blockedOnCall, no SGI), and the SM6.A.3 local vs
+# remote rendezvous SGI emission (remote receiver wakes onto its home core).
+run_check_with_timeout "TRACE" lake exe smp_cross_core_call_suite
+
 finalize_report

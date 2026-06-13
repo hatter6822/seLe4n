@@ -1,3 +1,73 @@
+## v0.31.65 — WS-SM SM6.A: endpoint call across cores (cross-core IPC phase opens)
+
+First slice of WS-SM Phase SM6 (cross-core IPC): the endpoint `Call` rendezvous
+lifted to SMP.  Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only);
+Tier 0–3 green; production/staged partition 64 → 66.
+
+**The cross-core transition.**  `endpointCallOnCore`
+(`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`) lifts the single-core
+`endpointCall` (in `IPC/DualQueue/Transport`) to an explicit `executingCore`,
+with two cross-core substitutions:
+
+- **Receiver wake** — on rendezvous the receiver is woken through the SM5.C
+  cross-core `wakeThread … executingCore`, which enqueues it on its *home* core
+  (`determineTargetCore`) and surfaces `some (target, .reschedule)` when that
+  core differs from the executing core (the cross-core poke the runtime fires).
+- **Caller block** — the caller is descheduled from *its own* core via the new
+  per-core `removeRunnableOnCore`, the generalisation of `removeRunnable`
+  (`removeRunnableOnCore … bootCoreId = removeRunnable …` by `rfl`).
+
+**The SM6.A theorems** (all axiom-clean):
+
+- **SM6.A.1** `endpointCallOnCore` + `removeRunnableOnCore` (+ bootCore bridge) +
+  `lockSet_endpointCallWithCaps` + the `endpointCallOnCore_{rendezvous,noReceiver}_eq`
+  full path-reduction lemmas.
+- **SM6.A.2** `endpointCallOnCore_lockSet_correct` — every declared lock has a
+  kind in `permittedKinds .call` and the keys are duplicate-free (hierarchy +
+  well-formedness).
+- **SM6.A.3** `endpointCallOnCore_emits_sgi_if_remote_receiver` (plan Theorem
+  3.2.1): a rendezvous unblocking a *remote* receiver surfaces the `.reschedule`
+  SGI to the receiver's home core; dually `_no_sgi_if_local_receiver`.
+- **SM6.A.4** `endpointCallOnCore_perCore_blocking` — the caller is removed from
+  its core's run queue and cleared from its current slot (per-core locality).
+- **SM6.A.5** `lockSet_endpointCall_donation_extension` — donating a SchedContext
+  extends the lock-set by exactly the SC **write** lock.
+- **SM6.A.6** `endpointCallOnCore_reply_linkage_under_lockSet` — the caller's
+  reply linkage (`blockedOnReply endpointId (some receiver)`) is established
+  under the caller-TCB write lock already in `lockSet_endpointCall`.  (This
+  kernel has no separate Reply *object* — the `.reply` lock-kind is N/A — so the
+  reply linkage is the caller's TCB state.)
+- **SM6.A.7** `endpointCallOnCore_call_path_NI`
+  (`SeLe4n/Kernel/IPC/CrossCore/EndpointCallNI.lean`) — a cross-core call between
+  high (non-observable) principals preserves the low-observer `projectState`,
+  composed from the new per-core scheduler-step projection lemmas
+  `enqueueRunnableOnCore_preserves_projection` /
+  `removeRunnableOnCore_preserves_projection` /
+  `wakeThread_preserves_projection`.
+- **SM6.A.8** `endpointCallWithCaps_lockSet_correct` — the WithCaps footprint
+  (`endpointCall`'s + the destination CNode **write** lock) is still
+  hierarchically correct.
+- **SM6.A.9** `endpointCallOnCore_atomic_under_lockSet` — the `withLockSet`-bracketed
+  transition decomposes deterministically into acquire-fold / action /
+  release-fold (Theorem 2.1.10, via `lockSet_atomic_under_2pl`).
+
+**Tests (SM6.A.10).**  `tests/SmpCrossCoreCallSuite.lean`
+(`lake exe smp_cross_core_call_suite`, Tier-2/3 wired): surface anchors + 3
+elaboration-time theorem witnesses (SGI, atomicity, NI) + 14 runtime assertions
+exercising the actual `endpointCallOnCore` / `removeRunnableOnCore` /
+`lockSet_endpointCall` computations (lock-set footprint + donation + WithCaps,
+per-core caller blocking, the no-receiver `blockedOnCall` path, and the local vs
+remote rendezvous SGI emission).
+
+**Staging.**  Both modules are staged (`Platform/Staged.lean` +
+`staged_module_allowlist.txt`, marker category); wiring `endpointCallOnCore`
+into the live syscall dispatch under the `withLockSet` acquisition over
+`lockSet_endpointCall` remains gated on the SM5.I FFI seam (the SM5.F tracked
+debt).  `endpointCall` / `wakeThread` / `determineTargetCore` stay the canonical
+production transitions.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.A)
+
 ## v0.31.64 — WS-SM SM5.J + SM5.K completion: genuine per-core liveness (R5 trace model generalized ∀-core)
 
 Completion audit-pass closing every optimality / completeness gap from the SM5.J/K
