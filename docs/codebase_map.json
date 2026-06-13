@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/upbeat-edison-4ahj6q",
-      "commit_sha": "2ab7c2bd4a8f545bd3a495000340a2ae1077ba30",
-      "tree_sha": "1f268f7c9346bb5d695404dd766379d1f5df0c44",
-      "committed_at_utc": "2026-06-13T08:31:06+00:00"
+      "commit_sha": "0654d56c9b304a61fd88c212028633e085d1501f",
+      "tree_sha": "f6b71e3ddfd2aef064fe7f49bf9c43bd517a2a45",
+      "committed_at_utc": "2026-06-13T09:00:30+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "7ac0d49e0a3c7eac8b07e63ab374aa3eac5c1c9767f7cc2c3a7ebf6a232592c3"
+    "source_digest": "98fb79f56cd5937c235e85813d515deb10b99c3fde5790375a9dd4ed615bfb98"
   },
   "summary": {
     "module_count": 299,
@@ -29,7 +29,7 @@
     "production_files": 240,
     "production_loc": 175829,
     "test_files": 59,
-    "test_loc": 37914,
+    "test_loc": 37919,
     "proved_theorem_lemma_decls": 5891,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -144127,6 +144127,8 @@
           "name": "SeLe4n.Testing.SmpCrossCoreCall",
           "line": 38,
           "called": [
+            "determineExecutingCore",
+            "determineExecutingCore_sound",
             "dualQueueSystemInvariant_of_getElem_eq",
             "endpointCallCrossCoreDispatch",
             "endpointCallCrossCoreDispatchChecked",
@@ -144180,8 +144182,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:132>",
-          "line": 132,
+          "name": "<anonymous:example:137>",
+          "line": 137,
           "called": [
             "CoreId",
             "Endpoint",
@@ -144208,8 +144210,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:152>",
-          "line": 152,
+          "name": "<anonymous:example:157>",
+          "line": 157,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -144229,8 +144231,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:163>",
-          "line": 163,
+          "name": "<anonymous:example:168>",
+          "line": 168,
           "called": [
             "CoreId",
             "Endpoint",
@@ -144263,7 +144265,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 193,
+          "line": 198,
           "called": [
             "throw"
           ]
@@ -144271,7 +144273,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 199,
+          "line": 204,
           "called": [
             "CoreId"
           ]
@@ -144279,7 +144281,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 201,
+          "line": 206,
           "called": [
             "ObjId"
           ]
@@ -144287,7 +144289,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 202,
+          "line": 207,
           "called": [
             "ObjId"
           ]
@@ -144295,7 +144297,7 @@
         {
           "kind": "def",
           "name": "destCnode",
-          "line": 203,
+          "line": 208,
           "called": [
             "ObjId"
           ]
@@ -144303,7 +144305,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 204,
+          "line": 209,
           "called": [
             "SchedContextId"
           ]
@@ -144311,7 +144313,7 @@
         {
           "kind": "def",
           "name": "callerTid",
-          "line": 205,
+          "line": 210,
           "called": [
             "ThreadId"
           ]
@@ -144319,7 +144321,7 @@
         {
           "kind": "def",
           "name": "recvLocalTid",
-          "line": 206,
+          "line": 211,
           "called": [
             "ThreadId"
           ]
@@ -144327,7 +144329,7 @@
         {
           "kind": "def",
           "name": "recvRemoteTid",
-          "line": 207,
+          "line": 212,
           "called": [
             "ThreadId"
           ]
@@ -144335,7 +144337,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 209,
+          "line": 214,
           "called": [
             "CoreId",
             "TCB",
@@ -144346,7 +144348,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 215,
+          "line": 220,
           "called": [
             "SystemState",
             "build",
@@ -144364,7 +144366,7 @@
         {
           "kind": "def",
           "name": "stWithReceiver",
-          "line": 225,
+          "line": 230,
           "called": [
             "SystemState",
             "ThreadId",
@@ -144378,7 +144380,7 @@
         {
           "kind": "def",
           "name": "callSgi",
-          "line": 231,
+          "line": 236,
           "called": [
             "CoreId",
             "SgiKind",
@@ -144394,7 +144396,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 236,
+          "line": 241,
           "called": [
             "assertBool",
             "callerTid",
@@ -144419,7 +144421,7 @@
         {
           "kind": "def",
           "name": "runBlockingChecks",
-          "line": 272,
+          "line": 277,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -144436,7 +144438,7 @@
         {
           "kind": "def",
           "name": "runNoReceiverChecks",
-          "line": 287,
+          "line": 292,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -144458,7 +144460,7 @@
         {
           "kind": "def",
           "name": "runRendezvousChecks",
-          "line": 311,
+          "line": 316,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -144480,7 +144482,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreCallChecks",
-          "line": 338,
+          "line": 343,
           "called": [
             "runBlockingChecks",
             "runLockSetChecks",
@@ -144491,7 +144493,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 350,
+          "line": 355,
           "called": [
             "runSmpCrossCoreCallChecks"
           ]

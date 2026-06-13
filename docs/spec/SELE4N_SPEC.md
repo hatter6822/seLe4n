@@ -52,7 +52,7 @@ enforcement, and scheduling.
 | **Package version** | `0.31.66` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 175,829 across 240 Lean files |
-| **Test LoC** | 37,914 across 59 Lean test suites |
+| **Test LoC** | 37,919 across 59 Lean test suites |
 | **Proved declarations** | 5,891 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
