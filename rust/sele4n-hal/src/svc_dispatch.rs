@@ -291,11 +291,10 @@ impl SyscallArgs {
 /// Routes the trap through [`SyscallId::from_u32`] and validates the
 /// inline-argument count against [`SyscallId::min_inline_args`] before
 /// delegating to the Lean kernel via the
-/// `lean_syscall_dispatch_cross_core` extern symbol (Lean-emitted via
-/// `@[export lean_syscall_dispatch_cross_core]` in
-/// `SeLe4n/Kernel/SyscallDispatchEntry.lean`, which routes into the
-/// verified `Kernel.syscallEntryChecked` — `.call` now via the cross-core
-/// dispatch — and fires the diff-recovered cross-core `.reschedule` SGIs).
+/// `syscall_dispatch_inner` extern symbol (Lean-emitted via
+/// `@[export syscall_dispatch_inner]` in `SeLe4n/Platform/FFI.lean`,
+/// which after WS-RC R2.B substantively routes into the verified
+/// `Kernel.syscallEntryChecked`).
 ///
 /// In test builds the inner symbol is a Rust-side stub returning the
 /// encoded `KernelError::NotImplemented = 17` value so the
@@ -334,13 +333,13 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
     // We decode this into the Result here so callers consume a clean
     // Rust shape.
     //
-    // SAFETY (production): `lean_syscall_dispatch_cross_core` is a Lean-emitted
+    // SAFETY (production): `syscall_dispatch_inner` is a Lean-emitted
     // extern "C" symbol resolved at link time.  The arguments cross
     // the FFI boundary as `u32 + 8 × u64` which the Lean side reads
     // via the @[extern] declaration in `SeLe4n/Platform/FFI.lean`.
     #[allow(unused_unsafe)]
     let raw = unsafe {
-        lean_syscall_dispatch_cross_core(
+        syscall_dispatch_inner(
             sid.to_u32(),
             args.msg_info,
             args.msg_regs[0],
@@ -372,11 +371,10 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // AN9-F.3 inner — Lean-emitted SVC dispatch entry.
 //
 // In production builds this resolves to the Lean kernel's
-// `syscallDispatchCrossCoreEntry` (a BaseIO wrapper around the verified
-// `syscallDispatchFromAbi` that also fires the diff-recovered cross-core
-// SGIs), emitted as the C-callable symbol `lean_syscall_dispatch_cross_core`
-// via `@[export lean_syscall_dispatch_cross_core]` in
-// `SeLe4n/Kernel/SyscallDispatchEntry.lean`.  The Lean wrapper reads the live
+// `syscallDispatchInner` (a thin BaseIO wrapper around the verified
+// `syscallDispatchFromAbi`), emitted as the C-callable symbol
+// `syscall_dispatch_inner` via `@[export syscall_dispatch_inner]` in
+// `SeLe4n/Platform/FFI.lean`.  The Lean wrapper reads the live
 // `SystemState` from the kernel-state IO.Ref and dispatches into the
 // verified `syscallEntryChecked` entry point.
 // In test builds (`#[cfg(test)]`) a Rust-side stub returns the error
@@ -384,20 +382,20 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // dispatch logic can be exercised on host.  Post-WS-RC R2 the
 // outer dispatcher decodes this as `DispatchError::Kernel(17)`.
 //
-// WS-SM SM6.A (LANDED): the live entry is the cross-core-aware
+// WS-SM SM6.A: the cross-core-aware successor is
 // `lean_syscall_dispatch_cross_core` (`syscallDispatchCrossCoreEntry` in
 // `SeLe4n/Kernel/SyscallDispatchEntry.lean`).  It runs the same verified
-// `syscallDispatchFromAbi` — whose `.call` arm now routes through the cross-core
-// dispatch (`endpointCallCrossCoreDispatch`, waking the receiver on its *home*
-// core) — and, after committing the post-state, fires the diff-recovered
-// cross-core `.reschedule` SGIs (`computeCrossCoreSgis` + `fireCrossCoreSgis`),
-// the syscall analogue of `lean_per_core_timer_tick`.  Single-core-inert (the
-// SGI list is empty at the boot core), so the switchover from the boot-pinned
-// `syscall_dispatch_inner` is behaviour-preserving on single-core and fires the
-// correct cross-core IPIs on multi-core.
+// `syscallDispatchFromAbi` but, after committing the post-state, fires the
+// diff-recovered cross-core `.reschedule` SGIs (`computeCrossCoreSgis` +
+// `fireCrossCoreSgis`) — the syscall analogue of `lean_per_core_timer_tick`.
+// It is single-core-inert (the SGI list is empty at the boot core), so the
+// switchover below to call it instead of `syscall_dispatch_inner` lands with
+// the per-core dispatch seam (when the executing core is threaded into the
+// pure dispatch so the caller is descheduled on its own core, not the boot
+// core).
 #[cfg(not(test))]
 extern "C" {
-    fn lean_syscall_dispatch_cross_core(
+    fn syscall_dispatch_inner(
         syscall_id: u32,
         msg_info: u64,
         x0: u64,
@@ -414,7 +412,7 @@ extern "C" {
 /// `NotImplemented` so dispatch tests exercise the error decoding.
 #[cfg(test)]
 #[no_mangle]
-extern "C" fn lean_syscall_dispatch_cross_core(
+extern "C" fn syscall_dispatch_inner(
     _syscall_id: u32,
     _msg_info: u64,
     _x0: u64,

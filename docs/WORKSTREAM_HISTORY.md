@@ -46,10 +46,23 @@ separate Reply object), the WithCaps footprint
 non-interference (`endpointCallOnCore_call_path_NI`
 ([`EndpointCallNI.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCallNI.lean)),
 SM6.A.7 — built from the new per-core scheduler-step projection lemmas).  Tests:
-`tests/SmpCrossCoreCallSuite.lean` (14 runtime assertions + theorem witnesses).
-Both modules are **staged** (production/staged partition 64 → 66); wiring
-`endpointCallOnCore` into the live syscall dispatch under `withLockSet` remains
-gated on the SM5.I FFI seam.  Plan:
+`tests/SmpCrossCoreCallSuite.lean` (20 runtime assertions + theorem witnesses).
+
+**v0.31.66 — live `.call` dispatch wired + SMP dispatch stack promoted.**  The
+live `API.dispatchWithCap{,Checked}` `.call` arm now routes through the below-API
+`endpointCallCrossCoreDispatch{,Checked}`
+([`EndpointCallDispatch.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean)),
+reached on the *production* checked chain (`syscall_dispatch_inner` →
+`syscallDispatchFromAbi` → `syscallEntryChecked` → `dispatchWithCapChecked`): the
+receiver is woken on its home core and the caller descheduled on its own core
+(`determineExecutingCore`).  The 14 SMP dispatch modules it makes
+production-reachable are promoted out of the staged partition (staged-only
+71 → 57).  Two follow-ups stay tracked: the cross-core **SGI-firing** seam
+(`syscallDispatchCrossCoreEntry` / `@[export lean_syscall_dispatch_cross_core]`)
+stays staged pending its `PriorityInheritance.PerCore` + `Concurrency.Runtime`
+closure (so the Rust extern stays on the production `syscall_dispatch_inner` —
+inert on single-core, the IPI only makes a remote pickup immediate); and ABI-level
+per-core caller identification.  Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.A).
 
 **Prior sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests

@@ -964,8 +964,12 @@ run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export syscall_dispatch_inner\]' SeLe4n/Platform/FFI.lean
-# WS-SM SM6.A (v0.31.66): the LIVE syscall dispatch entry is the cross-core
-# SGI-firing `lean_syscall_dispatch_cross_core` the Rust trap handler calls.
+# WS-SM SM6.A (v0.31.66): the cross-core SGI-firing dispatch entry
+# `lean_syscall_dispatch_cross_core` exists (staged `SyscallDispatchEntry`);
+# the live `.call` dispatch already routes cross-core through the production
+# `syscall_dispatch_inner` chain, so this seam stays staged until its
+# `PriorityInheritance.PerCore` + `Concurrency.Runtime` closure is promoted
+# (then the Rust extern flips to it).
 run_check "INVARIANT" rg -n '^@\[export lean_syscall_dispatch_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
@@ -979,8 +983,14 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejecte
 run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/Platform/FFI.lean
 # WS-RC R2.B.4: Rust comment alignment — the FFI inner symbol the
-# Rust HAL extern-imports must match the Lean @[export] name.
-run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-hal/src/svc_dispatch.rs
+# Rust HAL extern-imports must match the Lean @[export] name.  The live
+# entry is the production `syscall_dispatch_inner` (`@[export]` in
+# `Platform.FFI`, in the `SeLe4n.lean` production closure); the cross-core
+# SGI-firing `lean_syscall_dispatch_cross_core` seam (line 969) is staged
+# pending its `PriorityInheritance.PerCore` + `Concurrency.Runtime` closure,
+# so the Rust extern must NOT name the staged symbol (it would be an
+# undefined-symbol link error in the production kernel image).
+run_check "INVARIANT" rg -n 'fn syscall_dispatch_inner' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'fn suspend_thread_inner' rust/sele4n-hal/src/ffi.rs
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).

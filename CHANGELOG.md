@@ -24,19 +24,32 @@ the per-core scheduler (`Scheduler.Operations.PerCore{Wake,ChooseThread,SwitchTo
 call (`IPC.CrossCore.{EndpointCall,EndpointCallDispatch}`).  Their `STATUS: staged`
 markers are replaced with landing notes (the RwLock-at-SM3.A precedent).
 
-**Live Rust seam flip.**  `rust/sele4n-hal/src/svc_dispatch.rs` now calls
-`lean_syscall_dispatch_cross_core` (`syscallDispatchCrossCoreEntry`) instead of
-`syscall_dispatch_inner`: same verified dispatch, plus the diff-recovered
-cross-core `.reschedule` SGI firing.  Single-core-inert (SGI list empty at the
-boot core), so behaviour-preserving on the current single-core deployment and
-correct on multi-core.
+**Live dispatch path (production checked chain).**  The live `.call` reaches the
+cross-core dispatch through the *production* entry that was already wired:
+`syscall_dispatch_inner` (`@[export]` in `Platform.FFI`) → `syscallDispatchFromAbi`
+→ `syscallEntryChecked` → `dispatchSyscallChecked` → `dispatchWithCapChecked` →
+`endpointCallCrossCoreDispatchChecked`.  No Rust extern change is needed for the
+dispatch itself — the rewired arm is in the shared verified chain.
 
-**Remaining (tracked).**  The ABI-level per-core *caller identification*
-(`syscallDispatchFromAbi` / `syscallEntryChecked` reading `currentOnCore
-bootCoreId`) is a pre-existing boot-pinning affecting *all* syscalls; threading
-the executing core there (so a syscall from a non-boot core attributes the
-correct caller) is a distinct `Kernel`-monad refactor, recorded as tracked debt.
-The `.call` *operation* is fully per-core-correct given its caller.
+**Cross-core SGI firing stays staged.**  The diff-recovered cross-core
+`.reschedule` SGI *firing* (the `syscallDispatchCrossCoreEntry` /
+`@[export lean_syscall_dispatch_cross_core]` seam in the staged
+`SyscallDispatchEntry`) is **not** promoted in this cut: it depends on
+`Scheduler.PriorityInheritance.PerCore` (`computeCrossCoreSgis`) and
+`Concurrency.Runtime` (`fireCrossCoreSgis`, `currentCoreId`), both staged.  The
+Rust `svc_dispatch` extern therefore stays on the production `syscall_dispatch_inner`;
+flipping it to the staged symbol would be an undefined-symbol link error in the
+kernel image.  This is functionally inert today: on the single-core deployment the
+SGI list is empty (`computeCrossCoreSgis_nil_single_core`), and on multi-core a
+woken remote receiver is enqueued on its home core and picked up at that core's
+next scheduling decision — the IPI only makes the pickup *immediate*.
+
+**Remaining (tracked).**  Two distinct `Kernel`-monad / promotion follow-ups:
+(1) the cross-core SGI-firing seam promotion (above — promote `SyscallDispatchEntry`
++ its PIP/runtime closure, then flip the Rust extern); and (2) the ABI-level
+per-core *caller identification* (`syscallDispatchFromAbi` / `syscallEntryChecked`
+reading `currentOnCore bootCoreId`), a pre-existing boot-pinning affecting *all*
+syscalls.  The `.call` *operation* is fully per-core-correct given its caller.
 
 Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.A)
 
