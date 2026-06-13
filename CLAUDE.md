@@ -675,9 +675,23 @@ documentation lives under `docs/` and `docs/gitbook/`.
   transition in `withLockSet` requires the per-core kernel-state seam
   SM5 introduces; tracked as SM5.I follow-on.
 
-  **SM5.F tracked debt**: cross-core dispatch call-site substitution
-  (routing live IPC donation / timeout / resume through the per-core
-  boost + `fireCrossCoreSgis`) gated on the SM5.I FFI seam.
+  **SM5.F / SM6.A live-`.call` tracked debt**: SM6.A delivered the verified
+  cross-core call operation (`endpointCallOnCore`), its full invariant
+  preservation (`ipcInvariantFull`), per-core/∀-core non-interference
+  (`lowEquivalent_smp`), WithCaps + donation (`endpointCallCrossCoreDispatch`),
+  and the staged live drivers — `endpointCallCrossCoreEntry`
+  (`@[export lean_endpoint_call_cross_core]`) and the diff-based SGI-dispatch
+  seam `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
+  **Closure target SM5.I**: thread the executing core through
+  `syscallDispatchFromAbi → syscallEntryChecked → dispatchWithCap{,Checked}` (so
+  the caller is identified and descheduled on its *own* core, not the boot core),
+  route the live `.call` arm through `endpointCallOnCore` at that core, and flip
+  the Rust `svc_dispatch` extern from `syscall_dispatch_inner` to
+  `lean_syscall_dispatch_cross_core`.  This is deferred because it changes the
+  `.call` arm's wake operation (`ensureRunnable` → `enqueueRunnableOnCore`) and
+  threads a new parameter through the verified dispatch chain exercised by the
+  trace harness + 8 dispatch suites — a per-core-dispatch migration, not an
+  SM6.A increment.
 
   **SM4.C.11 tracked debt**: per-core Liveness forms
   (`Scheduler/Liveness/*.lean`) remain bootCoreId-pinned; migration
