@@ -916,7 +916,7 @@ run_check "INVARIANT" rg -n 'def extractMessageRegisters' SeLe4n/Kernel/Architec
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_uses_withCaps' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_withCaps' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_crossCoreDispatch' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
 
 # WS-K-F1: Per-syscall encode functions (layer 2).
@@ -964,6 +964,9 @@ run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export syscall_dispatch_inner\]' SeLe4n/Platform/FFI.lean
+# WS-SM SM6.A (v0.31.66): the LIVE syscall dispatch entry is the cross-core
+# SGI-firing `lean_syscall_dispatch_cross_core` the Rust trap handler calls.
+run_check "INVARIANT" rg -n '^@\[export lean_syscall_dispatch_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
@@ -977,7 +980,7 @@ run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb' Se
 run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/Platform/FFI.lean
 # WS-RC R2.B.4: Rust comment alignment — the FFI inner symbol the
 # Rust HAL extern-imports must match the Lean @[export] name.
-run_check "INVARIANT" rg -n 'fn syscall_dispatch_inner' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'fn suspend_thread_inner' rust/sele4n-hal/src/ffi.rs
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
@@ -1064,7 +1067,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_length
 #check @SeLe4n.Kernel.Architecture.RegisterDecode.extractMessageRegisters_ipc_bounded
 #check @SeLe4n.Kernel.dispatchWithCap_send_uses_withCaps
-#check @SeLe4n.Kernel.dispatchWithCap_call_uses_withCaps
+#check @SeLe4n.Kernel.dispatchWithCap_call_uses_crossCoreDispatch
 #check @SeLe4n.Kernel.dispatchWithCap_reply_populates_msg
 -- WS-K-F1: Per-syscall encode functions
 #check @SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs

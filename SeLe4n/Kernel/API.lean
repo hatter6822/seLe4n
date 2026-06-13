@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Scheduler.Invariant
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 
@@ -850,32 +851,16 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
-        -- Z7: Determine receiver before call pops it from receiveQ
-        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-        let maybeReceiver := match st.getEndpoint? epId with
-          | some ep => ep.receiveQ.head
-          | none    => none
-        match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
-            decoded.capRecvSlot st with
-        | .error e => .error e
-        | .ok (_, st') =>
-          -- Z7: Apply SchedContext donation to passive server if applicable
-          -- D4-L: Propagate PIP upward from the server after Call blocks the caller
-          match maybeReceiver with
-          | some receiverTid =>
-            -- AH2-C: Propagate donation errors.
-            -- AN10-residual-1 deep-audit: `applyCallDonation` requires
-            -- `ValidThreadId` for both args. Promote via `toValid?`;
-            -- under the AL7 dispatch-gate validators, the rejection arm
-            -- is structurally unreachable.
-            match SeLe4n.ThreadId.toValid? tid, SeLe4n.ThreadId.toValid? receiverTid with
-            | some tidVtid, some receiverVtid =>
-              match applyCallDonation st' tidVtid receiverVtid with
-              | .error e => .error e
-              | .ok st'' =>
-                .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
-            | _, _ => .error .invalidArgument
-          | none => .ok ((), st')
+        -- WS-SM SM6.A (live cross-core `.call`): route the unchecked `.call`
+        -- through the cross-core dispatch (receiver woken on its *home* core,
+        -- surfacing a `.reschedule` SGI). `endpointCallCrossCoreDispatch` is the
+        -- cross-core analogue of `endpointCallWithCaps` + inline donation; the
+        -- caller is descheduled from its own core (derived from the live state).
+        let executingCore := determineExecutingCore st tid
+        match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
+            decoded.capRecvSlot executingCore st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
   | .reply =>
@@ -1064,29 +1049,20 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
-        -- Z7: Determine receiver before call pops it from receiveQ
-        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-        let maybeReceiver := match st.getEndpoint? epId with
-          | some ep => ep.receiveQ.head
-          | none    => none
-        match endpointCallChecked ctx epId tid msg cap.rights gate.cspaceRoot
-            decoded.capRecvSlot st with
-        | .error e => .error e
-        | .ok (_, st') =>
-          -- Z7: Apply SchedContext donation to passive server if applicable
-          -- D4-L: Propagate PIP upward from the server after Call blocks the caller
-          match maybeReceiver with
-          | some receiverTid =>
-            -- AH2-C: Propagate donation errors.
-            -- AN10-residual-1 deep-audit: applyCallDonation requires ValidThreadId.
-            match SeLe4n.ThreadId.toValid? tid, SeLe4n.ThreadId.toValid? receiverTid with
-            | some tidVtid, some receiverVtid =>
-              match applyCallDonation st' tidVtid receiverVtid with
-              | .error e => .error e
-              | .ok st'' =>
-                .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
-            | _, _ => .error .invalidArgument
-          | none => .ok ((), st')
+        -- WS-SM SM6.A (live cross-core `.call`): route the checked `.call`
+        -- through the cross-core dispatch.  `endpointCallCrossCoreDispatchChecked`
+        -- is the cross-core analogue of `endpointCallChecked` + inline donation:
+        -- the same SM-IF flow guard, then the cross-core WithCaps call (the
+        -- receiver is woken on its *home* core via `wakeThread`, surfacing a
+        -- `.reschedule` SGI the FFI seam fires), then `applyCallDonation` + PIP.
+        -- The caller is descheduled from `executingCore` (the core running this
+        -- syscall, `currentOnCore executingCore`); the cross-core syscall seam
+        -- recovers the SGI from the `(pre, post)` diff.
+        let executingCore := determineExecutingCore st tid
+        match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
+            gate.cspaceRoot decoded.capRecvSlot executingCore st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
   -- In seL4, the reply capability is single-use authority consumed upon use.
@@ -1924,9 +1900,12 @@ theorem dispatchWithCap_send_uses_withCaps
         | .ok (_, st') => .ok ((), st') := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
-/-- WS-K-E/M-D01: When call dispatch is invoked, the IPC message includes
-resolved extra capabilities and uses the WithCaps call path. -/
-theorem dispatchWithCap_call_uses_withCaps
+/-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
+includes resolved extra capabilities and routes through the **cross-core** call
+dispatch (`endpointCallCrossCoreDispatch` — the WithCaps call with home-core
+receiver wake + donation), at the executing core derived from the live state
+(`determineExecutingCore st tid` — the caller's own core). -/
+theorem dispatchWithCap_call_uses_crossCoreDispatch
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (epId : SeLe4n.ObjId)
     (hSyscall : decoded.syscallId = .call)
@@ -1937,27 +1916,11 @@ theorem dispatchWithCap_call_uses_withCaps
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
-        -- Z7: Donation post-processing after call with caps
-        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-        let maybeReceiver := match st.getEndpoint? epId with
-          | some ep => ep.receiveQ.head
-          | none    => none
-        match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
-            decoded.capRecvSlot st with
-        | .error e => .error e
-        | .ok (_, st') =>
-          match maybeReceiver with
-          | some receiverTid =>
-            -- AH2-C: Propagate donation errors.
-            -- AN10-residual-1 deep-audit: applyCallDonation requires ValidThreadId.
-            match SeLe4n.ThreadId.toValid? tid, SeLe4n.ThreadId.toValid? receiverTid with
-            | some tidVtid, some receiverVtid =>
-              match applyCallDonation st' tidVtid receiverVtid with
-              | .error e => .error e
-              | .ok st'' =>
-                .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
-            | _, _ => .error .invalidArgument
-          | none => .ok ((), st') := by
+        let executingCore := determineExecutingCore st tid
+        match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
+            decoded.capRecvSlot executingCore st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated

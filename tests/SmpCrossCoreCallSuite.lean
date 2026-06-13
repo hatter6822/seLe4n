@@ -113,10 +113,15 @@ open SeLe4n.Testing
 #check @endpointCallCrossCoreDispatch_no_receiver
 
 -- SM6.A info-flow-checked cross-core dispatch (the op the live checked `.call`
--- arm will route through once the SMP stack is production-promoted at v1.0.0):
+-- arm now routes through; the SMP stack is production at v0.31.66):
 #check @endpointCallCrossCoreDispatchChecked
 #check @endpointCallCrossCoreDispatchChecked_flow_denied
 #check @endpointCallCrossCoreDispatchChecked_flow_allowed
+
+-- SM6.A live `.call`: the executing core derived from live state (the caller is
+-- the current thread on its core) — no hardware-core parameter threaded:
+#check @determineExecutingCore
+#check @determineExecutingCore_sound
 
 -- SM6.A live SGI-dispatch seam: the cross-core-aware syscall dispatch entry +
 -- its body-shape marker + the single-core inertness (trace-safety) witness:

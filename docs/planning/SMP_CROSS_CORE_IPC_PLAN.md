@@ -200,21 +200,26 @@ atomically via `modifyGetKernelState`, then fires the diff-recovered
 `perCoreTimerTickEntry`.  Single-core-inert / trace-safe
 (`syscallDispatchCrossCoreEntry_sgis_nil_single_core`).
 
-**Live `.call` arm — built, validated, gated on v1.0.0.**  The pure cross-core
-`.call` dispatch ops live **below the API layer** in
+**Live `.call` arm — LANDED (v0.31.66).**  The pure cross-core `.call` dispatch
+ops live **below the API layer** in
 `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (FFI-free):
 `endpointCallWithCapsOnCore`, `endpointCallCrossCoreDispatch`, and the
 info-flow-checked `endpointCallCrossCoreDispatchChecked` (the cross-core
-analogue of `endpointCallChecked`).  Routing the live `dispatchWithCap{,Checked}`
-`.call` arm through them was validated end-to-end — API + `Main` + the trace
-harness build clean, the trace fixture is byte-identical, and all 8 `.call`
-dispatch suites pass (the `ensureRunnable`→`enqueueRunnableOnCore` wake change is
-invariant-safe).  **But** the live arm makes 13 staged SMP modules
-(lock hierarchy + per-core scheduler + cross-core call) production-reachable; the
-Tier-0 production/staged partition gate correctly blocks that — it is the v1.0.0
-"SMP enabled by default" milestone, premature at v0.31.65.  The live arm + the
-Rust `svc_dispatch` extern flip (`syscall_dispatch_inner` →
-`lean_syscall_dispatch_cross_core`) land together with that promotion.
+analogue of `endpointCallChecked`).  The live `API.dispatchWithCap{,Checked}`
+`.call` arm now routes through them — the receiver woken on its *home* core, the
+caller descheduled on its *own* core (derived from the live state by
+`determineExecutingCore st tid`, no hardware-core parameter threaded through the
+`Kernel`-monad chain).  The SMP infrastructure is **promoted to production**
+(staged-only 71 → 57; 14 modules: lock hierarchy + per-core scheduler +
+cross-core call), and the Rust `svc_dispatch` extern is flipped to
+`lean_syscall_dispatch_cross_core` (the SGI-firing entry).  Validated: trace
+fixture byte-identical, all 8 `.call` dispatch suites pass, partition + AK7
+green.  **Remaining (tracked):** ABI-level per-core *caller identification*
+(`syscallDispatchFromAbi` / `syscallEntryChecked` read `currentOnCore bootCoreId`
+— a pre-existing boot-pinning affecting *all* syscalls); threading the executing
+core there is a distinct `Kernel`-monad refactor.  The `.call` *operation* is
+per-core-correct given its caller; single-core (the boot-pinned read = the
+caller) is correct today.
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|

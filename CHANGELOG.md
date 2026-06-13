@@ -1,3 +1,45 @@
+## v0.31.66 — WS-SM SM6.A: live cross-core `.call` + SMP-by-default production promotion
+
+The live `.call` syscall now routes through the cross-core dispatch, and the SMP
+infrastructure it depends on is promoted to production — bringing SMP-by-default
+forward.  Axiom-clean; Tier 0–3 green; the trace fixture is byte-identical and
+all 8 `.call` dispatch suites pass.
+
+**Live `.call` arm rewire.**  `API.dispatchWithCap{,Checked}`'s `.call` arm now
+routes through `endpointCallCrossCoreDispatch{,Checked}` (in the new below-API
+`EndpointCallDispatch`), replacing the boot-pinned `endpointCallWithCaps` /
+`endpointCallChecked` + inline donation.  The receiver is woken on its *home*
+core (`wakeThread`), the caller is descheduled on its *own* core — derived from
+the live state by `determineExecutingCore st tid` (the caller is the current
+thread on its core, found by scanning `Concurrency.allCores`; `_sound` witnesses
+it never invents a non-running core) — so no hardware-core parameter is threaded
+through the `Kernel`-monad dispatch chain.  Donation (`applyCallDonation` + PIP)
+and the SM-IF flow guard are preserved exactly.
+
+**SMP-by-default promotion.**  The live arm makes 14 modules production-reachable;
+they are promoted out of the staged partition (staged-only 71 → 57): the lock
+hierarchy (`Concurrency.Locks.{Kind,LockIdProjection,LockSet,LockSet2PL,LockSetHeld,LockSetTransitions,WithLockSet}`),
+the per-core scheduler (`Scheduler.Operations.PerCore{Wake,ChooseThread,SwitchToThread}`,
+`{Scheduler,IPC,Capability,Architecture}.Invariant.PerCore`), and the cross-core
+call (`IPC.CrossCore.{EndpointCall,EndpointCallDispatch}`).  Their `STATUS: staged`
+markers are replaced with landing notes (the RwLock-at-SM3.A precedent).
+
+**Live Rust seam flip.**  `rust/sele4n-hal/src/svc_dispatch.rs` now calls
+`lean_syscall_dispatch_cross_core` (`syscallDispatchCrossCoreEntry`) instead of
+`syscall_dispatch_inner`: same verified dispatch, plus the diff-recovered
+cross-core `.reschedule` SGI firing.  Single-core-inert (SGI list empty at the
+boot core), so behaviour-preserving on the current single-core deployment and
+correct on multi-core.
+
+**Remaining (tracked).**  The ABI-level per-core *caller identification*
+(`syscallDispatchFromAbi` / `syscallEntryChecked` reading `currentOnCore
+bootCoreId`) is a pre-existing boot-pinning affecting *all* syscalls; threading
+the executing core there (so a syscall from a non-boot core attributes the
+correct caller) is a distinct `Kernel`-monad refactor, recorded as tracked debt.
+The `.call` *operation* is fully per-core-correct given its caller.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.A)
+
 ## v0.31.65 — WS-SM SM6.A: endpoint call across cores (cross-core IPC phase opens)
 
 First slice of WS-SM Phase SM6 (cross-core IPC): the endpoint `Call` rendezvous
