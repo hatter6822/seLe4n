@@ -61,7 +61,6 @@ theorem projectObjects_insert_high (ctx : LabelingContext) (observer : IfObserve
 -- §2  Cross-core scheduler steps preserve `projectState` for a high thread
 -- ============================================================================
 
-set_option linter.unusedSimpArgs false in
 /-- WS-SM SM6.A.7: removing a **non-observable** thread from *any* core's run
 queue preserves the low-observer projection.  Boot core: the single-core
 `removeRunnable_preserves_projection`; other cores: the boot-core scheduler
@@ -78,24 +77,18 @@ theorem removeRunnableOnCore_preserves_projection
     exact removeRunnable_preserves_projection ctx observer st tid hHigh
   · have hRQ := removeRunnableOnCore_runQueueOnCore_ne st tid c bootCoreId hc
     have hCur := removeRunnableOnCore_currentOnCore_ne st tid c bootCoreId hc
-    have hAD : (removeRunnableOnCore st tid c).scheduler.activeDomainOnCore bootCoreId
-        = st.scheduler.activeDomainOnCore bootCoreId := by simp [removeRunnableOnCore]
-    have hDTR : (removeRunnableOnCore st tid c).scheduler.domainTimeRemainingOnCore bootCoreId
-        = st.scheduler.domainTimeRemainingOnCore bootCoreId := by simp [removeRunnableOnCore]
-    have hDSI : (removeRunnableOnCore st tid c).scheduler.domainScheduleIndexOnCore bootCoreId
-        = st.scheduler.domainScheduleIndexOnCore bootCoreId := by simp [removeRunnableOnCore]
-    have hDS : (removeRunnableOnCore st tid c).scheduler.domainSchedule
-        = st.scheduler.domainSchedule := by simp [removeRunnableOnCore]
+    -- The boot core's domain slots and the machine register file are
+    -- definitionally unchanged by a deschedule on another core, so those
+    -- `congr` subgoals close by `rfl`; only the run-queue and current-thread
+    -- slots need their explicit frame lemmas.
     have hMach : (removeRunnableOnCore st tid c).machine = st.machine := rfl
     simp only [projectState]
     congr 1 <;>
       first
         | rfl
-        | simp only [projectRunnable, projectCurrent, projectMachineRegs, projectActiveDomain,
-            projectDomainTimeRemaining, projectDomainScheduleIndex, projectDomainSchedule,
-            SchedulerState.runnable, hRQ, hCur, hAD, hDTR, hDSI, hDS, hMach]
+        | simp only [projectRunnable, projectCurrent, projectMachineRegs,
+            SchedulerState.runnable, hRQ, hCur, hMach]
 
-set_option linter.unusedSimpArgs false in
 /-- WS-SM SM6.A.7: enqueuing a **non-observable** thread onto *any* core's run
 queue (the receiver wake) preserves the low-observer projection.  The
 `ipcState := .ready` write lands on the high receiver TCB (invisible to
