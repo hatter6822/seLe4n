@@ -418,6 +418,15 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 -- `ipcState := .ready` write is a no-op on the already-ready rendezvous
 -- receiver) composed with the single-core per-step preservation lemmas.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
+-- WS-SM SM6.A: cross-core endpoint call — WithCaps + donation + live FFI seam.
+-- `endpointCallWithCapsOnCore` (cross-core endpointCallWithCaps), the full
+-- `endpointCallCrossCoreDispatch` (.call semantics across cores: WithCaps +
+-- applyCallDonation passive-server SchedContext donation + PIP propagation,
+-- surfacing the SGI), and the live `endpointCallCrossCoreEntry` BaseIO driver
+-- (read currentCoreId, commit via modifyGetKernelState, fire the SGI via
+-- emitWakeSgi) + the `@[export lean_endpoint_call_cross_core]` C seam, mirroring
+-- the SM5.I perCoreTimerTickEntry pattern.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

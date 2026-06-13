@@ -9,6 +9,8 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -75,6 +77,19 @@ open SeLe4n.Testing
 #check @enqueueRunnableOnCore_preserves_projection
 #check @removeRunnableOnCore_preserves_projection
 #check @wakeThread_preserves_projection
+
+-- SM6.A.1 IPC invariant preservation:
+#check @endpointCallOnCore_preserves_objects_invExt
+#check @endpointCallOnCore_preserves_ipcInvariant
+#check @enqueueRunnableOnCore_objects_getElem_eq_of_ready
+
+-- SM6.A.5/.8/.10 WithCaps + donation + live FFI seam:
+#check @endpointCallWithCapsOnCore
+#check @endpointCallCrossCoreDispatch
+#check @endpointCallCrossCoreEntry
+#check @endpointCallCrossCoreExport
+#check @endpointCallWithCapsOnCore_no_caps
+#check @endpointCallCrossCoreDispatch_no_receiver
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
@@ -243,6 +258,16 @@ private def runNoReceiverChecks : IO Unit := do
      | none => false)
   assertBool "no-receiver call removes the caller from the boot run queue"
     (!(st'.scheduler.runQueueOnCore bootCoreId).contains callerTid)
+  -- SM6.A.5/.8: WithCaps + the full cross-core dispatch agree with the bare call
+  -- on the no-receiver path (no caps to transfer; no donation without a server).
+  assertBool "no-receiver WithCaps cross-core call also surfaces no SGI"
+    (match (endpointCallWithCapsOnCore epId callerTid IpcMessage.empty AccessRightSet.empty
+        cnRoot (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+     | .ok (_, none) => true | _ => false)
+  assertBool "no-receiver cross-core dispatch performs no donation (= WithCaps)"
+    (match (endpointCallCrossCoreDispatch epId callerTid IpcMessage.empty AccessRightSet.empty
+        cnRoot (SeLe4n.Slot.ofNat 0) bootCoreId stBase).2 with
+     | .ok (_, none) => true | _ => false)
 
 private def runRendezvousChecks : IO Unit := do
   IO.println "--- §3.4 SM6.A.3 rendezvous SGI (local vs remote) ---"
