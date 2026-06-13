@@ -951,7 +951,7 @@ Pipeline:
      `rust/sele4n-hal/src/svc_dispatch.rs::SyscallArgs::from_trap_frame`).
      A mismatch indicates a malformed FFI call and is rejected with
      `.invalidSyscallArgument`.
-  2. Look up `(st.scheduler.currentOnCore bootCoreId)` (must be `some` on a real syscall).
+  2. Look up `(st.scheduler.currentOnCore executingCore)` (must be `some` on a real syscall).
   3. Spill the FFI register values into the current thread's TCB
      `registerContext` (matches the ARM64 trap handler's spill).
   4. Invoke `syscallEntryChecked` with the deployment's labeling
@@ -966,6 +966,7 @@ inside the dispatch.  A future refinement may cross-validate the two
 when telemetry is added. -/
 def syscallDispatchFromAbi
     (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 : UInt64)
     (_ipcBufferAddr : UInt64) : Kernel UInt64 :=
@@ -978,12 +979,17 @@ def syscallDispatchFromAbi
     if msgInfo != x1 then
       .ok (encodeError .invalidSyscallArgument, st)
     else
-      match (st.scheduler.currentOnCore bootCoreId) with
+      -- WS-SM SM6.A: resolve the caller on the *executing* (trapping) core, not
+      -- the boot core, so a secondary-core syscall acts on that core's current
+      -- thread; the cross-core dispatch seam reads `executingCore` from the
+      -- hardware (`currentCoreId`).  `syscallDispatchInner` (single-core) passes
+      -- `bootCoreId`, preserving the boot-pinned behaviour.
+      match (st.scheduler.currentOnCore executingCore) with
       | none => .ok (encodeError .illegalState, st)
       | some tid =>
         let stRegs := writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
         let layout := SeLe4n.arm64DefaultLayout
-        match syscallEntryChecked ctx layout 32 stRegs with
+        match syscallEntryChecked ctx layout executingCore 32 stRegs with
         | .error ke => .ok (encodeError ke, stRegs)
         | .ok ((), st') => .ok (encodeOk (readReturnValue st' tid), st')
 
@@ -1086,7 +1092,11 @@ def syscallDispatchInner
     (ipcBufferAddr : UInt64) : BaseIO UInt64 := do
   let st  ← getKernelState
   let ctx ← getKernelLabelingContext
-  match syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st with
+  -- WS-SM SM6.A: the boot-pinned single-core entry resolves the caller on the
+  -- boot core (`bootCoreId`).  The cross-core entry `syscallDispatchCrossCoreEntry`
+  -- threads the hardware `currentCoreId` instead, identifying a secondary-core
+  -- caller on its own core.
+  match syscallDispatchFromAbi ctx bootCoreId syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st with
   | Except.ok (encoded, st') =>
       initialiseKernelState st'
       pure encoded
@@ -1133,26 +1143,27 @@ scheduler's `current` slot and on the `syscallEntryChecked` result;
 every branch produces an `.ok` value. -/
 theorem syscallDispatchFromAbi_total
     (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) :
     ∃ (encoded : UInt64) (st' : SystemState),
-      syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+      syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
         = Except.ok (encoded, st') := by
   unfold syscallDispatchFromAbi
   -- The function first checks the ABI invariant `msgInfo == x1`,
-  -- then case-splits on `(st.scheduler.currentOnCore bootCoreId)`, then on the
+  -- then case-splits on `(st.scheduler.currentOnCore executingCore)`, then on the
   -- `syscallEntryChecked` result.  Every branch produces `.ok`.
   by_cases hMsg : msgInfo != x1
   · -- ABI mismatch path: returns `.ok (encodeError .invalidSyscallArgument, st)`.
     exact ⟨encodeError .invalidSyscallArgument, st, by simp [hMsg]⟩
   · -- ABI consistency holds: drive the if-then-else into the else branch
     -- using `hMsg` so the goal exposes the next match.
-    cases (st.scheduler.currentOnCore bootCoreId) with
+    cases (st.scheduler.currentOnCore executingCore) with
     | none =>
         exact ⟨encodeError .illegalState, st, by simp [hMsg]⟩
     | some tid =>
-        cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
+        cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
                 (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
         | error ke =>
             exact ⟨encodeError ke,
@@ -1176,16 +1187,17 @@ the verified `syscallEntryChecked` is the sole source of `.ok`
 results. -/
 theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
     (hMsg : msgInfo = x1)
-    (hCur : (st.scheduler.currentOnCore bootCoreId) = some tid)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
-      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.ok ((), st')) :
-    syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeOk (readReturnValue st' tid), st') := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur, hSyscall]
@@ -1197,16 +1209,17 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     to any subsequent inspection of the kernel state). -/
 theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
     (hMsg : msgInfo = x1)
-    (hCur : (st.scheduler.currentOnCore bootCoreId) = some tid)
+    (hCur : (st.scheduler.currentOnCore executingCore) = some tid)
     (hSyscall :
-      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
+      syscallEntryChecked ctx SeLe4n.arm64DefaultLayout executingCore 32
           (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.error ke) :
-    syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeError ke,
                    writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
   unfold syscallDispatchFromAbi
@@ -1220,12 +1233,13 @@ context (e.g., during early boot before the scheduler has elected a
 thread).  No state is mutated. -/
 theorem syscallDispatchFromAbi_illegalState_when_no_current
     (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState)
     (hMsg : msgInfo = x1)
-    (hCur : (st.scheduler.currentOnCore bootCoreId) = none) :
-    syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    (hCur : (st.scheduler.currentOnCore executingCore) = none) :
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeError .illegalState, st) := by
   unfold syscallDispatchFromAbi
   simp [hMsg, hCur]
@@ -1242,11 +1256,12 @@ either a malformed caller or memory corruption — either way, the
 safe response is to refuse the syscall. -/
 theorem syscallDispatchFromAbi_abiMismatch_rejected
     (ctx : LabelingContext)
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState)
     (hMsg : msgInfo ≠ x1) :
-    syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+    syscallDispatchFromAbi ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeError .invalidSyscallArgument, st) := by
   unfold syscallDispatchFromAbi
   -- `msgInfo ≠ x1` ⟹ `msgInfo != x1 = true` ⟹ the if-branch is taken.

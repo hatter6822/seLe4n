@@ -7,9 +7,13 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM6.A cross-core IPC (the cross-core-aware syscall
--- dispatch entry; live Rust switchover gated on per-core dispatch — SM5.I /
--- SM6 — see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- WS-SM SM6.A: PRODUCTION (LANDED).  The cross-core-aware syscall dispatch entry
+-- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`)
+-- is the live seam the Rust SVC handler resolves against; it runs the verified
+-- `syscallDispatchFromAbi` (per-core caller via the threaded `executingCore`) and
+-- fires the diff-recovered cross-core `.reschedule` SGIs.  (Former "STATUS:
+-- staged" marker replaced with this landing note per the implement-the-improvement
+-- rule; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
 
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Concurrency.Runtime
@@ -71,7 +75,7 @@ def syscallDispatchCrossCoreEntry
   let ctx ← Platform.FFI.getKernelLabelingContext
   let execCore ← Concurrency.currentCoreId
   let result ← Platform.FFI.modifyGetKernelState (fun st =>
-    match Platform.FFI.syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5
+    match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr st with
     | Except.ok (encoded, st') =>
         ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore), st')
@@ -95,7 +99,7 @@ theorem syscallDispatchCrossCoreEntry_def
         let ctx ← Platform.FFI.getKernelLabelingContext
         let execCore ← Concurrency.currentCoreId
         let result ← Platform.FFI.modifyGetKernelState (fun st =>
-          match Platform.FFI.syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5
+          match Platform.FFI.syscallDispatchFromAbi ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
               ipcBufferAddr st with
           | Except.ok (encoded, st') =>
               ((encoded, PriorityInheritance.computeCrossCoreSgis st st' execCore), st')

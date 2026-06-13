@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.66.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.67.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -638,7 +638,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   primitives with formal mutex/fairness theorems; SGI INTID 0..4 reserved
   for kernel SMP coordination (SM0.H).
 
-  **Phase status** (current version: v0.31.66):
+  **Phase status** (current version: v0.31.67):
 
   | Phase | Status | Version | Summary |
   |-------|--------|---------|---------|
@@ -650,7 +650,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   | SM5.A–I | LANDED | v0.31.38–62 | Per-core scheduler: selection, switch, wake, timer, idle, PIP, domain, CBS, invariant suite |
   | SM5.J | LANDED | v0.31.63→64 | WCRT under fine locks; **completion v0.31.64**: genuine per-core eventually-scheduled liveness (R5 trace model generalized ∀-core), execution-sensitive bridge, cycle-commensurate units |
   | SM5.K | LANDED | v0.31.63→64 | Tests + fixtures: 4-thread/4-core aggregate suite (+ multi-step dynamic simulation + cross-core round-trip), WCRT suite, golden trace fixture |
-  | SM6.A | LANDED | v0.31.65→66 | Endpoint call across cores: `endpointCallOnCore` (receiver wake via SM5.C `wakeThread`, caller block via per-core `removeRunnableOnCore`) + lock-set correctness/membership/donation-extension/2PL-atomicity, cross-core wake SGI (Thm 3.2.1), per-core blocking, reply-state allocation, **full `ipcInvariantFull` preservation**, boot-core **+ per-core/∀-core (`lowEquivalent_smp`) NI**, WithCaps + donation + info-flow-checked dispatch. **v0.31.66: live `.call` LANDED** — `API.dispatchWithCap{,Checked}` routes through `endpointCallCrossCoreDispatch{,Checked}` (caller's core via `determineExecutingCore`) via the production checked chain (`syscall_dispatch_inner` → `syscallEntryChecked`), SMP dispatch stack promoted to production (staged 71→57); cross-core SGI firing (staged `SyscallDispatchEntry`) + ABI per-core caller-id are tracked debt. `tests/SmpCrossCoreCallSuite.lean` |
+  | SM6.A | LANDED | v0.31.65→66 | Endpoint call across cores: `endpointCallOnCore` (receiver wake via SM5.C `wakeThread`, caller block via per-core `removeRunnableOnCore`) + lock-set correctness/membership/donation-extension/2PL-atomicity, cross-core wake SGI (Thm 3.2.1), per-core blocking, reply-state allocation, **full `ipcInvariantFull` preservation**, boot-core **+ per-core/∀-core (`lowEquivalent_smp`) NI**, WithCaps + donation + info-flow-checked dispatch. **v0.31.66: live `.call` LANDED** — `API.dispatchWithCap{,Checked}` routes through `endpointCallCrossCoreDispatch{,Checked}` (caller's core via `determineExecutingCore`), SMP dispatch stack promoted to production (staged 71→57). **v0.31.67: cross-core completion** — SGI-firing seam promoted (`SyscallDispatchEntry` + `PriorityInheritance.PerCore` + `Concurrency.Runtime`, staged 57→54), Rust flipped to `lean_syscall_dispatch_cross_core` (fires diff SGIs), `executingCore` threaded through `syscallDispatchFromAbi`/`syscallEntryChecked` (per-core caller-id), `.call` donation uses cross-core PIP (`propagatePipChainCrossCore`). PR #820 review #1/#2/#3/#5 closed. `tests/SmpCrossCoreCallSuite.lean` |
   | SM6.B–SM9 | PENDING | — | Cross-core notification/reply/cancellation, per-core IPC invariant bundle, TLB shootdown, info-flow, release closure (→ v1.0.0) |
 
   **Plans**: master overview at
@@ -667,7 +667,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Rust HAL at v0.31.62**: 724 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
-  **Staged modules**: 57 staged-only (via `Platform/Staged.lean` +
+  **Staged modules**: 54 staged-only (via `Platform/Staged.lean` +
   `scripts/staged_module_allowlist.txt`); production/staged partition
   gate enforced by `scripts/check_production_staging_partition.sh`.
 
@@ -675,37 +675,29 @@ documentation lives under `docs/` and `docs/gitbook/`.
   transition in `withLockSet` requires the per-core kernel-state seam
   SM5 introduces; tracked as SM5.I follow-on.
 
-  **SM6.A live-`.call` — LANDED (v0.31.66)**: the live `.call` syscall routes
-  through the cross-core dispatch.  `API.dispatchWithCap{,Checked}`'s `.call` arm
-  now calls `endpointCallCrossCoreDispatch{,Checked}` (in the below-API
-  `EndpointCallDispatch`): the receiver is woken on its *home* core, and the
-  caller is descheduled on its *own* core, derived from the live state by
-  `determineExecutingCore st tid` (no hardware-core parameter threaded through the
-  `Kernel`-monad chain).  The SMP infrastructure it needs is **promoted to
-  production** (staged-only 71 → 57; 14 modules: the lock hierarchy, the per-core
-  scheduler, and the cross-core call), `STATUS: staged` markers replaced with
-  landing notes.  The dispatch reaches the cross-core arm through the *production*
-  entry already wired (`syscall_dispatch_inner` `@[export]` in `Platform.FFI` →
-  `syscallDispatchFromAbi` → `syscallEntryChecked` → `dispatchWithCapChecked`), so
-  **no Rust extern change is needed** for the dispatch.  Validated: trace fixture
-  byte-identical, all 8 `.call` dispatch suites pass, partition + AK7 green.
-  **Remaining tracked debt — two distinct follow-ups**: (1) **cross-core SGI
-  firing** — the `syscallDispatchCrossCoreEntry` /
-  `@[export lean_syscall_dispatch_cross_core]` seam (staged `SyscallDispatchEntry`)
-  fires the diff-recovered `.reschedule` IPIs; it stays staged because it depends
-  on `Scheduler.PriorityInheritance.PerCore` (`computeCrossCoreSgis`) +
-  `Concurrency.Runtime` (`fireCrossCoreSgis`), both staged.  The Rust extern stays
-  on the production `syscall_dispatch_inner` until that closure is promoted —
-  flipping it to the staged symbol would be an undefined-symbol link error.
-  Functionally inert today (single-core: empty SGI list; multi-core: the woken
-  remote receiver is enqueued on its home core and picked up at that core's next
-  scheduling decision, the IPI only makes pickup immediate).  (2) **ABI per-core
-  caller identification** — `syscallDispatchFromAbi` / `syscallEntryChecked` read
-  `currentOnCore bootCoreId` to identify the caller (a pre-existing boot-pinning
-  affecting *all* syscalls); threading the executing core there is a distinct
-  `Kernel`-monad refactor.  The `.call` *operation* is per-core-correct given its
-  caller; on the single-core deployment the boot-pinned read *is* the caller, so
-  the live path is correct today.
+  **SM6.A cross-core `.call` — COMPLETE (v0.31.66 live dispatch → v0.31.67
+  multi-core completion)**: the live `.call` syscall routes through the cross-core
+  dispatch and the multi-core path is complete.  `API.dispatchWithCap{,Checked}`'s
+  `.call` arm calls `endpointCallCrossCoreDispatch{,Checked}` (below-API
+  `EndpointCallDispatch`): the receiver is woken on its *home* core; the caller is
+  descheduled on its *own* core (`determineExecutingCore`); the donated-priority
+  boost propagates via the cross-core chain walk `propagatePipChainCrossCore`
+  (FFI-free `Propagate`), migrating each boosted server's bucket on its home core.
+  The **SGI-firing seam is production** (v0.31.67): `SyscallDispatchEntry`
+  (`@[export lean_syscall_dispatch_cross_core]`) + its closure
+  (`PriorityInheritance.PerCore`, `Concurrency.Runtime`) are in the `SeLe4n.lean`
+  library (staged-only 71 → 57 → **54**), and the Rust `svc_dispatch` extern is
+  flipped to it — the live syscall commits the verified post-state then fires the
+  diff-recovered cross-core `.reschedule` SGIs (single-core-inert).  **Per-core
+  caller identification** (v0.31.67): `syscallDispatchFromAbi` / `syscallEntryChecked`
+  take an explicit `executingCore` and read `currentOnCore executingCore`;
+  `syscallDispatchCrossCoreEntry` threads the hardware `currentCoreId`,
+  `syscallDispatchInner` passes `bootCoreId` (boot-pinned, unchanged); the five
+  `syscallDispatchFromAbi_*` bridges are generalised to an arbitrary core.
+  Validated: trace byte-identical, all `.call` + SMP suites pass, partition (54) +
+  AK7 + Rust HAL (724) green.  PR #820 review comments #1/#2/#3/#5 all closed (#4
+  — the vestigial 2-arg `lean_endpoint_call_cross_core` export — is the remaining
+  cleanup item, superseded by the full-context `syscallDispatchCrossCoreEntry`).
 
   **SM4.C.11 tracked debt**: per-core Liveness forms
   (`Scheduler/Liveness/*.lean`) remain bootCoreId-pinned; migration

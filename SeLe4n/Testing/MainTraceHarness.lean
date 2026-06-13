@@ -1826,7 +1826,8 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
   -- A4: Full checked dispatch via syscallEntryChecked
   -- AI5-C (M-19): Use testLabelingContext to bypass insecurity guard
   let ctx := SeLe4n.Kernel.testLabelingContext
-  match SeLe4n.Kernel.syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32 stPipe with
+  match SeLe4n.Kernel.syscallEntryChecked ctx SeLe4n.arm64DefaultLayout
+      SeLe4n.Kernel.Concurrency.bootCoreId 32 stPipe with
   | .error e => IO.println s!"[PIP-004] A4 syscallEntryChecked error: {reprStr e}"
   | .ok (_, stChecked) =>
     -- Verify the send succeeded: endpoint should have a sender in sendQ

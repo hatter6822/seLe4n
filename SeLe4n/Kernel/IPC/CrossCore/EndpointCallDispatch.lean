@@ -136,7 +136,19 @@ def endpointCallCrossCoreDispatch
           match applyCallDonation st' callerV receiverV with
           | .error e => (st', .error e)
           | .ok st'' =>
-              (PriorityInheritance.propagatePriorityInheritance st'' receiverTid, .ok (summary, sgi))
+              -- WS-SM SM6.A: propagate the donated-priority boost with the
+              -- *cross-core* chain walk (`propagatePipChainCrossCore`, SM5.F.4 — in
+              -- the FFI-free `Propagate`, so no import cycle below the API layer);
+              -- its `.1` is the post-walk state.  Each boosted server's run-queue
+              -- bucket migrates on its *home* core (via `pipBoostWithWake`'s
+              -- `updatePipBoostOnCore`), so a passive server pinned to a remote core
+              -- becomes schedulable at the donated priority there — and the run-queue
+              -- change surfaces in the `(pre, post)` diff the syscall seam fires the
+              -- cross-core SGI from.  On the boot core with an unbound receiver this
+              -- is state-identical to the single-core `propagatePriorityInheritance`
+              -- (`pipBoostWithWake … bootCoreId` of an unbound thread = `updatePipBoost`).
+              ((PriorityInheritance.propagatePipChainCrossCore st'' receiverTid executingCore).1,
+               .ok (summary, sgi))
         | _, _ => (st', .error .invalidArgument)
       | none => (st', .ok (summary, sgi))
 

@@ -1,3 +1,43 @@
+## v0.31.67 — WS-SM SM6.A: cross-core `.call` completion (SGI firing + cross-core PIP + per-core caller-id)
+
+Completes the multi-core cross-core `.call` started at v0.31.66, closing the
+three deferred gaps PR #820's review flagged.  Axiom-clean; Tier 0–3 green; the
+trace fixture is byte-identical; partition 57 → 54; AK7 monotone; Rust HAL 724
+tests + clippy clean.
+
+**SGI-firing seam promoted to production.**  `SyscallDispatchEntry`
+(`syscallDispatchCrossCoreEntry` / `@[export lean_syscall_dispatch_cross_core]`)
+and its closure (`Scheduler.PriorityInheritance.PerCore`, `Concurrency.Runtime`)
+move into the `SeLe4n.lean` production library (staged-only 57 → 54), so the
+`@[export]` symbol is emitted into the kernel image.  The Rust `svc_dispatch`
+extern is flipped to `lean_syscall_dispatch_cross_core` (link-safe now the symbol
+is production): the live syscall commits the verified post-state and then fires
+the diff-recovered cross-core `.reschedule` SGIs (`computeCrossCoreSgis` +
+`fireCrossCoreSgis`), single-core-inert.  *(Closes review comment #1.)*
+
+**Per-core caller identification.**  `syscallDispatchFromAbi` and
+`syscallEntryChecked` now take an explicit `executingCore` and read
+`currentOnCore executingCore` instead of `currentOnCore bootCoreId`, so a syscall
+issued from a secondary core decodes and mutates *that* core's current TCB.
+`syscallDispatchCrossCoreEntry` threads the hardware `currentCoreId`;
+`syscallDispatchInner` (single-core) passes `bootCoreId` (boot-pinned, unchanged).
+The five `syscallDispatchFromAbi_*` bridge theorems are generalised from
+`bootCoreId` to an arbitrary core.  *(Closes review comment #5.)*
+
+**Cross-core PIP after donation.**  The `.call` arm's donation propagation
+switches from the boot-pinned `propagatePriorityInheritance` to the cross-core
+chain walk `propagatePipChainCrossCore` (in the FFI-free `Propagate`, so no import
+cycle below the API layer): each boosted server's run-queue bucket migrates on its
+*home* core, so a passive server pinned to a remote core becomes schedulable at the
+donated priority there (and the bucket change surfaces in the SGI diff).
+State-identical to the single-core path on the boot core with an unbound receiver.
+*(Closes review comment #3.)*
+
+**Fail-closed atomicity** in the staged `endpointCallCrossCoreEntry`: commit the
+original `st` (not the partial `st'`) on a dispatch error.  *(Closes review comment #2.)*
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.A)
+
 ## v0.31.66 — WS-SM SM6.A: live cross-core `.call` + SMP-by-default production promotion
 
 The live `.call` syscall now routes through the cross-core dispatch, and the SMP

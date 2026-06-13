@@ -221,22 +221,23 @@ production** (staged-only 71 → 57; 14 modules: lock hierarchy + per-core sched
 `dispatchWithCapChecked` → `endpointCallCrossCoreDispatchChecked` — so **no Rust
 extern change is needed** for the dispatch.  Validated: trace fixture
 byte-identical, all 8 `.call` dispatch suites pass, partition + AK7 green.
-**Remaining (tracked) — two follow-ups:** (1) **cross-core SGI firing** — the
-`syscallDispatchCrossCoreEntry` / `@[export lean_syscall_dispatch_cross_core]`
-seam (staged `SyscallDispatchEntry`) fires the diff-recovered `.reschedule` IPIs;
-it stays staged because it depends on `Scheduler.PriorityInheritance.PerCore`
-(`computeCrossCoreSgis`) + `Concurrency.Runtime` (`fireCrossCoreSgis`), both
-staged.  The Rust extern stays on the production `syscall_dispatch_inner` until
-that closure is promoted — flipping to the staged symbol would be an
-undefined-symbol link error.  Inert today (single-core: empty SGI list;
-multi-core: the woken remote receiver is enqueued on its home core and picked up
-at that core's next scheduling decision — the IPI only makes pickup immediate).
-(2) **ABI-level per-core caller identification** (`syscallDispatchFromAbi` /
-`syscallEntryChecked` read `currentOnCore bootCoreId` — a pre-existing
-boot-pinning affecting *all* syscalls); threading the executing core there is a
-distinct `Kernel`-monad refactor.  The `.call` *operation* is per-core-correct
-given its caller; single-core (the boot-pinned read = the caller) is correct
-today.
+**Cross-core completion — LANDED (v0.31.67).**  The two v0.31.66 follow-ups are
+closed (PR #820 review #1/#3/#5): (1) **cross-core SGI firing** — the SGI-firing
+seam `SyscallDispatchEntry` (`@[export lean_syscall_dispatch_cross_core]`) + its
+closure (`PriorityInheritance.PerCore`, `Concurrency.Runtime`) are **promoted to
+production** (staged-only 57 → 54), and the Rust `svc_dispatch` extern is flipped
+to it — the live syscall commits the verified post-state then fires the
+diff-recovered cross-core `.reschedule` SGIs (`computeCrossCoreSgis` +
+`fireCrossCoreSgis`), single-core-inert.  (2) **per-core caller identification** —
+`syscallDispatchFromAbi` / `syscallEntryChecked` now take an explicit
+`executingCore` and read `currentOnCore executingCore`;
+`syscallDispatchCrossCoreEntry` threads the hardware `currentCoreId`,
+`syscallDispatchInner` passes `bootCoreId` (boot-pinned, unchanged); the five
+`syscallDispatchFromAbi_*` bridges are generalised to an arbitrary core.  The
+`.call` arm's donation propagation also switches to the cross-core chain walk
+`propagatePipChainCrossCore` (review #3 — migrates each boosted server's bucket on
+its home core).  Validated: trace byte-identical, all `.call` + SMP suites pass,
+partition (54) + AK7 + Rust HAL (724) green.
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|

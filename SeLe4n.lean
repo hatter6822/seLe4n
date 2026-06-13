@@ -28,3 +28,11 @@ import SeLe4n.Platform.Boot
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.Sim.Contract
 import SeLe4n.Platform.RPi5.Contract
+-- WS-SM SM6.A (live cross-core `.call` completion): the cross-core syscall
+-- dispatch entry `syscallDispatchCrossCoreEntry`
+-- (`@[export lean_syscall_dispatch_cross_core]`) — the live seam the Rust SVC
+-- handler resolves against, which fires the diff-recovered cross-core
+-- `.reschedule` SGIs.  Pulls its closure (`Concurrency.Runtime`,
+-- `Scheduler.PriorityInheritance.PerCore`) into the production library so the
+-- `@[export]` symbol is emitted into the kernel image.
+import SeLe4n.Kernel.SyscallDispatchEntry

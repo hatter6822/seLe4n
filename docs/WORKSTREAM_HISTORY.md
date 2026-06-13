@@ -57,12 +57,22 @@ reached on the *production* checked chain (`syscall_dispatch_inner` →
 receiver is woken on its home core and the caller descheduled on its own core
 (`determineExecutingCore`).  The 14 SMP dispatch modules it makes
 production-reachable are promoted out of the staged partition (staged-only
-71 → 57).  Two follow-ups stay tracked: the cross-core **SGI-firing** seam
-(`syscallDispatchCrossCoreEntry` / `@[export lean_syscall_dispatch_cross_core]`)
-stays staged pending its `PriorityInheritance.PerCore` + `Concurrency.Runtime`
-closure (so the Rust extern stays on the production `syscall_dispatch_inner` —
-inert on single-core, the IPI only makes a remote pickup immediate); and ABI-level
-per-core caller identification.  Plan:
+71 → 57).
+
+**v0.31.67 — cross-core completion (the two v0.31.66 follow-ups closed; PR #820
+review #1/#3/#5).**  The cross-core **SGI-firing** seam `SyscallDispatchEntry`
+(`@[export lean_syscall_dispatch_cross_core]`) + its closure
+(`PriorityInheritance.PerCore`, `Concurrency.Runtime`) are **promoted to
+production** (staged-only 57 → 54), and the Rust `svc_dispatch` extern is flipped
+to it — the live syscall commits the verified post-state then fires the
+diff-recovered cross-core `.reschedule` SGIs (single-core-inert).  **Per-core
+caller identification**: `syscallDispatchFromAbi` / `syscallEntryChecked` take an
+explicit `executingCore` and read `currentOnCore executingCore` (the cross-core
+entry threads `currentCoreId`; `syscallDispatchInner` stays boot-pinned); the five
+`syscallDispatchFromAbi_*` bridges generalise to an arbitrary core.  The `.call`
+arm's donation propagation switches to the cross-core chain walk
+`propagatePipChainCrossCore` (FFI-free `Propagate`), migrating each boosted
+server's bucket on its home core.  Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.A).
 
 **Prior sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests

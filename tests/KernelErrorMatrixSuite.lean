@@ -318,7 +318,7 @@ private def row_policyDenied_insecure_default : KernelErrorRejection :=
     runScenario   := fun _ =>
       runUnit (syscallEntryChecked
         SeLe4n.Kernel.defaultLabelingContext
-        SeLe4n.arm64DefaultLayout 32
+        SeLe4n.arm64DefaultLayout SeLe4n.Kernel.Concurrency.bootCoreId 32
         (default : SystemState)) }
 
 /-- Row: `cspaceMint` rejects null cap with `.nullCapability`.  Builds a

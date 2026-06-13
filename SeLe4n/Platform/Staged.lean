@@ -37,7 +37,6 @@ import SeLe4n.Kernel.Concurrency.Sgi
 -- Rust per-CPU base) on every push.  Reachability: production import
 -- closure runs through here even before per-core scheduler state lands
 -- at SM5.
-import SeLe4n.Kernel.Concurrency.Runtime
 -- WS-SM SM1.C.6: secondary-core kernel-entry placeholder.  Pulled into
 -- Staged so CI verifies the `@[export lean_secondary_kernel_main]`
 -- attribute keeps emitting a C-callable wrapper that the Rust HAL's
@@ -310,7 +309,6 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 -- / `restoreToReadyWithWake` in `Lifecycle.Suspend`) are production-reached; SM5.I's
 -- runtime dispatch (wiring `pipBoostWithWake` / `restoreToReadyWithWake` into the live
 -- donation / timeout / resume paths) is the first runtime exerciser.
-import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 -- WS-SM SM5.F: the per-core-PIP theorem inventory (categories compute / updateBoost /
 -- consistent / wake / chain / resume / blockingGraph / witness) with the `ppit!`
 -- compile-time identifier-validation macro + per-category count + partition-sum +
@@ -447,7 +445,6 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 -- `syscallDispatchCrossCoreEntry_sgis_nil_single_core`).  Staged until the
 -- per-core dispatch seam threads the executing core into the pure dispatch so the
 -- Rust trap handler can switch over from the boot-pinned `syscall_dispatch_inner`.
-import SeLe4n.Kernel.SyscallDispatchEntry
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

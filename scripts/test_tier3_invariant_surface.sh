@@ -964,12 +964,13 @@ run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^@\[export syscall_dispatch_inner\]' SeLe4n/Platform/FFI.lean
-# WS-SM SM6.A (v0.31.66): the cross-core SGI-firing dispatch entry
-# `lean_syscall_dispatch_cross_core` exists (staged `SyscallDispatchEntry`);
-# the live `.call` dispatch already routes cross-core through the production
-# `syscall_dispatch_inner` chain, so this seam stays staged until its
-# `PriorityInheritance.PerCore` + `Concurrency.Runtime` closure is promoted
-# (then the Rust extern flips to it).
+# WS-SM SM6.A (v0.31.67): the cross-core SGI-firing dispatch entry
+# `lean_syscall_dispatch_cross_core` (`SyscallDispatchEntry`) is PROMOTED to the
+# production library (`SeLe4n.lean`) with its `PriorityInheritance.PerCore` +
+# `Concurrency.Runtime` closure, and the Rust extern is flipped to it (line 993):
+# the live syscall fires the diff-recovered cross-core `.reschedule` SGIs.  The
+# boot-pinned `syscall_dispatch_inner` (line 966) remains in `Platform.FFI` as the
+# single-core entry.
 run_check "INVARIANT" rg -n '^@\[export lean_syscall_dispatch_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
@@ -982,15 +983,14 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_n
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/Platform/FFI.lean
-# WS-RC R2.B.4: Rust comment alignment — the FFI inner symbol the
-# Rust HAL extern-imports must match the Lean @[export] name.  The live
-# entry is the production `syscall_dispatch_inner` (`@[export]` in
-# `Platform.FFI`, in the `SeLe4n.lean` production closure); the cross-core
-# SGI-firing `lean_syscall_dispatch_cross_core` seam (line 969) is staged
-# pending its `PriorityInheritance.PerCore` + `Concurrency.Runtime` closure,
-# so the Rust extern must NOT name the staged symbol (it would be an
-# undefined-symbol link error in the production kernel image).
-run_check "INVARIANT" rg -n 'fn syscall_dispatch_inner' rust/sele4n-hal/src/svc_dispatch.rs
+# WS-RC R2.B.4 / WS-SM SM6.A: Rust ↔ Lean symbol alignment — the FFI inner
+# symbol the Rust HAL extern-imports must match a Lean `@[export]` name in the
+# production closure.  Post-v0.31.67 the live entry is the cross-core
+# `lean_syscall_dispatch_cross_core` (`@[export]` in `SyscallDispatchEntry`, now
+# promoted into the `SeLe4n.lean` production library), so the Rust extern names
+# it; the boot-pinned `syscall_dispatch_inner` (`@[export]` in `Platform.FFI`,
+# line 966) stays as the single-core entry.
+run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'fn suspend_thread_inner' rust/sele4n-hal/src/ffi.rs
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).

@@ -1240,12 +1240,17 @@ def dispatchSyscallChecked (ctx : LabelingContext)
     available for trusted kernel paths and backward compatibility. -/
 def syscallEntryChecked (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout)
+    (executingCore : Concurrency.CoreId)
     (regCount : Nat := 32) : Kernel Unit :=
   fun st =>
     -- AI5-C (M-19): Reject insecure default labeling context in checked mode
     if isInsecureDefaultContext ctx then .error .policyDenied
     else
-    match (st.scheduler.currentOnCore bootCoreId) with
+    -- WS-SM SM6.A: identify the caller on its *own* core (the trapping core),
+    -- not the boot core — so a syscall issued from a secondary core decodes and
+    -- mutates *that* core's current TCB.  `executingCore` is read from the
+    -- hardware (`currentCoreId`) by the cross-core dispatch seam.
+    match (st.scheduler.currentOnCore executingCore) with
     | none => .error .illegalState
     | some tid =>
       match lookupThreadRegisterContext tid st with
