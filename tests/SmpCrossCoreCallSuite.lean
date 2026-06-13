@@ -108,7 +108,6 @@ open SeLe4n.Testing
 #check @endpointCallWithCapsOnCore
 #check @endpointCallCrossCoreDispatch
 #check @endpointCallCrossCoreEntry
-#check @endpointCallCrossCoreExport
 #check @endpointCallWithCapsOnCore_no_caps
 #check @endpointCallCrossCoreDispatch_no_receiver
 

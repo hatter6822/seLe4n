@@ -35,13 +35,24 @@ open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 -- §1  Live FFI seam (the SM5.I `perCoreTimerTickEntry` pattern)
 -- ============================================================================
 
-/-- WS-SM SM6.A.10 (live driver): run a cross-core `Call` against the live
-kernel state.  Reads the executing core from the hardware (`currentCoreId`,
+/-- WS-SM SM6.A.10 (reference BaseIO driver): run a cross-core `Call` against the
+live kernel state.  Reads the executing core from the hardware (`currentCoreId`,
 `TPIDR_EL1`), commits `endpointCallCrossCoreDispatch` **atomically** against the
 kernel state ref (`modifyGetKernelState`), then — *after* the state commit is
 globally visible — fires the recovered cross-core `.reschedule` SGI
-(`emitWakeSgi`; the BKL release→acquire ordering, SM5.C.4).  This is the live
-analogue of the SM5.I `perCoreTimerTickEntry` seam, for the IPC `Call` path. -/
+(`emitWakeSgi`; the BKL release→acquire ordering, SM5.C.4) directly from the
+operation's *surfaced* SGI.
+
+NOTE: this direct endpoint-call driver is **not** the live `.call` entry — the
+production cross-core `.call` routes through the *syscall* dispatch
+(`SyscallDispatchEntry.syscallDispatchCrossCoreEntry`, the
+`@[export lean_syscall_dispatch_cross_core]` symbol the Rust SVC handler resolves
+against), which decodes the full trap-frame context and recovers the SGIs from the
+`(pre, post)` state *diff* (`computeCrossCoreSgis`).  This driver is retained as a
+reference for the surfaced-SGI firing pattern; it takes the full message /
+capability context (unlike a syscall entry, it is not fed a decoded trap frame),
+so it is not given a C `@[export]` (a 2-arg empty-context export would bypass the
+syscall-ABI decode and capability/flow validation — PR #820 review #4). -/
 def endpointCallCrossCoreEntry
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) (endpointRights : AccessRightSet)
@@ -62,23 +73,17 @@ def endpointCallCrossCoreEntry
   Concurrency.emitWakeSgi result.2
   pure result.1
 
-/-- WS-SM SM6.A.10 (C entry): the `@[export]` cross-core `Call` symbol the Rust
-syscall handler resolves against.  Takes the resolved endpoint object id and
-caller thread id; the full message + capability decode from the trap frame is
-the syscall-ABI layer above (identical to the single-core entry, which decodes
-via the `SyscallDecodeResult` pipeline before invoking the operation).  Returns
-the `KernelError`-encoded status word. -/
-@[export lean_endpoint_call_cross_core]
-def endpointCallCrossCoreExport (endpointIdRaw callerRaw : UInt64) :
-    BaseIO UInt32 := do
-  let res ← endpointCallCrossCoreEntry (SeLe4n.ObjId.ofNat endpointIdRaw.toNat)
-    (SeLe4n.ThreadId.ofNat callerRaw.toNat) IpcMessage.empty AccessRightSet.empty
-    (SeLe4n.ObjId.ofNat 0) (SeLe4n.Slot.ofNat 0)
-  match res with
-  | .ok _ => pure 0
-  | .error e => pure (Platform.FFI.KernelError.toUInt32 e)
+-- WS-SM SM6.A.10 / PR #820 review #4: the former 2-arg
+-- `@[export lean_endpoint_call_cross_core]` C seam (`endpointCallCrossCoreExport`)
+-- was removed.  It fed `endpointCallCrossCoreEntry` an *empty* message / cap set
+-- / root-slot 0, so wiring it would have delivered payload-less, Grant-less calls
+-- with the raw endpoint/caller ids bypassing the `syscallInvoke` / checked-dispatch
+-- capability and flow validation.  The live cross-core `.call` is the full-context
+-- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`),
+-- which the Rust SVC handler resolves against; this module keeps only the
+-- reference BaseIO driver above.
 
-/-- WS-SM SM6.A.10: the live driver's three-phase shape — read the executing
+/-- WS-SM SM6.A.10: the reference driver's three-phase shape — read the executing
 core, atomically commit the dispatch, then fire the surfaced SGI. -/
 theorem endpointCallCrossCoreEntry_def
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
