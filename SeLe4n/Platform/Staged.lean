@@ -427,6 +427,16 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 -- emitWakeSgi) + the `@[export lean_endpoint_call_cross_core]` C seam, mirroring
 -- the SM5.I perCoreTimerTickEntry pattern.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
+-- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
+-- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
+-- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,
+-- then fires the SM5.F.4 diff-recovered cross-core `.reschedule` SGIs
+-- (`computeCrossCoreSgis` + `fireCrossCoreSgis`).  The syscall analogue of
+-- `perCoreTimerTickEntry`; single-core-inert (trace-safe — see the surfaced
+-- `syscallDispatchCrossCoreEntry_sgis_nil_single_core`).  Staged until the
+-- per-core dispatch seam threads the executing core into the pure dispatch so the
+-- Rust trap handler can switch over from the boot-pinned `syscall_dispatch_inner`.
+import SeLe4n.Kernel.SyscallDispatchEntry
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

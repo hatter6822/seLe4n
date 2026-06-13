@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
+import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -102,6 +103,12 @@ open SeLe4n.Testing
 #check @endpointCallCrossCoreExport
 #check @endpointCallWithCapsOnCore_no_caps
 #check @endpointCallCrossCoreDispatch_no_receiver
+
+-- SM6.A live SGI-dispatch seam: the cross-core-aware syscall dispatch entry +
+-- its body-shape marker + the single-core inertness (trace-safety) witness:
+#check @syscallDispatchCrossCoreEntry
+#check @syscallDispatchCrossCoreEntry_def
+#check @syscallDispatchCrossCoreEntry_sgis_nil_single_core
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs

@@ -2,7 +2,7 @@
 
 First slice of WS-SM Phase SM6 (cross-core IPC): the endpoint `Call` rendezvous
 lifted to SMP.  Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only);
-Tier 0–3 green; production/staged partition 64 → 66.
+Tier 0–3 green; production/staged partition 64 → 69.
 
 **The cross-core transition.**  `endpointCallOnCore`
 (`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`) lifts the single-core
@@ -59,12 +59,53 @@ exercising the actual `endpointCallOnCore` / `removeRunnableOnCore` /
 per-core caller blocking, the no-receiver `blockedOnCall` path, and the local vs
 remote rendezvous SGI emission).
 
-**Staging.**  Both modules are staged (`Platform/Staged.lean` +
+**Staging.**  All cross-core modules are staged (`Platform/Staged.lean` +
 `staged_module_allowlist.txt`, marker category); wiring `endpointCallOnCore`
 into the live syscall dispatch under the `withLockSet` acquisition over
 `lockSet_endpointCall` remains gated on the SM5.I FFI seam (the SM5.F tracked
 debt).  `endpointCall` / `wakeThread` / `determineTargetCore` stay the canonical
 production transitions.
+
+**Follow-on hardening (same slice).**
+
+- **Full `ipcInvariantFull` preservation.**  Beyond `objects.invExt` and the
+  `ipcInvariant` notification well-formedness, `endpointCallOnCore` now provably
+  preserves the structural `dualQueueSystemInvariant`, `allPendingMessagesBounded`,
+  `badgeWellFormed`, and the whole fifteen-conjunct `ipcInvariantFull`
+  (`endpointCallOnCore_preserves_ipcInvariantFull`).  The proof introduces a
+  reusable lookup-only congruence family (`dualQueueSystemInvariant_of_getElem_eq`
+  and friends): the cross-core wake of an already-`.ready` receiver agrees with the
+  pre-state on every `objects[·]?` lookup (a Robin-Hood re-insert of an identical
+  value may differ in array representation, so the existing `*_of_objects_eq`
+  structural-equality family does not apply).  This *strengthens* the single-core
+  `endpointCall_preserves_ipcInvariantFull`, deriving a fourth conjunct
+  (`dualQueueSystemInvariant`) internally; only the genuinely scheduler-sensitive
+  `passiveServerIdle` is carried as a post-state hypothesis, as single-core does.
+
+- **Substantive lock-set membership.**  `lockSet_endpointCall_caller_tcb_write_mem`
+  proves the caller-TCB *write* lock is a declared member of the call footprint
+  (not merely an asserted footprint shape), and
+  `endpointCallOnCore_withLockSet_preserves_objects_invExt` carries object-store
+  integrity *through* the entire 2PL acquire/release fold (SM3.C.8
+  `withLockSet_invariant_preserved`).
+
+- **NI proof cleanup.**  Both `linter.unusedSimpArgs` suppressions in the
+  cross-core non-interference proofs are removed and the proofs cleaned honestly
+  (the boot-core domain-schedule slots and machine registers are definitionally
+  unchanged by a remote-core deschedule, so those `congr` subgoals close by `rfl`).
+
+- **Live cross-core SGI-dispatch seam.**  New
+  `SeLe4n/Kernel/SyscallDispatchEntry.lean`: `syscallDispatchCrossCoreEntry`
+  (`@[export lean_syscall_dispatch_cross_core]`), the syscall analogue of
+  `perCoreTimerTickEntry`.  It runs the verified `syscallDispatchFromAbi`
+  atomically via `modifyGetKernelState`, then fires the SM5.F.4 diff-recovered
+  cross-core `.reschedule` SGIs (`computeCrossCoreSgis` + `fireCrossCoreSgis`) —
+  the missing live half of the diff-based cross-core dispatch for the syscall
+  path.  Single-core-inert (`syscallDispatchCrossCoreEntry_sgis_nil_single_core`:
+  the SGI list is empty at the boot core) and trace-safe (the harness exercises
+  the pure `syscallEntry`).  The live Rust switchover from the boot-pinned
+  `syscall_dispatch_inner` is gated on the per-core dispatch seam threading the
+  executing core into `syscallDispatchFromAbi`.
 
 Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.A)
 

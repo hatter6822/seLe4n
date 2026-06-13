@@ -165,14 +165,34 @@ replenish queue migrates per SM5.H.4.
 ### SM6.A — Endpoint call across cores (4 PRs, 10 sub-tasks)
 
 **Status: LANDED (v0.31.65).** Axiom-clean (`propext` / `Classical.choice` /
-`Quot.sound` only); Tier 0–3 green; staged (production partition 64 → 66). The
+`Quot.sound` only); Tier 0–3 green; staged (production partition 64 → 69). The
 cross-core transition `endpointCallOnCore` and the SM6.A theorems live in
 `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (+ `EndpointCallNI.lean` for
-the non-interference slice); the 14-assertion runtime suite is
-`tests/SmpCrossCoreCallSuite.lean` (`lake exe smp_cross_core_call_suite`).
-Runtime wiring of `endpointCallOnCore` into the live syscall dispatch (under
-the `withLockSet` acquisition over `lockSet_endpointCall`) remains gated on the
-SM5.I FFI seam (the SM5.F tracked debt).
+the non-interference slice, `EndpointCallInvariant.lean` for IPC-invariant
+preservation, `EndpointCallEntry.lean` for the WithCaps + donation + FFI
+driver); the 21-assertion runtime suite is `tests/SmpCrossCoreCallSuite.lean`
+(`lake exe smp_cross_core_call_suite`).
+
+**Invariant preservation (full).** `endpointCallOnCore` provably preserves the
+whole fifteen-conjunct `ipcInvariantFull` (`endpointCallOnCore_preserves_ipcInvariantFull`),
+deriving `ipcInvariant`, `dualQueueSystemInvariant`, `allPendingMessagesBounded`,
+and `badgeWellFormed` internally via a reusable lookup-only congruence family
+(`dualQueueSystemInvariant_of_getElem_eq` &c.) — one conjunct *more* than the
+single-core theorem; only the scheduler-sensitive `passiveServerIdle` is carried
+as a hypothesis, as single-core does.
+
+**Live SGI-dispatch seam.** The SM5.F.4 diff-based cross-core SGI dispatch is now
+wired into a live syscall entry: `syscallDispatchCrossCoreEntry`
+(`@[export lean_syscall_dispatch_cross_core]` in
+`SeLe4n/Kernel/SyscallDispatchEntry.lean`) runs `syscallDispatchFromAbi`
+atomically via `modifyGetKernelState`, then fires the diff-recovered
+`computeCrossCoreSgis` via `fireCrossCoreSgis` — the syscall analogue of
+`perCoreTimerTickEntry`.  Single-core-inert / trace-safe
+(`syscallDispatchCrossCoreEntry_sgis_nil_single_core`).  Runtime wiring of
+`endpointCallOnCore`'s *receiver wake* into this path (so a remote `.call`
+receiver fires its reschedule), and the Rust switchover from the boot-pinned
+`syscall_dispatch_inner`, remain gated on the SM5.I per-core dispatch seam (the
+executing core threaded into `syscallDispatchFromAbi`) — the SM5.F tracked debt.
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|
@@ -181,11 +201,11 @@ SM5.I FFI seam (the SM5.F tracked debt).
 | SM6.A.3 | Cross-core wake via `wakeThread` (Theorem 3.2.1) | `endpointCallOnCore_emits_sgi_if_remote_receiver` (+ `_no_sgi_if_local_receiver`) | ✓ |
 | SM6.A.4 | `endpointCall_perCore_blocking` | `endpointCallOnCore_perCore_blocking` | ✓ |
 | SM6.A.5 | Donation chain lock-set extension | `lockSet_endpointCall_donation_extension` | ✓ |
-| SM6.A.6 | Reply state allocation under lock-set | `endpointCallOnCore_reply_linkage_under_lockSet` | ✓ |
+| SM6.A.6 | Reply state allocation under lock-set | `endpointCallOnCore_reply_linkage_under_lockSet` (+ `lockSet_endpointCall_caller_tcb_write_mem`: the caller-TCB write lock is a *member* of the footprint) | ✓ |
 | SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | `endpointCallOnCore_call_path_NI` (+ `{enqueueRunnableOnCore,removeRunnableOnCore,wakeThread}_preserves_projection`) | ✓ |
 | SM6.A.8 | `endpointCallWithCaps_lockSet_correct` | `endpointCallWithCaps_lockSet_correct` (+ `lockSet_endpointCallWithCaps`) | ✓ |
-| SM6.A.9 | `endpointCall_atomic_under_lockSet` | `endpointCallOnCore_atomic_under_lockSet` | ✓ |
-| SM6.A.10 | 8 cross-core call scenarios | `tests/SmpCrossCoreCallSuite.lean` (14 runtime assertions) | ✓ |
+| SM6.A.9 | `endpointCall_atomic_under_lockSet` | `endpointCallOnCore_atomic_under_lockSet` (+ `endpointCallOnCore_withLockSet_preserves_objects_invExt`: invariant carried *through* the 2PL fold) | ✓ |
+| SM6.A.10 | 8 cross-core call scenarios | `tests/SmpCrossCoreCallSuite.lean` (21 runtime assertions) | ✓ |
 
 > **Model note.** This kernel has no separate Reply *object* (the `.reply`
 > lock-kind is N/A — `lockHeld` is `False` for it); the reply linkage is the

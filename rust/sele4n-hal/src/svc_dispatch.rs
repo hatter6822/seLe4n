@@ -381,6 +381,18 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // flag set with the encoded `KernelError::NotImplemented = 17` so
 // dispatch logic can be exercised on host.  Post-WS-RC R2 the
 // outer dispatcher decodes this as `DispatchError::Kernel(17)`.
+//
+// WS-SM SM6.A: the cross-core-aware successor is
+// `lean_syscall_dispatch_cross_core` (`syscallDispatchCrossCoreEntry` in
+// `SeLe4n/Kernel/SyscallDispatchEntry.lean`).  It runs the same verified
+// `syscallDispatchFromAbi` but, after committing the post-state, fires the
+// diff-recovered cross-core `.reschedule` SGIs (`computeCrossCoreSgis` +
+// `fireCrossCoreSgis`) — the syscall analogue of `lean_per_core_timer_tick`.
+// It is single-core-inert (the SGI list is empty at the boot core), so the
+// switchover below to call it instead of `syscall_dispatch_inner` lands with
+// the per-core dispatch seam (when the executing core is threaded into the
+// pure dispatch so the caller is descheduled on its own core, not the boot
+// core).
 #[cfg(not(test))]
 extern "C" {
     fn syscall_dispatch_inner(
