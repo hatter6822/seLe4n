@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/upbeat-edison-4ahj6q",
-      "commit_sha": "0654d56c9b304a61fd88c212028633e085d1501f",
-      "tree_sha": "f6b71e3ddfd2aef064fe7f49bf9c43bd517a2a45",
-      "committed_at_utc": "2026-06-13T09:00:30+00:00"
+      "commit_sha": "863fb25eb743a8eeac26abdae767e10d79e06e5e",
+      "tree_sha": "313e2bcf05cf7c97fcea91e5f6a1c85130e2714a",
+      "committed_at_utc": "2026-06-13T22:19:15+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "98fb79f56cd5937c235e85813d515deb10b99c3fde5790375a9dd4ed615bfb98"
+    "source_digest": "01f8bfc8ba74037dcc68f1bd137bb6613f09f6bb51a795cae13f3ac5cd737a43"
   },
   "summary": {
     "module_count": 299,
@@ -27,7 +27,7 @@
     "version": "0.31.66",
     "lean_toolchain": "v4.28.0",
     "production_files": 240,
-    "production_loc": 175829,
+    "production_loc": 175834,
     "test_files": 59,
     "test_loc": 37919,
     "proved_theorem_lemma_decls": 5891,
@@ -34789,7 +34789,7 @@
         {
           "kind": "def",
           "name": "endpointCallCrossCoreExport",
-          "line": 67,
+          "line": 72,
           "called": [
             "KernelError.toUInt32",
             "empty",
@@ -34802,7 +34802,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallCrossCoreEntry_def",
-          "line": 78,
+          "line": 83,
           "called": [
             "AccessRightSet",
             "CoreId",
