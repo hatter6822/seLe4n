@@ -52,7 +52,12 @@ def endpointCallCrossCoreEntry
     let (st', res) := endpointCallCrossCoreDispatch endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase executingCore st
     match res with
-    | .error e => ((Except.error e, (none : Option (CoreId × SgiKind))), st')
+    -- Fail-closed atomicity: on any dispatch error commit the *original* `st`,
+    -- discarding the partial post-state `st'` (a mid-rendezvous failure — e.g. a
+    -- missing receiver CSpace root or a donation failure — would otherwise leave
+    -- the receiver woken / caller blocked on a syscall that returns an error).
+    -- Mirrors the Kernel-monad dispatch arm, which drops post-state on `.error`.
+    | .error e => ((Except.error e, (none : Option (CoreId × SgiKind))), st)
     | .ok (summary, sgi) => ((Except.ok summary, sgi), st'))
   Concurrency.emitWakeSgi result.2
   pure result.1
@@ -87,7 +92,7 @@ theorem endpointCallCrossCoreEntry_def
             let (st', res) := endpointCallCrossCoreDispatch endpointId caller msg endpointRights
               callerCspaceRoot receiverSlotBase executingCore st
             match res with
-            | .error e => ((Except.error e, (none : Option (CoreId × SgiKind))), st')
+            | .error e => ((Except.error e, (none : Option (CoreId × SgiKind))), st)
             | .ok (summary, sgi) => ((Except.ok summary, sgi), st'))
           Concurrency.emitWakeSgi result.2
           pure result.1) := rfl
