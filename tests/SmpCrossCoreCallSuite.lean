@@ -64,6 +64,7 @@ open SeLe4n.Testing
 -- SM6.A.3 cross-core wake (plan Theorem 3.2.1):
 #check @endpointCallOnCore_emits_sgi_if_remote_receiver
 #check @endpointCallOnCore_no_sgi_if_local_receiver
+#check @endpointCallOnCore_noReceiver_no_sgi
 
 -- SM6.A.4/.6 blocking + reply linkage:
 #check @endpointCallOnCore_perCore_blocking

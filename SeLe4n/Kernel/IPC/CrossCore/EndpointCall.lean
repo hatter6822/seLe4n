@@ -253,10 +253,11 @@ theorem endpointCallOnCore_noReceiver_eq
 rendezvous unblocks a receiver whose home core differs from the executing core,
 the operation surfaces a `.reschedule` SGI targeting the receiver's core — the
 cross-core poke the runtime fires after the state commit.  The target core is
-read at the wake site (`st''`); the receiver's `cpuAffinity` is unchanged from
-the pre-state by the intervening pop + store
-(`determineTargetCore_endpointCallOnCore_rendezvous` lifts this to the
-pre-state form). -/
+the receiver's home core `determineTargetCore … receiver` (its `cpuAffinity`),
+read at the wake site `st''`; the intervening pop + store mutate only the
+receiver's `ipcState` / `pendingMessage` and the endpoint queue links, never its
+`cpuAffinity`, so this is the same core the plan's pre-state `determineTargetCore
+s receiver` names. -/
 theorem endpointCallOnCore_emits_sgi_if_remote_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
@@ -300,6 +301,24 @@ theorem endpointCallOnCore_no_sgi_if_local_receiver
         recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
   show Except.ok (wakeThread st'' receiver executingCore).2 = Except.ok none
   rw [wakeThread_no_sgi_if_local st'' receiver executingCore hLocal]
+
+/-- WS-SM SM6.A.3: the **no-receiver** path (the caller enqueues on the
+endpoint's send queue as `blockedOnCall`) surfaces no SGI — no thread is woken,
+so there is no cross-core poke.  Completes the SGI characterisation: a call pokes
+a remote core *only* on a rendezvous with a remote receiver. -/
+theorem endpointCallOnCore_noReceiver_no_sgi
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) (ep : Endpoint) (st' st'' : SystemState)
+    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
+    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hHead : ep.receiveQ.head = none)
+    (hEnq : endpointQueueEnqueue endpointId false caller st = .ok st')
+    (hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg)
+        = .ok st'') :
+    (endpointCallOnCore endpointId caller msg executingCore st).2 = .ok none := by
+  rw [endpointCallOnCore_noReceiver_eq endpointId caller msg executingCore st ep st' st''
+        hSz1 hSz2 hObj hHead hEnq hStore]
 
 -- ============================================================================
 -- §7  SM6.A.2 — `endpointCall` lock-set correctness
