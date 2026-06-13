@@ -2,7 +2,7 @@
 
 First slice of WS-SM Phase SM6 (cross-core IPC): the endpoint `Call` rendezvous
 lifted to SMP.  Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only);
-Tier 0–3 green; production/staged partition 64 → 69.
+Tier 0–3 green; production/staged partition 64 → 70.
 
 **The cross-core transition.**  `endpointCallOnCore`
 (`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`) lifts the single-core
@@ -93,6 +93,18 @@ production transitions.
   cross-core non-interference proofs are removed and the proofs cleaned honestly
   (the boot-core domain-schedule slots and machine registers are definitionally
   unchanged by a remote-core deschedule, so those `congr` subgoals close by `rfl`).
+
+- **Per-core / ∀-core non-interference.**  New
+  `SeLe4n/Kernel/IPC/CrossCore/EndpointCallNiPerCore.lean`:
+  `endpointCallOnCore_call_path_NI_smp` strengthens the boot-core `projectState`
+  NI to `lowEquivalent_smp` — a high cross-core call is invisible to a low
+  observer on *every* core, including the remote core the receiver is woken onto
+  and the executing core where the caller is descheduled (and its current thread
+  cleared).  Supported by a machine-register frame family for the object steps
+  (`{storeTcbQueueLinks,storeTcbIpcStateAndMessage,endpointQueuePopHead,endpointQueueEnqueue}_machine_eq`,
+  mirroring the existing `*_scheduler_eq` family) plus per-core run-queue /
+  current-thread projection lemmas (the high wake-insert / deschedule-remove /
+  current-clear are all observer-filtered).  Axiom-clean.
 
 - **Live cross-core SGI-dispatch seam.**  New
   `SeLe4n/Kernel/SyscallDispatchEntry.lean`: `syscallDispatchCrossCoreEntry`

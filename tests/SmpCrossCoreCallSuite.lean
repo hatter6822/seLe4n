@@ -11,6 +11,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.SyscallDispatchEntry
 import SeLe4n.Testing.StateBuilder
 
@@ -73,11 +74,17 @@ open SeLe4n.Testing
 #check @endpointCallOnCore_perCore_blocking
 #check @endpointCallOnCore_reply_linkage_under_lockSet
 
--- SM6.A.7 cross-core non-interference:
+-- SM6.A.7 cross-core non-interference (boot-core projectState):
 #check @endpointCallOnCore_call_path_NI
 #check @enqueueRunnableOnCore_preserves_projection
 #check @removeRunnableOnCore_preserves_projection
 #check @wakeThread_preserves_projection
+
+-- SM6.A.7 per-core / ∀-core non-interference (lowEquivalent_smp on every core):
+#check @endpointCallOnCore_call_path_NI_smp
+#check @endpointQueuePopHead_machine_eq
+#check @removeRunnableOnCore_projectCurrentOnCore_high
+#check @removeRunnableOnCore_preserves_projectionOnCore
 
 -- SM6.A.1 IPC invariant preservation:
 #check @endpointCallOnCore_preserves_objects_invExt

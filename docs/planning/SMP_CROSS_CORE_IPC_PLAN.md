@@ -165,13 +165,23 @@ replenish queue migrates per SM5.H.4.
 ### SM6.A — Endpoint call across cores (4 PRs, 10 sub-tasks)
 
 **Status: LANDED (v0.31.65).** Axiom-clean (`propext` / `Classical.choice` /
-`Quot.sound` only); Tier 0–3 green; staged (production partition 64 → 69). The
+`Quot.sound` only); Tier 0–3 green; staged (production partition 64 → 70). The
 cross-core transition `endpointCallOnCore` and the SM6.A theorems live in
 `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (+ `EndpointCallNI.lean` for
-the non-interference slice, `EndpointCallInvariant.lean` for IPC-invariant
-preservation, `EndpointCallEntry.lean` for the WithCaps + donation + FFI
-driver); the 21-assertion runtime suite is `tests/SmpCrossCoreCallSuite.lean`
-(`lake exe smp_cross_core_call_suite`).
+the boot-core non-interference slice, `EndpointCallNiPerCore.lean` for the
+per-core / ∀-core (`lowEquivalent_smp`) non-interference, `EndpointCallInvariant.lean`
+for IPC-invariant preservation, `EndpointCallEntry.lean` for the WithCaps +
+donation + FFI driver); the 21-assertion runtime suite is
+`tests/SmpCrossCoreCallSuite.lean` (`lake exe smp_cross_core_call_suite`).
+
+**Non-interference (per-core / ∀-core).** `endpointCallOnCore_call_path_NI_smp`
+strengthens the boot-core `projectState` NI to `lowEquivalent_smp`: a high
+cross-core call is invisible to a low observer on *every* core — the remote core
+the receiver is woken onto, the executing core where the caller is descheduled
+(and its current thread cleared), and every bystander core.  The proof rests on a
+machine-register frame family for the object steps (the `*_machine_eq` mirrors of
+the `*_scheduler_eq` family) plus per-core run-queue / current-thread projection
+lemmas: every scheduler edit touches only *high* threads the observer filters out.
 
 **Invariant preservation (full).** `endpointCallOnCore` provably preserves the
 whole fifteen-conjunct `ipcInvariantFull` (`endpointCallOnCore_preserves_ipcInvariantFull`),
@@ -202,7 +212,7 @@ executing core threaded into `syscallDispatchFromAbi`) — the SM5.F tracked deb
 | SM6.A.4 | `endpointCall_perCore_blocking` | `endpointCallOnCore_perCore_blocking` | ✓ |
 | SM6.A.5 | Donation chain lock-set extension | `lockSet_endpointCall_donation_extension` | ✓ |
 | SM6.A.6 | Reply state allocation under lock-set | `endpointCallOnCore_reply_linkage_under_lockSet` (+ `lockSet_endpointCall_caller_tcb_write_mem`: the caller-TCB write lock is a *member* of the footprint) | ✓ |
-| SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | `endpointCallOnCore_call_path_NI` (+ `{enqueueRunnableOnCore,removeRunnableOnCore,wakeThread}_preserves_projection`) | ✓ |
+| SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | `endpointCallOnCore_call_path_NI` (boot-core `projectState`) + `endpointCallOnCore_call_path_NI_smp` (per-core / ∀-core `lowEquivalent_smp` — invisible on *every* core) | ✓ |
 | SM6.A.8 | `endpointCallWithCaps_lockSet_correct` | `endpointCallWithCaps_lockSet_correct` (+ `lockSet_endpointCallWithCaps`) | ✓ |
 | SM6.A.9 | `endpointCall_atomic_under_lockSet` | `endpointCallOnCore_atomic_under_lockSet` (+ `endpointCallOnCore_withLockSet_preserves_objects_invExt`: invariant carried *through* the 2PL fold) | ✓ |
 | SM6.A.10 | 8 cross-core call scenarios | `tests/SmpCrossCoreCallSuite.lean` (21 runtime assertions) | ✓ |

@@ -411,6 +411,12 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 -- projection-preservation lemmas (`enqueueRunnableOnCore_preserves_projection` /
 -- `removeRunnableOnCore_preserves_projection` / `wakeThread_preserves_projection`).
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
+-- WS-SM SM6.A.7: per-core / ∀-core non-interference — `endpointCallOnCore_call_path_NI_smp`
+-- (a high cross-core call is `lowEquivalent_smp` pre/post: invisible to a low
+-- observer on *every* core, not just the boot core), built on a machine-register
+-- frame family for the object steps + per-core run-queue/current projection
+-- lemmas (the high wake/deschedule edits are observer-filtered).
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 -- WS-SM SM6.A.1: cross-core endpoint-call IPC invariant preservation —
 -- `endpointCallOnCore` preserves `objects.invExt` and the `ipcInvariant`
 -- notification well-formedness, via the object-invisibility keystone

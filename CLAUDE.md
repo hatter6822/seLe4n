@@ -667,7 +667,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Rust HAL at v0.31.62**: 724 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
-  **Staged modules**: 69 staged-only (via `Platform/Staged.lean` +
+  **Staged modules**: 70 staged-only (via `Platform/Staged.lean` +
   `scripts/staged_module_allowlist.txt`); production/staged partition
   gate enforced by `scripts/check_production_staging_partition.sh`.
 

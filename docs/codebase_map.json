@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/upbeat-edison-4ahj6q",
-      "commit_sha": "eec69be574134860915e27927a96b4fc73660b1d",
-      "tree_sha": "e1423a865d472aa8b789565a63d207efeb4ec3cd",
-      "committed_at_utc": "2026-06-13T06:53:09+00:00"
+      "commit_sha": "bc6dd3ea3e35b68114d36fad56d631fe11f4e011",
+      "tree_sha": "74482732883bff205e45f4aaf989d398e08a04ec",
+      "committed_at_utc": "2026-06-13T07:21:09+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "13475234dcb73cc81663e676c2b762597d2b97eb83af7a5d1de448445aadf2b6"
+    "source_digest": "34df48074b0ce9ac909412d5512587b9e6044d43ad3f7ec9f6d22b3e92c5270c"
   },
   "summary": {
-    "module_count": 297,
-    "declaration_count": 11105
+    "module_count": 298,
+    "declaration_count": 11130
   },
   "readme_sync": {
     "version": "0.31.65",
     "lean_toolchain": "v4.28.0",
-    "production_files": 238,
-    "production_loc": 175201,
+    "production_files": 239,
+    "production_loc": 175744,
     "test_files": 59,
-    "test_loc": 37900,
-    "proved_theorem_lemma_decls": 5864,
+    "test_loc": 37907,
+    "proved_theorem_lemma_decls": 5888,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -35382,6 +35382,510 @@
             "wakeThread",
             "wakeThread_preserves_objects_invExt",
             "wakeThread_preserves_projection"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallNiPerCore.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 38,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbQueueLinks_machine_eq",
+          "line": 48,
+          "called": [
+            "QueuePPrev",
+            "SystemState",
+            "ThreadId",
+            "lookupTcb",
+            "none",
+            "st",
+            "storeObject",
+            "storeObject_machine_eq",
+            "storeTcbQueueLinks",
+            "tcbWithQueueLinks",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_machine_eq",
+          "line": 66,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "lookupTcb",
+            "none",
+            "st",
+            "storeObject",
+            "storeObject_machine_eq",
+            "storeTcbIpcStateAndMessage",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_machine_eq",
+          "line": 84,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueuePopHead",
+            "head",
+            "lookupTcb",
+            "none",
+            "st",
+            "storeObject",
+            "storeObject_machine_eq",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_machine_eq",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_machine_eq",
+          "line": 136,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "lookupTcb",
+            "none",
+            "st",
+            "storeObject",
+            "storeObject_machine_eq",
+            "storeTcbQueueLinks",
+            "storeTcbQueueLinks_machine_eq",
+            "tail",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectStateOnCore_congr_runnable",
+          "line": 192,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "projectActiveDomainOnCore_frame",
+            "projectCurrentOnCore_frame",
+            "projectDomainScheduleIndexOnCore_frame",
+            "projectDomainTimeRemainingOnCore_frame",
+            "projectMachineRegsOnCore_frame",
+            "projectRunnableOnCore",
+            "projectState",
+            "projectStateOnCore",
+            "regsOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_projectRunnableOnCore_high",
+          "line": 217,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "enqueueRunnableOnCore",
+            "enqueueRunnableOnCore_runQueueOnCore_ne",
+            "getTcb",
+            "none",
+            "projectRunnableOnCore",
+            "setRunQueueOnCore_runQueueOnCore_self",
+            "st",
+            "threadObservable",
+            "toList_filter_insert_neg'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_projectRunnableOnCore_high",
+          "line": 237,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "projectRunnableOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_runQueueOnCore_ne",
+            "removeRunnableOnCore_runQueueOnCore_self",
+            "st",
+            "threadObservable",
+            "toList_filter_remove_neg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "projectStateOnCore_congr_proj",
+          "line": 259,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "activeDomainOnCore",
+            "domainScheduleIndexOnCore",
+            "domainTimeRemainingOnCore",
+            "projectActiveDomainOnCore_frame",
+            "projectCurrentOnCore",
+            "projectDomainScheduleIndexOnCore_frame",
+            "projectDomainTimeRemainingOnCore_frame",
+            "projectMachineRegsOnCore",
+            "projectRunnableOnCore",
+            "projectState",
+            "projectStateOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_activeDomainOnCore",
+          "line": 276,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "activeDomainOnCore",
+            "enqueueRunnableOnCore",
+            "getTcb",
+            "none",
+            "setRunQueueOnCore_activeDomainOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_domainTimeRemainingOnCore",
+          "line": 289,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "domainTimeRemainingOnCore",
+            "enqueueRunnableOnCore",
+            "getTcb",
+            "none",
+            "setRunQueueOnCore_domainTimeRemainingOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_domainScheduleIndexOnCore",
+          "line": 302,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "domainScheduleIndexOnCore",
+            "enqueueRunnableOnCore",
+            "getTcb",
+            "none",
+            "setRunQueueOnCore_domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_machineEq",
+          "line": 315,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "enqueueRunnableOnCore",
+            "getTcb",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_machine_eq",
+          "line": 322,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "removeRunnableOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_activeDomainOnCore",
+          "line": 326,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "activeDomainOnCore",
+            "removeRunnableOnCore",
+            "setCurrentOnCore_activeDomainOnCore",
+            "setRunQueueOnCore_activeDomainOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_domainTimeRemainingOnCore",
+          "line": 334,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "domainTimeRemainingOnCore",
+            "removeRunnableOnCore",
+            "setCurrentOnCore_domainTimeRemainingOnCore",
+            "setRunQueueOnCore_domainTimeRemainingOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_domainScheduleIndexOnCore",
+          "line": 342,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "domainScheduleIndexOnCore",
+            "removeRunnableOnCore",
+            "setCurrentOnCore_domainScheduleIndexOnCore",
+            "setRunQueueOnCore_domainScheduleIndexOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_projectCurrentOnCore_high",
+          "line": 353,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "none",
+            "projectCurrentOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_currentOnCore_ne",
+            "removeRunnableOnCore_currentOnCore_self",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_projectMachineRegsOnCore_high",
+          "line": 373,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "currentOnCore",
+            "none",
+            "projectMachineRegsOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_currentOnCore_ne",
+            "removeRunnableOnCore_currentOnCore_self",
+            "removeRunnableOnCore_machine_eq",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_preserves_projectionOnCore",
+          "line": 393,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_machine_eq",
+            "endpointQueuePopHead_preserves_projection",
+            "endpointQueuePopHead_scheduler_eq",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "projectStateOnCore_congr",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_projectionOnCore",
+          "line": 411,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "IpcMessage",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "projectStateOnCore_congr",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_machine_eq",
+            "storeTcbIpcStateAndMessage_preserves_projection",
+            "storeTcbIpcStateAndMessage_scheduler_eq",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_preserves_projectionOnCore",
+          "line": 427,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "enqueueRunnableOnCore",
+            "enqueueRunnableOnCore_activeDomainOnCore",
+            "enqueueRunnableOnCore_currentOnCore",
+            "enqueueRunnableOnCore_domainScheduleIndexOnCore",
+            "enqueueRunnableOnCore_domainTimeRemainingOnCore",
+            "enqueueRunnableOnCore_machineEq",
+            "enqueueRunnableOnCore_preserves_projection",
+            "enqueueRunnableOnCore_projectRunnableOnCore_high",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "projectStateOnCore_congr_runnable",
+            "st",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wakeThread_preserves_projectionOnCore",
+          "line": 444,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "enqueueRunnableOnCore_preserves_projectionOnCore",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "st",
+            "threadObservable",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_state_eq_enqueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_preserves_projectionOnCore",
+          "line": 458,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "projectStateOnCore",
+            "projectStateOnCore_congr_proj",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_activeDomainOnCore",
+            "removeRunnableOnCore_domainScheduleIndexOnCore",
+            "removeRunnableOnCore_domainTimeRemainingOnCore",
+            "removeRunnableOnCore_preserves_projection",
+            "removeRunnableOnCore_projectCurrentOnCore_high",
+            "removeRunnableOnCore_projectMachineRegsOnCore_high",
+            "removeRunnableOnCore_projectRunnableOnCore_high",
+            "st",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_call_path_NI_smp",
+          "line": 489,
+          "called": [
+            "CoreId",
+            "Endpoint",
+            "IfObserver",
+            "IpcMessage",
+            "Kernel",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointCallOnCore_rendezvous_eq",
+            "endpointId",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointQueuePopHead_preserves_projectionOnCore",
+            "head",
+            "invExt",
+            "lowEquivalent_smp",
+            "maxExtraCaps",
+            "maxMessageRegisters",
+            "none",
+            "objectObservable",
+            "projectStateOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_projectionOnCore",
+            "size",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_projectionOnCore",
+            "threadObservable",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_preserves_objects_invExt",
+            "wakeThread_preserves_projectionOnCore"
           ]
         }
       ]
@@ -116907,13 +117411,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 489,
+          "line": 495,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 495,
+          "line": 501,
           "called": []
         }
       ]
@@ -143531,7 +144035,7 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCrossCoreCall",
-          "line": 36,
+          "line": 37,
           "called": [
             "dualQueueSystemInvariant_of_getElem_eq",
             "endpointCallCrossCoreDispatch",
@@ -143542,6 +144046,7 @@
             "endpointCallOnCore",
             "endpointCallOnCore_atomic_under_lockSet",
             "endpointCallOnCore_call_path_NI",
+            "endpointCallOnCore_call_path_NI_smp",
             "endpointCallOnCore_emits_sgi_if_remote_receiver",
             "endpointCallOnCore_lockSet_correct",
             "endpointCallOnCore_noReceiver_eq",
@@ -143561,6 +144066,7 @@
             "endpointCallWithCapsOnCore",
             "endpointCallWithCapsOnCore_no_caps",
             "endpointCallWithCaps_lockSet_correct",
+            "endpointQueuePopHead_machine_eq",
             "enqueueRunnableOnCore_objects_getElem_eq_of_ready",
             "enqueueRunnableOnCore_preserves_projection",
             "lockSet_endpointCallOnCore",
@@ -143571,6 +144077,8 @@
             "removeRunnableOnCore",
             "removeRunnableOnCore_bootCoreId",
             "removeRunnableOnCore_preserves_projection",
+            "removeRunnableOnCore_preserves_projectionOnCore",
+            "removeRunnableOnCore_projectCurrentOnCore_high",
             "syscallDispatchCrossCoreEntry",
             "syscallDispatchCrossCoreEntry_def",
             "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
@@ -143579,8 +144087,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:118>",
-          "line": 118,
+          "name": "<anonymous:example:125>",
+          "line": 125,
           "called": [
             "CoreId",
             "Endpoint",
@@ -143607,8 +144115,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:138>",
-          "line": 138,
+          "name": "<anonymous:example:145>",
+          "line": 145,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -143628,8 +144136,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:149>",
-          "line": 149,
+          "name": "<anonymous:example:156>",
+          "line": 156,
           "called": [
             "CoreId",
             "Endpoint",
@@ -143662,7 +144170,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 179,
+          "line": 186,
           "called": [
             "throw"
           ]
@@ -143670,7 +144178,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 185,
+          "line": 192,
           "called": [
             "CoreId"
           ]
@@ -143678,7 +144186,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 187,
+          "line": 194,
           "called": [
             "ObjId"
           ]
@@ -143686,7 +144194,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 188,
+          "line": 195,
           "called": [
             "ObjId"
           ]
@@ -143694,7 +144202,7 @@
         {
           "kind": "def",
           "name": "destCnode",
-          "line": 189,
+          "line": 196,
           "called": [
             "ObjId"
           ]
@@ -143702,7 +144210,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 190,
+          "line": 197,
           "called": [
             "SchedContextId"
           ]
@@ -143710,7 +144218,7 @@
         {
           "kind": "def",
           "name": "callerTid",
-          "line": 191,
+          "line": 198,
           "called": [
             "ThreadId"
           ]
@@ -143718,7 +144226,7 @@
         {
           "kind": "def",
           "name": "recvLocalTid",
-          "line": 192,
+          "line": 199,
           "called": [
             "ThreadId"
           ]
@@ -143726,7 +144234,7 @@
         {
           "kind": "def",
           "name": "recvRemoteTid",
-          "line": 193,
+          "line": 200,
           "called": [
             "ThreadId"
           ]
@@ -143734,7 +144242,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 195,
+          "line": 202,
           "called": [
             "CoreId",
             "TCB",
@@ -143745,7 +144253,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 201,
+          "line": 208,
           "called": [
             "SystemState",
             "build",
@@ -143763,7 +144271,7 @@
         {
           "kind": "def",
           "name": "stWithReceiver",
-          "line": 211,
+          "line": 218,
           "called": [
             "SystemState",
             "ThreadId",
@@ -143777,7 +144285,7 @@
         {
           "kind": "def",
           "name": "callSgi",
-          "line": 217,
+          "line": 224,
           "called": [
             "CoreId",
             "SgiKind",
@@ -143793,7 +144301,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 222,
+          "line": 229,
           "called": [
             "assertBool",
             "callerTid",
@@ -143818,7 +144326,7 @@
         {
           "kind": "def",
           "name": "runBlockingChecks",
-          "line": 258,
+          "line": 265,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -143835,7 +144343,7 @@
         {
           "kind": "def",
           "name": "runNoReceiverChecks",
-          "line": 273,
+          "line": 280,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -143857,7 +144365,7 @@
         {
           "kind": "def",
           "name": "runRendezvousChecks",
-          "line": 297,
+          "line": 304,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -143879,7 +144387,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreCallChecks",
-          "line": 324,
+          "line": 331,
           "called": [
             "runBlockingChecks",
             "runLockSetChecks",
@@ -143890,7 +144398,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 336,
+          "line": 343,
           "called": [
             "runSmpCrossCoreCallChecks"
           ]
