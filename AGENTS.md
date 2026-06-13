@@ -667,7 +667,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Rust HAL at v0.31.62**: 724 tests, zero clippy warnings,
   zero `#[ignore]`'d.
 
-  **Staged modules**: 70 staged-only (via `Platform/Staged.lean` +
+  **Staged modules**: 71 staged-only (via `Platform/Staged.lean` +
   `scripts/staged_module_allowlist.txt`); production/staged partition
   gate enforced by `scripts/check_production_staging_partition.sh`.
 
@@ -678,20 +678,28 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **SM5.F / SM6.A live-`.call` tracked debt**: SM6.A delivered the verified
   cross-core call operation (`endpointCallOnCore`), its full invariant
   preservation (`ipcInvariantFull`), per-core/∀-core non-interference
-  (`lowEquivalent_smp`), WithCaps + donation (`endpointCallCrossCoreDispatch`),
-  and the staged live drivers — `endpointCallCrossCoreEntry`
-  (`@[export lean_endpoint_call_cross_core]`) and the diff-based SGI-dispatch
-  seam `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
-  **Closure target SM5.I**: thread the executing core through
-  `syscallDispatchFromAbi → syscallEntryChecked → dispatchWithCap{,Checked}` (so
-  the caller is identified and descheduled on its *own* core, not the boot core),
-  route the live `.call` arm through `endpointCallOnCore` at that core, and flip
-  the Rust `svc_dispatch` extern from `syscall_dispatch_inner` to
-  `lean_syscall_dispatch_cross_core`.  This is deferred because it changes the
-  `.call` arm's wake operation (`ensureRunnable` → `enqueueRunnableOnCore`) and
-  threads a new parameter through the verified dispatch chain exercised by the
-  trace harness + 8 dispatch suites — a per-core-dispatch migration, not an
-  SM6.A increment.
+  (`lowEquivalent_smp`), the WithCaps + donation dispatch
+  (`endpointCallCrossCoreDispatch`) and the info-flow-checked dispatch
+  (`endpointCallCrossCoreDispatchChecked` — the cross-core analogue of
+  `endpointCallChecked`) **below the API layer** in `EndpointCallDispatch`
+  (FFI-free, ready for the live `.call` arm), plus the staged live drivers —
+  `endpointCallCrossCoreEntry` (`@[export lean_endpoint_call_cross_core]`) and the
+  diff-based SGI-dispatch seam `syscallDispatchCrossCoreEntry`
+  (`@[export lean_syscall_dispatch_cross_core]`).  **Closure = the v1.0.0
+  SMP-by-default milestone, not an SM6.A increment.**  Routing the live
+  `dispatchWithCap{,Checked}` `.call` arm through `endpointCallCrossCoreDispatch`
+  was validated end-to-end (API + `Main` + trace harness build clean, the trace
+  fixture is byte-identical, and all 8 `.call` dispatch suites pass — the
+  `ensureRunnable`→`enqueueRunnableOnCore` wake change is invariant-safe), but it
+  makes **13 staged SMP modules** production-reachable (the lock hierarchy
+  `Kind`/`LockSet*`/`WithLockSet`, the per-core scheduler
+  `PerCore{Wake,ChooseThread,SwitchToThread}` + `{IPC,Scheduler}.Invariant.PerCore`,
+  and `EndpointCall`).  The Tier-0 production/staged partition gate (which must
+  not be bypassed) correctly blocks this: promoting the whole SMP stack to
+  production is the v1.0.0 "SMP enabled by default" milestone, premature at
+  v0.31.65.  The live arm + the Rust `svc_dispatch` extern flip
+  (`syscall_dispatch_inner` → `lean_syscall_dispatch_cross_core`) land together
+  with that promotion.
 
   **SM4.C.11 tracked debt**: per-core Liveness forms
   (`Scheduler/Liveness/*.lean`) remain bootCoreId-pinned; migration

@@ -431,7 +431,12 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 -- surfacing the SGI), and the live `endpointCallCrossCoreEntry` BaseIO driver
 -- (read currentCoreId, commit via modifyGetKernelState, fire the SGI via
 -- emitWakeSgi) + the `@[export lean_endpoint_call_cross_core]` C seam, mirroring
--- the SM5.I perCoreTimerTickEntry pattern.
+-- the SM5.I perCoreTimerTickEntry pattern.  The pure dispatch ops it layers over
+-- (`endpointCallWithCapsOnCore`, `endpointCallCrossCoreDispatch`, and the
+-- info-flow-checked `endpointCallCrossCoreDispatchChecked`) live below the API
+-- layer in `EndpointCallDispatch`, ready for the live `.call` arm once the SMP
+-- infrastructure is production-promoted at the v1.0.0 SMP-by-default milestone.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).

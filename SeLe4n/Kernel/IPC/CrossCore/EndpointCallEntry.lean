@@ -7,33 +7,23 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM6.A cross-core IPC live dispatch (the SM5.I FFI
--- seam; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- STATUS: staged for WS-SM SM6.A cross-core IPC (the live BaseIO seam +
+-- @[export]; the pure dispatch ops live in EndpointCallDispatch, below the API
+-- layer; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
 
-import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
-import SeLe4n.Kernel.IPC.DualQueue.WithCaps
-import SeLe4n.Kernel.IPC.Operations.Donation.Primitives
-import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Platform.FFI
 
 /-!
-# WS-SM SM6.A — Cross-core endpoint call: WithCaps + live FFI seam
+# WS-SM SM6.A — Cross-core endpoint call: the live FFI seam
 
-The live cross-core `Call` path.  Composes:
-
-* **`endpointCallWithCapsOnCore`** — the cross-core `endpointCallWithCaps`: the
-  cross-core `endpointCallOnCore` rendezvous (SGI surfaced) followed by
-  `ipcUnwrapCaps` capability transfer to the receiver's CSpace, mirroring the
-  single-core `endpointCallWithCaps`.
-* **`endpointCallCrossCoreDispatch`** — the full `.call` syscall semantics
-  across cores: the WithCaps call, then the SchedContext **donation** to a
-  passive server (`applyCallDonation`), then priority-inheritance propagation
-  (`propagatePriorityInheritance`), surfacing the cross-core `.reschedule` SGI.
-* **`endpointCallCrossCoreEntry`** — the live `BaseIO` FFI seam: read the
-  executing core (`currentCoreId`), commit the dispatch atomically against the
-  kernel state ref (`modifyGetKernelState`), then fire the surfaced SGI
-  (`emitWakeSgi`).  Mirrors the SM5.I `perCoreTimerTickEntry` pattern.
+The BaseIO live driver and the `@[export]` C symbol for the cross-core `Call`,
+layered over the pure `endpointCallCrossCoreDispatch` (in `EndpointCallDispatch`,
+below the API layer).  Reads the executing core (`currentCoreId`), commits the
+dispatch atomically against the kernel state ref (`modifyGetKernelState`), then
+fires the surfaced SGI (`emitWakeSgi`).  Mirrors the SM5.I `perCoreTimerTickEntry`
+pattern.
 -/
 
 namespace SeLe4n.Kernel
@@ -42,80 +32,7 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (CoreId SgiKind)
 
 -- ============================================================================
--- §1  Cross-core `endpointCallWithCaps`
--- ============================================================================
-
-/-- WS-SM SM6.A.8 (operation): endpoint call with capability transfer, across
-cores.  The cross-core `endpointCallOnCore` rendezvous (which surfaces the
-receiver-wake SGI), then — on an immediate rendezvous carrying caps —
-`ipcUnwrapCaps` installs the transferred capabilities into the receiver's
-CSpace (gated on the endpoint's `grant` right).  Returns the post-state, the
-capability-transfer summary, and the optional cross-core SGI. -/
-def endpointCallWithCapsOnCore
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) :
-    SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
-  let hasReceiver := match st.getEndpoint? endpointId with
-    | some ep => ep.receiveQ.head.isSome
-    | none    => false
-  match endpointCallOnCore endpointId caller msg executingCore st with
-  | (st', .error e) => (st', .error e)
-  | (st', .ok sgi) =>
-      if !hasReceiver || msg.caps.isEmpty then (st', .ok ({ results := #[] }, sgi))
-      else
-        match st.getEndpoint? endpointId with
-        | some ep =>
-          match ep.receiveQ.head with
-          | some receiverId =>
-            match lookupCspaceRoot st' receiverId with
-            | some recvRoot =>
-              match ipcUnwrapCaps msg callerCspaceRoot recvRoot receiverSlotBase
-                  (endpointRights.mem .grant) st' with
-              | .error e => (st', .error e)
-              | .ok (summary, st'') => (st'', .ok (summary, sgi))
-            | none => (st', .error .invalidCapability)
-          | none => (st', .ok ({ results := #[] }, sgi))
-        | none => (st', .ok ({ results := #[] }, sgi))
-
--- ============================================================================
--- §2  Full cross-core `.call` dispatch (WithCaps + donation + PIP)
--- ============================================================================
-
-/-- WS-SM SM6.A.5 (operation): the full cross-core `Call` syscall semantics.
-The cross-core WithCaps call, then — if a receiver rendezvoused — the
-SchedContext **donation** to a passive server (`applyCallDonation` rebinds the
-caller's bound SchedContext to the receiver, an object-store-only update that is
-cross-core-safe) and priority-inheritance propagation.  The cross-core
-`.reschedule` SGI is surfaced for the runtime to fire after the commit.
-Mirrors the live single-core `.call` dispatch arm (`API.dispatchWithCap`). -/
-def endpointCallCrossCoreDispatch
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) :
-    SystemState × Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)) :=
-  let maybeReceiver := match st.getEndpoint? endpointId with
-    | some ep => ep.receiveQ.head
-    | none    => none
-  match endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
-      receiverSlotBase executingCore st with
-  | (st', .error e) => (st', .error e)
-  | (st', .ok (summary, sgi)) =>
-      match maybeReceiver with
-      | some receiverTid =>
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerV, some receiverV =>
-          match applyCallDonation st' callerV receiverV with
-          | .error e => (st', .error e)
-          | .ok st'' =>
-              (PriorityInheritance.propagatePriorityInheritance st'' receiverTid, .ok (summary, sgi))
-        | _, _ => (st', .error .invalidArgument)
-      | none => (st', .ok (summary, sgi))
-
--- ============================================================================
--- §3  Live FFI seam (the SM5.I `perCoreTimerTickEntry` pattern)
+-- §1  Live FFI seam (the SM5.I `perCoreTimerTickEntry` pattern)
 -- ============================================================================
 
 /-- WS-SM SM6.A.10 (live driver): run a cross-core `Call` against the live
@@ -155,51 +72,6 @@ def endpointCallCrossCoreExport (endpointIdRaw callerRaw : UInt64) :
   match res with
   | .ok _ => pure 0
   | .error e => pure (Platform.FFI.KernelError.toUInt32 e)
-
--- ============================================================================
--- §4  Characterisation theorems
--- ============================================================================
-
-/-- WS-SM SM6.A.8: with no capabilities to transfer, the WithCaps cross-core
-call is exactly the bare cross-core call (empty transfer summary), so its
-surfaced SGI is the bare call's — the SM6.A.3 SGI characterisation carries to
-the WithCaps path. -/
-theorem endpointCallWithCapsOnCore_no_caps
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
-    (hCaps : msg.caps.isEmpty = true) :
-    endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
-        receiverSlotBase executingCore st
-      = ((endpointCallOnCore endpointId caller msg executingCore st).1,
-         (endpointCallOnCore endpointId caller msg executingCore st).2.map
-           (fun sgi => ({ results := #[] }, sgi))) := by
-  unfold endpointCallWithCapsOnCore
-  cases h : endpointCallOnCore endpointId caller msg executingCore st with
-  | mk st' res => cases res with
-    | error e => simp [Except.map]
-    | ok sgi => simp [hCaps, Except.map]
-
-/-- WS-SM SM6.A.5: on the no-receiver path (the caller blocks as `blockedOnCall`)
-the cross-core dispatch performs no donation — it is exactly the WithCaps call.
-Donation only fires on an immediate rendezvous with a passive server. -/
-theorem endpointCallCrossCoreDispatch_no_receiver
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet) (callerCspaceRoot : SeLe4n.ObjId)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
-    (hNoRecv : (match st.getEndpoint? endpointId with
-      | some ep => ep.receiveQ.head | none => none) = none) :
-    endpointCallCrossCoreDispatch endpointId caller msg endpointRights callerCspaceRoot
-        receiverSlotBase executingCore st
-      = endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
-          receiverSlotBase executingCore st := by
-  unfold endpointCallCrossCoreDispatch
-  rw [hNoRecv]
-  cases h : endpointCallWithCapsOnCore endpointId caller msg endpointRights callerCspaceRoot
-      receiverSlotBase executingCore st with
-  | mk st' res => cases res with
-    | error e => rfl
-    | ok pair => rfl
 
 /-- WS-SM SM6.A.10: the live driver's three-phase shape — read the executing
 core, atomically commit the dispatch, then fire the surfaced SGI. -/

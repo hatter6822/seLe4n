@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
 import SeLe4n.Kernel.SyscallDispatchEntry
@@ -110,6 +111,12 @@ open SeLe4n.Testing
 #check @endpointCallCrossCoreExport
 #check @endpointCallWithCapsOnCore_no_caps
 #check @endpointCallCrossCoreDispatch_no_receiver
+
+-- SM6.A info-flow-checked cross-core dispatch (the op the live checked `.call`
+-- arm will route through once the SMP stack is production-promoted at v1.0.0):
+#check @endpointCallCrossCoreDispatchChecked
+#check @endpointCallCrossCoreDispatchChecked_flow_denied
+#check @endpointCallCrossCoreDispatchChecked_flow_allowed
 
 -- SM6.A live SGI-dispatch seam: the cross-core-aware syscall dispatch entry +
 -- its body-shape marker + the single-core inertness (trace-safety) witness:

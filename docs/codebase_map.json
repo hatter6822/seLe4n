@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/upbeat-edison-4ahj6q",
-      "commit_sha": "bc6dd3ea3e35b68114d36fad56d631fe11f4e011",
-      "tree_sha": "74482732883bff205e45f4aaf989d398e08a04ec",
-      "committed_at_utc": "2026-06-13T07:21:09+00:00"
+      "commit_sha": "ab60be1c92b5fccb341091c77425a630c963e8c6",
+      "tree_sha": "073e9cde766301523f6c920cb138f961f7759f11",
+      "committed_at_utc": "2026-06-13T08:01:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "34df48074b0ce9ac909412d5512587b9e6044d43ad3f7ec9f6d22b3e92c5270c"
+    "source_digest": "4388798c08e28d7587275a0aa5edca91167bf0ea20f50c460c75d4894141ecc7"
   },
   "summary": {
-    "module_count": 298,
-    "declaration_count": 11130
+    "module_count": 299,
+    "declaration_count": 11134
   },
   "readme_sync": {
     "version": "0.31.65",
     "lean_toolchain": "v4.28.0",
-    "production_files": 239,
-    "production_loc": 175744,
+    "production_files": 240,
+    "production_loc": 175825,
     "test_files": 59,
-    "test_loc": 37907,
-    "proved_theorem_lemma_decls": 5888,
+    "test_loc": 37914,
+    "proved_theorem_lemma_decls": 5890,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -34569,20 +34569,20 @@
       ]
     },
     {
-      "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry",
-      "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallEntry.lean",
+      "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean",
       "declaration_count": 8,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 39,
+          "line": 33,
           "called": []
         },
         {
           "kind": "def",
           "name": "endpointCallWithCapsOnCore",
-          "line": 54,
+          "line": 48,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -34609,7 +34609,7 @@
         {
           "kind": "def",
           "name": "endpointCallCrossCoreDispatch",
-          "line": 93,
+          "line": 87,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -34634,39 +34634,63 @@
         },
         {
           "kind": "def",
-          "name": "endpointCallCrossCoreEntry",
-          "line": 128,
+          "name": "endpointCallCrossCoreDispatchChecked",
+          "line": 121,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
             "CoreId",
             "IpcMessage",
             "KernelError",
+            "LabelingContext",
             "ObjId",
             "SgiKind",
             "Slot",
+            "SystemState",
             "ThreadId",
-            "currentCoreId",
-            "emitWakeSgi",
             "endpointCallCrossCoreDispatch",
             "endpointId",
-            "modifyGetKernelState",
-            "none",
-            "pure",
+            "securityFlowsTo",
             "st"
           ]
         },
         {
-          "kind": "def",
-          "name": "endpointCallCrossCoreExport",
-          "line": 150,
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatchChecked_flow_denied",
+          "line": 135,
           "called": [
-            "KernelError.toUInt32",
-            "empty",
-            "endpointCallCrossCoreEntry",
-            "ofNat",
-            "pure",
-            "toNat"
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "endpointCallCrossCoreDispatchChecked",
+            "endpointId",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatchChecked_flow_allowed",
+          "line": 147,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "endpointCallCrossCoreDispatch",
+            "endpointCallCrossCoreDispatchChecked",
+            "endpointId",
+            "securityFlowsTo",
+            "st"
           ]
         },
         {
@@ -34696,6 +34720,7 @@
             "AccessRightSet",
             "CoreId",
             "IpcMessage",
+            "Kernel",
             "ObjId",
             "Slot",
             "SystemState",
@@ -34708,11 +34733,61 @@
             "none",
             "st"
           ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallEntry.lean",
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 29,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "endpointCallCrossCoreEntry",
+          "line": 45,
+          "called": [
+            "AccessRightSet",
+            "CapTransferSummary",
+            "CoreId",
+            "IpcMessage",
+            "KernelError",
+            "ObjId",
+            "SgiKind",
+            "Slot",
+            "ThreadId",
+            "currentCoreId",
+            "emitWakeSgi",
+            "endpointCallCrossCoreDispatch",
+            "endpointId",
+            "modifyGetKernelState",
+            "none",
+            "pure",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointCallCrossCoreExport",
+          "line": 67,
+          "called": [
+            "KernelError.toUInt32",
+            "empty",
+            "endpointCallCrossCoreEntry",
+            "ofNat",
+            "pure",
+            "toNat"
+          ]
         },
         {
           "kind": "theorem",
           "name": "endpointCallCrossCoreEntry_def",
-          "line": 206,
+          "line": 78,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -117411,13 +117486,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 495,
+          "line": 500,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 501,
+          "line": 506,
           "called": []
         }
       ]
@@ -144035,10 +144110,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCrossCoreCall",
-          "line": 37,
+          "line": 38,
           "called": [
             "dualQueueSystemInvariant_of_getElem_eq",
             "endpointCallCrossCoreDispatch",
+            "endpointCallCrossCoreDispatchChecked",
+            "endpointCallCrossCoreDispatchChecked_flow_allowed",
+            "endpointCallCrossCoreDispatchChecked_flow_denied",
             "endpointCallCrossCoreDispatch_no_receiver",
             "endpointCallCrossCoreEntry",
             "endpointCallCrossCoreExport",
@@ -144087,8 +144165,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:125>",
-          "line": 125,
+          "name": "<anonymous:example:132>",
+          "line": 132,
           "called": [
             "CoreId",
             "Endpoint",
@@ -144115,8 +144193,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:145>",
-          "line": 145,
+          "name": "<anonymous:example:152>",
+          "line": 152,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -144136,8 +144214,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:156>",
-          "line": 156,
+          "name": "<anonymous:example:163>",
+          "line": 163,
           "called": [
             "CoreId",
             "Endpoint",
@@ -144170,7 +144248,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 186,
+          "line": 193,
           "called": [
             "throw"
           ]
@@ -144178,7 +144256,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 192,
+          "line": 199,
           "called": [
             "CoreId"
           ]
@@ -144186,7 +144264,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 194,
+          "line": 201,
           "called": [
             "ObjId"
           ]
@@ -144194,7 +144272,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 195,
+          "line": 202,
           "called": [
             "ObjId"
           ]
@@ -144202,7 +144280,7 @@
         {
           "kind": "def",
           "name": "destCnode",
-          "line": 196,
+          "line": 203,
           "called": [
             "ObjId"
           ]
@@ -144210,7 +144288,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 197,
+          "line": 204,
           "called": [
             "SchedContextId"
           ]
@@ -144218,7 +144296,7 @@
         {
           "kind": "def",
           "name": "callerTid",
-          "line": 198,
+          "line": 205,
           "called": [
             "ThreadId"
           ]
@@ -144226,7 +144304,7 @@
         {
           "kind": "def",
           "name": "recvLocalTid",
-          "line": 199,
+          "line": 206,
           "called": [
             "ThreadId"
           ]
@@ -144234,7 +144312,7 @@
         {
           "kind": "def",
           "name": "recvRemoteTid",
-          "line": 200,
+          "line": 207,
           "called": [
             "ThreadId"
           ]
@@ -144242,7 +144320,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 202,
+          "line": 209,
           "called": [
             "CoreId",
             "TCB",
@@ -144253,7 +144331,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 208,
+          "line": 215,
           "called": [
             "SystemState",
             "build",
@@ -144271,7 +144349,7 @@
         {
           "kind": "def",
           "name": "stWithReceiver",
-          "line": 218,
+          "line": 225,
           "called": [
             "SystemState",
             "ThreadId",
@@ -144285,7 +144363,7 @@
         {
           "kind": "def",
           "name": "callSgi",
-          "line": 224,
+          "line": 231,
           "called": [
             "CoreId",
             "SgiKind",
@@ -144301,7 +144379,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 229,
+          "line": 236,
           "called": [
             "assertBool",
             "callerTid",
@@ -144326,7 +144404,7 @@
         {
           "kind": "def",
           "name": "runBlockingChecks",
-          "line": 265,
+          "line": 272,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -144343,7 +144421,7 @@
         {
           "kind": "def",
           "name": "runNoReceiverChecks",
-          "line": 280,
+          "line": 287,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -144365,7 +144443,7 @@
         {
           "kind": "def",
           "name": "runRendezvousChecks",
-          "line": 304,
+          "line": 311,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -144387,7 +144465,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreCallChecks",
-          "line": 331,
+          "line": 338,
           "called": [
             "runBlockingChecks",
             "runLockSetChecks",
@@ -144398,7 +144476,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 343,
+          "line": 350,
           "called": [
             "runSmpCrossCoreCallChecks"
           ]

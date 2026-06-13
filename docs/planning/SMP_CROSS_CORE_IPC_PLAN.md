@@ -198,11 +198,23 @@ wired into a live syscall entry: `syscallDispatchCrossCoreEntry`
 atomically via `modifyGetKernelState`, then fires the diff-recovered
 `computeCrossCoreSgis` via `fireCrossCoreSgis` — the syscall analogue of
 `perCoreTimerTickEntry`.  Single-core-inert / trace-safe
-(`syscallDispatchCrossCoreEntry_sgis_nil_single_core`).  Runtime wiring of
-`endpointCallOnCore`'s *receiver wake* into this path (so a remote `.call`
-receiver fires its reschedule), and the Rust switchover from the boot-pinned
-`syscall_dispatch_inner`, remain gated on the SM5.I per-core dispatch seam (the
-executing core threaded into `syscallDispatchFromAbi`) — the SM5.F tracked debt.
+(`syscallDispatchCrossCoreEntry_sgis_nil_single_core`).
+
+**Live `.call` arm — built, validated, gated on v1.0.0.**  The pure cross-core
+`.call` dispatch ops live **below the API layer** in
+`SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (FFI-free):
+`endpointCallWithCapsOnCore`, `endpointCallCrossCoreDispatch`, and the
+info-flow-checked `endpointCallCrossCoreDispatchChecked` (the cross-core
+analogue of `endpointCallChecked`).  Routing the live `dispatchWithCap{,Checked}`
+`.call` arm through them was validated end-to-end — API + `Main` + the trace
+harness build clean, the trace fixture is byte-identical, and all 8 `.call`
+dispatch suites pass (the `ensureRunnable`→`enqueueRunnableOnCore` wake change is
+invariant-safe).  **But** the live arm makes 13 staged SMP modules
+(lock hierarchy + per-core scheduler + cross-core call) production-reachable; the
+Tier-0 production/staged partition gate correctly blocks that — it is the v1.0.0
+"SMP enabled by default" milestone, premature at v0.31.65.  The live arm + the
+Rust `svc_dispatch` extern flip (`syscall_dispatch_inner` →
+`lean_syscall_dispatch_cross_core`) land together with that promotion.
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|

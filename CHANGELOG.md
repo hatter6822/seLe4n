@@ -106,6 +106,23 @@ production transitions.
   current-thread projection lemmas (the high wake-insert / deschedule-remove /
   current-clear are all observer-filtered).  Axiom-clean.
 
+- **Info-flow-checked cross-core dispatch + below-API refactor.**  Split the
+  cross-core `.call` dispatch into a new FFI-free
+  `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (below the API layer,
+  so the live `.call` arm can route through it) and the BaseIO seam in
+  `EndpointCallEntry`.  Added `endpointCallCrossCoreDispatchChecked` — the
+  cross-core analogue of `endpointCallChecked` (`securityFlowsTo` guard + the
+  cross-core WithCaps/donation dispatch; `_flow_denied` / `_flow_allowed`), the
+  operation the live checked `.call` arm routes through.  Routing the live
+  `dispatchWithCap{,Checked}` `.call` arm through it was validated end-to-end
+  (API + `Main` + trace harness build clean; the trace fixture is byte-identical;
+  all 8 `.call` dispatch suites pass — the `ensureRunnable`→`enqueueRunnableOnCore`
+  wake change is invariant-safe), but doing so makes **13 staged SMP modules**
+  production-reachable (lock hierarchy + per-core scheduler + cross-core call).
+  The Tier-0 production/staged partition gate correctly blocks this: live `.call`
+  activation is the v1.0.0 SMP-by-default milestone, premature at v0.31.65, and
+  is recorded as explicit tracked debt.  Axiom-clean.
+
 - **Live cross-core SGI-dispatch seam.**  New
   `SeLe4n/Kernel/SyscallDispatchEntry.lean`: `syscallDispatchCrossCoreEntry`
   (`@[export lean_syscall_dispatch_cross_core]`), the syscall analogue of
