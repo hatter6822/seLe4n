@@ -580,4 +580,76 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
         recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
   exact ⟨t, hGet, hIpc⟩
 
+-- ============================================================================
+-- §14  SM6.A.6 — the caller-TCB write lock IS in the footprint (membership)
+-- ============================================================================
+
+/-- Forward `insertOrMerge` membership: a pair already present under a key
+distinct from `l` survives the insert (it is neither replaced nor merged). -/
+theorem mem_insertOrMerge_of_mem_of_ne (S : LockSet) (l : LockId) (m : AccessMode)
+    (p : LockId × AccessMode) (hp : p ∈ S.pairs) (hne : p.fst ≠ l) :
+    p ∈ (S.insertOrMerge l m).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  · exact List.mem_map.mpr ⟨p, hp, by simp [hne]⟩
+  · exact List.mem_cons_of_mem _ hp
+
+/-- Forward `insertOrMerge` membership: a fresh key's pair is in the result. -/
+theorem self_mem_insertOrMerge_of_not_containsKey (S : LockSet) (l : LockId)
+    (m : AccessMode) (h : LockSet.containsKey l S = false) :
+    (l, m) ∈ (S.insertOrMerge l m).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  · exfalso; rename_i hc; rw [h] at hc; exact Bool.noConfusion hc
+  · exact List.mem_cons.mpr (Or.inl rfl)
+
+/-- WS-SM SM6.A.6 (the substantive "under lock-set"): the **caller-TCB write
+lock** — under which the call writes the caller's reply-blocked state — is a
+declared member of the `endpointCall` lock-set footprint.  (The receiver, when
+present, is a *distinct* thread from the caller — you do not `Call` yourself — so
+its TCB write lock does not displace the caller's.)  Together with
+`endpointCallOnCore_reply_linkage_under_lockSet` this makes "reply-state
+allocation under lock-set" concrete: the specific lock covering the write is in
+the held footprint. -/
+theorem lockSet_endpointCall_caller_tcb_write_mem
+    (caller : SeLe4n.ThreadId) (cnRoot endpointId : SeLe4n.ObjId)
+    (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    (hRecvNe : ∀ rt, receiver? = some rt → tcbLock rt ≠ tcbLock caller) :
+    (tcbLock caller, AccessMode.write)
+      ∈ (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).pairs := by
+  -- Base: the head of the explicit list is the caller-TCB write lock.
+  have hBase : (tcbLock caller, AccessMode.write)
+      ∈ (lockSetOfList [(tcbLock caller, .write), (cnodeLock cnRoot, .read),
+            (endpointLock endpointId, .write)]).pairs := by
+    show (tcbLock caller, AccessMode.write)
+      ∈ ((((LockSet.empty.insertOrMerge (tcbLock caller) .write).insertOrMerge
+          (cnodeLock cnRoot) .read).insertOrMerge (endpointLock endpointId) .write)).pairs
+    refine mem_insertOrMerge_of_mem_of_ne _ _ _ _
+      (mem_insertOrMerge_of_mem_of_ne _ _ _ _
+        (self_mem_insertOrMerge_of_not_containsKey _ _ _ rfl) ?_) ?_
+    · show tcbLock caller ≠ cnodeLock cnRoot
+      intro h; simp [tcbLock, cnodeLock] at h
+    · show tcbLock caller ≠ endpointLock endpointId
+      intro h; simp [tcbLock, endpointLock] at h
+  -- Receiver extension (distinct TCB) preserves it.
+  have hRecv : (tcbLock caller, AccessMode.write)
+      ∈ (lockSetExtendOpt
+          (lockSetOfList [(tcbLock caller, .write), (cnodeLock cnRoot, .read),
+            (endpointLock endpointId, .write)])
+          (receiver?.map (fun rt => (tcbLock rt, .write)))).pairs := by
+    cases hr : receiver? with
+    | none => simp only [lockSetExtendOpt, Option.map_none]; exact hBase
+    | some rt =>
+      simp only [lockSetExtendOpt, Option.map_some]
+      exact mem_insertOrMerge_of_mem_of_ne _ _ _ _ hBase (Ne.symm (hRecvNe rt hr))
+  -- SchedContext extension (distinct kind) preserves it.
+  unfold lockSet_endpointCall
+  cases hsc : donatedSc? with
+  | none => simp only [lockSetExtendOpt, Option.map_none]; exact hRecv
+  | some sc =>
+    simp only [lockSetExtendOpt, Option.map_some]
+    refine mem_insertOrMerge_of_mem_of_ne _ _ _ _ hRecv ?_
+    show tcbLock caller ≠ schedContextLock sc
+    intro h; simp [tcbLock, schedContextLock] at h
+
 end SeLe4n.Kernel

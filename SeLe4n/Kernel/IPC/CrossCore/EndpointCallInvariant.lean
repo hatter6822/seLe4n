@@ -12,6 +12,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.Concurrency.Locks.Serializability
 
 /-!
 # WS-SM SM6.A — Cross-core endpoint-call invariant preservation
@@ -32,7 +33,7 @@ object-only invariants do not read.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
-open SeLe4n.Kernel.Concurrency (CoreId bootCoreId)
+open SeLe4n.Kernel.Concurrency
 
 -- ============================================================================
 -- §1  `objects.invExt` preservation (object-store integrity)
@@ -211,5 +212,29 @@ theorem endpointCallOnCore_preserves_ipcInvariant
               (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hInvW hObjW hCS
             show ipcInvariant (removeRunnableOnCore st4 caller executingCore)
             exact fun oid ntfn h => hInv4 oid ntfn (by rwa [removeRunnableOnCore_preserves_objects] at h)
+
+-- ============================================================================
+-- §4  SM6.A.9 — invariant preservation *through* the 2PL lock bracket
+-- ============================================================================
+
+/-- WS-SM SM6.A.9 (atomicity, invariant form): under its `withLockSet` bracket
+the cross-core endpoint call preserves object-store integrity **through the
+entire 2PL acquire/release fold**, not merely the bare action.  Composes the
+bare-action `endpointCallOnCore_preserves_objects_invExt` with the lock-acquire /
+lock-release insensitivity of `invExt` via the SM3.C.8 metatheorem
+`withLockSet_invariant_preserved`.  This is the substantive content behind
+"atomic under lock-set": no lock-bookkeeping step of the bracket disturbs the
+object-store well-formedness the transition relies on. -/
+theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
+    (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    (s : SystemState) (hObjInv : s.objects.invExt) :
+    (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
+        executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.objects.invExt :=
+  withLockSet_invariant_preserved _ executingCore _ s (fun st => st.objects.invExt) hObjInv
+    (fun l m s' h => acquireLockOnObject_preserves_invExt s' executingCore l m h)
+    (fun s' h => endpointCallOnCore_preserves_objects_invExt endpointId caller msg executingCore s' h)
+    (fun l m s' h => releaseLockOnObject_preserves_invExt s' executingCore l m h)
 
 end SeLe4n.Kernel

@@ -83,6 +83,10 @@ open SeLe4n.Testing
 #check @endpointCallOnCore_preserves_ipcInvariant
 #check @enqueueRunnableOnCore_objects_getElem_eq_of_ready
 
+-- SM6.A.6/.9 lock-set membership + invariant preservation through the 2PL bracket:
+#check @lockSet_endpointCall_caller_tcb_write_mem
+#check @endpointCallOnCore_withLockSet_preserves_objects_invExt
+
 -- SM6.A.5/.8/.10 WithCaps + donation + live FFI seam:
 #check @endpointCallWithCapsOnCore
 #check @endpointCallCrossCoreDispatch
@@ -215,6 +219,12 @@ private def runLockSetChecks : IO Unit := do
     (decide (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)
       = lockSetExtendOpt (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) none)
           (some (schedContextLock scId, .write))))
+  -- SM6.A.6: the caller-TCB *write* lock — covering the reply-blocked-state
+  -- write — is concretely a declared member of the footprint (the membership
+  -- behind `lockSet_endpointCall_caller_tcb_write_mem`, on distinct caller/recv).
+  assertBool "caller-TCB write lock is in the endpointCall footprint"
+    (decide ((tcbLock callerTid, AccessMode.write) ∈
+      (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)).pairs))
   -- SM6.A.8: the WithCaps lock-set is still hierarchically correct.
   assertBool "endpointCallWithCaps lock-set kinds all permitted (adds dest CNode W)"
     (decide (∀ p ∈ (lockSet_endpointCallWithCaps callerTid cnRoot destCnode epId
