@@ -49,11 +49,14 @@ pub enum SyscallId {
     TcbSetIPCBuffer = 24,
     // CPU-affinity configuration (WS-SM, SM5.H.4)
     TcbSetAffinity = 25,
+    // Notification binding (WS-SM, SM6.B)
+    TcbBindNotification = 26,
+    TcbUnbindNotification = 27,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 26;
+    pub const COUNT: usize = 28;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -85,6 +88,8 @@ impl SyscallId {
             23 => Some(Self::TcbSetMCPriority),
             24 => Some(Self::TcbSetIPCBuffer),
             25 => Some(Self::TcbSetAffinity),
+            26 => Some(Self::TcbBindNotification),
+            27 => Some(Self::TcbUnbindNotification),
             _ => None,
         }
     }
@@ -114,6 +119,7 @@ impl SyscallId {
             Self::TcbSetPriority | Self::TcbSetMCPriority => AccessRight::Write,
             Self::TcbSetIPCBuffer => AccessRight::Write,
             Self::TcbSetAffinity => AccessRight::Write,
+            Self::TcbBindNotification | Self::TcbUnbindNotification => AccessRight::Write,
         }
     }
 }
@@ -132,7 +138,7 @@ mod tests {
 
     #[test]
     fn from_u64_out_of_range() {
-        assert!(SyscallId::from_u64(26).is_none());
+        assert!(SyscallId::from_u64(28).is_none());
         assert!(SyscallId::from_u64(255).is_none());
     }
 

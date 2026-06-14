@@ -1,3 +1,37 @@
+## v0.31.71 — WS-SM SM6.B: bind/unbind-notification syscalls (end-to-end userspace ABI)
+
+Completes the bound-notification feature with the userspace **syscall ABI** for
+`bindNotification` / `unbindNotification` — so a userspace task can now create and
+tear down the binding via `seL4_TCB_BindNotification` / `…UnbindNotification`,
+making the v0.31.70 live bound-delivery reachable end-to-end.  Axiom-clean; Tier
+0–3 green; Rust HAL 724 tests + conformance + zero clippy warnings.
+
+**Lean ABI.**  Two new `SyscallId` variants (`tcbBindNotification` = 26,
+`tcbUnbindNotification` = 27) threaded through every site the enum drives — the
+three `toNat`/`ofNat?`/`ToString` encodings + the `all` list + `count` (26 → 28)
+and their round-trip/completeness proofs (`Model/Object/Types.lean`); the
+`permittedKinds` lock-ladder + the new `lockSet_tcb{Bind,Unbind}Notification`
+declarations + `lockSet_consistent_*` theorems + the SM3.B inventory (92 → 96
+entries, +2 lockSet / +2 consistency, counts updated); the enforcement-boundary
+classification (capability-only) + completeness theorem (34 → 36); the
+`frozenOpCoverage`; the `syscallRequiredRight` (write) + the
+`dispatchWithCap{,Checked}` wildcard-unreachable witnesses; and the new
+`decodeTcb{Bind,Unbind}NotificationArgs` decoders.  The live
+`API.dispatchCapabilityOnly` arms route `tcbBindNotification` (cap = TCB,
+`msgRegs[0]` = the notification id) and `tcbUnbindNotification` (cap = TCB) to the
+verified `bind`/`unbindNotification` operations.
+
+**Rust ABI.**  The `sele4n-types` and `sele4n-hal` `SyscallId` enums + `from_u64`
+/ `required_right` / `COUNT` mirrors gain the two variants; the conformance suite
+(`sele4n-abi`) and the HAL mirror-drift guard are updated (count 26 → 28, boundary
+27/28).
+
+**Fixture.**  `main_trace_smoke.expected` updated (the `[XVAL-002]` SyscallId
+round-trip line now reports `all 28 variants`) — the sole, documented trace
+change from the two new syscalls; checksum regenerated.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.70 — WS-SM SM6.B: bound notifications + live bound-aware cross-core signal dispatch
 
 Implements the seL4 **bound-notification** relation and wires the notification

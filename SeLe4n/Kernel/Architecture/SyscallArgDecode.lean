@@ -1181,6 +1181,29 @@ def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
     : Except KernelError SchedContextUnbindArgs :=
   pure {}
 
+/-- WS-SM SM6.B: arguments for `tcbBindNotification` — `msgRegs[0]` is the
+    notification `ObjId` to bind to the capability-target TCB. -/
+structure TcbBindNotificationArgs where
+  notificationId : Nat
+  deriving Repr, DecidableEq
+
+/-- WS-SM SM6.B: arguments for `tcbUnbindNotification` (none — the bound
+    notification is recovered from the TCB). -/
+structure TcbUnbindNotificationArgs where
+  deriving Repr, DecidableEq
+
+/-- WS-SM SM6.B: decode `tcbBindNotification` arguments (1 register: the
+    notification id). -/
+def decodeTcbBindNotificationArgs (decoded : SyscallDecodeResult)
+    : Except KernelError TcbBindNotificationArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { notificationId := r0.val }
+
+/-- WS-SM SM6.B: decode `tcbUnbindNotification` arguments (none). -/
+def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
+    : Except KernelError TcbUnbindNotificationArgs :=
+  pure {}
+
 -- ============================================================================
 -- Z5-A/B/C: SchedContext encode functions
 -- ============================================================================

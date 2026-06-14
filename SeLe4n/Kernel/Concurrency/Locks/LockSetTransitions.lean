@@ -590,6 +590,27 @@ def lockSet_schedContextUnbind (callerTid : ThreadId)
      (schedContextLock scid, .write),
      (tcbLock targetTcbTid, .write)]
 
+/-- WS-SM SM6.B: `lockSet` for `tcbBindNotification`.  The bound TCB (write —
+`boundNotification`) and the notification (write — `boundTCB`) both mutate; the
+caller TCB is read (identity) and the CSpace root read (cap resolution). -/
+def lockSet_tcbBindNotification (callerTid : ThreadId) (cnodeRootObjId : ObjId)
+    (notificationObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read),
+     (notificationLock notificationObjId, .write),
+     (tcbLock targetTcbTid, .write)]
+
+/-- WS-SM SM6.B: `lockSet` for `tcbUnbindNotification` — same footprint as bind
+(both ends of the binding cleared under write locks). -/
+def lockSet_tcbUnbindNotification (callerTid : ThreadId) (cnodeRootObjId : ObjId)
+    (notificationObjId : ObjId) (targetTcbTid : ThreadId) : LockSet :=
+  lockSetOfList
+    [(tcbLock callerTid, .read),
+     (cnodeLock cnodeRootObjId, .read),
+     (notificationLock notificationObjId, .write),
+     (tcbLock targetTcbTid, .write)]
+
 /-! ## TCB lifecycle and config syscalls (5 transitions) -/
 
 /-- WS-SM SM3.B.3: `lockSet` for `tcbSuspend`.
@@ -940,6 +961,11 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the run-queue / replenish-queue slots are SM5.A's separate `SchedLockId` domain).
   | .tcbSetAffinity =>
       [.tcb, .cnode, .schedContext]
+  -- WS-SM SM6.B: bind/unbind a notification to a TCB.  Both the notification
+  -- (write — `boundTCB`) and the bound TCB (write — `boundNotification`) are in
+  -- the footprint, plus the CNode (read) covering the capability resolution.
+  | .tcbBindNotification | .tcbUnbindNotification =>
+      [.tcb, .cnode, .notification]
 
 /-- WS-SM SM3.B.4 helper: `Decidable` `kind ∈ permittedKinds τ`. -/
 instance (k : LockKind) (sid : SyscallId) :
@@ -1516,6 +1542,40 @@ theorem lockSet_consistent_schedContextUnbind (callerTid : ThreadId)
     (cnRoot : ObjId) (scid : SchedContextId) (targetTcb : ThreadId) :
     ∀ p ∈ (lockSet_schedContextUnbind callerTid cnRoot scid targetTcb).pairs,
       p.fst.kind ∈ permittedKinds .schedContextUnbind :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM6.B.4 for `.tcbBindNotification`. -/
+theorem lockSet_consistent_tcbBindNotification (callerTid : ThreadId)
+    (cnRoot : ObjId) (nId : ObjId) (targetTcb : ThreadId) :
+    ∀ p ∈ (lockSet_tcbBindNotification callerTid cnRoot nId targetTcb).pairs,
+      p.fst.kind ∈ permittedKinds .tcbBindNotification :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM6.B.4 for `.tcbUnbindNotification`. -/
+theorem lockSet_consistent_tcbUnbindNotification (callerTid : ThreadId)
+    (cnRoot : ObjId) (nId : ObjId) (targetTcb : ThreadId) :
+    ∀ p ∈ (lockSet_tcbUnbindNotification callerTid cnRoot nId targetTcb).pairs,
+      p.fst.kind ∈ permittedKinds .tcbUnbindNotification :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem

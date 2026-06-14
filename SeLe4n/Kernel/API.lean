@@ -394,6 +394,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetMCPriority      => .write
   | .tcbSetIPCBuffer       => .write
   | .tcbSetAffinity        => .write
+  | .tcbBindNotification   => .write
+  | .tcbUnbindNotification => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -677,6 +679,28 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           match validateObjIdArg scId with
           | .error e => .error e
           | .ok vScId => SchedContextOps.schedContextUnbind vScId st
+    | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
+  -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
+  | .tcbBindNotification =>
+    some <| match cap.target with
+    | .object tcbObjId =>
+      fun st => match decodeTcbBindNotificationArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          match bindNotification (⟨args.notificationId⟩ : SeLe4n.ObjId)
+              (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
+          | .error e => .error e
+          | .ok ((), st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
+  | .tcbUnbindNotification =>
+    some <| match cap.target with
+    | .object tcbObjId =>
+      fun st =>
+        match unbindNotification (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
+        | .error e => .error e
+        | .ok ((), st') => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- D1: TCB suspend — target thread from capability
   | .tcbSuspend =>
@@ -1562,7 +1586,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer, .tcbSetAffinity] : List SyscallId) := by
+            .tcbSetIPCBuffer, .tcbSetAffinity,
+            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -1580,7 +1605,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer, .tcbSetAffinity] : List SyscallId) := by
+            .tcbSetIPCBuffer, .tcbSetAffinity,
+            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

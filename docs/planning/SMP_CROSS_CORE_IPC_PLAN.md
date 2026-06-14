@@ -264,7 +264,14 @@ partition (54) + AK7 + Rust HAL (724) green.
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 
 **Status: LANDED (v0.31.68); proof-thoroughness completion (v0.31.69); bound
-notifications + LIVE bound-aware dispatch (v0.31.70).**
+notifications + LIVE bound-aware dispatch (v0.31.70); bind/unbind-notification
+syscalls — end-to-end userspace ABI (v0.31.71).**  **v0.31.71** adds the
+`tcbBindNotification` / `tcbUnbindNotification` `SyscallId` variants threaded
+through the full Lean + Rust ABI (encodings, `permittedKinds` + lock-sets +
+consistency + SM3.B inventory, enforcement-boundary, the live
+`API.dispatchCapabilityOnly` arms, decoders, and the Rust `sele4n-types` /
+`sele4n-hal` mirrors + conformance) — so userspace can create / tear down the
+binding, making the live bound-delivery reachable end-to-end.
 Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only); Tier 0–3 green;
 trace fixture byte-identical.  **v0.31.70** implements the seL4 bound-notification
 relation (`Notification.boundTCB` field + `bind`/`unbindNotification` +

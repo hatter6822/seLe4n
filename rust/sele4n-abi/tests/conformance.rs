@@ -457,11 +457,11 @@ fn message_info_exhaustive_bounds() {
 /// WS-SM SM5.H.4: +TcbSetAffinity).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..26u64 {
+    for i in 0..28u64 {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(26).is_none());
+    assert!(SyscallId::from_u64(28).is_none());
 }
 
 /// Verify KernelError roundtrip for all 54 variants.
@@ -983,7 +983,7 @@ fn kernel_error_variant_count() {
 /// WS-SM SM5.H.4 added TcbSetAffinity at 25).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 26;
+    const SYSCALL_COUNT: u64 = 28;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1122,10 +1122,10 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 26 (WS-SM SM5.H.4 added TcbSetAffinity).
+/// AA1-B-5: COUNT is updated to 28 (WS-SM SM6.B added Tcb{Bind,Unbind}Notification).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 26);
+    assert_eq!(SyscallId::COUNT, 28);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1357,12 +1357,12 @@ fn tcb_set_affinity_roundtrip() {
 }
 
 /// D6-D5: Boundary — discriminant 26 is out of range for SyscallId
-/// (WS-SM SM5.H.4 moved the boundary from 25 to 26).
+/// (WS-SM SM6.B moved the boundary from 25 to 27).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(25).is_some()); // Last valid
-    assert!(SyscallId::from_u64(26).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 26);
+    assert!(SyscallId::from_u64(27).is_some()); // Last valid
+    assert!(SyscallId::from_u64(28).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 28);
 }
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-392).
