@@ -80,7 +80,16 @@ both remaining debt items closed — the single-core `notificationSignal` /
 `notificationWait` now also carry `boundTCB := ntfn.boundTCB` (dependent invariant
 proofs updated; trace byte-identical), and `SyscallDispatchSuite` gains a CSpace-with-caps
 `.tcbBindNotification` authority test (authorized bind, no-cap → `.invalidCapability`,
-read-only-cap → `.illegalAuthority`).
+read-only-cap → `.illegalAuthority`).  **v0.31.76 (deep-audit closure):** the
+bound-delivery 2PL footprint is now proven-covered —
+`lockSet_notificationSignalBoundOnCore_{endpoint,boundTcb}_write_mem` (forward lemma
+`insertOrMerge_preserves_mem_of_ne`) prove the endpoint + bound-TCB write locks are
+members.  Recorded remaining proof-depth debt: bound-delivery non-interference
+(`endpointQueueRemoveDual` relinks the dequeued TCB's queue neighbours, so all-high NI
+needs a dual-queue endpoint-label invariant the codebase lacks; the covert channel is
+already prevented by the #3 flow gate).  Closure target:
+`endpointQueueRemoveDual_preserves_projection{,OnCore}` →
+`notificationSignalBoundOnCore_delivery_path_NI{,_smp}`.
 Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
 

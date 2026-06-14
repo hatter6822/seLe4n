@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/serene-johnson-gnssgu",
-      "commit_sha": "42f8adf09337819b0a5ae617c2575840bd2f4e67",
-      "tree_sha": "c72bcd700789011be859caca37b2ef398a18f4b7",
-      "committed_at_utc": "2026-06-14T21:45:34+00:00"
+      "commit_sha": "48a74dc14d81a50ac66ce9d8df22b5d279010a21",
+      "tree_sha": "3cf530c17ad5a31fa498107f9defe2c7cd53fae4",
+      "committed_at_utc": "2026-06-14T22:27:13+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "db4b6c5bdc50989095f0afce8b96c06e3034e9ecdd2a8a40faf86692478a20eb"
+    "source_digest": "61bf430d37c8c71ff3d79773ee4d2caab604cd20fb9925eb5f86c17835858674"
   },
   "summary": {
     "module_count": 306,
-    "declaration_count": 11257
+    "declaration_count": 11260
   },
   "readme_sync": {
-    "version": "0.31.75",
+    "version": "0.31.76",
     "lean_toolchain": "v4.28.0",
     "production_files": 246,
-    "production_loc": 178358,
+    "production_loc": 178408,
     "test_files": 60,
-    "test_loc": 38523,
-    "proved_theorem_lemma_decls": 5954,
+    "test_loc": 38526,
+    "proved_theorem_lemma_decls": 5957,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -36092,7 +36092,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationBind",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean",
-      "declaration_count": 15,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
@@ -36404,7 +36404,6 @@
           "name": "lockSet_notificationSignalBoundOnCore_correct",
           "line": 382,
           "called": [
-            "Kernel",
             "ObjId",
             "SystemState",
             "ThreadId",
@@ -36418,6 +36417,56 @@
             "notificationSignal",
             "permittedKinds",
             "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "insertOrMerge_preserves_mem_of_ne",
+          "line": 415,
+          "called": [
+            "AccessMode",
+            "LockId",
+            "LockSet",
+            "insertOrMerge"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_notificationSignalBoundOnCore_boundTcb_write_mem",
+          "line": 427,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "boundDeliveryTarget",
+            "epId",
+            "lockSetOfList",
+            "lockSet_notificationSignalBoundOnCore",
+            "notificationId",
+            "self_write_mem_insertOrMerge",
+            "st",
+            "tcbLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_notificationSignalBoundOnCore_endpoint_write_mem",
+          "line": 444,
+          "called": [
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "boundDeliveryTarget",
+            "endpointLock",
+            "epId",
+            "insertOrMerge_preserves_mem_of_ne",
+            "lockSetOfList",
+            "lockSet_notificationSignalBoundOnCore",
+            "notificationId",
+            "self_write_mem_insertOrMerge",
+            "st",
+            "tcbLock"
           ]
         }
       ]
@@ -146596,7 +146645,9 @@
             "boundDeliveryTarget",
             "determineTargetCore_congr",
             "endpointQueueRemoveDual_preserves_objects_invExt",
+            "lockSet_notificationSignalBoundOnCore_boundTcb_write_mem",
             "lockSet_notificationSignalBoundOnCore_correct",
+            "lockSet_notificationSignalBoundOnCore_endpoint_write_mem",
             "lockSet_notificationSignalOnCore",
             "lockSet_notificationSignalOnCore_correct",
             "lockSet_notificationSignal_notification_write_mem",
@@ -146654,8 +146705,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:144>",
-          "line": 144,
+          "name": "<anonymous:example:147>",
+          "line": 147,
           "called": [
             "Badge",
             "CoreId",
@@ -146682,8 +146733,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:163>",
-          "line": 163,
+          "name": "<anonymous:example:166>",
+          "line": 166,
           "called": [
             "Badge",
             "CoreId",
@@ -146703,8 +146754,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:174>",
-          "line": 174,
+          "name": "<anonymous:example:177>",
+          "line": 177,
           "called": [
             "Badge",
             "CoreId",
@@ -146736,7 +146787,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 199,
+          "line": 202,
           "called": [
             "throw"
           ]
@@ -146744,7 +146795,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 205,
+          "line": 208,
           "called": [
             "CoreId"
           ]
@@ -146752,7 +146803,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 207,
+          "line": 210,
           "called": [
             "ObjId"
           ]
@@ -146760,7 +146811,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 208,
+          "line": 211,
           "called": [
             "ObjId"
           ]
@@ -146768,7 +146819,7 @@
         {
           "kind": "def",
           "name": "signallerTid",
-          "line": 209,
+          "line": 212,
           "called": [
             "ThreadId"
           ]
@@ -146776,7 +146827,7 @@
         {
           "kind": "def",
           "name": "waiterLocalTid",
-          "line": 210,
+          "line": 213,
           "called": [
             "ThreadId"
           ]
@@ -146784,7 +146835,7 @@
         {
           "kind": "def",
           "name": "waiterRemoteTid",
-          "line": 211,
+          "line": 214,
           "called": [
             "ThreadId"
           ]
@@ -146792,7 +146843,7 @@
         {
           "kind": "def",
           "name": "badge",
-          "line": 212,
+          "line": 215,
           "called": [
             "Badge",
             "ofNatMasked"
@@ -146801,7 +146852,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 214,
+          "line": 217,
           "called": [
             "CoreId",
             "TCB",
@@ -146812,7 +146863,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 221,
+          "line": 224,
           "called": [
             "SystemState",
             "build",
@@ -146832,7 +146883,7 @@
         {
           "kind": "def",
           "name": "stWithWaiter",
-          "line": 231,
+          "line": 234,
           "called": [
             "SystemState",
             "ThreadId",
@@ -146847,7 +146898,7 @@
         {
           "kind": "def",
           "name": "stTwoWaiters",
-          "line": 238,
+          "line": 241,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -146862,7 +146913,7 @@
         {
           "kind": "def",
           "name": "signalSgi",
-          "line": 247,
+          "line": 250,
           "called": [
             "CoreId",
             "SgiKind",
@@ -146877,7 +146928,7 @@
         {
           "kind": "def",
           "name": "waiterList",
-          "line": 253,
+          "line": 256,
           "called": [
             "SystemState",
             "ThreadId",
@@ -146888,7 +146939,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 259,
+          "line": 262,
           "called": [
             "ObjId"
           ]
@@ -146896,7 +146947,7 @@
         {
           "kind": "def",
           "name": "boundTid",
-          "line": 260,
+          "line": 263,
           "called": [
             "ThreadId"
           ]
@@ -146904,7 +146955,7 @@
         {
           "kind": "def",
           "name": "stBoundBase",
-          "line": 264,
+          "line": 267,
           "called": [
             "SystemState",
             "boundTid",
@@ -146923,7 +146974,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 273,
+          "line": 276,
           "called": [
             "assertBool",
             "cnRoot",
@@ -146947,7 +146998,7 @@
         {
           "kind": "def",
           "name": "runNoWaiterChecks",
-          "line": 302,
+          "line": 305,
           "called": [
             "assertBool",
             "badge",
@@ -146961,7 +147012,7 @@
         {
           "kind": "def",
           "name": "runSignalWakeChecks",
-          "line": 314,
+          "line": 317,
           "called": [
             "assertBool",
             "badge",
@@ -146983,7 +147034,7 @@
         {
           "kind": "def",
           "name": "runMultiWaiterChecks",
-          "line": 339,
+          "line": 342,
           "called": [
             "assertBool",
             "badge",
@@ -147005,7 +147056,7 @@
         {
           "kind": "def",
           "name": "runWaitChecks",
-          "line": 364,
+          "line": 367,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -147023,7 +147074,7 @@
         {
           "kind": "def",
           "name": "runBadgeWaitChecks",
-          "line": 383,
+          "line": 386,
           "called": [
             "assertBool",
             "badge",
@@ -147041,7 +147092,7 @@
         {
           "kind": "def",
           "name": "runErrorChecks",
-          "line": 398,
+          "line": 401,
           "called": [
             "assertBool",
             "badge",
@@ -147056,7 +147107,7 @@
         {
           "kind": "def",
           "name": "runBoundChecks",
-          "line": 414,
+          "line": 417,
           "called": [
             "assertBool",
             "badge",
@@ -147081,7 +147132,7 @@
         {
           "kind": "def",
           "name": "runReviewFixChecks",
-          "line": 479,
+          "line": 482,
           "called": [
             "any",
             "assertBool",
@@ -147108,7 +147159,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreNotificationChecks",
-          "line": 521,
+          "line": 524,
           "called": [
             "runBadgeWaitChecks",
             "runBoundChecks",
@@ -147124,7 +147175,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 538,
+          "line": 541,
           "called": [
             "runSmpCrossCoreNotificationChecks"
           ]

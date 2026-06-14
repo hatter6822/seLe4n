@@ -126,6 +126,9 @@ open SeLe4n.Testing
 #check @notificationWaitCrossCoreDispatch
 #check @notificationWaitCrossCoreDispatchChecked
 #check @lockSet_notificationSignalBoundOnCore_correct
+-- SM6.B review #5 coverage: the bound-delivery endpoint + bound-TCB writes are members:
+#check @lockSet_notificationSignalBoundOnCore_endpoint_write_mem
+#check @lockSet_notificationSignalBoundOnCore_boundTcb_write_mem
 -- SM6.B bound-delivery semantics + invariant preservation:
 #check @notificationSignalBoundOnCore_fallthrough_eq
 #check @notificationSignalBoundOnCore_delivery_eq

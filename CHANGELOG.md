@@ -1,3 +1,35 @@
+## v0.31.76 — WS-SM SM6.B: deep-audit closure (bound-delivery lock coverage proven; NI debt recorded)
+
+A final deep audit of the SM6.B surface elevated the bound-delivery 2PL footprint from
+runtime-tested to **proven**, and precisely recorded the one remaining proof-depth item.
+Axiom-clean (`propext` / `Classical.choice` / `Quot.sound`); Tier 0–3 green; trace
+byte-identical; partition 55 staged; Rust 724 HAL + 98 conformance + zero clippy.
+
+**Lock-set coverage proven (review #5, completion).**  v0.31.73 added
+`lockSet_notificationSignalBoundOnCore` + its hierarchical-correctness theorem and a
+runtime membership test.  This cut adds the proven **coverage** theorems —
+`lockSet_notificationSignalBoundOnCore_{endpoint,boundTcb}_write_mem` — showing the
+endpoint-write and bound-TCB-write locks (exactly the writes the bound-delivery path
+performs via `endpointQueueRemoveDual` + the badge/`.ready` store, and that the prior
+`lockSet_notificationSignalOnCore` left *outside* the footprint) are declared members of
+the bound footprint.  Backed by a new forward lock-set lemma
+`insertOrMerge_preserves_mem_of_ne` (a distinct-key insert preserves existing members).
+
+**Tracked debt recorded — bound-delivery non-interference.**  The bound-delivery branch
+of `notificationSignalBoundOnCore` is the one SM6.B path without a formal NI theorem
+(plain signal/wait/call have `_signal_path_NI` etc.).  This is foundational, not polish:
+`endpointQueueRemoveDual` relinks the dequeued bound TCB's queue *neighbours*, and
+`boundDeliveryTarget?` does not constrain the endpoint's other receivers, so the all-high
+NI property requires a dual-queue invariant ("threads queued on a high endpoint share its
+label") the codebase has not built — even SM6.A's `.call` NI sidesteps this by using
+`endpointQueuePopHead`.  The covert channel itself is already prevented operationally by
+the v0.31.73 #3 flow gate (`notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver`,
+proven).  Closure target: prove `endpointQueueRemoveDual_preserves_projection{,OnCore}`
+under an endpoint-queue-label hypothesis, then chain into
+`notificationSignalBoundOnCore_delivery_path_NI{,_smp}`.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.75 — WS-SM SM6.B: tracked-debt closure (single-core binding preservation + bind-authority test)
 
 Closes the two tracked-debt items left from the PR #821 review remediation.

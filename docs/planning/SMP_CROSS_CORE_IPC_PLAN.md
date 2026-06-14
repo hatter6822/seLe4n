@@ -344,6 +344,24 @@ being `boundTCB`-independent.  **(b) Bind-authority dispatch test:**
 `.tcbBindNotification` through a CSpace-with-caps fixture and asserts authorized-bind
 success, no-cap → `.invalidCapability`, and read-only-cap → `.illegalAuthority`.
 
+**Deep-audit closure (v0.31.76).**  The bound-delivery 2PL footprint is now
+**proven-covered**, not just runtime-tested: `lockSet_notificationSignalBoundOnCore_{endpoint,boundTcb}_write_mem`
+(via the new forward lemma `insertOrMerge_preserves_mem_of_ne`) prove the
+endpoint-write and bound-TCB-write locks — the writes `endpointQueueRemoveDual` +
+the badge/`.ready` store perform — are members of the bound lock-set.  **Remaining
+proof-depth debt (recorded, not silent): bound-delivery non-interference.**  The
+delivery branch of `notificationSignalBoundOnCore` lacks a formal NI theorem (the
+plain signal/wait/call have `_signal_path_NI` etc.).  It is genuinely foundational:
+`endpointQueueRemoveDual` relinks the dequeued TCB's queue *neighbours* and
+`boundDeliveryTarget?` does not constrain the endpoint's other receivers, so all-high
+NI needs a dual-queue label invariant ("threads queued on a high endpoint share its
+label") the codebase has not built (SM6.A's `.call` NI sidesteps it via
+`endpointQueuePopHead`).  The covert channel is already prevented operationally by the
+#3 flow gate (`notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver`,
+proven).  **Closure target:** prove
+`endpointQueueRemoveDual_preserves_projection{,OnCore}` under an endpoint-queue-label
+hypothesis, then chain into `notificationSignalBoundOnCore_delivery_path_NI{,_smp}`.
+
 **Proof-thoroughness completion (v0.31.69)** closes the gaps to SM6.A's bar:
 `notification{Signal,Wait}OnCore_preserves_{objects_invExt,ipcInvariant}`
 (invariant preservation, `NotificationInvariant.lean`); the wait operation brought
