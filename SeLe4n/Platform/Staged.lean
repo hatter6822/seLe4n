@@ -37,7 +37,6 @@ import SeLe4n.Kernel.Concurrency.Sgi
 -- Rust per-CPU base) on every push.  Reachability: production import
 -- closure runs through here even before per-core scheduler state lands
 -- at SM5.
-import SeLe4n.Kernel.Concurrency.Runtime
 -- WS-SM SM1.C.6: secondary-core kernel-entry placeholder.  Pulled into
 -- Staged so CI verifies the `@[export lean_secondary_kernel_main]`
 -- attribute keeps emitting a C-callable wrapper that the Rust HAL's
@@ -310,7 +309,6 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdleInventory
 -- / `restoreToReadyWithWake` in `Lifecycle.Suspend`) are production-reached; SM5.I's
 -- runtime dispatch (wiring `pipBoostWithWake` / `restoreToReadyWithWake` into the live
 -- donation / timeout / resume paths) is the first runtime exerciser.
-import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 -- WS-SM SM5.F: the per-core-PIP theorem inventory (categories compute / updateBoost /
 -- consistent / wake / chain / resume / blockingGraph / witness) with the `ppit!`
 -- compile-time identifier-validation macro + per-category count + partition-sum +
@@ -394,6 +392,60 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrt
 -- Nodup-on-identifiers/descriptions; mirrors the SM5.G `PerCoreDomainInventory`.
 -- A renamed/removed SM5.J theorem fails this module's elaboration.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreWcrtInventory
+-- WS-SM SM6.A: cross-core endpoint call — the `endpointCallOnCore` transition
+-- (the single-core `endpointCall` rendezvous lifted to an explicit executing
+-- core, routing the receiver wake through the SM5.C cross-core `wakeThread` and
+-- blocking the caller via the per-core `removeRunnableOnCore`), the
+-- `lockSet_endpointCallWithCaps` footprint, the path-reduction lemmas, and the
+-- SM6.A theorems: lock-set correctness (.2/.8), donation-chain extension (.5),
+-- 2PL atomicity (.9), the cross-core wake SGI emission (Thm 3.2.1, .3), per-core
+-- caller blocking (.4), and reply-state allocation (.6).  Staged until the SM5.I
+-- FFI seam wires `endpointCallOnCore` into the live syscall dispatch under the
+-- `withLockSet` acquisition over `lockSet_endpointCall`.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+-- WS-SM SM6.A.7: the cross-core endpoint-call non-interference slice —
+-- `endpointCallOnCore_call_path_NI` (a high-principal cross-core call is
+-- invisible to a low observer), composed from the new per-core scheduler-step
+-- projection-preservation lemmas (`enqueueRunnableOnCore_preserves_projection` /
+-- `removeRunnableOnCore_preserves_projection` / `wakeThread_preserves_projection`).
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
+-- WS-SM SM6.A.7: per-core / ∀-core non-interference — `endpointCallOnCore_call_path_NI_smp`
+-- (a high cross-core call is `lowEquivalent_smp` pre/post: invisible to a low
+-- observer on *every* core, not just the boot core), built on a machine-register
+-- frame family for the object steps + per-core run-queue/current projection
+-- lemmas (the high wake/deschedule edits are observer-filtered).
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNiPerCore
+-- WS-SM SM6.A.1: cross-core endpoint-call IPC invariant preservation —
+-- `endpointCallOnCore` preserves `objects.invExt` and the `ipcInvariant`
+-- notification well-formedness, via the object-invisibility keystone
+-- (`enqueueRunnableOnCore_objects_getElem_eq_of_ready`: the receiver wake's
+-- `ipcState := .ready` write is a no-op on the already-ready rendezvous
+-- receiver) composed with the single-core per-step preservation lemmas.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
+-- WS-SM SM6.A: cross-core endpoint call — WithCaps + donation + live FFI seam.
+-- `endpointCallWithCapsOnCore` (cross-core endpointCallWithCaps), the full
+-- `endpointCallCrossCoreDispatch` (.call semantics across cores: WithCaps +
+-- applyCallDonation passive-server SchedContext donation + PIP propagation,
+-- surfacing the SGI), and the reference `endpointCallCrossCoreEntry` BaseIO driver
+-- (read currentCoreId, commit via modifyGetKernelState, fire the surfaced SGI via
+-- emitWakeSgi).  The former 2-arg `@[export lean_endpoint_call_cross_core]` C seam
+-- was removed (PR #820 review #4 — empty-context footgun); the live cross-core
+-- `.call` is the full-context `syscallDispatchCrossCoreEntry` in
+-- `SyscallDispatchEntry` (now production).  The pure dispatch ops the driver layers
+-- over (`endpointCallWithCapsOnCore`, `endpointCallCrossCoreDispatch`, and the
+-- info-flow-checked `endpointCallCrossCoreDispatchChecked`) live below the API
+-- layer in `EndpointCallDispatch` and back the live `.call` arm.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
+-- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
+-- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
+-- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,
+-- then fires the SM5.F.4 diff-recovered cross-core `.reschedule` SGIs
+-- (`computeCrossCoreSgis` + `fireCrossCoreSgis`).  The syscall analogue of
+-- `perCoreTimerTickEntry`; single-core-inert (trace-safe — see the surfaced
+-- `syscallDispatchCrossCoreEntry_sgis_nil_single_core`).  Staged until the
+-- per-core dispatch seam threads the executing core into the pure dispatch so the
+-- Rust trap handler can switch over from the boot-pinned `syscall_dispatch_inner`.
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

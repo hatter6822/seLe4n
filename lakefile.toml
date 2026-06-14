@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.64"
+version = "0.31.67"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -484,3 +484,15 @@ root = "tests.SmpWcrtSuite"
 [[lean_exe]]
 name = "smp_scheduler_suite"
 root = "tests.SmpSchedulerSuite"
+
+# WS-SM SM6.A — Cross-core endpoint call test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM6.A.10 cross-core call scenarios: the SM6.A.2/.5/.8 lock-set footprint /
+# donation extension / WithCaps correctness, the SM6.A.1/.4 per-core caller
+# blocking (removeRunnableOnCore bridge + descheduling), the SM6.A.1 no-receiver
+# path (blockedOnCall, no SGI), and the SM6.A.3 local vs remote rendezvous SGI
+# emission (the cross-core wake routed to the receiver's home core).  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_cross_core_call_suite"
+root = "tests.SmpCrossCoreCallSuite"

@@ -24,7 +24,58 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests
+**Current sub-phase: SM6.A endpoint call across cores LANDED (v0.31.65).**
+The cross-core IPC phase (SM6) opens with the endpoint `Call` rendezvous lifted
+to SMP.  `endpointCallOnCore`
+([`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean))
+generalises the single-core `endpointCall` to an explicit `executingCore`:
+on rendezvous the receiver is woken through the SM5.C cross-core `wakeThread`
+(enqueued on its `determineTargetCore` home core, surfacing a `.reschedule` SGI
+when that core is remote — plan **Theorem 3.2.1**
+`endpointCallOnCore_emits_sgi_if_remote_receiver`), and the caller is descheduled
+from its own core via the new per-core `removeRunnableOnCore`
+(`… bootCoreId = removeRunnable …` by `rfl`).  All ten SM6.A sub-tasks landed
+axiom-clean: lock-set correctness (`endpointCallOnCore_lockSet_correct`,
+SM6.A.2), donation-chain extension (`lockSet_endpointCall_donation_extension`,
+SM6.A.5), 2PL atomicity (`endpointCallOnCore_atomic_under_lockSet`, SM6.A.9),
+per-core caller blocking (`endpointCallOnCore_perCore_blocking`, SM6.A.4),
+reply-state allocation under the caller-TCB lock
+(`endpointCallOnCore_reply_linkage_under_lockSet`, SM6.A.6 — this kernel has no
+separate Reply object), the WithCaps footprint
+(`endpointCallWithCaps_lockSet_correct`, SM6.A.8), and cross-core
+non-interference (`endpointCallOnCore_call_path_NI`
+([`EndpointCallNI.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCallNI.lean)),
+SM6.A.7 — built from the new per-core scheduler-step projection lemmas).  Tests:
+`tests/SmpCrossCoreCallSuite.lean` (20 runtime assertions + theorem witnesses).
+
+**v0.31.66 — live `.call` dispatch wired + SMP dispatch stack promoted.**  The
+live `API.dispatchWithCap{,Checked}` `.call` arm now routes through the below-API
+`endpointCallCrossCoreDispatch{,Checked}`
+([`EndpointCallDispatch.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean)),
+reached on the *production* checked chain (`syscall_dispatch_inner` →
+`syscallDispatchFromAbi` → `syscallEntryChecked` → `dispatchWithCapChecked`): the
+receiver is woken on its home core and the caller descheduled on its own core
+(`determineExecutingCore`).  The 14 SMP dispatch modules it makes
+production-reachable are promoted out of the staged partition (staged-only
+71 → 57).
+
+**v0.31.67 — cross-core completion (the two v0.31.66 follow-ups closed; PR #820
+review #1/#3/#5).**  The cross-core **SGI-firing** seam `SyscallDispatchEntry`
+(`@[export lean_syscall_dispatch_cross_core]`) + its closure
+(`PriorityInheritance.PerCore`, `Concurrency.Runtime`) are **promoted to
+production** (staged-only 57 → 54), and the Rust `svc_dispatch` extern is flipped
+to it — the live syscall commits the verified post-state then fires the
+diff-recovered cross-core `.reschedule` SGIs (single-core-inert).  **Per-core
+caller identification**: `syscallDispatchFromAbi` / `syscallEntryChecked` take an
+explicit `executingCore` and read `currentOnCore executingCore` (the cross-core
+entry threads `currentCoreId`; `syscallDispatchInner` stays boot-pinned); the five
+`syscallDispatchFromAbi_*` bridges generalise to an arbitrary core.  The `.call`
+arm's donation propagation switches to the cross-core chain walk
+`propagatePipChainCrossCore` (FFI-free `Propagate`), migrating each boosted
+server's bucket on its home core.  Plan:
+[`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.A).
+
+**Prior sub-phase: SM5.J WCRT under fine locks + SM5.K acceptance tests
 COMPLETE (v0.31.63; completion audit-pass v0.31.64).**  The **v0.31.64
 completion** makes "no thread starves under SMP" a *genuine* eventually-scheduled
 liveness theorem: the bootCoreId-pinned R5 trace model is generalised to an

@@ -7,8 +7,11 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM5+ (SM1.B.5 typed FFI wrapper; consumed
--- once per-core scheduler state lands)
+-- WS-SM SM6.A: PRODUCTION (LANDED at the live cross-core `.call` completion).
+-- `currentCoreId` / `fireCrossCoreSgis` / `emitWakeSgi` entered the production
+-- import closure via `SyscallDispatchEntry` (the live `lean_syscall_dispatch_cross_core`
+-- seam that fires the diff-recovered cross-core SGIs).  (Former "STATUS: staged"
+-- marker replaced with this landing note per the implement-the-improvement rule.)
 -- WS-SM SM1.B.5 (closes SMP-M4): typed wrapper for the
 -- `ffi_current_core_id` FFI export.
 import SeLe4n.Kernel.Concurrency.Types

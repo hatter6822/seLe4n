@@ -164,18 +164,102 @@ replenish queue migrates per SM5.H.4.
 
 ### SM6.A — Endpoint call across cores (4 PRs, 10 sub-tasks)
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM6.A.1 | Migrate `endpointCall` to acquire lock-set | (refactor) | M |
-| SM6.A.2 | `endpointCall_lockSet_correct` | Theorem | M |
-| SM6.A.3 | Cross-core wake via wakeThread | Theorem 3.2.1 | L |
-| SM6.A.4 | `endpointCall_perCore_blocking` | Theorem | M |
-| SM6.A.5 | Donation chain lock-set extension | Theorem | M |
-| SM6.A.6 | Reply object allocation under lock-set | Theorem | M |
-| SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | Theorem | L |
-| SM6.A.8 | `endpointCallWithCaps_lockSet_correct` | Theorem | L |
-| SM6.A.9 | `endpointCall_atomic_under_lockSet` | Theorem | L |
-| SM6.A.10 | 8 cross-core call scenarios | Tests | L |
+**Status: LANDED (v0.31.65); live dispatch + production promotion (v0.31.66).**
+Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only); Tier 0–3 green.
+At v0.31.65 the modules landed staged; **at v0.31.66 the live `.call` dispatch
+routes through them and the 14 dispatch modules are promoted to production**
+(staged-only 71 → 57) — see the "Live `.call` arm" note below.  The cross-core
+transition `endpointCallOnCore` and the SM6.A theorems live in
+`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (+ `EndpointCallNI.lean` for
+the boot-core non-interference slice, `EndpointCallNiPerCore.lean` for the
+per-core / ∀-core (`lowEquivalent_smp`) non-interference, `EndpointCallInvariant.lean`
+for IPC-invariant preservation, `EndpointCallEntry.lean` for the WithCaps +
+donation + FFI driver, `EndpointCallDispatch.lean` for the below-API live `.call`
+dispatch); the 20-assertion runtime suite is
+`tests/SmpCrossCoreCallSuite.lean` (`lake exe smp_cross_core_call_suite`).
+
+**Non-interference (per-core / ∀-core).** `endpointCallOnCore_call_path_NI_smp`
+strengthens the boot-core `projectState` NI to `lowEquivalent_smp`: a high
+cross-core call is invisible to a low observer on *every* core — the remote core
+the receiver is woken onto, the executing core where the caller is descheduled
+(and its current thread cleared), and every bystander core.  The proof rests on a
+machine-register frame family for the object steps (the `*_machine_eq` mirrors of
+the `*_scheduler_eq` family) plus per-core run-queue / current-thread projection
+lemmas: every scheduler edit touches only *high* threads the observer filters out.
+
+**Invariant preservation (full).** `endpointCallOnCore` provably preserves the
+whole fifteen-conjunct `ipcInvariantFull` (`endpointCallOnCore_preserves_ipcInvariantFull`),
+deriving `ipcInvariant`, `dualQueueSystemInvariant`, `allPendingMessagesBounded`,
+and `badgeWellFormed` internally via a reusable lookup-only congruence family
+(`dualQueueSystemInvariant_of_getElem_eq` &c.) — one conjunct *more* than the
+single-core theorem; only the scheduler-sensitive `passiveServerIdle` is carried
+as a hypothesis, as single-core does.
+
+**Live SGI-dispatch seam.** The SM5.F.4 diff-based cross-core SGI dispatch is now
+wired into a live syscall entry: `syscallDispatchCrossCoreEntry`
+(`@[export lean_syscall_dispatch_cross_core]` in
+`SeLe4n/Kernel/SyscallDispatchEntry.lean`) runs `syscallDispatchFromAbi`
+atomically via `modifyGetKernelState`, then fires the diff-recovered
+`computeCrossCoreSgis` via `fireCrossCoreSgis` — the syscall analogue of
+`perCoreTimerTickEntry`.  Single-core-inert / trace-safe
+(`syscallDispatchCrossCoreEntry_sgis_nil_single_core`).
+
+**Live `.call` arm — LANDED (v0.31.66).**  The pure cross-core `.call` dispatch
+ops live **below the API layer** in
+`SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (FFI-free):
+`endpointCallWithCapsOnCore`, `endpointCallCrossCoreDispatch`, and the
+info-flow-checked `endpointCallCrossCoreDispatchChecked` (the cross-core
+analogue of `endpointCallChecked`).  The live `API.dispatchWithCap{,Checked}`
+`.call` arm now routes through them — the receiver woken on its *home* core, the
+caller descheduled on its *own* core (derived from the live state by
+`determineExecutingCore st tid`, no hardware-core parameter threaded through the
+`Kernel`-monad chain).  The SMP dispatch infrastructure is **promoted to
+production** (staged-only 71 → 57; 14 modules: lock hierarchy + per-core scheduler
++ cross-core call).  The dispatch reaches the cross-core arm through the
+*production* entry already wired — `syscall_dispatch_inner` (`@[export]` in
+`Platform.FFI`) → `syscallDispatchFromAbi` → `syscallEntryChecked` →
+`dispatchWithCapChecked` → `endpointCallCrossCoreDispatchChecked` — so **no Rust
+extern change is needed** for the dispatch.  Validated: trace fixture
+byte-identical, all 8 `.call` dispatch suites pass, partition + AK7 green.
+**Cross-core completion — LANDED (v0.31.67).**  The two v0.31.66 follow-ups are
+closed (PR #820 review #1/#3/#5): (1) **cross-core SGI firing** — the SGI-firing
+seam `SyscallDispatchEntry` (`@[export lean_syscall_dispatch_cross_core]`) + its
+closure (`PriorityInheritance.PerCore`, `Concurrency.Runtime`) are **promoted to
+production** (staged-only 57 → 54), and the Rust `svc_dispatch` extern is flipped
+to it — the live syscall commits the verified post-state then fires the
+diff-recovered cross-core `.reschedule` SGIs (`computeCrossCoreSgis` +
+`fireCrossCoreSgis`), single-core-inert.  (2) **per-core caller identification** —
+`syscallDispatchFromAbi` / `syscallEntryChecked` now take an explicit
+`executingCore` and read `currentOnCore executingCore`;
+`syscallDispatchCrossCoreEntry` threads the hardware `currentCoreId`,
+`syscallDispatchInner` passes `bootCoreId` (boot-pinned, unchanged); the five
+`syscallDispatchFromAbi_*` bridges are generalised to an arbitrary core.  The
+`.call` arm's donation propagation also switches to the cross-core chain walk
+`propagatePipChainCrossCore` (review #3 — migrates each boosted server's bucket on
+its home core).  Validated: trace byte-identical, all `.call` + SMP suites pass,
+partition (54) + AK7 + Rust HAL (724) green.
+
+| Sub | Description | Landed symbol | Status |
+|-----|-------------|---------------|--------|
+| SM6.A.1 | Migrate `endpointCall` to acquire lock-set (cross-core) | `endpointCallOnCore`, `removeRunnableOnCore` (+ bootCore bridge), `endpointCallOnCore_{rendezvous,noReceiver}_eq` | ✓ |
+| SM6.A.2 | `endpointCall_lockSet_correct` | `endpointCallOnCore_lockSet_correct` | ✓ |
+| SM6.A.3 | Cross-core wake via `wakeThread` (Theorem 3.2.1) | `endpointCallOnCore_emits_sgi_if_remote_receiver` (+ `_no_sgi_if_local_receiver`) | ✓ |
+| SM6.A.4 | `endpointCall_perCore_blocking` | `endpointCallOnCore_perCore_blocking` | ✓ |
+| SM6.A.5 | Donation chain lock-set extension | `lockSet_endpointCall_donation_extension` | ✓ |
+| SM6.A.6 | Reply state allocation under lock-set | `endpointCallOnCore_reply_linkage_under_lockSet` (+ `lockSet_endpointCall_caller_tcb_write_mem`: the caller-TCB write lock is a *member* of the footprint) | ✓ |
+| SM6.A.7 | `endpointCall_call_path_NI` (cross-core variant) | `endpointCallOnCore_call_path_NI` (boot-core `projectState`) + `endpointCallOnCore_call_path_NI_smp` (per-core / ∀-core `lowEquivalent_smp` — invisible on *every* core) | ✓ |
+| SM6.A.8 | `endpointCallWithCaps_lockSet_correct` | `endpointCallWithCaps_lockSet_correct` (+ `lockSet_endpointCallWithCaps`) | ✓ |
+| SM6.A.9 | `endpointCall_atomic_under_lockSet` | `endpointCallOnCore_atomic_under_lockSet` (+ `endpointCallOnCore_withLockSet_preserves_objects_invExt`: invariant carried *through* the 2PL fold) | ✓ |
+| SM6.A.10 | 8 cross-core call scenarios | `tests/SmpCrossCoreCallSuite.lean` (20 runtime assertions) | ✓ |
+
+> **Model note.** This kernel has no separate Reply *object* (the `.reply`
+> lock-kind is N/A — `lockHeld` is `False` for it); the reply linkage is the
+> caller's `blockedOnReply endpointId (some receiver)` TCB state, written under
+> the caller-TCB **write** lock already in `lockSet_endpointCall`. SM6.A.6 is
+> therefore "reply *state* allocation under lock-set" rather than reply-object
+> allocation. The SGI theorem (SM6.A.3) is stated at the wake-site state
+> (`determineTargetCore st'' receiver`); `cpuAffinity` is unchanged by the
+> intervening pop+store, so this coincides with the pre-state target core.
 
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 
