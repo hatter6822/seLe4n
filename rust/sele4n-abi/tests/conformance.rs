@@ -1356,8 +1356,24 @@ fn tcb_set_affinity_roundtrip() {
     assert_eq!(sid.to_u64(), 25);
 }
 
-/// D6-D5: Boundary — discriminant 26 is out of range for SyscallId
-/// (WS-SM SM6.B moved the boundary from 25 to 27).
+/// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
+#[test]
+fn tcb_bind_notification_roundtrip() {
+    let sid = SyscallId::from_u64(26).expect("TcbBindNotification must exist");
+    assert_eq!(sid, SyscallId::TcbBindNotification);
+    assert_eq!(sid.to_u64(), 26);
+}
+
+/// WS-SM SM6.B: TcbUnbindNotification roundtrip (discriminant 27).
+#[test]
+fn tcb_unbind_notification_roundtrip() {
+    let sid = SyscallId::from_u64(27).expect("TcbUnbindNotification must exist");
+    assert_eq!(sid, SyscallId::TcbUnbindNotification);
+    assert_eq!(sid.to_u64(), 27);
+}
+
+/// D6-D5: Boundary — discriminant 28 is out of range for SyscallId
+/// (WS-SM SM6.B added bind/unbind-notification, moving the boundary from 25 to 27).
 #[test]
 fn syscall_boundary() {
     assert!(SyscallId::from_u64(27).is_some()); // Last valid
@@ -1374,6 +1390,8 @@ fn tcb_ops_require_write() {
     assert_eq!(SyscallId::TcbSetMCPriority.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::TcbSetIPCBuffer.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::TcbSetAffinity.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbBindNotification.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::TcbUnbindNotification.required_right(), AccessRight::Write);
 }
 
 /// D6-D3: AlignmentError roundtrip (discriminant 43).

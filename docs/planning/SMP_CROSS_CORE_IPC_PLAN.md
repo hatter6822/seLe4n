@@ -277,7 +277,7 @@ trace fixture byte-identical.  **v0.31.70** implements the seL4 bound-notificati
 relation (`Notification.boundTCB` field + `bind`/`unbindNotification` +
 `notificationSignalBound{,OnCore}` bound-delivery, `Operations/NotificationBind.lean`
 + `CrossCore/NotificationBind{,Dispatch}.lean`) and wires the live
-`API.dispatchSyscall{,Checked}` `.notificationSignal` arms through the
+`API.dispatchWithCap{,Checked}` `.notificationSignal` arms through the
 info-flow-checked cross-core bound dispatch — so a signal to a bound notification
 delivers the badge directly to its `BlockedOnReceive` TCB on the running kernel
 (`NotificationSignal` / `NotificationInvariant` + the bound stack promoted to
@@ -287,12 +287,27 @@ in `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`
 (+ `NotificationSignalNI.lean` for the boot-core / per-core / ∀-core
 (`lowEquivalent_smp`) non-interference of **both** signal *and* wait,
 + `NotificationInvariant.lean` for the `objects.invExt` / `ipcInvariant`
-preservation of both ops); the 31-assertion runtime suite is
+preservation of both ops); the 42-assertion runtime suite is
 `tests/SmpCrossCoreNotificationSuite.lean`
-(`lake exe smp_cross_core_notification_suite`).  The modules land **staged**
-(production/staged partition 54 → 57), mirroring SM6.A's staged → live
-progression; wiring the cross-core notification dispatch into the live syscall
-path is the SM5.I FFI-seam follow-on.
+(`lake exe smp_cross_core_notification_suite`).  The cross-core transition modules
+are **production** — `NotificationSignal` / `NotificationInvariant` /
+`NotificationBind{,Dispatch}` entered the import closure with the live
+`.notificationSignal` dispatch; only `NotificationSignalNI.lean` remains staged.
+
+**v0.31.72 (audit closure — live wake SGI).** An audit found that the live wake did
+not actually poke the remote core: the diff-based SGI re-derivation `crossCoreSgiBody`
+(SM5.F.4), which the syscall entry runs on the committed `(pre, post)` diff, gated
+*only* on an effective run-queue bucket change (a PIP boost).  A notification /
+endpoint-call wake leaves the woken thread's effective priority unchanged, so the
+re-derivation produced **no** SGI and the freshly-runnable remote thread waited for
+that core's next local timer tick — the operation surfaced the SGI (`…_remote_wake`)
+but the live path dropped it.  `crossCoreSgiBody` now *also* fires a `.reschedule`
+SGI when a thread becomes **newly runnable on a remote home core** (proven by
+`crossCoreSgiBody_remote_wake`), so the live re-derivation matches the operation's own
+surfaced SGI for SM6.A receivers and SM6.B notification waiters / bound TCBs alike.
+Single-core inertness (`computeCrossCoreSgis_nil_single_core`) and the PIP-boost /
+immaterial-boost / non-runnable-holder gates are all preserved; `tests/SmpPipSuite.lean`
+gains the cross-core-wake firing assertions.
 
 **Proof-thoroughness completion (v0.31.69)** closes the gaps to SM6.A's bar:
 `notification{Signal,Wait}OnCore_preserves_{objects_invExt,ipcInvariant}`
@@ -338,7 +353,7 @@ optional `.reschedule` SGI) — and the signaller does **not** block.
 | SM6.B.5 | `notificationSignal_perCore_consistent` | `notificationSignalOnCore_perCore_consistent` (wake confined to the waiter's home core) | ✓ |
 | SM6.B.6 | Binding (notification ↔ TCB) lock-set | `lockSet_notificationSignal_notification_write_mem` + `lockSet_notificationSignal_waiter_tcb_write_mem` (both ends write-locked; `self_write_mem_insertOrMerge`) | ✓ |
 | SM6.B.7 | `notificationSignal_perCore_NI` | `notificationSignalOnCore_signal_path_NI` (boot-core `projectState`) + `notificationSignalOnCore_signal_path_NI_smp` (per-core / ∀-core `lowEquivalent_smp` — invisible on *every* core) | ✓ |
-| SM6.B.8 | 6 cross-core notification scenarios | `tests/SmpCrossCoreNotificationSuite.lean` (24 runtime assertions) | ✓ |
+| SM6.B.8 | 6 cross-core notification scenarios | `tests/SmpCrossCoreNotificationSuite.lean` (42 runtime assertions) | ✓ |
 
 ### SM6.C — Reply path across cores (4 PRs, 10 sub-tasks)
 

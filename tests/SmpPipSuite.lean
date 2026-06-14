@@ -163,6 +163,8 @@ open SeLe4n.Kernel.Lifecycle.Suspend (restoreToReady restoreToReadyOnCore restor
 #check @computeCrossCoreSgis
 #check @computeCrossCoreSgis_all_reschedule
 #check @computeCrossCoreSgis_nil_single_core
+-- SM6.B wake-SGI fix: the body fires on a cross-core wake (not only a PIP boost):
+#check @crossCoreSgiBody_remote_wake
 #check @crossCoreWakeDispatch
 #check @crossCoreWakeDispatch_singleCore
 #check @pipChainWakeDispatch
@@ -503,6 +505,19 @@ private def runDispatchChecks : IO Unit := do
   let postNoRq := (pipBoostWithWake stNoRq srv core0).1
   assertBool "P2-1 diff dispatch is empty for a boost of a NON-runnable holder (C9 consistency)"
     (decide (computeCrossCoreSgis stNoRq postNoRq core0 = []))
+  -- WS-SM SM6.B (the wake-SGI fix): a cross-core WAKE — srv non-runnable in stNoRq,
+  -- woken onto its remote home core1 — now fires the diff-recovered reschedule SGI.
+  -- The earlier priority-only gate dropped this (a wake leaves the effective priority
+  -- unchanged), so a live cross-core notification / endpoint-call wake reached the
+  -- remote core only at its next local timer tick.  The diff dispatch must now match
+  -- the wake operation's own surfaced SGI (`crossCoreSgiBody_remote_wake`).
+  let postWake := (wakeThread stNoRq srv core0).1
+  assertBool "SM6.B wake: the wake op itself surfaces (core1, .reschedule)"
+    (decide ((wakeThread stNoRq srv core0).2 = some (core1, SgiKind.reschedule)))
+  assertBool "SM6.B wake: diff dispatch now FIRES for the cross-core wake: [(core1, .reschedule)]"
+    (decide (computeCrossCoreSgis stNoRq postWake core0 = [(core1, SgiKind.reschedule)]))
+  assertBool "SM6.B wake: executing on the woken thread's home core pokes nothing (inert)"
+    (decide (computeCrossCoreSgis stNoRq postWake core1 = []))
 
 /-- §3.10: completion-pass non-vacuity — B6 dominance, B7 home-core stability,
 F13 complete resume, and the single-core bridge, exercised on concrete states. -/

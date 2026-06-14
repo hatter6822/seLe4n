@@ -302,7 +302,7 @@ private def runNoWaiterChecks : IO Unit := do
   -- The notification transitions to `.active` carrying the merged pending badge.
   assertBool "no-waiter signal merges the badge into the notification (state .active)"
     (match st'.objects[nId]? with
-     | some (.notification ntfn) => decide (ntfn.state = .active ∧ ntfn.pendingBadge.isSome)
+     | some (.notification ntfn) => decide (ntfn.state = .active ∧ ntfn.pendingBadge = some badge)
      | _ => false)
 
 private def runSignalWakeChecks : IO Unit := do
@@ -316,9 +316,9 @@ private def runSignalWakeChecks : IO Unit := do
         (match signalSgi st bootCoreId with | none => true | _ => false)
       -- The woken waiter is delivered the badge and made ready.
       let (st', _) := notificationSignalOnCore nId badge bootCoreId st
-      assertBool "signal delivers the badge to the woken local waiter (ipcState .ready)"
+      assertBool "signal delivers the badge to the woken local waiter (.ready + badge value)"
         (match st'.getTcb? waiterLocalTid with
-         | some t => decide (t.ipcState = .ready)
+         | some t => decide (t.ipcState = .ready ∧ t.pendingMessage.bind (·.badge) = some badge)
          | none => false)
   | none => assertBool "signal setup (local waiter) succeeded" false
   -- Remote waiter (core1-bound): a reschedule SGI is fired to core 1.
@@ -379,8 +379,8 @@ private def runBadgeWaitChecks : IO Unit := do
   -- Prepare a notification carrying a pending badge (a no-waiter signal merges it in).
   let stActive := (notificationSignalOnCore nId badge bootCoreId stBase).1
   let (st', res) := notificationWaitOnCore nId waiterLocalTid bootCoreId stActive
-  assertBool "wait on a notification with a pending badge returns the badge"
-    (match res with | .ok (some _) => true | _ => false)
+  assertBool "wait on a notification with a pending badge returns the badge (value pinned)"
+    (match res with | .ok (some b) => decide (b = badge) | _ => false)
   -- The badge-consume path makes no scheduler change — the caller stays runnable.
   assertBool "badge-consume wait leaves the caller runnable on the boot core"
     ((st'.scheduler.runQueueOnCore bootCoreId).contains waiterLocalTid)
@@ -428,9 +428,9 @@ private def runBoundChecks : IO Unit := do
           let (stSig, res) := notificationSignalBoundOnCore nId badge bootCoreId stBound
           assertBool "bound signal succeeds with no SGI for a local bound TCB"
             (match res with | .ok none => true | _ => false)
-          assertBool "bound signal makes the bound TCB ready with the badge delivered"
+          assertBool "bound signal makes the bound TCB ready with the badge delivered (value pinned)"
             (match stSig.getTcb? boundTid with
-             | some t => decide (t.ipcState = .ready ∧ t.pendingMessage.isSome)
+             | some t => decide (t.ipcState = .ready ∧ t.pendingMessage.bind (·.badge) = some badge)
              | none => false)
           -- The bound TCB is dequeued from the endpoint's receive queue.
           assertBool "bound signal dequeues the bound TCB from its endpoint"

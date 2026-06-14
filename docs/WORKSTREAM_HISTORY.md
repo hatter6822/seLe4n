@@ -24,7 +24,7 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68).**
+**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68 → v0.31.72).**
 The cross-core IPC phase continues with the notification syscalls lifted to SMP.
 `notificationSignalOnCore`
 ([`SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean))
@@ -51,10 +51,20 @@ SM6.B.6); and cross-core non-interference
 (`notificationSignalOnCore_signal_path_NI` boot-core + `_smp` per-core/∀-core
 `lowEquivalent_smp`,
 [`NotificationSignalNI.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean),
-SM6.B.7).  Tests: `tests/SmpCrossCoreNotificationSuite.lean` (24 runtime
-assertions + theorem witnesses, SM6.B.8).  The modules land **staged** (partition
-54 → 56), mirroring SM6.A's staged → live progression; wiring the cross-core
-notification dispatch into the live syscall path is the SM5.I FFI-seam follow-on.
+SM6.B.7).  Tests: `tests/SmpCrossCoreNotificationSuite.lean` (42 runtime
+assertions + theorem witnesses, SM6.B.8).  **Live (v0.31.70):** the bound-notification
+relation (`Notification.boundTCB` ⇄ `TCB.boundNotification`, `bind`/`unbindNotification`,
+`notificationSignalBound{,OnCore}` bound-delivery) is wired through the live
+`API.dispatchWithCap{,Checked}` `.notificationSignal` arms; the cross-core transition
+modules are **production** (only `NotificationSignalNI.lean` remains staged, partition
+55).  **v0.31.71:** `tcbBind/UnbindNotification` syscalls (id 26/27, count 28) thread
+the full Lean + Rust ABI (live via `API.dispatchCapabilityOnly`).  **v0.31.72 (audit
+closure):** the live cross-core wake now actually pokes the remote core — the diff-based
+SGI re-derivation `crossCoreSgiBody` (SM5.F.4) gated only on a PIP-style effective-bucket
+change, dropping the wake SGI (a wake leaves the effective priority unchanged); it now
+also fires `.reschedule` for a thread newly runnable on a remote home core
+(`crossCoreSgiBody_remote_wake`), matching the operation's surfaced SGI for SM6.A
+receivers and SM6.B waiters / bound TCBs (single-core inertness preserved).
 Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
 

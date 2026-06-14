@@ -1,3 +1,49 @@
+## v0.31.72 — WS-SM SM6.B: audit closure (live cross-core wake SGI + test/doc hardening)
+
+A deep audit of the SM6.B notification-across-cores PR found one real correctness
+gap and several test/documentation accuracy issues; this cut closes them.
+Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only); Tier 0–3 green;
+trace fixture byte-identical; partition 55 staged-only; Rust HAL 724 tests +
+conformance (98) + zero clippy warnings.
+
+**Correctness fix — the live cross-core wake now pokes the remote core.**  The live
+`.notificationSignal` (and SM6.A `.call`) syscall commits the verified post-state and
+re-derives the cross-core `.reschedule` SGI from the `(pre, post)` diff via
+`PriorityInheritance.computeCrossCoreSgis` (the SM5.F.4 dispatch).  Its per-object
+body `crossCoreSgiBody` gated *only* on a thread's **effective run-queue bucket**
+(`resolveEffectivePrioDeadline`) changing — the PIP-boost case.  A wake (notification
+waiter, bound TCB, or endpoint-call receiver) moves a thread blocked → ready
+**without changing its priority**, so the re-derivation produced no SGI and the
+freshly-runnable remote thread waited for that core's next local timer tick: the
+operation surfaced the SGI correctly (`…_remote_wake`), but the live path dropped it.
+`crossCoreSgiBody` now *also* fires a `.reschedule` SGI when a thread becomes **newly
+runnable on a remote home core** (in `post`'s home run queue, not in `pre`'s),
+unifying the wake and re-bucketing cases.  New theorem `crossCoreSgiBody_remote_wake`
+pins the positive firing; the existing `crossCoreSgiBody_reschedule` (kind),
+`crossCoreSgiBody_none_single_core` / `computeCrossCoreSgis_nil_single_core`
+(single-core inertness — trace-preserving), and the PIP-boost / immaterial-boost /
+non-runnable-holder gates are all preserved.  Fixes the live cross-core wake for
+**both** SM6.A receivers and SM6.B notification waiters / bound TCBs.
+
+**Tests.**  `tests/SmpPipSuite.lean` gains three cross-core-wake firing assertions
+(the wake op's surfaced SGI, the diff dispatch now matching it, home-core inertness)
+plus a `#check` anchor for `crossCoreSgiBody_remote_wake`.
+`tests/SmpCrossCoreNotificationSuite.lean` strengthens four badge assertions to pin
+the delivered/merged badge **value** (no-waiter merge, local-waiter wake,
+badge-consume wait, bound delivery) rather than only `.isSome`.  The `sele4n-abi`
+conformance suite adds named per-variant round-trips (`tcb_bind_notification_roundtrip`
+/ `…unbind…`, discriminants 26/27) and extends `tcb_ops_require_write` to the two new
+syscalls (96 → 98 conformance tests).
+
+**Documentation.**  Corrected the SM6.B assertion count (the plan said 24, the suite
+runs 42), the staged → production status (the plan and `WORKSTREAM_HISTORY.md` still
+described the cross-core notification dispatch as staged with live wiring deferred to
+SM5.I, but it is live and the modules are production), the `dispatchSyscall` →
+`dispatchWithCap` arm-location naming, and a stale conformance boundary comment
+(`26 out of range` → `28 out of range`).
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.71 — WS-SM SM6.B: bind/unbind-notification syscalls (end-to-end userspace ABI)
 
 Completes the bound-notification feature with the userspace **syscall ABI** for
@@ -59,7 +105,7 @@ it) when applicable and otherwise **falls through** to the unchanged
 `wakeThread` (home-core enqueue + `.reschedule` SGI for a remote bound TCB), and
 the below-API `notificationSignalBoundCrossCoreDispatch{,Checked}`
 (`CrossCore/NotificationBindDispatch.lean`, the info-flow-checked form gates on
-`securityFlowsTo signaler→notification`) back the **live** `API.dispatchSyscall{,Checked}`
+`securityFlowsTo signaler→notification`) back the **live** `API.dispatchWithCap{,Checked}`
 `.notificationSignal` arms — so a signal to a bound notification now delivers
 directly to the bound TCB on the running kernel.  Reuses SM6.A's diff-based SGI
 seam (no new Rust extern).

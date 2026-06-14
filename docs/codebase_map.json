@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/serene-johnson-gnssgu",
-      "commit_sha": "2d7d6741460820310c48e03955f66e2acc1a747e",
-      "tree_sha": "ea67363346eb64d749024440d4d59b90d1c9e8c8",
-      "committed_at_utc": "2026-06-14T08:01:03+00:00"
+      "commit_sha": "a28bcf06912b2f8eaabb9e90d2ba008089e8013f",
+      "tree_sha": "569b956188fbbac39e2ca6c0ce315acef2721409",
+      "committed_at_utc": "2026-06-14T08:43:04+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "82798d1d5456d843a32073d8cbc8d3d9e941044699b42d361aad02e89d949f82"
+    "source_digest": "d9bd5e80fe040cb60b677b23469da9ecd332ec2689d5ad8db31f3e381b6a1575"
   },
   "summary": {
     "module_count": 306,
-    "declaration_count": 11244
+    "declaration_count": 11245
   },
   "readme_sync": {
-    "version": "0.31.71",
+    "version": "0.31.72",
     "lean_toolchain": "v4.28.0",
     "production_files": 246,
-    "production_loc": 178107,
+    "production_loc": 178144,
     "test_files": 60,
-    "test_loc": 38406,
-    "proved_theorem_lemma_decls": 5946,
+    "test_loc": 38421,
+    "proved_theorem_lemma_decls": 5947,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -95625,7 +95625,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean",
-      "declaration_count": 89,
+      "declaration_count": 90,
       "declarations": [
         {
           "kind": "namespace",
@@ -96916,7 +96916,7 @@
         {
           "kind": "def",
           "name": "crossCoreSgiBody",
-          "line": 1357,
+          "line": 1369,
           "called": [
             "CoreId",
             "ObjId",
@@ -96932,7 +96932,7 @@
         {
           "kind": "def",
           "name": "computeCrossCoreSgis",
-          "line": 1388,
+          "line": 1399,
           "called": [
             "CoreId",
             "SgiKind",
@@ -96944,7 +96944,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_reschedule",
-          "line": 1392,
+          "line": 1403,
           "called": [
             "CoreId",
             "ObjId",
@@ -96956,7 +96956,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreSgiBody_none_single_core",
-          "line": 1410,
+          "line": 1421,
           "called": [
             "ObjId",
             "SystemState",
@@ -96968,8 +96968,23 @@
         },
         {
           "kind": "theorem",
+          "name": "crossCoreSgiBody_remote_wake",
+          "line": 1439,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "crossCoreSgiBody",
+            "determineTargetCore",
+            "getTcb",
+            "runQueueOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "computeCrossCoreSgis_all_reschedule",
-          "line": 1424,
+          "line": 1458,
           "called": [
             "CoreId",
             "SystemState",
@@ -96981,7 +96996,7 @@
         {
           "kind": "theorem",
           "name": "computeCrossCoreSgis_nil_single_core",
-          "line": 1437,
+          "line": 1471,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -96993,7 +97008,7 @@
         {
           "kind": "def",
           "name": "crossCoreWakeDispatch",
-          "line": 1449,
+          "line": 1483,
           "called": [
             "CoreId",
             "SystemState",
@@ -97004,7 +97019,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreWakeDispatch_singleCore",
-          "line": 1453,
+          "line": 1487,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -97017,7 +97032,7 @@
         {
           "kind": "def",
           "name": "pipChainWakeDispatch",
-          "line": 1464,
+          "line": 1498,
           "called": [
             "CoreId",
             "SystemState",
@@ -97031,7 +97046,7 @@
         {
           "kind": "theorem",
           "name": "pipChainWakeDispatch_singleCore",
-          "line": 1470,
+          "line": 1504,
           "called": [
             "SystemState",
             "ThreadId",
@@ -97047,7 +97062,7 @@
         {
           "kind": "def",
           "name": "emitBoostWakeSgi",
-          "line": 1482,
+          "line": 1516,
           "called": [
             "CoreId",
             "SgiKind",
@@ -97057,7 +97072,7 @@
         {
           "kind": "theorem",
           "name": "emitBoostWakeSgi_none",
-          "line": 1486,
+          "line": 1520,
           "called": [
             "emitBoostWakeSgi",
             "none",
@@ -101302,13 +101317,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 56,
+          "line": 59,
           "called": []
         },
         {
           "kind": "def",
           "name": "syscallDispatchCrossCoreEntry",
-          "line": 71,
+          "line": 74,
           "called": [
             "CoreId",
             "SgiKind",
@@ -101326,7 +101341,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_def",
-          "line": 94,
+          "line": 97,
           "called": [
             "CoreId",
             "SgiKind",
@@ -101345,7 +101360,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchCrossCoreEntry_sgis_nil_single_core",
-          "line": 118,
+          "line": 121,
           "called": [
             "Kernel",
             "SystemState",
@@ -146764,6 +146779,7 @@
           "called": [
             "assertBool",
             "badge",
+            "bind",
             "bootCoreId",
             "core1",
             "getTcb",
@@ -146858,6 +146874,7 @@
           "called": [
             "assertBool",
             "badge",
+            "bind",
             "bindNotification",
             "bootCoreId",
             "boundDeliveryTarget",
@@ -149448,6 +149465,7 @@
             "computeMaxWaiterPriorityOnCore_value",
             "computeMaxWaiterPriority_eq_sup_perCore",
             "computeMaxWaiterPriority_value",
+            "crossCoreSgiBody_remote_wake",
             "crossCoreWakeDispatch",
             "crossCoreWakeDispatch_singleCore",
             "optPriorityVal",
@@ -149531,8 +149549,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:178>",
-          "line": 178,
+          "name": "<anonymous:example:180>",
+          "line": 180,
           "called": [
             "CoreId",
             "SystemState",
@@ -149546,8 +149564,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:184>",
-          "line": 184,
+          "name": "<anonymous:example:186>",
+          "line": 186,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149560,8 +149578,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:189>",
-          "line": 189,
+          "name": "<anonymous:example:191>",
+          "line": 191,
           "called": [
             "CoreId",
             "SystemState",
@@ -149578,8 +149596,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:196>",
-          "line": 196,
+          "name": "<anonymous:example:198>",
+          "line": 198,
           "called": [
             "CoreId",
             "SystemState",
@@ -149593,8 +149611,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:205>",
-          "line": 205,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
             "CoreId",
             "SystemState",
@@ -149612,8 +149630,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
+          "name": "<anonymous:example:218>",
+          "line": 218,
           "called": [
             "CoreId",
             "SystemState",
@@ -149627,8 +149645,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:222>",
-          "line": 222,
+          "name": "<anonymous:example:224>",
+          "line": 224,
           "called": [
             "CoreId",
             "SystemState",
@@ -149645,8 +149663,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:230>",
-          "line": 230,
+          "name": "<anonymous:example:232>",
+          "line": 232,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149658,8 +149676,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:235>",
-          "line": 235,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "CoreId",
             "SystemState",
@@ -149671,8 +149689,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:240>",
-          "line": 240,
+          "name": "<anonymous:example:242>",
+          "line": 242,
           "called": [
             "CoreId",
             "SystemState",
@@ -149690,8 +149708,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:248>",
-          "line": 248,
+          "name": "<anonymous:example:250>",
+          "line": 250,
           "called": [
             "SystemState",
             "ThreadId",
@@ -149704,8 +149722,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:255>",
-          "line": 255,
+          "name": "<anonymous:example:257>",
+          "line": 257,
           "called": [
             "CoreId",
             "SystemState",
@@ -149720,8 +149738,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:261>",
-          "line": 261,
+          "name": "<anonymous:example:263>",
+          "line": 263,
           "called": [
             "CoreId",
             "SystemState",
@@ -149735,8 +149753,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:268>",
-          "line": 268,
+          "name": "<anonymous:example:270>",
+          "line": 270,
           "called": [
             "CoreId",
             "SgiKind",
@@ -149753,8 +149771,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:278>",
-          "line": 278,
+          "name": "<anonymous:example:280>",
+          "line": 280,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -149766,8 +149784,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:284>",
-          "line": 284,
+          "name": "<anonymous:example:286>",
+          "line": 286,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -149781,7 +149799,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 294,
+          "line": 296,
           "called": [
             "CoreId"
           ]
@@ -149789,7 +149807,7 @@
         {
           "kind": "def",
           "name": "core0",
-          "line": 295,
+          "line": 297,
           "called": [
             "CoreId",
             "bootCoreId"
@@ -149798,7 +149816,7 @@
         {
           "kind": "def",
           "name": "srv",
-          "line": 297,
+          "line": 299,
           "called": [
             "ThreadId",
             "ofNat"
@@ -149807,7 +149825,7 @@
         {
           "kind": "def",
           "name": "cli",
-          "line": 298,
+          "line": 300,
           "called": [
             "ThreadId",
             "ofNat"
@@ -149816,7 +149834,7 @@
         {
           "kind": "def",
           "name": "mkServerTcb",
-          "line": 301,
+          "line": 303,
           "called": [
             "CoreId",
             "TCB",
@@ -149826,7 +149844,7 @@
         {
           "kind": "def",
           "name": "mkWaiterTcb",
-          "line": 308,
+          "line": 310,
           "called": [
             "TCB",
             "ofNat"
@@ -149835,7 +149853,7 @@
         {
           "kind": "def",
           "name": "st",
-          "line": 319,
+          "line": 321,
           "called": [
             "SystemState",
             "build",
@@ -149852,7 +149870,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 324,
+          "line": 326,
           "called": [
             "throw"
           ]
@@ -149860,7 +149878,7 @@
         {
           "kind": "def",
           "name": "runComputeChecks",
-          "line": 332,
+          "line": 334,
           "called": [
             "assertBool",
             "computeMaxWaiterPriority",
@@ -149876,7 +149894,7 @@
         {
           "kind": "def",
           "name": "runWakeChecks",
-          "line": 348,
+          "line": 350,
           "called": [
             "assertBool",
             "bind",
@@ -149894,7 +149912,7 @@
         {
           "kind": "def",
           "name": "runBlockingGraphChecks",
-          "line": 365,
+          "line": 367,
           "called": [
             "assertBool",
             "blockingServer",
@@ -149911,7 +149929,7 @@
         {
           "kind": "def",
           "name": "runResumeChecks",
-          "line": 378,
+          "line": 380,
           "called": [
             "assertBool",
             "core0",
@@ -149926,7 +149944,7 @@
         {
           "kind": "def",
           "name": "runInventoryChecks",
-          "line": 393,
+          "line": 395,
           "called": [
             "assertBool",
             "filter",
@@ -149936,7 +149954,7 @@
         {
           "kind": "def",
           "name": "stNoRq",
-          "line": 418,
+          "line": 420,
           "called": [
             "SystemState",
             "build",
@@ -149950,7 +149968,7 @@
         {
           "kind": "def",
           "name": "stUnbound",
-          "line": 425,
+          "line": 427,
           "called": [
             "SystemState",
             "build",
@@ -149965,15 +149983,6 @@
         {
           "kind": "def",
           "name": "srvHi",
-          "line": 431,
-          "called": [
-            "ThreadId",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "cliLo",
           "line": 433,
           "called": [
             "ThreadId",
@@ -149982,8 +149991,17 @@
         },
         {
           "kind": "def",
+          "name": "cliLo",
+          "line": 435,
+          "called": [
+            "ThreadId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "stImmaterial",
-          "line": 442,
+          "line": 444,
           "called": [
             "SystemState",
             "build",
@@ -150000,7 +150018,7 @@
         {
           "kind": "def",
           "name": "runC9Checks",
-          "line": 449,
+          "line": 451,
           "called": [
             "assertBool",
             "bind",
@@ -150017,7 +150035,7 @@
         {
           "kind": "def",
           "name": "runDecompositionChecks",
-          "line": 462,
+          "line": 464,
           "called": [
             "assertBool",
             "computeMaxWaiterPriority",
@@ -150030,7 +150048,7 @@
         {
           "kind": "def",
           "name": "runChainChecks",
-          "line": 472,
+          "line": 474,
           "called": [
             "all",
             "assertBool",
@@ -150045,7 +150063,7 @@
         {
           "kind": "def",
           "name": "runDispatchChecks",
-          "line": 484,
+          "line": 486,
           "called": [
             "all",
             "assertBool",
@@ -150055,13 +150073,14 @@
             "pipBoostWithWake",
             "srv",
             "st",
-            "stNoRq"
+            "stNoRq",
+            "wakeThread"
           ]
         },
         {
           "kind": "def",
           "name": "runCompletionNonVacuityChecks",
-          "line": 509,
+          "line": 524,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -150085,7 +150104,7 @@
         {
           "kind": "def",
           "name": "runP2MaterialityChecks",
-          "line": 546,
+          "line": 561,
           "called": [
             "assertBool",
             "bind",
@@ -150106,7 +150125,7 @@
         {
           "kind": "def",
           "name": "runP5LocalRescheduleChecks",
-          "line": 579,
+          "line": 594,
           "called": [
             "assertBool",
             "core0",
@@ -150124,7 +150143,7 @@
         {
           "kind": "def",
           "name": "runDedupChecks",
-          "line": 605,
+          "line": 620,
           "called": [
             "all",
             "assertBool",
@@ -150137,7 +150156,7 @@
         {
           "kind": "def",
           "name": "runSmpPipChecks",
-          "line": 626,
+          "line": 641,
           "called": [
             "runBlockingGraphChecks",
             "runC9Checks",
@@ -150157,7 +150176,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 647,
+          "line": 662,
           "called": [
             "runSmpPipChecks"
           ]
