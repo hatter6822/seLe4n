@@ -978,6 +978,15 @@ structure Notification where
       surface, per the WS-RC §1.5 structural-fix policy. -/
   waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
+  /-- WS-SM SM6.B (bound notification): the TCB bound to this notification, if
+      any (the seL4 `NotificationBind` relation).  `bindNotification` sets it
+      (and the dual `TCB.boundNotification`); `unbindNotification` clears it.
+      When a notification with `boundTCB = some t` and *no* waiters is signalled
+      while `t` is `BlockedOnReceive`, the signal is delivered directly to `t`
+      (the bound-delivery path of `notificationSignalBound`) rather than stored as
+      a pending badge.  Default `none` — a freshly-allocated notification is
+      unbound, so every existing construction site is unaffected. -/
+  boundTCB : Option SeLe4n.ThreadId := none
   /-- WS-SM SM3.A.4: per-Notification reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated Notification starts
       with its lock available.  `notificationSignal` / `notificationWait`

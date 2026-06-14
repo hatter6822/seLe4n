@@ -7,12 +7,14 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM6.B cross-core IPC (notification across cores;
--- runtime dispatch wiring gated on the SM5.I FFI seam, mirroring SM6.A —
--- see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §5).
+-- WS-SM SM6.B: PRODUCTION (LANDED).  `notificationSignalOnCore` entered the
+-- production import closure when the live bound-aware `.notificationSignal`
+-- dispatch (`API.dispatchSyscall{,Checked}` →
+-- `notificationSignalBoundCrossCoreDispatch{,Checked}`) was wired through it.
+-- (Former "STATUS: staged" marker replaced with this landing note per the
+-- implement-the-improvement rule; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §5.)
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
-import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 
 /-!
 # WS-SM SM6.B — Notification across cores

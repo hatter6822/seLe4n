@@ -110,47 +110,13 @@ theorem endpointCallOnCore_preserves_objects_invExt
 -- §2  Keystone: the cross-core receiver wake is object-invisible
 -- ============================================================================
 
-/-- WS-SM SM6.A.1 (keystone): `enqueueRunnableOnCore` of a thread that is
-**already `.ready`** is invisible to every object-store lookup.  The only object
-the wake writes is the woken TCB, with `ipcState := .ready` — but it is already
-`.ready`, so the inserted value equals the one already stored.  This is why the
-cross-core receiver wake preserves every *objects-only* invariant: on the
-rendezvous path the receiver was set `.ready` by the preceding store. -/
-theorem enqueueRunnableOnCore_objects_getElem_eq_of_ready
-    (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
-    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
-    (enqueueRunnableOnCore st c tid).objects[oid]? = st.objects[oid]? := by
-  -- (typed via `getTcb?_eq_some_iff`; the object-store lookup shape is inferred,
-  -- so this proof writes no raw typed-id object-store lookup of its own).
-  have hObjTcb := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
-  have hVal : (KernelObject.tcb { tcb with ipcState := .ready }) = .tcb tcb := by rw [← hReady]
-  unfold enqueueRunnableOnCore
-  simp only [hTcb]
-  split
-  · rfl
-  · show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
-        = st.objects[oid]?
-    rw [hVal]
-    by_cases hEq : oid = tid.toObjId
-    · subst hEq
-      rw [hObjTcb]
-      simp only [RHTable_getElem?_eq_get?]
-      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId (.tcb tcb) hInv
-    · simp only [RHTable_getElem?_eq_get?]
-      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId oid (.tcb tcb)
-        (by simp only [beq_iff_eq]; exact fun h => hEq h.symm) hInv
-
-/-- WS-SM SM6.A.1 (keystone, wake form): the cross-core `wakeThread` of an
-already-`.ready` thread is invisible to every object-store lookup. -/
-theorem wakeThread_objects_getElem_eq_of_ready
-    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
-    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
-    (hInv : st.objects.invExt) (oid : SeLe4n.ObjId) :
-    (wakeThread st tid ec).1.objects[oid]? = st.objects[oid]? := by
-  rw [wakeThread_state_eq_enqueue]
-  exact enqueueRunnableOnCore_objects_getElem_eq_of_ready st (determineTargetCore st tid) tid tcb
-    hTcb hReady hInv oid
+-- WS-SM SM6.A.1 (keystone): `enqueueRunnableOnCore` / `wakeThread` of an
+-- already-`.ready` thread is invisible to every object-store lookup
+-- (`{enqueueRunnableOnCore,wakeThread}_objects_getElem_eq_of_ready`).  These
+-- moved to `Scheduler.Operations.PerCoreWake` (beside `wakeThread`) so the SM6.A
+-- endpoint-call and SM6.B notification cross-core invariant proofs both share
+-- them without either side's heavy invariant module entering the other's
+-- production import closure.
 
 -- ============================================================================
 -- §3  `ipcInvariant` (notification well-formedness) preservation

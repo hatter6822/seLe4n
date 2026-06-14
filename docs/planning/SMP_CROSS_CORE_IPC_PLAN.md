@@ -263,9 +263,18 @@ partition (54) + AK7 + Rust HAL (724) green.
 
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 
-**Status: LANDED (v0.31.68); proof-thoroughness completion (v0.31.69).**
+**Status: LANDED (v0.31.68); proof-thoroughness completion (v0.31.69); bound
+notifications + LIVE bound-aware dispatch (v0.31.70).**
 Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only); Tier 0–3 green;
-trace fixture byte-identical.  The cross-core transitions
+trace fixture byte-identical.  **v0.31.70** implements the seL4 bound-notification
+relation (`Notification.boundTCB` field + `bind`/`unbindNotification` +
+`notificationSignalBound{,OnCore}` bound-delivery, `Operations/NotificationBind.lean`
++ `CrossCore/NotificationBind{,Dispatch}.lean`) and wires the live
+`API.dispatchSyscall{,Checked}` `.notificationSignal` arms through the
+info-flow-checked cross-core bound dispatch — so a signal to a bound notification
+delivers the badge directly to its `BlockedOnReceive` TCB on the running kernel
+(`NotificationSignal` / `NotificationInvariant` + the bound stack promoted to
+production; staged 57 → 55).  The cross-core transitions
 `notificationSignalOnCore` / `notificationWaitOnCore` and the SM6.B theorems live
 in `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`
 (+ `NotificationSignalNI.lean` for the boot-core / per-core / ∀-core
@@ -299,14 +308,19 @@ optional `.reschedule` SGI) — and the signaller does **not** block.
 `removeRunnableOnCore … executingCore`.  The lock-sets
 `lockSet_notificationSignal` / `lockSet_notificationWait` (SM3.B.3) are unchanged.
 
-> **Model note.**  A notification's "binding to a TCB" (SM6.B.6) is realised as
-> the woken-waiter TCB write lock plus the notification write lock — *both* ends
-> of the signal's wake covered by a held write lock — proved via the
-> unconditional `self_write_mem_insertOrMerge` (a write `insertOrMerge` always
-> write-locks its key, by the `AccessMode.lub` top), so the TCB-end membership
-> needs no waiter≠signaller side-condition.  The latent `TCB.boundNotification`
-> field (no consuming operation in the present model) is unrelated; SM6.B's
-> binding is the per-signal wake binding declared in the lock-set footprint.
+> **Model note.**  SM6.B.6's *lock-set* "binding (notification ↔ TCB)" is the
+> woken-waiter TCB write lock plus the notification write lock — *both* ends of
+> the signal's wake covered by a held write lock — proved via the unconditional
+> `self_write_mem_insertOrMerge`.  **Separately, the full seL4 bound-notification
+> relation is now implemented (v0.31.70):** the `Notification.boundTCB` ⇄
+> `TCB.boundNotification` binding (`bindNotification` / `unbindNotification`,
+> `Operations/NotificationBind.lean`) and the bound-delivery path
+> (`notificationSignalBound{,OnCore}` — a signal to a notification whose bound TCB
+> is `BlockedOnReceive` delivers the badge directly to it, dequeuing it from its
+> endpoint), wired **live** through `API`'s `.notificationSignal` arms via
+> `notificationSignalBoundCrossCoreDispatch{,Checked}`.  (The latent
+> `TCB.boundNotification` field thus gained its consuming operations, per the
+> implement-the-improvement rule.)
 
 | Sub | Description | Landed symbol | Status |
 |-----|-------------|---------------|--------|

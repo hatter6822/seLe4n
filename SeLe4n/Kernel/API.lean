@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 
@@ -945,9 +946,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st => match decodeNotificationSignalArgs decoded with
       | .error e => .error e
       | .ok args =>
-          match notificationSignal notifId args.badge st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          -- WS-SM SM6.B (live bound-aware cross-core signal): route through
+          -- `notificationSignalBoundCrossCoreDispatch` — when the notification is
+          -- bound to a `BlockedOnReceive` TCB the badge is delivered directly to
+          -- it, otherwise the cross-core `notificationSignalOnCore` runs (head
+          -- waiter woken on its home core).  The surfaced cross-core SGI is
+          -- re-derived from the committed state diff by the runtime entry.
+          match notificationSignalBoundCrossCoreDispatch notifId args.badge tid st with
+          | (st', .ok _) => .ok ((), st')
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification wait — consume pending badge or block.
   -- The notification object comes from the capability target, waiter is current thread.
@@ -1158,9 +1165,13 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st => match decodeNotificationSignalArgs decoded with
       | .error e => .error e
       | .ok args =>
-          match notificationSignalChecked ctx notifId tid args.badge st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          -- WS-SM SM6.B (live checked bound-aware cross-core signal): the
+          -- info-flow-checked analogue of the unchecked arm, gating on
+          -- `securityFlowsTo signaler→notification` before the bound-aware
+          -- cross-core dispatch.
+          match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid args.badge st with
+          | (st', .ok _) => .ok ((), st')
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
   | .notificationWait =>

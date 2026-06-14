@@ -10,6 +10,8 @@
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
+import SeLe4n.Kernel.IPC.CrossCore.NotificationBind
+import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -107,6 +109,26 @@ open SeLe4n.Testing
 
 -- SM6.B (coherence) lock-set pre-resolution names the woken thread:
 #check @notificationSignalWaiter?_eq_wake_head
+
+-- SM6.B (bound notification) — bind/unbind ops + bound-delivery + the live dispatch:
+#check @bindNotification
+#check @unbindNotification
+#check @boundDeliveryTarget?
+#check @notificationSignalBound
+#check @notificationSignalBoundOnCore
+#check @notificationSignalBoundCrossCoreDispatch
+#check @notificationSignalBoundCrossCoreDispatchChecked
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_denied
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_allowed
+-- SM6.B bound-delivery semantics + invariant preservation:
+#check @notificationSignalBoundOnCore_fallthrough_eq
+#check @notificationSignalBoundOnCore_delivery_eq
+#check @notificationSignalBoundOnCore_delivery_remote_wake
+#check @notificationSignalBoundOnCore_preserves_objects_invExt
+#check @notificationSignalBoundOnCore_preserves_ipcInvariant
+#check @bindNotification_preserves_ipcInvariant
+#check @unbindNotification_preserves_ipcInvariant
+#check @endpointQueueRemoveDual_preserves_objects_invExt
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
@@ -226,6 +248,21 @@ private def waiterList (st : SystemState) : List SeLe4n.ThreadId :=
   match st.objects[nId]? with
   | some (.notification ntfn) => ntfn.waitingThreads.val
   | _ => []
+
+-- Bound-notification fixture: an endpoint + a TCB to bind to the notification.
+private def epId : SeLe4n.ObjId := ⟨600⟩
+private def boundTid : SeLe4n.ThreadId := ⟨504⟩
+
+/-- Notification (idle, no waiters) + an endpoint + a TCB (to be bound), all on the
+boot core. -/
+private def stBoundBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject nId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
+    |>.withObject epId (.endpoint {})
+    |>.withObject signallerTid.toObjId (.tcb (mkTcb 501 40 none))
+    |>.withObject boundTid.toObjId (.tcb (mkTcb 504 30 none))
+    |>.withRunnable [signallerTid, boundTid]
+    |>.build)
 
 private def runLockSetChecks : IO Unit := do
   IO.println "--- §3.1 SM6.B.1/.6 lock-set footprint + binding ---"
@@ -368,6 +405,69 @@ private def runErrorChecks : IO Unit := do
     (match (notificationWaitOnCore ⟨9999⟩ waiterLocalTid bootCoreId stBase).2 with
      | .error .objectNotFound => true | _ => false)
 
+private def runBoundChecks : IO Unit := do
+  IO.println "--- §3.8 SM6.B bound notification (bind / deliver / unbind) ---"
+  -- Block the to-be-bound TCB on receive (it joins the endpoint's receive queue).
+  match endpointReceiveDual epId boundTid stBoundBase with
+  | .ok (_, stRecv) =>
+      match bindNotification nId boundTid stRecv with
+      | .ok ((), stBound) =>
+          -- Both directions of the binding are established.
+          assertBool "bindNotification sets Notification.boundTCB"
+            (match stBound.objects[nId]? with
+             | some (.notification n) => decide (n.boundTCB = some boundTid)
+             | _ => false)
+          assertBool "bindNotification sets TCB.boundNotification"
+            (match stBound.getTcb? boundTid with
+             | some t => decide (t.boundNotification = some nId)
+             | none => false)
+          -- The bound-delivery target resolves to the BlockedOnReceive bound TCB.
+          assertBool "boundDeliveryTarget? resolves the bound TCB + its endpoint"
+            (decide (boundDeliveryTarget? stBound nId = some (boundTid, epId)))
+          -- A signal delivers the badge directly to the bound TCB.
+          let (stSig, res) := notificationSignalBoundOnCore nId badge bootCoreId stBound
+          assertBool "bound signal succeeds with no SGI for a local bound TCB"
+            (match res with | .ok none => true | _ => false)
+          assertBool "bound signal makes the bound TCB ready with the badge delivered"
+            (match stSig.getTcb? boundTid with
+             | some t => decide (t.ipcState = .ready ∧ t.pendingMessage.isSome)
+             | none => false)
+          -- The bound TCB is dequeued from the endpoint's receive queue.
+          assertBool "bound signal dequeues the bound TCB from its endpoint"
+            (match stSig.objects[epId]? with
+             | some (.endpoint ep) => decide (ep.receiveQ.head = none)
+             | _ => false)
+          -- Unbind clears both directions.
+          match unbindNotification boundTid stBound with
+          | .ok ((), stUnbound) =>
+              assertBool "unbindNotification clears Notification.boundTCB"
+                (match stUnbound.objects[nId]? with
+                 | some (.notification n) => decide (n.boundTCB = none)
+                 | _ => false)
+              assertBool "unbindNotification clears TCB.boundNotification"
+                (match stUnbound.getTcb? boundTid with
+                 | some t => decide (t.boundNotification = none)
+                 | none => false)
+          | .error _ => assertBool "unbindNotification succeeded" false
+      | .error _ => assertBool "bindNotification succeeded" false
+  | .error _ => assertBool "endpointReceiveDual (bound-TCB setup) succeeded" false
+  -- Fall-through: a signal to an UNBOUND notification takes the normal path.
+  assertBool "unbound notification has no bound-delivery target"
+    (decide (boundDeliveryTarget? stBoundBase nId = none))
+  assertBool "fall-through bound signal matches the plain cross-core signal"
+    (((notificationSignalBoundOnCore nId badge bootCoreId stBoundBase).1.objects[nId]?) ==
+     ((notificationSignalOnCore nId badge bootCoreId stBoundBase).1.objects[nId]?))
+  -- Bind precondition: binding an already-bound notification fails (illegalState).
+  match endpointReceiveDual epId boundTid stBoundBase with
+  | .ok (_, stRecv) =>
+      match bindNotification nId boundTid stRecv with
+      | .ok ((), stBound) =>
+          assertBool "re-binding an already-bound notification fails with illegalState"
+            (match bindNotification nId boundTid stBound with
+             | .error .illegalState => true | _ => false)
+      | .error _ => assertBool "bind setup for precondition check succeeded" false
+  | .error _ => assertBool "receive setup for precondition check succeeded" false
+
 def runSmpCrossCoreNotificationChecks : IO Unit := do
   IO.println "WS-SM SM6.B — Cross-core notification suite"
   IO.println "===================================="
@@ -378,6 +478,7 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runWaitChecks
   runBadgeWaitChecks
   runErrorChecks
+  runBoundChecks
   IO.println "===================================="
   IO.println "All SM6.B cross-core notification checks PASS."
 

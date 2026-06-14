@@ -7,8 +7,11 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- STATUS: staged for WS-SM SM6.B cross-core IPC (notification IPC-invariant
--- preservation; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
+-- WS-SM SM6.B: PRODUCTION (LANDED).  Entered the production import closure with
+-- `notificationSignalOnCore` when the live bound-aware `.notificationSignal`
+-- dispatch was wired through the cross-core notification stack.  (Former
+-- "STATUS: staged" marker replaced per the implement-the-improvement rule; see
+-- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md.)
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.IPC.Invariant
