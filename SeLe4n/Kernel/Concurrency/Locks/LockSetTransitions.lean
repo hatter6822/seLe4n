@@ -920,8 +920,15 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .schedContext]
   | .replyRecv =>
       [.tcb, .cnode, .endpoint, .schedContext]
-  -- Notification syscalls
-  | .notificationSignal | .notificationWait =>
+  -- Notification syscalls.  `.notificationSignal` may take the seL4 bound-delivery
+  -- path (WS-SM SM6.B): a signal to a notification whose bound TCB is
+  -- `BlockedOnReceive` dequeues that TCB from its endpoint and writes it, so the
+  -- footprint additionally covers an `.endpoint` lock (the bound TCB's endpoint).
+  -- `.endpoint` already coexists with `.notification` in `.tcbSuspend`, so the
+  -- by-kind lock ladder stays acyclic.
+  | .notificationSignal =>
+      [.tcb, .cnode, .notification, .endpoint]
+  | .notificationWait =>
       [.tcb, .cnode, .notification]
   -- Capability syscalls
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete =>

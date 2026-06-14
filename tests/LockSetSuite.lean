@@ -503,7 +503,10 @@ example : permittedKinds .receive = [.tcb, .cnode, .endpoint] := by decide
 example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext] := by decide
 example : permittedKinds .reply = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext] := by decide
-example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification] := by decide
+-- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
+-- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
+-- it from its endpoint); `.notificationWait` is unchanged.
+example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification, .endpoint] := by decide
 example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by decide
 example : permittedKinds .cspaceMint = [.tcb, .cnode] := by decide
 example : permittedKinds .cspaceCopy = [.tcb, .cnode] := by decide

@@ -986,9 +986,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
     match cap.target with
     | .object notifId =>
       fun st =>
-        match notificationWait notifId tid st with
-        | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        -- WS-SM SM6.B: route through the per-core cross-core wait so the blocked
+        -- caller is descheduled on *its own* core (not the boot core).
+        match notificationWaitCrossCoreDispatch notifId tid st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C: ReplyRecv — compound reply + receive in one transition.
   -- Cap targets the endpoint for the receive leg. Reply target from MR[0].
@@ -1202,9 +1204,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
     match cap.target with
     | .object notifId =>
       fun st =>
-        match notificationWaitChecked ctx notifId tid st with
-        | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
+        -- flow, then deschedules the caller on its own core).
+        match notificationWaitCrossCoreDispatchChecked ctx notifId tid st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
   | .replyRecv =>

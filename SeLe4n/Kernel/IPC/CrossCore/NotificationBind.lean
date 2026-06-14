@@ -346,4 +346,62 @@ theorem unbindNotification_preserves_ipcInvariant
             exact storeObject_notification_preserves_ipcInvariant p1.2 p2.2 notificationId _ hInv1 hObjInv1 hS2
               (hInv1 notificationId ntfn hObjRaw)
 
+-- ============================================================================
+-- §6  Bound-delivery lock-set footprint (codex review #5)
+-- ============================================================================
+
+/-- WS-SM SM6.B: the lock-set footprint a cross-core **bound** notification signal
+acquires.  On the bound-delivery path (`boundDeliveryTarget? = some (t, ep)`) the
+signal additionally dequeues the bound TCB `t` from its endpoint `ep`
+(`endpointQueueRemoveDual`) and writes `t` (badge + `.ready`), so the footprint
+extends the base signal lock-set — signaller TCB (read), CNode (read), notification
+(write); there is no notification waiter on this path — with the **endpoint write**
+and the **bound-TCB write** locks.  Off the bound path it is exactly
+`lockSet_notificationSignalOnCore`.  This is the footprint the runtime `withLockSet`
+bracket must acquire so the bound-delivery endpoint/TCB writes fall inside the 2PL
+footprint (codex review #5); the prior `lockSet_notificationSignalOnCore` declared
+only signaller/CNode/notification, leaving those writes unprotected. -/
+def lockSet_notificationSignalBoundOnCore (st : SystemState) (notificationId : SeLe4n.ObjId)
+    (signaller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) : LockSet :=
+  match boundDeliveryTarget? st notificationId with
+  | some (boundTcb, epId) =>
+      lockSetOfList
+        [(tcbLock signaller, .read),
+         (cnodeLock cnodeRootObjId, .read),
+         (notificationLock notificationId, .write),
+         (endpointLock epId, .write),
+         (tcbLock boundTcb, .write)]
+  | none =>
+      lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId
+
+/-- WS-SM SM6.B: the bound-signal lock-set is **hierarchically correct** — every
+declared lock has a kind in `permittedKinds .notificationSignal` (which SM6.B
+extends with `.endpoint` for the bound-delivery dequeue).  Off the bound path this
+is `lockSet_notificationSignalOnCore_correct`; on it, each of the five footprint
+locks (signaller / bound TCB, CNode, notification, endpoint) has a permitted kind. -/
+theorem lockSet_notificationSignalBoundOnCore_correct
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
+    (cnodeRootObjId : SeLe4n.ObjId) :
+    ∀ p ∈ (lockSet_notificationSignalBoundOnCore st notificationId signaller cnodeRootObjId).pairs,
+      p.fst.kind ∈ permittedKinds .notificationSignal := by
+  unfold lockSet_notificationSignalBoundOnCore
+  cases hT : boundDeliveryTarget? st notificationId with
+  | none =>
+      exact lockSet_notificationSignalOnCore_correct st notificationId signaller cnodeRootObjId
+  | some pair =>
+      obtain ⟨boundTcb, epId⟩ := pair
+      refine lockSet_consistent_of_extended_base _ (permittedKinds .notificationSignal) ?_
+      intro p hMem
+      rcases List.mem_cons.mp hMem with h | hMem
+      · rw [h]; simp; decide
+      rcases List.mem_cons.mp hMem with h | hMem
+      · rw [h]; simp; decide
+      rcases List.mem_cons.mp hMem with h | hMem
+      · rw [h]; simp; decide
+      rcases List.mem_cons.mp hMem with h | hMem
+      · rw [h]; simp; decide
+      rcases List.mem_cons.mp hMem with h | hMem
+      · rw [h]; simp; decide
+      exact absurd hMem (by intro h; cases h)
+
 end SeLe4n.Kernel

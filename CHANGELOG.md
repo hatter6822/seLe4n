@@ -1,3 +1,53 @@
+## v0.31.73 — WS-SM SM6.B: PR-review remediation (4 bound-notification / wait fixes)
+
+Closes four correctness/security findings from the PR #821 review on the
+bound-notification and wait paths.  (The fifth — requiring authority over the
+notification at *bind* time — is a capability-model change being designed
+separately; the single-core notification ops' binding preservation is tracked as a
+latent, non-live follow-on.)  Axiom-clean (`propext` / `Classical.choice` /
+`Quot.sound` only); Tier 0–3 green; trace byte-identical; partition 55 staged-only;
+Rust HAL 724 + conformance (98) + zero clippy.
+
+**#2 — preserve the notification ↔ TCB binding on signal/wait (correctness).**  The
+cross-core `notificationSignalOnCore` / `notificationWaitOnCore` reconstructed the
+notification record without `boundTCB`, so an ordinary signal/wait reset it to the
+default `none` — silently destroying a bound notification's binding (and leaving the
+TCB side stale).  Every reconstruction site now carries `boundTCB := ntfn.boundTCB`;
+the reduction / SGI / NI lemmas that spell the post-store value are updated in
+lockstep.  For a non-bound notification the value is unchanged, so the trace is
+byte-identical.
+
+**#3 — gate bound delivery on flow to the receiver (info-flow security).**  The
+checked bound-signal dispatch only proved `signaler → notification`, but bound
+delivery writes the badge into the bound TCB — a second sink.  It now also requires
+`securityFlowsTo notification → receiver` when `boundDeliveryTarget?` resolves,
+fail-closed with `.flowDenied`; otherwise a high notification could leak its badge to
+a low bound TCB.  New theorems pin both the denial (signaler and receiver) and the
+allowed (no-delivery and delivery) cases.
+
+**#4 — route `.notificationWait` through the per-core transition (correctness).**  The
+live `.notificationWait` arms still called the boot-core `notificationWait{,Checked}`,
+so a wait on a non-boot core descheduled the caller on the wrong core.  They now route
+through `notificationWaitCrossCoreDispatch{,Checked}` (executing core from
+`determineExecutingCore`), descheduling on the caller's own core; the checked form
+keeps the `notification → waiter` flow gate.
+
+**#5 — cover the bound-delivery endpoint + TCB in the 2PL footprint (soundness).**
+`lockSet_notificationSignalOnCore` declared only signaller / CNode / notification
+locks, but bound delivery dequeues the bound TCB from its endpoint and writes it —
+outside the footprint.  New `lockSet_notificationSignalBoundOnCore` extends the
+footprint with the endpoint-write and bound-TCB-write locks on the bound-delivery
+path (proved hierarchically correct, `lockSet_notificationSignalBoundOnCore_correct`);
+`permittedKinds .notificationSignal` gains `.endpoint` (which already coexists with
+`.notification` in `.tcbSuspend`, so the by-kind lock ladder stays acyclic).
+
+**Tests.**  `tests/SmpCrossCoreNotificationSuite.lean` (+6 assertions, 48 total) gains
+binding-preservation (#2) and bound-lock-set-coverage (#5) checks plus surface anchors
+for the new wait / dispatch / lock-set symbols; `tests/LockSetSuite.lean` updates the
+`permittedKinds .notificationSignal` expectation.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.72 — WS-SM SM6.B: audit closure (live cross-core wake SGI + test/doc hardening)
 
 A deep audit of the SM6.B notification-across-cores PR found one real correctness

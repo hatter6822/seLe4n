@@ -119,7 +119,13 @@ open SeLe4n.Testing
 #check @notificationSignalBoundCrossCoreDispatch
 #check @notificationSignalBoundCrossCoreDispatchChecked
 #check @notificationSignalBoundCrossCoreDispatchChecked_flow_denied
-#check @notificationSignalBoundCrossCoreDispatchChecked_flow_allowed
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_denied_to_receiver
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_no_delivery
+#check @notificationSignalBoundCrossCoreDispatchChecked_flow_allowed_to_receiver
+-- SM6.B audit closure (codex review #4 wait wiring, #5 bound lock-set):
+#check @notificationWaitCrossCoreDispatch
+#check @notificationWaitCrossCoreDispatchChecked
+#check @lockSet_notificationSignalBoundOnCore_correct
 -- SM6.B bound-delivery semantics + invariant preservation:
 #check @notificationSignalBoundOnCore_fallthrough_eq
 #check @notificationSignalBoundOnCore_delivery_eq
@@ -143,7 +149,7 @@ example (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : 
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none }) st = .ok ((), st'))
+          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
@@ -174,7 +180,7 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStore : storeObject notificationId (.notification
         { state := if rest.val.isEmpty then .idle else .waiting,
-          waitingThreads := rest, pendingBadge := none }) st = .ok ((), st'))
+          waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st = .ok ((), st'))
     (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
         (some { IpcMessage.empty with badge := some badge }) = .ok st'')
     (hObjInv : st.objects.invExt)
@@ -468,6 +474,41 @@ private def runBoundChecks : IO Unit := do
       | .error _ => assertBool "bind setup for precondition check succeeded" false
   | .error _ => assertBool "receive setup for precondition check succeeded" false
 
+/-- §3.9: WS-SM SM6.B audit closure (codex review #2 binding preservation + #5
+bound-delivery lock-set footprint). -/
+private def runReviewFixChecks : IO Unit := do
+  IO.println "--- §3.9 SM6.B audit closure (binding preservation + bound lock-set) ---"
+  -- review #2: an ordinary signal must PRESERVE the notification ↔ TCB binding.
+  -- Bind without making the bound TCB BlockedOnReceive ⇒ no bound-delivery target ⇒
+  -- the signal takes the no-waiter merge path; a fresh record would drop boundTCB.
+  match bindNotification nId boundTid stBoundBase with
+  | .ok ((), stB) =>
+      assertBool "review #2 precond: no bound-delivery target (bound TCB not BlockedOnReceive)"
+        (decide (boundDeliveryTarget? stB nId = none))
+      let (stSig, _) := notificationSignalOnCore nId badge bootCoreId stB
+      assertBool "review #2: an ordinary (fall-through) signal preserves the binding"
+        (match stSig.objects[nId]? with
+         | some (.notification n) => decide (n.boundTCB = some boundTid ∧ n.pendingBadge = some badge)
+         | _ => false)
+  | .error _ => assertBool "review #2 bind setup succeeded" false
+  -- review #5: on the bound-delivery path the lock-set covers the endpoint + bound TCB
+  -- (the writes `notificationSignalBoundOnCore` performs), all with permitted kinds.
+  match endpointReceiveDual epId boundTid stBoundBase with
+  | .ok (_, stRecv) =>
+      match bindNotification nId boundTid stRecv with
+      | .ok ((), stBnd) =>
+          assertBool "review #5 precond: bound-delivery target resolves"
+            (decide (boundDeliveryTarget? stBnd nId = some (boundTid, epId)))
+          let ls := lockSet_notificationSignalBoundOnCore stBnd nId signallerTid cnRoot
+          assertBool "review #5: bound lock-set includes the endpoint write lock"
+            (ls.pairs.any (fun p => p.fst == endpointLock epId && p.snd == AccessMode.write))
+          assertBool "review #5: bound lock-set includes the bound-TCB write lock"
+            (ls.pairs.any (fun p => p.fst == tcbLock boundTid && p.snd == AccessMode.write))
+          assertBool "review #5: bound lock-set is hierarchically correct (all kinds permitted)"
+            (decide (∀ p ∈ ls.pairs, p.fst.kind ∈ permittedKinds .notificationSignal))
+      | .error _ => assertBool "review #5 bind setup succeeded" false
+  | .error _ => assertBool "review #5 receive setup succeeded" false
+
 def runSmpCrossCoreNotificationChecks : IO Unit := do
   IO.println "WS-SM SM6.B — Cross-core notification suite"
   IO.println "===================================="
@@ -479,6 +520,7 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runBadgeWaitChecks
   runErrorChecks
   runBoundChecks
+  runReviewFixChecks
   IO.println "===================================="
   IO.println "All SM6.B cross-core notification checks PASS."
 

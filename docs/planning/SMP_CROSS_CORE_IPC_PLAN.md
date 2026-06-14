@@ -309,6 +309,28 @@ Single-core inertness (`computeCrossCoreSgis_nil_single_core`) and the PIP-boost
 immaterial-boost / non-runnable-holder gates are all preserved; `tests/SmpPipSuite.lean`
 gains the cross-core-wake firing assertions.
 
+**PR-review remediation (v0.31.73).** Four further correctness/security findings from
+the PR #821 review are closed: **(#2)** the cross-core `notificationSignalOnCore` /
+`notificationWaitOnCore` reconstructed the notification without `boundTCB`, silently
+destroying a bound notification's binding on every ordinary signal/wait — every
+reconstruction site now carries `boundTCB := ntfn.boundTCB` (trace byte-identical, the
+value only differs for bound notifications); **(#3)** the checked bound-signal dispatch
+only proved `signaler → notification`, so a bound delivery to a *low* receiver TCB
+could leak a high notification's badge — it now also requires `notification → receiver`
+(`securityFlowsTo`) when `boundDeliveryTarget?` resolves, fail-closed; **(#4)** the live
+`.notificationWait` arms still descheduled on the boot core — they now route through
+`notificationWaitCrossCoreDispatch{,Checked}` (per-core via `determineExecutingCore`);
+**(#5)** `lockSet_notificationSignalBoundOnCore` extends the signal footprint with the
+endpoint-write + bound-TCB-write locks on the bound-delivery path (the dequeue/TCB
+writes were outside the 2PL footprint), with `permittedKinds .notificationSignal`
+gaining `.endpoint`.  **Tracked debt:** the *bind* syscall still takes the notification
+as a raw ObjId from `msgRegs[0]` (review #1 — a TCB-cap holder can bind any
+notification); the seL4-faithful fix (resolve a notification capability) is a deferred
+ABI change.  The single-core `notificationSignal` / `notificationWait`
+(`IPC/Operations/Endpoint.lean`) share the #2 reconstruction pattern but are not on the
+live (cross-core) path for bound notifications — their binding-preservation is a latent
+follow-on (single-core `notificationSignalBound` is currently unused).
+
 **Proof-thoroughness completion (v0.31.69)** closes the gaps to SM6.A's bar:
 `notification{Signal,Wait}OnCore_preserves_{objects_invExt,ipcInvariant}`
 (invariant preservation, `NotificationInvariant.lean`); the wait operation brought

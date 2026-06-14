@@ -24,7 +24,7 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68 → v0.31.72).**
+**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68 → v0.31.73).**
 The cross-core IPC phase continues with the notification syscalls lifted to SMP.
 `notificationSignalOnCore`
 ([`SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean))
@@ -65,6 +65,15 @@ change, dropping the wake SGI (a wake leaves the effective priority unchanged); 
 also fires `.reschedule` for a thread newly runnable on a remote home core
 (`crossCoreSgiBody_remote_wake`), matching the operation's surfaced SGI for SM6.A
 receivers and SM6.B waiters / bound TCBs (single-core inertness preserved).
+**v0.31.73 (PR-review remediation):** four further fixes — #2 signal/wait now carry
+`boundTCB := ntfn.boundTCB` (an ordinary signal no longer destroys a bound
+notification's binding); #3 the checked bound dispatch also gates `notification →
+receiver` (no badge leak to a low bound TCB); #4 `.notificationWait` routes through the
+per-core `notificationWaitCrossCoreDispatch{,Checked}` (correct-core deschedule); #5
+`lockSet_notificationSignalBoundOnCore` covers the bound-delivery endpoint + TCB writes
+(`permittedKinds .notificationSignal` gains `.endpoint`).  Tracked debt: review #1
+(bind requires notification authority — a deferred capability ABI change) and the
+single-core notification ops' binding-preservation (latent, off the live path).
 Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
 
