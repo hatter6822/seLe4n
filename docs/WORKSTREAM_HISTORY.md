@@ -71,9 +71,13 @@ notification's binding); #3 the checked bound dispatch also gates `notification 
 receiver` (no badge leak to a low bound TCB); #4 `.notificationWait` routes through the
 per-core `notificationWaitCrossCoreDispatch{,Checked}` (correct-core deschedule); #5
 `lockSet_notificationSignalBoundOnCore` covers the bound-delivery endpoint + TCB writes
-(`permittedKinds .notificationSignal` gains `.endpoint`).  Tracked debt: review #1
-(bind requires notification authority — a deferred capability ABI change) and the
-single-core notification ops' binding-preservation (latent, off the live path).
+(`permittedKinds .notificationSignal` gains `.endpoint`).  **v0.31.74:** review #1
+closed — `.tcbBindNotification` now resolves the notification through a *capability*
+in the caller's CSpace (`msgRegs[0]` is a CPtr resolved via the verified
+`syscallLookupCap`), so a TCB-cap holder can no longer bind an arbitrary notification
+by raw ObjId; `unbindNotification` unchanged.  Tracked debt: the single-core
+notification ops' binding-preservation (latent, off the live path) and a dispatch-level
+pos/neg test for the bind-authority check (needs a CSpace-with-caps fixture).
 Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
 

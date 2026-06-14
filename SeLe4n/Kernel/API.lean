@@ -688,10 +688,34 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeTcbBindNotificationArgs decoded with
       | .error e => .error e
       | .ok args =>
-          match bindNotification (⟨args.notificationId⟩ : SeLe4n.ObjId)
-              (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          -- WS-SM SM6.B (review #1): resolve the notification through a CAPABILITY in
+          -- the caller's CSpace (seL4 BindNotification takes a notification cap), not a
+          -- raw ObjId.  A TCB-cap holder must *also* hold a notification capability
+          -- (Write) to redirect that notification's signals — otherwise it could hijack
+          -- or deny any notification merely by naming its ObjId.  `bindNotification`
+          -- still rejects a resolved cap whose target is not a notification object.
+          -- Typed accessors (AK7 cascade discipline): `getTcb?` / `getCNode?`
+          -- instead of raw `st.objects[…]?` matches.
+          match st.getTcb? tid with
+          | some callerTcb =>
+            match st.getCNode? callerTcb.cspaceRoot with
+            | some rootCn =>
+              let ntfnGate : SyscallGate := {
+                callerId      := tid
+                cspaceRoot    := callerTcb.cspaceRoot
+                capAddr       := SeLe4n.CPtr.ofNat args.notificationCPtr
+                capDepth      := rootCn.depth
+                requiredRight := .write
+              }
+              match syscallLookupCap ntfnGate st with
+              | .error e => .error e
+              | .ok (ntfnCap, _) =>
+                match ntfnCap.target with
+                | .object notifId =>
+                    bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
+                | _ => .error .invalidCapability
+            | none => .error .invalidCapability
+          | none => .error .objectNotFound
     | _ => fun _ => .error .invalidCapability
   -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
   | .tcbUnbindNotification =>

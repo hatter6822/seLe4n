@@ -1182,9 +1182,12 @@ def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
   pure {}
 
 /-- WS-SM SM6.B: arguments for `tcbBindNotification` — `msgRegs[0]` is the
-    notification `ObjId` to bind to the capability-target TCB. -/
+    **capability address** (CPtr) of the notification to bind to the
+    capability-target TCB.  Resolved through the caller's CSpace (review #1):
+    binding requires the caller to *hold* a notification capability, not merely
+    name a raw `ObjId`. -/
 structure TcbBindNotificationArgs where
-  notificationId : Nat
+  notificationCPtr : Nat
   deriving Repr, DecidableEq
 
 /-- WS-SM SM6.B: arguments for `tcbUnbindNotification` (none — the bound
@@ -1193,11 +1196,11 @@ structure TcbUnbindNotificationArgs where
   deriving Repr, DecidableEq
 
 /-- WS-SM SM6.B: decode `tcbBindNotification` arguments (1 register: the
-    notification id). -/
+    notification capability address). -/
 def decodeTcbBindNotificationArgs (decoded : SyscallDecodeResult)
     : Except KernelError TcbBindNotificationArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { notificationId := r0.val }
+  pure { notificationCPtr := r0.val }
 
 /-- WS-SM SM6.B: decode `tcbUnbindNotification` arguments (none). -/
 def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)

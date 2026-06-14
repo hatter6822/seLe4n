@@ -1,3 +1,33 @@
+## v0.31.74 — WS-SM SM6.B: bind-notification requires notification authority (review #1)
+
+Closes the last PR #821 review finding.  `.tcbBindNotification` took the notification
+as a **raw ObjId** from `msgRegs[0]` and checked only the TCB capability, so a holder
+of any TCB cap could bind (hijack / deny signals on) **any** notification just by
+naming its ObjId.  The bind path now resolves the notification through a **capability**
+in the caller's CSpace, matching seL4 `seL4_TCB_BindNotification`: `msgRegs[0]` is a
+CPtr, resolved via the verified `syscallLookupCap` (`resolveCapAddress` + slot lookup +
+`hasRight .write`), and `bindNotification` runs only if the resolved cap targets a
+notification object.  A caller that does not hold a suitable notification capability is
+rejected fail-closed before any state change.  `unbindNotification` is unchanged (it
+clears the TCB's own current binding, authorized by the TCB cap).
+
+The wire format is unchanged (a u64 in `msgRegs[0]`) — only its *interpretation*
+changes (a CPtr to resolve, not a raw ObjId) — so the Rust ABI and conformance are
+unaffected; `TcbBindNotificationArgs.notificationId` is renamed `.notificationCPtr`.
+The bind lock-set footprint already covered the CNode (resolution) + notification +
+TCB, so it is unchanged.
+
+Correctness rests on the same `syscallLookupCap` resolution path every other gated
+syscall uses (so the authority check is the verified one); build-verified, trace
+byte-identical, no test regressions.  A dispatch-level positive/negative regression
+test (bind with vs. without the held notification cap) is a follow-on — it needs a
+full CSpace-with-caps dispatch fixture the current suites don't yet provide.
+
+Axiom-clean (`propext` / `Classical.choice` / `Quot.sound`); Tier 0–3 green;
+partition 55 staged; Rust 724 HAL + 98 conformance + zero clippy.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.73 — WS-SM SM6.B: PR-review remediation (4 bound-notification / wait fixes)
 
 Closes four correctness/security findings from the PR #821 review on the
