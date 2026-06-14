@@ -330,12 +330,19 @@ lookup + `hasRight .write`), and `bindNotification` runs only if the resolved ca
 targets a notification.  A TCB-cap holder must additionally hold a notification
 capability, so it can no longer hijack/deny an arbitrary notification.  (Wire format
 unchanged → no Rust/conformance change; `TcbBindNotificationArgs.notificationId` →
-`.notificationCPtr`.)  A dispatch-level pos/neg regression test is a follow-on (needs
-a CSpace-with-caps dispatch fixture).  **Tracked debt:** the single-core
-`notificationSignal` / `notificationWait`
-(`IPC/Operations/Endpoint.lean`) share the #2 reconstruction pattern but are not on the
-live (cross-core) path for bound notifications — their binding-preservation is a latent
-follow-on (single-core `notificationSignalBound` is currently unused).
+`.notificationCPtr`.)
+
+**Tracked-debt closure (v0.31.75).** Both remaining debt items are now closed.
+**(a) Single-core binding preservation:** the single-core `notificationSignal` /
+`notificationWait` (`IPC/Operations/Endpoint.lean`) shared the #2 reconstruction
+pattern (dropping `boundTCB`); all four reconstruction sites now carry
+`boundTCB := ntfn.boundTCB`, with the dependent invariant proofs updated
+(`NotificationPreservation/{Signal,Wait}`, `Invariant/Structural/StoreObjectFrame`,
+`Capability/Invariant/Authority`) — trace byte-identical, `notificationQueueWellFormed`
+being `boundTCB`-independent.  **(b) Bind-authority dispatch test:**
+`SyscallDispatchSuite.sd050_bindNotification_requires_ntfn_cap` dispatches
+`.tcbBindNotification` through a CSpace-with-caps fixture and asserts authorized-bind
+success, no-cap → `.invalidCapability`, and read-only-cap → `.illegalAuthority`.
 
 **Proof-thoroughness completion (v0.31.69)** closes the gaps to SM6.A's bar:
 `notification{Signal,Wait}OnCore_preserves_{objects_invExt,ipcInvariant}`

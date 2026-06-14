@@ -76,7 +76,7 @@ theorem notificationSignal_preserves_ipcInvariant
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -127,7 +127,7 @@ theorem notificationSignal_preserves_schedulerInvariantBundle
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -236,7 +236,7 @@ theorem notificationWait_preserves_ipcInvariant
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                pendingBadge := none }) st with
+                pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -272,7 +272,7 @@ theorem notificationWait_preserves_ipcInvariant
             cases hStore : storeObject notificationId
                 (.notification { state := .waiting,
                                  waitingThreads := wt',
-                                 pendingBadge := none }) st with
+                                 pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -319,7 +319,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                pendingBadge := none }) st with
+                pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -378,7 +378,7 @@ theorem notificationWait_preserves_schedulerInvariantBundle
             cases hStore : storeObject notificationId
                 (.notification { state := .waiting,
                                  waitingThreads := wt',
-                                 pendingBadge := none }) st with
+                                 pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
             | error e => simp
             | ok pair =>
               simp only []
@@ -455,7 +455,7 @@ theorem notificationSignal_preserves_ipcSchedulerContractPredicates
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -629,7 +629,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
         cases hStore : storeObject notificationId
             (.notification
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-                pendingBadge := none }) st with
+                pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -754,7 +754,7 @@ theorem notificationWait_preserves_ipcSchedulerContractPredicates
             cases hStore : storeObject notificationId
                 (.notification { state := .waiting,
                                  waitingThreads := wt',
-                                 pendingBadge := none }) st with
+                                 pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
             | error e => simp
             | ok pair =>
               simp only []

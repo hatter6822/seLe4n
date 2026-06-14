@@ -490,6 +490,15 @@ private def runReviewFixChecks : IO Unit := do
         (match stSig.objects[nId]? with
          | some (.notification n) => decide (n.boundTCB = some boundTid ∧ n.pendingBadge = some badge)
          | _ => false)
+      -- review #2 (single-core debt): the single-core `notificationSignal` (the
+      -- canonical boot-core op, off the live cross-core path) must also preserve it.
+      match notificationSignal nId badge stB with
+      | .ok ((), stSc) =>
+          assertBool "review #2 (single-core): ordinary signal preserves the binding"
+            (match stSc.objects[nId]? with
+             | some (.notification n) => decide (n.boundTCB = some boundTid ∧ n.pendingBadge = some badge)
+             | _ => false)
+      | .error _ => assertBool "review #2 single-core signal setup succeeded" false
   | .error _ => assertBool "review #2 bind setup succeeded" false
   -- review #5: on the bound-delivery path the lock-set covers the endpoint + bound TCB
   -- (the writes `notificationSignalBoundOnCore` performs), all with permitted kinds.

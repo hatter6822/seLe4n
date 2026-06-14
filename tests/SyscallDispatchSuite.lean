@@ -593,6 +593,52 @@ private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
 -- Driver
 -- ============================================================================
 
+/-- WS-SM SM6.B (review #1 dispatch coverage): `.tcbBindNotification` resolves the
+notification through a CAPABILITY in the caller's CSpace.  A caller holding a TCB
+cap binds only if it ALSO holds a notification cap (with `.write`) at `msgRegs[0]`'s
+CPtr — otherwise it is rejected fail-closed.  Single-level CSpace: `depth=4,
+radixWidth=4, guard=0` ⇒ `CPtr.ofNat k` resolves to slot `k`. -/
+private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let ntfnId : SeLe4n.ObjId := ⟨60⟩
+  let tgtTcb : SeLe4n.ObjId := ⟨70⟩
+  let tcbCap    : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
+  let ntfnCap   : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.write] }
+  let ntfnCapRO : Capability := { target := .object ntfnId, rights := AccessRightSet.ofList [.read] }
+  let mkSt (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (ntfnId, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+    ]
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,                 -- primary TCB cap at slot 0
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .tcbBindNotification,
+      msgRegs := #[SeLe4n.RegValue.ofNat 1],          -- notification CPtr → slot 1
+      inlineCount := 1, overflowCount := 0 }
+  -- Positive: TCB cap (slot 0) + notification cap (slot 1) → bind succeeds, target bound.
+  let rOk := dispatchSyscall decoded caller (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCap)])
+  expect "sd050_bindNtfn_authorized_binds_target"
+    (match rOk with
+     | .ok ((), st') => (st'.getTcb? (SeLe4n.ThreadId.ofNat 70)).any (fun t => decide (t.boundNotification = some ntfnId))
+     | .error _ => false)
+    "authorized bind did not bind the target TCB"
+  -- Negative 1: notification cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
+  let rNoCap := dispatchSyscall decoded caller (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap)])
+  expect "sd050_bindNtfn_no_cap_rejected"
+    (match rNoCap with | .error .invalidCapability => true | _ => false)
+    "bind without a held notification cap should fail with invalidCapability"
+  -- Negative 2: notification cap present but READ-only (no `.write`) → illegalAuthority.
+  let rRO := dispatchSyscall decoded caller (mkSt [(SeLe4n.Slot.ofNat 0, tcbCap), (SeLe4n.Slot.ofNat 1, ntfnCapRO)])
+  expect "sd050_bindNtfn_readonly_cap_rejected"
+    (match rRO with | .error .illegalAuthority => true | _ => false)
+    "bind with a read-only notification cap should fail with illegalAuthority"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -622,4 +668,6 @@ def main : IO Unit := do
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext
   sd042_bootInitialise_malformed_config_rejects
+  IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
+  sd050_bindNotification_requires_ntfn_cap
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

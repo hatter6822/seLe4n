@@ -75,9 +75,12 @@ per-core `notificationWaitCrossCoreDispatch{,Checked}` (correct-core deschedule)
 closed — `.tcbBindNotification` now resolves the notification through a *capability*
 in the caller's CSpace (`msgRegs[0]` is a CPtr resolved via the verified
 `syscallLookupCap`), so a TCB-cap holder can no longer bind an arbitrary notification
-by raw ObjId; `unbindNotification` unchanged.  Tracked debt: the single-core
-notification ops' binding-preservation (latent, off the live path) and a dispatch-level
-pos/neg test for the bind-authority check (needs a CSpace-with-caps fixture).
+by raw ObjId; `unbindNotification` unchanged.  **v0.31.75 (tracked-debt closure):**
+both remaining debt items closed — the single-core `notificationSignal` /
+`notificationWait` now also carry `boundTCB := ntfn.boundTCB` (dependent invariant
+proofs updated; trace byte-identical), and `SyscallDispatchSuite` gains a CSpace-with-caps
+`.tcbBindNotification` authority test (authorized bind, no-cap → `.invalidCapability`,
+read-only-cap → `.illegalAuthority`).
 Plan:
 [`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
 

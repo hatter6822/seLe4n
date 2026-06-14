@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/serene-johnson-gnssgu",
-      "commit_sha": "f7b89ca4bd8638dd890aa4a49143767c6ddc6eb1",
-      "tree_sha": "65ff3550ccebfb6af0ebf200f284652bbe4bf270",
-      "committed_at_utc": "2026-06-14T20:51:10+00:00"
+      "commit_sha": "42f8adf09337819b0a5ae617c2575840bd2f4e67",
+      "tree_sha": "c72bcd700789011be859caca37b2ef398a18f4b7",
+      "committed_at_utc": "2026-06-14T21:45:34+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9973a56aff14e287a4d814a30de2609ce95130196add0ece0328b7d6d7a6e0a9"
+    "source_digest": "db4b6c5bdc50989095f0afce8b96c06e3034e9ecdd2a8a40faf86692478a20eb"
   },
   "summary": {
     "module_count": 306,
-    "declaration_count": 11256
+    "declaration_count": 11257
   },
   "readme_sync": {
-    "version": "0.31.74",
+    "version": "0.31.75",
     "lean_toolchain": "v4.28.0",
     "production_files": 246,
-    "production_loc": 178350,
+    "production_loc": 178358,
     "test_files": 60,
-    "test_loc": 38466,
+    "test_loc": 38523,
     "proved_theorem_lemma_decls": 5954,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -49621,7 +49621,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 706,
+          "line": 710,
           "called": [
             "Badge",
             "Kernel",
@@ -49644,7 +49644,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 766,
+          "line": 772,
           "called": [
             "ObjId",
             "SystemState",
@@ -49663,7 +49663,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 791,
+          "line": 797,
           "called": [
             "Notification",
             "ObjId",
@@ -49682,7 +49682,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 811,
+          "line": 817,
           "called": [
             "SystemState",
             "ThreadId",
@@ -49693,7 +49693,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 818,
+          "line": 824,
           "called": [
             "SystemState",
             "ThreadId",
@@ -49704,7 +49704,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet",
-          "line": 828,
+          "line": 834,
           "called": [
             "SystemState",
             "ThreadId",
@@ -49715,7 +49715,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSetComplete",
-          "line": 837,
+          "line": 843,
           "called": [
             "SystemState",
             "ThreadId",
@@ -49729,7 +49729,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet_invExt",
-          "line": 847,
+          "line": 853,
           "called": [
             "SystemState",
             "ThreadId",
@@ -49742,7 +49742,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 854,
+          "line": 860,
           "called": [
             "SystemState",
             "ThreadId",
@@ -49759,7 +49759,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 875,
+          "line": 881,
           "called": [
             "Endpoint",
             "ObjId",
@@ -49779,7 +49779,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 895,
+          "line": 901,
           "called": [
             "CNode",
             "ObjId",
@@ -49799,7 +49799,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 915,
+          "line": 921,
           "called": [
             "ObjId",
             "SystemState",
@@ -49818,7 +49818,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 936,
+          "line": 942,
           "called": [
             "CNode",
             "ObjId",
@@ -49839,7 +49839,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 963,
+          "line": 969,
           "called": [
             "Endpoint",
             "ObjId",
@@ -49860,7 +49860,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 990,
+          "line": 996,
           "called": [
             "Notification",
             "ObjId",
@@ -49881,7 +49881,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 1019,
+          "line": 1025,
           "called": [
             "Notification",
             "ObjId",
@@ -49897,7 +49897,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 1039,
+          "line": 1045,
           "called": [
             "Badge",
             "Notification",
@@ -49924,7 +49924,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 1121,
+          "line": 1128,
           "called": [
             "Notification",
             "ObjId",
@@ -147108,7 +147108,7 @@
         {
           "kind": "def",
           "name": "runSmpCrossCoreNotificationChecks",
-          "line": 512,
+          "line": 521,
           "called": [
             "runBadgeWaitChecks",
             "runBoundChecks",
@@ -147124,7 +147124,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 529,
+          "line": 538,
           "called": [
             "runSmpCrossCoreNotificationChecks"
           ]
@@ -154636,7 +154636,7 @@
     {
       "module": "tests.SyscallDispatchSuite",
       "path": "tests/SyscallDispatchSuite.lean",
-      "declaration_count": 26,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -155003,8 +155003,34 @@
         },
         {
           "kind": "def",
+          "name": "sd050_bindNotification_requires_ntfn_cap",
+          "line": 601,
+          "called": [
+            "Capability",
+            "ObjId",
+            "Slot",
+            "SyscallDecodeResult",
+            "SystemState",
+            "ThreadId",
+            "any",
+            "dispatchSyscall",
+            "empty",
+            "expect",
+            "getTcb",
+            "length",
+            "mkState",
+            "mkTcb",
+            "none",
+            "ofList",
+            "ofListWF",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 599,
+          "line": 645,
           "called": [
             "sd001_kernelErrorDiscriminants",
             "sd002_encodeError",
@@ -155024,7 +155050,8 @@
             "sd035_sequentialDispatches",
             "sd040_bootInitialise_emptyConfig_succeeds",
             "sd041_bootInitialise_withLabelingContext",
-            "sd042_bootInitialise_malformed_config_rejects"
+            "sd042_bootInitialise_malformed_config_rejects",
+            "sd050_bindNotification_requires_ntfn_cap"
           ]
         }
       ]

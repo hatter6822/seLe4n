@@ -647,10 +647,13 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
         match ntfn.waitingThreads.tail? with
         | some (waiter, rest) =>
             let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
+            -- WS-SM SM6.B (review #2, single-core): preserve `boundTCB` so an ordinary
+            -- signal does not destroy a bound notification's binding.
             let ntfn' : Notification := {
               state := nextState
               waitingThreads := rest
               pendingBadge := none
+              boundTCB := ntfn.boundTCB
             }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
@@ -683,6 +686,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
               state := .active
               waitingThreads := SeLe4n.NoDupList.empty
               pendingBadge := some mergedBadge
+              boundTCB := ntfn.boundTCB
             }
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
@@ -712,7 +716,8 @@ def notificationWait
         match ntfn.pendingBadge with
         | some badge =>
             let ntfn' : Notification :=
-              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+                boundTCB := ntfn.boundTCB }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -746,6 +751,7 @@ def notificationWait
                         state := .waiting
                         waitingThreads := wt'
                         pendingBadge := none
+                        boundTCB := ntfn.boundTCB
                       }
                       match storeObject notificationId (.notification ntfn') st with
                       | .error e => .error e
@@ -1088,7 +1094,8 @@ theorem notificationWait_badge_path_notification
       | some b =>
         simp only [hBadge] at hStep
         let newNtfn : Notification :=
-          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none,
+            boundTCB := ntfn.boundTCB }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -1144,7 +1151,7 @@ theorem notificationWait_wait_path_notification
         revert hStep
         cases hStore : storeObject notifId (.notification
             { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
-              pendingBadge := none }) st with
+              pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -1178,7 +1185,8 @@ theorem notificationWait_wait_path_notification
                 ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter
                   ntfn.waitingThreads wt').mp hCons).2
               let ntfn' : Notification :=
-                { state := .waiting, waitingThreads := wt', pendingBadge := none }
+                { state := .waiting, waitingThreads := wt', pendingBadge := none,
+                  boundTCB := ntfn.boundTCB }
               revert hStep
               cases hStore : storeObject notifId (.notification ntfn') st with
               | error e => simp

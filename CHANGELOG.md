@@ -1,3 +1,34 @@
+## v0.31.75 — WS-SM SM6.B: tracked-debt closure (single-core binding preservation + bind-authority test)
+
+Closes the two tracked-debt items left from the PR #821 review remediation.
+Axiom-clean (`propext` / `Classical.choice` / `Quot.sound`); Tier 0–3 green; trace
+byte-identical; partition 55 staged; Rust 724 HAL + 98 conformance + zero clippy.
+
+**Single-core binding preservation (review #2, single-core).**  The single-core
+`notificationSignal` / `notificationWait` (`IPC/Operations/Endpoint.lean`) shared the
+cross-core reconstruction pattern fixed in v0.31.73 — they rebuilt the notification
+record without `boundTCB`, so an ordinary single-core signal/wait would reset a bound
+notification's binding to the default `none`.  All four reconstruction sites (waiter /
+no-waiter signal, badge / block wait) now carry `boundTCB := ntfn.boundTCB`; the
+dependent invariant proofs that spell the post-store value are updated in lockstep
+(`NotificationPreservation/{Signal,Wait}`, `Invariant/Structural/StoreObjectFrame`,
+`Capability/Invariant/Authority`).  `notificationQueueWellFormed` is
+`boundTCB`-independent, so the well-formedness lemmas stay defeq; for a non-bound
+notification the reconstructed value is unchanged, so the trace stays byte-identical.
+A runtime check in `SmpCrossCoreNotificationSuite` confirms a single-core signal
+preserves the binding.
+
+**Bind-authority dispatch test (review #1 coverage).**  `SyscallDispatchSuite` gains
+`sd050_bindNotification_requires_ntfn_cap`: a CSpace-with-caps state dispatched through
+`dispatchSyscall .tcbBindNotification`, asserting (a) a caller holding both a TCB cap
+and a notification cap (`.write`) binds the target TCB, (b) a caller missing the
+notification cap is rejected `.invalidCapability`, and (c) a caller holding only a
+read-only notification cap is rejected `.illegalAuthority`.  This is the end-to-end
+regression test for the v0.31.74 capability-authority fix — the dispatch fixture the
+earlier cut lacked.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.74 — WS-SM SM6.B: bind-notification requires notification authority (review #1)
 
 Closes the last PR #821 review finding.  `.tcbBindNotification` took the notification
