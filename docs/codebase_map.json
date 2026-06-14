@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/serene-johnson-gnssgu",
-      "commit_sha": "140f0e845c2ccef95a7a7255b9fe346e4fb81f6b",
-      "tree_sha": "20b749b691ab8b1902a376e05845dff313d2ea61",
-      "committed_at_utc": "2026-06-13T21:00:27-04:00"
+      "commit_sha": "c982ba53f3a1e494f2946f3fdd209f6de0871814",
+      "tree_sha": "af5279dad869a9200326a101543d7bd6bb43833c",
+      "committed_at_utc": "2026-06-14T05:30:26+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "eb406a28c471fba243b9d79372fb2d0beda065bee6007e2f44074d9391c46e7a"
+    "source_digest": "46e2edde4bb6b47b700ac0ea8b1f1304bbbd83646f8ded6d0b8c926fb6b2e36a"
   },
   "summary": {
-    "module_count": 302,
-    "declaration_count": 11187
+    "module_count": 303,
+    "declaration_count": 11206
   },
   "readme_sync": {
-    "version": "0.31.68",
+    "version": "0.31.69",
     "lean_toolchain": "v4.28.0",
-    "production_files": 242,
-    "production_loc": 176672,
+    "production_files": 243,
+    "production_loc": 177230,
     "test_files": 60,
-    "test_loc": 38247,
-    "proved_theorem_lemma_decls": 5911,
+    "test_loc": 38305,
+    "proved_theorem_lemma_decls": 5927,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -36021,9 +36021,142 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean",
+      "declaration_count": 5,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 36,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_preserves_objects_invExt",
+          "line": 47,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "empty",
+            "getNotification",
+            "invExt",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "tail",
+            "wakeThread",
+            "wakeThread_preserves_objects_invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_preserves_objects_invExt",
+          "line": 81,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "consWithGuard",
+            "getNotification",
+            "invExt",
+            "lookupTcb",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_objects",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_preserves_objects_invExt",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_preserves_ipcInvariant",
+          "line": 143,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "empty",
+            "getNotification",
+            "invExt",
+            "ipcInvariant",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignal_result_wellFormed_merge",
+            "notificationSignal_result_wellFormed_wake",
+            "st",
+            "storeObject",
+            "storeObject_notification_preserves_ipcInvariant",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_getTcb",
+            "storeTcbIpcStateAndMessage_preserves_ipcInvariant",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "tail",
+            "wakeThread",
+            "wakeThread_objects_getElem_eq_of_ready"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_preserves_ipcInvariant",
+          "line": 188,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "consWithGuard",
+            "getNotification",
+            "invExt",
+            "ipcInvariant",
+            "lookupTcb",
+            "lookupTcb_preserved_by_storeObject_notification",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "notificationWait_result_wellFormed_badge",
+            "notificationWait_result_wellFormed_wait",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_objects",
+            "st",
+            "storeObject",
+            "storeObject_notification_preserves_ipcInvariant",
+            "storeObject_preserves_objects_invExt'",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_fromTcb_eq",
+            "storeTcbIpcState_preserves_ipcInvariant"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationSignal",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean",
-      "declaration_count": 23,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -36466,7 +36599,6 @@
           "called": [
             "Badge",
             "CoreId",
-            "Kernel",
             "NoDupList",
             "Notification",
             "ObjId",
@@ -36495,13 +36627,195 @@
             "wakeThread",
             "wakeThread_objects_getElem_eq_of_ready"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "determineTargetCore_congr",
+          "line": 623,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "getTcb",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_determineTargetCore_eq",
+          "line": 638,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "determineTargetCore",
+            "determineTargetCore_congr",
+            "getTcb",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "none",
+            "st",
+            "storeObject",
+            "storeObject_objects_eq'",
+            "storeObject_objects_ne'",
+            "storeTcbIpcStateAndMessage",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_determineTargetCore_eq",
+          "line": 664,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "determineTargetCore_congr",
+            "getTcb",
+            "invExt",
+            "st",
+            "storeObject",
+            "storeObject_objects_ne",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_remote_wake_preState",
+          "line": 679,
+          "called": [
+            "Badge",
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "badge",
+            "determineTargetCore",
+            "empty",
+            "getTcb",
+            "invExt",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_remote_wake",
+            "notification_ne_waiter_of_store",
+            "st",
+            "storeObject",
+            "storeObject_determineTargetCore_eq",
+            "storeObject_objects_eq",
+            "storeObject_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_determineTargetCore_eq",
+            "tail",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalWaiter",
+          "line": 719,
+          "called": [
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "getNotification",
+            "head",
+            "notificationId",
+            "st",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_badge_eq",
+          "line": 742,
+          "called": [
+            "Badge",
+            "CoreId",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "empty",
+            "getNotification",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "st",
+            "storeObject",
+            "storeTcbIpcState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_block_eq",
+          "line": 761,
+          "called": [
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "consWithGuard",
+            "getNotification",
+            "lookupTcb",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "removeRunnableOnCore",
+            "st",
+            "storeObject",
+            "storeTcbIpcState_fromTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_perCore_blocking",
+          "line": 784,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "consWithGuard",
+            "currentOnCore",
+            "lookupTcb",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "notificationWaitOnCore_block_eq",
+            "removeRunnableOnCore_currentOnCore_ne_self",
+            "removeRunnableOnCore_not_mem_self",
+            "runQueueOnCore",
+            "st",
+            "storeObject",
+            "storeTcbIpcState_fromTcb"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI",
       "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean",
-      "declaration_count": 4,
+      "declaration_count": 8,
       "declarations": [
         {
           "kind": "namespace",
@@ -36577,7 +36891,6 @@
             "Badge",
             "CoreId",
             "IfObserver",
-            "Kernel",
             "LabelingContext",
             "NoDupList",
             "Notification",
@@ -36607,6 +36920,124 @@
             "toObjId",
             "wakeThread",
             "wakeThread_preserves_projectionOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_machine_eq",
+          "line": 168,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "lookupTcb",
+            "none",
+            "st",
+            "storeObject",
+            "storeObject_machine_eq",
+            "storeTcbIpcState",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcState_preserves_projectionOnCore",
+          "line": 186,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "projectStateOnCore_congr",
+            "st",
+            "storeTcbIpcState",
+            "storeTcbIpcState_machine_eq",
+            "storeTcbIpcState_preserves_projection",
+            "storeTcbIpcState_scheduler_eq",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_block_path_NI",
+          "line": 204,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "consWithGuard",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_preserved_by_storeObject_notification",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "notificationWaitOnCore_block_eq",
+            "objectObservable",
+            "projectState",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_projection",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt",
+            "storeObject_preserves_projection",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_fromTcb_eq",
+            "storeTcbIpcState_preserves_projection",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_block_path_NI_smp",
+          "line": 239,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "consWithGuard",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_preserved_by_storeObject_notification",
+            "lowEquivalent_smp",
+            "none",
+            "notificationId",
+            "notificationWaitOnCore",
+            "notificationWaitOnCore_block_eq",
+            "objectObservable",
+            "projectStateOnCore",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_projectionOnCore",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt",
+            "storeObject_preserves_projectionOnCore",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb",
+            "storeTcbIpcState_fromTcb_eq",
+            "storeTcbIpcState_preserves_projectionOnCore",
+            "threadObservable",
+            "toObjId"
           ]
         }
       ]
@@ -118191,13 +118622,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 518,
+          "line": 524,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 524,
+          "line": 530,
           "called": []
         }
       ]
@@ -145323,13 +145754,14 @@
     {
       "module": "tests.SmpCrossCoreNotificationSuite",
       "path": "tests/SmpCrossCoreNotificationSuite.lean",
-      "declaration_count": 25,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCrossCoreNotification",
-          "line": 33,
+          "line": 34,
           "called": [
+            "determineTargetCore_congr",
             "lockSet_notificationSignalOnCore",
             "lockSet_notificationSignalOnCore_correct",
             "lockSet_notificationSignal_notification_write_mem",
@@ -145342,8 +145774,11 @@
             "notificationSignalOnCore_noWaiter_no_sgi",
             "notificationSignalOnCore_no_sgi_if_local_waiter",
             "notificationSignalOnCore_perCore_consistent",
+            "notificationSignalOnCore_preserves_ipcInvariant",
+            "notificationSignalOnCore_preserves_objects_invExt",
             "notificationSignalOnCore_remaining_waiters",
             "notificationSignalOnCore_remote_wake",
+            "notificationSignalOnCore_remote_wake_preState",
             "notificationSignalOnCore_signal_path_NI",
             "notificationSignalOnCore_signal_path_NI_smp",
             "notificationSignalOnCore_waiter_eq",
@@ -145351,15 +145786,24 @@
             "notificationSignalWaiter",
             "notificationWaitOnCore",
             "notificationWaitOnCore_atomic_under_lockSet",
+            "notificationWaitOnCore_badge_eq",
+            "notificationWaitOnCore_block_eq",
+            "notificationWaitOnCore_block_path_NI",
+            "notificationWaitOnCore_block_path_NI_smp",
             "notificationWaitOnCore_lockSet_correct",
+            "notificationWaitOnCore_perCore_blocking",
+            "notificationWaitOnCore_preserves_ipcInvariant",
+            "notificationWaitOnCore_preserves_objects_invExt",
             "self_write_mem_insertOrMerge",
-            "storeObject_preserves_projectionOnCore"
+            "storeObject_preserves_projectionOnCore",
+            "storeTcbIpcStateAndMessage_determineTargetCore_eq",
+            "storeTcbIpcState_preserves_projectionOnCore"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:91>",
-          "line": 91,
+          "name": "<anonymous:example:116>",
+          "line": 116,
           "called": [
             "Badge",
             "CoreId",
@@ -145386,8 +145830,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:110>",
-          "line": 110,
+          "name": "<anonymous:example:135>",
+          "line": 135,
           "called": [
             "Badge",
             "CoreId",
@@ -145407,8 +145851,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:121>",
-          "line": 121,
+          "name": "<anonymous:example:146>",
+          "line": 146,
           "called": [
             "Badge",
             "CoreId",
@@ -145440,7 +145884,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 146,
+          "line": 171,
           "called": [
             "throw"
           ]
@@ -145448,7 +145892,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 152,
+          "line": 177,
           "called": [
             "CoreId"
           ]
@@ -145456,7 +145900,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 154,
+          "line": 179,
           "called": [
             "ObjId"
           ]
@@ -145464,7 +145908,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 155,
+          "line": 180,
           "called": [
             "ObjId"
           ]
@@ -145472,7 +145916,7 @@
         {
           "kind": "def",
           "name": "signallerTid",
-          "line": 156,
+          "line": 181,
           "called": [
             "ThreadId"
           ]
@@ -145480,7 +145924,7 @@
         {
           "kind": "def",
           "name": "waiterLocalTid",
-          "line": 157,
+          "line": 182,
           "called": [
             "ThreadId"
           ]
@@ -145488,7 +145932,7 @@
         {
           "kind": "def",
           "name": "waiterRemoteTid",
-          "line": 158,
+          "line": 183,
           "called": [
             "ThreadId"
           ]
@@ -145496,7 +145940,7 @@
         {
           "kind": "def",
           "name": "badge",
-          "line": 159,
+          "line": 184,
           "called": [
             "Badge",
             "ofNatMasked"
@@ -145505,7 +145949,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 161,
+          "line": 186,
           "called": [
             "CoreId",
             "TCB",
@@ -145516,7 +145960,7 @@
         {
           "kind": "def",
           "name": "stBase",
-          "line": 168,
+          "line": 193,
           "called": [
             "SystemState",
             "build",
@@ -145536,7 +145980,7 @@
         {
           "kind": "def",
           "name": "stWithWaiter",
-          "line": 178,
+          "line": 203,
           "called": [
             "SystemState",
             "ThreadId",
@@ -145551,7 +145995,7 @@
         {
           "kind": "def",
           "name": "stTwoWaiters",
-          "line": 185,
+          "line": 210,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -145566,7 +146010,7 @@
         {
           "kind": "def",
           "name": "signalSgi",
-          "line": 194,
+          "line": 219,
           "called": [
             "CoreId",
             "SgiKind",
@@ -145581,7 +146025,7 @@
         {
           "kind": "def",
           "name": "waiterList",
-          "line": 200,
+          "line": 225,
           "called": [
             "SystemState",
             "ThreadId",
@@ -145592,7 +146036,7 @@
         {
           "kind": "def",
           "name": "runLockSetChecks",
-          "line": 205,
+          "line": 230,
           "called": [
             "assertBool",
             "cnRoot",
@@ -145616,7 +146060,7 @@
         {
           "kind": "def",
           "name": "runNoWaiterChecks",
-          "line": 234,
+          "line": 259,
           "called": [
             "assertBool",
             "badge",
@@ -145630,7 +146074,7 @@
         {
           "kind": "def",
           "name": "runSignalWakeChecks",
-          "line": 246,
+          "line": 271,
           "called": [
             "assertBool",
             "badge",
@@ -145651,7 +146095,7 @@
         {
           "kind": "def",
           "name": "runMultiWaiterChecks",
-          "line": 271,
+          "line": 296,
           "called": [
             "assertBool",
             "badge",
@@ -145673,7 +146117,7 @@
         {
           "kind": "def",
           "name": "runWaitChecks",
-          "line": 296,
+          "line": 321,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -145690,9 +146134,44 @@
         },
         {
           "kind": "def",
-          "name": "runSmpCrossCoreNotificationChecks",
-          "line": 315,
+          "name": "runBadgeWaitChecks",
+          "line": 340,
           "called": [
+            "assertBool",
+            "badge",
+            "bootCoreId",
+            "contains",
+            "nId",
+            "none",
+            "notificationSignalOnCore",
+            "notificationWaitOnCore",
+            "runQueueOnCore",
+            "stBase",
+            "waiterLocalTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runErrorChecks",
+          "line": 355,
+          "called": [
+            "assertBool",
+            "badge",
+            "bootCoreId",
+            "notificationSignalOnCore",
+            "notificationWaitOnCore",
+            "stBase",
+            "toObjId",
+            "waiterLocalTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSmpCrossCoreNotificationChecks",
+          "line": 371,
+          "called": [
+            "runBadgeWaitChecks",
+            "runErrorChecks",
             "runLockSetChecks",
             "runMultiWaiterChecks",
             "runNoWaiterChecks",
@@ -145703,7 +146182,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 328,
+          "line": 386,
           "called": [
             "runSmpCrossCoreNotificationChecks"
           ]

@@ -584,7 +584,9 @@ theorem notificationSignalOnCore_remaining_waiters
       (notificationSignalOnCore notificationId badge executingCore st).1.objects[notificationId]?
         = some (.notification ntfnPost)
       ∧ ntfnPost.waitingThreads = rest
-      ∧ waiter ∉ ntfnPost.waitingThreads.val := by
+      ∧ waiter ∉ ntfnPost.waitingThreads.val
+      ∧ ntfnPost.state = (if rest.val.isEmpty then .idle else .waiting)
+      ∧ ntfnPost.pendingBadge = none := by
   have hInv' : st'.objects.invExt :=
     storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore
   have hInv'' : st''.objects.invExt :=
@@ -598,7 +600,7 @@ theorem notificationSignalOnCore_remaining_waiters
   have hNe : notificationId ≠ waiter.toObjId :=
     notification_ne_waiter_of_store st' st'' notificationId waiter _ .ready _ hNtfn' hMsg
   refine ⟨{ state := if rest.val.isEmpty then .idle else .waiting,
-            waitingThreads := rest, pendingBadge := none }, ?_, rfl, ?_⟩
+            waitingThreads := rest, pendingBadge := none }, ?_, rfl, ?_, rfl, rfl⟩
   · rw [notificationSignalOnCore_waiter_eq notificationId badge executingCore st ntfn
           waiter rest st' st'' hObj hWaiters hStore hMsg]
     show (wakeThread st'' waiter executingCore).1.objects[notificationId]?
@@ -609,5 +611,194 @@ theorem notificationSignalOnCore_remaining_waiters
           hNe hInv' hMsg]
     exact hNtfn'
   · exact (notificationSignalOnCore_wakes_head ntfn waiter rest hWaiters).2.1
+
+-- ============================================================================
+-- §10  SM6.B.2 (strengthening) — SGI target is the *pre-state* home core
+-- ============================================================================
+
+/-- `determineTargetCore` depends on the thread only through its TCB's
+`cpuAffinity`: two states whose `getTcb?` agree up to `cpuAffinity` route the
+thread to the same core.  The congruence that lets the SGI target be read at the
+pre-state rather than at the post-store wake site. -/
+theorem determineTargetCore_congr (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : (st'.getTcb? tid).map (·.cpuAffinity) = (st.getTcb? tid).map (·.cpuAffinity)) :
+    determineTargetCore st' tid = determineTargetCore st tid := by
+  cases hT' : st'.getTcb? tid with
+  | none => cases hT : st.getTcb? tid with
+    | none => simp [determineTargetCore, hT', hT]
+    | some t => rw [hT', hT] at h; simp at h
+  | some t' => cases hT : st.getTcb? tid with
+    | none => rw [hT', hT] at h; simp at h
+    | some t =>
+      have hAff : t'.cpuAffinity = t.cpuAffinity := by rw [hT', hT] at h; simpa using h
+      simp [determineTargetCore, hT', hT, hAff]
+
+/-- `storeTcbIpcStateAndMessage` preserves every thread's `cpuAffinity` (it writes
+only `ipcState` / `pendingMessage`), hence preserves `determineTargetCore`. -/
+theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok pair =>
+      simp only [hSO] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      simp only [SystemState.getTcb?]
+      by_cases hEq2 : x.toObjId = tid.toObjId
+      · rw [hEq2]
+        simp [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
+              lookupTcb_some_objects st tid tcb hLk]
+      · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
+
+/-- `storeObject` at an id distinct from `x`'s TCB preserves `x`'s
+`determineTargetCore` (it does not touch `x`'s TCB). -/
+theorem storeObject_determineTargetCore_eq
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) (x : SeLe4n.ThreadId)
+    (hNe : id ≠ x.toObjId) (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  simp only [SystemState.getTcb?,
+    storeObject_objects_ne st st' id x.toObjId obj (fun h => hNe h.symm) hObjInv hStore]
+
+/-- WS-SM SM6.B.2 (honest SGI target): the cross-core signal's `.reschedule` SGI
+targets the waiter's **pre-state** home core `determineTargetCore st waiter` — the
+intervening notification-store + waiter-store touch only the notification object
+and the waiter's `ipcState` / `pendingMessage`, never its `cpuAffinity`, so the
+wake-site target coincides with the pre-state one.  The cleaner form of
+`notificationSignalOnCore_remote_wake` (whose target is read at `st''`). -/
+theorem notificationSignalOnCore_remote_wake_preState
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) (executingCore : CoreId)
+    (st : SystemState) (ntfn : Notification)
+    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (waiterTcb'' : TCB) (st' st'' : SystemState)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
+    (hStore : storeObject notificationId (.notification
+        { state := if rest.val.isEmpty then .idle else .waiting,
+          waitingThreads := rest, pendingBadge := none }) st = .ok ((), st'))
+    (hMsg : storeTcbIpcStateAndMessage st' waiter .ready
+        (some { IpcMessage.empty with badge := some badge }) = .ok st'')
+    (hTcb'' : st''.getTcb? waiter = some waiterTcb'')
+    (hObjInv : st.objects.invExt)
+    (hRemote : determineTargetCore st waiter ≠ executingCore) :
+    (notificationSignalOnCore notificationId badge executingCore st).2
+      = .ok (some (determineTargetCore st waiter, SgiKind.reschedule)) := by
+  -- The wake-site target equals the pre-state target (affinity is frame-stable).
+  have hNe : notificationId ≠ waiter.toObjId := by
+    have hNtfn' := storeObject_objects_eq st st' notificationId _ hObjInv hStore
+    exact notification_ne_waiter_of_store st' st'' notificationId waiter _ .ready _ hNtfn' hMsg
+  have hInv' : st'.objects.invExt :=
+    storeObject_preserves_objects_invExt st st' notificationId _ hObjInv hStore
+  have hTarget : determineTargetCore st'' waiter = determineTargetCore st waiter := by
+    rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st' st'' waiter .ready _ waiter hInv' hMsg,
+        storeObject_determineTargetCore_eq st st' notificationId _ waiter hNe hObjInv hStore]
+  rw [notificationSignalOnCore_remote_wake notificationId badge executingCore st ntfn waiter rest
+        waiterTcb'' st' st'' hObj hWaiters hStore hMsg hTcb'' (by rw [hTarget]; exact hRemote),
+      hTarget]
+
+-- ============================================================================
+-- §11  SM6.B (coherence) — the lock-set pre-resolution names the woken thread
+-- ============================================================================
+
+/-- WS-SM SM6.B (lock-set / transition coherence): the waiter the lock-set
+pre-resolves (`notificationSignalWaiter?`, the notification's waiter-list head,
+used to build `lockSet_notificationSignalOnCore`) is **exactly** the thread the
+transition wakes (the `tail?` head).  So the runtime acquires the waiter-TCB write
+lock on the very TCB the signal mutates — the footprint declaration and the
+operation agree. -/
+theorem notificationSignalWaiter?_eq_wake_head
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (ntfn : Notification)
+    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest)) :
+    notificationSignalWaiter? st notificationId = some waiter := by
+  have hObjN : st.getNotification? notificationId = some ntfn :=
+    (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mpr hObj
+  unfold notificationSignalWaiter?
+  rw [hObjN]
+  have hVal : ntfn.waitingThreads.val = waiter :: rest.val :=
+    (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
+  show ntfn.waitingThreads.head? = some waiter
+  unfold SeLe4n.NoDupList.head?
+  rw [hVal]; rfl
+
+-- ============================================================================
+-- §12  SM6.B.1 — `notificationWaitOnCore` path reductions + per-core blocking
+-- ============================================================================
+
+/-- WS-SM SM6.B.1: full reduction of the **badge-consume** path (the notification
+has a pending badge).  The caller stays runnable and receives the badge; no SGI
+and no deschedule. -/
+theorem notificationWaitOnCore_badge_eq
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
+    (st : SystemState) (ntfn : Notification) (badge : SeLe4n.Badge) (st' st'' : SystemState)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hBadge : ntfn.pendingBadge = some badge)
+    (hStore : storeObject notificationId (.notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) st
+        = .ok ((), st'))
+    (hTcb : storeTcbIpcState st' waiter .ready = .ok st'') :
+    notificationWaitOnCore notificationId waiter executingCore st = (st'', .ok (some badge)) := by
+  unfold notificationWaitOnCore
+  have hObjN : st.getNotification? notificationId = some ntfn :=
+    (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mpr hObj
+  simp only [hObjN, hBadge, hStore, hTcb]
+
+/-- WS-SM SM6.B.1: full reduction of the **block** path (no pending badge, the
+caller is not already waiting, and the waiter-list cons succeeds).  The caller is
+appended to the waiter list, transitions to `blockedOnNotification`, and is
+removed from *its own* core's run queue/current via `removeRunnableOnCore`. -/
+theorem notificationWaitOnCore_block_eq
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
+    (st : SystemState) (ntfn : Notification) (tcb : TCB)
+    (wt' : SeLe4n.NoDupList SeLe4n.ThreadId) (st' st'' : SystemState)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hBadge : ntfn.pendingBadge = none)
+    (hLk : lookupTcb st waiter = some tcb)
+    (hNotWaiting : ¬ (tcb.ipcState = .blockedOnNotification notificationId))
+    (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
+    (hStore : storeObject notificationId (.notification
+        { state := .waiting, waitingThreads := wt', pendingBadge := none }) st = .ok ((), st'))
+    (hTcb : storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) = .ok st'') :
+    notificationWaitOnCore notificationId waiter executingCore st
+      = (removeRunnableOnCore st'' waiter executingCore, .ok none) := by
+  unfold notificationWaitOnCore
+  have hObjN : st.getNotification? notificationId = some ntfn :=
+    (SystemState.getNotification?_eq_some_iff st notificationId ntfn).mpr hObj
+  simp only [hObjN, hBadge, hLk, if_neg hNotWaiting, hCons, hStore, hTcb]
+
+/-- WS-SM SM6.B.1 (`notificationWait_perCore_blocking`): on the block path the
+caller is **blocked on its own core** — removed from `executingCore`'s run queue
+and cleared from `executingCore`'s current slot.  The wait pokes no other core
+(no SGI); the deschedule is confined to the executing core. -/
+theorem notificationWaitOnCore_perCore_blocking
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId) (executingCore : CoreId)
+    (st : SystemState) (ntfn : Notification) (tcb : TCB)
+    (wt' : SeLe4n.NoDupList SeLe4n.ThreadId) (st' st'' : SystemState)
+    (hObj : st.objects[notificationId]? = some (.notification ntfn))
+    (hBadge : ntfn.pendingBadge = none)
+    (hLk : lookupTcb st waiter = some tcb)
+    (hNotWaiting : ¬ (tcb.ipcState = .blockedOnNotification notificationId))
+    (hCons : ntfn.waitingThreads.consWithGuard? waiter = some wt')
+    (hStore : storeObject notificationId (.notification
+        { state := .waiting, waitingThreads := wt', pendingBadge := none }) st = .ok ((), st'))
+    (hTcb : storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) = .ok st'') :
+    waiter ∉ (notificationWaitOnCore notificationId waiter executingCore st).1.scheduler.runQueueOnCore executingCore ∧
+    (notificationWaitOnCore notificationId waiter executingCore st).1.scheduler.currentOnCore executingCore
+      ≠ some waiter := by
+  rw [notificationWaitOnCore_block_eq notificationId waiter executingCore st ntfn tcb wt' st' st''
+        hObj hBadge hLk hNotWaiting hCons hStore hTcb]
+  exact ⟨removeRunnableOnCore_not_mem_self st'' waiter executingCore,
+         removeRunnableOnCore_currentOnCore_ne_self st'' waiter executingCore⟩
 
 end SeLe4n.Kernel

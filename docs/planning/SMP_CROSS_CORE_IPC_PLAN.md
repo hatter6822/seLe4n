@@ -263,17 +263,33 @@ partition (54) + AK7 + Rust HAL (724) green.
 
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 
-**Status: LANDED (v0.31.68).**  Axiom-clean (`propext` / `Classical.choice` /
-`Quot.sound` only); Tier 0–3 green; trace fixture byte-identical.  The cross-core
-transitions `notificationSignalOnCore` / `notificationWaitOnCore` and the SM6.B
-theorems live in `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`
+**Status: LANDED (v0.31.68); proof-thoroughness completion (v0.31.69).**
+Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only); Tier 0–3 green;
+trace fixture byte-identical.  The cross-core transitions
+`notificationSignalOnCore` / `notificationWaitOnCore` and the SM6.B theorems live
+in `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`
 (+ `NotificationSignalNI.lean` for the boot-core / per-core / ∀-core
-(`lowEquivalent_smp`) non-interference); the 24-assertion runtime suite is
+(`lowEquivalent_smp`) non-interference of **both** signal *and* wait,
++ `NotificationInvariant.lean` for the `objects.invExt` / `ipcInvariant`
+preservation of both ops); the 31-assertion runtime suite is
 `tests/SmpCrossCoreNotificationSuite.lean`
 (`lake exe smp_cross_core_notification_suite`).  The modules land **staged**
-(production/staged partition 54 → 56), mirroring SM6.A's staged → live
+(production/staged partition 54 → 57), mirroring SM6.A's staged → live
 progression; wiring the cross-core notification dispatch into the live syscall
 path is the SM5.I FFI-seam follow-on.
+
+**Proof-thoroughness completion (v0.31.69)** closes the gaps to SM6.A's bar:
+`notification{Signal,Wait}OnCore_preserves_{objects_invExt,ipcInvariant}`
+(invariant preservation, `NotificationInvariant.lean`); the wait operation brought
+to parity with the signal — path reductions
+(`notificationWaitOnCore_{badge,block}_eq`), per-core caller blocking
+(`notificationWaitOnCore_perCore_blocking`), and cross-core NI
+(`notificationWaitOnCore_block_path_NI{,_smp}`); the honest *pre-state* SGI target
+(`notificationSignalOnCore_remote_wake_preState` via `determineTargetCore_congr` +
+the store affinity-frame lemmas); the lock-set / transition coherence
+(`notificationSignalWaiter?_eq_wake_head` — the pre-resolved waiter *is* the woken
+thread); and the multi-waiter theorem strengthened to capture the notification's
+`state` transition + `pendingBadge` clearing.
 
 `notificationSignalOnCore` mirrors the single-core `notificationSignal` with one
 cross-core substitution — the head waiter's wake routes through the SM5.C

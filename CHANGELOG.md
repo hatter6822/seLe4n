@@ -1,3 +1,51 @@
+## v0.31.69 — WS-SM SM6.B: proof-thoroughness completion (invariant preservation + wait theorems + honest SGI target)
+
+Closes the proof-completeness gaps between SM6.B's initial cut (v0.31.68) and
+SM6.A's thoroughness bar.  Axiom-clean (`propext` / `Classical.choice` /
+`Quot.sound` only); Tier 0–3 green; trace byte-identical; partition 56 → 57.
+
+**IPC-invariant preservation (new `NotificationInvariant.lean`).**  Mirroring
+SM6.A's `EndpointCallInvariant`: `notificationSignalOnCore` and
+`notificationWaitOnCore` each provably preserve `objects.invExt` and the
+`ipcInvariant` notification well-formedness — the cross-core waiter wake is
+object-invisible on the already-`.ready` waiter (the `wakeThread_objects_getElem_eq_of_ready`
+keystone) and the per-core deschedule (`removeRunnableOnCore`) is an object-store
+frame, so the lookup-only `ipcInvariant` carries; the notification-store / TCB-store
+steps reuse the single-core per-step lemmas verbatim.  (The full 15-conjunct
+bundle remains the SM6.D aggregate.)
+
+**`notificationWaitOnCore` brought to parity with the signal.**  Added the badge-
+consume and block path reductions (`notificationWaitOnCore_{badge,block}_eq`), the
+per-core caller blocking theorem `notificationWaitOnCore_perCore_blocking` (the
+block path deschedules the caller from *its own* core, sibling cores untouched —
+now a *theorem*, not just a runtime check), and the cross-core non-interference
+`notificationWaitOnCore_block_path_NI{,_smp}` (boot-core `projectState` + per-core/
+∀-core `lowEquivalent_smp`), built on the new per-core
+`storeTcbIpcState_preserves_projectionOnCore`.
+
+**Honest SGI target (pre-state).**  `notificationSignalOnCore_remote_wake_preState`
+states the `.reschedule` SGI target as the waiter's *pre-state* home core
+`determineTargetCore st waiter` — proved via the general congruence
+`determineTargetCore_congr` plus `storeObject`/`storeTcbIpcStateAndMessage`
+affinity-frame lemmas (the intervening stores never touch `cpuAffinity`), upgrading
+the previous post-store-site form from a prose note to a theorem.
+
+**Lock-set / transition coherence.**  `notificationSignalWaiter?_eq_wake_head`
+proves the waiter the lock-set pre-resolves (used to build
+`lockSet_notificationSignalOnCore`) is *exactly* the thread the transition wakes —
+the runtime acquires the write lock on the very TCB the signal mutates.
+
+**Multi-waiter discipline strengthened.**  `notificationSignalOnCore_remaining_waiters`
+now also proves the post-state notification's `state` transitions correctly
+(`.idle` when the last waiter is woken, `.waiting` otherwise) and its
+`pendingBadge` is cleared.
+
+**Tests.**  `tests/SmpCrossCoreNotificationSuite.lean` grows to 31 runtime
+assertions (+ the badge-consume wait path and the wrong-kind / absent-object error
+paths) and anchors every new theorem.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.68 — WS-SM SM6.B: notification across cores (signal/wait under fine locks)
 
 Lands the SM6.B "Notification across cores" deliverable of the WS-SM Phase 6

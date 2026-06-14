@@ -457,6 +457,12 @@ import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 -- per-core `storeObject_preserves_projectionOnCore` composed with the SM6.A
 -- per-core wake/store projection family.
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
+-- WS-SM SM6.B.1: cross-core notification IPC-invariant preservation —
+-- `notificationSignalOnCore` / `notificationWaitOnCore` preserve `objects.invExt`
+-- and the `ipcInvariant` notification well-formedness (the cross-core wake is
+-- object-invisible on the already-`.ready` waiter; the per-core deschedule is an
+-- object-store frame).  Mirrors SM6.A's `EndpointCallInvariant`.
+import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

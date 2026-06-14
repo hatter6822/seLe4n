@@ -9,6 +9,7 @@
 
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
+import SeLe4n.Kernel.IPC.CrossCore.NotificationInvariant
 import SeLe4n.Testing.StateBuilder
 
 /-!
@@ -82,6 +83,30 @@ open SeLe4n.Testing
 #check @notificationSignalOnCore_signal_path_NI
 #check @notificationSignalOnCore_signal_path_NI_smp
 #check @storeObject_preserves_projectionOnCore
+
+-- SM6.B.7 (wait) non-interference (boot-core + per-core/∀-core smp) + helper:
+#check @notificationWaitOnCore_block_path_NI
+#check @notificationWaitOnCore_block_path_NI_smp
+#check @storeTcbIpcState_preserves_projectionOnCore
+
+-- SM6.B.1 IPC-invariant preservation (objects.invExt + ipcInvariant, both ops):
+#check @notificationSignalOnCore_preserves_objects_invExt
+#check @notificationSignalOnCore_preserves_ipcInvariant
+#check @notificationWaitOnCore_preserves_objects_invExt
+#check @notificationWaitOnCore_preserves_ipcInvariant
+
+-- SM6.B.1 wait path reductions + per-core caller blocking:
+#check @notificationWaitOnCore_badge_eq
+#check @notificationWaitOnCore_block_eq
+#check @notificationWaitOnCore_perCore_blocking
+
+-- SM6.B.2 (strengthening) honest pre-state SGI target + affinity-frame congruence:
+#check @notificationSignalOnCore_remote_wake_preState
+#check @determineTargetCore_congr
+#check @storeTcbIpcStateAndMessage_determineTargetCore_eq
+
+-- SM6.B (coherence) lock-set pre-resolution names the woken thread:
+#check @notificationSignalWaiter?_eq_wake_head
 
 -- ============================================================================
 -- §2  Elaboration-time examples (Tier-3): theorems apply to typed inputs
@@ -312,6 +337,37 @@ private def runWaitChecks : IO Unit := do
   assertBool "wait on core 1 leaves the boot core's run queue intact"
     ((st''.scheduler.runQueueOnCore bootCoreId).contains waiterLocalTid)
 
+private def runBadgeWaitChecks : IO Unit := do
+  IO.println "--- §3.6 SM6.B.1 wait consumes a pending badge (caller stays runnable) ---"
+  -- Prepare a notification carrying a pending badge (a no-waiter signal merges it in).
+  let stActive := (notificationSignalOnCore nId badge bootCoreId stBase).1
+  let (st', res) := notificationWaitOnCore nId waiterLocalTid bootCoreId stActive
+  assertBool "wait on a notification with a pending badge returns the badge"
+    (match res with | .ok (some _) => true | _ => false)
+  -- The badge-consume path makes no scheduler change — the caller stays runnable.
+  assertBool "badge-consume wait leaves the caller runnable on the boot core"
+    ((st'.scheduler.runQueueOnCore bootCoreId).contains waiterLocalTid)
+  assertBool "badge-consume wait clears the notification to idle (badge consumed)"
+    (match st'.objects[nId]? with
+     | some (.notification ntfn) => decide (ntfn.state = .idle ∧ ntfn.pendingBadge = none)
+     | _ => false)
+
+private def runErrorChecks : IO Unit := do
+  IO.println "--- §3.7 SM6.B.1 error paths (wrong-kind / absent object) ---"
+  -- Wrong-kind object (a TCB id) ⇒ invalidCapability; absent id ⇒ objectNotFound.
+  assertBool "signal on a non-notification object fails with invalidCapability"
+    (match (notificationSignalOnCore signallerTid.toObjId badge bootCoreId stBase).2 with
+     | .error .invalidCapability => true | _ => false)
+  assertBool "signal on an absent object fails with objectNotFound"
+    (match (notificationSignalOnCore ⟨9999⟩ badge bootCoreId stBase).2 with
+     | .error .objectNotFound => true | _ => false)
+  assertBool "wait on a non-notification object fails with invalidCapability"
+    (match (notificationWaitOnCore signallerTid.toObjId waiterLocalTid bootCoreId stBase).2 with
+     | .error .invalidCapability => true | _ => false)
+  assertBool "wait on an absent object fails with objectNotFound"
+    (match (notificationWaitOnCore ⟨9999⟩ waiterLocalTid bootCoreId stBase).2 with
+     | .error .objectNotFound => true | _ => false)
+
 def runSmpCrossCoreNotificationChecks : IO Unit := do
   IO.println "WS-SM SM6.B — Cross-core notification suite"
   IO.println "===================================="
@@ -320,6 +376,8 @@ def runSmpCrossCoreNotificationChecks : IO Unit := do
   runSignalWakeChecks
   runMultiWaiterChecks
   runWaitChecks
+  runBadgeWaitChecks
+  runErrorChecks
   IO.println "===================================="
   IO.println "All SM6.B cross-core notification checks PASS."
 
