@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.67.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.68.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -638,7 +638,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   primitives with formal mutex/fairness theorems; SGI INTID 0..4 reserved
   for kernel SMP coordination (SM0.H).
 
-  **Phase status** (current version: v0.31.67):
+  **Phase status** (current version: v0.31.68):
 
   | Phase | Status | Version | Summary |
   |-------|--------|---------|---------|
@@ -651,7 +651,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
   | SM5.J | LANDED | v0.31.63→64 | WCRT under fine locks; **completion v0.31.64**: genuine per-core eventually-scheduled liveness (R5 trace model generalized ∀-core), execution-sensitive bridge, cycle-commensurate units |
   | SM5.K | LANDED | v0.31.63→64 | Tests + fixtures: 4-thread/4-core aggregate suite (+ multi-step dynamic simulation + cross-core round-trip), WCRT suite, golden trace fixture |
   | SM6.A | LANDED | v0.31.65→66 | Endpoint call across cores: `endpointCallOnCore` (receiver wake via SM5.C `wakeThread`, caller block via per-core `removeRunnableOnCore`) + lock-set correctness/membership/donation-extension/2PL-atomicity, cross-core wake SGI (Thm 3.2.1), per-core blocking, reply-state allocation, **full `ipcInvariantFull` preservation**, boot-core **+ per-core/∀-core (`lowEquivalent_smp`) NI**, WithCaps + donation + info-flow-checked dispatch. **v0.31.66: live `.call` LANDED** — `API.dispatchWithCap{,Checked}` routes through `endpointCallCrossCoreDispatch{,Checked}` (caller's core via `determineExecutingCore`), SMP dispatch stack promoted to production (staged 71→57). **v0.31.67: cross-core completion** — SGI-firing seam promoted (`SyscallDispatchEntry` + `PriorityInheritance.PerCore` + `Concurrency.Runtime`, staged 57→54), Rust flipped to `lean_syscall_dispatch_cross_core` (fires diff SGIs), `executingCore` threaded through `syscallDispatchFromAbi`/`syscallEntryChecked` (per-core caller-id), `.call` donation uses cross-core PIP (`propagatePipChainCrossCore`). PR #820 review #1/#2/#3/#5 closed. `tests/SmpCrossCoreCallSuite.lean` |
-  | SM6.B–SM9 | PENDING | — | Cross-core notification/reply/cancellation, per-core IPC invariant bundle, TLB shootdown, info-flow, release closure (→ v1.0.0) |
+  | SM6.B | LANDED | v0.31.68 | Notification across cores: `notificationSignalOnCore` (head waiter wake via SM5.C `wakeThread` routed to its home core, surfacing the `.reschedule` SGI; signaller does not block) + `notificationWaitOnCore` (caller block via per-core `removeRunnableOnCore`). Theorems: SGI emission (`_remote_wake` + local/no-waiter duals), multi-waiter discipline (`_wakes_head` + `_remaining_waiters` — one wake per signal, head removed, rest preserved NoDup), 2PL atomicity (signal + wait), per-core wake locality (`_perCore_consistent`), notification ↔ TCB binding lock-set membership (both ends write-locked via `self_write_mem_insertOrMerge`), lock-set correctness, boot-core **+ per-core/∀-core (`lowEquivalent_smp`) NI**. Staged (partition 54→56); SM5.I FFI seam wires live dispatch. `tests/SmpCrossCoreNotificationSuite.lean` (24 assertions) |
+  | SM6.C–SM9 | PENDING | — | Cross-core reply/cancellation, per-core IPC invariant bundle, TLB shootdown, info-flow, release closure (→ v1.0.0) |
 
   **Plans**: master overview at
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);

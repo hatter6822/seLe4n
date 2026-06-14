@@ -263,16 +263,45 @@ partition (54) + AK7 + Rust HAL (724) green.
 
 ### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM6.B.1 | Migrate `notificationSignal` to lock-set | (refactor) | M |
-| SM6.B.2 | `notificationSignal_remote_wake` | Theorem | L |
-| SM6.B.3 | Multi-waiter discipline preserved | Theorem | M |
-| SM6.B.4 | `notificationWait_atomic_under_lockSet` | Theorem | M |
-| SM6.B.5 | `notificationSignal_perCore_consistent` | Theorem | M |
-| SM6.B.6 | Binding (notification ↔ TCB) lock-set | Theorem | M |
-| SM6.B.7 | `notificationSignal_perCore_NI` | Theorem | M |
-| SM6.B.8 | 6 cross-core notification scenarios | Tests | L |
+**Status: LANDED (v0.31.68).**  Axiom-clean (`propext` / `Classical.choice` /
+`Quot.sound` only); Tier 0–3 green; trace fixture byte-identical.  The cross-core
+transitions `notificationSignalOnCore` / `notificationWaitOnCore` and the SM6.B
+theorems live in `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`
+(+ `NotificationSignalNI.lean` for the boot-core / per-core / ∀-core
+(`lowEquivalent_smp`) non-interference); the 24-assertion runtime suite is
+`tests/SmpCrossCoreNotificationSuite.lean`
+(`lake exe smp_cross_core_notification_suite`).  The modules land **staged**
+(production/staged partition 54 → 56), mirroring SM6.A's staged → live
+progression; wiring the cross-core notification dispatch into the live syscall
+path is the SM5.I FFI-seam follow-on.
+
+`notificationSignalOnCore` mirrors the single-core `notificationSignal` with one
+cross-core substitution — the head waiter's wake routes through the SM5.C
+`wakeThread … executingCore` (enqueued on the waiter's *home* core, surfacing the
+optional `.reschedule` SGI) — and the signaller does **not** block.
+`notificationWaitOnCore` blocks the caller on *its own* core via the SM6.A
+`removeRunnableOnCore … executingCore`.  The lock-sets
+`lockSet_notificationSignal` / `lockSet_notificationWait` (SM3.B.3) are unchanged.
+
+> **Model note.**  A notification's "binding to a TCB" (SM6.B.6) is realised as
+> the woken-waiter TCB write lock plus the notification write lock — *both* ends
+> of the signal's wake covered by a held write lock — proved via the
+> unconditional `self_write_mem_insertOrMerge` (a write `insertOrMerge` always
+> write-locks its key, by the `AccessMode.lub` top), so the TCB-end membership
+> needs no waiter≠signaller side-condition.  The latent `TCB.boundNotification`
+> field (no consuming operation in the present model) is unrelated; SM6.B's
+> binding is the per-signal wake binding declared in the lock-set footprint.
+
+| Sub | Description | Landed symbol | Status |
+|-----|-------------|---------------|--------|
+| SM6.B.1 | Migrate `notificationSignal`/`notificationWait` to lock-set (cross-core) | `notificationSignalOnCore`, `notificationWaitOnCore` (+ `notificationSignalOnCore_{waiter,noWaiter}_eq`, `lockSet_notificationSignalOnCore`, `notificationSignalOnCore_lockSet_correct`, `notificationWaitOnCore_lockSet_correct`) | ✓ |
+| SM6.B.2 | `notificationSignal_remote_wake` | `notificationSignalOnCore_remote_wake` (+ `_no_sgi_if_local_waiter`, `_noWaiter_no_sgi`) | ✓ |
+| SM6.B.3 | Multi-waiter discipline preserved | `notificationSignalOnCore_wakes_head` (one wake per signal, head ∉ NoDup remainder) + `notificationSignalOnCore_remaining_waiters` (observable post-state carries exactly the remaining list, read through the object-invisible wake) | ✓ |
+| SM6.B.4 | `notificationWait_atomic_under_lockSet` | `notificationWaitOnCore_atomic_under_lockSet` (+ `notificationSignalOnCore_atomic_under_lockSet` companion) | ✓ |
+| SM6.B.5 | `notificationSignal_perCore_consistent` | `notificationSignalOnCore_perCore_consistent` (wake confined to the waiter's home core) | ✓ |
+| SM6.B.6 | Binding (notification ↔ TCB) lock-set | `lockSet_notificationSignal_notification_write_mem` + `lockSet_notificationSignal_waiter_tcb_write_mem` (both ends write-locked; `self_write_mem_insertOrMerge`) | ✓ |
+| SM6.B.7 | `notificationSignal_perCore_NI` | `notificationSignalOnCore_signal_path_NI` (boot-core `projectState`) + `notificationSignalOnCore_signal_path_NI_smp` (per-core / ∀-core `lowEquivalent_smp` — invisible on *every* core) | ✓ |
+| SM6.B.8 | 6 cross-core notification scenarios | `tests/SmpCrossCoreNotificationSuite.lean` (24 runtime assertions) | ✓ |
 
 ### SM6.C — Reply path across cores (4 PRs, 10 sub-tasks)
 

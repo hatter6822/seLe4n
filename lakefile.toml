@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.67"
+version = "0.31.68"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -496,3 +496,16 @@ root = "tests.SmpSchedulerSuite"
 [[lean_exe]]
 name = "smp_cross_core_call_suite"
 root = "tests.SmpCrossCoreCallSuite"
+
+# WS-SM SM6.B — Cross-core notification test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM6.B.8 cross-core notification scenarios: the SM6.B.1/.6 lock-set footprint /
+# binding membership (notification + woken-waiter TCB write locks), the SM6.B.2
+# no-waiter badge merge (no SGI) and local vs remote signal SGI emission (the
+# cross-core wake routed to the waiter's home core), the SM6.B.3 multi-waiter
+# discipline (one wake per signal, woken head removed, rest preserved NoDup), and
+# the SM6.B.1/.4 per-core caller blocking on notificationWait.  Tier-2 + Tier-3
+# wired.
+[[lean_exe]]
+name = "smp_cross_core_notification_suite"
+root = "tests.SmpCrossCoreNotificationSuite"

@@ -24,7 +24,41 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.A endpoint call across cores LANDED (v0.31.65).**
+**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68).**
+The cross-core IPC phase continues with the notification syscalls lifted to SMP.
+`notificationSignalOnCore`
+([`SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean))
+generalises the single-core `notificationSignal` to an explicit `executingCore`:
+on a signal that unblocks the head waiter, the waiter is woken through the SM5.C
+cross-core `wakeThread` (enqueued on its home core, surfacing a `.reschedule` SGI
+when that core is remote — `notificationSignalOnCore_remote_wake`, SM6.B.2), while
+the signaller does **not** block; `notificationWaitOnCore` blocks the caller on
+its *own* core via the SM6.A per-core `removeRunnableOnCore`.  All eight SM6.B
+sub-tasks landed axiom-clean: lock-set hierarchical correctness
+(`notificationSignalOnCore_lockSet_correct` / `notificationWaitOnCore_lockSet_correct`,
+SM6.B.1); the multi-waiter discipline (`notificationSignalOnCore_wakes_head` —
+one wake per signal, the woken head not a member of the duplicate-free remainder —
+and `notificationSignalOnCore_remaining_waiters` — the observable post-state
+notification carries exactly the remaining list, read back through the
+object-invisible cross-core wake, SM6.B.3); 2PL atomicity
+(`notificationWaitOnCore_atomic_under_lockSet` + a signal companion, SM6.B.4);
+per-core wake locality (`notificationSignalOnCore_perCore_consistent` — the wake is
+confined to the waiter's home core, SM6.B.5); the notification ↔ TCB binding
+lock-set membership (`lockSet_notificationSignal_notification_write_mem` +
+`lockSet_notificationSignal_waiter_tcb_write_mem` — both ends of the wake covered
+by a held write lock, proved via the unconditional `self_write_mem_insertOrMerge`,
+SM6.B.6); and cross-core non-interference
+(`notificationSignalOnCore_signal_path_NI` boot-core + `_smp` per-core/∀-core
+`lowEquivalent_smp`,
+[`NotificationSignalNI.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean),
+SM6.B.7).  Tests: `tests/SmpCrossCoreNotificationSuite.lean` (24 runtime
+assertions + theorem witnesses, SM6.B.8).  The modules land **staged** (partition
+54 → 56), mirroring SM6.A's staged → live progression; wiring the cross-core
+notification dispatch into the live syscall path is the SM5.I FFI-seam follow-on.
+Plan:
+[`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
+
+**Prior sub-phase: SM6.A endpoint call across cores LANDED (v0.31.65).**
 The cross-core IPC phase (SM6) opens with the endpoint `Call` rendezvous lifted
 to SMP.  `endpointCallOnCore`
 ([`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean))

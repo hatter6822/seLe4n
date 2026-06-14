@@ -1,3 +1,75 @@
+## v0.31.68 — WS-SM SM6.B: notification across cores (signal/wait under fine locks)
+
+Lands the SM6.B "Notification across cores" deliverable of the WS-SM Phase 6
+cross-core IPC workstream (plan `docs/planning/SMP_CROSS_CORE_IPC_PLAN.md` §3.1,
+§5) — all 8 sub-tasks (SM6.B.1–8).  Axiom-clean (`propext` / `Classical.choice` /
+`Quot.sound` only); Tier 0–3 green; the trace fixture is byte-identical; the
+production/staged partition moves 54 → 56 (two new staged-only proof modules).
+
+**Cross-core transitions (SM6.B.1).**  `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`
+lifts the single-core notification syscalls to cross-core transitions under the
+SM3.B per-object lock-set discipline: `notificationSignalOnCore` routes the head
+waiter's wake through the SM5.C cross-core `wakeThread` (enqueued on the waiter's
+*home* core, surfacing the optional `.reschedule` SGI; the signaller does not
+block), and `notificationWaitOnCore` blocks the caller on *its own* core via the
+SM6.A `removeRunnableOnCore` generalisation of `removeRunnable`.  Full
+path-reduction lemmas characterise every control path; the lock-sets
+(`lockSet_notificationSignal` / `lockSet_notificationWait`, with the waiter
+pre-resolved by `notificationSignalWaiter?`) are proved hierarchically correct
+(`permittedKinds`-respecting, duplicate-free keys).
+
+**Cross-core wake SGI (SM6.B.2).**  `notificationSignalOnCore_remote_wake`: a
+signal that unblocks a waiter bound to a *remote* core surfaces a `.reschedule`
+SGI to that core; the dual lemmas prove a *local* waiter and the *no-waiter*
+(badge-merge) path surface no SGI — a signal pokes a remote core *only* when it
+wakes a waiter pinned there.
+
+**Multi-waiter discipline (SM6.B.3).**  `notificationSignalOnCore_wakes_head`
+(one wake per signal — the popped waiter is the list head, *not* a member of the
+duplicate-free remainder) and `notificationSignalOnCore_remaining_waiters` (the
+*observable* post-state notification carries exactly the remaining waiter list,
+read back through the object-invisible cross-core wake — the just-readied waiter's
+identical-value re-insert agrees on every object lookup).
+
+**2PL atomicity (SM6.B.4).**  `notificationWaitOnCore_atomic_under_lockSet` (plus
+a `notificationSignalOnCore_atomic_under_lockSet` companion): each transition,
+wrapped in `withLockSet`, decomposes deterministically into acquire-fold /
+transition / release-fold — no partial intermediate is observable.
+
+**Per-core consistency (SM6.B.5).**  `notificationSignalOnCore_perCore_consistent`:
+the signal's wake is confined to the woken waiter's home core; every *other*
+core's run queue and current thread equal the pre-state's.
+
+**Notification ↔ TCB binding under lock-set (SM6.B.6).**  Both ends of the wake
+are covered by a held *write* lock —
+`lockSet_notificationSignal_notification_write_mem` (the notification) and
+`lockSet_notificationSignal_waiter_tcb_write_mem` (the woken TCB) — proved via the
+new unconditional `self_write_mem_insertOrMerge` (a write `insertOrMerge` always
+write-locks its key, by the `AccessMode.lub` top), so the TCB-end membership needs
+no waiter≠signaller side-condition.
+
+**Non-interference (SM6.B.7).**
+`SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean` proves
+`notificationSignalOnCore_signal_path_NI` (boot-core `projectState`) and
+`notificationSignalOnCore_signal_path_NI_smp` (per-core / ∀-core
+`lowEquivalent_smp`: a high signal at a high notification waking a high waiter is
+invisible to a low observer on *every* core, including the remote wake target),
+built on the new per-core `storeObject_preserves_projectionOnCore` composed with
+the SM6.A per-core wake/store projection family.
+
+**Tests (SM6.B.8).**  `tests/SmpCrossCoreNotificationSuite.lean`
+(`lake exe smp_cross_core_notification_suite`, Tier-2) — 24 runtime assertions
+across the lock-set footprint + binding membership, the no-waiter badge merge,
+the local vs remote signal SGI, the multi-waiter discipline, and the per-core
+caller blocking on wait — plus §1 surface anchors and §2 theorem-application
+witnesses (Tier-3).
+
+Staged-only (proof modules) until the SM5.I FFI seam wires the cross-core
+notification dispatch into the live syscall path, mirroring SM6.A's staged →
+live progression.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §5 (SM6.B)
+
 ## v0.31.67 — WS-SM SM6.A: cross-core `.call` completion (SGI firing + cross-core PIP + per-core caller-id)
 
 Completes the multi-core cross-core `.call` started at v0.31.66, closing the

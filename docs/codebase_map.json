@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/upbeat-edison-4ahj6q",
-      "commit_sha": "f39da1d8d4334f09abbb0e6f6a9b12bef063202f",
-      "tree_sha": "f46386cc95c8302427bf008f8fe79c581fe2d366",
-      "committed_at_utc": "2026-06-13T23:02:55+00:00"
+      "branch": "claude/serene-johnson-gnssgu",
+      "commit_sha": "140f0e845c2ccef95a7a7255b9fe346e4fb81f6b",
+      "tree_sha": "20b749b691ab8b1902a376e05845dff313d2ea61",
+      "committed_at_utc": "2026-06-13T21:00:27-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9ae075b65a79a20cb647c738557e8bb2b0240693643a8d6b9c260003cc722145"
+    "source_digest": "eb406a28c471fba243b9d79372fb2d0beda065bee6007e2f44074d9391c46e7a"
   },
   "summary": {
-    "module_count": 299,
-    "declaration_count": 11135
+    "module_count": 302,
+    "declaration_count": 11187
   },
   "readme_sync": {
-    "version": "0.31.67",
+    "version": "0.31.68",
     "lean_toolchain": "v4.28.0",
-    "production_files": 240,
-    "production_loc": 175877,
-    "test_files": 59,
-    "test_loc": 37918,
-    "proved_theorem_lemma_decls": 5891,
+    "production_files": 242,
+    "production_loc": 176672,
+    "test_files": 60,
+    "test_loc": 38247,
+    "proved_theorem_lemma_decls": 5911,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -409,6 +409,7 @@
             "SyscallDecodeResult",
             "SyscallGate",
             "ThreadId",
+            "badge",
             "cnodeId",
             "cspaceCopy",
             "cspaceMint",
@@ -457,6 +458,7 @@
             "SyscallGate",
             "ThreadId",
             "applyReplyDonation",
+            "badge",
             "cnodeId",
             "cspaceCopy",
             "cspaceCopyChecked",
@@ -795,6 +797,7 @@
             "SystemState",
             "ThreadId",
             "applyReplyDonation",
+            "badge",
             "decodeReplyRecvArgs",
             "dispatchCapabilityOnly",
             "dispatchWithCap",
@@ -968,6 +971,7 @@
             "SyscallDecodeResult",
             "SyscallGate",
             "ThreadId",
+            "badge",
             "cnodeId",
             "cspaceMint",
             "cspaceMintWithCdt",
@@ -1103,6 +1107,7 @@
             "SyscallDecodeResult",
             "SyscallGate",
             "ThreadId",
+            "badge",
             "decodeExtraCapAddrs",
             "dispatchCapabilityOnly",
             "dispatchWithCap",
@@ -1124,6 +1129,7 @@
             "SyscallDecodeResult",
             "SyscallGate",
             "ThreadId",
+            "badge",
             "decodeExtraCapAddrs",
             "determineExecutingCore",
             "dispatchCapabilityOnly",
@@ -1144,6 +1150,7 @@
             "SyscallDecodeResult",
             "SyscallGate",
             "ThreadId",
+            "badge",
             "dispatchCapabilityOnly",
             "dispatchWithCap",
             "endpointReplyWithDonation",
@@ -5503,6 +5510,7 @@
             "Badge",
             "MessageInfo",
             "RegValue",
+            "badge",
             "bounded",
             "extractMessageRegisters",
             "extractMessageRegisters_length",
@@ -5824,7 +5832,8 @@
           "called": [
             "AccessRightSet",
             "Badge",
-            "Slot"
+            "Slot",
+            "badge"
           ]
         },
         {
@@ -5889,6 +5898,7 @@
             "CSpaceMintArgs",
             "KernelError",
             "SyscallDecodeResult",
+            "badge",
             "ofNat",
             "ofNatMasked",
             "pure",
@@ -6346,6 +6356,7 @@
             "Badge.ofNatMasked_toNat",
             "CSpaceMintArgs",
             "KernelError",
+            "badge",
             "decodeCSpaceMintArgs",
             "encodeCSpaceMintArgs",
             "isWord5_of_valid",
@@ -6637,7 +6648,8 @@
           "name": "NotificationSignalArgs",
           "line": 1043,
           "called": [
-            "Badge"
+            "Badge",
+            "badge"
           ]
         },
         {
@@ -6662,6 +6674,7 @@
             "KernelError",
             "NotificationSignalArgs",
             "SyscallDecodeResult",
+            "badge",
             "ofNatMasked",
             "pure",
             "requireMsgReg"
@@ -10197,6 +10210,7 @@
             "Badge",
             "Capability",
             "NonNullCap",
+            "badge",
             "capAttenuates",
             "mintDerivedCap",
             "rightsSubset_sound"
@@ -10211,6 +10225,7 @@
             "Badge",
             "Capability",
             "NonNullCap",
+            "badge",
             "mintDerivedCap",
             "mintDerivedCap_attenuates"
           ]
@@ -10224,6 +10239,7 @@
             "Badge",
             "Capability",
             "NonNullCap",
+            "badge",
             "mintDerivedCap",
             "mintDerivedCap_attenuates"
           ]
@@ -10238,6 +10254,7 @@
             "CSpaceAddr",
             "Capability.toNonNull",
             "SystemState",
+            "badge",
             "capAttenuates",
             "cspaceInsertSlot",
             "cspaceInsertSlot_lookup_eq",
@@ -10261,6 +10278,7 @@
             "Badge",
             "CSpaceAddr",
             "SystemState",
+            "badge",
             "cspaceLookupSlot",
             "cspaceMint",
             "cspaceMint_child_attenuates",
@@ -10277,6 +10295,7 @@
             "Badge",
             "Capability",
             "NonNullCap",
+            "badge",
             "mintDerivedCap"
           ]
         },
@@ -10290,6 +10309,7 @@
             "CSpaceAddr",
             "Capability.toNonNull",
             "SystemState",
+            "badge",
             "cspaceInsertSlot_lookup_eq",
             "cspaceLookupSlot",
             "cspaceLookupSlot_preserves_state",
@@ -10311,6 +10331,7 @@
             "Notification",
             "ObjId",
             "SystemState",
+            "badge",
             "empty",
             "invExt",
             "none",
@@ -10332,6 +10353,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "empty",
             "invExt",
             "lookupTcb",
@@ -10356,6 +10378,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "cspaceMint",
             "invExt",
             "none",
@@ -10374,6 +10397,7 @@
           "line": 627,
           "called": [
             "Badge",
+            "badge",
             "bor",
             "ofNatMasked",
             "toNat"
@@ -10398,6 +10422,7 @@
           "name": "cspaceAttenuationRule_holds",
           "line": 656,
           "called": [
+            "badge",
             "cspaceAttenuationRule",
             "mintDerivedCap_attenuates"
           ]
@@ -10465,6 +10490,7 @@
           "name": "cspaceAttenuationRule",
           "line": 40,
           "called": [
+            "badge",
             "capAttenuates",
             "mintDerivedCap"
           ]
@@ -11936,6 +11962,7 @@
             "CNode",
             "ObjId",
             "SystemState",
+            "badge",
             "capabilityBadgesWellFormed",
             "invExt",
             "lookup",
@@ -11953,6 +11980,7 @@
           "line": 65,
           "called": [
             "SystemState",
+            "badge",
             "badgeWellFormed",
             "st"
           ]
@@ -11967,6 +11995,7 @@
             "CSpaceAddr",
             "Capability.toNonNull",
             "SystemState",
+            "badge",
             "badgeWellFormed",
             "badgeWellFormed_of_objects_eq",
             "cspaceInsertSlot",
@@ -12000,6 +12029,7 @@
             "Badge",
             "CSpaceAddr",
             "SystemState",
+            "badge",
             "badgeWellFormed",
             "badgeWellFormed_of_objects_eq",
             "cspaceLookupSlot",
@@ -12158,6 +12188,7 @@
             "CSpaceAddr",
             "Capability.toNonNull",
             "SystemState",
+            "badge",
             "cdtMapsConsistent",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_cdtMapsConsistent",
@@ -12360,6 +12391,7 @@
             "CSpaceAddr",
             "SystemState",
             "addEdge",
+            "badge",
             "capabilityInvariantBundle",
             "cdtAcyclicity",
             "cdtCompleteness",
@@ -12397,6 +12429,7 @@
             "Badge",
             "CSpaceAddr",
             "SystemState",
+            "badge",
             "capabilityInvariantBundle",
             "cdtAcyclicity",
             "cdtAcyclicity_of_cdt_eq",
@@ -12436,6 +12469,7 @@
             "Badge",
             "CSpaceAddr",
             "SystemState",
+            "badge",
             "cspaceLookupSlot",
             "cspaceLookupSlot_ok_iff_lookupSlotCap",
             "cspaceMutate",
@@ -12456,6 +12490,7 @@
             "CSpaceAddr",
             "Kernel",
             "SystemState",
+            "badge",
             "cspaceLookupSlot",
             "cspaceMutate",
             "isNull",
@@ -13294,6 +13329,7 @@
             "Capability.toNonNull",
             "Kernel",
             "SystemState",
+            "badge",
             "capabilityInvariantBundle",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_capabilityInvariantBundle",
@@ -14031,6 +14067,7 @@
             "Capability",
             "KernelError",
             "NonNullCap",
+            "badge",
             "isNull",
             "rightsSubset"
           ]
@@ -14044,6 +14081,7 @@
             "Badge",
             "Capability",
             "NonNullCap",
+            "badge",
             "isNull",
             "mintDerivedCap"
           ]
@@ -14057,6 +14095,7 @@
             "Badge",
             "KernelError",
             "NonNullCap",
+            "badge",
             "isNull",
             "mintDerivedCap",
             "mintDerivedCap_preserves_non_null"
@@ -14070,6 +14109,7 @@
             "AccessRightSet",
             "Badge",
             "NonNullCap",
+            "badge",
             "mintDerivedCap",
             "mintDerivedCapNonNull"
           ]
@@ -14083,6 +14123,7 @@
             "Badge",
             "CSpaceAddr",
             "Kernel",
+            "badge",
             "cspaceInsertSlot",
             "cspaceLookupSlot",
             "mintDerivedCap",
@@ -14227,6 +14268,7 @@
             "CSpaceAddr",
             "Capability",
             "Kernel",
+            "badge",
             "cspaceLookupSlot",
             "insert",
             "isNull",
@@ -14246,6 +14288,7 @@
             "CSpaceAddr",
             "Kernel",
             "addEdge",
+            "badge",
             "cspaceMint",
             "ensureCdtNodeForSlot",
             "st"
@@ -21040,6 +21083,7 @@
             "cnRoot",
             "lockSet_consistent_base_plus_opt",
             "lockSet_notificationSignal",
+            "nId",
             "none",
             "notificationSignal",
             "permittedKinds"
@@ -21056,6 +21100,7 @@
             "cnRoot",
             "lockSet_consistent_of_extended_base",
             "lockSet_notificationWait",
+            "nId",
             "notificationWait",
             "permittedKinds"
           ]
@@ -32487,6 +32532,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "bootCoreId",
             "invExt",
             "ipcSchedulerContractPredicates_smp",
@@ -32942,6 +32988,7 @@
             "Notification",
             "ObjId",
             "get",
+            "nId",
             "none",
             "st"
           ]
@@ -33004,7 +33051,8 @@
             "FrozenKernel",
             "Notification",
             "ObjId",
-            "frozenStoreObject"
+            "frozenStoreObject",
+            "nId"
           ]
         },
         {
@@ -33046,6 +33094,7 @@
             "ObjId",
             "frozenLookupNotification",
             "frozenStoreNotification",
+            "nId",
             "none",
             "st"
           ]
@@ -33092,6 +33141,7 @@
             "frozenLookupNotification",
             "frozenStoreNotification",
             "frozenStoreNotificationChecked",
+            "nId",
             "none",
             "st"
           ]
@@ -33531,6 +33581,7 @@
             "Notification",
             "NotificationState",
             "ObjId",
+            "badge",
             "bor",
             "empty",
             "frozenStoreTcbIpcState",
@@ -33555,6 +33606,7 @@
             "Notification",
             "ObjId",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "empty",
             "frozenLookupTcb",
@@ -35118,6 +35170,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "badge",
             "badgeWellFormed"
           ]
         },
@@ -35962,6 +36015,597 @@
             "toObjId",
             "wakeThread",
             "wakeThread_preserves_objects_invExt",
+            "wakeThread_preserves_projectionOnCore"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationSignal",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean",
+      "declaration_count": 23,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 45,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "notificationSignalOnCore",
+          "line": 67,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IpcMessage",
+            "KernelError",
+            "Notification",
+            "NotificationState",
+            "ObjId",
+            "SgiKind",
+            "SystemState",
+            "badge",
+            "bor",
+            "empty",
+            "getNotification",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "ofNatMasked",
+            "st",
+            "storeObject",
+            "storeTcbIpcStateAndMessage",
+            "tail",
+            "toNat",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "notificationWaitOnCore",
+          "line": 126,
+          "called": [
+            "Badge",
+            "CoreId",
+            "KernelError",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "consWithGuard",
+            "empty",
+            "getNotification",
+            "lookupTcb",
+            "none",
+            "notificationId",
+            "removeRunnableOnCore",
+            "st",
+            "storeObject",
+            "storeTcbIpcState",
+            "storeTcbIpcState_fromTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "notificationSignalWaiter",
+          "line": 177,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "getNotification",
+            "head",
+            "none",
+            "notificationId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lockSet_notificationSignalOnCore",
+          "line": 188,
+          "called": [
+            "LockSet",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "lockSet_notificationSignal",
+            "notificationId",
+            "notificationSignalWaiter",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lockSet_notificationWaitOnCore",
+          "line": 198,
+          "called": [
+            "LockSet",
+            "ObjId",
+            "ThreadId",
+            "lockSet_notificationWait",
+            "notificationId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_waiter_eq",
+          "line": 209,
+          "called": [
+            "Badge",
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "empty",
+            "getNotification",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "st",
+            "storeObject",
+            "storeTcbIpcStateAndMessage",
+            "tail",
+            "wakeThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_noWaiter_eq",
+          "line": 232,
+          "called": [
+            "Badge",
+            "CoreId",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "bor",
+            "empty",
+            "getNotification",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "ofNatMasked",
+            "st",
+            "storeObject",
+            "tail",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_remote_wake",
+          "line": 261,
+          "called": [
+            "Badge",
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "badge",
+            "determineTargetCore",
+            "empty",
+            "getTcb",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_waiter_eq",
+            "st",
+            "storeObject",
+            "storeTcbIpcStateAndMessage",
+            "tail",
+            "wakeThread",
+            "wakeThread_emits_sgi_if_remote"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_no_sgi_if_local_waiter",
+          "line": 286,
+          "called": [
+            "Badge",
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "determineTargetCore",
+            "empty",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_waiter_eq",
+            "st",
+            "storeObject",
+            "storeTcbIpcStateAndMessage",
+            "tail",
+            "wakeThread",
+            "wakeThread_no_sgi_if_local"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_noWaiter_no_sgi",
+          "line": 309,
+          "called": [
+            "Badge",
+            "CoreId",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "badge",
+            "bor",
+            "empty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_noWaiter_eq",
+            "ofNatMasked",
+            "st",
+            "storeObject",
+            "tail",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_lockSet_correct",
+          "line": 334,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "cnRoot",
+            "lockSet_consistent_notificationSignal",
+            "lockSet_notificationSignal",
+            "notificationId",
+            "notificationSignal",
+            "permittedKinds"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_notificationSignalOnCore_correct",
+          "line": 349,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "lockSet_consistent_notificationSignal",
+            "lockSet_notificationSignalOnCore",
+            "notificationId",
+            "notificationSignal",
+            "notificationSignalWaiter",
+            "permittedKinds",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_lockSet_correct",
+          "line": 362,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "cnRoot",
+            "lockSet_consistent_notificationWait",
+            "lockSet_notificationWait",
+            "notificationId",
+            "notificationWait",
+            "permittedKinds"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "self_write_mem_insertOrMerge",
+          "line": 380,
+          "called": [
+            "AccessMode.lub_write_right",
+            "LockId",
+            "LockSet",
+            "containsKey",
+            "insertOrMerge"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_notificationSignal_notification_write_mem",
+          "line": 397,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "cnRoot",
+            "cnodeLock",
+            "insertOrMerge",
+            "lockSetExtendOpt",
+            "lockSetOfList",
+            "lockSet_notificationSignal",
+            "mem_insertOrMerge_of_mem_of_ne",
+            "none",
+            "notificationId",
+            "notificationLock",
+            "self_write_mem_insertOrMerge",
+            "tcbLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockSet_notificationSignal_waiter_tcb_write_mem",
+          "line": 432,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "cnRoot",
+            "lockSetExtendOpt",
+            "lockSet_notificationSignal",
+            "notificationId",
+            "self_write_mem_insertOrMerge",
+            "tcbLock"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_perCore_consistent",
+          "line": 453,
+          "called": [
+            "Badge",
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "currentOnCore",
+            "determineTargetCore",
+            "empty",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_waiter_eq",
+            "runQueueOnCore",
+            "st",
+            "storeObject",
+            "storeObject_scheduler_eq",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_scheduler_eq",
+            "tail",
+            "wakeThread_independent_of_other_core"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationWaitOnCore_atomic_under_lockSet",
+          "line": 489,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "cnRoot",
+            "lockAcquireSequence",
+            "lockSet_atomic_under_2pl",
+            "lockSet_notificationWait",
+            "notificationId",
+            "notificationWaitOnCore",
+            "releaseAll",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_atomic_under_lockSet",
+          "line": 506,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "badge",
+            "cnRoot",
+            "lockAcquireSequence",
+            "lockSet_atomic_under_2pl",
+            "lockSet_notificationSignal",
+            "notificationId",
+            "notificationSignalOnCore",
+            "releaseAll",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_wakes_head",
+          "line": 532,
+          "called": [
+            "NoDupList",
+            "Notification",
+            "ThreadId",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notification_ne_waiter_of_store",
+          "line": 548,
+          "called": [
+            "IpcMessage",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "ThreadIpcState",
+            "isReserved",
+            "lookupTcb",
+            "none",
+            "notificationId",
+            "storeTcbIpcStateAndMessage",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_remaining_waiters",
+          "line": 570,
+          "called": [
+            "Badge",
+            "CoreId",
+            "Kernel",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "empty",
+            "invExt",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_waiter_eq",
+            "notificationSignalOnCore_wakes_head",
+            "notification_ne_waiter_of_store",
+            "st",
+            "storeObject",
+            "storeObject_objects_eq",
+            "storeObject_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_getTcb",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_objects_ne",
+            "tail",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_objects_getElem_eq_of_ready"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI",
+      "path": "SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean",
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 39,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "storeObject_preserves_projectionOnCore",
+          "line": 54,
+          "called": [
+            "CoreId",
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "invExt",
+            "objectObservable",
+            "projectStateOnCore",
+            "projectStateOnCore_congr",
+            "st",
+            "storeObject",
+            "storeObject_machine_eq",
+            "storeObject_preserves_projection",
+            "storeObject_scheduler_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_signal_path_NI",
+          "line": 77,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "empty",
+            "invExt",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_waiter_eq",
+            "objectObservable",
+            "projectState",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt",
+            "storeObject_preserves_projection",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_projection",
+            "tail",
+            "threadObservable",
+            "toObjId",
+            "wakeThread",
+            "wakeThread_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "notificationSignalOnCore_signal_path_NI_smp",
+          "line": 124,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IfObserver",
+            "Kernel",
+            "LabelingContext",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "empty",
+            "invExt",
+            "isEmpty",
+            "lowEquivalent_smp",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_waiter_eq",
+            "objectObservable",
+            "projectStateOnCore",
+            "st",
+            "storeObject",
+            "storeObject_preserves_objects_invExt",
+            "storeObject_preserves_projectionOnCore",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "storeTcbIpcStateAndMessage_preserves_projectionOnCore",
+            "tail",
+            "threadObservable",
+            "toObjId",
+            "wakeThread",
             "wakeThread_preserves_projectionOnCore"
           ]
         }
@@ -38032,6 +38676,7 @@
           "line": 273,
           "called": [
             "Badge",
+            "badge",
             "valid"
           ]
         },
@@ -38044,6 +38689,7 @@
             "Notification",
             "ObjId",
             "SystemState",
+            "badge",
             "st",
             "valid"
           ]
@@ -38059,6 +38705,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "badge",
             "lookup",
             "st",
             "valid"
@@ -39238,6 +39885,7 @@
           "called": [
             "SystemState",
             "ThreadId",
+            "badge",
             "badgeWellFormed",
             "cleanupPreReceiveDonation",
             "cleanupPreReceiveDonation_frame_helper",
@@ -40298,6 +40946,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "empty",
             "ensureRunnable_preserves_objects",
             "invExt",
@@ -40326,6 +40975,7 @@
             "ObjId",
             "SchedulerState.runnable",
             "SystemState",
+            "badge",
             "bootCoreId",
             "currentNotOnNotificationWaitList",
             "currentOnCore",
@@ -40366,6 +41016,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "empty",
             "invExt",
@@ -40397,6 +41048,7 @@
             "SchedulerState.runnable",
             "SystemState",
             "ThreadId",
+            "badge",
             "bootCoreId",
             "consWithGuard",
             "currentOnCore",
@@ -40438,6 +41090,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "contracts_of_same_scheduler_ipcState",
             "empty",
             "ensureRunnable_mem_reverse",
@@ -40475,6 +41128,7 @@
             "SystemState",
             "ThreadId",
             "ThreadId.toObjId_injective",
+            "badge",
             "consWithGuard",
             "empty",
             "invExt",
@@ -40559,6 +41213,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "badge",
             "capabilityBadgesWellFormed",
             "invExt",
             "st",
@@ -40698,6 +41353,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "badgeWellFormed",
             "bor_valid",
             "empty",
@@ -40812,6 +41468,7 @@
             "Notification",
             "ObjId",
             "SystemState",
+            "badge",
             "bor",
             "empty",
             "ensureRunnable_preserves_objects",
@@ -40871,6 +41528,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
             "invExt",
             "none",
@@ -40894,6 +41552,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "invExt",
             "lookupTcb",
             "none",
@@ -42131,6 +42790,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
             "epId",
             "invExt",
@@ -42156,6 +42816,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "epId",
             "invExt",
@@ -42980,6 +43641,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "endpointQueueNoDup",
             "ensureRunnable_preserves_endpointQueueNoDup",
             "invExt",
@@ -43004,6 +43666,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "endpointQueueNoDup",
             "invExt",
@@ -43151,6 +43814,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "blockedOnReplyHasTarget",
             "blockedThreadTimeoutConsistent",
             "donationBudgetTransfer",
@@ -44124,6 +44788,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "invExt",
             "ipcStateQueueConsistent",
@@ -44148,6 +44813,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "invExt",
             "ipcStateQueueConsistent",
             "lookupTcb",
@@ -46019,6 +46685,7 @@
             "ObjId",
             "SystemState",
             "allPendingMessagesBounded",
+            "badge",
             "empty",
             "empty_bounded",
             "ensureRunnable_preserves_allPendingMessagesBounded",
@@ -46046,6 +46713,7 @@
             "SystemState",
             "ThreadId",
             "allPendingMessagesBounded",
+            "badge",
             "empty",
             "invExt",
             "lookupTcb",
@@ -46096,6 +46764,7 @@
             "Badge",
             "ObjId",
             "SystemState",
+            "badge",
             "dualQueueSystemInvariant",
             "empty",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
@@ -47836,6 +48505,7 @@
             "Notification",
             "NotificationState",
             "ObjId",
+            "badge",
             "bor",
             "empty",
             "ensureRunnable",
@@ -47860,6 +48530,7 @@
             "Notification",
             "ObjId",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "empty",
             "lookupTcb",
@@ -48136,6 +48807,7 @@
             "RHTable_insert_preserves_invExt",
             "SystemState",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "empty",
             "invExt",
@@ -48947,6 +49619,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "bootCoreId",
             "ensureRunnable_mem_self",
             "invExt",
@@ -49065,6 +49738,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "notificationId",
             "notificationSignal",
             "notificationSignalChecked",
@@ -49082,6 +49756,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "notificationId",
             "notificationSignalChecked",
             "securityFlowsTo",
@@ -49183,6 +49858,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "notificationId",
             "notificationSignalChecked",
             "securityFlowsTo",
@@ -49240,6 +49916,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "notificationId",
             "notificationSignal",
             "notificationSignalChecked",
@@ -49430,6 +50107,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "notificationId",
             "notificationSignalChecked",
             "notificationSignalChecked_flowDenied",
@@ -49524,6 +50202,7 @@
             "CSpaceAddr",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cspaceMintChecked",
             "securityFlowsTo",
             "st"
@@ -49697,6 +50376,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "badge",
             "cspaceMintChecked",
             "cspaceMintChecked_denied_preserves_state",
             "endpointSendDualChecked",
@@ -49733,6 +50413,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "badge",
             "cspaceCopyChecked",
             "cspaceMintChecked",
             "cspaceMoveChecked",
@@ -49804,6 +50485,7 @@
             "CSpaceAddr",
             "Kernel",
             "LabelingContext",
+            "badge",
             "cspaceMintWithCdt",
             "none",
             "securityFlowsTo",
@@ -49863,6 +50545,7 @@
             "CSpaceAddr",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cspaceMintChecked",
             "cspaceMintWithCdt",
             "securityFlowsTo",
@@ -49879,6 +50562,7 @@
             "CSpaceAddr",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cspaceMintChecked",
             "securityFlowsTo",
             "st"
@@ -49968,6 +50652,7 @@
             "CSpaceAddr",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cspaceMintChecked",
             "securityFlowsTo",
             "st"
@@ -50005,6 +50690,7 @@
             "CSpaceAddr",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cspaceMintChecked",
             "cspaceMintWithCdt",
             "securityFlowsTo",
@@ -50021,6 +50707,7 @@
             "LabelingContext",
             "ObjId",
             "ThreadId",
+            "badge",
             "notificationId",
             "notificationSignal",
             "securityFlowsTo",
@@ -50189,6 +50876,7 @@
             "ThreadId",
             "ThreadIpcState",
             "VAddr",
+            "badge",
             "bootCoreId",
             "chooseThread",
             "cspaceCopy",
@@ -50246,6 +50934,7 @@
             "LabelingContext",
             "NonInterferenceStep",
             "SystemState",
+            "badge",
             "chooseThread",
             "chooseThread_preserves_state",
             "cspaceCopy",
@@ -51187,6 +51876,7 @@
             "IfObserver",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cspaceInsertSlot",
             "cspaceInsertSlot_preserves_irqHandlers",
             "cspaceInsertSlot_preserves_machine",
@@ -51290,6 +51980,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "empty",
             "ensureRunnable_preserves_projection",
             "head",
@@ -51321,6 +52012,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "invExt",
             "lowEquivalent",
             "notificationId",
@@ -51343,6 +52035,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "consWithGuard",
             "invExt",
             "lookupTcb",
@@ -51489,6 +52182,7 @@
             "IfObserver",
             "LabelingContext",
             "SystemState",
+            "badge",
             "cdt_only_preserves_projection'",
             "cspaceMint",
             "cspaceMintChecked",
@@ -51539,6 +52233,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "invExt",
             "lowEquivalent",
             "notificationId",
@@ -106205,6 +106900,7 @@
             "AccessRightSet",
             "Badge",
             "CapTarget",
+            "badge",
             "none"
           ]
         },
@@ -106258,6 +106954,7 @@
           "line": 391,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "none",
             "sentinel"
@@ -106427,6 +107124,7 @@
             "Badge",
             "Capability",
             "RegValue",
+            "badge",
             "none"
           ]
         },
@@ -106443,6 +107141,7 @@
           "called": [
             "IpcMessage",
             "RegValue",
+            "badge",
             "none"
           ]
         },
@@ -113227,6 +113926,7 @@
           "line": 2449,
           "called": [
             "KernelObject",
+            "badge",
             "bitsConsumed",
             "bootSafeVSpaceRoot",
             "head",
@@ -113391,6 +114091,7 @@
             "SystemState",
             "VSpaceRoot",
             "applyMachineConfig_objects_eq",
+            "badge",
             "blockingChain",
             "blockingChain_step",
             "blockingServer",
@@ -117490,13 +118191,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 498,
+          "line": 518,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 504,
+          "line": 524,
           "called": []
         }
       ]
@@ -118451,7 +119152,8 @@
           "name": "toNat",
           "line": 635,
           "called": [
-            "Badge"
+            "Badge",
+            "badge"
           ]
         },
         {
@@ -118460,6 +119162,7 @@
           "line": 638,
           "called": [
             "Badge",
+            "badge",
             "machineWordMax"
           ]
         },
@@ -118469,6 +119172,7 @@
           "line": 641,
           "called": [
             "Badge",
+            "badge",
             "machineWordMax"
           ]
         },
@@ -118648,6 +119352,7 @@
           "line": 759,
           "called": [
             "Badge",
+            "badge",
             "toNat"
           ]
         },
@@ -120876,6 +121581,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "badge",
             "empty",
             "fold",
             "foldr",
@@ -121606,6 +122312,7 @@
           "line": 65,
           "called": [
             "SystemState",
+            "badge",
             "buildChecked",
             "demoEndpoint",
             "demoNotification",
@@ -121682,6 +122389,7 @@
             "SystemState",
             "ThreadId",
             "adapterReadMemory",
+            "badge",
             "bootCoreId",
             "checkInvariants",
             "cspaceLookupPath",
@@ -121734,6 +122442,7 @@
             "ObjId",
             "SystemState",
             "any",
+            "badge",
             "bootCoreId",
             "checkInvariants",
             "cspaceLookupSlot",
@@ -121777,6 +122486,7 @@
             "SystemState",
             "ThreadId",
             "any",
+            "badge",
             "bootCoreId",
             "checkInvariants",
             "cspaceCopy",
@@ -121843,6 +122553,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "checkInvariants",
             "demoEndpoint",
             "endpointCall",
@@ -121868,6 +122579,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "checkInvariants",
             "demoEndpoint",
             "endpointCall",
@@ -121889,6 +122601,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "badge",
             "checkInvariants",
             "count",
             "demoUntyped",
@@ -121990,6 +122703,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "checkInvariants",
             "demoEndpoint",
             "empty",
@@ -122015,6 +122729,7 @@
             "SyscallGate",
             "SystemState",
             "ThreadId",
+            "badge",
             "checkInvariants",
             "cnodeId",
             "demoEndpoint",
@@ -122057,6 +122772,7 @@
             "SyscallRegisterLayout",
             "SystemState",
             "arm64DefaultLayout",
+            "badge",
             "buildChecked",
             "checkInvariants",
             "decode",
@@ -122092,6 +122808,7 @@
             "SyscallDecodeResult",
             "SystemState",
             "arm64DefaultLayout",
+            "badge",
             "buildChecked",
             "checkInvariants",
             "cspaceCopy",
@@ -122139,6 +122856,7 @@
             "RegisterFile",
             "SystemState",
             "arm64DefaultLayout",
+            "badge",
             "bootCoreId",
             "buildChecked",
             "currentOnCore",
@@ -122176,6 +122894,7 @@
             "ObjId",
             "SyscallDecodeResult",
             "SystemState",
+            "badge",
             "buildChecked",
             "checkInvariants",
             "cspaceMove",
@@ -122203,6 +122922,7 @@
             "KernelObject",
             "SystemState",
             "ThreadId",
+            "badge",
             "checkInvariants",
             "demoEndpoint",
             "endpointCall",
@@ -122228,6 +122948,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "badge",
             "buildChecked",
             "checkInvariants",
             "empty",
@@ -122256,6 +122977,7 @@
             "SystemState",
             "ThreadId",
             "all",
+            "badge",
             "checkInvariants",
             "demoEndpoint",
             "empty",
@@ -122451,6 +123173,7 @@
             "Slot",
             "SystemState",
             "ThreadId",
+            "badge",
             "buildChecked",
             "empty",
             "none",
@@ -122498,6 +123221,7 @@
             "SyscallDecodeResult",
             "SyscallId",
             "all",
+            "badge",
             "count",
             "decode",
             "decodeCSpaceMintArgs",
@@ -123118,6 +123842,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "empty",
             "findFirstEmptySlotChecked",
             "insert",
@@ -123268,6 +123993,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "empty",
             "freezeCNodeSlotsChecked",
             "insert",
@@ -123282,6 +124008,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "empty",
             "freezeCNodeSlotsChecked",
             "insert",
@@ -124537,6 +125264,7 @@
             "TCB",
             "ThreadId",
             "ValidThreadId",
+            "badge",
             "clearPendingState",
             "clearPendingStateValid",
             "default",
@@ -127692,6 +128420,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "expect",
             "freezeObject",
             "get",
@@ -127710,6 +128439,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "expect",
             "freezeObject",
             "insert",
@@ -127742,6 +128472,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "expect",
             "freezeObject",
             "insert",
@@ -127989,6 +128720,7 @@
           "called": [
             "IpcMessage",
             "TCB",
+            "badge",
             "expect",
             "frozenEndpointReply",
             "frozenLookupTcb",
@@ -128006,6 +128738,7 @@
           "called": [
             "IpcMessage",
             "TCB",
+            "badge",
             "expect",
             "frozenEndpointReply",
             "mkFrozenState",
@@ -128034,6 +128767,7 @@
             "CNodeRadix.empty",
             "Capability",
             "FrozenCNode",
+            "badge",
             "expect",
             "frozenCspaceLookup",
             "insert",
@@ -128101,6 +128835,7 @@
             "RHTable.empty",
             "ServiceId",
             "ServiceRegistration",
+            "badge",
             "emptyFrozenState",
             "expect",
             "freezeMap",
@@ -128130,6 +128865,7 @@
             "CNodeRadix.empty",
             "Capability",
             "FrozenCNode",
+            "badge",
             "expect",
             "frozenCspaceDelete",
             "frozenCspaceLookup",
@@ -128162,6 +128898,7 @@
           "line": 261,
           "called": [
             "Notification",
+            "badge",
             "empty",
             "expect",
             "frozenNotificationWait",
@@ -128178,6 +128915,7 @@
           "called": [
             "Endpoint",
             "IpcMessage",
+            "badge",
             "expect",
             "frozenEndpointSend",
             "frozenLookupTcb",
@@ -128216,6 +128954,7 @@
           "called": [
             "Endpoint",
             "IpcMessage",
+            "badge",
             "expect",
             "frozenEndpointCall",
             "frozenLookupTcb",
@@ -128258,6 +128997,7 @@
             "FrozenSystemState",
             "ObjId",
             "RHTable.empty",
+            "badge",
             "cnodeId",
             "emptyFrozenState",
             "epId",
@@ -128279,6 +129019,7 @@
           "called": [
             "Endpoint",
             "IpcMessage",
+            "badge",
             "expect",
             "frozenEndpointReceive",
             "frozenEndpointSend",
@@ -128470,6 +129211,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "expect",
             "freezeObject",
             "insert",
@@ -128789,6 +129531,7 @@
           "called": [
             "IpcMessage",
             "TCB",
+            "badge",
             "defaultLabelingContext",
             "none",
             "ofNat",
@@ -128864,6 +129607,7 @@
             "all",
             "allowAll",
             "altState",
+            "badge",
             "bibaIntegrityFlowsTo",
             "bootCoreId",
             "buildChecked",
@@ -129725,6 +130469,7 @@
             "IpcMessage",
             "KernelErrorRejection",
             "SystemState",
+            "badge",
             "default",
             "endpointSendDual",
             "maxMessageRegisters",
@@ -129742,6 +130487,7 @@
             "IpcMessage",
             "KernelErrorRejection",
             "SystemState",
+            "badge",
             "default",
             "endpointSendDual",
             "maxExtraCaps",
@@ -129815,6 +130561,7 @@
             "SlotRef",
             "SystemState",
             "addEdge",
+            "badge",
             "cnodeId",
             "cspaceDeleteSlot",
             "default",
@@ -129880,6 +130627,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "badge",
             "cnodeId",
             "cspaceInsertSlot",
             "default",
@@ -130289,6 +131037,7 @@
             "Notification",
             "ObjId",
             "SystemState",
+            "badge",
             "cnodeId",
             "default",
             "empty",
@@ -130314,6 +131063,7 @@
             "ObjId",
             "SystemState",
             "UntypedObject",
+            "badge",
             "cnodeId",
             "default",
             "insert",
@@ -130338,6 +131088,7 @@
             "ObjId",
             "SystemState",
             "UntypedObject",
+            "badge",
             "cnodeId",
             "default",
             "insert",
@@ -133167,6 +133918,7 @@
           "line": 268,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "isNull",
@@ -133179,6 +133931,7 @@
           "line": 274,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "none",
@@ -133191,6 +133944,7 @@
           "line": 283,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "isNull",
@@ -133204,6 +133958,7 @@
           "line": 296,
           "called": [
             "Capability",
+            "badge",
             "expect",
             "isNull",
             "none",
@@ -133226,6 +133981,7 @@
           "line": 321,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "none",
@@ -133238,6 +133994,7 @@
           "line": 327,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "none",
@@ -133354,6 +134111,7 @@
           "called": [
             "Capability",
             "UniqueSlotMap",
+            "badge",
             "empty",
             "expect",
             "get",
@@ -133368,6 +134126,7 @@
           "line": 443,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "erase",
             "expect",
@@ -133384,6 +134143,7 @@
           "called": [
             "Capability",
             "UniqueSlotMap",
+            "badge",
             "empty",
             "expect",
             "get",
@@ -133399,6 +134159,7 @@
           "called": [
             "Capability",
             "UniqueSlotMap",
+            "badge",
             "empty",
             "expect",
             "insert",
@@ -133415,6 +134176,7 @@
           "called": [
             "CNode",
             "Capability",
+            "badge",
             "empty",
             "expect",
             "insert",
@@ -134052,6 +134814,7 @@
           "line": 1133,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "isNull",
@@ -134759,6 +135522,7 @@
           "called": [
             "SystemState",
             "asidPrimary",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -134892,6 +135656,7 @@
           "line": 192,
           "called": [
             "SystemState",
+            "badge",
             "buildChecked",
             "empty",
             "f2UntypedAuthCnode",
@@ -134920,6 +135685,7 @@
           "line": 221,
           "called": [
             "SystemState",
+            "badge",
             "buildChecked",
             "empty",
             "f2DeviceUntypedId",
@@ -134962,6 +135728,7 @@
             "CdtNodeId",
             "SystemState",
             "addEdge",
+            "badge",
             "baseState",
             "cnodeId",
             "cspaceDeleteSlot",
@@ -134993,6 +135760,7 @@
             "KernelObject",
             "SystemState",
             "asidPrimary",
+            "badge",
             "baseState",
             "bor",
             "cnodeId",
@@ -135021,6 +135789,7 @@
           "name": "runBadgeTruncationNegativeChecks",
           "line": 589,
           "called": [
+            "badge",
             "baseState",
             "bor",
             "endpointId",
@@ -135040,6 +135809,7 @@
           "line": 635,
           "called": [
             "IpcMessage",
+            "badge",
             "baseState",
             "endpointCall",
             "endpointId",
@@ -135128,6 +135898,7 @@
           "called": [
             "RHTable.empty",
             "SystemState",
+            "badge",
             "buildChecked",
             "empty",
             "expectErr",
@@ -135173,6 +135944,7 @@
           "line": 1202,
           "called": [
             "SystemState",
+            "badge",
             "buildChecked",
             "empty",
             "expectErr",
@@ -135201,6 +135973,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "badge",
             "baseState",
             "cspaceLookupSlot",
             "cspaceMutate",
@@ -135237,6 +136010,7 @@
             "RHTable",
             "VAddr",
             "VSpaceRoot",
+            "badge",
             "baseState",
             "default",
             "endpointId",
@@ -135319,6 +136093,7 @@
             "SyscallGate",
             "SystemState",
             "ThreadId",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -135363,6 +136138,7 @@
             "CSpaceAddr",
             "ObjId",
             "SystemState",
+            "badge",
             "build",
             "buildChecked",
             "empty",
@@ -135389,6 +136165,7 @@
             "ObjId",
             "SystemState",
             "TCB",
+            "badge",
             "bootCoreId",
             "buildChecked",
             "contains",
@@ -135466,6 +136243,7 @@
             "PagePermissions.ofNat",
             "SyscallDecodeResult",
             "SystemState",
+            "badge",
             "buildChecked",
             "decodeLifecycleRetypeArgs",
             "decodeVSpaceMapArgs",
@@ -135579,6 +136357,7 @@
             "CSpaceAddr",
             "Capability",
             "ObjId",
+            "badge",
             "buildChecked",
             "empty",
             "ipcTransferSingleCap",
@@ -135600,6 +136379,7 @@
             "ObjId",
             "TCB",
             "all",
+            "badge",
             "buildChecked",
             "empty",
             "ipcUnwrapCapsLoop",
@@ -135618,6 +136398,7 @@
           "line": 2684,
           "called": [
             "ObjId",
+            "badge",
             "buildChecked",
             "empty",
             "none",
@@ -135635,6 +136416,7 @@
           "line": 2727,
           "called": [
             "ObjId",
+            "badge",
             "buildChecked",
             "empty",
             "none",
@@ -135653,6 +136435,7 @@
           "line": 2791,
           "called": [
             "ObjId",
+            "badge",
             "buildChecked",
             "empty",
             "none",
@@ -135671,6 +136454,7 @@
           "called": [
             "CPtr",
             "ObjId",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -135690,6 +136474,7 @@
           "line": 2937,
           "called": [
             "ObjId",
+            "badge",
             "buildChecked",
             "empty",
             "none",
@@ -135707,6 +136492,7 @@
           "line": 3014,
           "called": [
             "ObjId",
+            "badge",
             "buildChecked",
             "cspaceLookupMultiLevel",
             "empty",
@@ -135741,6 +136527,7 @@
             "ObjId",
             "SystemState",
             "addEdge",
+            "badge",
             "buildChecked",
             "cspaceRevokeCdt",
             "empty",
@@ -135796,6 +136583,7 @@
             "ObjId",
             "SystemState",
             "addEdge",
+            "badge",
             "baseState",
             "cnodeId",
             "cspaceCopy",
@@ -135822,6 +136610,7 @@
             "CSpaceAddr",
             "ObjId",
             "SystemState",
+            "badge",
             "baseState",
             "buildChecked",
             "cnodeId",
@@ -135931,6 +136720,7 @@
             "ObjId",
             "Slot",
             "SystemState",
+            "badge",
             "cspaceMint",
             "cspaceMintWithCdt",
             "default",
@@ -135997,6 +136787,7 @@
           "line": 3819,
           "called": [
             "Capability",
+            "badge",
             "none",
             "ofList",
             "r1TargetObj"
@@ -136008,6 +136799,7 @@
           "line": 3824,
           "called": [
             "IpcMessage",
+            "badge",
             "none",
             "r1Cap"
           ]
@@ -136293,6 +137085,7 @@
             "ObjId",
             "Slot",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cnodeId",
             "cspaceMint",
@@ -136381,6 +137174,7 @@
             "ObjId",
             "Slot",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cnodeId",
             "cspaceCopy",
@@ -136483,6 +137277,7 @@
             "ObjId",
             "SyscallGate",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceMint",
             "cspaceMintWithCdt",
@@ -136515,6 +137310,7 @@
             "Slot",
             "SystemState",
             "ThreadId",
+            "badge",
             "buildChecked",
             "empty",
             "none",
@@ -136586,6 +137382,7 @@
             "ObjId",
             "arm64DefaultLayout",
             "assertInvariants",
+            "badge",
             "bootCoreId",
             "buildChecked",
             "cnodeId",
@@ -136619,6 +137416,7 @@
             "ObjId",
             "arm64DefaultLayout",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -136648,6 +137446,7 @@
             "ObjId",
             "ThreadId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "empty",
             "endpointReceiveDual",
@@ -136677,6 +137476,7 @@
             "ThreadId",
             "all",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "empty",
             "endpointReceiveDual",
@@ -136706,6 +137506,7 @@
             "ObjId",
             "ThreadId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "empty",
             "endpointReceiveDual",
@@ -136733,6 +137534,7 @@
             "CSpaceAddr",
             "ObjId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
@@ -136760,6 +137562,7 @@
             "CSpaceAddr",
             "ObjId",
             "any",
+            "badge",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
@@ -136790,6 +137593,7 @@
             "ObjId",
             "all",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
@@ -136816,6 +137620,7 @@
             "CSpaceAddr",
             "ObjId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStreaming",
@@ -136840,6 +137645,7 @@
             "CSpaceAddr",
             "ObjId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceRevokeCdtStreaming",
             "empty",
@@ -136862,6 +137668,7 @@
             "CSpaceAddr",
             "ObjId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStreaming",
@@ -136887,6 +137694,7 @@
             "ObjId",
             "SystemState",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdt",
@@ -136913,6 +137721,7 @@
             "ObjId",
             "ThreadId",
             "assertInvariants",
+            "badge",
             "bootCoreId",
             "buildChecked",
             "empty",
@@ -136938,6 +137747,7 @@
             "CSpaceAddr",
             "ObjId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "cspaceDeleteSlot",
             "cspaceMintWithCdt",
@@ -136989,6 +137799,7 @@
             "Irq",
             "ObjId",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "empty",
             "expect",
@@ -137035,6 +137846,7 @@
             "RegName",
             "SystemState",
             "ThreadId",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -137058,6 +137870,7 @@
             "ObjId",
             "Slot",
             "arm64DefaultLayout",
+            "badge",
             "buildSyscallState",
             "cspaceCopy",
             "cspaceMint",
@@ -137131,6 +137944,7 @@
             "RegName",
             "ThreadId",
             "arm64DefaultLayout",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -137176,6 +137990,7 @@
             "ServiceRegistration",
             "any",
             "assertInvariants",
+            "badge",
             "buildChecked",
             "empty",
             "expect",
@@ -137202,6 +138017,7 @@
             "CPtr",
             "Capability",
             "ObjId",
+            "badge",
             "buildChecked",
             "cnodeId",
             "empty",
@@ -140141,6 +140957,7 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "badge",
             "expect",
             "insert",
             "lookup",
@@ -140157,6 +140974,7 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "badge",
             "erase",
             "expect",
             "insert",
@@ -140174,6 +140992,7 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "badge",
             "expect",
             "insert",
             "lookup",
@@ -140190,6 +141009,7 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "badge",
             "expect",
             "insert",
             "lookup",
@@ -140206,6 +141026,7 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "badge",
             "erase",
             "expect",
             "insert",
@@ -140222,6 +141043,7 @@
             "CNodeRadix.empty",
             "Capability",
             "any",
+            "badge",
             "expect",
             "insert",
             "length",
@@ -140238,6 +141060,7 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "badge",
             "expect",
             "fold",
             "insert",
@@ -140276,6 +141099,7 @@
             "RHTable",
             "RHTable.empty",
             "Slot",
+            "badge",
             "buildCNodeRadix",
             "config",
             "expect",
@@ -140306,6 +141130,7 @@
             "RHTable",
             "RHTable.empty",
             "Slot",
+            "badge",
             "buildCNodeRadix",
             "config",
             "expect",
@@ -140538,6 +141363,7 @@
           "line": 187,
           "called": [
             "Capability",
+            "badge",
             "empty",
             "expect",
             "insert",
@@ -140554,6 +141380,7 @@
           "line": 204,
           "called": [
             "Capability",
+            "badge",
             "expect",
             "insert",
             "lookup",
@@ -140569,6 +141396,7 @@
           "line": 219,
           "called": [
             "Capability",
+            "badge",
             "expect",
             "findFirstEmptySlot",
             "insert",
@@ -140585,6 +141413,7 @@
           "line": 235,
           "called": [
             "Capability",
+            "badge",
             "capacity",
             "empty",
             "expect",
@@ -140601,6 +141430,7 @@
           "line": 248,
           "called": [
             "Capability",
+            "badge",
             "expect",
             "lookup",
             "mk'",
@@ -140617,6 +141447,7 @@
           "line": 265,
           "called": [
             "Capability",
+            "badge",
             "expect",
             "insert",
             "none",
@@ -144485,6 +145316,396 @@
           "line": 354,
           "called": [
             "runSmpCrossCoreCallChecks"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.SmpCrossCoreNotificationSuite",
+      "path": "tests/SmpCrossCoreNotificationSuite.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SmpCrossCoreNotification",
+          "line": 33,
+          "called": [
+            "lockSet_notificationSignalOnCore",
+            "lockSet_notificationSignalOnCore_correct",
+            "lockSet_notificationSignal_notification_write_mem",
+            "lockSet_notificationSignal_waiter_tcb_write_mem",
+            "lockSet_notificationWaitOnCore",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_atomic_under_lockSet",
+            "notificationSignalOnCore_lockSet_correct",
+            "notificationSignalOnCore_noWaiter_eq",
+            "notificationSignalOnCore_noWaiter_no_sgi",
+            "notificationSignalOnCore_no_sgi_if_local_waiter",
+            "notificationSignalOnCore_perCore_consistent",
+            "notificationSignalOnCore_remaining_waiters",
+            "notificationSignalOnCore_remote_wake",
+            "notificationSignalOnCore_signal_path_NI",
+            "notificationSignalOnCore_signal_path_NI_smp",
+            "notificationSignalOnCore_waiter_eq",
+            "notificationSignalOnCore_wakes_head",
+            "notificationSignalWaiter",
+            "notificationWaitOnCore",
+            "notificationWaitOnCore_atomic_under_lockSet",
+            "notificationWaitOnCore_lockSet_correct",
+            "self_write_mem_insertOrMerge",
+            "storeObject_preserves_projectionOnCore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:91>",
+          "line": 91,
+          "called": [
+            "Badge",
+            "CoreId",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "badge",
+            "determineTargetCore",
+            "empty",
+            "getTcb",
+            "isEmpty",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_remote_wake",
+            "st",
+            "storeObject",
+            "storeTcbIpcStateAndMessage",
+            "tail"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:110>",
+          "line": 110,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "acquireAll",
+            "badge",
+            "cnRoot",
+            "lockAcquireSequence",
+            "lockSet_notificationSignal",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_atomic_under_lockSet",
+            "withLockSet"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:121>",
+          "line": 121,
+          "called": [
+            "Badge",
+            "CoreId",
+            "IfObserver",
+            "LabelingContext",
+            "NoDupList",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "badge",
+            "empty",
+            "invExt",
+            "isEmpty",
+            "lowEquivalent_smp",
+            "none",
+            "notificationId",
+            "notificationSignalOnCore",
+            "notificationSignalOnCore_signal_path_NI_smp",
+            "objectObservable",
+            "st",
+            "storeObject",
+            "storeTcbIpcStateAndMessage",
+            "tail",
+            "threadObservable",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 146,
+          "called": [
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "core1",
+          "line": 152,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nId",
+          "line": 154,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cnRoot",
+          "line": 155,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "signallerTid",
+          "line": 156,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "waiterLocalTid",
+          "line": 157,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "waiterRemoteTid",
+          "line": 158,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "badge",
+          "line": 159,
+          "called": [
+            "Badge",
+            "ofNatMasked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 161,
+          "called": [
+            "CoreId",
+            "TCB",
+            "cnRoot",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stBase",
+          "line": 168,
+          "called": [
+            "SystemState",
+            "build",
+            "core1",
+            "empty",
+            "mkTcb",
+            "nId",
+            "none",
+            "signallerTid",
+            "toObjId",
+            "waiterLocalTid",
+            "waiterRemoteTid",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stWithWaiter",
+          "line": 178,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "bootCoreId",
+            "nId",
+            "none",
+            "notificationWaitOnCore",
+            "st",
+            "stBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stTwoWaiters",
+          "line": 185,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "nId",
+            "none",
+            "notificationWaitOnCore",
+            "stBase",
+            "waiterLocalTid",
+            "waiterRemoteTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "signalSgi",
+          "line": 194,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "badge",
+            "nId",
+            "none",
+            "notificationSignalOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "waiterList",
+          "line": 200,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "nId",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runLockSetChecks",
+          "line": 205,
+          "called": [
+            "assertBool",
+            "cnRoot",
+            "lockSet_notificationSignal",
+            "lockSet_notificationSignalOnCore",
+            "lockSet_notificationWait",
+            "nId",
+            "none",
+            "notificationLock",
+            "notificationSignal",
+            "notificationSignalWaiter",
+            "notificationWait",
+            "permittedKinds",
+            "signallerTid",
+            "stBase",
+            "tcbLock",
+            "waiterLocalTid",
+            "waiterRemoteTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runNoWaiterChecks",
+          "line": 234,
+          "called": [
+            "assertBool",
+            "badge",
+            "bootCoreId",
+            "nId",
+            "none",
+            "notificationSignalOnCore",
+            "stBase"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSignalWakeChecks",
+          "line": 246,
+          "called": [
+            "assertBool",
+            "badge",
+            "bootCoreId",
+            "core1",
+            "getTcb",
+            "nId",
+            "none",
+            "notificationSignalOnCore",
+            "notificationSignalWaiter",
+            "signalSgi",
+            "st",
+            "stWithWaiter",
+            "waiterLocalTid",
+            "waiterRemoteTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runMultiWaiterChecks",
+          "line": 271,
+          "called": [
+            "assertBool",
+            "badge",
+            "bootCoreId",
+            "contains",
+            "core1",
+            "nId",
+            "none",
+            "notificationSignalOnCore",
+            "notificationSignalWaiter",
+            "signalSgi",
+            "st",
+            "stTwoWaiters",
+            "waiterList",
+            "waiterLocalTid",
+            "waiterRemoteTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runWaitChecks",
+          "line": 296,
+          "called": [
+            "assertBool",
+            "bootCoreId",
+            "contains",
+            "core1",
+            "getTcb",
+            "nId",
+            "none",
+            "notificationWaitOnCore",
+            "runQueueOnCore",
+            "stBase",
+            "waiterLocalTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSmpCrossCoreNotificationChecks",
+          "line": 315,
+          "called": [
+            "runLockSetChecks",
+            "runMultiWaiterChecks",
+            "runNoWaiterChecks",
+            "runSignalWakeChecks",
+            "runWaitChecks"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 328,
+          "called": [
+            "runSmpCrossCoreNotificationChecks"
           ]
         }
       ]
@@ -151416,6 +152637,7 @@
           "line": 81,
           "called": [
             "ThreadId",
+            "badge",
             "expect",
             "mkState",
             "mkTcb",
@@ -153109,6 +154331,7 @@
             "Slot",
             "SystemState",
             "ThreadId",
+            "badge",
             "bootCoreId",
             "default",
             "empty",
@@ -153223,6 +154446,7 @@
             "StepOutcome",
             "SystemState",
             "ThreadId",
+            "badge",
             "classifyError",
             "cspaceCopy",
             "cspaceLookupSlot",
@@ -153433,6 +154657,7 @@
           "called": [
             "Endpoint",
             "IpcMessage",
+            "badge",
             "expect",
             "frozenEndpointSend",
             "frozenLookupTcb",
@@ -153466,6 +154691,7 @@
             "Endpoint",
             "IpcMessage",
             "TCB",
+            "badge",
             "expect",
             "frozenEndpointCall",
             "frozenLookupTcb",

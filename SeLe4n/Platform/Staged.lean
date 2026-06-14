@@ -437,6 +437,26 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 -- layer in `EndpointCallDispatch` and back the live `.call` arm.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
+-- WS-SM SM6.B.1–6: notification across cores — `notificationSignalOnCore` (the
+-- cross-core notification-signal transition: the head waiter's wake is routed to
+-- its home core via `wakeThread`, surfacing the `.reschedule` SGI; the signaller
+-- does not block) and `notificationWaitOnCore` (the caller blocks on its own core
+-- via `removeRunnableOnCore`).  Carries the SM6.B theorems: SGI emission (.2
+-- `notificationSignal_remote_wake`), multi-waiter discipline preserved (.3, one
+-- wake per signal, no waiter lost/duplicated), 2PL atomicity of signal + wait (.4),
+-- per-core wake locality (.5), the notification ↔ TCB binding lock-set membership
+-- (.6, both ends write-locked), and lock-set hierarchical correctness.  Staged
+-- until the SM5.I FFI seam wires these into the live syscall dispatch under the
+-- `withLockSet` acquisition over `lockSet_notificationSignal` / `lockSet_notificationWait`.
+import SeLe4n.Kernel.IPC.CrossCore.NotificationSignal
+-- WS-SM SM6.B.7: cross-core notification-signal non-interference —
+-- `notificationSignalOnCore_signal_path_NI` (boot-core `projectState`) and
+-- `notificationSignalOnCore_signal_path_NI_smp` (per-core / ∀-core
+-- `lowEquivalent_smp`: a high signal is invisible to a low observer on *every*
+-- core, including the remote core the waiter is woken onto), built on the new
+-- per-core `storeObject_preserves_projectionOnCore` composed with the SM6.A
+-- per-core wake/store projection family.
+import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,
