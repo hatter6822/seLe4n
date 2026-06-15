@@ -1,3 +1,21 @@
+## v0.31.87 — Reply objects (seL4-MCS): MCS Call ABI decode (slice C-abi)
+
+The argument-decode surface for the faithful MCS `Call` syscall, which passes a
+single-use reply capability (`SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`).
+Standalone (unreferenced until the C-wire dispatch), no `sorry`; trace
+byte-identical (233/233).
+
+`IpcCallArgs { replyCPtr : Nat }` + `decodeIpcCallArgs` (1 register: the reply
+capability pointer) + `encodeIpcCallArgs` (inverse) + the characterization
+`decodeIpcCallArgs_error_iff` (fails iff `< 1` message register) and round-trip
+`decodeIpcCallArgs_roundtrip`.  The reply CPtr mirrors `tcbBindNotification`'s
+`notificationCPtr`: reply authority is resolved through the caller's CSpace via
+`syscallLookupCap` (a caller must *hold* a reply cap, not name a raw `ReplyId`),
+unlike the legacy `replyRecv` raw thread-ID target.  Full CSpaceMint-style
+structure + decode + encode + error-characterization + round-trip treatment.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical.
+
 ## v0.31.86 — Reply objects (seL4-MCS): TCB-store frame + linkage-op ipcInvariantFull preservation (store B + compose)
 
 Completes the linkage-op invariant preservation
