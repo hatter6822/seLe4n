@@ -1,3 +1,34 @@
+## v0.31.82 — Reply objects (seL4-MCS): caller↔reply linkage ops (slice C-link)
+
+The two **inverse linkage operations** the Phase-C `Call`/`Reply` re-base composes
+to establish and tear down the bidirectional TCB↔Reply link, added
+standalone-additive (unreferenced by any live path, so the trace fixture is
+**byte-identical**, 233/233).
+
+**`linkCallerReply` / `consumeCallerReply`** (`SeLe4n/Model/State.lean`,
+`Kernel Unit`).  `linkCallerReply caller rid` is what the `Call` syscall runs
+after `endpointCall`: it sets `reply.caller := some caller` (via the B1
+`linkReply`, **failing closed** with `.replyCapInvalid` on an absent or in-use
+reply) **and** the inverse forward link `caller.replyObject := some rid` on the
+caller TCB — the seL4 `tcb->tcbReply` pairing the C2 field models.
+`consumeCallerReply caller rid` is the reply-path inverse: it clears
+`reply.caller := none` (via B1 `consumeReply`, the single-use barrier) and
+`caller.replyObject := none` on the now-unblocked caller.  Both compose the
+existing reply mutators with a `getTcb?`/`storeObject` TCB update; neither
+touches `endpointCall`/`endpointReply` or their preservation theorems, so the
+IPC transition proof surface is untouched this slice.
+
+**Spec lemma** (proved, no `sorry`): `linkCallerReply_inUse_error` — the link op
+inherits `linkReply`'s single-use barrier and never touches the caller TCB when
+the reply is already bound, so a reply capability authorizes at most one
+outstanding caller at a time.  The full `ipcInvariantFull` preservation of both
+ops (frame-based: neither `replyObject` nor `reply.caller` appears in any of the
+15 conjuncts) lands in the next slice, where the cross-object disjointness
+(`caller.toObjId ≠ rid.toObjId`) is set up once for the post-conditions.
+
+Production `lake build` + the staged anchor + Tier 0/1/2 green; trace
+byte-identical.
+
 ## v0.31.81 — Reply objects (seL4-MCS): TCB→Reply link field (slice C2)
 
 Phase C's migration seam: the per-thread link from a TCB to its outstanding

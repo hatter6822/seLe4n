@@ -2378,6 +2378,54 @@ theorem linkReply_inUse_error (st : SystemState) (rid : SeLe4n.ReplyId)
     | some _ => rfl
   simp [linkReply, hGet, hNot]
 
+/-- WS-SM SM6.D (Reply-cap linkage, Call path): establish the bidirectional
+TCB↔Reply link that the `Call` syscall creates.  Sets `reply.caller := some
+caller` (via `linkReply`, which **fails closed** with `.replyCapInvalid` on an
+absent or already-in-use reply — `caller ≠ none`) and the inverse forward link
+`caller.replyObject := some rid` on the caller TCB (seL4's `tcb->tcbReply`).
+Fails with `.objectNotFound` if the caller TCB is absent.  Composed after
+`endpointCall` by the `.call` dispatch (Phase C-wire); the `replyCallerLinkage`
+invariant (Phase D) reads exactly this pair of links.  Standalone prep —
+unreferenced by any live path this slice, so the trace fixture is unchanged. -/
+def linkCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match linkReply rid caller st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+        match st1.getTcb? caller with
+        | none => .error .objectNotFound
+        | some tcb =>
+            storeObject caller.toObjId (.tcb { tcb with replyObject := some rid }) st1
+
+/-- WS-SM SM6.D (Reply-cap linkage, Reply path): tear down the TCB↔Reply link
+when a reply is delivered/consumed.  Clears `reply.caller := none` (via
+`consumeReply` — the single-use barrier, so a replay finds `caller = none` and
+fails closed) and the inverse `caller.replyObject := none` on the
+(now-unblocked) caller TCB.  No-op on the TCB leg if the caller is absent
+(the link is then already moot).  Composed by the reply transitions
+(Phase C-wire).  Standalone prep — unreferenced this slice, trace unchanged. -/
+def consumeCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match consumeReply rid st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+        match st1.getTcb? caller with
+        | none => .ok ((), st1)
+        | some tcb =>
+            storeObject caller.toObjId (.tcb { tcb with replyObject := none }) st1
+
+/-- WS-SM SM6.D: `linkCallerReply` fails closed (`.replyCapInvalid`) on an
+already-linked (in-use) reply — it never touches the caller TCB.  Inherits
+`linkReply`'s single-use barrier: a second `Call` cannot re-bind a reply that
+already has a `caller`, so a reply capability authorizes at most one
+outstanding caller at a time. -/
+theorem linkCallerReply_inUse_error (st : SystemState) (rid : SeLe4n.ReplyId)
+    (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
+    (hGet : st.getReply? rid = some r) (hInUse : r.caller ≠ none) :
+    linkCallerReply caller rid st = .error .replyCapInvalid := by
+  unfold linkCallerReply
+  rw [linkReply_inUse_error st rid caller r hGet hInUse]
+
 /-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
 `some ep` iff the store holds exactly `KernelObject.endpoint ep` at
 `id`. -/
