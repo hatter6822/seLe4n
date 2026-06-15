@@ -1,3 +1,27 @@
+## v0.31.80 — Reply objects (seL4-MCS): verified reply mutators (slice B1)
+
+Phase B prep for the first-class Reply object: the two core, **verified** reply-object
+mutators that the Phase-C `Call`/`Reply` re-base will build on, added standalone
+(unreferenced by any live path, so the trace fixture is **byte-identical**, 233/233).
+
+**`linkReply` / `consumeReply`** (`SeLe4n/Model/State.lean`, `Kernel Unit`).
+`linkReply rid caller` sets `reply.caller := some caller` — **failing closed** with
+`.replyCapInvalid` if the reply is absent or already in use (`caller ≠ none`), the
+structural half of reply caps' single-use semantics. `consumeReply rid` clears
+`reply.caller := none` — the dynamic half (a delivered reply is consumed so a replay
+finds `caller = none` and fails closed). Both route through the existing `storeObject`
+mutation primitive and `getReply?` accessor.
+
+**Spec lemmas** (proved, no `sorry`): `linkReply_getReply?_caller_some` (link on a
+present, free reply sets `caller`), `consumeReply_getReply?_caller_none` (consume clears
+`caller`), `linkReply_inUse_error` (link fails closed on an in-use reply) — discharged via
+`storeObject_inserted_object_lookup` + `getReply?_eq_some_iff`. These give Phase C a
+verified linkage/consumption contract to compose against.
+
+(Phase B's cleanup wiring is deferred into Phase C: until the IPC linkage populates
+`reply.caller`, destroying a Reply has nothing to clear, so the cleanup lands with the
+linkage it protects.) Production `lake build` + the staged anchor + Tier 0/2/3 green.
+
 ## v0.31.79 — Reply objects (seL4-MCS): `KernelObject.reply` variant + reply lock (slice A2)
 
 Second slice of the first-class Reply-object workstream: the `Reply` structure

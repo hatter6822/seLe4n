@@ -2314,6 +2314,70 @@ theorem getReply?_eq_some_iff (st : SystemState) (replyId : SeLe4n.ReplyId)
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- WS-SM SM6.D: link a Reply object to the caller about to block on it
+(sets `reply.caller`).  Fails closed with `.replyCapInvalid` if the reply is
+absent or already in use (`caller ≠ none`) — an in-use reply cannot be
+re-linked, the structural half of reply caps' single-use semantics.  Pure
+prep (Phase B): wired into the `Call` path in Phase C. -/
+def linkReply (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r =>
+        if r.caller.isNone then
+          storeObject rid.toObjId (.reply { r with caller := some caller }) st
+        else .error .replyCapInvalid
+    | none => .error .replyCapInvalid
+
+/-- WS-SM SM6.D: consume a Reply object's linkage (clears `reply.caller`).  A
+delivered reply is consumed so a replay finds `caller = none` and fails closed —
+the dynamic half of single-use.  No-op if the reply is absent. -/
+def consumeReply (rid : SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r => storeObject rid.toObjId (.reply { r with caller := none }) st
+    | none => .ok ((), st)
+
+/-- WS-SM SM6.D: `consumeReply` on a present reply clears its `caller`. -/
+theorem consumeReply_getReply?_caller_none (st : SystemState) (rid : SeLe4n.ReplyId)
+    (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) :
+    ∀ result, consumeReply rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := none } := by
+  intro result hRun
+  unfold consumeReply at hRun
+  rw [hGet] at hRun
+  have hStore := storeObject_inserted_object_lookup st rid.toObjId
+    (.reply { r with caller := none }) hObjInv result hRun
+  rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
+  exact hStore
+
+/-- WS-SM SM6.D: `linkReply` on a present, free reply sets its `caller`. -/
+theorem linkReply_getReply?_caller_some (st : SystemState) (rid : SeLe4n.ReplyId)
+    (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
+    (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) (hFree : r.caller = none) :
+    ∀ result, linkReply rid caller st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := some caller } := by
+  intro result hRun
+  unfold linkReply at hRun
+  rw [hGet] at hRun
+  simp only [hFree, Option.isNone_none, if_true] at hRun
+  have hStore := storeObject_inserted_object_lookup st rid.toObjId
+    (.reply { r with caller := some caller }) hObjInv result hRun
+  rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
+  exact hStore
+
+/-- WS-SM SM6.D: `linkReply` fails closed on an already-linked (in-use) reply. -/
+theorem linkReply_inUse_error (st : SystemState) (rid : SeLe4n.ReplyId)
+    (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
+    (hGet : st.getReply? rid = some r) (hInUse : r.caller ≠ none) :
+    linkReply rid caller st = .error .replyCapInvalid := by
+  have hNot : r.caller.isNone = false := by
+    cases hc : r.caller with
+    | none => exact absurd hc hInUse
+    | some _ => rfl
+  simp [linkReply, hGet, hNot]
+
 /-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
 `some ep` iff the store holds exactly `KernelObject.endpoint ep` at
 `id`. -/
