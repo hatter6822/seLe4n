@@ -242,6 +242,11 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "setIPCBuffer"
   -- WS-SM SM5.H.4: CPU-affinity configuration capability-only operation
   , .capabilityOnly "setThreadCpuAffinity"
+  -- WS-SM SM6.B: notification-binding capability-only operations (seL4
+  -- NotificationBind / UnbindNotification — mutate the boundTCB ⇄ boundNotification
+  -- relation; gated by the TCB capability, not an information-flow policy)
+  , .capabilityOnly "bindNotification"
+  , .capabilityOnly "unbindNotification"
   -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
   , .capabilityOnly "vspaceMapPageCheckedWithFlushFromState"
   , .capabilityOnly "vspaceUnmapPageWithFlush"
@@ -284,6 +289,8 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetMCPriority      => "setMCPriority"
   | .tcbSetIPCBuffer       => "setIPCBuffer"
   | .tcbSetAffinity        => "setThreadCpuAffinity"
+  | .tcbBindNotification   => "bindNotification"
+  | .tcbUnbindNotification => "unbindNotification"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/

@@ -140,11 +140,14 @@ pub enum SyscallId {
     TcbSetIPCBuffer = 24,
     // WS-SM SM5.H.4: CPU-affinity configuration (+ run-queue/replenish migration).
     TcbSetAffinity = 25,
+    // WS-SM SM6.B: notification binding (bind/unbind a notification to a TCB).
+    TcbBindNotification = 26,
+    TcbUnbindNotification = 27,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 26;
+    pub const COUNT: u32 = 28;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid 0..=25 range with `None`.
@@ -176,6 +179,8 @@ impl SyscallId {
             23 => Some(Self::TcbSetMCPriority),
             24 => Some(Self::TcbSetIPCBuffer),
             25 => Some(Self::TcbSetAffinity),
+            26 => Some(Self::TcbBindNotification),
+            27 => Some(Self::TcbUnbindNotification),
             _ => None,
         }
     }
@@ -228,6 +233,9 @@ impl SyscallId {
             Self::TcbSetIPCBuffer => 1,
             // WS-SM SM5.H.4: x2 = the raw affinity word (1 inline register).
             Self::TcbSetAffinity => 1,
+            // WS-SM SM6.B: bind takes 1 register (notification id); unbind none.
+            Self::TcbBindNotification => 1,
+            Self::TcbUnbindNotification => 0,
         }
     }
 }

@@ -978,6 +978,15 @@ structure Notification where
       surface, per the WS-RC §1.5 structural-fix policy. -/
   waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
+  /-- WS-SM SM6.B (bound notification): the TCB bound to this notification, if
+      any (the seL4 `NotificationBind` relation).  `bindNotification` sets it
+      (and the dual `TCB.boundNotification`); `unbindNotification` clears it.
+      When a notification with `boundTCB = some t` and *no* waiters is signalled
+      while `t` is `BlockedOnReceive`, the signal is delivered directly to `t`
+      (the bound-delivery path of `notificationSignalBound`) rather than stored as
+      a pending badge.  Default `none` — a freshly-allocated notification is
+      unbound, so every existing construction site is unaffected. -/
+  boundTCB : Option SeLe4n.ThreadId := none
   /-- WS-SM SM3.A.4: per-Notification reader-writer lock state.  Default
       `RwLockState.unheld` means a freshly-allocated Notification starts
       with its lock available.  `notificationSignal` / `notificationWait`
@@ -1469,6 +1478,8 @@ inductive SyscallId where
   | tcbSetMCPriority       -- D2-B: set thread maximum controlled priority
   | tcbSetIPCBuffer        -- D3-A: set thread IPC buffer address
   | tcbSetAffinity         -- WS-SM SM5.H.4: set thread CPU affinity (+ migration)
+  | tcbBindNotification    -- WS-SM SM6.B: bind a notification to a TCB (seL4 NotificationBind)
+  | tcbUnbindNotification  -- WS-SM SM6.B: unbind a TCB's bound notification
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1502,9 +1513,11 @@ namespace SyscallId
   | .tcbSetMCPriority      => 23
   | .tcbSetIPCBuffer       => 24
   | .tcbSetAffinity        => 25
+  | .tcbBindNotification   => 26
+  | .tcbUnbindNotification => 27
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 26
+def count : Nat := 28
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1535,6 +1548,8 @@ def count : Nat := 26
   | 23 => some .tcbSetMCPriority
   | 24 => some .tcbSetIPCBuffer
   | 25 => some .tcbSetAffinity
+  | 26 => some .tcbBindNotification
+  | 27 => some .tcbUnbindNotification
   | _  => none
 
 instance : ToString SyscallId where
@@ -1565,6 +1580,8 @@ instance : ToString SyscallId where
     | .tcbSetMCPriority      => "tcbSetMCPriority"
     | .tcbSetIPCBuffer       => "tcbSetIPCBuffer"
     | .tcbSetAffinity        => "tcbSetAffinity"
+    | .tcbBindNotification   => "tcbBindNotification"
+    | .tcbUnbindNotification => "tcbUnbindNotification"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1578,7 +1595,8 @@ def all : List SyscallId :=
   , .notificationSignal, .notificationWait, .replyRecv
   , .schedContextConfigure, .schedContextBind, .schedContextUnbind
   , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
-  , .tcbSetIPCBuffer, .tcbSetAffinity ]
+  , .tcbSetIPCBuffer, .tcbSetAffinity
+  , .tcbBindNotification, .tcbUnbindNotification ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1608,9 +1626,10 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 0  | 1  | 2  | 3  | 4  | 5  | 6
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
-  | 20 | 21 | 22 | 23 | 24 | 25 =>
+  | 20 | 21 | 22 | 23 | 24 | 25
+  | 26 | 27 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 26 => intro s h; simp [ofNat?] at h
+  | n + 28 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

@@ -437,6 +437,19 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 -- layer in `EndpointCallDispatch` and back the live `.call` arm.
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
+-- WS-SM SM6.B: the cross-core notification transitions `NotificationSignal` /
+-- `NotificationInvariant` are now **production** (reached from `API` via the live
+-- bound-aware `.notificationSignal` dispatch), and the bound-notification stack
+-- (`Operations.NotificationBind`, `CrossCore.NotificationBind{,Dispatch}`) is
+-- production too — so they are *not* listed here.  Only the non-interference
+-- proof module remains staged:
+-- WS-SM SM6.B.7: cross-core notification non-interference —
+-- `notificationSignalOnCore_signal_path_NI{,_smp}` (signal) and
+-- `notificationWaitOnCore_block_path_NI{,_smp}` (wait), boot-core `projectState`
+-- + per-core / ∀-core `lowEquivalent_smp` (invisible on *every* core), built on
+-- the per-core `storeObject` / `storeTcbIpcState` projection lemmas composed with
+-- the SM6.A per-core wake/store/deschedule projection family.
+import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

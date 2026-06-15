@@ -503,7 +503,10 @@ example : permittedKinds .receive = [.tcb, .cnode, .endpoint] := by decide
 example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext] := by decide
 example : permittedKinds .reply = [.tcb, .cnode, .schedContext] := by decide
 example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext] := by decide
-example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification] := by decide
+-- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
+-- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
+-- it from its endpoint); `.notificationWait` is unchanged.
+example : permittedKinds .notificationSignal = [.tcb, .cnode, .notification, .endpoint] := by decide
 example : permittedKinds .notificationWait = [.tcb, .cnode, .notification] := by decide
 example : permittedKinds .cspaceMint = [.tcb, .cnode] := by decide
 example : permittedKinds .cspaceCopy = [.tcb, .cnode] := by decide
@@ -679,15 +682,15 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 92 := by decide
+example : lockSetTheorems.length = 96 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 26 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 28 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 26 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 28 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1209,14 +1212,14 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 92"
-    (decide (lockSetTheorems.length = 92))
+  assertBool "lockSetTheorems.length = 96"
+    (decide (lockSetTheorems.length = 96))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
-  assertBool "lockSet category count = 26 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 26))
-  assertBool "consistency category count = 26 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 26))
+  assertBool "lockSet category count = 28 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 28))
+  assertBool "consistency category count = 28 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 28))
   assertBool "acquireSort category count = 6"
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"

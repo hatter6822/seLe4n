@@ -32,10 +32,13 @@ the SM5.F.4 dispatch `computeCrossCoreSgis`.
 
 This closes the live half of the SM5.F.4 diff-based cross-core SGI dispatch for
 the syscall path: the existing `Platform.FFI.syscallDispatchInner` commits the
-post-state but never pokes a remote core, so a syscall whose effect migrates a
-remote thread's run-queue bucket (e.g. a `.call`'s donation boosting a passive
-server pinned to another core) would leave that core unscheduled until its next
-local timer tick.  This entry fires the IPI immediately after the commit.
+post-state but never pokes a remote core, so a syscall whose effect makes a remote
+thread newly runnable (an endpoint-call receiver or notification waiter / bound TCB
+woken on another core — WS-SM SM6.A/SM6.B) or migrates its run-queue bucket (a
+`.call`'s donation boosting a passive server pinned to another core) would leave
+that core unscheduled until its next local timer tick.  This entry fires the IPI
+immediately after the commit.  (The `computeCrossCoreSgis` diff recovers *both*
+cases — see `crossCoreSgiBody_remote_wake` for the wake direction.)
 
 **Single-core inertness (trace safety).** On the boot core,
 `PriorityInheritance.computeCrossCoreSgis pre post bootCoreId = []` whenever every

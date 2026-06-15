@@ -458,7 +458,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
         revert hStep
         cases hStore : storeObject notificationId
             (.notification { state := if rest.val.isEmpty then .idle else .waiting,
-                             waitingThreads := rest, pendingBadge := none }) st with
+                             waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -466,7 +466,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
           have hConsist1 := storeObject_notification_preserves_notificationWaiterConsistent
             st pair.2 notificationId ntfn
             { state := if rest.val.isEmpty then .idle else .waiting,
-              waitingThreads := rest, pendingBadge := none }
+              waitingThreads := rest, pendingBadge := none, boundTCB := ntfn.boundTCB }
             hConsist hObjInv hObj hStore
             (fun tid hMem => by
               show tid ∈ ntfn.waitingThreads.val
@@ -518,7 +518,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
           { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
             pendingBadge := some (match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge
-              | none => SeLe4n.Badge.ofNatMasked badge.toNat) }
+              | none => SeLe4n.Badge.ofNatMasked badge.toNat), boundTCB := ntfn.boundTCB }
           hConsist hObjInv hObj hStep
           (fun _ hMem => by simp at hMem)
 

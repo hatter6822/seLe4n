@@ -330,4 +330,14 @@ run_check_with_timeout "TRACE" lake exe smp_scheduler_suite
 # remote rendezvous SGI emission (remote receiver wakes onto its home core).
 run_check_with_timeout "TRACE" lake exe smp_cross_core_call_suite
 
+# WS-SM SM6.B — Cross-core notification runtime checks.  Exercises the actual
+# notificationSignalOnCore / notificationWaitOnCore / lockSet_notificationSignal
+# computations: the SM6.B.1/.6 lock-set footprint + binding membership (the
+# notification and woken-waiter TCB write locks both declared), the SM6.B.2
+# no-waiter badge merge (no SGI) and local vs remote signal SGI emission (the
+# cross-core wake routed to the waiter's home core), the SM6.B.3 multi-waiter
+# discipline (one wake per signal, woken head removed, remaining waiters preserved
+# NoDup), and the SM6.B.1/.4 per-core caller blocking on notificationWait.
+run_check_with_timeout "TRACE" lake exe smp_cross_core_notification_suite
+
 finalize_report

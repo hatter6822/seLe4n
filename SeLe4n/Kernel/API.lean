@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
 
@@ -393,6 +394,8 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetMCPriority      => .write
   | .tcbSetIPCBuffer       => .write
   | .tcbSetAffinity        => .write
+  | .tcbBindNotification   => .write
+  | .tcbUnbindNotification => .write
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -677,6 +680,52 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
           | .error e => .error e
           | .ok vScId => SchedContextOps.schedContextUnbind vScId st
     | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM6.B: bind a notification to the capability-target TCB (seL4
+  -- NotificationBind).  Cap target = the TCB; msgRegs[0] = the notification ObjId.
+  | .tcbBindNotification =>
+    some <| match cap.target with
+    | .object tcbObjId =>
+      fun st => match decodeTcbBindNotificationArgs decoded with
+      | .error e => .error e
+      | .ok args =>
+          -- WS-SM SM6.B (review #1): resolve the notification through a CAPABILITY in
+          -- the caller's CSpace (seL4 BindNotification takes a notification cap), not a
+          -- raw ObjId.  A TCB-cap holder must *also* hold a notification capability
+          -- (Write) to redirect that notification's signals — otherwise it could hijack
+          -- or deny any notification merely by naming its ObjId.  `bindNotification`
+          -- still rejects a resolved cap whose target is not a notification object.
+          -- Typed accessors (AK7 cascade discipline): `getTcb?` / `getCNode?`
+          -- instead of raw `st.objects[…]?` matches.
+          match st.getTcb? tid with
+          | some callerTcb =>
+            match st.getCNode? callerTcb.cspaceRoot with
+            | some rootCn =>
+              let ntfnGate : SyscallGate := {
+                callerId      := tid
+                cspaceRoot    := callerTcb.cspaceRoot
+                capAddr       := SeLe4n.CPtr.ofNat args.notificationCPtr
+                capDepth      := rootCn.depth
+                requiredRight := .write
+              }
+              match syscallLookupCap ntfnGate st with
+              | .error e => .error e
+              | .ok (ntfnCap, _) =>
+                match ntfnCap.target with
+                | .object notifId =>
+                    bindNotification notifId (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st
+                | _ => .error .invalidCapability
+            | none => .error .invalidCapability
+          | none => .error .objectNotFound
+    | _ => fun _ => .error .invalidCapability
+  -- WS-SM SM6.B: unbind the capability-target TCB's bound notification.
+  | .tcbUnbindNotification =>
+    some <| match cap.target with
+    | .object tcbObjId =>
+      fun st =>
+        match unbindNotification (SeLe4n.ThreadId.ofNat tcbObjId.toNat) st with
+        | .error e => .error e
+        | .ok ((), st') => .ok ((), st')
+    | _ => fun _ => .error .invalidCapability
   -- D1: TCB suspend — target thread from capability
   | .tcbSuspend =>
     some <| match cap.target with
@@ -945,9 +994,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st => match decodeNotificationSignalArgs decoded with
       | .error e => .error e
       | .ok args =>
-          match notificationSignal notifId args.badge st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          -- WS-SM SM6.B (live bound-aware cross-core signal): route through
+          -- `notificationSignalBoundCrossCoreDispatch` — when the notification is
+          -- bound to a `BlockedOnReceive` TCB the badge is delivered directly to
+          -- it, otherwise the cross-core `notificationSignalOnCore` runs (head
+          -- waiter woken on its home core).  The surfaced cross-core SGI is
+          -- re-derived from the committed state diff by the runtime entry.
+          match notificationSignalBoundCrossCoreDispatch notifId args.badge tid st with
+          | (st', .ok _) => .ok ((), st')
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification wait — consume pending badge or block.
   -- The notification object comes from the capability target, waiter is current thread.
@@ -955,9 +1010,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
     match cap.target with
     | .object notifId =>
       fun st =>
-        match notificationWait notifId tid st with
-        | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        -- WS-SM SM6.B: route through the per-core cross-core wait so the blocked
+        -- caller is descheduled on *its own* core (not the boot core).
+        match notificationWaitCrossCoreDispatch notifId tid st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C: ReplyRecv — compound reply + receive in one transition.
   -- Cap targets the endpoint for the receive leg. Reply target from MR[0].
@@ -1158,18 +1215,24 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st => match decodeNotificationSignalArgs decoded with
       | .error e => .error e
       | .ok args =>
-          match notificationSignalChecked ctx notifId tid args.badge st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          -- WS-SM SM6.B (live checked bound-aware cross-core signal): the
+          -- info-flow-checked analogue of the unchecked arm, gating on
+          -- `securityFlowsTo signaler→notification` before the bound-aware
+          -- cross-core dispatch.
+          match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid args.badge st with
+          | (st', .ok _) => .ok ((), st')
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
   | .notificationWait =>
     match cap.target with
     | .object notifId =>
       fun st =>
-        match notificationWaitChecked ctx notifId tid st with
-        | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        -- WS-SM SM6.B: per-core checked cross-core wait (gates notification→waiter
+        -- flow, then deschedules the caller on its own core).
+        match notificationWaitCrossCoreDispatchChecked ctx notifId tid st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-C/T6-I: ReplyRecv — checked for both reply and receive legs
   | .replyRecv =>
@@ -1551,7 +1614,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer, .tcbSetAffinity] : List SyscallId) := by
+            .tcbSetIPCBuffer, .tcbSetAffinity,
+            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -1569,7 +1633,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .schedContextConfigure, .schedContextBind,
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
-            .tcbSetIPCBuffer, .tcbSetAffinity] : List SyscallId) := by
+            .tcbSetIPCBuffer, .tcbSetAffinity,
+            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

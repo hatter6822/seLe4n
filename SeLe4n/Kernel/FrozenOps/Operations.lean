@@ -981,6 +981,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetMCPriority => true        -- D2: frozenSetMCPriority
   | .tcbSetIPCBuffer => true         -- D3: frozenSetIPCBuffer
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
+  | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
+  | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
     The 6 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,

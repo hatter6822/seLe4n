@@ -24,7 +24,76 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.A endpoint call across cores LANDED (v0.31.65).**
+**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68 → v0.31.73).**
+The cross-core IPC phase continues with the notification syscalls lifted to SMP.
+`notificationSignalOnCore`
+([`SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean))
+generalises the single-core `notificationSignal` to an explicit `executingCore`:
+on a signal that unblocks the head waiter, the waiter is woken through the SM5.C
+cross-core `wakeThread` (enqueued on its home core, surfacing a `.reschedule` SGI
+when that core is remote — `notificationSignalOnCore_remote_wake`, SM6.B.2), while
+the signaller does **not** block; `notificationWaitOnCore` blocks the caller on
+its *own* core via the SM6.A per-core `removeRunnableOnCore`.  All eight SM6.B
+sub-tasks landed axiom-clean: lock-set hierarchical correctness
+(`notificationSignalOnCore_lockSet_correct` / `notificationWaitOnCore_lockSet_correct`,
+SM6.B.1); the multi-waiter discipline (`notificationSignalOnCore_wakes_head` —
+one wake per signal, the woken head not a member of the duplicate-free remainder —
+and `notificationSignalOnCore_remaining_waiters` — the observable post-state
+notification carries exactly the remaining list, read back through the
+object-invisible cross-core wake, SM6.B.3); 2PL atomicity
+(`notificationWaitOnCore_atomic_under_lockSet` + a signal companion, SM6.B.4);
+per-core wake locality (`notificationSignalOnCore_perCore_consistent` — the wake is
+confined to the waiter's home core, SM6.B.5); the notification ↔ TCB binding
+lock-set membership (`lockSet_notificationSignal_notification_write_mem` +
+`lockSet_notificationSignal_waiter_tcb_write_mem` — both ends of the wake covered
+by a held write lock, proved via the unconditional `self_write_mem_insertOrMerge`,
+SM6.B.6); and cross-core non-interference
+(`notificationSignalOnCore_signal_path_NI` boot-core + `_smp` per-core/∀-core
+`lowEquivalent_smp`,
+[`NotificationSignalNI.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean),
+SM6.B.7).  Tests: `tests/SmpCrossCoreNotificationSuite.lean` (42 runtime
+assertions + theorem witnesses, SM6.B.8).  **Live (v0.31.70):** the bound-notification
+relation (`Notification.boundTCB` ⇄ `TCB.boundNotification`, `bind`/`unbindNotification`,
+`notificationSignalBound{,OnCore}` bound-delivery) is wired through the live
+`API.dispatchWithCap{,Checked}` `.notificationSignal` arms; the cross-core transition
+modules are **production** (only `NotificationSignalNI.lean` remains staged, partition
+55).  **v0.31.71:** `tcbBind/UnbindNotification` syscalls (id 26/27, count 28) thread
+the full Lean + Rust ABI (live via `API.dispatchCapabilityOnly`).  **v0.31.72 (audit
+closure):** the live cross-core wake now actually pokes the remote core — the diff-based
+SGI re-derivation `crossCoreSgiBody` (SM5.F.4) gated only on a PIP-style effective-bucket
+change, dropping the wake SGI (a wake leaves the effective priority unchanged); it now
+also fires `.reschedule` for a thread newly runnable on a remote home core
+(`crossCoreSgiBody_remote_wake`), matching the operation's surfaced SGI for SM6.A
+receivers and SM6.B waiters / bound TCBs (single-core inertness preserved).
+**v0.31.73 (PR-review remediation):** four further fixes — #2 signal/wait now carry
+`boundTCB := ntfn.boundTCB` (an ordinary signal no longer destroys a bound
+notification's binding); #3 the checked bound dispatch also gates `notification →
+receiver` (no badge leak to a low bound TCB); #4 `.notificationWait` routes through the
+per-core `notificationWaitCrossCoreDispatch{,Checked}` (correct-core deschedule); #5
+`lockSet_notificationSignalBoundOnCore` covers the bound-delivery endpoint + TCB writes
+(`permittedKinds .notificationSignal` gains `.endpoint`).  **v0.31.74:** review #1
+closed — `.tcbBindNotification` now resolves the notification through a *capability*
+in the caller's CSpace (`msgRegs[0]` is a CPtr resolved via the verified
+`syscallLookupCap`), so a TCB-cap holder can no longer bind an arbitrary notification
+by raw ObjId; `unbindNotification` unchanged.  **v0.31.75 (tracked-debt closure):**
+both remaining debt items closed — the single-core `notificationSignal` /
+`notificationWait` now also carry `boundTCB := ntfn.boundTCB` (dependent invariant
+proofs updated; trace byte-identical), and `SyscallDispatchSuite` gains a CSpace-with-caps
+`.tcbBindNotification` authority test (authorized bind, no-cap → `.invalidCapability`,
+read-only-cap → `.illegalAuthority`).  **v0.31.76 (deep-audit closure):** the
+bound-delivery 2PL footprint is now proven-covered —
+`lockSet_notificationSignalBoundOnCore_{endpoint,boundTcb}_write_mem` (forward lemma
+`insertOrMerge_preserves_mem_of_ne`) prove the endpoint + bound-TCB write locks are
+members.  Recorded remaining proof-depth debt: bound-delivery non-interference
+(`endpointQueueRemoveDual` relinks the dequeued TCB's queue neighbours, so all-high NI
+needs a dual-queue endpoint-label invariant the codebase lacks; the covert channel is
+already prevented by the #3 flow gate).  Closure target:
+`endpointQueueRemoveDual_preserves_projection{,OnCore}` →
+`notificationSignalBoundOnCore_delivery_path_NI{,_smp}`.
+Plan:
+[`docs/planning/SMP_CROSS_CORE_IPC_PLAN.md`](planning/SMP_CROSS_CORE_IPC_PLAN.md) §5 (SM6.B).
+
+**Prior sub-phase: SM6.A endpoint call across cores LANDED (v0.31.65).**
 The cross-core IPC phase (SM6) opens with the endpoint `Call` rendezvous lifted
 to SMP.  `endpointCallOnCore`
 ([`SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean))

@@ -1349,33 +1349,44 @@ theorem restoreToReadyWithWake_sets_threadState (st : SystemState) (tid : Thread
 -- IPC donation / timeout / resume paths is trace-preserving on single-core hardware
 -- and activates automatically once per-core affinities are set.
 
-/-- WS-SM SM5.F.4: the per-object body of the diff-based dispatch — emits a
-`.reschedule` SGI to a thread's *remote* home core iff its *effective* priority
-(`resolveEffectivePrioDeadline`, the run-queue bucket key) changed.  Factored out so
-the dispatch theorems reference it by name (the single object-store read site,
-mirroring `waitersOf`'s raw iteration). -/
+/-- WS-SM SM5.F.4 / SM6.B: the per-object body of the diff-based dispatch — emits a
+`.reschedule` SGI to a thread's *remote* home core iff its presence/bucket in that
+core's run queue *changed* across `pre → post`.  Two material cases:
+
+* a **wake / migration** — the thread became newly runnable on its home core (in
+  `post`'s home run queue, not in `pre`'s).  This is the SM6.A endpoint-call
+  receiver / SM6.B notification-waiter / bound-TCB wake: it leaves the effective
+  priority unchanged, yet a freshly-runnable remote thread must be scheduled on its
+  home core.  (The earlier priority-only gate dropped this SGI — the live wake
+  arrived only at the home core's next timer tick.)
+* a **re-bucketing** — the thread was already runnable on its home core but its
+  *effective* run-queue bucket (`resolveEffectivePrioDeadline`) changed: a PIP boost
+  (PR #811 P2-2).  An *immaterial* boost (effective priority unchanged on an
+  already-runnable thread) migrates no bucket and so fires nothing.
+
+Factored out so the dispatch theorems reference it by name (the single object-store
+read site, mirroring `waitersOf`'s raw iteration). -/
 def crossCoreSgiBody (pre post : SystemState) (execCore : CoreId) (oid : ObjId)
     : Option (CoreId × SgiKind) :=
   match post.objects[oid]? with
   | some (KernelObject.tcb tpost) =>
     match pre.getTcb? tpost.tid with
     | some tpre =>
-      -- WS-SM SM5.F.4 (PR #811 P2-2): gate on the *effective* priority changing, not
-      -- the raw `pipBoost` — exactly `pipBoostWithWake`'s bucket-migration materiality.
-      -- A boost that does not raise the effective priority migrates no run-queue bucket
-      -- and so has no scheduling consequence on the home core; firing an SGI for it would
-      -- be a spurious cross-core IPI.
-      if (SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
-          == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1 then none
-      else
-        let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
-        -- WS-SM SM5.F.4 (PR #811 P2-1): mirror `pipBoostWithWake`'s C9 runnability gate.
-        -- A holder not runnable on its home core has no run-queue bucket to re-evaluate,
-        -- so poking it would be a spurious cross-core IPI — exactly the case
-        -- `pipBoostWithWake_no_sgi_if_not_runnable` rules out on the direct path.
-        if home == execCore then none
-        else if tpost.tid ∈ post.scheduler.runQueueOnCore home then some (home, SgiKind.reschedule)
-        else none
+      let home := SeLe4n.Kernel.determineTargetCore post tpost.tid
+      -- WS-SM SM5.F.4 (PR #811 P2-1, C9 runnability gate): a thread whose home is the
+      -- executing core needs no cross-core poke (single-core inert); a thread not
+      -- runnable on its home core in `post` has no run-queue bucket there to re-evaluate.
+      if home == execCore then none
+      else if tpost.tid ∈ post.scheduler.runQueueOnCore home then
+        -- The home core must re-run its scheduler iff `tpost.tid`'s presence in its
+        -- remote run queue is a *change* it has not yet seen.  Fire UNLESS the thread
+        -- was already runnable on `home` (so not a wake) AND its effective bucket is
+        -- unchanged (so not a re-bucketing) — the immaterial case that pokes nothing.
+        if (tpost.tid ∈ pre.scheduler.runQueueOnCore home)
+            && ((SeLe4n.Kernel.resolveEffectivePrioDeadline pre tpre).1
+                  == (SeLe4n.Kernel.resolveEffectivePrioDeadline post tpost).1) then none
+        else some (home, SgiKind.reschedule)
+      else none
     | none => none
   | _ => none
 
@@ -1395,14 +1406,14 @@ theorem crossCoreSgiBody_reschedule (pre post : SystemState) (ec : CoreId) (oid 
   unfold crossCoreSgiBody at h
   split at h
   · split at h
-    · split at h
+    · simp only [] at h
+      split at h
       · simp at h
-      · simp only [] at h
-        split at h
-        · simp at h
+      · split at h
         · split at h
-          · simp only [Option.some.injEq] at h; rw [← h]
           · simp at h
+          · simp only [Option.some.injEq] at h; rw [← h]
+        · simp at h
     · simp at h
   · simp at h
 
@@ -1413,11 +1424,34 @@ theorem crossCoreSgiBody_none_single_core (pre post : SystemState) (oid : ObjId)
   unfold crossCoreSgiBody
   split
   · split
-    · split
-      · rfl
-      · simp [hAllBoot]
+    · simp [hAllBoot]
     · rfl
   · rfl
+
+/-- WS-SM SM6.B (the wake-SGI fix, positive direction): a thread that becomes newly
+runnable on a *remote* home core — present in `pre`, in `post`'s home-core run queue
+but *not* in `pre`'s home-core run queue — makes the dispatch body emit a
+`.reschedule` SGI to that home core.  This is the cross-core poke a notification /
+endpoint-call wake warrants; the earlier priority-only gate dropped it (a wake leaves
+the effective priority unchanged).  The positive companion of
+`crossCoreSgiBody_reschedule` (kind) and `crossCoreSgiBody_none_single_core`
+(single-core inertness). -/
+theorem crossCoreSgiBody_remote_wake (pre post : SystemState) (execCore : CoreId)
+    (oid : ObjId) (tpost tpre : TCB)
+    (hPost : post.objects[oid]? = some (.tcb tpost))
+    (hPre : pre.getTcb? tpost.tid = some tpre)
+    (hRemote : SeLe4n.Kernel.determineTargetCore post tpost.tid ≠ execCore)
+    (hPostRq : tpost.tid ∈
+        post.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid))
+    (hPreNotRq : tpost.tid ∉
+        pre.scheduler.runQueueOnCore (SeLe4n.Kernel.determineTargetCore post tpost.tid)) :
+    crossCoreSgiBody pre post execCore oid
+      = some (SeLe4n.Kernel.determineTargetCore post tpost.tid, SgiKind.reschedule) := by
+  unfold crossCoreSgiBody
+  rw [hPost]
+  simp only [hPre]
+  rw [if_neg (by simpa using hRemote), if_pos hPostRq,
+      if_neg (by simp [hPreNotRq])]
 
 /-- WS-SM SM5.F.4: every SGI the diff-based dispatch emits is a `.reschedule` — it
 pokes cores only to reschedule, never with a foreign SGI kind. -/
