@@ -1,3 +1,69 @@
+## v0.31.77 — WS-SM SM6.C: reply path across cores (live `.reply` / `.replyRecv` cross-core dispatch)
+
+The SM6.C deliverable of the WS-SM Phase 6 cross-core IPC workstream: the reply
+syscalls now work across cores under the SM3.B per-object lock-set discipline, wired
+**live** into the kernel's `.reply` / `.replyRecv` dispatch.  Axiom-clean (`propext` /
+`Classical.choice` / `Quot.sound` only); Tier 0–3 green; trace fixture byte-identical;
+partition 56 staged.
+
+**Cross-core reply transitions** (`SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`).
+`endpointReplyOnCore` lifts the single-core `endpointReply` rendezvous: on a reply that
+unblocks the recorded caller (the `blockedOnReply` thread, validated against its recorded
+authorised replier — the confused-deputy gate is unchanged), the caller is woken through
+the SM5.C `wakeThread … executingCore` — enqueued on its *home* core, surfacing the
+optional `.reschedule` SGI (plan SM6.C.2 `endpointReply_remote_wake`) — and the replier
+does **not** block.  `endpointReceiveDualOnCore` (the receive leg of `replyRecv`) blocks
+the server on *its own* core via `removeRunnableOnCore … executingCore` and wakes a
+`blockedOnSend` rendezvous sender on *its* home core; `endpointReplyRecvOnCore` composes
+the two legs, surfacing the union of their cross-core SGIs.
+
+**Theorems** (SM6.C.1–.9): path reductions; the cross-core wake SGI + local / error duals
+(SM6.C.2); lock-set hierarchical correctness for reply and replyRecv + the state-resolved
+forms (SM6.C.1/.5); reply-payload delivery to the *right* TCB — the original caller, not
+the replier (`endpointReplyOnCore_perCore_delivery`, SM6.C.4); the reply-state lifecycle —
+the `blockedOnReply → .ready` write lands on the caller-TCB **write** lock declared in
+`lockSet_endpointReply` (`lockSet_endpointReply_target_tcb_write_mem`, SM6.C.6); the
+reply-replay barrier — a delivered reply leaves the caller `.ready`, so a replay (or a
+confused-deputy reply) fails closed with `.replyCapInvalid`
+(`endpointReplyOnCore_replay_rejected` / `_not_blocked_eq` / `_wrong_replier_eq`, SM6.C.7);
+2PL atomicity under the lock-set; per-core wake locality; `objects.invExt` + `ipcInvariant`
+preservation (`EndpointReplyInvariant.lean`); boot-core + per-core / ∀-core
+(`lowEquivalent_smp`) non-interference (`EndpointReplyNI.lean`, SM6.C.8 — a high reply
+unblocking a high caller is invisible to a low observer on *every* core, including the
+remote core the caller is woken onto); the donation-chain lock-set extension
+(`lockSet_endpointReply_donation_extension`) + the cross-core donation return
+(`applyReplyDonationOnCore`, bootCore-bridged) + PIP reversion via
+`propagatePipChainCrossCore` (SM6.C.3); and the reply donation-chain length bound
+(`endpointReply_donation_chain_length_bounded` — ≤ `fuel = objectIndex.length` SGIs, so a
+k-deep donation chain terminates and pokes a bounded number of remote cores, SM6.C.9).
+
+**Live `.reply` / `.replyRecv` dispatch** (`EndpointReplyDispatch.lean`).  The pure
+cross-core reply dispatch ops live below the API layer:
+`endpointReplyCrossCoreDispatch` / `endpointReplyRecvCrossCoreDispatch` (reply +
+`applyReplyDonationOnCore` + cross-core PIP reversion) and the info-flow-checked
+`endpointReplyCrossCoreDispatchChecked` / `endpointReplyRecvCrossCoreDispatchChecked`
+(the same SM-IF flow gates as the single-core `endpointReply{,Recv}Checked` — one gate for
+reply, two for replyRecv).  The live `API.dispatchWithCap{,Checked}` `.reply` /
+`.replyRecv` arms now route through them, deriving the executing core from the live state
+(`determineExecutingCore st tid`) so the woken caller / blocked server land on the right
+cores.  The cross-core reply stack (`EndpointReply` / `EndpointReplyInvariant` /
+`EndpointReplyDispatch`) is **promoted to production** (only `EndpointReplyNI` remains
+staged — partition 55→56 staged); the two
+`checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed` equivalence theorems are
+re-proven through the cross-core flow-allowed lemmas, and `dispatchWithCap_reply_populates_msg`
+restated for the cross-core dispatch.  The boot trace is byte-identical (the trace harness
+exercises the reply transitions directly, and `endpointReplyOnCore … bootCoreId` coincides
+observably with `endpointReply` on a single-core trace).
+
+**Tests** (`tests/SmpCrossCoreReplySuite.lean`, SM6.C.10): 27 runtime assertions across the
+lock-set footprint + caller-TCB write-lock membership, payload delivery, local vs remote
+caller-wake SGI emission, the reply-replay barrier + confused-deputy rejection, the
+replyRecv combined op, the donation-chain lock-set extension, and the chain-length bound;
+plus surface anchors + elaboration-time theorem-application witnesses.  Wired into
+`scripts/test_tier2_negative.sh`.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §4.3, §5 (SM6.C)
+
 ## v0.31.76 — WS-SM SM6.B: deep-audit closure (bound-delivery lock coverage proven; NI debt recorded)
 
 A final deep audit of the SM6.B surface elevated the bound-delivery 2PL footprint from

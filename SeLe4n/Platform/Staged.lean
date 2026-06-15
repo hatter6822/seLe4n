@@ -450,6 +450,16 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallEntry
 -- the per-core `storeObject` / `storeTcbIpcState` projection lemmas composed with
 -- the SM6.A per-core wake/store/deschedule projection family.
 import SeLe4n.Kernel.IPC.CrossCore.NotificationSignalNI
+-- WS-SM SM6.C: the cross-core reply transitions `EndpointReply` /
+-- `EndpointReplyInvariant` / `EndpointReplyDispatch` are now **production**
+-- (reached from `API` via the live `.reply` / `.replyRecv` cross-core dispatch),
+-- so they are *not* listed here.  Only the non-interference proof module remains
+-- staged:
+-- WS-SM SM6.C.8: cross-core reply non-interference —
+-- `endpointReplyOnCore_reply_path_NI{,_smp}`, boot-core `projectState` + per-core
+-- / ∀-core `lowEquivalent_smp` (a high reply waking a high caller is invisible on
+-- *every* core), built on the SM6.A per-core wake/store projection family.
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- WS-SM SM6.A: the cross-core-aware syscall dispatch entry —
 -- `syscallDispatchCrossCoreEntry` (`@[export lean_syscall_dispatch_cross_core]`).
 -- Runs the verified `syscallDispatchFromAbi` atomically via `modifyGetKernelState`,

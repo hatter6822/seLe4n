@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
@@ -915,9 +916,20 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
   | .reply =>
     match cap.target with
     | .replyCap targetTid =>
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      -- Z7: Use donation-aware reply wrapper to return SchedContext
-      endpointReplyWithDonation tid targetTid { registers := body, caps := #[], badge := cap.badge }
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        -- WS-SM SM6.C (live cross-core `.reply`): route the unchecked `.reply`
+        -- through the cross-core dispatch — the original caller (the
+        -- `blockedOnReply` thread `targetTid`) is woken on its *home* core via
+        -- `wakeThread` (surfacing a `.reschedule` SGI the syscall seam fires),
+        -- the donated SchedContext is returned, and the priority-inheritance
+        -- reversion walks the blocking chain cross-core.  The replier is
+        -- descheduled (if passive) on `executingCore`, derived from the live state.
+        let executingCore := determineExecutingCore st tid
+        match endpointReplyCrossCoreDispatch tid targetTid
+            { registers := body, caps := #[], badge := cap.badge } executingCore st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -1027,10 +1039,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       | .ok args =>
           let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
           let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
-          -- Z7: Use donation-aware replyRecv wrapper
-          match endpointReplyRecvWithDonation epId tid args.replyTarget msg st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+          -- WS-SM SM6.C.5 (live cross-core `.replyRecv`): route through the
+          -- cross-core reply-and-receive dispatch — the reply leg wakes the
+          -- recorded caller on its *home* core, the receive leg blocks the server
+          -- on *its own* core (or wakes a rendezvous sender on the sender's home
+          -- core), and the donated SC is returned with cross-core PIP reversion.
+          let executingCore := determineExecutingCore st tid
+          match endpointReplyRecvCrossCoreDispatch epId tid args.replyTarget msg executingCore st with
+          | (st', .ok _) => .ok ((), st')
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B: tcbSetPriority, tcbSetMCPriority, tcbSetIPCBuffer are now handled
   -- by dispatchCapabilityOnly above. Together with cspaceDelete, lifecycleRetype,
@@ -1128,23 +1145,21 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   | .reply =>
     match cap.target with
     | .replyCap targetTid =>
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      -- Z7: Apply donation return after checked reply
-      -- D4-M: Revert PIP — the client is unblocked, so the replier's pipBoost
-      -- must be recomputed from remaining waiters.
       fun st =>
-        match endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge } st with
-        | .error e => .error e
-        | .ok ((), st') =>
-          -- AH2-C: Propagate donation return errors.
-          -- AN10-residual-1 deep-audit: applyReplyDonation requires ValidThreadId.
-          match SeLe4n.ThreadId.toValid? tid with
-          | some tidVtid =>
-            match applyReplyDonation st' tidVtid with
-            | .error e => .error e
-            | .ok st'' =>
-              .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
-          | none => .error .invalidArgument
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        -- WS-SM SM6.C (live cross-core checked `.reply`): route through the
+        -- info-flow-checked cross-core dispatch.  `endpointReplyCrossCoreDispatchChecked`
+        -- is the cross-core analogue of `endpointReplyChecked` + inline donation
+        -- return + PIP reversion: the same SM-IF flow guard
+        -- (`securityFlowsTo replierLabel targetLabel`), then the cross-core reply
+        -- (caller woken on its *home* core), the donated-SC return, and the
+        -- cross-core priority-inheritance reversion.  The cross-core syscall seam
+        -- recovers the SGIs from the `(pre, post)` diff.
+        let executingCore := determineExecutingCore st tid
+        match endpointReplyCrossCoreDispatchChecked ctx tid targetTid
+            { registers := body, caps := #[], badge := cap.badge } executingCore st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -1243,20 +1258,16 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       | .ok args =>
           let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
           let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
-          -- Z7: Apply donation return after checked replyRecv
-          -- D4-M: Revert PIP for the reply portion
-          match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
-          | .error e => .error e
-          | .ok ((), st') =>
-            -- AH2-C: Propagate donation return errors.
-            -- AN10-residual-1 deep-audit: applyReplyDonation requires ValidThreadId.
-            match SeLe4n.ThreadId.toValid? tid with
-            | some tidVtid =>
-              match applyReplyDonation st' tidVtid with
-              | .error e => .error e
-              | .ok st'' =>
-                .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
-            | none => .error .invalidArgument
+          -- WS-SM SM6.C.5 (live checked cross-core `.replyRecv`): the
+          -- info-flow-checked analogue, gating on BOTH the reply leg
+          -- (`securityFlowsTo receiver→replyTarget`) and the receive leg
+          -- (`securityFlowsTo endpoint→receiver`) before the cross-core
+          -- reply-and-receive dispatch (caller woken on its home core, server
+          -- blocked/sender woken cross-core, donated SC returned, PIP reverted).
+          let executingCore := determineExecutingCore st tid
+          match endpointReplyRecvCrossCoreDispatchChecked ctx epId tid args.replyTarget msg executingCore st with
+          | (st', .ok _) => .ok ((), st')
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
@@ -1505,16 +1516,16 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
 -- AJ1-D (M-01): Reply/ReplyRecv conditional equivalence theorems
 -- ============================================================================
 
-/-- AJ1-D (M-01): When the information flow policy allows the reply, checked
-and unchecked `.reply` dispatch produce identical results. The checked path
-(`endpointReplyChecked`) gates on `securityFlowsTo replierLabel targetLabel`;
-when this condition holds, both paths execute the identical three-step sequence:
-`endpointReply` → `applyReplyDonation` → `revertPriorityInheritance`.
+/-- AJ1-D (M-01) / WS-SM SM6.C: When the information flow policy allows the reply,
+checked and unchecked `.reply` dispatch produce identical results. The checked path
+(`endpointReplyCrossCoreDispatchChecked`) gates on `securityFlowsTo replierLabel
+targetLabel`; when this condition holds it is *exactly* the unchecked cross-core
+dispatch (`endpointReplyCrossCoreDispatchChecked_flow_allowed`), so the two arms —
+which apply the identical outer `match … | (st', .ok _) => …` wrapping to the same
+dispatch — coincide.
 
 This is a conditional equivalence: unlike the capability-only arms which are
-structurally identical (unconditional), `.reply` requires the flow hypothesis.
-The unchecked path bundles these steps in `endpointReplyWithDonation`; the
-checked path inlines them after `endpointReplyChecked`. -/
+structurally identical (unconditional), `.reply` requires the flow hypothesis. -/
 theorem checkedDispatch_reply_eq_unchecked_when_allowed
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
@@ -1525,16 +1536,14 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
     : ∀ (st : SystemState),
     dispatchWithCapChecked ctx decoded tid gate cap st =
     dispatchWithCap decoded tid gate cap st := by
-  -- Both sides reduce to `endpointReply → applyReplyDonation → revertPIP` when flow allows.
+  -- Both sides reduce to the cross-core reply dispatch when flow allows.
   intro st
-  -- Unfold both dispatch to reach the .reply arm with .replyCap targetTid
+  -- Unfold both dispatch to reach the .reply arm with .replyCap targetTid.
   -- dispatchCapabilityOnly returns `none` for .reply (not capability-only),
   -- so the match falls through to the explicit .reply arm.
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hCap]
-  -- Both sides now have endpointReply-based pipelines. Unfold checked wrapper.
-  simp only [endpointReplyChecked, hFlow, ite_true]
-  -- RHS is endpointReplyWithDonation applied to st — definitionally equal to LHS
-  rfl
+  -- The checked dispatch with flow allowed equals the unchecked cross-core dispatch.
+  rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid targetTid _ _ st hFlow]
 
 /-- AJ1-D (M-01): When the information flow policy allows both legs (reply +
 receive), checked and unchecked `.replyRecv` dispatch produce identical results.
@@ -1556,34 +1565,10 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     dispatchWithCapChecked ctx decoded tid gate cap st =
     dispatchWithCap decoded tid gate cap st := by
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hCap, hDecode]
-  -- Unfold checked wrapper with flow guards, and unchecked wrapper
-  simp only [endpointReplyRecvChecked, hFlowReply, hFlowRecv, ite_true]
-  -- The unchecked path wraps the result in `match ... with | .error e => .error e | .ok ((), st') => .ok ((), st')`
-  -- which is identity. The checked path doesn't have this wrapper.
-  -- Collapse by cases on the shared inner expression.
-  -- The RHS still has endpointReplyRecvWithDonation wrapped in identity match.
-  -- Unfold endpointReplyRecvWithDonation, then the identity match collapses.
-  simp only [endpointReplyRecvWithDonation]
-  -- Now both sides match on endpointReplyRecv. The RHS has an extra wrapper
-  -- `match ... with | .error e => .error e | .ok ((), st') => .ok ((), st')`.
-  -- Collapse by cases on the shared inner expression.
-  cases endpointReplyRecv epId tid args.replyTarget
-    { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-      caps := #[], badge := cap.badge } st with
-  | error => rfl
-  | ok p =>
-    obtain ⟨⟨⟩, s⟩ := p
-    simp only []
-    -- AN10-residual-1 deep-audit: both checked and unchecked dispatch paths
-    -- now route applyReplyDonation through the same `toValid? tid` shim
-    -- (added at the typed-wrapper signatures).  Match the case-split.
-    cases SeLe4n.ThreadId.toValid? tid with
-    | none => rfl
-    | some tidVtid =>
-      simp only []
-      cases applyReplyDonation s tidVtid with
-      | error => rfl
-      | ok => rfl
+  -- With both legs permitted, the checked cross-core replyRecv dispatch is exactly
+  -- the unchecked cross-core dispatch, so the identically-wrapped arms coincide.
+  rw [endpointReplyRecvCrossCoreDispatchChecked_flow_allowed ctx epId tid args.replyTarget _ _ st
+        hFlowReply hFlowRecv]
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
@@ -1993,17 +1978,25 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
-/-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated
-from decoded message registers via `extractMessageRegisters`. -/
+/-- WS-K-E / WS-SM SM6.C: When reply dispatch is invoked, the IPC message body is
+populated from decoded message registers via `extractMessageRegisters` and routes
+through the **cross-core** reply dispatch (`endpointReplyCrossCoreDispatch` — the
+original caller is woken on its home core, the donated SchedContext returned, and
+priority-inheritance reverted cross-core), at the executing core derived from the
+live state (`determineExecutingCore st tid` — the replier's own core). -/
 theorem dispatchWithCap_reply_populates_msg
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (targetTid : SeLe4n.ThreadId)
     (hSyscall : decoded.syscallId = .reply)
     (hTarget : cap.target = .replyCap targetTid) :
     dispatchWithCap decoded tid gate cap =
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      -- Z7: Donation-aware reply
-      endpointReplyWithDonation tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        let executingCore := determineExecutingCore st tid
+        match endpointReplyCrossCoreDispatch tid targetTid
+            { registers := body, caps := #[], badge := cap.badge } executingCore st with
+        | (st', .ok _) => .ok ((), st')
+        | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================

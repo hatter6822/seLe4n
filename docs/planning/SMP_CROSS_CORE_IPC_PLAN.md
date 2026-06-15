@@ -410,18 +410,67 @@ optional `.reschedule` SGI) — and the signaller does **not** block.
 
 ### SM6.C — Reply path across cores (4 PRs, 10 sub-tasks)
 
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM6.C.1 | Migrate `endpointReply` to lock-set | (refactor) | M |
-| SM6.C.2 | Cross-core reply: wake caller | `endpointReply_remote_wake` | L |
-| SM6.C.3 | Donation chain across cores extension | `donation_perCore_consistent` extension | L |
-| SM6.C.4 | Reply payload delivery to right TCB | `endpointReply_perCore_delivery` | M |
-| SM6.C.5 | `endpointReplyRecv` combined op lock-set | `endpointReplyRecv_lockSet_correct` | M |
-| SM6.C.6 | Reply object lifecycle | `replyObject_lifecycle_under_lockSet` | M |
-| SM6.C.7 | Reply-replay protection | Theorem | M |
-| SM6.C.8 | Cross-core reply NI | `endpointReply_perCore_NI` | M |
-| SM6.C.9 | Reply chain length bound (donation k > 2) | Theorem | M |
-| SM6.C.10 | 8 reply scenarios | Tests | L |
+**Status: LANDED (v0.31.77); live `.reply` / `.replyRecv` dispatch + production
+promotion.**  Axiom-clean (`propext` / `Classical.choice` / `Quot.sound` only);
+Tier 0–3 green; trace fixture byte-identical.  The cross-core reply transitions
+`endpointReplyOnCore` / `endpointReceiveDualOnCore` / `endpointReplyRecvOnCore` and
+the SM6.C theorems live in `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`
+(+ `EndpointReplyInvariant.lean` for `objects.invExt` / `ipcInvariant` preservation,
+`EndpointReplyNI.lean` for the boot-core + per-core / ∀-core (`lowEquivalent_smp`)
+non-interference, `EndpointReplyDispatch.lean` for the below-API live
+`.reply` / `.replyRecv` dispatch with donation return + cross-core PIP reversion);
+the 27-assertion runtime suite is `tests/SmpCrossCoreReplySuite.lean`
+(`lake exe smp_cross_core_reply_suite`).
+
+`endpointReplyOnCore` mirrors the single-core `endpointReply` with one cross-core
+substitution — the unblocked caller (the recorded `blockedOnReply` thread) is woken
+through the SM5.C `wakeThread … executingCore` (enqueued on the caller's *home*
+core, surfacing the optional `.reschedule` SGI) — and the replier does **not**
+block.  `endpointReceiveDualOnCore` (the receive leg of `replyRecv`) blocks the
+server on *its own* core via `removeRunnableOnCore … executingCore` and wakes a
+`blockedOnSend` rendezvous sender on *its* home core; `endpointReplyRecvOnCore`
+composes the two legs, surfacing the union of their cross-core SGIs.  The
+confused-deputy gate (`replier == expected` against the caller's recorded
+`replyTarget`) is unchanged, and a delivered reply leaves the caller `.ready` so a
+replay fails closed (`.replyCapInvalid`) — the SM6.C.7 single-use barrier.
+
+**Live `.reply` / `.replyRecv` arms — LANDED (v0.31.77).**  The pure cross-core
+reply dispatch ops live **below the API layer** in
+`SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (FFI-free):
+`endpointReplyCrossCoreDispatch` / `endpointReplyRecvCrossCoreDispatch` (reply +
+`applyReplyDonationOnCore` return + cross-core PIP reversion
+`propagatePipChainCrossCore`) and the info-flow-checked
+`endpointReplyCrossCoreDispatchChecked` / `endpointReplyRecvCrossCoreDispatchChecked`.
+The live `API.dispatchWithCap{,Checked}` `.reply` / `.replyRecv` arms now route
+through them (executing core derived from the live state by
+`determineExecutingCore st tid`).  The cross-core reply stack
+(`EndpointReply` / `EndpointReplyInvariant` / `EndpointReplyDispatch`) is **promoted
+to production** (only `EndpointReplyNI` remains staged); the two
+`checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed` equivalence theorems
+are re-proven through the cross-core flow-allowed lemmas.  Validated: trace fixture
+byte-identical, all reply + SMP suites pass, partition (56 staged) + AK7 green.
+
+> **Model note.**  This kernel has no separate Reply *object* (the `.reply`
+> lock-kind is N/A — `lockHeld` is `False` for it; see SM6.A's model note).  The
+> reply *linkage* is the caller's `blockedOnReply endpointId (some replier)` TCB
+> state, written under the caller-TCB **write** lock already in
+> `lockSet_endpointReply` (the `replyTargetTid` member).  SM6.C.6 ("reply object
+> lifecycle") is therefore the lifecycle of that reply *state* — `blockedOnReply →
+> .ready` under the caller-TCB write lock — and SM6.C.7 ("reply-replay protection")
+> is the consumption of that linkage.
+
+| Sub | Description | Landed symbol | Status |
+|-----|-------------|---------------|--------|
+| SM6.C.1 | Migrate `endpointReply` to lock-set (cross-core) | `endpointReplyOnCore` (+ `endpointReplyOnCore_{reply,not_blocked,wrong_replier}_eq`, `lockSet_endpointReplyOnCore`, `endpointReplyOnCore_lockSet_correct`, `lockSet_endpointReplyOnCore_correct`) | ✓ |
+| SM6.C.2 | Cross-core reply: wake caller | `endpointReplyOnCore_remote_wake` (+ `_no_sgi_if_local`, `_not_blocked_no_sgi`) | ✓ |
+| SM6.C.3 | Donation chain across cores extension | `lockSet_endpointReply_donation_extension` + `applyReplyDonationOnCore` (cross-core return; `applyReplyDonationOnCore_bootCoreId` bridge) + cross-core PIP reversion via `propagatePipChainCrossCore` | ✓ |
+| SM6.C.4 | Reply payload delivery to right TCB | `endpointReplyOnCore_perCore_delivery` (+ `storeTcbIpcStateAndMessage_fromTcb_self`) | ✓ |
+| SM6.C.5 | `endpointReplyRecv` combined op lock-set | `endpointReplyRecv_lockSet_correct` (+ `endpointReplyRecvOnCore`, `endpointReceiveDualOnCore`, `lockSet_endpointReplyRecvOnCore{,_correct}`) | ✓ |
+| SM6.C.6 | Reply object lifecycle | `lockSet_endpointReply_target_tcb_write_mem` (caller-TCB write lock covers the `blockedOnReply → .ready` reply-state write) + delivery | ✓ |
+| SM6.C.7 | Reply-replay protection | `endpointReplyOnCore_replay_rejected` (+ `_not_blocked_eq` / `_wrong_replier_eq`: a delivered reply consumes the linkage; replay / confused-deputy fail closed) | ✓ |
+| SM6.C.8 | Cross-core reply NI | `endpointReplyOnCore_reply_path_NI` (boot-core `projectState`) + `endpointReplyOnCore_reply_path_NI_smp` (per-core / ∀-core `lowEquivalent_smp` — invisible on *every* core) | ✓ |
+| SM6.C.9 | Reply chain length bound (donation k > 2) | `endpointReply_donation_chain_length_bounded` (`propagatePipChainCrossCore` emits ≤ `fuel` SGIs; with `fuel = objectIndex.length`, acyclicity bounds any k-deep chain) | ✓ |
+| SM6.C.10 | 8 reply scenarios | `tests/SmpCrossCoreReplySuite.lean` (27 runtime assertions) | ✓ |
 
 ### SM6.D — IPC across-core invariant bundle (2 PRs, 6 sub-tasks)
 
