@@ -1,3 +1,37 @@
+## v0.31.83 — Reply objects (seL4-MCS): linkage-op proof foundation (slice C-preserve)
+
+The reusable proof foundation under the C-link linkage operations: object-store
+frame infrastructure plus the forward-link (TCB→Reply) post-conditions, all
+proved standalone (no `sorry`), trace fixture **byte-identical** (233/233).
+
+**Object-store frame helpers** (`SeLe4n/Model/State.lean`).
+`linkReply_preserves_objects_invExt` / `consumeReply_preserves_objects_invExt`
+carry `objects.invExt` through the B1 reply mutators (each success path is a
+single `storeObject`).  `getTcb?_getReply?_slot_ne` proves a TCB slot and a Reply
+slot are distinct `ObjId`s — a single store slot holds exactly one
+`KernelObject`, so a slot resolving to a TCB and one resolving to a Reply cannot
+coincide.  This is the disjointness that lets a reply-linkage proof frame one of
+the two stores past the other.
+
+**Forward-link post-conditions.**  `linkCallerReply_replyObject_some` — on
+success the caller TCB's `replyObject` points at `rid` (the op's final store
+writes exactly this field).  `consumeCallerReply_replyObject_none` — any caller
+TCB still present after the op has `replyObject = none`.  Together they pin the
+TCB→Reply half of the `replyCallerLinkage` invariant (Phase D) to the
+transition behaviour.  Both discharge via `storeObject_inserted_object_lookup` +
+`getTcb?_eq_some_iff`.
+
+(The Reply→TCB back-link post-conditions — that the op establishes/clears
+`reply.caller`, framed past the TCB store via the new disjointness lemma — plus
+the full `ipcInvariantFull` frame preservation of both ops, land as the next
+standalone proof slice, ahead of the cap-swap + reply-path wiring that consumes
+them.  Both linkage stores miss all fifteen conjuncts — a Reply store is
+kind-invisible and the TCB store touches only `replyObject`, which no conjunct
+reads — so the preservation needs no concrete dispatch context.)
+
+Production `lake build` + the staged anchor + Tier 0/1/2 green; trace
+byte-identical.
+
 ## v0.31.82 — Reply objects (seL4-MCS): caller↔reply linkage ops (slice C-link)
 
 The two **inverse linkage operations** the Phase-C `Call`/`Reply` re-base composes
