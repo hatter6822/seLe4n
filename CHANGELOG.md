@@ -1,3 +1,29 @@
+## v0.31.85 — Reply objects (seL4-MCS): reply-store ipcInvariantFull frame (store A)
+
+First half of the linkage-op invariant preservation: storing a `.reply` object
+over a slot that already held a `.reply` preserves the full 15-conjunct
+`ipcInvariantFull` (`SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`).
+A reusable building block for every reply transition; proved standalone (no
+`sorry`; axioms = `propext` / `Classical.choice` / `Quot.sound` only).
+
+`storeObject_reply_preserves_ipcInvariantFull` — no `ipcInvariantFull` conjunct
+dereferences a `.reply`, and the slot held a `.reply` both before and after, so
+every notification / TCB / endpoint / cnode / schedContext lookup is unchanged.
+The uniform helper `reply_store_kind_agree` captures that single fact (for any
+non-`.reply` kind `k`, `st'.objects[s]? = some k ↔ st.objects[s]? = some k`, via
+`storeObject_objects_eq` / `_ne`); all fifteen conjuncts transport through it —
+hypothesis lookups pulled back with `.mp`, the schedContext / owner-TCB
+existentials in the donation conjuncts pushed forward with `.mpr`, and
+`passiveServerIdle`'s scheduler read rewritten via `storeObject_scheduler_eq`.
+Conjunct 2's queue sub-predicates (`intrusiveQueueWellFormed` /
+`tcbQueueLinkIntegrity` / `QueueNextPath` acyclicity) use three private transport
+helpers; conjunct 7 reuses the existing non-ep/non-tcb frame lemma.
+
+The TCB-`replyObject` store (store B) and the composition into
+`linkCallerReply` / `consumeCallerReply` preservation land next.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical.
+
 ## v0.31.84 — Reply objects (seL4-MCS): Reply→TCB back-link post-conditions
 
 The Reply→TCB direction of the caller↔reply link, completing the post-condition

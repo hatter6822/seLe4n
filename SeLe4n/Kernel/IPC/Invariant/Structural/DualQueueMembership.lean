@@ -2062,4 +2062,250 @@ theorem endpointReplyRecv_preserves_ipcStateQueueConsistent
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ | blockedOnNotification _ =>
       simp [hIpcS] at hStep
 
+-- ============================================================================
+-- WS-SM SM6.D: storing a `.reply` over a slot that already held a `.reply`
+-- preserves `ipcInvariantFull`.
+--
+-- A `.reply` object is foreign to every `ipcInvariantFull` conjunct: no
+-- conjunct dereferences a `.reply`.  The uniform `reply_store_kind_agree`
+-- helper below captures the single fact that drives all fifteen conjuncts —
+-- for every *non-reply* object kind, the pre- and post-store lookups agree
+-- (the post-store slot at `id` holds `.reply r'` and the pre-store slot held
+-- `.reply r`, so neither side can witness a non-reply kind at `id`, and every
+-- other slot is untouched by `storeObject_objects_ne`).
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D: after storing `.reply r'` over a slot that held `.reply r`,
+the lookup of any *non-`.reply`* object agrees between pre- and post-state.
+This is the single uniform fact behind every `ipcInvariantFull` conjunct:
+none of them reads a `.reply`, so each object lookup they perform is
+unchanged. -/
+private theorem reply_store_kind_agree
+    (st st' : SystemState) (id : SeLe4n.ObjId) (r r' : SeLe4n.Kernel.Reply)
+    (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.reply r))
+    (hStore : storeObject id (.reply r') st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k) := by
+  intro s k hk
+  by_cases hs : s = id
+  · subst hs
+    rw [storeObject_objects_eq st st' s (.reply r') hObjInv hStore, hPrev]
+    constructor
+    · intro h; cases h; exact absurd rfl (hk r')
+    · intro h; cases h; exact absurd rfl (hk r)
+  · rw [storeObject_objects_ne st st' id s (.reply r') hs hObjInv hStore]
+
+-- ----------------------------------------------------------------------------
+-- Conjunct 2 (`dualQueueSystemInvariant`) support: transport each sub-predicate
+-- through `reply_store_kind_agree`.  The three sub-predicates
+-- (`dualQueueEndpointWellFormed` per endpoint, `tcbQueueLinkIntegrity`,
+-- `tcbQueueChainAcyclic`) dereference only endpoints and TCBs — both non-reply.
+-- ----------------------------------------------------------------------------
+
+/-- WS-SM SM6.D: a `QueueNextPath` in the post-state transports back to the
+pre-state.  Each constructor carries a `.tcb` lookup, transported by
+`reply_store_kind_agree`; this gives `tcbQueueChainAcyclic` preservation. -/
+private theorem reply_store_QueueNextPath_backward
+    {st st' : SystemState}
+    (hAgree : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    {a b : SeLe4n.ThreadId} (hPath : QueueNextPath st' a b) :
+    QueueNextPath st a b := by
+  induction hPath with
+  | single src dst tcb hObj hNext =>
+      exact .single src dst tcb
+        ((hAgree src.toObjId (.tcb tcb) (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+        hNext
+  | cons src mid dst tcb hObj hNext _ ih =>
+      exact .cons src mid dst tcb
+        ((hAgree src.toObjId (.tcb tcb) (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+        hNext ih
+
+/-- WS-SM SM6.D: `intrusiveQueueWellFormed` for a fixed queue `q` transports
+forward across the `.reply` store.  The two boundary clauses witness `.tcb`
+objects (non-reply), transported via `reply_store_kind_agree`; the emptiness
+clause references only `q` itself, which is unchanged. -/
+private theorem reply_store_intrusiveQueueWellFormed_forward
+    {st st' : SystemState}
+    (hAgree : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    {q : IntrusiveQueue} (hWF : intrusiveQueueWellFormed q st) :
+    intrusiveQueueWellFormed q st' := by
+  obtain ⟨hEmpty, hHead, hTail⟩ := hWF
+  refine ⟨hEmpty, ?_, ?_⟩
+  · intro hd hHd
+    obtain ⟨tcb, hObj, hPrev⟩ := hHead hd hHd
+    exact ⟨tcb, (hAgree hd.toObjId (.tcb tcb)
+      (fun rr => by exact KernelObject.noConfusion)).mpr hObj, hPrev⟩
+  · intro tl hTl
+    obtain ⟨tcb, hObj, hNext⟩ := hTail tl hTl
+    exact ⟨tcb, (hAgree tl.toObjId (.tcb tcb)
+      (fun rr => by exact KernelObject.noConfusion)).mpr hObj, hNext⟩
+
+/-- WS-SM SM6.D: `tcbQueueLinkIntegrity` transports forward across the `.reply`
+store.  Every lookup it touches is a `.tcb` (non-reply). -/
+private theorem reply_store_tcbQueueLinkIntegrity_forward
+    {st st' : SystemState}
+    (hAgree : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hLI : tcbQueueLinkIntegrity st) :
+    tcbQueueLinkIntegrity st' := by
+  obtain ⟨hFwd, hRev⟩ := hLI
+  refine ⟨?_, ?_⟩
+  · intro a tcbA hA b hNext
+    have hA' := (hAgree a.toObjId (.tcb tcbA)
+      (fun rr => by exact KernelObject.noConfusion)).mp hA
+    obtain ⟨tcbB, hB, hBPrev⟩ := hFwd a tcbA hA' b hNext
+    exact ⟨tcbB, (hAgree b.toObjId (.tcb tcbB)
+      (fun rr => by exact KernelObject.noConfusion)).mpr hB, hBPrev⟩
+  · intro b tcbB hB a hPrev
+    have hB' := (hAgree b.toObjId (.tcb tcbB)
+      (fun rr => by exact KernelObject.noConfusion)).mp hB
+    obtain ⟨tcbA, hA, hANext⟩ := hRev b tcbB hB' a hPrev
+    exact ⟨tcbA, (hAgree a.toObjId (.tcb tcbA)
+      (fun rr => by exact KernelObject.noConfusion)).mpr hA, hANext⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D: storing a `.reply` object over a slot that already held a
+`.reply` preserves the full IPC invariant.  No `ipcInvariantFull` conjunct
+reads `.reply` objects, and the slot held a `.reply` both before and after, so
+every notification/TCB/endpoint/cnode/schedContext lookup is unchanged. -/
+theorem storeObject_reply_preserves_ipcInvariantFull
+    (st st' : SystemState) (id : SeLe4n.ObjId) (r r' : SeLe4n.Kernel.Reply)
+    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.reply r))
+    (hStore : storeObject id (.reply r') st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  -- The single uniform fact: non-reply lookups agree pre/post-store.
+  have hAgree := reply_store_kind_agree st st' id r r' hObjInv hPrev hStore
+  -- The scheduler is untouched by `storeObject`.
+  have hSched : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' id (.reply r') hStore
+  refine ⟨?c1, ?c2, ?c3, ?c4, ?c5, ?c6, ?c7, ?c8, ?c9, ?c10, ?c11, ?c12, ?c13,
+    ?c14, ?c15⟩
+  -- 1. ipcInvariant: reads `.notification` only.
+  · intro oid ntfn hObj
+    exact hInv.ipcInvariant oid ntfn ((hAgree oid (.notification ntfn)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+  -- 2. dualQueueSystemInvariant: per-endpoint well-formedness + link integrity
+  --    + chain acyclicity.  All lookups are `.endpoint`/`.tcb` (non-reply).
+  · obtain ⟨hEpWF, hLI, hAcyc⟩ := hInv.dualQueueSystemInvariant
+    refine ⟨?_, reply_store_tcbQueueLinkIntegrity_forward hAgree hLI, ?_⟩
+    · intro epId ep hEp
+      have hEp' := (hAgree epId (.endpoint ep)
+        (fun rr => by exact KernelObject.noConfusion)).mp hEp
+      have := hEpWF epId ep hEp'
+      -- `dualQueueEndpointWellFormed` on st' reduces via the same endpoint.
+      unfold dualQueueEndpointWellFormed at this ⊢
+      rw [hEp'] at this; rw [hEp]
+      obtain ⟨hSend, hRecv⟩ := this
+      exact ⟨reply_store_intrusiveQueueWellFormed_forward hAgree hSend,
+             reply_store_intrusiveQueueWellFormed_forward hAgree hRecv⟩
+    · intro tid hPath
+      exact hAcyc tid (reply_store_QueueNextPath_backward hAgree hPath)
+  -- 3. allPendingMessagesBounded: reads `.tcb` only.
+  · intro tid tcb msg hObj hMsg
+    exact hInv.allPendingMessagesBounded tid tcb msg
+      ((hAgree tid.toObjId (.tcb tcb)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj) hMsg
+  -- 4. badgeWellFormed: notification badges (reads `.notification`) +
+  --    capability badges (reads `.cnode`).
+  · obtain ⟨hNB, hCB⟩ := hInv.badgeWellFormed
+    refine ⟨?_, ?_⟩
+    · intro oid ntfn badge hObj hBadge
+      exact hNB oid ntfn badge ((hAgree oid (.notification ntfn)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
+    · intro oid cn slot cap badge hObj hLook hBadge
+      exact hCB oid cn slot cap badge ((hAgree oid (.cnode cn)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+  -- 5. waitingThreadsPendingMessageNone: reads `.tcb` only.
+  · intro tid tcb hObj
+    exact hInv.waitingThreadsPendingMessageNone tid tcb
+      ((hAgree tid.toObjId (.tcb tcb)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+  -- 6. endpointQueueNoDup: hypothesis `.endpoint`; body universally re-derives
+  --    a `.tcb` self-loop fact (transport that lookup with `.mp`).
+  · intro oid ep hObj
+    have hEp' := (hAgree oid (.endpoint ep)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj
+    obtain ⟨hSelf, hDisj⟩ := hInv.endpointQueueNoDup oid ep hEp'
+    refine ⟨?_, hDisj⟩
+    intro tid tcb hTcb
+    exact hSelf tid tcb ((hAgree tid.toObjId (.tcb tcb)
+      (fun rr => by exact KernelObject.noConfusion)).mp hTcb)
+  -- 7. ipcStateQueueMembershipConsistent: a `.reply` store is non-endpoint,
+  --    non-TCB, and the slot held `.reply r` before — exactly the precondition
+  --    of the reusable non-ep/non-tcb frame lemma.
+  · exact storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent
+      st st' id (.reply r')
+      hInv.ipcStateQueueMembershipConsistent hObjInv
+      (fun ep => by exact KernelObject.noConfusion)
+      (fun tcb => by exact KernelObject.noConfusion)
+      (fun ep => by rw [hPrev]; simp)
+      (fun tcb => by rw [hPrev]; simp)
+      hStore
+  -- 8. queueNextBlockingConsistent: two `.tcb` hypotheses only.
+  · intro a b tcbA tcbB hA hB hNext
+    exact hInv.queueNextBlockingConsistent a b tcbA tcbB
+      ((hAgree a.toObjId (.tcb tcbA)
+        (fun rr => by exact KernelObject.noConfusion)).mp hA)
+      ((hAgree b.toObjId (.tcb tcbB)
+        (fun rr => by exact KernelObject.noConfusion)).mp hB) hNext
+  -- 9. queueHeadBlockedConsistent: `.endpoint` + `.tcb` hypotheses only.
+  · intro epId ep hd tcb hEp hHd
+    exact hInv.queueHeadBlockedConsistent epId ep hd tcb
+      ((hAgree epId (.endpoint ep)
+        (fun rr => by exact KernelObject.noConfusion)).mp hEp)
+      ((hAgree hd.toObjId (.tcb tcb)
+        (fun rr => by exact KernelObject.noConfusion)).mp hHd)
+  -- 10. blockedThreadTimeoutConsistent: hypothesis `.tcb`; conclusion has a
+  --     `.schedContext` existence witness to transport forward.
+  · intro tid tcb scId hObj hBudget
+    have hTcb' := (hAgree tid.toObjId (.tcb tcb)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj
+    obtain ⟨⟨sc, hSc⟩, hState⟩ := hInv.blockedThreadTimeoutConsistent tid tcb scId
+      hTcb' hBudget
+    exact ⟨⟨sc, (hAgree scId.toObjId (.schedContext sc)
+      (fun rr => by exact KernelObject.noConfusion)).mpr hSc⟩, hState⟩
+  -- 11. donationChainAcyclic: two `.tcb` hypotheses only.
+  · intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+    exact hInv.donationChainAcyclic tid1 tid2 tcb1 tcb2 scId1 scId2
+      ((hAgree tid1.toObjId (.tcb tcb1)
+        (fun rr => by exact KernelObject.noConfusion)).mp h1)
+      ((hAgree tid2.toObjId (.tcb tcb2)
+        (fun rr => by exact KernelObject.noConfusion)).mp h2) hB1 hB2
+  -- 12. donationOwnerValid: hypothesis `.tcb`; conclusion has a `.schedContext`
+  --     witness and an owner `.tcb` witness to transport forward.
+  · intro tid tcb scId owner hObj hBind
+    have hTcb' := (hAgree tid.toObjId (.tcb tcb)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj
+    obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hOwnerBind, hOwnerIpc⟩⟩ :=
+      hInv.donationOwnerValid tid tcb scId owner hTcb' hBind
+    refine ⟨⟨sc, (hAgree scId.toObjId (.schedContext sc)
+      (fun rr => by exact KernelObject.noConfusion)).mpr hSc, hBound⟩,
+      ⟨ownerTcb, (hAgree owner.toObjId (.tcb ownerTcb)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hOwner,
+        hOwnerBind, hOwnerIpc⟩⟩
+  -- 13. passiveServerIdle: hypothesis `.tcb`; goal also reads `st'.scheduler`
+  --     (rewritten to `st.scheduler` via `storeObject_scheduler_eq`).
+  · intro tid tcb hObj hUnbound hNotInQ hNotCur
+    have hTcb' := (hAgree tid.toObjId (.tcb tcb)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj
+    rw [hSched] at hNotInQ hNotCur
+    exact hInv.passiveServerIdle tid tcb hTcb' hUnbound hNotInQ hNotCur
+  -- 14. donationBudgetTransfer: two `.tcb` hypotheses only.
+  · intro tid1 tid2 tcb1 tcb2 scId hObj1 hObj2 hNe hSc1 hSc2
+    exact hInv.donationBudgetTransfer tid1 tid2 tcb1 tcb2 scId
+      ((hAgree tid1.toObjId (.tcb tcb1)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj1)
+      ((hAgree tid2.toObjId (.tcb tcb2)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj2) hNe hSc1 hSc2
+  -- 15. blockedOnReplyHasTarget: reads `.tcb` only.
+  · intro tid tcb endpointId replyTarget hObj hIpc
+    exact hInv.blockedOnReplyHasTarget tid tcb endpointId replyTarget
+      ((hAgree tid.toObjId (.tcb tcb)
+        (fun rr => by exact KernelObject.noConfusion)).mp hObj) hIpc
+
 end SeLe4n.Kernel
