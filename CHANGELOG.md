@@ -1,3 +1,30 @@
+## v0.31.78 — Reply objects (seL4-MCS): `ReplyId` typed identifier (slice A1)
+
+First slice of the workstream promoting the implicit `Call`/`Reply` IPC linkage
+into a first-class **Reply kernel object** with single-use reply capabilities, to
+the full seL4-MCS standard (the donated SchedContext re-homes onto the Reply +
+reply-stack).  Today the reply linkage is the caller TCB's `blockedOnReply`
+state, the confused-deputy gate is a raw `replier == expected` ThreadId compare,
+and single-use is emergent; the workstream replaces that with a genuine
+single-use, revocable capability to a real object.  This slice lands only the
+foundational typed identifier so the later slices build on it incrementally
+rather than as one monolithic model change.
+
+**`ReplyId`** (`SeLe4n/Prelude.lean`).  A wrapper `structure ReplyId where
+val : Nat` mirroring `SchedContextId`: the full helper surface (`ofNat` /
+`toNat` / `toObjId` / `ofObjId` / `ofObjIdChecked` / `isReserved` / `sentinel` /
+`valid`), the round-trip and injectivity lemmas (`toNat_ofNat`, `ofNat_toNat`,
+`toObjId_injective`, `ofObjIdChecked_eq_some_of_nonzero`,
+`ofObjIdChecked_sentinel`), and the `Hashable` / `LawfulHashable` / `EquivBEq` /
+`LawfulBEq` / `ToString` instances.  `ReplyId.toObjId` shares the `ObjId`
+namespace via the identity mapping, as the other typed identifiers do; the
+object store's functional-map property keeps the kinds disjoint.
+
+No transition, invariant, or object-kind change yet — `ReplyId` is unreferenced
+this slice, so the trace fixture is byte-identical and every existing proof is
+untouched.  The `KernelObject.reply` variant, the `Reply` structure, and
+`getReply?` follow in slice A2.
+
 ## v0.31.77 — WS-SM SM6.C: reply path across cores (live `.reply` / `.replyRecv` cross-core dispatch)
 
 The SM6.C deliverable of the WS-SM Phase 6 cross-core IPC workstream: the reply
