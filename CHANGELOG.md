@@ -1,3 +1,35 @@
+## v0.31.86 — Reply objects (seL4-MCS): TCB-store frame + linkage-op ipcInvariantFull preservation (store B + compose)
+
+Completes the linkage-op invariant preservation
+(`SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`): the
+TCB-`replyObject` store frame (store B) and the composition of stores A+B into
+full `ipcInvariantFull` preservation of both reply-linkage operations.
+Standalone (no `sorry`; axioms = `propext` / `Classical.choice` / `Quot.sound`
+for all three theorems).
+
+**Store B** `storeObject_tcb_replyObject_preserves_ipcInvariantFull` — storing a
+`.tcb` that differs from the slot's previous TCB only in `replyObject` preserves
+all 15 conjuncts.  No conjunct reads `replyObject`, so every field a conjunct
+does read (ipcState, pendingMessage, queueNext/Prev/PPrev, schedContextBinding,
+timeoutBudget) is unchanged.  Three helpers: a non-`.tcb` lookup-agreement iff
+(`tcb_replyObject_store_nonTcb_agree`) plus forward/backward TCB helpers that
+expose the read-field equalities (all `rfl` under the `replyObject` update); the
+conjunct-2 queue sub-predicates and the conjunct-7 blocking arms transport
+through them.
+
+**Composition** `linkCallerReply_preserves_ipcInvariantFull` /
+`consumeCallerReply_preserves_ipcInvariantFull` — each op is a `.reply` store
+(B1 `linkReply` / `consumeReply`) followed by a caller-TCB `replyObject` store,
+so preservation chains store A (the reply write) and store B (the TCB write),
+threading `objects.invExt` via `linkReply_preserves_objects_invExt` /
+`consumeReply_preserves_objects_invExt`.  `consumeReply`'s reply-absent path
+carries `hInv` through unchanged; the caller-absent TCB leg is the identity.
+This is the preservation the live `.call` / `.reply` dispatch (Phase C-wire)
+needs once it composes these ops after `endpointCall` / `endpointReply`.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical
+(233/233).
+
 ## v0.31.85 — Reply objects (seL4-MCS): reply-store ipcInvariantFull frame (store A)
 
 First half of the linkage-op invariant preservation: storing a `.reply` object
