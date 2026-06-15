@@ -1,3 +1,26 @@
+## v0.31.84 — Reply objects (seL4-MCS): Reply→TCB back-link post-conditions
+
+The Reply→TCB direction of the caller↔reply link, completing the post-condition
+pair the Phase-D `replyCallerLinkage` invariant reads (`SeLe4n/Model/State.lean`).
+Both proved standalone (no `sorry`); trace fixture **byte-identical** (233/233).
+
+- `linkCallerReply_getReply?_caller_some` — on success the reply's `caller`
+  points at the linking thread.  `linkReply` sets `reply.caller := some caller`;
+  the subsequent caller-TCB store lands at a slot distinct from the reply
+  (`getTcb?_getReply?_slot_ne`), so it frames past (`storeObject_objects_ne`) and
+  the reply is still observed with `caller = some caller`.
+- `consumeCallerReply_getReply?_caller_none` — on a present reply the `caller` is
+  cleared; the TCB leg frames past identically, surfacing the dynamic single-use
+  barrier as a post-condition.
+
+With the C-preserve forward-link post-conditions (`linkCallerReply_replyObject_some`
+/ `consumeCallerReply_replyObject_none`) these pin **both** halves of the
+bidirectional TCB↔Reply link to the transition behaviour.  The full
+`ipcInvariantFull` frame preservation of the two linkage ops lands as the next
+slice.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical.
+
 ## v0.31.83 — Reply objects (seL4-MCS): linkage-op proof foundation (slice C-preserve)
 
 The reusable proof foundation under the C-link linkage operations: object-store

@@ -2524,6 +2524,75 @@ theorem consumeCallerReply_replyObject_none (st : SystemState) (caller : SeLe4n.
         rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore
       rw [hRes] at hGetT; injection hGetT with hEq; rw [← hEq]
 
+/-- WS-SM SM6.D: `linkCallerReply` establishes the Reply→TCB back-link — on
+success the reply's `caller` points at the linking thread.  `linkReply` sets
+`reply.caller := some caller`; the subsequent caller-TCB store lands at a slot
+distinct from the reply (`getTcb?_getReply?_slot_ne`), so it frames past and the
+reply is still observed with `caller = some caller`.  Together with
+`linkCallerReply_replyObject_some` this pins both halves of the bidirectional
+TCB↔Reply link the Phase-D `replyCallerLinkage` invariant reads. -/
+theorem linkCallerReply_getReply?_caller_some (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) (hFree : r.caller = none) :
+    ∀ result, linkCallerReply caller rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := some caller } := by
+  intro result hRun
+  unfold linkCallerReply at hRun
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hRun
+    have hR1 : st1.getReply? rid = some { r with caller := some caller } :=
+      linkReply_getReply?_caller_some st rid caller r hObjInv hGet hFree st1 hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hRun
+    | some tcb =>
+      simp only [hT] at hRun
+      have hInv1 : st1.objects.invExt :=
+        linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+      have hNe : caller.toObjId ≠ rid.toObjId :=
+        getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := some caller } hT hR1
+      have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
+        storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
+      rw [getReply?_eq_some_iff] at hR1 ⊢
+      rw [hFrame]; exact hR1
+
+/-- WS-SM SM6.D: `consumeCallerReply` tears down the Reply→TCB back-link — on a
+present reply the reply's `caller` is cleared.  `consumeReply` clears it; the
+TCB leg (when the caller is present) stores at a distinct slot
+(`getTcb?_getReply?_slot_ne`) and frames past, so the reply is observed with
+`caller = none` — the dynamic single-use barrier surfaced as a post-condition. -/
+theorem consumeCallerReply_getReply?_caller_none (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) :
+    ∀ result, consumeCallerReply caller rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := none } := by
+  intro result hRun
+  unfold consumeCallerReply at hRun
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hRun
+    have hR1 : st1.getReply? rid = some { r with caller := none } :=
+      consumeReply_getReply?_caller_none st rid r hObjInv hGet st1 hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hRun
+      subst hRun
+      exact hR1
+    | some tcb =>
+      simp only [hT] at hRun
+      have hInv1 : st1.objects.invExt :=
+        consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+      have hNe : caller.toObjId ≠ rid.toObjId :=
+        getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := none } hT hR1
+      have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
+        storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
+      rw [getReply?_eq_some_iff] at hR1 ⊢
+      rw [hFrame]; exact hR1
+
 /-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
 `some ep` iff the store holds exactly `KernelObject.endpoint ep` at
 `id`. -/
