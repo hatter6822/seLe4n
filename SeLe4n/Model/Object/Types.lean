@@ -773,6 +773,22 @@ structure TCB where
       operation (SM5.C.8) and the boot-time default-affinity wiring
       (SM5.C.9). -/
   cpuAffinity : Option SeLe4n.Kernel.Concurrency.CoreId := none
+  /-- WS-SM Reply objects (seL4-MCS): link to the first-class `Reply` object
+      that records this thread's outstanding `Call`.  Mirrors seL4's
+      `tcb->tcbReply`.  Set when the thread issues a `Call` (carried unchanged
+      through the `blockedOnCall → blockedOnReply` transition); cleared when the
+      reply is delivered/consumed.
+
+      Stored on the TCB rather than inside the `blockedOnReply` `ipcState`
+      payload so the `ThreadIpcState` arity is unchanged — the dozens of
+      exhaustive `match`/`cases` over `ThreadIpcState` stay byte-for-byte intact,
+      and `{ tcb with … }` record updates that touch `ipcState` do not have to
+      thread a reply id.  This is also the seL4-faithful layout (the kernel links
+      a thread to its reply via `tcb->tcbReply`, not via the blocking-state word).
+
+      `none` = no outstanding reply object.  The default keeps every existing TCB
+      construction and the boot trace byte-identical. -/
+  replyObject : Option SeLe4n.ReplyId := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -805,7 +821,11 @@ instance : BEq TCB where
     -- WS-SM SM5.B.4: per-TCB CPU affinity participates in structural equality.
     -- `Option CoreId` (`CoreId = Fin numCores`) derives `DecidableEq`, so its
     -- `==` agrees with `=`.
-    a.cpuAffinity == b.cpuAffinity
+    a.cpuAffinity == b.cpuAffinity &&
+    -- WS-SM Reply objects: per-TCB reply-object link participates in structural
+    -- equality.  `Option ReplyId` derives `DecidableEq`, so its `==` agrees
+    -- with `=`.
+    a.replyObject == b.replyObject
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -871,13 +891,15 @@ theorem TCB.ext {a b : TCB}
     -- WS-SM SM3.A.1: extensionality covers the per-TCB lock field.
     (hLock : a.lock = b.lock)
     -- WS-SM SM5.B.4: extensionality covers the per-TCB CPU-affinity field.
-    (hCpuAff : a.cpuAffinity = b.cpuAffinity) :
+    (hCpuAff : a.cpuAffinity = b.cpuAffinity)
+    -- WS-SM Reply objects: extensionality covers the per-TCB reply-object link.
+    (hReply : a.replyObject = b.replyObject) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff⟩
+         hLock, hCpuAff, hReply⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

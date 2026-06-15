@@ -1,3 +1,38 @@
+## v0.31.81 — Reply objects (seL4-MCS): TCB→Reply link field (slice C2)
+
+Phase C's migration seam: the per-thread link from a TCB to its outstanding
+**Reply object**, added standalone-additive so the Phase-C `Call`/`Reply`
+re-base can populate it path-by-path while every un-migrated path keeps
+authorizing via the existing `blockedOnReply` `replyTarget`.  No transition
+writes the field yet, so the trace fixture is **byte-identical** (233/233).
+
+**`TCB.replyObject`** (`SeLe4n/Model/Object/Types.lean`).  A new
+`replyObject : Option SeLe4n.ReplyId := none` field on the `TCB` structure —
+the seL4-faithful `tcb->tcbReply` layout: a thread links to its reply object
+**directly**, not through the IPC blocking-state word.  Set when a thread
+issues a `Call` (and carried unchanged through the
+`blockedOnCall → blockedOnReply` transition); cleared when the reply is
+delivered/consumed.  `none` = no outstanding reply.
+
+**Why a TCB field, not a `blockedOnReply` constructor payload.**  Putting the
+`ReplyId` inside the `blockedOnReply` constructor would change
+`ThreadIpcState`'s arity and cascade through dozens of exhaustive
+`match`/`cases` sites and every `rfl`/`simp` proof that reduces
+`blockedOnReply` (`blockingServer` / `blockingChain` / `tcbReplyServer` /
+`timeoutThread` and their consumers across `BlockingGraph` → `Timeout` →
+`Core` → the IPC-invariant files).  A *structure* field with a default is
+non-breaking for record syntax (`{ tcb with … }` and named constructions are
+unchanged), so the `ThreadIpcState` arity — and the whole IPC blocking-graph
+proof surface — stays byte-for-byte intact.  This is also more seL4-faithful
+(the real kernel uses `tcb->tcbReply`).
+
+The migration target invariant `replyCallerLinkage` (Phase C/D) reads
+`tcb.replyObject = some rid ↔ reply.caller = some tid`.  The manual `BEq TCB`
+(24 → 25 conjuncts) and `TCB.ext` extensionality lemma gain the matching
+`replyObject` / `hReply` field; `Option ReplyId` derives `DecidableEq`, so its
+`==` agrees with `=`.  Production `lake build` + the staged anchor + Tier 0/2/3
+green; trace byte-identical.
+
 ## v0.31.80 — Reply objects (seL4-MCS): verified reply mutators (slice B1)
 
 Phase B prep for the first-class Reply object: the two core, **verified** reply-object
