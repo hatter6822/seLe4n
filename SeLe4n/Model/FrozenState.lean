@@ -230,7 +230,8 @@ instance : Repr FrozenVSpaceRoot where
 
 /-- Q5-B: Frozen kernel object — mirrors `KernelObject` but with frozen
 representations for CNode and VSpaceRoot. TCB, Endpoint, Notification,
-and UntypedObject are unchanged (they contain no embedded hash tables). -/
+UntypedObject, SchedContext, and Reply are unchanged (they contain no
+embedded hash tables). -/
 inductive FrozenKernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)
@@ -239,6 +240,7 @@ inductive FrozenKernelObject where
   | vspaceRoot (v : FrozenVSpaceRoot)
   | untyped (u : UntypedObject)
   | schedContext (sc : SeLe4n.Kernel.SchedContext)
+  | reply (r : SeLe4n.Kernel.Reply)
 
 /-- Q5-B: Extract the object type from a frozen kernel object. -/
 def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
@@ -249,6 +251,7 @@ def FrozenKernelObject.objectType : FrozenKernelObject → KernelObjectType
   | .vspaceRoot _ => .vspaceRoot
   | .untyped _ => .untyped
   | .schedContext _ => .schedContext
+  | .reply _ => .reply
 
 /-- Q5-B: Frozen kernel object preserves the type tag of the source object. -/
 theorem FrozenKernelObject.objectType_tcb (t : TCB) :
@@ -265,6 +268,8 @@ theorem FrozenKernelObject.objectType_untyped (u : UntypedObject) :
     (FrozenKernelObject.untyped u).objectType = .untyped := rfl
 theorem FrozenKernelObject.objectType_schedContext (sc : SeLe4n.Kernel.SchedContext) :
     (FrozenKernelObject.schedContext sc).objectType = .schedContext := rfl
+theorem FrozenKernelObject.objectType_reply (r : SeLe4n.Kernel.Reply) :
+    (FrozenKernelObject.reply r).objectType = .reply := rfl
 
 /-- WS-SM SM3.A.10 audit-pass-2: per-variant lock-state projection on
 `FrozenKernelObject`, mirroring `KernelObject.objectLockOf`
@@ -288,6 +293,7 @@ def FrozenKernelObject.objectLockOf :
   | .vspaceRoot v   => v.lock
   | .untyped u      => u.lock
   | .schedContext s => s.lock
+  | .reply r        => r.lock
 
 /-- WS-SM SM3.A.10 audit-pass-2: per-variant unfold lemma for
 `FrozenKernelObject.objectLockOf` on `.tcb`. -/
@@ -323,6 +329,11 @@ def FrozenKernelObject.objectLockOf :
 `FrozenKernelObject.objectLockOf` on `.schedContext`. -/
 @[simp] theorem FrozenKernelObject.objectLockOf_schedContext (s : SeLe4n.Kernel.SchedContext) :
     (FrozenKernelObject.schedContext s).objectLockOf = s.lock := rfl
+
+/-- WS-SM SM6.D: per-variant unfold lemma for
+`FrozenKernelObject.objectLockOf` on `.reply`. -/
+@[simp] theorem FrozenKernelObject.objectLockOf_reply (r : SeLe4n.Kernel.Reply) :
+    (FrozenKernelObject.reply r).objectLockOf = r.lock := rfl
 
 -- ============================================================================
 -- Q5-B: FrozenSchedulerState
@@ -465,6 +476,7 @@ def freezeObject (obj : KernelObject) : FrozenKernelObject :=
   | .vspaceRoot vs => .vspaceRoot (freezeVSpaceRoot vs)
   | .untyped u => .untyped u
   | .schedContext sc => .schedContext sc
+  | .reply r => .reply r
 
 /-- Q5-C: `freezeObject` preserves the object type tag. -/
 theorem freezeObject_preserves_type (obj : KernelObject) :

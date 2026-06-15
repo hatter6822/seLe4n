@@ -1,3 +1,46 @@
+## v0.31.79 — Reply objects (seL4-MCS): `KernelObject.reply` variant + reply lock (slice A2)
+
+Second slice of the first-class Reply-object workstream: the `Reply` structure
+and the `KernelObject.reply` / `KernelObjectType.reply` (tag 7) variant land,
+making Reply a real kernel object.  No IPC transition constructs a `.reply` yet,
+so the trace fixture is **byte-identical** and the reply linkage is still the
+caller TCB's `blockedOnReply` state (re-based in slice C); this slice is the
+pure model-variant addition the SM3.A.5 "Reply N/A" tripwires were planted to
+force.
+
+**`Reply` structure** (`SeLe4n/Model/Object/Reply.lean`, new).  Mirrors
+`SchedContext`: `replyId` + the (Phase-E) MCS linkage fields `caller` /
+`donatedSc` / `prev` (all `none` for now) + a per-object `lock : RwLockState`.
+`Reply.empty` / `wellFormed` / `Inhabited` / manual `BEq` (lock-state-aware, like
+`BEq SchedContext`).  `getReply?` + `getReply?_eq_some_iff`
+(`SeLe4n/Model/State.lean`) clone `getSchedContext?`.
+
+**Variant threaded through the model.**  `KernelObject` (`BEq`, `objectType`,
+`objectLockOf`, `wellFormed`, `lockKind`, `updateLock`), `FrozenKernelObject`
+(+freeze mirror), `objectOfKernelType` (retype → empty Reply), `projectKernelObject`,
+`StateBuilder`, and ~250 exhaustive-match arms across the IPC / scheduler /
+capability / lifecycle / platform proof surface each gain the mechanical `.reply`
+case (a non-scheduling object, treated like `schedContext` in the trivial arms).
+
+**Reply lock is now first-class (SM3.B/C).**  Because `lookup_some_of_kindMatch`
+quantifies over every `KernelObject`, the new variant forces the reply lock to be
+genuinely modeled at hierarchy level 6: `KernelObject.lockKind .reply ↦
+LockKind.reply`; `LockId.lookup` dispatches the `.reply` kind through `getReply?`;
+`lockHeld` / `acquireLockOnObject` / `releaseLockOnObject` and the SM3
+serializability / frame lemmas treat `.reply` as a modeled kind rather than the
+former N/A no-op.  The planted tripwires flip accordingly:
+`variants_count_exactly_seven` → `variants_count_exactly_eight` (+ `variants_total`,
+`lockKind_in_modeledKinds`); `lockKind_ne_reply` is removed (`.reply` is reachable);
+`lookup_reply` / `lockHeld_reply` / `acquireLockOnObject_reply` /
+`releaseLockOnObject_reply` are repurposed from their N/A `= none` / `= s` forms to
+the positive dispatch / absence-conditioned forms (names preserved so the
+LockSet inventories and Tier-3 surface checks keep resolving).
+
+Production `lake build`, the staged-module anchor (`Platform/Staged.lean`, 56
+modules), and the trace/negative-state suites are green; trace byte-identical.
+The `CapTarget.replyCap` payload swap, reply lifecycle/caps, and the IPC linkage
+re-base follow in slices B / C.
+
 ## v0.31.78 — Reply objects (seL4-MCS): `ReplyId` typed identifier (slice A1)
 
 First slice of the workstream promoting the implicit `Call`/`Reply` IPC linkage

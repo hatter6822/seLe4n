@@ -3193,7 +3193,8 @@ theorem collectQueueMembers_some_start_nonEmpty_result
     | some (KernelObject.cnode _)
     | some (KernelObject.vspaceRoot _)
     | some (KernelObject.untyped _)
-    | some (KernelObject.schedContext _) =>
+    | some (KernelObject.schedContext _)
+    | some (KernelObject.reply _) =>
       rw [hLookup] at hWalk
       simp at hWalk; subst result; simp
 
@@ -3230,7 +3231,8 @@ theorem collectQueueMembers_head_is_start
     | some (KernelObject.cnode _)
     | some (KernelObject.vspaceRoot _)
     | some (KernelObject.untyped _)
-    | some (KernelObject.schedContext _) =>
+    | some (KernelObject.schedContext _)
+    | some (KernelObject.reply _) =>
       rw [hLookup] at hWalk
       simp at hWalk; subst result; simp
 

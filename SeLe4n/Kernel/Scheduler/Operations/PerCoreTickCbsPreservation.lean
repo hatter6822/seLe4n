@@ -259,7 +259,7 @@ theorem endpointQueueRemove_machine
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep

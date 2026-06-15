@@ -280,7 +280,7 @@ theorem dualQueueEndpointWellFormed_of_getElem_eq {s1 s2 : SystemState}
     | endpoint ep =>
       exact fun h => ⟨intrusiveQueueWellFormed_of_getElem_eq hEq h.1,
                       intrusiveQueueWellFormed_of_getElem_eq hEq h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
       exact fun _ => trivial
 
 /-- WS-SM SM6.A.1: the dual-queue system invariant is preserved by any state

@@ -172,9 +172,9 @@ def lockHeld (c : CoreId) (l : LockId) (mode : AccessMode)
     (s : SystemState) : Prop :=
   match l.kind with
   | .objStore => s.objStoreLock.coreHolds c mode
-  | .reply | .page => False   -- SM3.A.5 / SM3.A.8 N/A
+  | .page => False   -- SM3.A.8 N/A (pages inline in VSpaceRoot.mappings)
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext =>
+  | .vspaceRoot | .untyped | .schedContext | .reply =>
       match LockId.lookup s l with
       | some (lockState, _) => lockState.coreHolds c mode
       | none => False
@@ -187,12 +187,19 @@ instance lockHeld_decidable (c : CoreId) (l : LockId) (mode : AccessMode)
   cases l.kind <;> first | exact inferInstance |
     (cases LockId.lookup s l <;> exact inferInstance)
 
-/-- WS-SM SM3.C.4: `lockHeld` on `.reply` is always `False`. -/
-@[simp] theorem lockHeld_reply (c : CoreId) (oid : SeLe4n.ObjId)
-    (mode : AccessMode) (s : SystemState) :
+/-- WS-SM SM6.D: the `.reply` lock is not held when no Reply object is
+present at `oid` — `getReply?` misses, so `lockHeld` falls through the
+modeled (lookup) branch to `False`.  Reply is now a first-class kernel
+object, so the former unconditional `¬ lockHeld .reply` is replaced by this
+absence-conditioned form; once a Reply object is present and its lock
+acquired, the lock can be held. -/
+theorem lockHeld_reply (c : CoreId) (oid : SeLe4n.ObjId)
+    (mode : AccessMode) (s : SystemState)
+    (hAbsent : s.getReply? ⟨oid.val⟩ = none) :
     ¬ lockHeld c ⟨.reply, oid⟩ mode s := by
-  unfold lockHeld
-  cases mode <;> exact id
+  have hLook : LockId.lookup s ⟨.reply, oid⟩ = none := by
+    rw [LockId.lookup_reply, hAbsent]; rfl
+  simp [lockHeld, hLook]
 
 /-- WS-SM SM3.C.4: `lockHeld` on `.page` is always `False`. -/
 @[simp] theorem lockHeld_page (c : CoreId) (oid : SeLe4n.ObjId)
@@ -321,6 +328,11 @@ theorem default_getSchedContext?_none (scId : SeLe4n.SchedContextId) :
   unfold SystemState.getSchedContext?
   rw [default_objects_get?_none scId.toObjId]
 
+theorem default_getReply?_none (replyId : SeLe4n.ReplyId) :
+    (default : SystemState).getReply? replyId = none := by
+  unfold SystemState.getReply?
+  rw [default_objects_get?_none replyId.toObjId]
+
 /-- WS-SM SM3.C.4: on the default SystemState, `LockId.lookup` returns
 `none` for every modeled-kind LockId (the underlying object is
 absent), and trivially returns `none` for the `.objStore` / `.reply` /
@@ -331,7 +343,7 @@ theorem default_lookup_none (l : LockId) :
   cases l.kind <;> simp [default_getTcb?_none, default_getEndpoint?_none,
     default_getNotification?_none, default_getCNode?_none,
     default_getVSpaceRoot?_none, default_getUntyped?_none,
-    default_getSchedContext?_none]
+    default_getSchedContext?_none, default_getReply?_none]
 
 /-- WS-SM SM3.C.4: on the default SystemState (every lock `.unheld`),
 NO core holds any lock.
@@ -375,14 +387,11 @@ theorem lockSetHeld_default_iff_empty (c : CoreId) (S : LockSet) :
         | write =>
           rw [hM] at hHead
           simp [RwLockState.unheld] at hHead
-      | reply =>
-        rw [hK] at hHead
-        exact hHead
       | page =>
         rw [hK] at hHead
         exact hHead
       | tcb | endpoint | notification | cnode
-      | vspaceRoot | untyped | schedContext =>
+      | vspaceRoot | untyped | schedContext | reply =>
         all_goals (
           rw [hK] at hHead
           simp only at hHead
@@ -424,10 +433,14 @@ theorem LockId.lookup_eq_of_objects_getElem?_eq (s s' : SystemState) (l : LockId
   have hObjIdSc : (⟨l.objId.val⟩ : SeLe4n.SchedContextId).toObjId = l.objId := by
     show SeLe4n.ObjId.ofNat l.objId.val = l.objId
     exact SeLe4n.ObjId.ofNat_toNat l.objId
+  have hObjIdRp : (⟨l.objId.val⟩ : SeLe4n.ReplyId).toObjId = l.objId := by
+    show SeLe4n.ObjId.ofNat l.objId.val = l.objId
+    exact SeLe4n.ObjId.ofNat_toNat l.objId
   unfold LockId.lookup
   cases l.kind with
   | objStore => rfl
-  | reply => rfl
+  | reply =>
+      simp only [SystemState.getReply?, hObjIdRp, h]
   | page => rfl
   | tcb =>
       simp only [SystemState.getTcb?, hObjIdTcb, h]
@@ -475,10 +488,9 @@ theorem acquireLockOnObject_objects_getElem?_of_ne (s : SystemState)
   unfold acquireLockOnObject
   cases l.kind with
   | objStore => rfl
-  | reply => rfl
   | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_objects_getElem?_of_ne s l _ oid hExt hNe
 
 /-- WS-SM SM3.C.8 foundation: `updateObjectLockAt` preserves the RHTable
@@ -508,10 +520,9 @@ theorem acquireLockOnObject_preserves_invExt (s : SystemState)
   unfold acquireLockOnObject
   cases l.kind with
   | objStore => exact hExt
-  | reply => exact hExt
   | page => exact hExt
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
 
 /-- WS-SM SM3.C.8 foundation: after `updateObjectLockAt s l op` on a present,
@@ -580,20 +591,18 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
   -- The lock id names a modeled kind (its kind is the kind of a real object).
   have hNeObjStore : l.kind ≠ .objStore := by
     rw [← hKind]; exact KernelObject.lockKind_ne_objStore o
-  have hNeReply : l.kind ≠ .reply := by
-    rw [← hKind]; exact KernelObject.lockKind_ne_reply o
   have hNePage : l.kind ≠ .page := by
     rw [← hKind]; exact KernelObject.lockKind_ne_page o
-  -- The modeled branch of `acquireLockOnObject` is `updateObjectLockAt`.
+  -- The modeled branch of `acquireLockOnObject` is `updateObjectLockAt`
+  -- (WS-SM SM6.D: `.reply` is now a modeled kind, not an N/A no-op).
   have hAcq : acquireLockOnObject s core l mode
       = updateObjectLockAt s l (mode.toAcquireOp core) := by
     unfold acquireLockOnObject
     cases hk : l.kind with
     | objStore => exact absurd hk hNeObjStore
-    | reply => exact absurd hk hNeReply
     | page => exact absurd hk hNePage
     | tcb | endpoint | notification | cnode
-    | vspaceRoot | untyped | schedContext => all_goals rfl
+    | vspaceRoot | untyped | schedContext | reply => all_goals rfl
   rw [hAcq]
   -- The post-acquire lookup recovers the lock-advanced object.
   have hLookup' := updateObjectLockAt_lookup_self s l (mode.toAcquireOp core) o
@@ -601,10 +610,9 @@ theorem acquireLockOnObject_establishes_lockHeld_modeled
   unfold lockHeld
   cases hk : l.kind with
   | objStore => exact absurd hk hNeObjStore
-  | reply => exact absurd hk hNeReply
   | page => exact absurd hk hNePage
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
       all_goals (
         rw [hLookup']
         show (KernelObject.objectLockOf

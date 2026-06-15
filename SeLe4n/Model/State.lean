@@ -2024,7 +2024,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
     | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
-    | schedContext _ =>
+    | schedContext _ | reply _ =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
@@ -2047,6 +2047,7 @@ theorem storeObject_asidTable_non_vspaceRoot
   | notification _ => rfl
   | untyped _ => rfl
   | schedContext _ => rfl
+  | reply _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=
@@ -2136,6 +2137,13 @@ def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
   match st.objects[scId.toObjId]? with
   | some (.schedContext sc) => some sc
   | _                       => none
+
+/-- WS-SM SM6.D: Read a Reply from the global object store. -/
+def getReply? (st : SystemState) (replyId : SeLe4n.ReplyId)
+    : Option SeLe4n.Kernel.Reply :=
+  match st.objects[replyId.toObjId]? with
+  | some (.reply r) => some r
+  | _               => none
 
 /-- AL2-A: Read an Endpoint from the global object store. -/
 def getEndpoint? (st : SystemState) (id : SeLe4n.ObjId) : Option Endpoint :=
@@ -2285,6 +2293,21 @@ theorem getSchedContext?_eq_some_iff (st : SystemState) (scId : SeLe4n.SchedCont
   unfold getSchedContext?
   split
   · rename_i sc' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- WS-SM SM6.D: Unfolding lemma — `getReply?` returns `some r` iff the store
+holds exactly `KernelObject.reply r` at `replyId.toObjId`. -/
+theorem getReply?_eq_some_iff (st : SystemState) (replyId : SeLe4n.ReplyId)
+    (r : SeLe4n.Kernel.Reply) :
+    st.getReply? replyId = some r ↔
+      st.objects[replyId.toObjId]? = some (.reply r) := by
+  unfold getReply?
+  split
+  · rename_i r' heq; constructor
     · intro h; cases h; exact heq
     · intro h; rw [h] at heq; cases heq; rfl
   · rename_i hne; constructor

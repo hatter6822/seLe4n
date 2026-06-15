@@ -13,7 +13,7 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.31.78` |
+| Version | `0.31.79` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | refresh via `scripts/generate_codebase_map.py` (regenerated each phase) |
 | Test LoC | refresh via `scripts/generate_codebase_map.py` (regenerated each phase) |

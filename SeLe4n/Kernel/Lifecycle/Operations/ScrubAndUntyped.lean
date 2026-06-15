@@ -46,6 +46,7 @@ def objectTypeAllocSize : KernelObjectType → Nat
   | .vspaceRoot => 4096
   | .untyped => 4096
   | .schedContext => 256
+  | .reply => 64
 
 /-- S5-G: Predicate for object types that require page-aligned allocation bases.
 VSpace roots and CNodes back page-table structures on ARM64, so their backing
@@ -243,7 +244,7 @@ theorem retypeFromUntyped_capacity_gated
       split at hOk
       · simp at hOk
       · rename_i hLt; exact Nat.lt_of_not_le hLt
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ =>
       simp at hOk
 
 /-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
@@ -280,7 +281,7 @@ theorem retypeFromUntyped_childId_fresh
           cases hColl : st.objects[childId]?.isSome
           · rfl
           · simp [hColl] at hOk
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ =>
       simp at hOk
 
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
@@ -314,6 +315,7 @@ theorem retypeFromUntyped_ok_decompose
       | cnode _ => simp [hObj] at hStep
       | vspaceRoot _ => simp [hObj] at hStep
       | schedContext _ => simp [hObj] at hStep
+      | reply _ => simp [hObj] at hStep
       | untyped ut =>
           simp only [hObj] at hStep
           -- S4-B: Discharge capacity check
@@ -465,6 +467,7 @@ theorem retypeFromUntyped_error_typeMismatch
   | cnode _ => simp [hObj]
   | vspaceRoot _ => simp [hObj]
   | schedContext _ => simp [hObj]
+  | reply _ => simp [hObj]
 
 
 /-- WS-F2: `retypeFromUntyped` returns `untypedAllocSizeTooSmall` when allocSize is insufficient. -/

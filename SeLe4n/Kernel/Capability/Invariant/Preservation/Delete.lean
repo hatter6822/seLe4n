@@ -45,7 +45,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hStep
       | cnode preCn =>
         simp [hPre] at hStep
         cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
@@ -110,7 +110,7 @@ theorem cspaceDeleteSlotCore_preserves_cdtNodeSlot
   | none => simp [hPre] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hStep
     | cnode preCn =>
       simp [hPre] at hStep
       cases hStore : storeObject addr.cnode (.cnode (preCn.remove addr.slot)) st with
@@ -172,7 +172,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
       | none => simp [hLookup2, hPre] at hStep
       | some preObj =>
         cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hLookup2, hPre] at hStep
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hLookup2, hPre] at hStep
         | cnode preCn =>
           simp [hLookup2, hPre] at hStep
           cases hStore : storeObject addr.cnode (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) st with

@@ -645,7 +645,7 @@ private theorem chooseBestRunnableBy_some_ne_ok_none
           · simp only [hElig, hBetter, if_true] at h; exact ih _ h
         · simp only [hElig] at h; exact ih _ h
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ => rw [hObj] at h; simp at h
 
 /-- SM5.A.4 helper: a fold starting from `none` that returns `.ok none`
 witnesses that **every** scanned TCB was ineligible.  (A non-TCB entry
@@ -687,7 +687,7 @@ theorem chooseBestRunnableBy_none_no_eligible
           · simp only [hHdElig] at hHdReduce
             exact ih hHdReduce tid hMemTl tcb hObjTid
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
+        | schedContext _ | reply _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
 
 /-- SM5.A.4 helper: a fold over a list whose every entry resolves to a TCB
 never errors — it returns `.ok _`.  This is the "no `schedulerInvariant`
@@ -763,7 +763,7 @@ private theorem chooseBestRunnableBy_result_mem_aux
           · exact Or.inl (List.mem_cons_of_mem _ hTl)
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ => rw [hObj] at h; simp at h
 
 /-- SM5.A.4 / SM5.A.6 helper: selection soundness for a `none`-seeded
 fold — a recorded candidate is a member of the scanned list. -/
@@ -1267,7 +1267,7 @@ theorem chooseBestRunnableEffective_objects_congr (s₁ s₂ : SystemState)
           resolveEffectivePrioDeadline_objects_congr s₁ s₂ tcb h]
         exact ih _
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ =>
+      | schedContext _ | reply _ =>
         unfold chooseBestRunnableEffective; simp only [hObj, hObj2]
 
 /-- SM5.A budget helper: the bucket-first effective selector is objects-only
@@ -1379,7 +1379,7 @@ private theorem chooseBestRunnableEffective_result_props_aux
           · exact Or.inl ⟨List.mem_cons_of_mem _ hprops.1, hprops.2⟩
           · exact Or.inr hb
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ => rw [hObj] at h; simp at h
 
 /-- SM5.A budget helper: a `none`-seeded effective scan that selects `rt`
 witnesses that `rt` is a member of the scanned list, resolves to a TCB, and
@@ -1454,7 +1454,7 @@ theorem chooseBestRunnableEffective_result_fields
               · rw [Bool.not_eq_true] at hCond
                 simp only [hCond, Bool.false_eq_true, if_false] at hOk
                 exact ih init hOk hInit
-          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
               rw [hHdObj] at hOk; simp at hOk
 
 /-- WS-SM SM5.I (PR-B): the effective analogue of `chooseBestRunnableBy_optimal_combined`.
@@ -1743,7 +1743,7 @@ theorem chooseBestRunnableEffective_some_ne_ok_none
         · simp only [Bool.not_eq_true] at hCond
           simp only [hCond] at h; exact ih _ h
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => rw [hObj] at h; simp at h
+      | schedContext _ | reply _ => rw [hObj] at h; simp at h
 
 /-- SM5.A budget helper: a `none`-seeded effective scan returning `.ok none`
 witnesses that **no** scanned TCB was both domain-eligible and had sufficient
@@ -1784,7 +1784,7 @@ theorem chooseBestRunnableEffective_none_no_eligible
             simp only [hHdCond] at hHdReduce
             exact ih hHdReduce tid hMemTl tcb hObjTid
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
+        | schedContext _ | reply _ => rw [hHdObj] at hHdReduce; simp at hHdReduce
 
 /-- WS-SM SM5.I (PR-B capstone): the budget-aware analogue of
 `chooseThreadOnCore_selects_highest`.  The thread the *effective* (CBS-budget-

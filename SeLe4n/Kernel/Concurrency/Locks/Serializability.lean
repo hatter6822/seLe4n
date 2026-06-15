@@ -1296,10 +1296,9 @@ theorem releaseLockOnObject_preserves_invExt (s : SystemState) (core : CoreId)
   unfold releaseLockOnObject
   cases l.kind with
   | objStore => exact hExt
-  | reply => exact hExt
   | page => exact hExt
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_preserves_invExt s l _ hExt
 
 /-- WS-SM SM3.E.6 foundation: `updateObjectLockAt` preserves the `objectType` tag
@@ -1330,10 +1329,9 @@ theorem acquireLockOnObject_preserves_objectType_at (s : SystemState) (core : Co
   unfold acquireLockOnObject
   cases l.kind with
   | objStore => rfl
-  | reply => rfl
   | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toAcquireOp core) k hExt
 
 /-- WS-SM SM3.E.6 foundation: releasing a lock preserves the `objectType` tag at
@@ -1345,10 +1343,9 @@ theorem releaseLockOnObject_preserves_objectType_at (s : SystemState) (core : Co
   unfold releaseLockOnObject
   cases l.kind with
   | objStore => rfl
-  | reply => rfl
   | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
       all_goals exact updateObjectLockAt_preserves_objectType_at s l (m.toReleaseOp core) k hExt
 
 /-- WS-SM SM3.E.6 (SECOND non-vacuous Cor 2.1.11 witness): the **kind-discipline**

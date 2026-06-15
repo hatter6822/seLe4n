@@ -254,7 +254,7 @@ example : (withLockSet LockSet.empty bootCoreId
 
 example : ¬ lockHeld bootCoreId ⟨.reply, SeLe4n.ObjId.ofNat 0⟩ .write
     (default : SystemState) :=
-  lockHeld_reply _ _ _ _
+  lockHeld_reply _ _ _ _ (default_getReply?_none _)
 
 example : ¬ lockHeld bootCoreId ⟨.page, SeLe4n.ObjId.ofNat 0⟩ .read
     (default : SystemState) :=

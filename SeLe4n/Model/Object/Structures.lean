@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Model.Object.Types
+import SeLe4n.Model.Object.Reply
 import SeLe4n.Kernel.RobinHood.Bridge
 
 namespace SeLe4n.Model
@@ -2644,6 +2645,7 @@ inductive KernelObject where
   | vspaceRoot (v : VSpaceRoot)
   | untyped (u : UntypedObject)
   | schedContext (sc : SeLe4n.Kernel.SchedContext)
+  | reply (r : SeLe4n.Kernel.Reply)
   deriving Repr
 
 /-- WS-G5: Manual `BEq` for `KernelObject` dispatching to constituent `BEq`
@@ -2657,6 +2659,7 @@ instance : BEq KernelObject where
     | .vspaceRoot a, .vspaceRoot b => a == b
     | .untyped a, .untyped b => a == b
     | .schedContext a, .schedContext b => a == b
+    | .reply a, .reply b => a == b
     | _, _ => false
 
 inductive KernelObjectType where
@@ -2667,6 +2670,7 @@ inductive KernelObjectType where
   | vspaceRoot
   | untyped
   | schedContext
+  | reply
   deriving Repr, DecidableEq
 
 namespace KernelObjectType
@@ -2681,6 +2685,7 @@ def toNat : KernelObjectType → Nat
   | .vspaceRoot => 4
   | .untyped => 5
   | .schedContext => 6
+  | .reply => 7
 
 /-- R7-E/L-10: Decode a numeric type tag to `KernelObjectType`.
     Returns `none` for unrecognized tags, ensuring only valid types are accepted. -/
@@ -2692,7 +2697,8 @@ def ofNat? : Nat → Option KernelObjectType
   | 4 => some .vspaceRoot
   | 5 => some .untyped
   | 6 => some .schedContext
-  | _ + 7 => none
+  | 7 => some .reply
+  | _ + 8 => none
 
 /-- R7-E/L-10: `ofNat?` is a left inverse of `toNat`. -/
 theorem ofNat_toNat (t : KernelObjectType) : ofNat? t.toNat = some t := by
@@ -2714,6 +2720,7 @@ def objectType : KernelObject → KernelObjectType
   | .vspaceRoot _ => .vspaceRoot
   | .untyped _ => .untyped
   | .schedContext _ => .schedContext
+  | .reply _ => .reply
 
 /-- WS-SM SM3.A.10: per-object lock state projection.
 
@@ -2742,6 +2749,7 @@ def objectLockOf : KernelObject → SeLe4n.Kernel.Concurrency.RwLockState
   | .vspaceRoot v   => v.lock
   | .untyped u      => u.lock
   | .schedContext s => s.lock
+  | .reply r        => r.lock
 
 /-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.tcb`.
 
@@ -2774,6 +2782,10 @@ case-analysis on `KernelObject`. -/
 /-- WS-SM SM3.A.10: per-variant unfold lemma for `objectLockOf` on `.schedContext`. -/
 @[simp] theorem objectLockOf_schedContext (s : SeLe4n.Kernel.SchedContext) :
     objectLockOf (.schedContext s) = s.lock := rfl
+
+/-- WS-SM SM6.D: per-variant unfold lemma for `objectLockOf` on `.reply`. -/
+@[simp] theorem objectLockOf_reply (r : SeLe4n.Kernel.Reply) :
+    objectLockOf (.reply r) = r.lock := rfl
 
 -- ============================================================================
 -- WS-SM SM3.A audit-pass-5 — `objectLockOf` consistency theorems
@@ -2828,41 +2840,42 @@ theorem objectLockOf_consistent_with_type (obj : KernelObject) :
     | .cnode c        => objectType obj = .cnode        ∧ objectLockOf obj = c.lock
     | .vspaceRoot v   => objectType obj = .vspaceRoot   ∧ objectLockOf obj = v.lock
     | .untyped u      => objectType obj = .untyped      ∧ objectLockOf obj = u.lock
-    | .schedContext s => objectType obj = .schedContext ∧ objectLockOf obj = s.lock := by
+    | .schedContext s => objectType obj = .schedContext ∧ objectLockOf obj = s.lock
+    | .reply r        => objectType obj = .reply        ∧ objectLockOf obj = r.lock := by
   cases obj <;> exact ⟨rfl, rfl⟩
 
 end KernelObject
 
 namespace KernelObjectType
 
-/-- WS-SM SM3.A audit-pass-5: the seLe4n `KernelObjectType`
-enumeration has **exactly 7 variants** — and SM3.A.5 (Reply) and
-SM3.A.8 (Page) are NOT among them.
+/-- WS-SM SM6.D: the seLe4n `KernelObjectType` enumeration has
+**exactly 8 variants**, now including the first-class `reply` object
+(was 7 — SM3.A.5 deferred Reply to TCB state; this workstream promotes
+it to a real kernel object).  SM3.A.8 (Page) remains N/A — pages are
+inline mapping entries in `VSpaceRoot.mappings`, not a separate object.
 
-This is the structural enforcement that locks down the SM3.A.5 /
-SM3.A.8 "N/A for seLe4n" decisions.  A future workstream that
-adds a `Reply` or `Page` variant to `KernelObject` (and hence to
-`KernelObjectType`) would fail this exhaustivity witness, forcing
-the SM3.A decision to be revisited at that time rather than
-silently slipping past.
+This is the structural enforcement that locks down the remaining N/A
+decision: a future workstream that adds a `Page` variant (or any further
+kind) would fail this exhaustivity witness, forcing the decision to be
+revisited rather than silently slipping past.
 
-The `_count` form pins the cardinality; the `_variants` form
-enumerates each variant explicitly so a renamed-variant refactor
-fails the surface check. -/
-theorem variants_count_exactly_seven :
+The `_count` form pins the cardinality; the `variants_total` form
+enumerates each variant explicitly so a renamed-variant refactor fails
+the surface check. -/
+theorem variants_count_exactly_eight :
     let variants : List KernelObjectType :=
-      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext]
-    variants.length = 7 ∧ variants.Nodup := by
+      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply]
+    variants.length = 8 ∧ variants.Nodup := by
   refine ⟨rfl, ?_⟩
   decide
 
-/-- WS-SM SM3.A audit-pass-5: every `KernelObjectType` value is one
-of the 7 enumerated variants.  Total-case witness for the kind
-tag — pairs with `variants_count_exactly_seven` to lock down the
-N/A decisions for Reply (SM3.A.5) and Page (SM3.A.8). -/
+/-- WS-SM SM6.D: every `KernelObjectType` value is one of the 8
+enumerated variants.  Total-case witness for the kind tag — pairs with
+`variants_count_exactly_eight` to lock down the remaining N/A decision
+for Page (SM3.A.8). -/
 theorem variants_total (k : KernelObjectType) :
     k = .tcb ∨ k = .endpoint ∨ k = .notification ∨ k = .cnode ∨
-    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext := by
+    k = .vspaceRoot ∨ k = .untyped ∨ k = .schedContext ∨ k = .reply := by
   cases k
   · exact Or.inl rfl
   · exact Or.inr (Or.inl rfl)
@@ -2870,7 +2883,8 @@ theorem variants_total (k : KernelObjectType) :
   · exact Or.inr (Or.inr (Or.inr (Or.inl rfl)))
   · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))
   · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
-  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
+  · exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))
 
 end KernelObjectType
 
@@ -2900,6 +2914,7 @@ def wellFormed (obj : KernelObject)
   | .vspaceRoot _ => True
   | .untyped _ => True
   | .schedContext _ => True
+  | .reply _ => True
 
 /-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
 instance (obj : KernelObject)
@@ -2910,7 +2925,7 @@ instance (obj : KernelObject)
   | .tcb _ => exact instDecidableAnd
   | .cnode _ => exact inferInstance
   | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _
-  | .schedContext _ =>
+  | .schedContext _ | .reply _ =>
     exact instDecidableTrue
 
 end KernelObject

@@ -702,6 +702,9 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
     sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
     sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
     sc.boundThread.isNone
+  | .reply r =>
+    -- WS-SM SM6.D: a boot Reply is inert — no blocked caller, no donated SC.
+    r.caller.isNone && r.donatedSc.isNone && r.prev.isNone
 
 set_option maxHeartbeats 400000 in
 /-- AJ3-C (M-16): Partial soundness bridge — `bootSafeObjectCheck = true` implies
@@ -774,6 +777,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
            fun v hv => by injection hv; subst_vars; exact hBoot,
            fun _ he => by injection he⟩
   | untyped _ =>
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he⟩
+  | reply _ =>
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩

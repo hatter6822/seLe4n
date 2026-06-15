@@ -320,7 +320,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       · rw [hEq] at hObj; rw [lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore] at hObj
         cases newObj with
         | cnode _ => cases hObj; exact hNewObjCNodeBounded cn rfl
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => cases hObj
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hObjInv hStep] at hObj
         exact hBounded cnodeId cn hObj
     · exact cdtCompleteness_of_storeObject st st' target newObj hComp hObjInv hStore hNS
@@ -330,7 +330,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       · rw [hEq] at hObj; rw [lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore] at hObj
         cases newObj with
         | cnode _ => cases hObj; exact hNewObjCNodeDepth cn rfl
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => cases hObj
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hObjInv hStep] at hObj
         exact hDepthPre cnodeId cn hObj
     · exact storeObject_preserves_objects_invExt st st' target newObj hObjInv hStore
@@ -476,7 +476,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
       | none => simp [hObj] at hRevoke
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hRevoke
         | cnode preCn =>
           simp [hObj] at hRevoke
           cases hStore : storeObject cleanup.cnode

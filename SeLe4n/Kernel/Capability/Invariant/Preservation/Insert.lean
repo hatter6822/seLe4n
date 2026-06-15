@@ -96,7 +96,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     | none => simp [hPre] at hStep
     | some preObj =>
       cases preObj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hStep
       | cnode preCn =>
         cases hLookup : preCn.lookup addr.slot with
         | some _ => simp [hPre, hLookup] at hStep

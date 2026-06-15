@@ -1295,6 +1295,7 @@ theorem writeFfiRegistersToTcb_id_when_not_tcb
     | vspaceRoot _ => rfl
     | untyped _ => rfl
     | schedContext _ => rfl
+    | reply _ => rfl
 
 /-- WS-RC R2.B.5: `readReturnValue` is total — it reads `0` whenever
     the target object is not a TCB (or absent).  Used by callers that
@@ -1317,5 +1318,6 @@ theorem readReturnValue_zero_when_not_tcb
     | vspaceRoot _ => rfl
     | untyped _ => rfl
     | schedContext _ => rfl
+    | reply _ => rfl
 
 end SeLe4n.Platform.FFI

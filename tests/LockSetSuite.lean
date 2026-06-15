@@ -60,7 +60,7 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.lockKind_eq_of_objectType
 #check @KernelObject.lockKind_in_modeledKinds
 #check @KernelObject.lockKind_ne_objStore
-#check @KernelObject.lockKind_ne_reply
+#check @KernelObject.lockKind_reply
 #check @KernelObject.lockKind_ne_page
 #check @LockId.fromObject
 #check @LockId.fromObject_kind

@@ -145,7 +145,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                         have hNS1 := (storeObject_cdtNodeSlot_eq st stM dst.cnode _ hS).1
                         have ⟨_, hNS2, _, _⟩ := storeCapabilityRef_cdt_eq stM st2 dst (some cap.target) hInsert
                         rw [hNS2, hNS1]
-                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hInsert
+                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
                 (by rw [hNSSt2]; exact hNodeSlotK) hDelete
               rcases hBundleSt3 with ⟨_, hBnd3, _, _, hDepth3, hObjInv3⟩
@@ -264,7 +264,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
         | none => simp_all
         | some preObj =>
           cases preObj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp_all
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp_all
           | cnode preCn =>
             simp only [hPre] at hStep
             cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot

@@ -1906,7 +1906,7 @@ import SeLe4n.Model.Object.PerObjectLockInventory
 #check @SeLe4n.Model.KernelObject.objectLockOf_exists
 #check @SeLe4n.Model.KernelObject.objectType_and_lockOf_total
 #check @SeLe4n.Model.KernelObject.objectLockOf_consistent_with_type
-#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_seven
+#check @SeLe4n.Model.KernelObjectType.variants_count_exactly_eight
 #check @SeLe4n.Model.KernelObjectType.variants_total
 -- Inventory aggregator.
 #check @SeLe4n.Model.PerObjectLockCategory

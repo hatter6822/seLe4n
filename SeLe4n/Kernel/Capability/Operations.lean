@@ -480,7 +480,7 @@ theorem cspaceInsertSlot_preserves_scheduler
   | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hObj] at hStep
+      | schedContext _ | reply _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -510,7 +510,7 @@ theorem cspaceInsertSlot_preserves_services
   | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hObj] at hStep
+      | schedContext _ | reply _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -541,7 +541,7 @@ theorem cspaceInsertSlot_preserves_objects_ne
   | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hObj] at hStep
+      | schedContext _ | reply _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -569,7 +569,7 @@ theorem cspaceInsertSlot_preserves_objects_invExt
   | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hObj] at hStep
+      | schedContext _ | reply _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -596,7 +596,7 @@ theorem cspaceInsertSlot_preserves_machine
   | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hObj] at hStep
+      | schedContext _ | reply _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with
@@ -623,7 +623,7 @@ theorem cspaceInsertSlot_preserves_irqHandlers
   | some obj =>
       cases obj with
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hObj] at hStep
+      | schedContext _ | reply _ => simp [hObj] at hStep
       | cnode cn =>
           simp [hObj] at hStep
           cases hLookup : cn.lookup addr.slot with

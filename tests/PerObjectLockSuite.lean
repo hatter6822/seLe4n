@@ -150,7 +150,7 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.objectLockOf_exists
 #check @KernelObject.objectType_and_lockOf_total
 #check @KernelObject.objectLockOf_consistent_with_type
-#check @KernelObjectType.variants_count_exactly_seven
+#check @KernelObjectType.variants_count_exactly_eight
 #check @KernelObjectType.variants_total
 
 /-! ## SM3.A audit-pass-5 — Inventory aggregator -/
@@ -577,12 +577,12 @@ example : (default : SystemState).objStoreLock
     = SeLe4n.Kernel.Concurrency.RwLockState.unheld :=
   default_allObjectLocksUnheld.1
 
-/-! ## KernelObjectType variants_count_exactly_seven -/
+/-! ## KernelObjectType variants_count_exactly_eight -/
 
 example :
     let variants : List KernelObjectType :=
-      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext]
-    variants.length = 7 := by decide
+      [.tcb, .endpoint, .notification, .cnode, .vspaceRoot, .untyped, .schedContext, .reply]
+    variants.length = 8 := by decide
 
 /-! ## perObjectLockTheorems inventory has 34 entries -/
 

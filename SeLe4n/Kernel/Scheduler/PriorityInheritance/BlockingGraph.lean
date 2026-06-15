@@ -208,7 +208,7 @@ theorem blockingServer_isSome_iff_blockedOnReply_some
           | blockedOnNotification _ =>
           rw [hIpc] at hSome; simp at hSome
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ =>
+        | schedContext _ | reply _ =>
         simp at hSome
   · rintro ⟨tcb, epId, server, hObj, hIpc⟩
     simp only [blockingServer, hObj, hIpc, Option.isSome_some]
@@ -253,7 +253,7 @@ theorem blockingServer_some_implies_blockedOnReply
       | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
         | blockedOnNotification _ => rw [hIpc] at h; simp at h
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp at h
+      | schedContext _ | reply _ => simp at h
 
 -- ============================================================================
 -- AF1-B5: Blocking graph frame lemmas
@@ -288,6 +288,7 @@ theorem blockingChain_step (st : SystemState) (tid : ThreadId) (n : Nat) :
     | vspaceRoot _ => simp [blockingChain, blockingServer, hObj]
     | untyped _ => simp [blockingChain, blockingServer, hObj]
     | schedContext _ => simp [blockingChain, blockingServer, hObj]
+    | reply _ => simp [blockingChain, blockingServer, hObj]
 
 /-- AF1-B5: `blockingChain` is congruent in the blocking server function.
     If `blockingServer` returns the same results for all threads in both states,
@@ -350,6 +351,7 @@ theorem blockingChain_length_le_fuel (st : SystemState) (tid : ThreadId)
     | some (KernelObject.vspaceRoot _) => simp
     | some (KernelObject.untyped _) => simp
     | some (KernelObject.schedContext _) => simp
+    | some (KernelObject.reply _) => simp
 
 /-- D4-E: blockingChain with default fuel is bounded by objectIndex length. -/
 theorem blockingChain_bounded (st : SystemState) (tid : ThreadId) :

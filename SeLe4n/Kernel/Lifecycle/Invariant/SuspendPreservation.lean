@@ -605,7 +605,7 @@ theorem saveOutgoingContext_lookup_equiv
       | cnode _ => left; simp only []
       | vspaceRoot _ => left; simp only []
       | untyped _ => left; simp only []
-      | schedContext _ => left; simp only []
+      | schedContext _ | reply _ => left; simp only []
 
 /-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves the
     `getSchedContext?` lookup at every SchedContextId.  Only TCB slots
@@ -648,7 +648,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
       | cnode _ => simp only []
       | vspaceRoot _ => simp only []
       | untyped _ => simp only []
-      | schedContext _ => simp only []
+      | schedContext _ | reply _ => simp only []
 
 /-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves
     `objectIndex`. -/

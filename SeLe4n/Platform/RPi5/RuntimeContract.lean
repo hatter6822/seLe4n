@@ -253,7 +253,7 @@ theorem registerContextStableCheck_budget
       simp only [hSc] at hBud ⊢
       simp at hBud; exact hBud
     | some (.endpoint _) | some (.notification _) | some (.tcb _) |
-      some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | none =>
+      some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | some (.reply _) | none =>
       -- AK9-E: budgetSufficientCheck now returns false for these cases,
       -- so hBud : false = true is a direct contradiction — no SC to
       -- discharge currentBudgetPositive from.

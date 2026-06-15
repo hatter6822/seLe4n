@@ -228,9 +228,9 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectType_and_lockOf_total .consistency,
     polt! "objectLockOf is consistent with the kind tag"
       KernelObject.objectLockOf_consistent_with_type .consistency,
-    polt! "KernelObjectType has exactly 7 variants (locks down Reply / Page N/A decisions)"
-      KernelObjectType.variants_count_exactly_seven .consistency,
-    polt! "KernelObjectType variants_total — every value is one of the 7 enumerated kinds"
+    polt! "KernelObjectType has exactly 8 variants (reply now a real object; locks down Page N/A)"
+      KernelObjectType.variants_count_exactly_eight .consistency,
+    polt! "KernelObjectType variants_total — every value is one of the 8 enumerated kinds"
       KernelObjectType.variants_total .consistency]
 
 /-- WS-SM SM3.A audit-pass-5: the inventory has exactly 34 entries.

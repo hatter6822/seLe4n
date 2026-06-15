@@ -325,7 +325,8 @@ theorem effectiveBucketPriority_of_bound_sc_missing
     | some obj =>
       cases obj with
       | schedContext sc => exact absurd hLookup (hMiss sc)
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _
+      | reply _ =>
           simp [hLookup]
   · rw [hB]
     cases hLookup : (st.objects[scId.toObjId]? : Option KernelObject) with
@@ -333,7 +334,8 @@ theorem effectiveBucketPriority_of_bound_sc_missing
     | some obj =>
       cases obj with
       | schedContext sc => exact absurd hLookup (hMiss sc)
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _ =>
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _
+      | reply _ =>
           simp [hLookup]
 
 /-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
@@ -350,7 +352,8 @@ arm of `effectiveBucketPriority` falls through to `tcb.priority`. -/
   | some obj =>
     cases obj with
     | schedContext sc => exact absurd hLook (hNonSc sc)
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => rfl
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+    | reply _ => rfl
 
 /-- AK2-B: Frame lemma — `effectiveBucketPriority` is preserved whenever the
 thread's SchedContext object lookup agrees. -/
@@ -1029,7 +1032,7 @@ theorem objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent
           simp only at hAtPair
           exact hAtPair hBind
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-        | schedContext _ => simp
+        | schedContext _ | reply _ => simp
 
 /-- WS-RC R5.G.3 / Phase P2: A joint update that rewrites a SchedContext's
     `domain` to `⟨domain⟩` AND rewrites its bound TCB's `domain` to
@@ -1208,6 +1211,6 @@ theorem objects_update_sync_domain_preserves_boundThreadDomainConsistent
               rw [hLookScId]
               exact hPreSubBind
         | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-          | schedContext _ => simp
+          | schedContext _ | reply _ => simp
 
 end SeLe4n.Kernel

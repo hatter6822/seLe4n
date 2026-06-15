@@ -154,6 +154,7 @@ def KernelObject.updateLock (obj : KernelObject) (op : RwLockOp) :
   | .vspaceRoot v   => .vspaceRoot   { v with lock := v.lock.applyOp op }
   | .untyped u      => .untyped      { u with lock := u.lock.applyOp op }
   | .schedContext sc => .schedContext { sc with lock := sc.lock.applyOp op }
+  | .reply r        => .reply        { r with lock := r.lock.applyOp op }
 
 /-- WS-SM SM3.C.2: per-variant `@[simp]` unfold for `.tcb`. -/
 @[simp] theorem KernelObject.updateLock_tcb (t : TCB) (op : RwLockOp) :
@@ -190,6 +191,12 @@ def KernelObject.updateLock (obj : KernelObject) (op : RwLockOp) :
     (sc : SeLe4n.Kernel.SchedContext) (op : RwLockOp) :
     KernelObject.updateLock (.schedContext sc) op =
       .schedContext { sc with lock := sc.lock.applyOp op } := rfl
+
+/-- WS-SM SM6.D: per-variant `@[simp]` unfold for `.reply`. -/
+@[simp] theorem KernelObject.updateLock_reply
+    (r : SeLe4n.Kernel.Reply) (op : RwLockOp) :
+    KernelObject.updateLock (.reply r) op =
+      .reply { r with lock := r.lock.applyOp op } := rfl
 
 /-- WS-SM SM3.C.2: `updateLock` preserves the kernel-object kind tag.
 
@@ -301,9 +308,11 @@ The four control-flow branches:
   `objStoreLock` field directly via `RwLockState.applyOp`.  This
   is the table-level lock at hierarchy level 0 (top of the SM0.I
   ladder).
-* `l.kind ∈ {.reply, .page}`: SM3.A.5 / SM3.A.8 N/A — no kernel-
-  object struct exists, return state unchanged (fail-closed).
-* `l.kind ∈ {modeled kinds}`: route through `updateObjectLockAt`,
+* `l.kind = .page`: SM3.A.8 N/A — no kernel-object struct exists
+  (page mappings are inline in `VSpaceRoot.mappings`), return state
+  unchanged (fail-closed).
+* `l.kind ∈ {modeled kinds}` (now including `.reply`, WS-SM SM6.D):
+  route through `updateObjectLockAt`,
   which uses `LockId.lookup` to require that an object is present
   at `l.objId` **and** its variant matches `l.kind`.  If so, the
   object's lock field is advanced via `KernelObject.updateLock`;
@@ -323,10 +332,9 @@ def acquireLockOnObject (s : SystemState) (core : CoreId)
   match l.kind with
   | .objStore =>
       { s with objStoreLock := s.objStoreLock.applyOp (mode.toAcquireOp core) }
-  | .reply => s   -- SM3.A.5 N/A
   | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext =>
+  | .vspaceRoot | .untyped | .schedContext | .reply =>
       updateObjectLockAt s l (mode.toAcquireOp core)
 
 /-- WS-SM SM3.C.2: `releaseLockOnObject` — the SM3.C.1 release
@@ -339,17 +347,19 @@ def releaseLockOnObject (s : SystemState) (core : CoreId)
   match l.kind with
   | .objStore =>
       { s with objStoreLock := s.objStoreLock.applyOp (mode.toReleaseOp core) }
-  | .reply => s   -- SM3.A.5 N/A
   | .page => s    -- SM3.A.8 N/A
   | .tcb | .endpoint | .notification | .cnode
-  | .vspaceRoot | .untyped | .schedContext =>
+  | .vspaceRoot | .untyped | .schedContext | .reply =>
       updateObjectLockAt s l (mode.toReleaseOp core)
 
-/-- WS-SM SM3.C.2: `acquireLockOnObject` on a `.reply` LockId is
-identity (SM3.A.5 N/A — no kernel-object struct exists). -/
-@[simp] theorem acquireLockOnObject_reply (s : SystemState) (core : CoreId)
+/-- WS-SM SM6.D: `acquireLockOnObject` on a `.reply` LockId routes through
+`updateObjectLockAt` — Reply is now a first-class kernel object (hierarchy
+level 6), so its per-object lock is acquired like any modeled kind (was an
+identity no-op under the former SM3.A.5 N/A decision). -/
+theorem acquireLockOnObject_reply (s : SystemState) (core : CoreId)
     (oid : SeLe4n.ObjId) (m : AccessMode) :
-    acquireLockOnObject s core ⟨.reply, oid⟩ m = s := by
+    acquireLockOnObject s core ⟨.reply, oid⟩ m =
+      updateObjectLockAt s ⟨.reply, oid⟩ (m.toAcquireOp core) := by
   unfold acquireLockOnObject; rfl
 
 /-- WS-SM SM3.C.2: `acquireLockOnObject` on a `.page` LockId is
@@ -359,11 +369,12 @@ identity (SM3.A.8 N/A — page mappings stored in VSpaceRoot.mappings). -/
     acquireLockOnObject s core ⟨.page, oid⟩ m = s := by
   unfold acquireLockOnObject; rfl
 
-/-- WS-SM SM3.C.2: `releaseLockOnObject` on a `.reply` LockId is
-identity. -/
-@[simp] theorem releaseLockOnObject_reply (s : SystemState) (core : CoreId)
+/-- WS-SM SM6.D: `releaseLockOnObject` on a `.reply` LockId routes through
+`updateObjectLockAt` (symmetric to `acquireLockOnObject_reply`). -/
+theorem releaseLockOnObject_reply (s : SystemState) (core : CoreId)
     (oid : SeLe4n.ObjId) (m : AccessMode) :
-    releaseLockOnObject s core ⟨.reply, oid⟩ m = s := by
+    releaseLockOnObject s core ⟨.reply, oid⟩ m =
+      updateObjectLockAt s ⟨.reply, oid⟩ (m.toReleaseOp core) := by
   unfold releaseLockOnObject; rfl
 
 /-- WS-SM SM3.C.2: `releaseLockOnObject` on a `.page` LockId is
@@ -419,10 +430,9 @@ theorem acquireLockOnObject_preserves_objStoreLock_of_modeled
   unfold acquireLockOnObject
   cases hK : l.kind with
   | objStore => exact absurd hK hKind
-  | reply => rfl
   | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- WS-SM SM3.C.8 foundation: releasing a per-object lock preserves
@@ -434,10 +444,9 @@ theorem releaseLockOnObject_preserves_objStoreLock_of_modeled
   unfold releaseLockOnObject
   cases hK : l.kind with
   | objStore => exact absurd hK hKind
-  | reply => rfl
   | page => rfl
   | tcb | endpoint | notification | cnode
-  | vspaceRoot | untyped | schedContext =>
+  | vspaceRoot | untyped | schedContext | reply =>
     all_goals exact updateObjectLockAt_preserves_objStoreLock s l _
 
 /-- WS-SM SM3.C.8 foundation (substantive): `updateObjectAt` with a

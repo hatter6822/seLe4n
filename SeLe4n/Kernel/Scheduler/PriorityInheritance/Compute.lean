@@ -124,7 +124,7 @@ private theorem cmwpFoldBody_frame
     | tcb tc =>
       simp only [effectiveSchedParams_frame st st' tc hObjects]
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => rfl
+      | schedContext _ | reply _ => rfl
 
 private theorem computeMaxWaiterPriority_foldBody_frame
     (st st' : SystemState) (ws : List ThreadId)
@@ -290,7 +290,7 @@ private theorem cmwpFoldBody_frame_per_field
             simp only
             rw [effectiveSchedParams_frame_per_field st st' waiterTcb hSc]
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-            | schedContext _ => rfl
+            | schedContext _ | reply _ => rfl
       · rw [hPre, hPost]
         -- After rw, both sides have `match some (.tcb tcb') with ...` and
         -- `match some (.tcb tcb) with ...`.  Reduce both matches via simp.
@@ -447,7 +447,7 @@ private theorem cmwpFoldBody_optPriorityVal (st : SystemState)
       | none => simp [optPriorityVal]
       | some m => simp [optPriorityVal]
     | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [optPriorityVal]
+      | schedContext _ | reply _ => simp [optPriorityVal]
 
 /-- WS-SM SM5.F.1: one per-core fold step never exceeds the corresponding global
 step (it either matches it, on-core, or leaves the accumulator unchanged). -/
