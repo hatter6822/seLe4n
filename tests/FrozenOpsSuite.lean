@@ -120,6 +120,29 @@ private def fo004_endpointReply : IO Unit := do
       | none => throw <| IO.userError "target TCB missing"
   | .error _ => throw <| IO.userError "reply should succeed"
 
+/-- FO-004b: frozenEndpointReply consumes the linked Reply object (PR #822
+review): a successful reply clears the caller's `replyObject` forward link and
+the Reply object's `caller` back-link, mirroring the runtime `consumeCallerReply`
+single-use semantics. -/
+private def fo004b_endpointReplyConsumesLink : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB := { mkTcb 2 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
+  | .ok ((), fst') =>
+      match frozenLookupTcb fst' ⟨2⟩ with
+      | some tcb =>
+          expect "target unblocked" (tcb.ipcState == .ready)
+          expect "forward reply link cleared" (tcb.replyObject == none)
+      | none => throw <| IO.userError "target TCB missing"
+      match fst'.objects.get? rid.toObjId with
+      | some (.reply r) => expect "reply caller back-link consumed" (r.caller == none)
+      | _ => throw <| IO.userError "reply object missing/retyped"
+  | .error _ => throw <| IO.userError "reply should succeed"
+
 /-- FO-005: frozenEndpointReply — wrong replier rejected -/
 private def fo005_replyWrongReplier : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
@@ -442,6 +465,7 @@ def main : IO Unit := do
   fo003_storeObject
   IO.println "--- TPH-005: Frozen IPC ---"
   fo004_endpointReply
+  fo004b_endpointReplyConsumesLink
   fo005_replyWrongReplier
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"
   fo006_timerTickIdle
@@ -468,4 +492,4 @@ def main : IO Unit := do
   fo020_frozenCspaceMint
   IO.println "--- U-H01: Multi-round IPC Regression ---"
   fo021_popThenPushRegression
-  IO.println "=== All Q7 frozen ops tests passed (21 scenarios) ==="
+  IO.println "=== All Q7 frozen ops tests passed (22 scenarios) ==="

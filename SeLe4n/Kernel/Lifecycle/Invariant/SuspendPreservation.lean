@@ -54,7 +54,8 @@ theorem cancelIpcBlocking_scheduler_eq
     -- clearTcbIpcFields preserves scheduler, removeFromAllEndpointQueues preserves scheduler
     rw [clearTcbIpcFields_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
   | blockedOnReply _ _ =>
-    rw [clearTcbIpcFields_scheduler_eq]
+    -- WS-SM SM6.D (PR #822 review): the reply-link consume only writes `objects`.
+    rw [consumeReplyLink_scheduler_eq, clearTcbIpcFields_scheduler_eq]
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
@@ -129,7 +130,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
-    rw [clearTcbIpcFields_serviceRegistry_eq]
+    rw [consumeReplyLink_serviceRegistry_eq, clearTcbIpcFields_serviceRegistry_eq]
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
 
@@ -261,7 +262,7 @@ theorem cancelIpcBlocking_lifecycle_eq
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     rw [clearTcbIpcFields_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
   | blockedOnReply _ _ =>
-    rw [clearTcbIpcFields_lifecycle_eq]
+    rw [consumeReplyLink_lifecycle_eq, clearTcbIpcFields_lifecycle_eq]
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 

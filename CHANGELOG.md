@@ -1,3 +1,33 @@
+## v0.31.101 — Reply objects (seL4-MCS): consume/reject the reply link on lifecycle teardown (PR #822 review)
+
+Three teardown paths could strand a first-class Reply object permanently in-use
+(`reply.caller` set, the caller TCB's `replyObject` pointing at it), so a later
+receive re-supplying that single-use reply cap would fail `.replyCapInvalid`:
+
+- **Cancel / suspend of a blocked caller** (`cancelIpcBlocking`, Suspend.lean):
+  the `.blockedOnReply` arm restored IPC/queue fields but never severed the reply
+  link.  New pure-total helper `consumeReplyLink` (factored into
+  `clearReplyObjectCaller` + the `getTcb?`-typed `clearTcbReplyObject`, each with
+  scheduler / serviceRegistry / lifecycle preservation lemmas) now clears both the
+  Reply object's `caller` back-link and the TCB's `replyObject` forward link —
+  the pure analogue of the runtime `consumeCallerReply`.  The three
+  `cancelIpcBlocking_*_eq` preservation arms are extended accordingly.
+
+- **Frozen reply** (`frozenEndpointReply`, FrozenOps): a successful frozen reply
+  now consumes the frozen Reply link (clears `replyObject` + the frozen reply
+  object's `caller`), mirroring runtime semantics.  New `FrozenOpsSuite` FO-004b
+  exercises the consume (22 scenarios).
+
+- **Retype / delete of an in-use Reply** (`lifecyclePreRetypeCleanup`): now
+  fail-closed with `.revocationRequired` when the current Reply object still has a
+  `caller` (seL4's revoke-before-destroy discipline); a free Reply retypes
+  cleanly.  `lifecyclePreRetypeCleanup_flat_subset` gains the `.reply` arm; new
+  `ModelIntegritySuite.reply_inUse_retype_rejected` covers both cases.
+
+Closes PR #822 review items (Types:795 / cancel, FrozenState:243, Structures:2648).
+Full prod + staged `lake build` + Tier 0/1/2 + Rust conformance green; trace
+byte-identical; codebase map regenerated.
+
 ## v0.31.100 — Reply objects (seL4-MCS): redact Reply links from low projections (PR #822 review)
 
 The information-flow projection passed `.reply` objects through unchanged and the

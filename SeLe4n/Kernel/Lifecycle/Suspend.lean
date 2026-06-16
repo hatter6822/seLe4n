@@ -278,6 +278,98 @@ def resumeThreadOnCore (st : SystemState) (vtid : SeLe4n.ValidThreadId) (executi
         .ok (st3, some (target, SgiKind.reschedule))
   | none => .error .invalidArgument
 
+/-- WS-SM SM6.D (PR #822 review, Reply objects): sever a caller→Reply link as
+part of lifecycle teardown.  When `tcb.replyObject = some rid` (the seL4
+`tcb->tcbReply` forward link of a caller blocked awaiting a reply), clear the
+Reply object's `caller` back-link and the TCB's `replyObject` forward link —
+the pure, total analogue of the runtime `SystemState.consumeCallerReply`,
+suitable for composition inside the pure `cancelIpcBlocking` teardown.
+
+A no-op when the thread holds no reply object (`replyObject = none`) or the
+Reply object is already gone — so the existing teardown semantics are unchanged
+for every thread that was not a blocked caller.  Without it, suspending /
+cancelling a `blockedOnReply` caller would leave the Reply object permanently
+in-use (`reply.caller` set) and the TCB pointing at it, so a later receive that
+re-supplies that reply cap would fail `.replyCapInvalid`.
+
+`tcb` is the pre-teardown TCB (carrying the original `replyObject`); the TCB
+write re-reads the post-IPC-clear TCB so the `replyObject` clear composes on top
+of `clearTcbIpcFields`.  Reply object and caller TCB are distinct objects, so
+the two writes commute.  Factored into two single-match helpers
+(`clearReplyObjectCaller` / `clearTcbReplyObject`) so each preserves the
+scheduler / serviceRegistry / lifecycle by a one-line `split <;> rfl`. -/
+def clearReplyObjectCaller (st : SystemState) (rid : SeLe4n.ReplyId)
+    : SystemState :=
+  match st.getReply? rid with
+  | some r =>
+      { st with objects := st.objects.insert rid.toObjId (.reply { r with caller := none }) }
+  | none => st
+
+def clearTcbReplyObject (st : SystemState) (tid : SeLe4n.ThreadId)
+    : SystemState :=
+  -- typed accessor (AK7 `getTcb?` adoption; no raw object-store index by tid)
+  match st.getTcb? tid with
+  | some t =>
+      { st with objects := st.objects.insert tid.toObjId (.tcb { t with replyObject := none }) }
+  | none => st
+
+def consumeReplyLink (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    : SystemState :=
+  match tcb.replyObject with
+  | none => st
+  | some rid => clearReplyObjectCaller (clearTcbReplyObject st tid) rid
+
+/-- `clearReplyObjectCaller` only writes `objects`, preserving the scheduler. -/
+theorem clearReplyObjectCaller_scheduler_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (clearReplyObjectCaller st rid).scheduler = st.scheduler := by
+  unfold clearReplyObjectCaller; split <;> rfl
+
+/-- `clearReplyObjectCaller` preserves the serviceRegistry. -/
+theorem clearReplyObjectCaller_serviceRegistry_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (clearReplyObjectCaller st rid).serviceRegistry = st.serviceRegistry := by
+  unfold clearReplyObjectCaller; split <;> rfl
+
+/-- `clearReplyObjectCaller` preserves lifecycle metadata. -/
+theorem clearReplyObjectCaller_lifecycle_eq (st : SystemState) (rid : SeLe4n.ReplyId) :
+    (clearReplyObjectCaller st rid).lifecycle = st.lifecycle := by
+  unfold clearReplyObjectCaller; split <;> rfl
+
+/-- `clearTcbReplyObject` only writes `objects`, preserving the scheduler. -/
+theorem clearTcbReplyObject_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbReplyObject st tid).scheduler = st.scheduler := by
+  unfold clearTcbReplyObject; split <;> rfl
+
+/-- `clearTcbReplyObject` preserves the serviceRegistry. -/
+theorem clearTcbReplyObject_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbReplyObject st tid).serviceRegistry = st.serviceRegistry := by
+  unfold clearTcbReplyObject; split <;> rfl
+
+/-- `clearTcbReplyObject` preserves lifecycle metadata. -/
+theorem clearTcbReplyObject_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (clearTcbReplyObject st tid).lifecycle = st.lifecycle := by
+  unfold clearTcbReplyObject; split <;> rfl
+
+/-- `consumeReplyLink` preserves the scheduler (both legs only write `objects`). -/
+theorem consumeReplyLink_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (consumeReplyLink st tid tcb).scheduler = st.scheduler := by
+  unfold consumeReplyLink; split
+  · rfl
+  · rw [clearReplyObjectCaller_scheduler_eq, clearTcbReplyObject_scheduler_eq]
+
+/-- `consumeReplyLink` preserves the serviceRegistry. -/
+theorem consumeReplyLink_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (consumeReplyLink st tid tcb).serviceRegistry = st.serviceRegistry := by
+  unfold consumeReplyLink; split
+  · rfl
+  · rw [clearReplyObjectCaller_serviceRegistry_eq, clearTcbReplyObject_serviceRegistry_eq]
+
+/-- `consumeReplyLink` preserves lifecycle metadata. -/
+theorem consumeReplyLink_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (consumeReplyLink st tid tcb).lifecycle = st.lifecycle := by
+  unfold consumeReplyLink; split
+  · rfl
+  · rw [clearReplyObjectCaller_lifecycle_eq, clearTcbReplyObject_lifecycle_eq]
+
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
   match tcb.ipcState with
@@ -285,7 +377,10 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
   | .blockedOnSend _ | .blockedOnReceive _ | .blockedOnCall _ =>
     clearTcbIpcFields (removeFromAllEndpointQueues st tid) tid
   | .blockedOnReply _ _ =>
-    clearTcbIpcFields st tid
+    -- WS-SM SM6.D (PR #822 review): a cancelled/suspended caller awaiting a
+    -- reply must also relinquish its single-use reply link, else the Reply
+    -- object is stranded in-use (see `consumeReplyLink`).
+    consumeReplyLink (clearTcbIpcFields st tid) tid tcb
   | .blockedOnNotification _ =>
     clearTcbIpcFields (removeFromAllNotificationWaitLists st tid) tid
 

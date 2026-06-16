@@ -494,13 +494,27 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
         match targetTcb.ipcState with
         | .blockedOnReply _epId replyTarget =>
             if replyTarget = some replierId then
-              -- Deliver message and unblock
+              -- Deliver message and unblock; consume the reply link (mirror the
+              -- runtime `consumeCallerReply`, PR #822 review): clear the caller
+              -- TCB's `replyObject` forward link, and — if it named a frozen
+              -- Reply object — clear that object's `caller` back-link.  Without
+              -- this a successful frozen reply would leave `reply.caller` /
+              -- `replyObject` stale (the single-use reply cap permanently
+              -- in-use), diverging from the runtime semantics.
               let targetTcb' := { targetTcb with
                 ipcState := ThreadIpcState.ready
-                pendingMessage := some msg }
+                pendingMessage := some msg
+                replyObject := none }
               match frozenStoreTcb targetId targetTcb' st with
               | .error e => .error e
-              | .ok ((), st') => .ok ((), st')
+              | .ok ((), st') =>
+                  match targetTcb.replyObject with
+                  | some rid =>
+                      match st'.objects.get? rid.toObjId with
+                      | some (.reply r) =>
+                          frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
+                      | _ => .ok ((), st')
+                  | none => .ok ((), st')
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound

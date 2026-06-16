@@ -227,6 +227,16 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     match newObj with
     | .cnode _ => .ok st  -- CNode → CNode: no CDT cleanup needed
     | _ => .ok (detachCNodeSlots st target cn)
+  | .reply r =>
+    -- WS-SM SM6.D (PR #822 review): reject retyping/deleting a Reply object
+    -- that is still in use (a caller is blocked awaiting its reply).  Without
+    -- this guard the caller is stranded `blockedOnReply` with
+    -- `replyObject = some rid` while `getReply? rid` is gone, so the public
+    -- `.reply` path later fails `.replyCapInvalid` and the caller is never
+    -- woken.  Mirrors seL4's revoke/clear-before-destroy discipline: the
+    -- holder must first reply to (or cancel) the outstanding caller, which
+    -- consumes the link (`reply.caller := none`) before the object is freed.
+    if r.caller.isSome then .error .revocationRequired else .ok st
   | _ => .ok st
 
 /-- AN4-G.2 (LIF-M02) — **named `lifecycleCleanupPipeline` wrapper** over
@@ -339,9 +349,16 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk
     rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
-  | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
+  | reply r =>
+    -- WS-SM SM6.D (PR #822 review): an in-use reply errors (vacuous on `.ok`);
+    -- a free reply is a scheduler-identity cleanup like the kinds above.
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; exact h
 
 namespace Internal
 

@@ -699,6 +699,25 @@ def r4b_scrubToken_to_retypeTarget_endToEnd : IO Unit := do
         (SeLe4n.Kernel.ScrubToken.fromCleanup hCleanup)
   expect "WS-RC R4 close-out: end-to-end ScrubToken→RetypeTarget chain reachable" true
 
+/-- WS-SM SM6.D (PR #822 review): `lifecyclePreRetypeCleanup` rejects retyping an
+    **in-use** Reply object (a caller is still blocked awaiting its reply) with
+    `.revocationRequired`, fail-closed — otherwise the caller would be stranded
+    `blockedOnReply` while its Reply object is destroyed.  A **free** Reply (no
+    `caller`) retypes cleanly.  The `newObj` is irrelevant for the `.reply`
+    current-object arm, so any KernelObject witnesses the path. -/
+def reply_inUse_retype_rejected : IO Unit := do
+  let st : SystemState := default
+  let target : SeLe4n.ObjId := ⟨505⟩
+  let newObj : KernelObject := .reply { replyId := ⟨999⟩ }
+  let inUseReply : KernelObject := .reply { replyId := ⟨505⟩, caller := some ⟨2⟩ }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st target inUseReply newObj with
+  | .error e => expect "in-use Reply retype → revocationRequired" (e == .revocationRequired)
+  | .ok _ => throw <| IO.userError "in-use Reply retype must be rejected"
+  let freeReply : KernelObject := .reply { replyId := ⟨505⟩ }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st target freeReply newObj with
+  | .ok _ => expect "free Reply retype allowed" true
+  | .error _ => throw <| IO.userError "free Reply retype must succeed"
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -1977,6 +1996,8 @@ def main : IO Unit := do
   r4b_mkRetypeTarget_reachable
   -- WS-RC R4 close-out: end-to-end B1+B2+B3 chain pin
   r4b_scrubToken_to_retypeTarget_endToEnd
+  -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
+  reply_inUse_retype_rejected
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants
