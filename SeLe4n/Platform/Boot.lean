@@ -690,7 +690,8 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
     tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
     tcb.queueNext.isNone && tcb.queuePrev.isNone &&
     tcb.timeoutBudget.isNone &&
-    decide (tcb.schedContextBinding = .unbound)
+    decide (tcb.schedContextBinding = .unbound) &&
+    tcb.replyObject.isNone
   | .vspaceRoot vsr =>
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck vsr
   | .untyped _ => true
@@ -726,17 +727,23 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
       (cn.bitsConsumed > 0 → cn.wellFormed)) ∧
     -- TCBs: clean boot state
+    -- PR #822: a boot TCB carries no reply object.
     (∀ tcb, obj = .tcb tcb →
       tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
       tcb.queueNext = none ∧ tcb.queuePrev = none ∧
       tcb.timeoutBudget = none ∧
-      tcb.schedContextBinding = .unbound) ∧
+      tcb.schedContextBinding = .unbound ∧
+      tcb.replyObject = none) ∧
     -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
     -- SchedContexts: well-formed and unbound
     (∀ sc, obj = .schedContext sc →
-      schedContextWellFormed sc ∧ sc.boundThread = none) := by
+      schedContextWellFormed sc ∧ sc.boundThread = none) ∧
+    -- WS-SM SM6.D / PR #822: a boot Reply is inert — no blocked caller,
+    -- donated SC, or prev link.
+    (∀ r, obj = .reply r →
+      r.caller = none ∧ r.donatedSc = none ∧ r.prev = none) := by
   -- Discharge each constructor case. Non-matching constructors produce absurd
   -- injection hypotheses, discharged by `intro _ h; cases h`.
   cases obj with
@@ -746,27 +753,29 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he⟩
   | notification notif =>
     simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨h1, h2⟩, h3⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, List.isEmpty_iff.mp h2, Option.eq_none_of_isNone h3⟩,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he, fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
   | cnode cn =>
     simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨hSlots, hDepth⟩, hWf⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun c hc => by injection hc; subst_vars; exact ⟨hSlots, hDepth, hWf⟩,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he⟩
   | tcb tcb =>
     simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6⟩,
-           fun _ he => by injection he, fun _ he => by injection he⟩
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7⟩,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
   | vspaceRoot vsr =>
     -- WS-RC R3: bootSafeObjectCheck for VSpaceRoot reduces to
     -- `bootSafeVSpaceRootCheck vsr = true`, which is iff `bootSafeVSpaceRoot vsr`.
@@ -775,21 +784,28 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun v hv => by injection hv; subst_vars; exact hBoot,
-           fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he⟩
   | untyped _ =>
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he, fun _ he => by injection he⟩
-  | reply _ =>
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
+  | reply r =>
+    -- WS-SM SM6.D / PR #822: the check's `.reply` arm verifies the three
+    -- inert-Reply fields; thread them to the `.reply` conclusion clause.
+    simp only [bootSafeObjectCheck, Bool.and_eq_true] at h
+    obtain ⟨⟨hCaller, hDonated⟩, hPrev⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
-           fun _ he => by injection he, fun _ he => by injection he⟩
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone hCaller, Option.eq_none_of_isNone hDonated, Option.eq_none_of_isNone hPrev⟩⟩
   | schedContext sc =>
     simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
     obtain ⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩, hUnbound⟩ := h
     refine ⟨fun _ he => by injection he, fun _ he => by injection he,
             fun _ he => by injection he, fun _ he => by injection he,
-            fun _ he => by injection he, fun s hs => ?_⟩
+            fun _ he => by injection he, fun s hs => ?_,
+            fun _ he => by injection he⟩
     injection hs; subst_vars
     constructor
     · unfold schedContextWellFormed
@@ -2474,13 +2490,17 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
     tcb.queueNext = none ∧ tcb.queuePrev = none ∧
     tcb.timeoutBudget = none ∧
-    tcb.schedContextBinding = .unbound) ∧
+    tcb.schedContextBinding = .unbound ∧
+    tcb.replyObject = none) ∧
   -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
   (∀ vs, obj = .vspaceRoot vs →
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
   -- Z9-I: SchedContexts must be well-formed and unbound at boot
   (∀ sc, obj = .schedContext sc →
-    schedContextWellFormed sc ∧ sc.boundThread = none)
+    schedContextWellFormed sc ∧ sc.boundThread = none) ∧
+  -- WS-SM SM6.D: a boot Reply is inert — no blocked caller, donated SC, or prev link.
+  (∀ r, obj = .reply r →
+    r.caller = none ∧ r.donatedSc = none ∧ r.prev = none)
 
 /-- V4-A4: A PlatformConfig is boot-safe if all initial objects satisfy
     boot safety constraints. This is the standard precondition for
@@ -2498,7 +2518,7 @@ theorem bootSafeObject_admits_rpi5BootVSpaceRoot :
         (KernelObject.vspaceRoot
           SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot) := by
   unfold bootSafeObject
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro _ he; cases he
   · intro _ he; cases he
   · intro _ he; cases he
@@ -2506,6 +2526,7 @@ theorem bootSafeObject_admits_rpi5BootVSpaceRoot :
   · intro vs hv
     cases hv
     exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafe
+  · intro _ he; cases he
   · intro _ he; cases he
 
 /-- AK8-A (WS-AK / C-M01): Cross-untyped physical-region disjointness for
@@ -2962,11 +2983,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- Z7: donationChainAcyclic (vacuous: boot TCBs have .unbound binding)
       intro tid1 _ tcb1 _ _ _ h1 _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
-      rw [hTcb1.2.2.2.2.2] at hB1; cases hB1
+      rw [hTcb1.2.2.2.2.2.1] at hB1; cases hB1
     · -- Z7: donationOwnerValid (vacuous: no donated bindings at boot)
       intro tid tcb _ _ h hBinding
       have hTcb := (hBS tid.toObjId _ h).2.2.2.1 tcb rfl
-      rw [hTcb.2.2.2.2.2] at hBinding; cases hBinding
+      rw [hTcb.2.2.2.2.2.1] at hBinding; cases hBinding
     · -- Z7: passiveServerIdle (boot TCBs have ipcState = .ready)
       intro tid tcb h _ _ _
       have hTcb := (hBS tid.toObjId _ h).2.2.2.1 tcb rfl
@@ -2974,7 +2995,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- Z7: donationBudgetTransfer (vacuous: all TCBs have .unbound → scId? = none)
       intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
-      simp [hTcb1.2.2.2.2.2, SchedContextBinding.scId?] at hB1
+      simp [hTcb1.2.2.2.2.2.1, SchedContextBinding.scId?] at hB1
     · -- AJ1-B: blockedOnReplyHasTarget (boot TCBs have ipcState = .ready)
       intro tid tcb _ _ hObj hIpc
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
@@ -3093,12 +3114,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- Z9-A: schedContextStoreConsistent — all TCBs have .unbound binding at boot
       intro tid tcb hObj scId hBinding
       have hTcbProps := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
-      rw [hTcbProps.2.2.2.2.2] at hBinding
+      rw [hTcbProps.2.2.2.2.2.1] at hBinding
       simp [SchedContextBinding.scId?] at hBinding
     · -- Z9-B: schedContextNotDualBound — all TCBs have .unbound at boot, so no scId matches
       intro tid₁ tid₂ tcb₁ tcb₂ scId h₁ h₂ hB₁ hB₂
       have hTcb₁ := (hBS tid₁.toObjId _ h₁).2.2.2.1 tcb₁ rfl
-      rw [hTcb₁.2.2.2.2.2] at hB₁
+      rw [hTcb₁.2.2.2.2.2.1] at hB₁
       simp [SchedContextBinding.scId?] at hB₁
     · -- Z9-C: schedContextRunQueueConsistent — empty runnable list at boot
       intro tid hMem; rw [hRun] at hMem; simp at hMem
@@ -3157,7 +3178,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       simp [currentBudgetPositive, hCur]
     · -- schedContextsWellFormed: boot-safe SchedContexts are well-formed (Z9-I)
       intro oid sc hObj
-      exact ((hBS oid _ hObj).2.2.2.2.2 sc rfl).1
+      exact ((hBS oid _ hObj).2.2.2.2.2.1 sc rfl).1
     · -- replenishQueueValid: default scheduler has empty queue
       simp only [replenishQueueValid, hSch]
       exact ⟨empty_sorted, empty_sizeConsistent⟩
@@ -3165,10 +3186,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       constructor
       · intro tid tcb hTcb scId hBound
         have hTcbProps := (hBS tid.toObjId _ hTcb).2.2.2.1 tcb rfl
-        rw [hTcbProps.2.2.2.2.2] at hBound; cases hBound
+        rw [hTcbProps.2.2.2.2.2.1] at hBound; cases hBound
       · intro scId sc hSc tid hBound
         -- At boot, all SchedContexts have boundThread = none (Z9-I bootSafeObject)
-        have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2 sc rfl).2
+        have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2
         rw [hNone] at hBound; cases hBound
     · -- effectiveParamsMatchRunQueue: empty runQueue at boot
       intro tid hMem
@@ -3187,7 +3208,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         | tcb tcb =>
           intro hBound
           have hTcbProps := (hBS tid.toObjId _ hLookup).2.2.2.1 tcb rfl
-          rw [hTcbProps.2.2.2.2.2] at hBound; cases hBound
+          rw [hTcbProps.2.2.2.2.2.1] at hBound; cases hBound
         | _ => trivial
   -- AG7-D: notificationWaiterConsistent — boot notifications have empty waitingThreads
   have hNtfnWaiter : notificationWaiterConsistent (bootFromPlatform config).state := by

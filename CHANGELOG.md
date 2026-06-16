@@ -1,3 +1,22 @@
+## v0.31.95 — Reply objects (seL4-MCS): boot Reply/TCB safety (PR #822 review)
+
+Boot safety now covers the first-class Reply object and the TCB reply link (the
+runtime check rejected stale boot Reply linkage, but the Prop-level boot predicate
+did not — a checked config could boot a TCB with a live `replyObject` or a Reply
+carrying a caller/donatedSc/prev):
+
+- `bootSafeObjectCheck` (runtime): the `.tcb` arm now requires `replyObject.isNone`
+  (the `.reply` arm already rejected non-inert boot Replies).
+- `bootSafeObject` (Prop): the `.tcb` clause requires `replyObject = none`, and a new
+  `.reply` conjunct requires `r.caller = none ∧ r.donatedSc = none ∧ r.prev = none` —
+  so `PlatformConfig.bootSafe` no longer admits a stale-linked boot Reply.
+- `bootSafeObjectCheck_sound_structural` extended to bridge both new requirements;
+  the boot-invariant-bundle proofs over `bootSafeObject`'s conjuncts updated for the
+  added `.reply` clause (off-by-one accessor shifts only).
+
+Closes PR #822 review items (Boot:707, Types:795).  Trace byte-identical; prod
+`lake build` (376) + staged (234) + two-phase + AN9 hardware-binding suites green.
+
 ## v0.31.94 — Reply objects (seL4-MCS): surface anchors for the Reply object (PR #822 review)
 
 Two object-level hygiene closes (the Reply object exists regardless of the gated
