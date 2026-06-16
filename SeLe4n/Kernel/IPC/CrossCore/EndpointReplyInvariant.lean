@@ -66,11 +66,11 @@ theorem endpointReplyOnCore_state_eq
       split
       · exact Or.inl rfl
       · next expected =>
+        -- PR #822 review 6J-lYm: the `replier == expected` gate was removed (authority
+        -- is the reply cap), so the `some expected` arm is directly the store match.
         split
-        · split
-          · exact Or.inl rfl
-          · next st' hStore => exact Or.inr ⟨tcb, st', hLk, hStore, rfl⟩
         · exact Or.inl rfl
+        · next st' hStore => exact Or.inr ⟨tcb, st', hLk, hStore, rfl⟩
     · exact Or.inl rfl
 
 -- ============================================================================

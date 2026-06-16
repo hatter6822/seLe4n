@@ -57,7 +57,7 @@ open SeLe4n.Testing
 -- SM6.C.1 path-reduction lemmas:
 #check @endpointReplyOnCore_reply_eq
 #check @endpointReplyOnCore_not_blocked_eq
-#check @endpointReplyOnCore_wrong_replier_eq
+#check @endpointReplyOnCore_delegated_replier_eq
 
 -- SM6.C.2 cross-core caller wake (endpointReply_remote_wake):
 #check @endpointReplyOnCore_remote_wake
@@ -137,14 +137,13 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : C
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hTcb' : st'.getTcb? target = some targetTcb')
     (hRemote : determineTargetCore st' target ≠ executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (some (determineTargetCore st' target, SgiKind.reschedule)) :=
   endpointReplyOnCore_remote_wake replier target msg executingCore st st' tcb ep expected
-    targetTcb' hSz1 hSz2 hLk hIpc hReplier hStore hTcb' hRemote
+    targetTcb' hSz1 hSz2 hLk hIpc hStore hTcb' hRemote
 
 /-- SM6.C: the reply is a single 2PL-atomic step under its lock-set. -/
 example (replier target : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (msg : IpcMessage)
@@ -165,14 +164,13 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false) :
     lowEquivalent_smp ctx observer (endpointReplyOnCore replier target msg executingCore st).1 st :=
   endpointReplyOnCore_reply_path_NI_smp ctx observer replier target msg executingCore st st' tcb ep
-    expected hSz1 hSz2 hLk hIpc hReplier hStore hObjInv hTargetHigh hTargetObjHigh
+    expected hSz1 hSz2 hLk hIpc hStore hObjInv hTargetHigh hTargetObjHigh
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM6.C cross-core reply scenarios
@@ -309,10 +307,15 @@ private def runReplayChecks : IO Unit := do
   assertBool "a replayed reply to a now-ready caller fails with replyCapInvalid"
     (match (endpointReplyOnCore serverTid clientLocalTid replyMsg2 bootCoreId post).2 with
      | .error .replyCapInvalid => true | _ => false)
-  -- Confused deputy: a replier that is NOT the recorded authorised replier is rejected.
-  assertBool "an unauthorised replier (≠ recorded replyTarget) is rejected (confused-deputy gate)"
+  -- PR #822 review 6J-lYm: a replier that is NOT the originally-recorded server — a holder
+  -- of a copied/minted (delegated) reply cap — now SUCCEEDS.  Authority is the reply
+  -- *capability* (resolved by the dispatch to `reply.caller = target`), not the fixed
+  -- recorded replier; seL4-MCS reply caps are delegatable.  The confused-deputy protection
+  -- is the cap (only a holder reaches this primitive); replay is the `.blockedOnReply`
+  -- barrier (verified above) — a consumed reply leaves the caller `.ready`.
+  assertBool "a delegated replier (copied reply-cap holder) succeeds (cap-based authority)"
     (match (endpointReplyOnCore wrongTid clientLocalTid replyMsg bootCoreId stBase).2 with
-     | .error .replyCapInvalid => true | _ => false)
+     | .ok _ => true | _ => false)
   -- A reply to a thread NOT in blockedOnReply state (the server itself) is rejected.
   assertBool "a reply to a non-blockedOnReply target is rejected"
     (match (endpointReplyOnCore serverTid serverTid replyMsg bootCoreId stBase).2 with

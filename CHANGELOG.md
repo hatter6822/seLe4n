@@ -1,3 +1,26 @@
+## v0.31.122 — Reply objects (seL4-MCS): authorize `.reply` by the reply capability, not a fixed replier (SM6.D, finding E.2 — closes 6J-lYm)
+
+**Closes PR #822 review 6J-lYm.** A reply cap copied/minted (`cspaceCopy`/`cspaceMint`) to another server
+thread is legitimate delegated authority (seL4-MCS reply caps are delegatable), but `endpointReplyOnCore`
+gated on `replier == expected` — the syscall issuer being the *originally-called* server — so a delegated
+cap always failed `.replyCapInvalid`. The live `.reply`/`.replyRecv` arms already resolve the reply
+*capability* to `reply.caller = target` and pass the cap holder as `replier`, so the gate was a redundant
+identity check. Removed it; authority now flows from holding the cap. Trace byte-identical:
+
+- **Gate deleted** in `endpointReplyOnCore`: a caller in `.blockedOnReply` is delivered regardless of
+  `replier`. The replay barrier is unchanged (a consumed reply leaves the caller `.ready`, so a replay
+  finds it not-`blockedOnReply` and fails closed); the cross-domain IFC edge stays enforced by the checked
+  dispatch's `securityFlowsTo`. `_replier` retained for documentation (the cap holder the dispatch passes).
+- **`endpointReplyOnCore_reply_eq`** and the SGI/wake/`_perCore_delivery`/`ipcInvariant`/`objects.invExt`
+  reductions + the boot-core + ∀-core NI theorems (`_reply_path_NI{,_smp}`) drop the `hReplier` hypothesis
+  (the NI conclusion was always gate-independent — it depends on the target being high, not on the
+  replier). `endpointReplyOnCore_wrong_replier_eq` → `endpointReplyOnCore_delegated_replier_eq` (a
+  delegated-cap holder now *succeeds*). `endpointReplyOnCore_state_eq`'s split drops the gate level.
+- `SmpCrossCoreReplySuite`: the confused-deputy assertion is flipped — a copied-reply-cap holder now
+  succeeds (cap-based authority); the replay + non-`blockedOnReply` + absent-target rejections stay.
+
+Full prod + staged build green (zero warnings); trace byte-identical; Lean Tier 0-2 + reply suite green.
+
 ## v0.31.121 — Reply objects (seL4-MCS): reply lock in the receive/call linking footprints (SM6.D, finding A.3 — closes 6J-NL9)
 
 Final slice of SM6.D finding A — proves the per-object reply write-lock is in the `.receive` / `.call`

@@ -83,16 +83,23 @@ the matching authorised `replier`), the caller is woken through the SM5.C
 differs from `executingCore` (the cross-core poke the runtime fires).  The
 replier is *not* descheduled (reply is non-blocking from its perspective).
 
-The confused-deputy gate is unchanged: the reply succeeds only when `replier ==
-expected` (the `replyTarget` the caller recorded at `endpointCall` time), and
-fails closed (`.replyCapInvalid`) on a `none` recorded target, a mismatched
-replier, or a caller not in `blockedOnReply` state — the SM6.C.7 replay barrier.
+Authority is the reply **capability** (PR #822 review 6J-lYm): the live `.reply` /
+`.replyRecv` arms resolve the cap to `reply.caller = target` and pass the cap
+*holder* as `replier`, so this below-API primitive does **not** gate on `replier ==
+expected` — a copied/minted (delegated) reply cap held by a *different* server is
+legitimate authority (seL4-MCS reply caps are delegatable).  It fails closed
+(`.replyCapInvalid`) only on a `none` recorded target or a caller not in
+`blockedOnReply` state (the SM6.C.7 replay barrier — a consumed reply leaves the
+caller `.ready`).  The `replier` parameter is retained for caller documentation
+(the dispatch passes the cap holder) though the gate it fed has been removed.
 
 Returns the post-state paired with `Except KernelError (Option (CoreId ×
 SgiKind))`: an error on a failed step (pre-state returned, so a `withLockSet`
 bracket still releases cleanly), or `.ok sgi?` with the optional cross-core SGI
-to emit after the state commit. -/
-def endpointReplyOnCore (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
+to emit after the state commit.  (`_replier` — the cap holder the dispatch passes —
+is retained for documentation but unused in the body since the `replier == expected`
+gate was removed: authority is the reply capability, PR #822 review 6J-lYm.) -/
+def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
   if msg.registers.size > maxMessageRegisters then (st, .error .ipcMessageTooLarge)
@@ -105,13 +112,21 @@ def endpointReplyOnCore (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
       | .blockedOnReply _ replyTarget =>
           match replyTarget with
           | none => (st, .error .replyCapInvalid)
-          | some expected =>
-            if replier == expected then
-              match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
-              | .error e => (st, .error e)
-              | .ok st' => ((wakeThread st' target executingCore).1,
-                            .ok (wakeThread st' target executingCore).2)
-            else (st, .error .replyCapInvalid)
+          | some _expected =>
+            -- PR #822 review 6J-lYm: authority flows from **holding the reply
+            -- capability**, not from the syscall issuer being the originally-called
+            -- server.  The live `.reply`/`.replyRecv` arms resolve the reply cap to
+            -- `reply.caller = target` and pass the *cap holder* as `replier`; a
+            -- copied/minted reply cap held by a different server is legitimate
+            -- delegated authority (seL4-MCS reply caps are delegatable), so this
+            -- below-API primitive no longer gates on `replier == expected`.  The
+            -- replay barrier remains: only a caller still in `.blockedOnReply` is
+            -- delivered (a consumed reply leaves the caller `.ready`), and the
+            -- single-use `reply.caller := none` consume is composed by the dispatch.
+            match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+            | .error e => (st, .error e)
+            | .ok st' => ((wakeThread st' target executingCore).1,
+                          .ok (wakeThread st' target executingCore).2)
       | _ => (st, .error .replyCapInvalid)
 
 /-- WS-SM SM6.C.5 (plan §3.1): endpoint receive across cores — the receive leg of
@@ -267,10 +282,11 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
 -- ============================================================================
 
 /-- WS-SM SM6.C.1: full reduction of the **reply** (success) path — the caller
-`target` is in `blockedOnReply` state recording the authorised replier `expected`,
-and `replier == expected`.  The post-state delivers the reply message + `.ready`
-to the caller and wakes it cross-core; the surfaced SGI is exactly the caller
-wake's. -/
+`target` is in `blockedOnReply` state recording an authorised replier (`some
+expected`).  Authority flows from holding the reply cap (resolved by the dispatch),
+so the delivery is independent of `replier` (PR #822 review 6J-lYm).  The post-state
+delivers the reply message + `.ready` to the caller and wakes it cross-core; the
+surfaced SGI is exactly the caller wake's. -/
 theorem endpointReplyOnCore_reply_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
@@ -278,14 +294,12 @@ theorem endpointReplyOnCore_reply_eq
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
     endpointReplyOnCore replier target msg executingCore st
       = ((wakeThread st' target executingCore).1, .ok (wakeThread st' target executingCore).2) := by
   unfold endpointReplyOnCore
   rw [if_neg hSz1, if_neg hSz2]
   simp only [hLk, hIpc]
-  rw [if_pos hReplier]
   simp only [hStore]
 
 /-- WS-SM SM6.C.7 (replay barrier): a reply to a caller **not** in `blockedOnReply`
@@ -305,22 +319,27 @@ theorem endpointReplyOnCore_not_blocked_eq
   rw [if_neg hSz1, if_neg hSz2]
   simp only [hLk]
 
-/-- WS-SM SM6.C.1/.7: a reply whose `replier` does **not** match the caller's
-recorded authorised replier (`expected`) fails closed with `.replyCapInvalid`
-(the confused-deputy gate) — no state change, no wake. -/
-theorem endpointReplyOnCore_wrong_replier_eq
+/-- WS-SM SM6.C (PR #822 review 6J-lYm): a reply whose `replier` does **not** match
+the caller's recorded `expected` server — a holder of a **copied/minted (delegated)
+reply cap** — now **succeeds** (delivers + wakes), exactly like the original server.
+Authority is the reply *capability* (resolved by the dispatch to `reply.caller =
+target`), not the fixed recorded replier; seL4-MCS reply caps are delegatable.  The
+confused-deputy protection is the cap (only a holder reaches this primitive); replay
+is the `.blockedOnReply` state barrier (a consumed reply leaves the caller `.ready`).
+Subsumed by `endpointReplyOnCore_reply_eq`, which is now replier-independent. -/
+theorem endpointReplyOnCore_delegated_replier_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = false) :
-    endpointReplyOnCore replier target msg executingCore st = (st, .error .replyCapInvalid) := by
-  unfold endpointReplyOnCore
-  rw [if_neg hSz1, if_neg hSz2]
-  simp only [hLk, hIpc]
-  rw [if_neg (by simp [hReplier])]
+    (_hDelegated : (replier == expected) = false)
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
+    endpointReplyOnCore replier target msg executingCore st
+      = ((wakeThread st' target executingCore).1, .ok (wakeThread st' target executingCore).2) :=
+  endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+    hSz1 hSz2 hLk hIpc hStore
 
 -- ============================================================================
 -- §4  SM6.C.2 — Cross-core caller wake: SGI emission (`endpointReply_remote_wake`)
@@ -342,14 +361,13 @@ theorem endpointReplyOnCore_remote_wake
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hTcb' : st'.getTcb? target = some targetTcb')
     (hRemote : determineTargetCore st' target ≠ executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (some (determineTargetCore st' target, SgiKind.reschedule)) := by
   rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hReplier hStore]
+        hSz1 hSz2 hLk hIpc hStore]
   show Except.ok (wakeThread st' target executingCore).2
       = Except.ok (some (determineTargetCore st' target, SgiKind.reschedule))
   rw [wakeThread_emits_sgi_if_remote st' target executingCore targetTcb' hTcb' hRemote]
@@ -364,12 +382,11 @@ theorem endpointReplyOnCore_no_sgi_if_local
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hLocal : determineTargetCore st' target = executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2 = .ok none := by
   rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hReplier hStore]
+        hSz1 hSz2 hLk hIpc hStore]
   show Except.ok (wakeThread st' target executingCore).2 = Except.ok none
   rw [wakeThread_no_sgi_if_local st' target executingCore hLocal]
 
@@ -494,7 +511,6 @@ theorem endpointReplyOnCore_perCore_delivery
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt) :
     ∃ t, (endpointReplyOnCore replier target msg executingCore st).1.getTcb? target = some t
@@ -506,7 +522,7 @@ theorem endpointReplyOnCore_perCore_delivery
   have hSelf : st'.getTcb? target = some { tcb with ipcState := .ready, pendingMessage := some msg } :=
     storeTcbIpcStateAndMessage_fromTcb_self st st' target tcb .ready (some msg) hObjInv hStore
   rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hReplier hStore]
+        hSz1 hSz2 hLk hIpc hStore]
   refine ⟨{ tcb with ipcState := .ready, pendingMessage := some msg }, ?_, rfl, rfl⟩
   show (wakeThread st' target executingCore).1.getTcb? target = some _
   rw [wakeThread_getTcb?_eq_of_ready st' target executingCore
@@ -665,7 +681,6 @@ theorem endpointReplyOnCore_replay_rejected
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
     (hSz1' : ¬ msg2.registers.size > maxMessageRegisters)
@@ -674,7 +689,7 @@ theorem endpointReplyOnCore_replay_rejected
         (endpointReplyOnCore replier target msg executingCore st).1).2 = .error .replyCapInvalid := by
   obtain ⟨t, hGet, hReady, _⟩ :=
     endpointReplyOnCore_perCore_delivery replier target msg executingCore st st' tcb ep expected
-      hSz1 hSz2 hLk hIpc hReplier hStore hObjInv
+      hSz1 hSz2 hLk hIpc hStore hObjInv
   have hLkPost : lookupTcb (endpointReplyOnCore replier target msg executingCore st).1 target = some t :=
     lookupTcb_some_of_getTcb?_some st _ target tcb t hLk hGet
   rw [endpointReplyOnCore_not_blocked_no_sgi replier2 target msg2 executingCore2
@@ -745,7 +760,6 @@ theorem endpointReplyOnCore_perCore_consistent
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hOther : determineTargetCore st' target ≠ c') :
     (endpointReplyOnCore replier target msg executingCore st).1.scheduler.runQueueOnCore c'
@@ -757,7 +771,7 @@ theorem endpointReplyOnCore_perCore_consistent
   have hSched : st'.scheduler = st.scheduler :=
     storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready (some msg) hStore'
   rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hReplier hStore]
+        hSz1 hSz2 hLk hIpc hStore]
   obtain ⟨hRQ, hCur⟩ := wakeThread_independent_of_other_core st' target executingCore c' hOther
   exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
 

@@ -57,7 +57,6 @@ theorem endpointReplyOnCore_reply_path_NI
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
     (hTargetHigh : threadObservable ctx observer target = false)
@@ -69,7 +68,7 @@ theorem endpointReplyOnCore_reply_path_NI
   have hInv' : st'.objects.invExt :=
     storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg) hObjInv hStore'
   rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hReplier hStore]
+        hSz1 hSz2 hLk hIpc hStore]
   show projectState ctx observer (wakeThread st' target executingCore).1
     = projectState ctx observer st
   rw [wakeThread_preserves_projection ctx observer st' target executingCore
@@ -98,7 +97,6 @@ theorem endpointReplyOnCore_reply_path_NI_smp
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hReplier : (replier == expected) = true)
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
     (hTargetHigh : threadObservable ctx observer target = false)
@@ -114,7 +112,7 @@ theorem endpointReplyOnCore_reply_path_NI_smp
       (endpointReplyOnCore replier target msg executingCore st).1 c
     = projectStateOnCore ctx observer st c
   rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hReplier hStore]
+        hSz1 hSz2 hLk hIpc hStore]
   show projectStateOnCore ctx observer (wakeThread st' target executingCore).1 c
     = projectStateOnCore ctx observer st c
   rw [wakeThread_preserves_projectionOnCore ctx observer st' target executingCore c
