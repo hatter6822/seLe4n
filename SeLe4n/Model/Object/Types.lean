@@ -328,12 +328,16 @@ end AccessRightSet
 
 /-- The addressable target of a capability in the abstract object universe.
 
-WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities that
-reference a specific sender's TCB, enabling bidirectional IPC. -/
+WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities.
+
+WS-SM SM6.D (seL4-MCS Reply objects): `replyCap` references a first-class
+`Reply` *object* by `ReplyId` (the single-use reply authority), not a raw
+sender `ThreadId`.  The reply path resolves the `ReplyId` to its `reply.caller`
+linkage and consumes it (`reply.caller := none`) on use. -/
 inductive CapTarget where
   | object (id : SeLe4n.ObjId)
   | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
-  | replyCap (senderTcb : SeLe4n.ThreadId)
+  | replyCap (replyId : SeLe4n.ReplyId)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited

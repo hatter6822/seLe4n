@@ -286,7 +286,7 @@ def capability_cnodeSlot_not_null : IO Unit := do
       rights := AccessRightSet.empty, badge := none }
   expect "cnodeSlot not null" (cap.isNull = false)
   let reply : Capability :=
-    { target := .replyCap ⟨0⟩
+    { target := .replyCap SeLe4n.ReplyId.sentinel
       rights := AccessRightSet.empty, badge := none }
   expect "replyCap not null" (reply.isNull = false)
 

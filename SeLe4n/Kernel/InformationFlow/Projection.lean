@@ -195,7 +195,10 @@ def capTargetObservable (ctx : LabelingContext) (observer : IfObserver) (target 
   match target with
   | .object oid => objectObservable ctx observer oid
   | .cnodeSlot cnode _ => objectObservable ctx observer cnode
-  | .replyCap tid => threadObservable ctx observer tid
+  -- WS-SM SM6.D: a reply cap now references a `Reply` object by `ReplyId`; the
+  -- slot reveals that object's identity, so it is observable iff the reply
+  -- object is — consistent with the `.object`/`.cnodeSlot` arms above.
+  | .replyCap rid => objectObservable ctx observer rid.toObjId
 
 /-- WS-F3/F-22: Filter a KernelObject to redact high-domain information.
 For CNode objects, removes capability slots whose targets are not observable

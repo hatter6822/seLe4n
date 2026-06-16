@@ -826,7 +826,7 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          , ((SeLe4n.Slot.ofNat 2), { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
+          , ((SeLe4n.Slot.ofNat 2), { target := .replyCap (SeLe4n.ReplyId.ofNat 1), rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
       |>.buildChecked)
 

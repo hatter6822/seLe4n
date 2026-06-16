@@ -1930,8 +1930,8 @@ private def chain31SyscallReply : IO Unit := do
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
-            -- Slot 0: reply cap targeting the blocked sender
-            ((SeLe4n.Slot.ofNat 0), { target := .replyCap ⟨503⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            -- Slot 0: reply cap referencing the reply object (ReplyId 503)
+            ((SeLe4n.Slot.ofNat 0), { target := .replyCap (SeLe4n.ReplyId.ofNat 503), rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
       })
       |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })

@@ -1,3 +1,33 @@
+## v0.31.88 — Reply objects (seL4-MCS): reply cap names a ReplyId (C-wire cap-swap)
+
+The atomic keystone of the live wiring: `CapTarget.replyCap` now references a
+first-class `Reply` *object* by `ReplyId` (the single-use reply authority),
+replacing the raw sender `ThreadId`.  The `.reply` syscall resolves the `ReplyId`
+to its recorded `reply.caller`, replies to that caller, and **consumes** the
+single-use linkage.
+
+- `CapTarget.replyCap (replyId : SeLe4n.ReplyId)` (`Model/Object/Types.lean`),
+  was `(senderTcb : ThreadId)`.
+- `API.dispatchWithCap{,Checked}` `.reply` arms: resolve `getReply? rid →
+  reply.caller = some callerTid` (fail closed `.replyCapInvalid` on a dangling
+  reply or an unlinked caller) → feed the UNCHANGED `endpointReplyCrossCoreDispatch
+  {,Checked} tid callerTid …` (its internal `replier == blockedOnReply.replyTarget`
+  confused-deputy gate intact) → `consumeCallerReply callerTid rid`
+  (`reply.caller := none`, the structural single-use barrier).  The C-preserve-2
+  `consumeCallerReply_preserves_ipcInvariantFull` composes through.
+- `capTargetObservable .replyCap rid` projects the reply object's identity
+  (`objectObservable … rid.toObjId`), stateless and consistent with the
+  `.object`/`.cnodeSlot` arms (`InformationFlow/Projection.lean`).
+- Re-proved `checkedDispatch_reply_eq_unchecked_when_allowed` (now conditioned on
+  the resolved caller) and `dispatchWithCap_reply_populates_msg`.
+- Fixtures (`OperationChainSuite`/`InformationFlowSuite`/`ModelIntegritySuite`)
+  updated to `.replyCap (ReplyId.ofNat n)` / `ReplyId.sentinel`.
+
+Per the faithful-seL4-MCS decision (D4 revised → server-supplied reply objects),
+the reply-object *linking* moves to the receive path (`Recv`/`ReplyRecv`) — the
+next slice; `.call` is unchanged by the cap-swap.  Trace byte-identical (233/233);
+prod `lake build` + staged anchor + Tier 0/1/2 + all affected suites green.
+
 ## v0.31.87 — Reply objects (seL4-MCS): MCS Call ABI decode (slice C-abi)
 
 The argument-decode surface for the faithful MCS `Call` syscall, which passes a
