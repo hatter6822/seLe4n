@@ -640,6 +640,45 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     "bind with a read-only notification cap should fail with illegalAuthority"
 
 
+/-- SD-051: faithful seL4-MCS receive linkage (`linkReceivedCaller`, the new
+    `.receive`-arm step). After `endpointReceiveDual` rendezvouses a `Call` (moving
+    the caller to `.blockedOnReply`), the kernel links that caller to the
+    server-supplied reply object so the server's later `.reply` resolves authority
+    through `reply.caller`. A `Call` rendezvous carrying NO reply object is rejected
+    fail-closed (`.replyCapInvalid`) — the post-state is discarded, so the caller is
+    not stranded. A non-`Call` (`.ready`) rendezvous links nothing. -/
+private def sd051_receiveLinkCaller : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  -- (a) link the Call caller (now blockedOnReply) to the server-supplied reply object
+  expect "sd051a_receive_links_caller"
+    (match SeLe4n.Kernel.linkReceivedCaller caller (some rid) st with
+     | .ok ((), st') =>
+        (st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+        (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid))
+     | .error _ => false)
+    "Call caller should be linked to the server-supplied reply object"
+  -- (b) a Call rendezvous with NO reply object is rejected fail-closed (not stranded)
+  expect "sd051b_call_without_reply_rejected"
+    (match SeLe4n.Kernel.linkReceivedCaller caller none st with
+     | .error .replyCapInvalid => true | _ => false)
+    "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
+  -- (c) a non-Call (.ready) rendezvous links nothing
+  expect "sd051c_ready_rendezvous_no_link"
+    (match SeLe4n.Kernel.linkReceivedCaller server (some rid) st with
+     | .ok ((), st') => (st'.getTcb? server).all (fun t => decide (t.replyObject = none))
+     | .error _ => false)
+    "a non-Call (ready) rendezvous must not establish a reply link"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -671,4 +710,5 @@ def main : IO Unit := do
   sd042_bootInitialise_malformed_config_rejects
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
+  sd051_receiveLinkCaller
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

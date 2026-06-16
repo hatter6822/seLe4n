@@ -292,6 +292,51 @@ theorem extractReplyId_eq_ok_iff (cap : Capability) (rid : SeLe4n.ReplyId) :
   unfold extractReplyId
   cases cap.target <;> simp
 
+/-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
+reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
+its `ReplyId`.  Crucially the reply cap lives at a **different** CSpace slot than
+the endpoint receive cap, so we resolve it through a gate whose `capAddr` is
+`replyCPtr` (not the primary syscall gate, which names the endpoint).  Read-only.
+Returns `none` for a plain `Recv` that omits a reply object (the source may be a
+`Send`/`Notification`), an unresolvable slot, or a non-reply cap — the caller arm
+then links only on a genuine `Call` rendezvous. -/
+def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) : Option SeLe4n.ReplyId :=
+  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | .error _ => none
+  | .ok rargs =>
+      let replyGate : SyscallGate :=
+        { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
+      match syscallLookupCap replyGate st with
+      | .error _ => none
+      | .ok (rcap, _) =>
+          match extractReplyId rcap with
+          | .error _ => none
+          | .ok rid => some rid
+
+/-- WS-SM SM6.D (faithful seL4-MCS receive linkage): after `endpointReceiveDual`
+rendezvouses, link the woken caller to the server's reply object when (and only
+when) the caller is a `Call` — i.e. the receive moved it to `.blockedOnReply`.
+`linkCallerReply` establishes the bidirectional `reply.caller` / `tcb.replyObject`
+link (fail-closed on an in-use reply).  A `Call` rendezvous that carries **no**
+reply object is rejected `.replyCapInvalid` (the post-state is discarded, so the
+caller is *not* stranded `.blockedOnReply` with no reply object — seL4-MCS
+requires the server to provide a reply object to answer a Call).  A plain `Send`
+rendezvous (`.ready`) or the no-sender block path (`.blockedOnReceive`) links
+nothing. -/
+def linkReceivedCaller (sender : SeLe4n.ThreadId)
+    (replyIdOpt : Option SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match st.getTcb? sender with
+    | some sTcb =>
+        match sTcb.ipcState with
+        | .blockedOnReply _ _ =>
+            match replyIdOpt with
+            | some rid => SystemState.linkCallerReply sender rid st
+            | none => .error .replyCapInvalid
+        | _ => .ok ((), st)
+    | none => .ok ((), st)
+
 -- ============================================================================
 -- Syscall soundness theorems
 -- ============================================================================
@@ -917,15 +962,17 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
   | .receive =>
     match cap.target with
     | .object epId =>
-      -- WS-SM SM6.D (gated): plain receive.  The faithful server-supplied reply
-      -- linkage is staged OFF here — it is re-wired in the cohesive Reply-object
-      -- integration (lifecycle / info-flow / donation) so the live linkage lands
-      -- complete rather than exposing transient integration gaps.  The Reply
-      -- object, its `ipcInvariantFull` preservation, the `linkCallerReply` /
-      -- `consumeCallerReply` mutators, the cap-swap, and the `RecvArgs` /
-      -- `syscallLookupReplyId` resolution remain in place as the sound foundation.
-      fun st => match endpointReceiveDual epId tid st with
-        | .ok (_, st') => .ok ((), st')
+      -- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): the
+      -- server supplies a Reply object capability at `RecvArgs.replyCPtr`
+      -- (msgRegs[0]) — a *separate* CPtr from the endpoint receive cap, resolved
+      -- from the caller's own CSpace via a gate whose `capAddr` is that slot.
+      -- On a `Call` rendezvous (the popped sender lands `.blockedOnReply`) the
+      -- kernel links that caller to the server's reply object so the server's
+      -- later `.reply` resolves authority through `reply.caller`.
+      fun st =>
+        let replyIdOpt := resolveRecvReplyId gate decoded st
+        match endpointReceiveDual epId tid st with
+        | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -1153,11 +1200,16 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   | .receive =>
     match cap.target with
     | .object epId =>
-      -- WS-SM SM6.D (gated): plain flow-checked receive — the server-supplied reply
-      -- linkage is staged OFF (re-wired with the cohesive integration), matching the
-      -- unchecked arm.
-      fun st => match endpointReceiveDualChecked ctx epId tid st with
-        | .ok (_, st') => .ok ((), st')
+      -- WS-SM SM6.D (faithful seL4-MCS receive linkage, flow-checked): mirrors the
+      -- unchecked `.receive` arm — resolve the server-supplied reply cap at
+      -- `RecvArgs.replyCPtr` and, on a `Call` rendezvous, link the woken caller to
+      -- the server's reply object.  The endpoint→receiver flow gate stays in
+      -- `endpointReceiveDualChecked`; the reply linkage adds no cross-domain flow
+      -- (the server already observes the sender it received from).
+      fun st =>
+        let replyIdOpt := resolveRecvReplyId gate decoded st
+        match endpointReceiveDualChecked ctx epId tid st with
+        | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).

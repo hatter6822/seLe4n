@@ -1,3 +1,31 @@
+## v0.31.102 — Reply objects (seL4-MCS): re-wire faithful server-supplied `.receive` linking (PR #822 review)
+
+The `.receive` dispatch arms were gated to plain receive (no reply linking), so the
+live `.reply` path — which resolves authority through `reply.caller` — had no
+producer of that link in the common caller-already-queued case.  Both `.receive`
+arms (unchecked + flow-checked) now perform faithful seL4-MCS server-supplied
+linking:
+
+- **Resolve the server-supplied reply cap at the right slot** (new
+  `resolveRecvReplyId`): the reply cap lives at `RecvArgs.replyCPtr` (msgRegs[0]),
+  a *different* CSpace slot than the endpoint receive cap, so it is resolved through
+  a gate whose `capAddr` is `replyCPtr` — not the primary syscall gate (which names
+  the endpoint).  Read-only; `none` for a plain Recv that omits a reply object.
+- **Link the rendezvoused caller** (new `linkReceivedCaller`): when
+  `endpointReceiveDual` moves a `Call` sender to `.blockedOnReply`, the kernel links
+  it to the server's reply object via `linkCallerReply` (bidirectional
+  `reply.caller` / `tcb.replyObject`).  A `Call` rendezvous carrying **no** reply
+  object is rejected `.replyCapInvalid` fail-closed (the post-state is discarded, so
+  the caller is not stranded `.blockedOnReply` with no reply object).  A plain Send
+  rendezvous / block path links nothing (so plain receive is unchanged — `chain10`
+  green).
+
+New `SyscallDispatchSuite.sd051_receiveLinkCaller` (3 assertions: link / reject /
+no-link).  Closes PR #822 review items (API:281 helper-gate, the "dequeue Call
+without reply" stranding).  Full prod + staged `lake build` + Tier 0/1/2 + Rust
+conformance green; trace byte-identical (the `.receive` dispatch is not
+trace-exercised, and the resolution is read-only / Send path unchanged).
+
 ## v0.31.101 — Reply objects (seL4-MCS): consume/reject the reply link on lifecycle teardown (PR #822 review)
 
 Three teardown paths could strand a first-class Reply object permanently in-use
