@@ -717,6 +717,18 @@ def reply_inUse_retype_rejected : IO Unit := do
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup st target freeReply newObj with
   | .ok _ => expect "free Reply retype allowed" true
   | .error _ => throw <| IO.userError "free Reply retype must succeed"
+  -- PR #822 review: a FREE reply (caller = none) that is STASHED in a server's
+  -- `pendingReceiveReply` (server-first receive awaiting its next Call) is also
+  -- in-use and must be rejected — else the waiting server's stash dangles.
+  let stashTcb : TCB :=
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      pendingReceiveReply := some ⟨505⟩ }
+  let stStashed : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
+  | .error e => expect "stashed Reply retype → revocationRequired" (e == .revocationRequired)
+  | .ok _ => throw <| IO.userError "stashed (pendingReceiveReply) Reply retype must be rejected"
 
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers

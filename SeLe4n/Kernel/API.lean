@@ -319,7 +319,17 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
       | .ok (rcap, _) =>
           match extractReplyId rcap with
           | .error _ => none
-          | .ok rid => some rid
+          | .ok rid =>
+              -- PR #822 review: validate the reply object exists AND is FREE
+              -- (`caller = none`) before treating the cap as a usable reply.  Both
+              -- the caller-first link and the server-first stash need a live,
+              -- unlinked Reply object — stashing an absent / already-linked reply
+              -- would block the server (the later Call rendezvous would roll back
+              -- via `linkCallerReply`); fail-closed (→ `none`) symmetrically with
+              -- the caller-first path.
+              match st.getReply? rid with
+              | some r => if r.caller.isNone then some rid else none
+              | none => none
 
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): after `endpointReceiveDual`
 rendezvouses, link the woken caller to the server's reply object when (and only
@@ -346,12 +356,17 @@ def linkReceivedCaller (sender : SeLe4n.ThreadId)
         | .blockedOnReceive _ =>
             -- server-first: the *server* itself blocked on receive (no caller was
             -- queued).  Stash the supplied reply object on the server so a later
-            -- `Call` rendezvous can be linked to it (`linkServerFirstCaller`).  A
-            -- plain receive with no reply object stashes nothing.
+            -- `Call` rendezvous can be linked to it (`linkServerFirstCaller`).
             match replyIdOpt with
             | some rid =>
                 storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := some rid }) st
-            | none => .ok ((), st)
+            | none =>
+                -- PR #822 review: a plain receive (no reply object) must CLEAR any
+                -- stale `pendingReceiveReply` left by a prior server-first receive
+                -- that woke via `Send` / was cancelled — else a later `Call` could be
+                -- linked to a stale reply id (`linkServerFirstCaller`).  Fail-closed:
+                -- the current receive supplies no reply ⇒ no stash.
+                storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := none }) st
         | _ => .ok ((), st)
     | none => .ok ((), st)
 
@@ -379,7 +394,15 @@ def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
                         storeObject server.toObjId
                           (.tcb { sTcb with pendingReceiveReply := none }) st1
                     | none => .ok ((), st1)
-            | none => .ok ((), st)
+            | none =>
+                -- PR #822 review: the Call rendezvoused with a waiting server that
+                -- provided NO reply object (a plain `Recv`).  seL4-MCS cannot answer
+                -- a Call without a reply object, so reject fail-closed — the
+                -- post-state is discarded, so the caller is *not* stranded
+                -- `.blockedOnReply` with no linked Reply, and the server is not
+                -- spuriously woken.  Symmetric to the caller-first reject in
+                -- `linkReceivedCaller`.
+                .error .replyCapInvalid
         | _ => .ok ((), st)
     | none => .ok ((), st)
 
@@ -394,6 +417,10 @@ from *holding* the reply cap, exactly like the `.reply` arm — no raw-thread
 bypass). -/
 def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) : Option (SeLe4n.ReplyId × SeLe4n.ThreadId) :=
+  -- PR #822 review: require MR0 explicitly present (`msgInfo.length ≥ 1`) before
+  -- reading the reply CPtr — the ARM64 register decoder always materializes x2..x5,
+  -- so a length-0 `ReplyRecv` must not resolve/consume a stale (x2) reply cap.
+  if decoded.msgInfo.length == 0 then none else
   match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
   | .error _ => none
   | .ok rargs =>

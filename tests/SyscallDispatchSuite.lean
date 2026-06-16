@@ -764,6 +764,35 @@ private def sd053_serverFirstLink : IO Unit := do
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
         "the server's stash should be cleared after linking"
   | .error _ => failLine "sd053b" "linkServerFirstCaller should succeed"
+  -- (c) PR #822 review: a plain receive (no reply object) CLEARS a stale stash so a
+  -- later Call cannot reuse it (server woke via Send / was cancelled, then re-Recv's).
+  let stStale : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
+      |>.build)
+  match SeLe4n.Kernel.linkReceivedCaller server none stStale with
+  | .ok ((), st') =>
+      expect "sd053c_plain_receive_clears_stale_stash"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "a plain (no-reply) receive must clear any stale pendingReceiveReply"
+  | .error _ => failLine "sd053c" "plain receive (clear stash) should succeed"
+  -- (d) PR #822 review: a Call that rendezvouses with a waiting server holding NO
+  -- reply object (plain Recv) is rejected fail-closed (cannot answer a Call).
+  let stNoStash : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject caller.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.build)
+  match SeLe4n.Kernel.linkServerFirstCaller caller stNoStash with
+  | .error e =>
+      expect "sd053d_server_first_call_without_reply_rejected"
+        (e == .replyCapInvalid)
+        "a server-first Call with no stashed reply object must be rejected"
+  | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
 
 end SeLe4n.Testing.SyscallDispatchSuite
 

@@ -189,6 +189,18 @@ theorem detachCNodeSlots_lifecycle_eq
     rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_lifecycle_eq acc
       { cnode := cnodeId, slot := slot }).trans hAcc)
 
+/-- WS-SM SM6.D (PR #822 review): does any TCB stash `rid` in its
+`pendingReceiveReply` (a *server-first* receive that is waiting to hand this Reply
+object to its next `Call`)?  Such a Reply is "in use" even though its `caller` is
+still `none` — retyping/deleting it would leave the waiting server pointing at a
+removed Reply, so the next `Call` rendezvous rolls back and the server cannot
+accept Call IPC.  Used by `lifecyclePreRetypeCleanup` to reject the retype. -/
+def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  st.objects.fold (init := false) fun acc _oid obj =>
+    acc || match obj with
+      | .tcb t => t.pendingReceiveReply == some rid
+      | _ => false
+
 /-- WS-H2, R4-B.2 (M-13): Pre-retype cleanup combining TCB reference cleanup,
     CDT detach, and service registration cleanup.
     - If the current object is a TCB: clean up scheduler + IPC references.
@@ -228,15 +240,18 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     | .cnode _ => .ok st  -- CNode → CNode: no CDT cleanup needed
     | _ => .ok (detachCNodeSlots st target cn)
   | .reply r =>
-    -- WS-SM SM6.D (PR #822 review): reject retyping/deleting a Reply object
-    -- that is still in use (a caller is blocked awaiting its reply).  Without
-    -- this guard the caller is stranded `blockedOnReply` with
-    -- `replyObject = some rid` while `getReply? rid` is gone, so the public
-    -- `.reply` path later fails `.replyCapInvalid` and the caller is never
-    -- woken.  Mirrors seL4's revoke/clear-before-destroy discipline: the
-    -- holder must first reply to (or cancel) the outstanding caller, which
-    -- consumes the link (`reply.caller := none`) before the object is freed.
-    if r.caller.isSome then .error .revocationRequired else .ok st
+    -- WS-SM SM6.D (PR #822 review): reject retyping/deleting a Reply object that
+    -- is still in use.  Two in-use forms: (1) a caller is blocked awaiting its
+    -- reply (`r.caller.isSome` — caller-first link); (2) a server-first receiver
+    -- has stashed this Reply in its `pendingReceiveReply` awaiting its next Call
+    -- (`replyIsStashed`, `r.caller` still `none`).  Either way, freeing it strands
+    -- the caller / blocks the server (the later `.reply` / `linkServerFirstCaller`
+    -- fails `.replyCapInvalid`).  Mirrors seL4's revoke/clear-before-destroy: the
+    -- holder must first reply to (or cancel) the outstanding caller, or the server
+    -- must re-`Recv`, clearing the link before the object is freed.
+    if r.caller.isSome || replyIsStashed st r.replyId then
+      .error .revocationRequired
+    else .ok st
   | _ => .ok st
 
 /-- AN4-G.2 (LIF-M02) — **named `lifecycleCleanupPipeline` wrapper** over

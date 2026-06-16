@@ -1,3 +1,31 @@
+## v0.31.105 — Reply objects (seL4-MCS): harden the server-first reply stash (PR #822 review)
+
+Five edge-case fixes to the `pendingReceiveReply` server-first stash from v0.31.104:
+
+- **Validate before stashing** (`resolveRecvReplyId`): a reply cap is resolved only
+  if `getReply? rid` is a live, **free** Reply (`caller = none`) — an absent /
+  already-linked reply fails closed (→ `none`) symmetrically with the caller-first
+  path instead of stashing a reply the later Call would roll back on.
+- **Clear stale stashes** (`linkReceivedCaller`): a plain receive (no reply object)
+  now **clears** any stale `pendingReceiveReply` left by a prior server-first receive
+  that woke via `Send` / was cancelled, so a later Call cannot reuse a stale reply id.
+- **Reject server-first Calls without a reply** (`linkServerFirstCaller`): a Call that
+  rendezvouses with a waiting server holding **no** reply object is rejected
+  `.replyCapInvalid` fail-closed (post-state discarded — caller not stranded, server
+  not spuriously woken), symmetric to the caller-first reject.
+- **ReplyRecv length gate** (`resolveReplyRecvReply`): require `msgInfo.length ≥ 1`
+  before reading MR0 — a length-0 `ReplyRecv` must not resolve/consume a stale x2
+  reply cap (mirrors the v0.31.104 receive length gate).
+- **Reject retyping stashed Replies** (`lifecyclePreRetypeCleanup` + new
+  `replyIsStashed`): a free Reply (`caller = none`) **stashed** in a server's
+  `pendingReceiveReply` is now also `.revocationRequired` — freeing it would dangle
+  the waiting server's stash.
+
+`SyscallDispatchSuite.sd053` extended (clear-stale, reject-no-reply) and
+`ModelIntegritySuite.reply_inUse_retype_rejected` extended (stashed-reject).  Closes
+PR #822 review items (API:353/354/382/397, CleanupPreservation:239).  Full prod +
+staged `lake build` + Tier 0/1/2 + Rust conformance green; trace byte-identical.
+
 ## v0.31.104 — Reply objects (seL4-MCS): server-first receive linkage + reply-ABI control-register fixes (PR #822 review)
 
 Completes the faithful seL4-MCS receive linkage (both Call/Recv orderings) and
