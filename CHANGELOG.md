@@ -1,3 +1,38 @@
+## v0.31.106 — Reply objects (seL4-MCS): bidirectional Reply↔TCB linkage in the IPC invariant (PR #822 review)
+
+Adds `replyCallerLinkage` as the **16th conjunct** of `ipcInvariantFull` — the
+bidirectional consistency tying every `TCB.replyObject` forward link to a
+reciprocating `Reply.caller` back-link (and vice versa).  Without it
+`ipcInvariantFull` admitted a state where a TCB points at an absent/different
+Reply, or a `reply.caller` is not reciprocated, so a stale reply cap could act on
+or erase the wrong outstanding reply link.
+
+- **New predicate** `replyCallerLinkage` (forward `replyObject ⇒ reciprocating
+  reply`; backward `reply.caller ⇒ reciprocating TCB`).
+- **Established/preserved by the live reply mutators**: `linkCallerReply`
+  establishes it (sets both halves reciprocally, fail-closed on an in-use reply;
+  `linkCallerReply_establishes_replyCallerLinkage`), `consumeCallerReply` preserves
+  it on a mutually linked pair (`consumeCallerReply_preserves_replyCallerLinkage`).
+  Supporting frame + precondition lemmas (`linkCallerReply_objects_frame`,
+  `consumeCallerReply_objects_frame`, `linkCallerReply_pre`).
+- **Core/Full split**: `ipcInvariantCore` = the 15 structural conjuncts; the generic
+  reply-store building blocks (`storeObject_reply` / `storeObject_tcb_replyObject`)
+  now preserve only `ipcInvariantCore` — **not** the linkage — directly answering
+  the review (an arbitrary `replyObject` store is no longer `ipcInvariantFull`-
+  preserving).  `linkCallerReply` / `consumeCallerReply` re-assemble the full
+  invariant from the core (sequenced through the intermediate state, which
+  legitimately breaks the reciprocal link) plus the re-established linkage.
+- Cascade: the 16th conjunct threaded through the construction surface (10
+  non-mutating IPC transitions + the cross-core lifecycle bundle externalize it
+  alongside `blockedOnReplyHasTarget`; the timer/register/context and boot/default
+  states frame it via `replyCallerLinkage_of_objects_eq`); named projection +
+  bridge + `ipcInvariantCore` projection layer added.  AK7 baseline re-anchored
+  (additive invariant, `RAW_LOOKUP_TID` 837→851).
+
+Closes PR #822 review item (DualQueueMembership:2508 — "Add replyObject to the IPC
+invariant").  Full prod + staged `lake build` + Tier 0/1/2 green; trace
+byte-identical (proof-only surface); zero `sorry`/`axiom`.
+
 ## v0.31.105 — Reply objects (seL4-MCS): harden the server-first reply stash (PR #822 review)
 
 Five edge-case fixes to the `pendingReceiveReply` server-first stash from v0.31.104:

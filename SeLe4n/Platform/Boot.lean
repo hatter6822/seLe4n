@@ -2899,7 +2899,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       (bootFromPlatform config).hLifecycleConsistent
   -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -3003,6 +3003,13 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro tid tcb _ _ hObj hIpc
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcb.2.1] at hIpc; cases hIpc
+    · -- WS-SM SM6.D (PR #822): replyCallerLinkage (vacuous — boot TCBs have
+      -- replyObject = none and boot Replies have caller = none)
+      refine ⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩
+      · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+        rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
+      · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
+        rw [hR.1] at hCaller; cases hCaller
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by
