@@ -1,3 +1,26 @@
+## v0.31.117 — Reply objects (seL4-MCS): reply-path per-object lock wired live + coverage witness (SM6.D, finding A.2)
+
+Third slice of SM6.D finding A — wires the per-object reply write-lock into the **live** cross-core
+reply/replyRecv footprints and proves the 2PL coverage. **Closes PR #822 review 6J90-5** (the reply
+path's single-use `reply.caller` race). Trace byte-identical:
+
+- **State-resolved wrappers** `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` now
+  resolve the reply object from `target.replyObject` (the caller's forward C-link set by
+  `linkCallerReply`) and pass it as `replyId`, so the footprint the runtime `withLockSet` bracket
+  acquires contains `(replyLock rid, .write)` whenever a reply object is being consumed. The
+  `*OnCore_correct` consistency theorems thread the extra resolved-opt (`_`).
+- **Coverage witness** `lockSet_endpointReply_reply_write_mem`: `(replyLock rid, .write)` is a member of
+  `lockSet_endpointReply … (some rid)`. Together with `lockSet_endpointReply_target_tcb_write_mem` and
+  `endpointReplyOnCore_perCore_delivery` this makes the SM6.C.6 reply-object lifecycle concrete — the
+  `reply.caller := none` consume lands on a held per-object write lock, serialised under 2PL against a
+  second core using a copied reply cap.
+- `SmpCrossCoreReplySuite`: `#check` + runtime asserts that the reply write-lock is in the resolved-rid
+  footprint and the kinds stay all-permitted.
+
+The companion `.receive`/`.call` linking footprints (PR #822 review 6J-NL9) follow in A.3 — the
+parameter and permitted kind already landed in A.0/A.1; A.3 wires the rid resolution at the link sites.
+Full prod + staged build green; trace byte-identical.
+
 ## v0.31.116 — Reply objects (seL4-MCS): thread the reply lock into the 2PL footprints (SM6.D, finding A.1)
 
 Second slice of SM6.D finding A. Adds the per-object reply lock to the four reply-touching

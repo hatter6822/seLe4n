@@ -100,6 +100,10 @@ open SeLe4n.Testing
 #check @applyReplyDonationOnCore
 #check @applyReplyDonationOnCore_bootCoreId
 #check @lockSet_endpointReply_donation_extension
+-- WS-SM SM6.D: the per-object reply WRITE lock is in the reply footprint once the
+-- reply object is resolved (the 2PL coverage of the single-use `reply.caller`
+-- consume — PR #822 review 6J90-5).
+#check @lockSet_endpointReply_reply_write_mem
 #check @endpointReplyCrossCoreDispatch
 #check @endpointReplyCrossCoreDispatchChecked
 #check @endpointReplyCrossCoreDispatchChecked_flow_denied
@@ -234,6 +238,17 @@ private def runLockSetChecks : IO Unit := do
   assertBool "state-resolved reply lock-set kinds all permitted"
     (decide (∀ p ∈ (lockSet_endpointReplyOnCore stBase serverTid cnRoot clientLocalTid).pairs,
         p.fst.kind ∈ permittedKinds .reply))
+  -- WS-SM SM6.D: once the reply object is resolved (`replyId := some rid`), the
+  -- per-object reply WRITE lock is in the footprint — the 2PL coverage of the
+  -- single-use `reply.caller := none` consume against a copied reply cap on a
+  -- second core (PR #822 review 6J90-5).
+  assertBool "per-object reply write-lock is in the reply footprint (resolved rid)"
+    (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
+      ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
+          (some (⟨707⟩ : SeLe4n.ReplyId))).pairs))
+  assertBool "reply lock-set with resolved reply object: kinds all still permitted"
+    (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
+          (some (⟨707⟩ : SeLe4n.ReplyId))).pairs, p.fst.kind ∈ permittedKinds .reply))
 
 private def runDeliveryChecks : IO Unit := do
   IO.println "--- §3.2 SM6.C.4 reply payload delivery to the right TCB ---"

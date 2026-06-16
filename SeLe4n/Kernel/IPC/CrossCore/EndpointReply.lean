@@ -232,9 +232,15 @@ This is the footprint the runtime `withLockSet` bracket (the SM5.I FFI seam)
 acquires before invoking `endpointReplyOnCore replier target … executingCore st`. -/
 def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (target : SeLe4n.ThreadId) : LockSet :=
+  -- WS-SM SM6.D: the reply consumes the first-class Reply object the caller
+  -- (`target`) is blocked on — `target.replyObject` (its forward C-link, set by
+  -- `linkCallerReply`).  Resolving it from `st` puts the per-object reply
+  -- **write**-lock in the footprint, serialising the `reply.caller := none`
+  -- consume against any other core using a copied reply cap.
   lockSet_endpointReply replier cnodeRootObjId target
     ((endpointReplyDonation? st replier).map (·.1))
     ((endpointReplyDonation? st replier).map (·.2))
+    ((st.getTcb? target).bind (·.replyObject))
 
 /-- WS-SM SM6.C.5: the concrete lock-set a cross-core `endpointReplyRecvOnCore` on
 state `st` acquires — `lockSet_replyRecv` with the new sender (the receive-leg
@@ -248,9 +254,13 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
   let newSender? := match st.getEndpoint? endpointObjId with
     | some ep => ep.sendQ.head
     | none    => none
+  -- WS-SM SM6.D: replyRecv consumes the prior caller's Reply object and re-links
+  -- it to the next caller — the reply object is `target.replyObject`; resolving it
+  -- from `st` puts the per-object reply write-lock in the footprint.
   lockSet_replyRecv replier cnodeRootObjId target endpointObjId newSender?
     ((endpointReplyDonation? st replier).map (·.1))
     ((endpointReplyDonation? st replier).map (·.2))
+    ((st.getTcb? target).bind (·.replyObject))
 
 -- ============================================================================
 -- §3  Path reduction lemmas (full characterisation of each control path)
@@ -409,7 +419,7 @@ theorem lockSet_endpointReplyOnCore_correct
     ∀ p ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs,
       p.fst.kind ∈ permittedKinds .reply := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_consistent_reply replier cnodeRootObjId target _ _
+  exact lockSet_consistent_reply replier cnodeRootObjId target _ _ _
 
 /-- WS-SM SM6.C.5 (`endpointReplyRecv_lockSet_correct`): the combined `replyRecv`
 lock-set — the reply footprint extended with the receive-leg endpoint write and
@@ -435,7 +445,7 @@ theorem lockSet_endpointReplyRecvOnCore_correct
     ∀ p ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target endpointObjId).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv := by
   unfold lockSet_endpointReplyRecvOnCore
-  exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId _ _ _
+  exact lockSet_consistent_replyRecv replier cnodeRootObjId target endpointObjId _ _ _ _
 
 -- ============================================================================
 -- §6  SM6.C.4 / SM6.C.6 — Reply payload delivery + reply-state lifecycle
@@ -568,6 +578,24 @@ theorem lockSet_endpointReply_target_tcb_write_mem
   unfold lockSet_endpointReply
   exact write_mem_lockSetExtendOpt_map _ _ donatedOwner? (fun ot => tcbLock ot)
     (write_mem_lockSetExtendOpt_map _ _ donatedSc? (fun sc => schedContextLock sc) hBase)
+
+/-- WS-SM SM6.D (reply-object lifecycle under lock-set): the **per-object reply
+write lock** — under which the reply consumes the first-class Reply object
+(`consumeReply` writes `reply.caller := none`, the single-use barrier) — is a
+declared member of the `endpointReply` lock-set footprint once the reply object
+`rid` is resolved (`replyId := some rid`).  Together with
+`lockSet_endpointReply_target_tcb_write_mem` and `endpointReplyOnCore_perCore_delivery`
+this makes the SM6.C.6 reply-object lifecycle concrete: the `reply.caller := none`
+consume lands on a held per-object write lock, serialised under 2PL against a
+second core using a copied reply cap (the SM6.D fix for PR #822 review 6J90-5). -/
+theorem lockSet_endpointReply_reply_write_mem
+    (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
+    (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    (replyLock rid, AccessMode.write)
+      ∈ (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? (some rid)).pairs := by
+  unfold lockSet_endpointReply
+  exact self_write_mem_insertOrMerge _ (replyLock rid)
 
 -- ============================================================================
 -- §7  SM6.C.7 — Reply-replay protection
