@@ -597,6 +597,35 @@ theorem lockSet_endpointReply_reply_write_mem
   unfold lockSet_endpointReply
   exact self_write_mem_insertOrMerge _ (replyLock rid)
 
+/-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
+declared member of the `.receive` lock-set footprint once the linked reply object
+is resolved (`replyId := some rid`).  A `Call` rendezvous on the receive path links
+a server-supplied Reply object to the just-dequeued caller (`linkCallerReply` writes
+`reply.caller`), so that write must fall inside the 2PL set — closing the race where
+two cores with copied caps to the same Reply both observe it free and race
+`reply.caller`/`tcb.replyObject`. -/
+theorem lockSet_endpointReceive_reply_write_mem
+    (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
+    (senderTid : Option SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
+    (replyLock rid, AccessMode.write)
+      ∈ (lockSet_endpointReceive callerTid cnRoot endpointObjId senderTid (some rid)).pairs := by
+  unfold lockSet_endpointReceive
+  exact self_write_mem_insertOrMerge _ (replyLock rid)
+
+/-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
+declared member of the `.call` lock-set footprint once the linked reply object is
+resolved (`replyId := some rid`).  A server-first `Call` rendezvous links the caller
+to the waiting server's stashed Reply object (`linkServerFirstCaller` → `linkCallerReply`
+writes `reply.caller`); that write is now serialised under the per-object reply lock. -/
+theorem lockSet_endpointCall_reply_write_mem
+    (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
+    (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
+    (rid : SeLe4n.ReplyId) :
+    (replyLock rid, AccessMode.write)
+      ∈ (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId (some rid)).pairs := by
+  unfold lockSet_endpointCall
+  exact self_write_mem_insertOrMerge _ (replyLock rid)
+
 -- ============================================================================
 -- §7  SM6.C.7 — Reply-replay protection
 -- ============================================================================

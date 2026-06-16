@@ -1,3 +1,23 @@
+## v0.31.121 — Reply objects (seL4-MCS): reply lock in the receive/call linking footprints (SM6.D, finding A.3 — closes 6J-NL9)
+
+Final slice of SM6.D finding A — proves the per-object reply write-lock is in the `.receive` / `.call`
+2PL footprints once the linked reply object is resolved, **closing PR #822 review 6J-NL9**. (A.1 added the
+defaulted `replyId` opt + `permittedKinds += .reply` for both; A.3 proves the coverage.) Trace
+byte-identical:
+
+- **Coverage witnesses** `lockSet_endpointReceive_reply_write_mem` + `lockSet_endpointCall_reply_write_mem`:
+  `(replyLock rid, .write)` is a member of `lockSet_endpointReceive … (some rid)` /
+  `lockSet_endpointCall … (some rid)`. A `Call` rendezvous on the receive path links a server-supplied
+  Reply object to the dequeued caller (`linkCallerReply` writes `reply.caller`), and a server-first `Call`
+  links via `linkServerFirstCaller` — both writes now fall inside the 2PL set, closing the race where two
+  cores with copied caps to the same Reply both observe it free.
+- `SmpCrossCoreReplySuite`: `#check` anchors + runtime asserts that the reply write-lock is in the
+  resolved `.receive` / `.call` footprints.
+
+With A.0–A.3, finding A is complete: the per-object Reply lock is in the `.reply`/`.replyRecv`/`.receive`/
+`.call` footprints (6J90-5 + 6J-NL9 closed). Full prod + staged build green; trace byte-identical;
+Lean Tier 0-2 + reply suite green.
+
 ## v0.31.120 — Reply objects (seL4-MCS): frozen reply back-link validation + cross-core reply primitive demotion (PR #822 Codex review)
 
 Two Codex-review hardening fixes (both Lean-only, trace byte-identical):

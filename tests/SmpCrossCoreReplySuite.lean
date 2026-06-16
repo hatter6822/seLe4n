@@ -104,6 +104,11 @@ open SeLe4n.Testing
 -- reply object is resolved (the 2PL coverage of the single-use `reply.caller`
 -- consume — PR #822 review 6J90-5).
 #check @lockSet_endpointReply_reply_write_mem
+-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply write lock is also in the
+-- `.receive` / `.call` footprints once the linked reply is resolved (a Call rendezvous
+-- on receive / a server-first Call links a Reply object under the reply write lock).
+#check @lockSet_endpointReceive_reply_write_mem
+#check @lockSet_endpointCall_reply_write_mem
 -- PR #822 Codex review: a below-API delivery+donation+PIP primitive — it does NOT
 -- consume the Reply linkage; the single-use `consumeCallerReply` teardown is
 -- composed by the live `.reply` API arm.  Anchored here as a building block, not as
@@ -253,6 +258,15 @@ private def runLockSetChecks : IO Unit := do
   assertBool "reply lock-set with resolved reply object: kinds all still permitted"
     (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
           (some (⟨707⟩ : SeLe4n.ReplyId))).pairs, p.fst.kind ∈ permittedKinds .reply))
+  -- WS-SM SM6.D (PR #822 review 6J-NL9): the `.receive` / `.call` footprints also carry
+  -- the per-object reply write lock once the linked reply is resolved — a Call rendezvous
+  -- on receive (and a server-first Call) links a Reply object under that lock.
+  assertBool "per-object reply write-lock is in the .receive footprint (resolved rid)"
+    (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
+      ∈ (lockSet_endpointReceive serverTid cnRoot epId none (some (⟨707⟩ : SeLe4n.ReplyId))).pairs))
+  assertBool "per-object reply write-lock is in the .call footprint (resolved rid)"
+    (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
+      ∈ (lockSet_endpointCall serverTid cnRoot epId none none (some (⟨707⟩ : SeLe4n.ReplyId))).pairs))
 
 private def runDeliveryChecks : IO Unit := do
   IO.println "--- §3.2 SM6.C.4 reply payload delivery to the right TCB ---"
