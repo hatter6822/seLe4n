@@ -7,12 +7,15 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-SM SM6.C: PRODUCTION (LANDED).  The pure `.reply` / `.replyRecv` dispatch ops
--- below the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` /
--- `.replyRecv` arms route through `endpointReplyCrossCoreDispatch{,Checked}` /
--- `endpointReplyRecvCrossCoreDispatch{,Checked}` here, deriving the executing core
--- from the live state (`determineExecutingCore`).  See
--- docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §4.3, §5 (SM6.C).
+-- WS-SM SM6.C: PRODUCTION (LANDED).  The pure cross-core `.reply` dispatch op below
+-- the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` arm routes through
+-- `endpointReplyCrossCoreDispatch{,Checked}` here, deriving the executing core from
+-- the live state (`determineExecutingCore`).  The live `.replyRecv` arm routes
+-- through the reply-object-aware `replyRecvBody` (in `API`), which resolves the
+-- *reply capability* (authority flows from holding the reply cap, exactly like
+-- `.reply`) and consumes / re-links the first-class Reply object — it does NOT use a
+-- raw-thread dispatch here.  See docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §4.3,
+-- §5 (SM6.C).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
@@ -23,13 +26,18 @@ import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
 /-!
 # WS-SM SM6.C — Cross-core `.reply` / `.replyRecv` dispatch (pure; below the API layer)
 
-The pure cross-core reply dispatch operations — `endpointReplyCrossCoreDispatch`,
-`endpointReplyRecvCrossCoreDispatch`, and the information-flow-checked
-`endpointReplyCrossCoreDispatchChecked` / `endpointReplyRecvCrossCoreDispatchChecked`.
-These live *below* `SeLe4n.Kernel.API` (no `Platform.FFI` dependency) so the live
-`.reply` / `.replyRecv` dispatch arms can route through them — the cross-core
-generalisation of the single-core `endpointReplyWithDonation` /
-`endpointReplyRecvWithDonation`.
+The pure cross-core `.reply` dispatch operation — `endpointReplyCrossCoreDispatch`
+and the information-flow-checked `endpointReplyCrossCoreDispatchChecked`.  These live
+*below* `SeLe4n.Kernel.API` (no `Platform.FFI` dependency) so the live `.reply`
+dispatch arm can route through them — the cross-core generalisation of the
+single-core `endpointReplyWithDonation`.
+
+The live `.replyRecv` syscall is handled one layer up by `API.replyRecvBody`, which
+resolves the reply *capability* and consumes / re-links the first-class Reply object;
+the underlying combined reply-and-receive transition (`endpointReplyRecvOnCore`, in
+`EndpointReply`) remains available as a below-API building block.  There is
+deliberately **no** raw-thread `.replyRecv` dispatch wrapper here — it would expose a
+reply-without-the-reply-cap surface that bypasses the single-use Reply object.
 
 Each dispatch composes:
 
@@ -177,66 +185,16 @@ theorem endpointReplyCrossCoreDispatchChecked_flow_allowed
   simp [endpointReplyCrossCoreDispatchChecked, hAllow]
 
 -- ============================================================================
--- §4  SM6.C.5 — Full cross-core `.replyRecv` dispatch
+-- §4  SM6.C — `.reply` checked-dispatch equivalence
 -- ============================================================================
-
-/-- WS-SM SM6.C.5 (operation): the full cross-core `ReplyRecv` syscall semantics —
-the cross-core reply-and-receive (`endpointReplyRecvOnCore`) then the donation
-return + cross-core PIP reversion for the reply leg, mirroring the single-core
-`endpointReplyRecvWithDonation`.  Surfaces the union of the reply+receive cross-core
-SGIs. -/
-def endpointReplyRecvCrossCoreDispatch
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
-    SystemState × Except KernelError (List (CoreId × SgiKind)) :=
-  match endpointReplyRecvOnCore endpointId receiver replyTarget msg executingCore st with
-  | (_, .error e) => (st, .error e)
-  | (st1, .ok sgis) =>
-      match SeLe4n.ThreadId.toValid? receiver with
-      | some receiverV =>
-          match applyReplyDonationOnCore st1 receiverV executingCore with
-          | .error e => (st, .error e)
-          | .ok st2 =>
-              ((PriorityInheritance.propagatePipChainCrossCore st2 receiver executingCore).1, .ok sgis)
-      | none => (st, .error .invalidArgument)
-
-/-- WS-SM SM6.C.5 (live `.replyRecv` enforcement): the information-flow-checked
-cross-core reply-and-receive dispatch.  Mirrors the single-core
-`endpointReplyRecvChecked`'s **two** flow gates: the reply leg (receiver →
-replyTarget) and the receive leg (endpoint → receiver).  Both must hold. -/
-def endpointReplyRecvCrossCoreDispatchChecked
-    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyTarget : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) :
-    SystemState × Except KernelError (List (CoreId × SgiKind)) :=
-  if securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) then
-    if securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) then
-      endpointReplyRecvCrossCoreDispatch endpointId receiver replyTarget msg executingCore st
-    else
-      (st, .error .flowDenied)
-  else
-    (st, .error .flowDenied)
-
-/-- WS-SM SM6.C.5: the checked replyRecv dispatch is fail-closed on a denied reply
-leg. -/
-theorem endpointReplyRecvCrossCoreDispatchChecked_reply_flow_denied
-    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
-    (hDeny : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = false) :
-    endpointReplyRecvCrossCoreDispatchChecked ctx endpointId receiver replyTarget msg executingCore st
-      = (st, .error .flowDenied) := by
-  simp [endpointReplyRecvCrossCoreDispatchChecked, hDeny]
-
-/-- WS-SM SM6.C.5: the checked replyRecv dispatch is fail-closed on a denied
-receive leg (even when the reply leg is permitted). -/
-theorem endpointReplyRecvCrossCoreDispatchChecked_recv_flow_denied
-    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
-    (hReply : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true)
-    (hDeny : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = false) :
-    endpointReplyRecvCrossCoreDispatchChecked ctx endpointId receiver replyTarget msg executingCore st
-      = (st, .error .flowDenied) := by
-  simp [endpointReplyRecvCrossCoreDispatchChecked, hReply, hDeny]
+--
+-- NOTE: there is deliberately no raw-thread cross-core `.replyRecv` dispatch
+-- wrapper here.  The live `.replyRecv` syscall routes through `API.replyRecvBody`,
+-- which resolves the reply *capability* and consumes / re-links the first-class
+-- Reply object; the underlying combined transition `endpointReplyRecvOnCore`
+-- (in `EndpointReply`) remains the below-API building block.  A raw `(replyTarget :
+-- ThreadId)` dispatch wrapper was removed because it exposed a reply-without-the-
+-- reply-cap surface that bypassed the single-use Reply object (PR #822 review).
 
 /-- WS-SM SM6.C: when the reply leg flow is permitted, the checked reply dispatch
 is exactly the unchecked cross-core dispatch — the guard is a pure precondition.
@@ -248,18 +206,6 @@ theorem endpointReplyCrossCoreDispatchChecked_eq_unchecked_of_flow
     endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st
       = endpointReplyCrossCoreDispatch replier target msg executingCore st :=
   endpointReplyCrossCoreDispatchChecked_flow_allowed ctx replier target msg executingCore st hAllow
-
-/-- WS-SM SM6.C.5: when *both* flow legs (reply receiver → replyTarget, receive
-endpoint → receiver) are permitted, the checked replyRecv dispatch is exactly the
-unchecked cross-core dispatch. -/
-theorem endpointReplyRecvCrossCoreDispatchChecked_flow_allowed
-    (ctx : LabelingContext) (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
-    (hReply : securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true)
-    (hRecv : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true) :
-    endpointReplyRecvCrossCoreDispatchChecked ctx endpointId receiver replyTarget msg executingCore st
-      = endpointReplyRecvCrossCoreDispatch endpointId receiver replyTarget msg executingCore st := by
-  simp [endpointReplyRecvCrossCoreDispatchChecked, hReply, hRecv]
 
 -- ============================================================================
 -- §5  SM6.C.9 — Reply donation-chain length bound (donation k > 2)

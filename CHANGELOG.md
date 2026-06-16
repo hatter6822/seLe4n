@@ -1,3 +1,29 @@
+## v0.31.114 — Reply objects (seL4-MCS): remove the raw-thread cross-core replyRecv dispatch surface (PR #822 review)
+
+`EndpointReplyDispatch` exposed `endpointReplyRecvCrossCoreDispatch{,Checked}` — a
+cross-core `.replyRecv` dispatch taking a **raw `replyTarget : ThreadId`** and calling
+`endpointReplyRecvOnCore` directly, and the module header advertised it as the live
+`.replyRecv` surface.  But the live `.replyRecv` syscall actually routes through
+`API.replyRecvBody`, which resolves the reply *capability* (authority flows from
+*holding* the reply cap, exactly like `.reply`) and consumes / re-links the
+first-class Reply object.  The raw-thread wrappers were therefore a redundant,
+non-live surface that let a direct caller reply to a thread **without holding or
+resolving the reply cap**, bypassing the single-use Reply object (PR #822 review
+6J-NMF).
+
+- **Removed** `endpointReplyRecvCrossCoreDispatch`, `endpointReplyRecvCrossCoreDispatchChecked`,
+  and their three flow theorems (`_reply_flow_denied`, `_recv_flow_denied`,
+  `_flow_allowed`); nothing in production referenced them (the live `.reply` dispatch
+  `endpointReplyCrossCoreDispatch{,Checked}` is untouched).  The below-API combined
+  transition `endpointReplyRecvOnCore` (in `EndpointReply`) stays as the building
+  block; the lock-set theorems and the SM6.C suite continue to anchor it.
+- **Corrected** the stale module header / docstring that advertised the removed
+  wrapper as the live `.replyRecv` surface — it now points at `API.replyRecvBody`.
+- `SmpCrossCoreReplySuite` `#check`s for the removed symbols dropped (the reply suite
+  stays green).
+
+`declaration_count` −5; full prod + staged build green; trace byte-identical.
+
 ## v0.31.113 — Reply objects (seL4-MCS): regression test for the replyRecv donation switch (PR #822 review)
 
 Adds `SyscallDispatchSuite.sd052b_replyRecv_donation_switch`, an end-to-end
