@@ -322,13 +322,18 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
           match extractReplyId rcap with
           | .error e => .error e
           | .ok rid =>
-              -- PR #822 review: validate the reply object exists AND is FREE
-              -- (`caller = none`) before treating the cap as a usable reply.  Both
-              -- the caller-first link and the server-first stash need a live,
-              -- unlinked Reply object; an absent / already-linked reply named by an
-              -- explicit MR0 is `.replyCapInvalid` (fail-closed before the receive).
+              -- PR #822 review: validate the reply object exists AND is FREE before
+              -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
+              -- caller-first link) AND not already stashed in some server's
+              -- `pendingReceiveReply` (`replyIsStashed` — a server-first link in
+              -- progress); else a second `endpoint_receive_with_reply` via a copied
+              -- cap could block another server on the same `rid` and later roll back
+              -- `.replyCapInvalid` on a stale stash.  Matches the lifecycle-cleanup
+              -- in-use treatment.  Explicit-MR0 failure is fail-closed before receive.
               match st.getReply? rid with
-              | some r => if r.caller.isNone then .ok (some rid) else .error .replyCapInvalid
+              | some r =>
+                  if r.caller.isNone && !replyIsStashed st rid then .ok (some rid)
+                  else .error .replyCapInvalid
               | none => .error .replyCapInvalid
 
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): after `endpointReceiveDual`

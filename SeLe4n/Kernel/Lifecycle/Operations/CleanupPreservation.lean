@@ -257,6 +257,14 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     if r.caller.isSome || replyIsStashed st (SeLe4n.ReplyId.ofNat target.toNat) then
       .error .revocationRequired
     else .ok st
+  | .tcb tcb =>
+    -- WS-SM SM6.D (PR #822 review): reject retyping a caller TCB that still holds a
+    -- reply link (`replyObject = some rid`, a `blockedOnReply` caller awaiting its
+    -- reply).  Freeing the TCB would leave the Reply with `caller = some tid`
+    -- pointing at the gone thread, so the later `.reply` resolves a stale caller and
+    -- never consumes the Reply.  Mirrors the Reply reject + seL4 revoke-before-
+    -- destroy: the outstanding reply must be replied-to / cancelled first.
+    if tcb.replyObject.isSome then .error .revocationRequired else .ok st
   | _ => .ok st
 
 /-- AN4-G.2 (LIF-M02) — **named `lifecycleCleanupPipeline` wrapper** over
@@ -344,6 +352,15 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       rw [hDon] at hOk
       have hDonSched : stDon.scheduler = st.scheduler :=
         cleanupDonatedSchedContext_scheduler_eq st stDon tcb.tid hDon
+      -- PR #822 review: with the donation resolved, the final `.tcb` arm rejects a
+      -- TCB still holding a reply link (`.error`, vacuous on `.ok`); reduce the
+      -- reject-`if` away on the `.ok` path and finish the cleanup-identity proof.
+      simp only [] at hOk
+      have hRO : tcb.replyObject.isSome = false := by
+        cases hr : tcb.replyObject.isSome with
+        | false => rfl
+        | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
+      rw [if_neg (by simp [hRO])] at hOk
       injection hOk with hOk; subst hOk
       -- S-05/PERF-O1: scThreadIndex cleanup preserves scheduler (both branches)
       have hScIdxSched : (match tcb.schedContextBinding with

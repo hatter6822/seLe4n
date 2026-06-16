@@ -114,6 +114,13 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
       | error e => rw [hDon] at hClean; simp at hClean
       | ok stDon =>
         rw [hDon] at hClean; simp only [] at hClean
+        -- PR #822 review: the final `.tcb` arm rejects a TCB still holding a reply
+        -- link (`.error`, vacuous on `.ok`); reduce the reject-`if` on the `.ok` path.
+        have hRO : tcb.replyObject.isSome = false := by
+          cases hr : tcb.replyObject.isSome with
+          | false => rfl
+          | true => rw [if_pos hr] at hClean; exact absurd hClean (by simp)
+        rw [if_neg (by simp [hRO])] at hClean
         injection hClean with hClean; subst hClean
         -- S-05/PERF-O1: cleanupTcbReferences_removes_from_runnable is polymorphic in
         -- the input state; use _ to let Lean unify with the scThreadIndex-cleaned state

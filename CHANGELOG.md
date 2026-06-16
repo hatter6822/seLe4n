@@ -1,3 +1,24 @@
+## v0.31.109 — Reply objects (seL4-MCS): reject TCB retype with reply link + stashed reply receive (PR #822 review)
+
+Two more in-use Reply guards:
+
+- **Reject retyping a caller TCB that still holds a reply link**
+  (`lifecyclePreRetypeCleanup`): a `.tcb` arm now rejects (`revocationRequired`)
+  when `tcb.replyObject.isSome` — else the TCB is replaced while the Reply keeps
+  `caller = some tid` pointing at the gone thread, so the later `.reply` resolves a
+  stale caller and never consumes the Reply.  Mirrors the Reply reject + seL4
+  revoke-before-destroy.  Cleanup-preservation proofs (CleanupPreservation,
+  RetypeWrappers) reduce the reject-`if` on the `.ok` path.
+- **Treat stashed Reply objects as in-use on receive** (`resolveRecvReplyId`): the
+  free-reply check now requires both `caller = none` AND not already stashed in a
+  server's `pendingReceiveReply` (`replyIsStashed`), so a second
+  `endpoint_receive_with_reply` via a copied cap cannot block another server on the
+  same `rid` and later roll back on a stale stash.
+
+`ModelIntegritySuite.reply_inUse_retype_rejected` extended (linked-TCB reject +
+free-TCB allow).  Closes PR #822 review items (CleanupPreservation:242, API:331).
+Full prod + staged build + Tier 0/1/2 green; trace byte-identical.
+
 ## v0.31.108 — Reply objects (seL4-MCS): require linked reply callers to be blockedOnReply (PR #822 review)
 
 Strengthens the `replyCallerLinkage` IPC-invariant conjunct (v0.31.106): the

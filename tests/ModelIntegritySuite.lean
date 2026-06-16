@@ -729,6 +729,21 @@ def reply_inUse_retype_rejected : IO Unit := do
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
   | .error e => expect "stashed Reply retype → revocationRequired" (e == .revocationRequired)
   | .ok _ => throw <| IO.userError "stashed (pendingReceiveReply) Reply retype must be rejected"
+  -- PR #822 review: retyping a caller TCB that still holds a reply link
+  -- (`replyObject = some rid`) is rejected — else the Reply's `caller` dangles.
+  let linkedTcb : TCB :=
+    { tid := ⟨601⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      replyObject := some ⟨505⟩ }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨601⟩ (.tcb linkedTcb) newObj with
+  | .error e => expect "linked caller TCB retype → revocationRequired" (e == .revocationRequired)
+  | .ok _ => throw <| IO.userError "retyping a TCB with an outstanding reply link must be rejected"
+  let freeTcb : TCB :=
+    { tid := ⟨602⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨602⟩ (.tcb freeTcb) newObj with
+  | .ok _ => expect "free TCB retype allowed" true
+  | .error _ => throw <| IO.userError "retyping a TCB with no reply link must succeed"
 
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
