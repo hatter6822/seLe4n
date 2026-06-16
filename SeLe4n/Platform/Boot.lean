@@ -691,7 +691,8 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
     tcb.queueNext.isNone && tcb.queuePrev.isNone &&
     tcb.timeoutBudget.isNone &&
     decide (tcb.schedContextBinding = .unbound) &&
-    tcb.replyObject.isNone
+    tcb.replyObject.isNone &&
+    tcb.pendingReceiveReply.isNone
   | .vspaceRoot vsr =>
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck vsr
   | .untyped _ => true
@@ -733,7 +734,8 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       tcb.queueNext = none ∧ tcb.queuePrev = none ∧
       tcb.timeoutBudget = none ∧
       tcb.schedContextBinding = .unbound ∧
-      tcb.replyObject = none) ∧
+      tcb.replyObject = none ∧
+      tcb.pendingReceiveReply = none) ∧
     -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
     (∀ vs, obj = .vspaceRoot vs →
       SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
@@ -770,10 +772,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
            fun _ he => by injection he, fun _ he => by injection he⟩
   | tcb tcb =>
     simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he,
-           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7⟩,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6, Option.eq_none_of_isNone h7, Option.eq_none_of_isNone h8⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he⟩
   | vspaceRoot vsr =>
@@ -2491,7 +2493,8 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.queueNext = none ∧ tcb.queuePrev = none ∧
     tcb.timeoutBudget = none ∧
     tcb.schedContextBinding = .unbound ∧
-    tcb.replyObject = none) ∧
+    tcb.replyObject = none ∧
+    tcb.pendingReceiveReply = none) ∧
   -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
   (∀ vs, obj = .vspaceRoot vs →
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧

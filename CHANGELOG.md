@@ -1,3 +1,35 @@
+## v0.31.104 — Reply objects (seL4-MCS): server-first receive linkage + reply-ABI control-register fixes (PR #822 review)
+
+Completes the faithful seL4-MCS receive linkage (both Call/Recv orderings) and
+fixes two MR0 control-register bugs in the receive/replyRecv ABI:
+
+- **Server-first linkage** (the `server-blocks-then-client-Calls` ordering): a new
+  `TCB.pendingReceiveReply : Option ReplyId` stashes the Reply object a *server*
+  supplies on its `Recv` while no caller is queued.  `linkReceivedCaller`'s
+  `.blockedOnReceive` arm stashes it; the `.call` arms then run
+  `linkServerFirstCaller` after `endpointCallCrossCoreDispatch` — when the call
+  rendezvouses with a waiting server (caller `.blockedOnReply ep (some server)`)
+  it links the caller to the server's stashed reply object and clears the stash.
+  Together with the v0.31.102 caller-first path this closes both orderings.  The
+  field is stripped by the NI projection (`projectKernelObject_erases_pendingReceiveReply`)
+  and required `none` by `bootSafeObjectCheck` + the Prop-level `bootSafeObject`
+  (mirroring `replyObject`).  New `SyscallDispatchSuite.sd053_serverFirstLink`.
+
+- **Receive length gate** (`resolveRecvReplyId`): the ARM64 register decoder always
+  materializes x2..x5, so MR0 is present even for a no-reply `Recv`.  Gate on
+  `decoded.msgInfo.length == 0` so a plain receive (length 0) never resolves a
+  stale / CPtr-0 reply cap — fail-closed.  `endpoint_receive_with_reply` declares
+  length 1.
+
+- **ReplyRecv payload strip** (both `.replyRecv` arms): MR0 carries the reply CPtr
+  (a control register), so the reply *payload* to the previous caller is MR1.. —
+  strip the leading control register (`full.extract 1 full.size`) before building
+  the reply message, instead of delivering the reply CPtr as the first payload word.
+
+Closes PR #822 review items (server-first linkage; API:305 receive length gate;
+API:1193 replyRecv payload strip).  Full prod + staged `lake build` + Tier 0/1/2 +
+Rust conformance green; trace byte-identical; codebase map regenerated.
+
 ## v0.31.103 — Reply objects (seL4-MCS): faithful `.replyRecv` via the reply object + Rust receive-with-reply ABI (PR #822 review)
 
 The `.replyRecv` dispatch trusted a raw `args.replyTarget` thread id, called the

@@ -302,6 +302,13 @@ Returns `none` for a plain `Recv` that omits a reply object (the source may be a
 then links only on a genuine `Call` rendezvous. -/
 def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
     (st : SystemState) : Option SeLe4n.ReplyId :=
+  -- A plain `Recv` *omits* the reply object via message length 0 (PR #822 review):
+  -- the ARM64 register decoder always materializes x2..x5, so MR0 is present even
+  -- for a no-reply receive (the Rust `endpoint_receive` wrapper sends x2 = 0).
+  -- Gate on the declared `msgInfo.length` so a length-0 receive never resolves a
+  -- (possibly stale / CPtr-0) reply cap — `endpoint_receive_with_reply` declares
+  -- length 1.  Fail-closed: no explicit reply slot ⇒ no reply object.
+  if decoded.msgInfo.length == 0 then none else
   match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
   | .error _ => none
   | .ok rargs =>
@@ -331,9 +338,48 @@ def linkReceivedCaller (sender : SeLe4n.ThreadId)
     | some sTcb =>
         match sTcb.ipcState with
         | .blockedOnReply _ _ =>
+            -- caller-first: a queued `Call` was just dequeued (now `.blockedOnReply`)
+            -- — link it to the server's reply object, or reject a Call carrying none.
             match replyIdOpt with
             | some rid => SystemState.linkCallerReply sender rid st
             | none => .error .replyCapInvalid
+        | .blockedOnReceive _ =>
+            -- server-first: the *server* itself blocked on receive (no caller was
+            -- queued).  Stash the supplied reply object on the server so a later
+            -- `Call` rendezvous can be linked to it (`linkServerFirstCaller`).  A
+            -- plain receive with no reply object stashes nothing.
+            match replyIdOpt with
+            | some rid =>
+                storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := some rid }) st
+            | none => .ok ((), st)
+        | _ => .ok ((), st)
+    | none => .ok ((), st)
+
+/-- WS-SM SM6.D (faithful seL4-MCS, server-first receive linkage): after a `Call`
+rendezvouses with a *waiting* server — the caller lands `.blockedOnReply ep (some
+server)` and the server is woken — link the caller to the Reply object the server
+stashed on its earlier `Recv` (`server.pendingReceiveReply`), then clear the stash
+(one-shot).  A no-op when the call did not rendezvous with a waiting server (caller
+`.blockedOnCall`, i.e. it was enqueued) or the server supplied no reply object.
+Composed by the `.call` dispatch after `endpointCallCrossCoreDispatch`; mirrors the
+caller-first `linkReceivedCaller` for the symmetric ordering. -/
+def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.getTcb? caller with
+    | some cTcb =>
+        match cTcb.ipcState with
+        | .blockedOnReply _ (some server) =>
+            match (st.getTcb? server).bind (·.pendingReceiveReply) with
+            | some rid =>
+                match SystemState.linkCallerReply caller rid st with
+                | .error e => .error e
+                | .ok ((), st1) =>
+                    match st1.getTcb? server with
+                    | some sTcb =>
+                        storeObject server.toObjId
+                          (.tcb { sTcb with pendingReceiveReply := none }) st1
+                    | none => .ok ((), st1)
+            | none => .ok ((), st)
         | _ => .ok ((), st)
     | none => .ok ((), st)
 
@@ -1046,7 +1092,9 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let executingCore := determineExecutingCore st tid
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- WS-SM SM6.D (server-first linkage): if the call rendezvoused with a
+        -- waiting server, link the caller to the server's stashed reply object.
+        | (st', .ok _) => linkServerFirstCaller tid st'
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -1190,7 +1238,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         match resolveReplyRecvReply gate decoded st with
         | none => .error .replyCapInvalid
         | some (rid, prevCaller) =>
-            let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+            -- WS-SM SM6.D (PR #822 review): MR0 carries the reply CPtr (a control
+            -- register), so the reply *payload* delivered to the previous caller is
+            -- MR1.. — strip the leading control register before building the reply.
+            let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+            let body := full.extract 1 full.size
             let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
             let executingCore := determineExecutingCore st tid
             replyRecvBody epId tid rid prevCaller msg executingCore st
@@ -1289,7 +1341,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let executingCore := determineExecutingCore st tid
         match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
             gate.cspaceRoot decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- WS-SM SM6.D (server-first linkage): mirror the unchecked arm.
+        | (st', .ok _) => linkServerFirstCaller tid st'
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -1425,7 +1478,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         match resolveReplyRecvReply gate decoded st with
         | none => .error .replyCapInvalid
         | some (rid, prevCaller) =>
-            let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+            -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
+            -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
+            let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+            let body := full.extract 1 full.size
             let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
             let executingCore := determineExecutingCore st tid
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller)
@@ -2149,7 +2205,8 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         let executingCore := determineExecutingCore st tid
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- WS-SM SM6.D: server-first reply linkage composed after the dispatch.
+        | (st', .ok _) => linkServerFirstCaller tid st'
         | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 

@@ -279,7 +279,8 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- the `.reply` arm below.
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
                        pipBoost := none, pendingMessage := none, timedOut := false,
-                       cpuAffinity := none, replyObject := none }
+                       cpuAffinity := none, replyObject := none,
+                       pendingReceiveReply := none }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -381,6 +382,19 @@ theorem projectKernelObject_erases_replyObject
     (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
     match projectKernelObject ctx observer (.tcb tcb) with
     | .tcb tcb' => tcb'.replyObject = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM6.D (PR #822 review, server-first receive): `projectKernelObject`
+    strips the server's stashed `pendingReceiveReply` link from projected TCBs
+    (resets it to `none`).  Like `replyObject`, it names a Reply object identity
+    (the reply a server will hand to its next caller); leaking it would expose the
+    server's outstanding-receive reply provisioning.  Mirrors
+    `projectKernelObject_erases_replyObject`. -/
+theorem projectKernelObject_erases_pendingReceiveReply
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
+    match projectKernelObject ctx observer (.tcb tcb) with
+    | .tcb tcb' => tcb'.pendingReceiveReply = none
     | _ => True := by
   simp [projectKernelObject]
 

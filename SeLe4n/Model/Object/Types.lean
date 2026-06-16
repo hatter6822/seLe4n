@@ -793,6 +793,17 @@ structure TCB where
       `none` = no outstanding reply object.  The default keeps every existing TCB
       construction and the boot trace byte-identical. -/
   replyObject : Option SeLe4n.ReplyId := none
+  /-- WS-SM SM6.D (faithful seL4-MCS, server-first receive): the Reply object a
+      *server* supplied on its `Recv` while no caller was yet queued.  Stashed here
+      when the server blocks on receive (`.blockedOnReceive`) so that a later `Call`
+      that rendezvouses with this waiting server can be linked to the reply object
+      (`linkCallerReply caller rid`), then cleared.  Distinct from `replyObject`
+      (this thread's *own* outstanding-Call reply): `pendingReceiveReply` is the
+      reply object this thread, acting as a server, will hand to the *next* caller.
+      `none` = the server provided no reply object (a plain receive that cannot
+      answer a Call).  Default keeps every existing construction + boot trace
+      byte-identical. -/
+  pendingReceiveReply : Option SeLe4n.ReplyId := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -826,10 +837,11 @@ instance : BEq TCB where
     -- `Option CoreId` (`CoreId = Fin numCores`) derives `DecidableEq`, so its
     -- `==` agrees with `=`.
     a.cpuAffinity == b.cpuAffinity &&
-    -- WS-SM Reply objects: per-TCB reply-object link participates in structural
+    -- WS-SM Reply objects: per-TCB reply-object links participate in structural
     -- equality.  `Option ReplyId` derives `DecidableEq`, so its `==` agrees
     -- with `=`.
-    a.replyObject == b.replyObject
+    a.replyObject == b.replyObject &&
+    a.pendingReceiveReply == b.pendingReceiveReply
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -896,14 +908,15 @@ theorem TCB.ext {a b : TCB}
     (hLock : a.lock = b.lock)
     -- WS-SM SM5.B.4: extensionality covers the per-TCB CPU-affinity field.
     (hCpuAff : a.cpuAffinity = b.cpuAffinity)
-    -- WS-SM Reply objects: extensionality covers the per-TCB reply-object link.
-    (hReply : a.replyObject = b.replyObject) :
+    -- WS-SM Reply objects: extensionality covers the per-TCB reply-object links.
+    (hReply : a.replyObject = b.replyObject)
+    (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff, hReply⟩
+         hLock, hCpuAff, hReply, hPendReply⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 

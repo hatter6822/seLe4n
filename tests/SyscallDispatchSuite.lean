@@ -717,6 +717,54 @@ private def sd052_replyRecvBody : IO Unit := do
         "the server should block on the endpoint (no next sender queued)"
   | .error _ => failLine "sd052_replyRecvBody" "replyRecvBody should succeed"
 
+/-- SD-053: faithful seL4-MCS server-first receive linkage. (a) A server that blocks
+    on `Recv` with a reply object STASHES it on `pendingReceiveReply` (it cannot link
+    yet — no caller is queued). (b) When a later `Call` rendezvouses with that waiting
+    server (caller `.blockedOnReply ep (some server)`), `linkServerFirstCaller` links
+    the caller to the stashed reply object and clears the stash. Together with sd051
+    (caller-first) this closes both receive/Call orderings. -/
+private def sd053_serverFirstLink : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  -- (a) server blocked on receive stashes the reply object (no premature link)
+  let stA : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.linkReceivedCaller server (some rid) stA with
+  | .ok ((), st') =>
+      expect "sd053a_server_stashes_reply"
+        ((st'.getTcb? server).any (fun t => decide (t.pendingReceiveReply = some rid)))
+        "a server blocked on receive should stash the reply object"
+      expect "sd053a_no_premature_link"
+        ((st'.getReply? rid).all (fun r => decide (r.caller = none)))
+        "the stash must not prematurely set reply.caller"
+  | .error _ => failLine "sd053a" "linkReceivedCaller (server block path) should succeed"
+  -- (b) a later Call rendezvous links the caller to the server's stashed reply object
+  let stB : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withObject caller.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.linkServerFirstCaller caller stB with
+  | .ok ((), st') =>
+      expect "sd053b_caller_linked"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+         (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid)))
+        "the Call caller should be linked to the server's stashed reply object"
+      expect "sd053b_stash_cleared"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "the server's stash should be cleared after linking"
+  | .error _ => failLine "sd053b" "linkServerFirstCaller should succeed"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -750,4 +798,5 @@ def main : IO Unit := do
   sd050_bindNotification_requires_ntfn_cap
   sd051_receiveLinkCaller
   sd052_replyRecvBody
+  sd053_serverFirstLink
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="
