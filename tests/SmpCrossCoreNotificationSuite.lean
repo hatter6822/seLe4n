@@ -69,6 +69,12 @@ open SeLe4n.Testing
 #check @self_write_mem_insertOrMerge
 #check @lockSet_notificationSignal_notification_write_mem
 #check @lockSet_notificationSignal_waiter_tcb_write_mem
+-- WS-SM SM6.D (PR #822 Codex review): the canonical `.notificationSignal` footprint
+-- upper-bounds the bound-delivery endpoint + bound-TCB writes (the
+-- endpointQueueRemoveDual dequeue + bound-TCB write that the prior footprint left
+-- outside the 2PL set).
+#check @lockSet_notificationSignal_bound_tcb_write_mem
+#check @lockSet_notificationSignal_bound_endpoint_write_mem
 
 -- SM6.B.5 per-core wake locality:
 #check @notificationSignalOnCore_perCore_consistent

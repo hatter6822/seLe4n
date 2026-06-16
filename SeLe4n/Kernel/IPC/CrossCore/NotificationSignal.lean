@@ -443,8 +443,42 @@ theorem lockSet_notificationSignal_waiter_tcb_write_mem
     (tcbLock wt, AccessMode.write)
       ∈ (lockSet_notificationSignal signaller cnRoot notificationId (some wt)).pairs := by
   unfold lockSet_notificationSignal
-  simp only [lockSetExtendOpt, Option.map_some]
+  simp only [lockSetExtendOpt, Option.map_some, Option.map_none]
   exact self_write_mem_insertOrMerge _ (tcbLock wt)
+
+/-- WS-SM SM6.B/SM6.D (PR #822 Codex review): the bound-delivery **bound-TCB write
+lock** — under which `notificationSignalBoundOnCore` writes the dequeued bound TCB
+(`.ready` + badge) — is a declared member of the canonical `notificationSignal`
+footprint once the bound TCB is resolved (`boundTcb := some bt`).  This is the
+endpoint-receive-queue/receiver-TCB write that the prior footprint left outside the
+2PL set; it is now covered (the live state-resolved form is
+`lockSet_notificationSignalBoundOnCore`). -/
+theorem lockSet_notificationSignal_bound_tcb_write_mem
+    (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
+    (waiter? : Option SeLe4n.ThreadId) (boundEp? : Option SeLe4n.ObjId)
+    (bt : SeLe4n.ThreadId) :
+    (tcbLock bt, AccessMode.write)
+      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter? boundEp? (some bt)).pairs := by
+  unfold lockSet_notificationSignal
+  simp only [lockSetExtendOpt, Option.map_some]
+  exact self_write_mem_insertOrMerge _ (tcbLock bt)
+
+/-- WS-SM SM6.B/SM6.D (PR #822 Codex review): the bound-delivery **endpoint write
+lock** — under which `notificationSignalBoundOnCore` dequeues the bound TCB from its
+endpoint (`endpointQueueRemoveDual`, an endpoint-queue mutation) — is a declared
+member of the canonical `notificationSignal` footprint once the bound endpoint + TCB
+are resolved. -/
+theorem lockSet_notificationSignal_bound_endpoint_write_mem
+    (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
+    (waiter? : Option SeLe4n.ThreadId) (ep : SeLe4n.ObjId) (bt : SeLe4n.ThreadId) :
+    (endpointLock ep, AccessMode.write)
+      ∈ (lockSet_notificationSignal signaller cnRoot notificationId waiter? (some ep) (some bt)).pairs := by
+  unfold lockSet_notificationSignal
+  simp only [lockSetExtendOpt, Option.map_some]
+  refine mem_insertOrMerge_of_mem_of_ne _ _ _ _ ?_ ?_
+  · exact self_write_mem_insertOrMerge _ (endpointLock ep)
+  · show endpointLock ep ≠ tcbLock bt
+    intro h; simp [endpointLock, tcbLock] at h
 
 -- ============================================================================
 -- §7  SM6.B.5 — Per-core consistency of the signal wake

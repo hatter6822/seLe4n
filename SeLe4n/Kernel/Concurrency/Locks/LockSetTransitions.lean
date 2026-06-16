@@ -437,13 +437,29 @@ badge attribution.  The notification mutates (waiter dequeue or
 badge merge); the optional waiter TCB mutates (wake-up). -/
 def lockSet_notificationSignal (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (notificationObjId : ObjId)
-    (waiterTid : Option ThreadId) : LockSet :=
-  lockSetExtendOpt
+    (waiterTid : Option ThreadId)
+    (boundEndpoint : Option ObjId := none)
+    (boundTcb : Option ThreadId := none) : LockSet :=
+  -- WS-SM SM6.B/SM6.D (PR #822 Codex review): a notification bound to a TCB
+  -- blocked on receive takes the bound-delivery path (`notificationSignalBoundOnCore`):
+  -- it dequeues the bound TCB from its endpoint (`endpointQueueRemoveDual` — an
+  -- endpoint **write**) and writes the bound TCB (`.ready` + badge — a TCB
+  -- **write**).  These two state-dependent writes are folded in as outermost
+  -- optionals so the canonical `.notificationSignal` footprint upper-bounds the
+  -- bound case.  `none` ⇒ the set is definitionally the non-bound footprint, so
+  -- every existing call site is unchanged.  (`permittedKinds .notificationSignal`
+  -- already lists `.endpoint`/`.tcb`.)  The state-resolved instance is
+  -- `lockSet_notificationSignalBoundOnCore`.
+  let withWaiter := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .read),
        (cnodeLock cnodeRootObjId, .read),
        (notificationLock notificationObjId, .write)])
     (waiterTid.map (fun wt => (tcbLock wt, .write)))
+  let withEp := lockSetExtendOpt withWaiter
+    (boundEndpoint.map (fun ep => (endpointLock ep, .write)))
+  lockSetExtendOpt withEp
+    (boundTcb.map (fun bt => (tcbLock bt, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `notificationWait`.
 
@@ -1388,10 +1404,11 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
-    (cnRoot nId : ObjId) (wTid : Option ThreadId) :
-    ∀ p ∈ (lockSet_notificationSignal callerTid cnRoot nId wTid).pairs,
+    (cnRoot nId : ObjId) (wTid : Option ThreadId)
+    (boundEndpoint : Option ObjId := none) (boundTcb : Option ThreadId := none) :
+    ∀ p ∈ (lockSet_notificationSignal callerTid cnRoot nId wTid boundEndpoint boundTcb).pairs,
       p.fst.kind ∈ permittedKinds .notificationSignal :=
-  lockSet_consistent_base_plus_opt _ _ _
+  lockSet_consistent_base_plus_three_opts _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1404,6 +1421,14 @@ theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
         cases wTid with
         | none => simp at hpp
         | some wt => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases boundEndpoint with
+        | none => simp at hpp
+        | some ep => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases boundTcb with
+        | none => simp at hpp
+        | some bt => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationWait`. -/
 theorem lockSet_consistent_notificationWait (callerTid : ThreadId)

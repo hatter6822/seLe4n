@@ -1,3 +1,26 @@
+## v0.31.119 — Bound notifications: per-object lock footprint covers the bound-delivery endpoint/TCB writes (PR #822 Codex review)
+
+**P1.** A notification bound to a TCB blocked on receive takes the bound-delivery path
+(`notificationSignalBoundOnCore`), which dequeues that TCB from its endpoint
+(`endpointQueueRemoveDual` — an endpoint-queue **write**) and writes the bound TCB (`.ready` + badge — a
+TCB **write**). The canonical `.notificationSignal` 2PL footprint (`lockSet_notificationSignal`) declared
+only signaller/CNode/notification + an optional waiter, so under SMP a bound signal could mutate the
+endpoint receive queue and receiver TCB **without the corresponding locks**, racing concurrent endpoint
+receive/cancel paths. The same fix idiom as SM6.D finding A:
+
+- **`lockSet_notificationSignal` gains defaulted `(boundEndpoint : Option ObjId := none)` +
+  `(boundTcb : Option ThreadId := none)`** opts, folding `(endpointLock ep, .write)` + `(tcbLock bt, .write)`
+  in as outermost extensions. `none` ⇒ the set is definitionally the prior footprint, so all existing call
+  sites and witnesses (`_notification_write_mem`, `_waiter_tcb_write_mem`) are unchanged.
+  `permittedKinds .notificationSignal` already lists `.endpoint`/`.tcb`.
+- **`lockSet_consistent_notificationSignal`** bumps to `base_plus_three_opts` (+2 `hOpt` branches).
+- **Coverage witnesses** `lockSet_notificationSignal_bound_{tcb,endpoint}_write_mem`: the bound-TCB and
+  endpoint write-locks are members of the canonical footprint once resolved — so the dequeue + receiver-TCB
+  write fall inside the 2PL set. (The live state-resolved form `lockSet_notificationSignalBoundOnCore`
+  already proves the same coverage.) `SmpCrossCoreNotificationSuite` `#check` anchors added.
+
+Full prod + staged build green; trace byte-identical; Lean Tier 0-2 + notification suites green.
+
 ## v0.31.118 — Reply objects (seL4-MCS): projection replyId normalization + frozen reply authority (PR #822 Codex review)
 
 Two Codex-review hardening fixes against the live Reply-object surface (both Lean-only, trace
