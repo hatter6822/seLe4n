@@ -1,3 +1,24 @@
+## v0.31.115 — Reply objects (seL4-MCS): per-object reply lock foundation — key + permitted kinds (SM6.D, finding A.0)
+
+First slice of SM6.D finding A (the per-object Reply lock missing from the
+`.reply`/`.replyRecv`/`.receive`/`.call` 2PL footprints, PR #822 review `6J90-5`/`6J-NL9`).
+Foundation only — no lock-set value change yet, trace byte-identical:
+
+- **`replyLock` lock-key constructor** (`Concurrency/Locks/LockSetTransitions.lean`):
+  `replyLock (rid : ReplyId) : LockId := ⟨.reply, rid.toObjId⟩`, beside `schedContextLock`, with
+  the `@[simp] replyLock_kind` lemma. (The `.reply` `LockKind` is already a live level-6 per-object
+  lock — `lookup_reply`/`LockSetHeld` — so only the key constructor was missing.)
+- **`permittedKinds += .reply`** for `.receive` (split out from `.send`), `.call`, `.reply`,
+  `.replyRecv` — the four syscalls that link or consume a Reply object. Monotonic-safe: the lock-sets
+  are unchanged in this slice, and `lockSet_consistent_*` discharge by `simp; decide`, so growing the
+  permitted-kind list only weakens the obligation. `LockSetSuite` exact-value assertions updated.
+- **Corrected the stale `EndpointReply.lean` model note** that claimed "no separate Reply object / the
+  `.reply` lock-kind is N/A / `lockHeld` is `False`" — the first-class `Reply` object and its live
+  `.reply` per-object lock have landed; the note now describes `reply.caller` as the linkage written
+  under the per-object reply write-lock.
+
+Full prod + staged build green; `LockSetSuite` green; trace byte-identical.
+
 ## v0.31.114 — Reply objects (seL4-MCS): remove the raw-thread cross-core replyRecv dispatch surface (PR #822 review)
 
 `EndpointReplyDispatch` exposed `endpointReplyRecvCrossCoreDispatch{,Checked}` — a

@@ -50,15 +50,18 @@ lock-set footprints `lockSet_endpointReply` / `lockSet_replyRecv` (SM3.B.3) are
 unchanged; this module proves the SM6.C theorems the runtime `withLockSet`
 bracket consumes.
 
-> **Model note.**  This kernel has no separate Reply *object* (the `.reply`
-> lock-kind is N/A — `lockHeld` is `False` for it; see SM6.A's model note).  The
-> reply *linkage* is the caller's `blockedOnReply endpointId (some replier)` TCB
-> state, written under the **caller-TCB write lock** already in
-> `lockSet_endpointReply` (the `replyTargetTid` member).  SM6.C.6 ("reply object
-> lifecycle") is therefore the lifecycle of that reply *state* — `blockedOnReply
-> → .ready` under the caller-TCB write lock — and SM6.C.7 ("reply-replay
-> protection") is the consumption of that linkage: once delivered the caller is
-> `.ready`, so a second reply fails closed with `.replyCapInvalid`.
+> **Model note.**  This kernel now has a first-class `Reply` *object*
+> (`KernelObject.reply`, addressed by `ReplyId`) carrying the caller back-link in
+> `reply.caller`.  The `.reply` lock-kind is a **live level-6 per-object lock**:
+> `LockId.lookup` resolves `(reply.lock, .reply r)` via `getReply?` and `lockHeld`
+> reads `Reply.lock` (`LockIdProjection.lookup_reply`, `LockSetHeld`).  SM6.C.6
+> ("reply object lifecycle") is the lifecycle of `reply.caller` — set on the
+> receive path (`linkCallerReply`) and consumed `:= none` on reply
+> (`consumeReply`) — and SM6.C.7 ("reply-replay protection") is that single-use
+> consumption: once delivered the caller is `.ready` and `reply.caller = none`, so
+> a second reply fails closed with `.replyCapInvalid`.  The `reply.caller` write is
+> serialised by the per-object reply write-lock (`replyLock`) carried in the
+> reply/replyRecv lock-set footprints (`lockSet_endpointReply` / `lockSet_replyRecv`).
 -/
 
 namespace SeLe4n.Kernel

@@ -195,6 +195,13 @@ SchedContextId. -/
 @[inline] def schedContextLock (scid : SchedContextId) : LockId :=
   ⟨.schedContext, scid.toObjId⟩
 
+/-- WS-SM SM6.D: build the LockId for a first-class Reply object at the given
+ReplyId.  The per-object reply lock serialises the single-use `reply.caller`
+write across cores — the 2PL footprint member for `.reply` / `.replyRecv` /
+`.receive` / `.call` (the syscalls that link or consume a Reply object). -/
+@[inline] def replyLock (rid : ReplyId) : LockId :=
+  ⟨.reply, rid.toObjId⟩
+
 /-- WS-SM SM3.B: build the LockId for a VSpaceRoot at the given ObjId. -/
 @[inline] def vspaceRootLock (oid : ObjId) : LockId :=
   ⟨.vspaceRoot, oid⟩
@@ -912,14 +919,20 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   match sid with
   -- IPC syscalls.  `.call`, `.reply`, `.replyRecv` may traverse a
   -- SchedContext-donation path (per audit-pass-3 extension).
-  | .send | .receive =>
+  | .send =>
       [.tcb, .cnode, .endpoint]
+  -- WS-SM SM6.D: `.receive` may link a server-supplied Reply object to a
+  -- rendezvousing `Call` caller (`linkCallerReply` writes `reply.caller`), and
+  -- `.call` / `.reply` / `.replyRecv` link or consume a Reply — all under the
+  -- per-object reply write-lock, so `.reply` enters their permitted kinds.
+  | .receive =>
+      [.tcb, .cnode, .endpoint, .reply]
   | .call =>
-      [.tcb, .cnode, .endpoint, .schedContext]
+      [.tcb, .cnode, .endpoint, .schedContext, .reply]
   | .reply =>
-      [.tcb, .cnode, .schedContext]
+      [.tcb, .cnode, .schedContext, .reply]
   | .replyRecv =>
-      [.tcb, .cnode, .endpoint, .schedContext]
+      [.tcb, .cnode, .endpoint, .schedContext, .reply]
   -- Notification syscalls.  `.notificationSignal` may take the seL4 bound-delivery
   -- path (WS-SM SM6.B): a signal to a notification whose bound TCB is
   -- `BlockedOnReceive` dequeues that TCB from its endpoint and writes it, so the
@@ -1180,6 +1193,10 @@ theorem lockSet_consistent_base_plus_four_opts
 /-- WS-SM SM3.B.4 helper: SchedContext lock kinds are `.schedContext`. -/
 @[simp] theorem schedContextLock_kind (scid : SchedContextId) :
     (schedContextLock scid).kind = .schedContext := rfl
+
+/-- WS-SM SM6.D helper: Reply lock kinds are `.reply`. -/
+@[simp] theorem replyLock_kind (rid : ReplyId) :
+    (replyLock rid).kind = .reply := rfl
 
 /-- WS-SM SM3.B.4 helper: VSpaceRoot lock kinds are `.vspaceRoot`. -/
 @[simp] theorem vspaceRootLock_kind (oid : ObjId) :

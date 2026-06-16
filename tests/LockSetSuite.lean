@@ -497,12 +497,16 @@ example :
 -- ============================================================================
 
 example : permittedKinds .send = [.tcb, .cnode, .endpoint] := by decide
-example : permittedKinds .receive = [.tcb, .cnode, .endpoint] := by decide
--- Audit-pass-3: `.call`/`.reply`/`.replyRecv` now include `.schedContext`
--- to cover the donation extension.
-example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext] := by decide
-example : permittedKinds .reply = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext] := by decide
+-- WS-SM SM6.D: `.receive` gains `.reply` — a `Call` rendezvous on the receive
+-- path links a server-supplied Reply object (`linkCallerReply` writes `reply.caller`
+-- under the per-object reply write-lock).
+example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply] := by decide
+-- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
+-- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
+-- consumes a first-class Reply object under the per-object reply write-lock.
+example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
+example : permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply] := by decide
+example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
 -- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
 -- it from its endpoint); `.notificationWait` is unchanged.
@@ -786,13 +790,14 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .schedContextBind"
     (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
-  assertBool "permittedKinds .call (with donation kind)"
-    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext]))
-  assertBool "permittedKinds .reply (with donation-return kind)"
-    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext]))
-  assertBool "permittedKinds .replyRecv (with donation-return kind)"
+  -- WS-SM SM6.D: they also include .reply (per-object reply write-lock).
+  assertBool "permittedKinds .call (donation + reply-object kind)"
+    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply]))
+  assertBool "permittedKinds .reply (donation-return + reply-object kind)"
+    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply]))
+  assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
     (decide (permittedKinds .replyRecv =
-      [.tcb, .cnode, .endpoint, .schedContext]))
+      [.tcb, .cnode, .endpoint, .schedContext, .reply]))
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"
