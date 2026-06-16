@@ -719,16 +719,33 @@ def reply_inUse_retype_rejected : IO Unit := do
   | .error _ => throw <| IO.userError "free Reply retype must succeed"
   -- PR #822 review: a FREE reply (caller = none) that is STASHED in a server's
   -- `pendingReceiveReply` (server-first receive awaiting its next Call) is also
-  -- in-use and must be rejected — else the waiting server's stash dangles.
+  -- in-use and must be rejected — else the waiting server's stash dangles.  The
+  -- stash reserves the Reply only while the server is STILL `.blockedOnReceive`
+  -- (a woken `.ready` server no longer reserves it — see `replyIsStashed`).
   let stashTcb : TCB :=
     { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
       vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .blockedOnReceive ⟨700⟩,
       pendingReceiveReply := some ⟨505⟩ }
   let stStashed : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
   match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
   | .error e => expect "stashed Reply retype → revocationRequired" (e == .revocationRequired)
   | .ok _ => throw <| IO.userError "stashed (pendingReceiveReply) Reply retype must be rejected"
+  -- PR #822 review: a server that was woken (e.g. by a bound notification) is now
+  -- `.ready` — its receive is OVER, so a leftover `pendingReceiveReply` does NOT
+  -- reserve the Reply, and retyping that free Reply must SUCCEED.  Guards the
+  -- "ready server keeps the Reply permanently in use" regression.
+  let wokenStashTcb : TCB :=
+    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .ready,
+      pendingReceiveReply := some ⟨505⟩ }
+  let stWokenStash : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb wokenStashTcb) |>.build)
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stWokenStash target freeReply newObj with
+  | .ok _ => expect "woken (.ready) server with stale stash → Reply free, retype allowed" true
+  | .error _ => throw <| IO.userError "a woken server's stale stash must not keep the Reply in use"
   -- PR #822 review: retyping a caller TCB that still holds a reply link
   -- (`replyObject = some rid`) is rejected — else the Reply's `caller` dangles.
   let linkedTcb : TCB :=

@@ -198,7 +198,20 @@ accept Call IPC.  Used by `lifecyclePreRetypeCleanup` to reject the retype. -/
 def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
   st.objects.fold (init := false) fun acc _oid obj =>
     acc || match obj with
-      | .tcb t => t.pendingReceiveReply == some rid
+      -- PR #822 review: a stash reserves the Reply only while the server is STILL
+      -- blocked on its server-first receive, awaiting the next `Call` to link.  The
+      -- moment the server is woken by anything *other* than that Call — a bound
+      -- notification (`notificationSignalBoundOnCore`), a `Send` rendezvous, a
+      -- cancellation — its receive is over and the Reply is free, even if the
+      -- now-`.ready` TCB's `pendingReceiveReply` field has not yet been scrubbed.
+      -- (A server woken *by* its Call is covered by `reply.caller`, set in the same
+      -- atomic transition.)  Tying "stashed" to `.blockedOnReceive` makes the
+      -- predicate robust to any wake path that does not eager-clear the stash, so a
+      -- ready server never keeps the Reply permanently in use.
+      | .tcb t =>
+          match t.ipcState with
+          | .blockedOnReceive _ => t.pendingReceiveReply == some rid
+          | _ => false
       | _ => false
 
 /-- WS-H2, R4-B.2 (M-13): Pre-retype cleanup combining TCB reference cleanup,

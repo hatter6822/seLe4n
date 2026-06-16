@@ -1,3 +1,33 @@
+## v0.31.111 — Reply objects (seL4-MCS): a woken server's stash never keeps the Reply in use (PR #822 review)
+
+`replyIsStashed` answers "is this Reply reserved by a server *still waiting* to hand
+it to its next `Call`?".  It previously counted **any** TCB whose
+`pendingReceiveReply` field named the Reply, regardless of IPC state — so a
+server-first receiver woken by something other than a `Call` (a bound notification
+via `notificationSignalBoundOnCore`, a `Send` rendezvous, a cancellation) became
+`.ready` with a stale stash field that kept the Reply **permanently** marked in use:
+`resolveRecvReplyId` would reject re-acquiring it and `lifecyclePreRetypeCleanup`
+would reject retyping it (`revocationRequired`), even though no receive is pending.
+
+- **Tie "stashed" to `.blockedOnReceive`**: `replyIsStashed` now counts a stash only
+  while the holding TCB is still `.blockedOnReceive` — the only state in which the
+  server is actually awaiting the next `Call` to link.  A woken `.ready` (or any
+  non-receiving) server no longer reserves the Reply.  A server woken *by* its `Call`
+  is unaffected: its outstanding link is recorded in `reply.caller` (set in the same
+  atomic transition), which the in-use check already covers via `r.caller.isSome`.
+
+This makes the predicate **robust to any wake path** that does not eager-clear the
+stash (the bound-notification path being the first such gap the reviewer found),
+rather than chasing each wake site individually.  The established eager clears
+(`linkServerFirstCaller`, plain-receive in `linkReceivedCaller`, suspend) remain and
+keep the state tidy; correctness no longer depends on their exhaustiveness.
+
+`ModelIntegritySuite.reply_inUse_retype_rejected`: the stashed-rejection TCB is now
+realistically `.blockedOnReceive`, and a new assertion proves a woken `.ready` server
+with a stale stash leaves the Reply free (retype allowed).  No proof cascade
+(`replyIsStashed` is consumed opaquely in `if` guards, never unfolded).  Full prod +
+staged build green; trace byte-identical.
+
 ## v0.31.110 — Reply objects (seL4-MCS): a retyped/created Reply must start inert (PR #822 review)
 
 `KernelObject.wellFormed` is the retype gate validated by
