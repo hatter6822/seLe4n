@@ -1,3 +1,22 @@
+## v0.31.93 — Reply objects (seL4-MCS): gate the live receive linkage (cohesive integration)
+
+Per the integration-approach decision: the live `.receive` Reply-object linkage
+(v0.31.90/91) is **staged off** — both `.receive` arms revert to plain receive —
+so the cross-cutting Reply integration (lifecycle consume/reject across
+retype/cancel/frozen, info-flow projection redaction + NI, `replyRecv` consumption
++ donation, boot/invariant hygiene, server-first persist) lands as a cohesive set
+and the live linkage is re-wired ONCE, complete, rather than exposing transient
+integration gaps (PR #822 review surfaced ~10 such gaps across those subsystems).
+
+The sound foundation remains in place: the first-class `Reply` object, its full
+15-conjunct `ipcInvariantFull` preservation, `linkCallerReply` /
+`consumeCallerReply`, the `CapTarget.replyCap` `ReplyId` cap-swap, and the
+`RecvArgs` / `syscallLookupReplyId` / `extractReplyId` resolution (staged for the
+re-wire).  `sd051` (which exercised the gated linkage) removed.
+
+Trace byte-identical (233/233); prod `lake build` (376) + staged (234) + Tier
+0/1/2 green.
+
 ## v0.31.92 — Reply objects (seL4-MCS): remove dead Call reply-cap ABI (PR #822 review)
 
 Decision D4 was revised to faithful seL4-MCS *server-supplied* reply objects (the
