@@ -1,3 +1,18 @@
+## v0.31.123 — Reply objects (seL4-MCS): pendingReceiveReply well-formedness predicate (SM6.D, finding D.0 — foundation)
+
+Foundation slice of SM6.D finding D (PR #822 review `6J9Kjg`/`6J9Kp6`: `ipcInvariantFull` admits an
+ill-formed `pendingReceiveReply` stash). Standalone, unbundled, trace byte-identical:
+
+- **`pendingReceiveReplyWellFormed`** predicate (`IPC/Invariant/Defs.lean`): a server-first receive stash
+  (`TCB.pendingReceiveReply = some rid`) occurs only on a `.blockedOnReceive` TCB and names an existing
+  **free** Reply (`reply.caller = none`). Modeled on `replyCallerLinkage`.
+- **`pendingReceiveReplyWellFormed_of_objects_eq`** frame lemma (preserved when the object store is
+  unchanged), the lever that discharges the object-frame preservation sites in the bundle step.
+
+Operationally already maintained (`resolveRecvReplyId` only stashes a free/present `rid`; exit from
+`.blockedOnReceive` clears the stash, v0.31.111). Bundling as the 17th conjunct of `ipcInvariantFull`
+(D.2) is the next slice. Full prod + staged build green; trace byte-identical.
+
 ## v0.31.122 — Reply objects (seL4-MCS): authorize `.reply` by the reply capability, not a fixed replier (SM6.D, finding E.2 — closes 6J-lYm)
 
 **Closes PR #822 review 6J-lYm.** A reply cap copied/minted (`cspaceCopy`/`cspaceMint`) to another server

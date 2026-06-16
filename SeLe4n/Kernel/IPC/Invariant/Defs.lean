@@ -640,6 +640,33 @@ theorem replyCallerLinkage_of_objects_eq {st st' : SystemState}
     replyCallerLinkage st' := by
   unfold replyCallerLinkage at h ⊢; rw [hObjs]; exact h
 
+/-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
+(`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still
+`.blockedOnReceive` (the only state in which the server is awaiting its next `Call`
+to link the Reply), and it names an **existing free** Reply object (`reply.caller =
+none`).  Without this conjunct `ipcInvariantFull` admits a blocked receiver stashing
+an absent or already-linked Reply, which a later server-first `Call` (`linkServerFirstCaller`)
+then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
+already maintained: `resolveRecvReplyId` only stashes a free, present `rid`, and
+exit from `.blockedOnReceive` clears the stash (v0.31.111 / `replyIsStashed`); this
+conjunct *states* it. -/
+def pendingReceiveReplyWellFormed (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.getTcb? tid = some tcb →
+    tcb.pendingReceiveReply = some rid →
+    (∃ ep, tcb.ipcState = .blockedOnReceive ep) ∧
+    (∃ r, st.getReply? rid = some r ∧ r.caller = none)
+
+/-- WS-SM SM6.D (PR #822 review): `pendingReceiveReplyWellFormed` reads only the
+object store (through the typed `getTcb?` / `getReply?` accessors), so any transition
+that leaves the object store unchanged frames it (timer tick, register/context
+writes, the default state). -/
+theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
+  rw [hObjs]; exact h
+
 /-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
 Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
 explicit target. This theorem is the formal discharge of the claim that the
