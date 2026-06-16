@@ -486,46 +486,40 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
 
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
 Mirrors `endpointReply`. -/
-def frozenEndpointReply (replierId : SeLe4n.ThreadId)
+def frozenEndpointReply (_replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (msg : IpcMessage) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st targetId with
     | some targetTcb =>
         match targetTcb.ipcState with
-        | .blockedOnReply _epId replyTarget =>
-            if replyTarget = some replierId then
-              -- Deliver message and unblock; consume the reply link (mirror the
-              -- runtime `consumeCallerReply`, PR #822 review): clear the caller
-              -- TCB's `replyObject` forward link, and — if it named a frozen
-              -- Reply object — clear that object's `caller` back-link.  Without
-              -- this a successful frozen reply would leave `reply.caller` /
-              -- `replyObject` stale (the single-use reply cap permanently
-              -- in-use), diverging from the runtime semantics.
-              let targetTcb' := { targetTcb with
-                ipcState := ThreadIpcState.ready
-                pendingMessage := some msg
-                replyObject := none }
-              -- PR #822 review (Codex): a reply REQUIRES a resolved Reply object whose
-              -- back-link authorizes THIS caller — the live `.reply` path resolves the
-              -- target *from* `reply.caller` and consumes it.  So the frozen mirror must
-              -- (a) reject a caller with NO `replyObject` forward link, and (b) require
-              -- the Reply object at `rid` to exist with `caller = some targetId`.  A
-              -- stale/forged forward link on the TCB, or a Reply whose `caller` is `none`
-              -- or names a different thread, must NOT authorize the reply.  Validate the
-              -- back-link BEFORE any store (fail-closed).
-              match targetTcb.replyObject with
-              | none => .error .replyCapInvalid
-              | some rid =>
-                  match st.objects.get? rid.toObjId with
-                  | some (.reply r) =>
-                      if r.caller = some targetId then
-                        match frozenStoreTcb targetId targetTcb' st with
-                        | .error e => .error e
-                        | .ok ((), st') =>
-                            frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
-                      else .error .replyCapInvalid
-                  | _ => .error .replyCapInvalid
-            else .error .replyCapInvalid
+        | .blockedOnReply _epId _replyTarget =>
+            -- PR #822 review (Codex), frozen mirror of E.2: authority is the Reply
+            -- object's back-link (`r.caller = some targetId`), NOT the recorded
+            -- `replyTarget` — a delegated (copied/minted) reply cap held by a
+            -- *different* replier is legitimate, exactly like the live `.reply` path
+            -- (which dropped the `replier == expected` gate, 6J-lYm).  `_replierId` is
+            -- retained for documentation.  Deliver + consume the single-use Reply link
+            -- (clear the caller's `replyObject` forward link and the Reply object's
+            -- `caller` back-link, mirroring `consumeCallerReply`).  Require a resolved
+            -- Reply object whose `caller = some targetId` BEFORE any store (fail-closed):
+            -- a missing forward link, or a Reply whose `caller` is `none`/another thread,
+            -- must NOT authorize the reply.
+            let targetTcb' := { targetTcb with
+              ipcState := ThreadIpcState.ready
+              pendingMessage := some msg
+              replyObject := none }
+            match targetTcb.replyObject with
+            | none => .error .replyCapInvalid
+            | some rid =>
+                match st.objects.get? rid.toObjId with
+                | some (.reply r) =>
+                    if r.caller = some targetId then
+                      match frozenStoreTcb targetId targetTcb' st with
+                      | .error e => .error e
+                      | .ok ((), st') =>
+                          frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
+                    else .error .replyCapInvalid
+                | _ => .error .replyCapInvalid
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound
 

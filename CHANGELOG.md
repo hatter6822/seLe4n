@@ -1,3 +1,16 @@
+## v0.31.124 — Reply objects (seL4-MCS): frozen reply authorized by the Reply object, not a fixed replier (PR #822 Codex review)
+
+**P2, frozen mirror of E.2.** After v0.31.122 removed the live `.reply` `replier == expected` gate,
+`frozenEndpointReply` still rejected any replier different from the recorded `blockedOnReply` server
+*before* validating the Reply object — so a frozen experiment with a valid linked Reply object and a
+delegated replier had production `.reply` succeed while the frozen mirror returned `replyCapInvalid`,
+modeling the obsolete authority rule. The `if replyTarget = some replierId` gate is removed; authority is
+the Reply object's back-link (`r.caller = some targetId`, already validated, fail-closed before any
+store), exactly like the live path. `_replierId` retained for documentation. `FrozenOpsSuite` FO-005
+repurposed from "wrong replier rejected" to "delegated replier (holding the linked Reply object) succeeds".
+
+Full prod + staged build green (zero warnings); trace byte-identical; FrozenOps suite green.
+
 ## v0.31.123 — Reply objects (seL4-MCS): pendingReceiveReply well-formedness predicate (SM6.D, finding D.0 — foundation)
 
 Foundation slice of SM6.D finding D (PR #822 review `6J9Kjg`/`6J9Kp6`: `ipcInvariantFull` admits an

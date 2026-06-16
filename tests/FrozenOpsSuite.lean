@@ -142,14 +142,25 @@ private def fo004b_endpointReplyConsumesLink : IO Unit := do
       | _ => throw <| IO.userError "reply object missing/retyped"
   | .error _ => throw <| IO.userError "reply should succeed"
 
-/-- FO-005: frozenEndpointReply — wrong replier rejected -/
-private def fo005_replyWrongReplier : IO Unit := do
-  let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
-  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
+/-- FO-005 (PR #822 review, frozen mirror of E.2 / 6J-lYm): a DELEGATED replier —
+NOT the recorded `replyTarget` server (⟨3⟩), but the reply is authorized by the
+linked Reply object whose `caller` names the target — now SUCCEEDS.  Authority is
+the Reply object, not the recorded replier (a copied/minted reply cap is
+delegatable), exactly like the live `.reply` path. -/
+private def fo005_replyDelegatedReplier : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB :=
+    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- replier ⟨99⟩ ≠ the recorded server ⟨3⟩, but holds the linked Reply object.
   match frozenEndpointReply ⟨99⟩ ⟨2⟩ msg fst with
-  | .ok _ => throw <| IO.userError "wrong replier should fail"
-  | .error e => expect "wrong replier → replyCapInvalid" (e == .replyCapInvalid)
+  | .ok ((), fst') =>
+      match frozenLookupTcb fst' ⟨2⟩ with
+      | some tcb => expect "delegated replier delivers (target ready)" (tcb.ipcState == .ready)
+      | none => throw <| IO.userError "target TCB missing"
+  | .error _ => throw <| IO.userError "delegated replier with a valid linked Reply object should succeed"
 
 -- ============================================================================
 -- TPH-006: Frozen Scheduler Tick
@@ -465,7 +476,7 @@ def main : IO Unit := do
   IO.println "--- TPH-005: Frozen IPC ---"
   fo004_endpointReply
   fo004b_endpointReplyConsumesLink
-  fo005_replyWrongReplier
+  fo005_replyDelegatedReplier
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"
   fo006_timerTickIdle
   IO.println "--- TPH-007: Frozen CSpace Lookup ---"
