@@ -238,10 +238,41 @@ def endpointReplyDonation? (st : SystemState) (replier : SeLe4n.ThreadId) :
       | _                           => none
   | none => none
 
+/-- WS-SM SM6.D (PR #822 review): the **recorded server** of a `blockedOnReply`
+caller — the thread that received the original `Call` (recorded as `some expected`
+in `caller.ipcState = .blockedOnReply ep (some expected)`) and therefore holds any
+SchedContext the caller donated.  After PR #822 review `6J-lYm` the reply-cap
+holder (`replier`) may be a *delegate* (a copied/minted reply cap), so the
+SchedContext donation **return** and the priority-inheritance **reversion** must be
+keyed on this recorded server, not on `replier`. -/
+def recordedReplyServer? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option SeLe4n.ThreadId :=
+  match st.getTcb? target with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnReply _ (some expected) => some expected
+      | _                                 => none
+  | none => none
+
+/-- WS-SM SM6.D (PR #822 review): the SchedContext returned on this reply — the
+**recorded server's** donated SC (resolved via `recordedReplyServer?` from the
+caller `target`'s `blockedOnReply` link), paired with its original owner.  This is
+the donation the passive server received from the caller at `Call` time; on a
+*delegated* reply the cap holder `replier` is not that server, so the return is
+keyed on the recorded server.  In the non-delegated case (`replier = expected`,
+the server holding `.donated scId owner`) this is exactly the legacy
+`endpointReplyDonation? st replier`. -/
+def endpointReplyServerDonation? (st : SystemState) (target : SeLe4n.ThreadId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match recordedReplyServer? st target with
+  | some server => endpointReplyDonation? st server
+  | none        => none
+
 /-- WS-SM SM6.C.1: the concrete lock-set a cross-core `endpointReplyOnCore` on
 state `st` acquires — `lockSet_endpointReply` with the returned SchedContext +
-original owner **pre-resolved from `st`** via `endpointReplyDonation?` (the
-replier's own donated binding).  The caller being replied to (`target`) is a known
+original owner **pre-resolved from `st`** via `endpointReplyServerDonation?` (the
+**recorded server's** donated binding — PR #822 review, not the possibly-delegated
+cap holder `replier`).  The caller being replied to (`target`) is a known
 argument, contributing its TCB **write** lock (the reply-state lifecycle write).
 This is the footprint the runtime `withLockSet` bracket (the SM5.I FFI seam)
 acquires before invoking `endpointReplyOnCore replier target … executingCore st`. -/
@@ -252,9 +283,19 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
   -- `linkCallerReply`).  Resolving it from `st` puts the per-object reply
   -- **write**-lock in the footprint, serialising the `reply.caller := none`
   -- consume against any other core using a copied reply cap.
-  lockSet_endpointReply replier cnodeRootObjId target
-    ((endpointReplyDonation? st replier).map (·.1))
-    ((endpointReplyDonation? st replier).map (·.2))
+  -- WS-SM SM6.D (PR #822 review): the donation returned on reply is the
+  -- **recorded server's** (`endpointReplyServerDonation? st target`), not the
+  -- (possibly delegated) cap holder `replier`'s — so the returned SC's write lock
+  -- and the original owner's TCB write lock cover the actual donation-return
+  -- writes the dispatch performs on the recorded server.  The first TCB **write**
+  -- lock is keyed on that recorded server too (`server`), since the reply's
+  -- server-side writes (donation clear + deschedule) land on the server, while the
+  -- cap holder `replier` is only read-locked via its CSpace root.  In the
+  -- non-delegated case (`server = replier`) the footprint is unchanged.
+  let server := (recordedReplyServer? st target).getD replier
+  lockSet_endpointReply server cnodeRootObjId target
+    ((endpointReplyServerDonation? st target).map (·.1))
+    ((endpointReplyServerDonation? st target).map (·.2))
     ((st.getTcb? target).bind (·.replyObject))
 
 /-- WS-SM SM6.C.5: the concrete lock-set a cross-core `endpointReplyRecvOnCore` on
@@ -262,7 +303,9 @@ state `st` acquires — `lockSet_replyRecv` with the new sender (the receive-leg
 rendezvous head), the returned SchedContext, and its original owner all
 **pre-resolved from `st`**.  The new sender is the endpoint's send-queue head (the
 thread the receive leg rendezvouses with, if any); the donation pair is the
-replier's own donated binding. -/
+replyRecv invoker's (`replier` = the server `tid`, which *is* the donee in
+`replyRecv` since it receives the next message — `replyRecvReturnDonation` keys the
+return on `tid`, unlike the delegatable plain `.reply` path). -/
 def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (endpointObjId : SeLe4n.ObjId) : LockSet :=
@@ -436,7 +479,7 @@ theorem lockSet_endpointReplyOnCore_correct
     ∀ p ∈ (lockSet_endpointReplyOnCore st replier cnodeRootObjId target).pairs,
       p.fst.kind ∈ permittedKinds .reply := by
   unfold lockSet_endpointReplyOnCore
-  exact lockSet_consistent_reply replier cnodeRootObjId target _ _ _
+  exact lockSet_consistent_reply _ cnodeRootObjId target _ _ _
 
 /-- WS-SM SM6.C.5 (`endpointReplyRecv_lockSet_correct`): the combined `replyRecv`
 lock-set — the reply footprint extended with the receive-leg endpoint write and

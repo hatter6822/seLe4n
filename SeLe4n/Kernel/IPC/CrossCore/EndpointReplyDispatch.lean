@@ -127,11 +127,14 @@ theorem lockSet_endpointReply_donation_extension
 /-- WS-SM SM6.C (operation): the cross-core `Reply` **delivery + scheduling**
 primitive — below the API layer.  The cross-core reply (`endpointReplyOnCore` —
 caller woken on its home core), then the SchedContext donation **return**
-(`applyReplyDonationOnCore` — the passive server returns the donated SC and is
-descheduled on its own core), then the cross-core priority-inheritance
-**reversion** (`propagatePipChainCrossCore` — the unblocked caller's blocking chain
-re-derives each holder's boost from its remaining waiters, migrating buckets on
-home cores).  Surfaces the reply-leg caller-wake SGI; the chain-walk SGIs are
+(`applyReplyDonationOnCore` — the passive **recorded server** returns the donated
+SC and is descheduled on its own core), then the cross-core priority-inheritance
+**reversion** (`propagatePipChainCrossCore` over the recorded server's blocking
+chain — re-derives each holder's boost from its remaining waiters, migrating
+buckets on home cores).  The donation/PIP target is the server recorded in the
+caller's `blockedOnReply` link (`recordedReplyServer? st target`), **not** the
+reply-cap holder `replier` (a delegated cap holder is not the donee — PR #822
+review).  Surfaces the reply-leg caller-wake SGI; the chain-walk SGIs are
 re-derived from the committed diff.
 
 **Delivery-only — does NOT consume the first-class Reply linkage** (PR #822 Codex
@@ -152,13 +155,23 @@ def endpointReplyCrossCoreDispatch
   match endpointReplyOnCore replier target msg executingCore st with
   | (_, .error e) => (st, .error e)
   | (st1, .ok replySgi?) =>
-      match SeLe4n.ThreadId.toValid? replier with
-      | some replierV =>
-          match applyReplyDonationOnCore st1 replierV executingCore with
-          | .error e => (st, .error e)
-          | .ok st2 =>
-              ((PriorityInheritance.propagatePipChainCrossCore st2 replier executingCore).1, .ok replySgi?)
-      | none => (st, .error .invalidArgument)
+      -- WS-SM SM6.D (PR #822 review): the SchedContext donation **return** and the
+      -- priority-inheritance **reversion** are keyed on the **recorded server**
+      -- (`target`'s `blockedOnReply` link, resolved from the pre-state `st` —
+      -- `endpointReplyOnCore` succeeded, so it is `some expected`), who holds the
+      -- donated SC and the PIP boost, NOT the reply-cap holder `replier` (which may
+      -- be a *delegate* after the 6J-lYm gate removal).  In the non-delegated case
+      -- (`replier = expected`) this is identical to the legacy `replier`-keyed path.
+      match recordedReplyServer? st target with
+      | some expected =>
+          match SeLe4n.ThreadId.toValid? expected with
+          | some expectedV =>
+              match applyReplyDonationOnCore st1 expectedV executingCore with
+              | .error e => (st, .error e)
+              | .ok st2 =>
+                  ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
+          | none => (st, .error .invalidArgument)
+      | none => (st, .error .replyCapInvalid)
 
 /-- WS-SM SM6.C (live `.reply` enforcement): the **information-flow-checked**
 cross-core reply dispatch — the cross-core analogue of `endpointReplyChecked`

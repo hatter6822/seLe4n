@@ -100,6 +100,11 @@ open SeLe4n.Testing
 #check @applyReplyDonationOnCore
 #check @applyReplyDonationOnCore_bootCoreId
 #check @lockSet_endpointReply_donation_extension
+-- WS-SM SM6.D (PR #822 review): the reply donation return is keyed on the RECORDED
+-- SERVER (the caller's `blockedOnReply` server, who holds the donated SC), not the
+-- possibly-delegated cap holder.
+#check @recordedReplyServer?
+#check @endpointReplyServerDonation?
 -- WS-SM SM6.D: the per-object reply WRITE lock is in the reply footprint once the
 -- reply object is resolved (the 2PL coverage of the single-use `reply.caller`
 -- consume — PR #822 review 6J90-5).
@@ -363,6 +368,37 @@ private def runDonationChecks : IO Unit := do
       assertBool "applyReplyDonationOnCore on a non-donating replier is a no-op (ok)"
         (match applyReplyDonationOnCore stBase serverV bootCoreId with | .ok _ => true | .error _ => false)
   | none => assertBool "serverTid is a valid thread id" false
+  -- WS-SM SM6.D (PR #822 review 6J90-... donation): the donation return is keyed on
+  -- the RECORDED SERVER, not the (possibly delegated) cap holder.  Build a state
+  -- where `clientLocalTid` is `blockedOnReply (some serverTid)` and `serverTid`
+  -- holds `.donated scId clientLocalTid`; `wrongTid` is an unrelated (delegate)
+  -- replier holding no donation.
+  let stDonated : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject serverTid.toObjId
+          (.tcb { mkTcb 601 50 none .ready with
+                    schedContextBinding := .donated scId clientLocalTid })
+      |>.withObject clientLocalTid.toObjId
+          (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+      |>.withObject wrongTid.toObjId (.tcb (mkTcb 604 40 none .ready))
+      |>.withRunnable [serverTid]
+      |>.build)
+  assertBool "recordedReplyServer? resolves the caller's recorded blockedOnReply server"
+    (decide (recordedReplyServer? stDonated clientLocalTid = some serverTid))
+  -- The key finding: the resolved donation is the RECORDED SERVER's, regardless of
+  -- which thread holds the reply cap (the delegate `wrongTid` holds none).
+  assertBool "endpointReplyServerDonation? resolves the recorded server's donation (not the replier's)"
+    (decide (endpointReplyServerDonation? stDonated clientLocalTid = some (scId, clientLocalTid)))
+  -- The state-resolved reply lock-set therefore covers the returned SC write lock
+  -- AND the recorded server's TCB write lock, even on a delegated reply where the
+  -- cap holder (`wrongTid`) is not the server.
+  assertBool "delegated reply lock-set covers the returned SchedContext write lock (keyed on the server)"
+    (decide ((schedContextLock scId, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore stDonated wrongTid cnRoot clientLocalTid).pairs))
+  assertBool "delegated reply lock-set covers the recorded server's TCB write lock"
+    (decide ((tcbLock serverTid, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore stDonated wrongTid cnRoot clientLocalTid).pairs))
 
 private def runDispatchChecks : IO Unit := do
   IO.println "--- §3.6 SM6.C cross-core dispatch + SM6.C.9 chain bound ---"

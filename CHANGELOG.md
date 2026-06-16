@@ -1,3 +1,31 @@
+## v0.31.126 — Reply objects (seL4-MCS): reply donation returns from the recorded server, not the delegated cap holder (PR #822 Codex review)
+
+**P2, completes E.2 (delegation correctness).** After v0.31.122 let a *delegated*/copied reply cap
+authorize a holder other than the originally-called server, the cross-core `.reply` dispatch still ran the
+SchedContext donation **return** and the priority-inheritance **reversion** on the cap holder `replier`.
+In the passive-server case the donated SC is attached to the **recorded server** (`some expected` in the
+caller's `blockedOnReply` link), so a delegated `.reply` woke the client while leaving its SC bound/donated
+to the old server — the client never got its budget back (a liveness/resource bug), and the recorded
+server's donation-clear + deschedule writes fell outside the acquired 2PL lock set.
+
+Fix — the reply's scheduling bookkeeping is keyed on the **recorded server**, not `replier`:
+- New `recordedReplyServer? st target` (the `blockedOnReply` server) and `endpointReplyServerDonation? st
+  target` (that server's `.donated` binding) resolvers.
+- `endpointReplyCrossCoreDispatch` runs `applyReplyDonationOnCore` + `propagatePipChainCrossCore` on the
+  recorded server (resolved from the pre-state), not the cap holder.
+- `lockSet_endpointReplyOnCore` resolves the returned SC / owner from the recorded server **and** keys its
+  first TCB **write** lock on that server (whose donation-clear + deschedule writes it must cover); the cap
+  holder is only CSpace-read-locked. The parametric lock-set, its `_consistent_`/`_correct` theorems, the
+  dispatch reduction/NI/flow-equivalence theorems, and the chain-length bound are all unchanged (parametric
+  over the donation thread / structural over the flow gate).
+- In the non-delegated case (`replier = expected`) the footprint and behaviour are **identical** to before.
+- `.replyRecv` is unchanged: its invoker `tid` *is* the donee (it receives the next message), so
+  `replyRecvReturnDonation`/`lockSet_endpointReplyRecvOnCore` correctly stay keyed on the invoker.
+
+`SmpCrossCoreReplySuite` gains delegated-donation tests (donation resolved from the recorded server, lock-set
+covers the server's SC + TCB writes even when the cap holder is a different thread). Full prod + staged build
+green (239 jobs); Lean Tier 0-2 green; trace byte-identical.
+
 ## v0.31.125 — Reply objects (seL4-MCS): pendingReceiveReply well-formedness as the 17th `ipcInvariantFull` conjunct (SM6.D, finding D.2 — closes 6J9Kjg/6J9Kp6)
 
 **P2, closes finding D.** Bundles `pendingReceiveReplyWellFormed` (landed standalone in v0.31.123) as the
