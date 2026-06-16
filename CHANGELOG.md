@@ -1,3 +1,25 @@
+## v0.31.110 — Reply objects (seL4-MCS): a retyped/created Reply must start inert (PR #822 review)
+
+`KernelObject.wellFormed` is the retype gate validated by
+`lifecycleRetypeWithCleanup` / `lifecycleRetypeDirectWithCleanup` before the new
+object is installed (`RetypeWrappers.lean`: `if ¬ newObj.wellFormed st.objects`).
+Its `.reply` arm previously returned `True`, so retype would happily install a
+Reply carrying a live `caller` / `donatedSc` / `prev` link — bypassing the
+`linkCallerReply` / `replyCallerLinkage` setup path and seeding a stale or in-use
+link the way the boot-safe Reply requirement already forbids at boot.
+
+- **Require inertness in the retype gate**: `KernelObject.wellFormed (.reply r)`
+  now demands `r.caller = none ∧ r.donatedSc = none ∧ r.prev = none`, mirroring the
+  boot-safe Reply requirement.  A retyped/created Reply must therefore start with no
+  caller, no donated scheduling context, and no previous-reply link.
+- Decidability instance (`KernelObject.wellFormed` `Decidable`) updated: the
+  `.reply` arm now uses `inferInstance` (decidable conjunction of `Option`
+  equalities) instead of `instDecidableTrue`.
+
+`KernelObject.wellFormed` is a retype/creation gate, not a state-wide invariant
+(idle TCBs deliberately fail it — see `Boot.lean`), so in-use Replies elsewhere in
+the state are unaffected.  Full prod + staged build green; trace byte-identical.
+
 ## v0.31.109 — Reply objects (seL4-MCS): reject TCB retype with reply link + stashed reply receive (PR #822 review)
 
 Two more in-use Reply guards:
