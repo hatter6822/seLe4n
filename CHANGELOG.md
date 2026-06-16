@@ -1,3 +1,17 @@
+## v0.31.92 — Reply objects (seL4-MCS): remove dead Call reply-cap ABI (PR #822 review)
+
+Decision D4 was revised to faithful seL4-MCS *server-supplied* reply objects (the
+receiver supplies the reply cap on `Recv`/`ReplyRecv`; `Call` carries no reply
+cap).  The `IpcCallArgs` decode/encode ABI added under the earlier
+caller-supplied framing is therefore dead and inconsistent with the live `.call`
+dispatch (which treats all message registers as payload) — removed
+(`Architecture/SyscallArgDecode.lean`): `IpcCallArgs`, `decodeIpcCallArgs`,
+`encodeIpcCallArgs`, and the `_error_iff` / `_roundtrip` theorems.  The reply-CPtr
+ABI lives on the receive path (`RecvArgs`, v0.31.90).
+
+Closes PR #822 review item (SyscallArgDecode:1097).  Trace byte-identical; prod
+`lake build` (376) + Tier 0/1 green.
+
 ## v0.31.91 — Reply objects (seL4-MCS): `.receive` reply cap is optional (CI fix)
 
 Fixes a regression from v0.31.90: the `.receive` linking made the arm *require* a
