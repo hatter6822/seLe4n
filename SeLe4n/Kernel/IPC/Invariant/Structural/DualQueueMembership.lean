@@ -2815,6 +2815,8 @@ was free, the caller held no reply) rule out a pre-existing link to `rid` or fro
 theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hRCL : replyCallerLinkage st) (hObjInv : st.objects.invExt)
+    (hCallerBlk : ∀ tc, st.getTcb? caller = some tc →
+      ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tc.ipcState = .blockedOnReply ep rt)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     replyCallerLinkage st' := by
   obtain ⟨⟨r0, hGetR, hFree⟩, tcbC, hGetC, hCFree⟩ :=
@@ -2870,13 +2872,17 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
       simp only at hCaller
       have : tid = caller := by simpa using hCaller.symm
       subst this
-      exact ⟨tcbC', hCallerObj', hRepC'⟩
+      -- the linked caller is `blockedOnReply` (precondition + ipcState preserved).
+      obtain ⟨ep, rt, hBlk⟩ := hCallerBlk tcbC hGetC
+      have hIpc : tcbC'.ipcState = tcbC.ipcState :=
+        linkCallerReply_caller_ipcState_preserved st tid ridv tcbC hObjInv hGetC st' tcbC' hStep hGetC'
+      exact ⟨tcbC', hCallerObj', hRepC', ep, rt, by rw [hIpc]; exact hBlk⟩
     · have hridv_ne_rid : ridv.toObjId ≠ rid.toObjId :=
         fun h => hRR (SeLe4n.ReplyId.toObjId_injective ridv rid h)
       have hridv_ne_caller : ridv.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj'] at hRep; cases hRep
       rw [hFrame ridv.toObjId hridv_ne_rid hridv_ne_caller] at hRep
-      obtain ⟨tcb, ht, htr⟩ := hRCL.2 ridv r tid hRep hCaller
+      obtain ⟨tcb, ht, htr, hBlk⟩ := hRCL.2 ridv r tid hRep hCaller
       have htid_ne_caller : tid.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj] at ht
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at ht
@@ -2884,7 +2890,7 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
       have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj] at ht; cases ht
       rw [← hFrame tid.toObjId htid_ne_rid htid_ne_caller] at ht
-      exact ⟨tcb, ht, htr⟩
+      exact ⟨tcb, ht, htr, hBlk⟩
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): `consumeCallerReply` **preserves**
@@ -2903,7 +2909,7 @@ theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
   have hReplyObj : st.objects[rid.toObjId]? = some (.reply r0) :=
     (getReply?_eq_some_iff st rid r0).mp hGetR
   -- mutual link: the caller points back at `rid` (reciprocity from `hRCL`).
-  obtain ⟨tcbC, hCallerObj, hCallerRep⟩ := hRCL.2 rid r0 caller hReplyObj hLinked
+  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRCL.2 rid r0 caller hReplyObj hLinked
   have hC_ne : caller.toObjId ≠ rid.toObjId :=
     getTcb?_getReply?_slot_ne st caller rid tcbC r0
       ((getTcb?_eq_some_iff st caller tcbC).mpr hCallerObj) hGetR
@@ -2975,7 +2981,7 @@ theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
       have hridv_ne_caller : ridv.toObjId ≠ caller.toObjId := by
         intro h; obtain ⟨t, ht⟩ := hCallerTcb'; rw [h, ht] at hRep; cases hRep
       rw [hFrame ridv.toObjId hridv_ne_rid hridv_ne_caller] at hRep
-      obtain ⟨tcb, ht, htr⟩ := hRCL.2 ridv r tid hRep hCaller
+      obtain ⟨tcb, ht, htr, hBlk⟩ := hRCL.2 ridv r tid hRep hCaller
       have htid_ne_caller : tid.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj] at ht
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at ht
@@ -2984,7 +2990,7 @@ theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
       have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj] at ht; cases ht
       rw [← hFrame tid.toObjId htid_ne_rid htid_ne_caller] at ht
-      exact ⟨tcb, ht, htr⟩
+      exact ⟨tcb, ht, htr, hBlk⟩
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
@@ -2994,12 +3000,14 @@ reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
 theorem linkCallerReply_preserves_ipcInvariantFull
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hCallerBlk : ∀ tc, st.getTcb? caller = some tc →
+      ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tc.ipcState = .blockedOnReply ep rt)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link
   case link =>
     exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
-      hInv.replyCallerLinkage hObjInv hStep
+      hInv.replyCallerLinkage hObjInv hCallerBlk hStep
   case core =>
     unfold linkCallerReply at hStep
     cases hLink : linkReply rid caller st with

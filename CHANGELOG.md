@@ -1,3 +1,22 @@
+## v0.31.108 — Reply objects (seL4-MCS): require linked reply callers to be blockedOnReply (PR #822 review)
+
+Strengthens the `replyCallerLinkage` IPC-invariant conjunct (v0.31.106): the
+backward direction (`reply.caller = some tid ⇒ reciprocating TCB`) now **also**
+requires that TCB to be `blockedOnReply` — the only state from which the public
+`.reply` path can consume it.  Without this, `ipcInvariantFull` admitted a Reply
+linked to a `.ready` caller that `.reply` then rejects, leaving the Reply
+permanently in-use and unconsumable.
+
+- New post-condition `linkCallerReply_caller_ipcState_preserved` (the final store
+  rewrites only `replyObject`, so a `blockedOnReply` caller stays blocked).
+- `linkCallerReply_establishes_replyCallerLinkage` gains a `blockedOnReply` caller
+  precondition (threaded through `linkCallerReply_preserves_ipcInvariantFull`);
+  `consumeCallerReply` and the framing transitions carry the stronger clause
+  through unchanged; boot/default discharge it vacuously.
+
+Closes PR #822 review item (Defs:627).  Full prod + staged build + Tier 0/1/2
+green; trace byte-identical (proof-only surface); zero `sorry`/`axiom`.
+
 ## v0.31.107 — Reply objects (seL4-MCS): receive/replyRecv reply-cap behavior hardening (PR #822 review)
 
 Four bounded behavior fixes to the reply-cap dispatch + lifecycle paths:

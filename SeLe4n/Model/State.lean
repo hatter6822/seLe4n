@@ -2505,6 +2505,52 @@ theorem linkCallerReply_replyObject_some (st : SystemState) (caller : SeLe4n.Thr
           by rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore, rfl⟩
       · simp at hRun
 
+/-- WS-SM SM6.D (PR #822 review): `linkCallerReply` preserves the caller's IPC
+state — its final store rewrites only `replyObject`, so a caller blocked on reply
+*stays* blocked.  The `replyCallerLinkage` invariant reads this to require a linked
+Reply's caller to be `blockedOnReply` (the only state `.reply` can consume). -/
+theorem linkCallerReply_caller_ipcState_preserved (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (tcbC : TCB) (hObjInv : st.objects.invExt)
+    (hPre : st.getTcb? caller = some tcbC) :
+    ∀ result tcb', linkCallerReply caller rid st = .ok ((), result) →
+      result.getTcb? caller = some tcb' → tcb'.ipcState = tcbC.ipcState := by
+  intro result tcb' hRun hPost
+  unfold linkCallerReply at hRun
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hRun
+    have hNe : caller.toObjId ≠ rid.toObjId := by
+      cases hGetR : st.getReply? rid with
+      | none => unfold linkReply at hLink; rw [hGetR] at hLink; simp at hLink
+      | some r0 => exact getTcb?_getReply?_slot_ne st caller rid tcbC r0 hPre hGetR
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hFrame : st1.objects[caller.toObjId]? = st.objects[caller.toObjId]? := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r0 =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_objects_ne st st1 rid.toObjId caller.toObjId _ hNe hObjInv hLink
+        · simp at hLink
+    have hT1 : st1.getTcb? caller = some tcbC := by
+      rw [getTcb?_eq_some_iff] at hPre ⊢; rw [hFrame]; exact hPre
+    cases hT : st1.getTcb? caller with
+    | none => rw [hT1] at hT; cases hT
+    | some tcb =>
+      have htcb : tcbC = tcb := by rw [hT1] at hT; injection hT
+      subst htcb
+      simp only [hT] at hRun
+      split at hRun
+      · have hStore := storeObject_inserted_object_lookup st1 caller.toObjId
+          (.tcb { tcbC with replyObject := some rid }) hObjInv1 result hRun
+        have hRes : result.getTcb? caller = some { tcbC with replyObject := some rid } := by
+          rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore
+        rw [hRes] at hPost; injection hPost with hPost; rw [← hPost]
+      · simp at hRun
+
 /-- WS-SM SM6.D: `consumeCallerReply` tears down the forward TCB→Reply link —
 any caller TCB still present after the op has `replyObject = none`.  (The TCB
 leg writes exactly this field; the no-op leg leaves no TCB to observe.) -/

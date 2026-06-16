@@ -611,11 +611,15 @@ Reply, or a `reply.caller` is not reciprocated, letting a stale reply cap act on
 or erase the wrong outstanding reply link.  Two directions:
 
 * **forward** (`tcb.replyObject = some rid` ⇒ the Reply exists and names this TCB);
-* **backward** (`reply.caller = some tid` ⇒ that TCB exists and points back).
+* **backward** (`reply.caller = some tid` ⇒ that TCB exists, points back, **and is
+  `blockedOnReply`** — the only state from which the public `.reply` path can
+  consume it; without this the invariant would admit a Reply linked to a `.ready`
+  caller that `.reply` then rejects, leaving the Reply in-use and unconsumable).
 
-Established by `linkCallerReply` (sets both fields reciprocally, fail-closed on an
-in-use reply) and preserved by `consumeCallerReply` (clears both reciprocally);
-all other IPC transitions frame it (they touch neither field). -/
+Established by `linkCallerReply` (sets both fields reciprocally on a `blockedOnReply`
+caller, fail-closed on an in-use reply) and preserved by `consumeCallerReply`
+(clears both reciprocally); all other IPC transitions frame it (they touch neither
+field nor a linked caller's IPC state). -/
 def replyCallerLinkage (st : SystemState) : Prop :=
   (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -624,7 +628,9 @@ def replyCallerLinkage (st : SystemState) : Prop :=
   (∀ (rid : SeLe4n.ReplyId) (r : Reply) (tid : SeLe4n.ThreadId),
       st.objects[rid.toObjId]? = some (.reply r) →
       r.caller = some tid →
-      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid)
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid ∧
+        ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+          tcb.ipcState = .blockedOnReply ep rt)
 
 /-- WS-SM SM6.D (PR #822 review): `replyCallerLinkage` reads only `st.objects`, so
 any transition that leaves the object store unchanged frames it.  Used by the
