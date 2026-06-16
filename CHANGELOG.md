@@ -1,3 +1,29 @@
+## v0.31.90 — Reply objects (seL4-MCS): `.receive` links the server's reply object (C-wire-link-1)
+
+First faithful server-supplied linking (decision D4): `seL4_Recv(ep, reply)` — the
+server supplies a Reply object capability, and on a `Call`-rendezvous the kernel
+links it to the caller.  Wired at the **dispatch-arm layer**, so the
+`endpointReceiveDual` transition and its SM6.C proof suite stay untouched — the
+link composes through the already-proven `linkCallerReply_preserves_ipcInvariantFull`
+(C-preserve-B).
+
+- `RecvArgs { replyCPtr }` + `decodeRecvArgs` / `encodeRecvArgs` + `_error_iff` /
+  `_roundtrip` (`Architecture/SyscallArgDecode.lean`).
+- Both `.receive` arms (`dispatchWithCap{,Checked}`): resolve the server-supplied
+  reply capability from the server's *own* CSpace (`syscallLookupReplyId`, via the
+  `tcbBindNotification` secondary-cap pattern), run the unchanged receive, then
+  **iff** the rendezvoused sender's post-state is `.blockedOnReply` (a `Call`),
+  `linkCallerReply sender rid` — fail-closed on an in-use reply or absent caller.
+  A plain `Send` rendezvous takes no reply; the checked arm differs only in
+  `endpointReceiveDualChecked`.
+- `tests/SyscallDispatchSuite.lean` `sd051`: a queued `Call`-sender + a server reply
+  cap → `.receive` dispatch → caller's `replyObject = some rid` and `getReply? rid
+  |>.caller = some sender`; no-cap / wrong-cap → `.invalidCapability`.
+
+Trace byte-identical (233/233); prod `lake build` (376) + staged anchor (234) +
+Tier 0/1/2 green.  The `.replyRecv` reply-leg conversion and the server-first
+(`endpointCall`) path follow.
+
 ## v0.31.89 — Reply objects (seL4-MCS): reply-cap resolution foundation (C-wire-link prep)
 
 Foundation for faithful server-supplied reply-object linking (decision D4 revised

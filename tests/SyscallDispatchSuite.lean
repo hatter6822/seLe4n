@@ -639,6 +639,80 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
 
+/-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): the `.receive`
+syscall has the *server* supply a Reply object capability (`msgRegs[0]` = the
+reply-cap slot in the server's CSpace); when a **Call**-sender rendezvouses, the
+kernel links that reply object to the caller (`reply.caller := some sender`,
+`sender.replyObject := some rid`).  Single-level CSpace: `depth=4, radixWidth=4,
+guard=0` ⇒ `CPtr.ofNat k` resolves to slot `k`.  Slot 0 = the endpoint cap (the
+`.receive` primary, `.read`); slot 1 = the server-supplied reply cap (`.write`). -/
+private def sd051_recv_links_reply_to_call_sender : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let sender : SeLe4n.ThreadId := ⟨2⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let epId   : SeLe4n.ObjId := ⟨60⟩
+  let rid    : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 80
+  let epCap     : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read, .write] }
+  let replyCap  : Capability := { target := .replyCap rid, rights := AccessRightSet.ofList [.write] }
+  let mkSt (slots : List (SeLe4n.Slot × Capability)) : SystemState :=
+    mkState [
+      (server.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (sender.toObjId, .tcb { (mkTcb 2) with cspaceRoot := cnId }),
+      (epId, .endpoint {}),
+      (rid.toObjId, .reply (SeLe4n.Kernel.Reply.empty rid)),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF slots })
+    ]
+  -- The receive dispatch: primary endpoint cap at slot 0 (`capAddr`); the
+  -- server-supplied reply cap at slot 1 (`msgRegs[0]`).
+  let decoded : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .receive,
+      msgRegs := #[SeLe4n.RegValue.ofNat 1],          -- reply CPtr → slot 1
+      inlineCount := 1, overflowCount := 0 }
+  -- Enqueue a Call-sender on the endpoint (`endpointCall` with no queued
+  -- receiver ⇒ sender enqueued `.blockedOnCall epId`), yielding a valid
+  -- intrusive sendQ for the receive to dequeue.
+  let stBase := mkSt [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, replyCap)]
+  match SeLe4n.Kernel.endpointCall epId sender IpcMessage.empty stBase with
+  | .error e => failLine "sd051_recv_setup_endpointCall" s!"endpointCall enqueue failed: {toString e}"
+  | .ok ((), stCall) =>
+    -- Positive: the Call-sender rendezvouses; the kernel links the reply object.
+    let rOk := dispatchSyscall decoded server stCall
+    expect "sd051_recv_links_reply_sender_replyObject"
+      (match rOk with
+       | .ok ((), st') =>
+           (st'.getTcb? sender).any (fun t => decide (t.replyObject = some rid))
+       | .error _ => false)
+      "receive did not set the rendezvoused Call-sender's replyObject to the reply id"
+    expect "sd051_recv_links_reply_caller"
+      (match rOk with
+       | .ok ((), st') =>
+           (st'.getReply? rid).any (fun r => decide (r.caller = some sender))
+       | .error _ => false)
+      "receive did not set the reply object's caller to the rendezvoused Call-sender"
+  -- Negative 1: reply cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
+  let stNoCap := mkSt [(SeLe4n.Slot.ofNat 0, epCap)]
+  match SeLe4n.Kernel.endpointCall epId sender IpcMessage.empty stNoCap with
+  | .error e => failLine "sd051_recv_nocap_setup" s!"endpointCall enqueue failed: {toString e}"
+  | .ok ((), stCall) =>
+    let rNoCap := dispatchSyscall decoded server stCall
+    expect "sd051_recv_no_reply_cap_rejected"
+      (match rNoCap with | .error .invalidCapability => true | _ => false)
+      "receive without a held reply cap should fail with invalidCapability"
+  -- Negative 2: wrong cap at slot 1 (the endpoint cap, not a reply cap) →
+  -- `extractReplyId` fails closed with invalidCapability.
+  let stWrong := mkSt [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, epCap)]
+  match SeLe4n.Kernel.endpointCall epId sender IpcMessage.empty stWrong with
+  | .error e => failLine "sd051_recv_wrongcap_setup" s!"endpointCall enqueue failed: {toString e}"
+  | .ok ((), stCall) =>
+    let rWrong := dispatchSyscall decoded server stCall
+    expect "sd051_recv_wrong_cap_rejected"
+      (match rWrong with | .error .invalidCapability => true | _ => false)
+      "receive with a non-reply cap at the reply slot should fail with invalidCapability"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -670,4 +744,6 @@ def main : IO Unit := do
   sd042_bootInitialise_malformed_config_rejects
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
+  IO.println "--- WS-SM SM6.D: receive links server-supplied reply object to Call-sender ---"
+  sd051_recv_links_reply_to_call_sender
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="
