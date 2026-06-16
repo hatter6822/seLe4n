@@ -2710,9 +2710,11 @@ theorem linkCallerReply_preserves_ipcInvariantFull
     | none => simp [hT] at hStep
     | some tcb =>
       simp only [hT] at hStep
-      exact storeObject_tcb_replyObject_preserves_ipcInvariantFull st1 st'
-        caller.toObjId tcb (some rid) hInv1 hObjInv1
-        ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
+      split at hStep
+      · exact storeObject_tcb_replyObject_preserves_ipcInvariantFull st1 st'
+          caller.toObjId tcb (some rid) hInv1 hObjInv1
+          ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
+      · simp at hStep
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `consumeCallerReply` preserves `ipcInvariantFull`.  It is the

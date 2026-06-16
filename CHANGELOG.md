@@ -1,3 +1,22 @@
+## v0.31.96 — Reply objects (seL4-MCS): caller-side single-use for linkCallerReply (PR #822 review)
+
+`linkCallerReply` now fails closed (`.replyCapInvalid`) when the *caller* already
+holds a reply object (`tcb.replyObject ≠ none`) — caller-side single-use, dual to
+the existing reply-side `linkCallerReply_inUse_error` barrier.  Previously the store
+overwrote the forward TCB→Reply link, orphaning the old Reply with a stale `caller`
+(a later reply cap could resolve to the caller, and `consumeCallerReply` could clear
+the newer link).
+
+The three `linkCallerReply` post-condition / preservation theorems
+(`_replyObject_some`, `_getReply?_caller_some`, `_preserves_ipcInvariantFull`)
+re-proven through the added `if tcb.replyObject.isNone` branch (a `split` whose
+`else` arm is `.error = .ok`, vacuous).  `linkCallerReply_inUse_error` is unchanged
+(its error precedes the new branch).
+
+Closes PR #822 review item (State.lean:2398).  Trace byte-identical
+(`linkCallerReply` is gated-off foundation); prod `lake build` (376) + staged (234)
++ Tier 0/1/2 green.
+
 ## v0.31.95 — Reply objects (seL4-MCS): boot Reply/TCB safety (PR #822 review)
 
 Boot safety now covers the first-class Reply object and the TCB reply link (the

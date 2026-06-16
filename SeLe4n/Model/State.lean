@@ -2395,7 +2395,14 @@ def linkCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kernel U
         match st1.getTcb? caller with
         | none => .error .objectNotFound
         | some tcb =>
-            storeObject caller.toObjId (.tcb { tcb with replyObject := some rid }) st1
+            -- WS-SM SM6.D (PR #822): caller-side single-use — a caller already
+            -- holding a reply object must not be re-linked, else the old Reply is
+            -- orphaned with a stale `caller` (a later reply cap could resolve to
+            -- this caller, and `consumeCallerReply` would clear the newer link).
+            -- Fail closed unless `replyObject` is `none`.
+            if tcb.replyObject.isNone then
+              storeObject caller.toObjId (.tcb { tcb with replyObject := some rid }) st1
+            else .error .replyCapInvalid
 
 /-- WS-SM SM6.D (Reply-cap linkage, Reply path): tear down the TCB↔Reply link
 when a reply is delivered/consumed.  Clears `reply.caller := none` (via
@@ -2490,11 +2497,13 @@ theorem linkCallerReply_replyObject_some (st : SystemState) (caller : SeLe4n.Thr
     | none => simp [hT] at hRun
     | some tcb =>
       simp only [hT] at hRun
-      have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
-      have hStore := storeObject_inserted_object_lookup st1 caller.toObjId
-        (.tcb { tcb with replyObject := some rid }) hInv1 result hRun
-      exact ⟨{ tcb with replyObject := some rid },
-        by rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore, rfl⟩
+      split at hRun
+      · have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        have hStore := storeObject_inserted_object_lookup st1 caller.toObjId
+          (.tcb { tcb with replyObject := some rid }) hInv1 result hRun
+        exact ⟨{ tcb with replyObject := some rid },
+          by rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore, rfl⟩
+      · simp at hRun
 
 /-- WS-SM SM6.D: `consumeCallerReply` tears down the forward TCB→Reply link —
 any caller TCB still present after the op has `replyObject = none`.  (The TCB
@@ -2549,14 +2558,16 @@ theorem linkCallerReply_getReply?_caller_some (st : SystemState) (caller : SeLe4
     | none => simp [hT] at hRun
     | some tcb =>
       simp only [hT] at hRun
-      have hInv1 : st1.objects.invExt :=
-        linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
-      have hNe : caller.toObjId ≠ rid.toObjId :=
-        getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := some caller } hT hR1
-      have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
-        storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
-      rw [getReply?_eq_some_iff] at hR1 ⊢
-      rw [hFrame]; exact hR1
+      split at hRun
+      · have hInv1 : st1.objects.invExt :=
+          linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        have hNe : caller.toObjId ≠ rid.toObjId :=
+          getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := some caller } hT hR1
+        have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
+          storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
+        rw [getReply?_eq_some_iff] at hR1 ⊢
+        rw [hFrame]; exact hR1
+      · simp at hRun
 
 /-- WS-SM SM6.D: `consumeCallerReply` tears down the Reply→TCB back-link — on a
 present reply the reply's `caller` is cleared.  `consumeReply` clears it; the
