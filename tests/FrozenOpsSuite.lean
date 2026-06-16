@@ -106,19 +106,18 @@ private def fo003_storeObject : IO Unit := do
 -- TPH-005: Frozen IPC Send/Receive
 -- ============================================================================
 
-/-- FO-004: frozenEndpointReply — reply to blocked caller -/
+/-- FO-004 (PR #822 review, Codex): frozenEndpointReply requires a resolved Reply
+object.  A `blockedOnReply` caller with NO `replyObject` link is rejected
+`.replyCapInvalid` — the frozen mirror of the live `.reply` path, which resolves
+`reply.caller` and consumes it.  (The success path with a linked Reply object is
+FO-004b.) -/
 private def fo004_endpointReply : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
-  | .ok ((), fst') =>
-      match frozenLookupTcb fst' ⟨2⟩ with
-      | some tcb =>
-          expect "target unblocked" (tcb.ipcState == .ready)
-          expect "message delivered" (tcb.pendingMessage.isSome)
-      | none => throw <| IO.userError "target TCB missing"
-  | .error _ => throw <| IO.userError "reply should succeed"
+  | .ok _ => throw <| IO.userError "reply to a caller with no Reply object must be rejected"
+  | .error e => expect "no-reply-object frozen reply → replyCapInvalid" (e == .replyCapInvalid)
 
 /-- FO-004b: frozenEndpointReply consumes the linked Reply object (PR #822
 review): a successful reply clears the caller's `replyObject` forward link and

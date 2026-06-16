@@ -296,9 +296,17 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- low-visible reply object once the receive-path links it.  Mirrors the
       -- `.schedContext` `boundThread := none` stripping and the TCB
       -- `schedContextBinding`/`replyObject` stripping above — structural, per
-      -- the projection's pure-function discipline.  Only `replyId` (the object's
-      -- own identity, already gated by `objectObservable`) and `lock` survive.
-      .reply { r with caller := none, donatedSc := none, prev := none }
+      -- the projection's pure-function discipline.
+      --
+      -- PR #822 review (Codex): also **normalize `replyId`** to the sentinel.  The
+      -- *outer* object key is gated by `objectObservable`, but the Reply's *internal*
+      -- `replyId` field need not equal that key (`wellFormed` does not enforce it,
+      -- and a retyped Reply is built with `ReplyId.sentinel`), so an un-normalized
+      -- internal id would leak a hidden ReplyId through a low-visible Reply object.
+      -- Erasing it to the canonical sentinel removes the channel; only `lock`
+      -- survives (an `RwLockState` carrying no cross-domain identity).
+      .reply { r with replyId := SeLe4n.ReplyId.sentinel,
+                      caller := none, donatedSc := none, prev := none }
   | other => other
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
@@ -429,6 +437,18 @@ theorem projectKernelObject_erases_reply_prev
     (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
     match projectKernelObject ctx observer (.reply r) with
     | .reply r' => r'.prev = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM6.D (PR #822 review, Codex): `projectKernelObject` **normalizes** the
+    Reply object's internal `replyId` to `ReplyId.sentinel`.  The internal field
+    need not equal the object-store key (`wellFormed` does not enforce it; a
+    retyped Reply is built with the sentinel id), so without normalization a hidden
+    ReplyId stored inside a low-visible Reply would leak through `projectObjects`. -/
+theorem projectKernelObject_normalizes_reply_replyId
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
+    match projectKernelObject ctx observer (.reply r) with
+    | .reply r' => r'.replyId = SeLe4n.ReplyId.sentinel
     | _ => True := by
   simp [projectKernelObject]
 

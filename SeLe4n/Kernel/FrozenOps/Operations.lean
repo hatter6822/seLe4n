@@ -505,16 +505,21 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                 ipcState := ThreadIpcState.ready
                 pendingMessage := some msg
                 replyObject := none }
-              match frozenStoreTcb targetId targetTcb' st with
-              | .error e => .error e
-              | .ok ((), st') =>
-                  match targetTcb.replyObject with
-                  | some rid =>
+              -- PR #822 review (Codex): a reply REQUIRES a resolved Reply object —
+              -- the live `.reply` path resolves `reply.caller` and consumes it, so
+              -- the frozen mirror must reject a caller with NO `replyObject` (else a
+              -- frozen Call/Reply experiment bypasses reply-cap authority + the
+              -- single-use barrier).  Fail-closed BEFORE any store.
+              match targetTcb.replyObject with
+              | none => .error .replyCapInvalid
+              | some rid =>
+                  match frozenStoreTcb targetId targetTcb' st with
+                  | .error e => .error e
+                  | .ok ((), st') =>
                       match st'.objects.get? rid.toObjId with
                       | some (.reply r) =>
                           frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
-                      | _ => .ok ((), st')
-                  | none => .ok ((), st')
+                      | _ => .error .replyCapInvalid
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound

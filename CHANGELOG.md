@@ -1,3 +1,25 @@
+## v0.31.118 — Reply objects (seL4-MCS): projection replyId normalization + frozen reply authority (PR #822 Codex review)
+
+Two Codex-review hardening fixes against the live Reply-object surface (both Lean-only, trace
+byte-identical):
+
+- **Projection: normalize the Reply `replyId` (P2)** — `projectKernelObject`'s `.reply` arm stripped
+  `caller`/`donatedSc`/`prev` but kept the internal `replyId`. That field need not equal the object-store
+  key (`wellFormed` does not enforce it; a retyped Reply is built with `ReplyId.sentinel`), so an
+  un-normalized internal id leaked a hidden ReplyId through a low-visible Reply via `projectObjects`. The
+  `.reply` projection now also sets `replyId := ReplyId.sentinel`; new theorem
+  `projectKernelObject_normalizes_reply_replyId`. The full InformationFlow invariant/NI surface re-proves
+  (more erasure only strengthens low-equivalence).
+- **Frozen reply requires a resolved Reply object (P2)** — `frozenEndpointReply`'s consume branch
+  succeeded when `targetTcb.replyObject = none`, bypassing reply-object authority + the single-use
+  barrier (a frozen Call creates `blockedOnReply` callers without a `replyObject`). It now fails closed
+  `.replyCapInvalid` on a missing reply link (and on a `replyObject` that does not resolve to a `.reply`),
+  mirroring the live `.reply` path that resolves `reply.caller` and consumes it. `FrozenOpsSuite` FO-004
+  repurposed to the negative case (no reply object → rejected); FO-004b keeps the linked-success case.
+
+Full prod + staged build green; trace byte-identical; Lean Tier 0-2 + FrozenOps/InformationFlow suites
+green (Rust `cargo test` is the known container hang — no Rust change this slice).
+
 ## v0.31.117 — Reply objects (seL4-MCS): reply-path per-object lock wired live + coverage witness (SM6.D, finding A.2)
 
 Third slice of SM6.D finding A — wires the per-object reply write-lock into the **live** cross-core
