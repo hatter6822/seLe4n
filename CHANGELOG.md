@@ -1,3 +1,20 @@
+## v0.31.98 — Reply objects (seL4-MCS): restore the chain31 reply-unblock validation (PR #822 review)
+
+The cap-swap (v0.31.88) pointed `operation_chain_suite` chain31's reply cap at
+`ReplyId 503`, but ObjId 503 is the caller TCB — no backing `.reply` object — so
+the live `.reply` dispatch (which resolves `getReply? rid`) degraded to
+`replyCapInvalid`, masked by the scenario's permissive error branch, and the test
+no longer validated that a reply unblocks its caller.
+
+The fixture now installs a real `.reply` object (fresh ObjId via `ReplyId 505`,
+`caller := some 503`) and sets the blocked sender to `blockedOnReply epId (some
+replier)` with `replyObject := some 505`.  chain31 now takes the success path — the
+`.reply` dispatch resolves the reply object, unblocks the caller (`.ready`), and
+consumes the link — so it asserts "reply unblocked caller" again.
+
+Closes PR #822 review item (OperationChainSuite:1934).  prod `lake build` + Tier
+0/1/2 + `operation_chain_suite` green; trace byte-identical.
+
 ## v0.31.97 — Reply objects (seL4-MCS): Rust type-tag ABI for Reply retype (PR #822 review)
 
 The Lean retype path (`objectOfKernelType` / the validated `KernelObjectType`

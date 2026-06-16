@@ -1923,20 +1923,28 @@ private def chain31SyscallReply : IO Unit := do
       |>.withObject senderId (.tcb {
           tid := ⟨503⟩, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
-          ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .blockedOnCall epId,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
+          ipcState := .blockedOnReply epId (some tid),
+          replyObject := some (SeLe4n.ReplyId.ofNat 505),
           registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := fun _ => ⟨0⟩ }
       })
+      -- WS-SM SM6.D: the Reply object the replier's reply cap resolves to — its
+      -- caller is the blocked sender, so the live `.reply` dispatch resolves
+      -- `getReply? rid → caller = 503`, unblocks that caller, and consumes the link.
+      |>.withObject ((SeLe4n.ReplyId.ofNat 505).toObjId) (.reply
+          { (SeLe4n.Kernel.Reply.empty (SeLe4n.ReplyId.ofNat 505)) with caller := some ⟨503⟩ })
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
-            -- Slot 0: reply cap referencing the reply object (ReplyId 503)
-            ((SeLe4n.Slot.ofNat 0), { target := .replyCap (SeLe4n.ReplyId.ofNat 503), rights := AccessRightSet.ofList [.read, .write], badge := none })
+            -- Slot 0: reply cap referencing the Reply object (ReplyId 505)
+            ((SeLe4n.Slot.ofNat 0), { target := .replyCap (SeLe4n.ReplyId.ofNat 505), rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
       })
       |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType tid.toObjId .tcb
       |>.withLifecycleObjectType senderId .tcb
+      |>.withLifecycleObjectType ((SeLe4n.ReplyId.ofNat 505).toObjId) .reply
       |>.withLifecycleObjectType epId .endpoint
       |>.withLifecycleObjectType cnodeId .cnode
       |>.withLifecycleObjectType vsId .vspaceRoot
