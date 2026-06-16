@@ -1,3 +1,24 @@
+## v0.31.120 — Reply objects (seL4-MCS): frozen reply back-link validation + cross-core reply primitive demotion (PR #822 Codex review)
+
+Two Codex-review hardening fixes (both Lean-only, trace byte-identical):
+
+- **Frozen reply validates the Reply back-link (P2)** — refines v0.31.118.  When
+  `targetTcb.replyObject = some rid` but the Reply object at `rid` has `caller = none` or names a
+  *different* thread, `frozenEndpointReply` still delivered and cleared `r.caller`, letting a stale/forged
+  forward link on the TCB authorize a reply the Reply object itself did not.  It now resolves the Reply
+  from `rid` and requires `r.caller = some targetId` **before** any store (fail-closed), mirroring the
+  live `.reply` path that resolves the target *from* `reply.caller`.  `FrozenOpsSuite` FO-004b (the linked
+  success case) stays green.
+- **`endpointReplyCrossCoreDispatch` demoted to a documented delivery primitive (P2)** — the below-API
+  cross-core `.reply` dispatch performs the wake + donation-return + PIP reversion only; it does **not**
+  consume the first-class Reply linkage.  Its docstring (and the SM6.C suite `#check` anchor) now state
+  this explicitly: the single-use `consumeCallerReply` teardown is composed by the live `.reply` API arm
+  (`API.dispatchWithCap{,Checked}`), which resolves the reply cap then calls `consumeCallerReply target rid`
+  after this primitive delivers.  A direct caller must compose the consume — it is not full reply semantics.
+  (No behavioural change; the live `.reply` path already composes the consume.)
+
+Full prod + staged build green; trace byte-identical; Lean Tier 0-2 + FrozenOps suite green.
+
 ## v0.31.119 — Bound notifications: per-object lock footprint covers the bound-delivery endpoint/TCB writes (PR #822 Codex review)
 
 **P1.** A notification bound to a TCB blocked on receive takes the bound-delivery path

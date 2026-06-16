@@ -505,21 +505,26 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                 ipcState := ThreadIpcState.ready
                 pendingMessage := some msg
                 replyObject := none }
-              -- PR #822 review (Codex): a reply REQUIRES a resolved Reply object —
-              -- the live `.reply` path resolves `reply.caller` and consumes it, so
-              -- the frozen mirror must reject a caller with NO `replyObject` (else a
-              -- frozen Call/Reply experiment bypasses reply-cap authority + the
-              -- single-use barrier).  Fail-closed BEFORE any store.
+              -- PR #822 review (Codex): a reply REQUIRES a resolved Reply object whose
+              -- back-link authorizes THIS caller — the live `.reply` path resolves the
+              -- target *from* `reply.caller` and consumes it.  So the frozen mirror must
+              -- (a) reject a caller with NO `replyObject` forward link, and (b) require
+              -- the Reply object at `rid` to exist with `caller = some targetId`.  A
+              -- stale/forged forward link on the TCB, or a Reply whose `caller` is `none`
+              -- or names a different thread, must NOT authorize the reply.  Validate the
+              -- back-link BEFORE any store (fail-closed).
               match targetTcb.replyObject with
               | none => .error .replyCapInvalid
               | some rid =>
-                  match frozenStoreTcb targetId targetTcb' st with
-                  | .error e => .error e
-                  | .ok ((), st') =>
-                      match st'.objects.get? rid.toObjId with
-                      | some (.reply r) =>
-                          frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
-                      | _ => .error .replyCapInvalid
+                  match st.objects.get? rid.toObjId with
+                  | some (.reply r) =>
+                      if r.caller = some targetId then
+                        match frozenStoreTcb targetId targetTcb' st with
+                        | .error e => .error e
+                        | .ok ((), st') =>
+                            frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
+                      else .error .replyCapInvalid
+                  | _ => .error .replyCapInvalid
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound

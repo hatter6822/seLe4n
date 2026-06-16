@@ -124,15 +124,27 @@ theorem lockSet_endpointReply_donation_extension
 -- §3  SM6.C — Full cross-core `.reply` dispatch (reply + donation + PIP revert)
 -- ============================================================================
 
-/-- WS-SM SM6.C (operation): the full cross-core `Reply` syscall semantics.  The
-cross-core reply (`endpointReplyOnCore` — caller woken on its home core), then the
-SchedContext donation **return** (`applyReplyDonationOnCore` — the passive server
-returns the donated SC and is descheduled on its own core), then the cross-core
-priority-inheritance **reversion** (`propagatePipChainCrossCore` — the unblocked
-caller's blocking chain re-derives each holder's boost from its remaining
-waiters, migrating buckets on home cores).  Surfaces the reply-leg caller-wake
-SGI; the chain-walk SGIs are re-derived from the committed diff.  Mirrors the live
-single-core `.reply` dispatch arm (`API.dispatchWithCap`). -/
+/-- WS-SM SM6.C (operation): the cross-core `Reply` **delivery + scheduling**
+primitive — below the API layer.  The cross-core reply (`endpointReplyOnCore` —
+caller woken on its home core), then the SchedContext donation **return**
+(`applyReplyDonationOnCore` — the passive server returns the donated SC and is
+descheduled on its own core), then the cross-core priority-inheritance
+**reversion** (`propagatePipChainCrossCore` — the unblocked caller's blocking chain
+re-derives each holder's boost from its remaining waiters, migrating buckets on
+home cores).  Surfaces the reply-leg caller-wake SGI; the chain-walk SGIs are
+re-derived from the committed diff.
+
+**Delivery-only — does NOT consume the first-class Reply linkage** (PR #822 Codex
+review): this helper takes raw `replier`/`target` threads and performs the wake +
+donation + PIP only.  The single-use Reply-object teardown (`consumeCallerReply` —
+clear `target.replyObject` *and* `reply.caller := none`) is **composed separately
+by the live `.reply` dispatch arm** (`API.dispatchWithCap{,Checked}`), which first
+resolves the reply *capability* to `(rid, reply.caller = target)` and, after this
+primitive delivers, calls `consumeCallerReply target rid`.  A direct caller of this
+below-API helper (e.g. the SM6.C cross-core suite, which anchors it as a
+building-block) **must not** treat it as full reply semantics — it must compose the
+consume itself, or the Reply object is left in-use (`reply.caller`/`replyObject`
+stale), so later lifecycle cleanup / reuse of that Reply is rejected. -/
 def endpointReplyCrossCoreDispatch
     (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) :

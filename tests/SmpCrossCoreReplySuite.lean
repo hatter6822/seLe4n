@@ -104,6 +104,10 @@ open SeLe4n.Testing
 -- reply object is resolved (the 2PL coverage of the single-use `reply.caller`
 -- consume — PR #822 review 6J90-5).
 #check @lockSet_endpointReply_reply_write_mem
+-- PR #822 Codex review: a below-API delivery+donation+PIP primitive — it does NOT
+-- consume the Reply linkage; the single-use `consumeCallerReply` teardown is
+-- composed by the live `.reply` API arm.  Anchored here as a building block, not as
+-- full reply semantics.
 #check @endpointReplyCrossCoreDispatch
 #check @endpointReplyCrossCoreDispatchChecked
 #check @endpointReplyCrossCoreDispatchChecked_flow_denied
