@@ -1,3 +1,21 @@
+## v0.31.113 — Reply objects (seL4-MCS): regression test for the replyRecv donation switch (PR #822 review)
+
+Adds `SyscallDispatchSuite.sd052b_replyRecv_donation_switch`, an end-to-end
+regression test for the v0.31.112 fix.  A passive server (running on a SchedContext
+donated by `clientA`) replies-and-receives while a second client's `Call` is queued
+`blockedOnCall` (enqueued via `endpointCallOnCore`, which defers donation).  After
+`replyRecvBody` it asserts:
+
+- the previous caller (`clientA`) is unblocked (`.ready`);
+- **the server stays runnable** (`scheduler.runQueueOnCore bootCoreId` still contains
+  it) — this is the assertion that fails under the old descheduled-before-receive
+  body;
+- the server's donation **switched** to the new caller's SchedContext
+  (`schedContextBinding = .donated scB clientB`);
+- the new caller rendezvoused (`.blockedOnReply`).
+
+Test-only; full prod + staged build unaffected; trace byte-identical.
+
 ## v0.31.112 — Reply objects (seL4-MCS): replyRecv returns/switches donation AFTER the receive leg (PR #822 review)
 
 The live cross-core `.replyRecv` body (`replyRecvBody`) returned the server's
