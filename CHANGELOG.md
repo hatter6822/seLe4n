@@ -1,3 +1,23 @@
+## v0.31.89 — Reply objects (seL4-MCS): reply-cap resolution foundation (C-wire-link prep)
+
+Foundation for faithful server-supplied reply-object linking (decision D4 revised
+→ the receiver supplies the reply object): the helpers that resolve a *reply
+capability* (held by the server) to the `ReplyId` the kernel will link to the
+rendezvoused caller.
+
+- `extractReplyId : Capability → Except KernelError ReplyId` — yields the reply
+  object a `.replyCap` authorizes; `.invalidCapability` otherwise.
+- `syscallLookupReplyId : SyscallGate → Kernel ReplyId` — resolves a reply
+  capability held at a CSpace slot through the verified `syscallLookupCap` (like
+  `tcbBindNotification`), so authority flows from *holding* a reply capability,
+  not naming a raw `ReplyId`.  Read-only.
+- Lemmas: `extractReplyId_eq_ok_iff` (succeeds exactly on a `.replyCap` target);
+  `syscallLookupReplyId_preserves_state` (lookup leaves state unchanged).
+
+Standalone prep, unreferenced this slice (the receive-path linking consumes it
+next).  Trace byte-identical (233/233); prod `lake build` + staged anchor + Tier
+0/1/2 green.
+
 ## v0.31.88 — Reply objects (seL4-MCS): reply cap names a ReplyId (C-wire cap-swap)
 
 The atomic keystone of the live wiring: `CapTarget.replyCap` now references a

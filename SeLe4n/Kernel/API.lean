@@ -263,6 +263,35 @@ def syscallInvoke (gate : SyscallGate) (op : Capability → Kernel α) : Kernel 
     | .error e => .error e
     | .ok (cap, st') => op cap st'
 
+/-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): extract the
+single-use `ReplyId` a reply capability authorizes.  Fails `.invalidCapability`
+if the capability does not target a reply object. -/
+def extractReplyId (cap : Capability) : Except KernelError SeLe4n.ReplyId :=
+  match cap.target with
+  | .replyCap rid => .ok rid
+  | _ => .error .invalidCapability
+
+/-- WS-SM SM6.D: resolve a reply capability held at a CSpace slot to its
+`ReplyId`.  Under faithful seL4-MCS the *server* passes the reply *capability*
+slot (a CPtr through the verified `syscallLookupCap`, like `tcbBindNotification`),
+not a raw `ReplyId`, so authority flows from *holding* a reply capability rather
+than naming an arbitrary reply object.  Read-only (state unchanged on success). -/
+def syscallLookupReplyId (gate : SyscallGate) : Kernel SeLe4n.ReplyId :=
+  fun st =>
+    match syscallLookupCap gate st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+        match extractReplyId cap with
+        | .error e => .error e
+        | .ok rid => .ok (rid, st')
+
+/-- `extractReplyId` succeeds with `rid` exactly when the capability targets the
+reply object `rid`. -/
+theorem extractReplyId_eq_ok_iff (cap : Capability) (rid : SeLe4n.ReplyId) :
+    extractReplyId cap = .ok rid ↔ cap.target = .replyCap rid := by
+  unfold extractReplyId
+  cases cap.target <;> simp
+
 -- ============================================================================
 -- Syscall soundness theorems
 -- ============================================================================
@@ -2046,6 +2075,22 @@ theorem syscallLookupCap_preserves_state
     st' = st := by
   rcases syscallLookupCap_implies_capability_held gate st cap st' hOk with ⟨_, _, _, _, hEq⟩
   exact hEq
+
+/-- WS-SM SM6.D: `syscallLookupReplyId` is read-only — it only resolves and
+inspects a capability, so the state is unchanged on success. -/
+theorem syscallLookupReplyId_preserves_state
+    (gate : SyscallGate) (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hOk : syscallLookupReplyId gate st = .ok (rid, st')) :
+    st' = st := by
+  unfold syscallLookupReplyId at hOk
+  split at hOk
+  · simp at hOk
+  · next cap st'' hLook =>
+    split at hOk
+    · simp at hOk
+    · next rid' hExtract =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+      exact hOk.2 ▸ syscallLookupCap_preserves_state gate st st'' cap hLook
 
 /-- WS-J1-D: `syscallEntry` error paths preserve `proofLayerInvariantBundle`
 trivially — the state is unchanged on error. -/
