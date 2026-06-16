@@ -1,3 +1,24 @@
+## v0.31.116 — Reply objects (seL4-MCS): thread the reply lock into the 2PL footprints (SM6.D, finding A.1)
+
+Second slice of SM6.D finding A. Adds the per-object reply lock to the four reply-touching
+lock-set *values* (the keystone), trace byte-identical, with all ~174 existing call sites unchanged:
+
+- **Defaulted `(replyId : Option ReplyId := none)`** parameter on `lockSet_endpointReceive`,
+  `lockSet_endpointCall`, `lockSet_endpointReply`, `lockSet_replyRecv`, folding
+  `(replyLock rid, .write)` in as the **outermost** `lockSetExtendOpt`. Because
+  `lockSetExtendOpt S none = S` *definitionally*, omitting the argument leaves every set value
+  unchanged — so the ~174 existing call sites, the `rfl`-proved
+  `lockSet_endpointReply_donation_extension`, the hand-built `lockSet_endpointReply_target_tcb_write_mem`,
+  the `*OnCore_correct` theorems, and the `LockSetInventory` `lkst!` entries all stay green with **no
+  edits** (cleaner than the naïve "~6 proofs" estimate).
+- **The four `lockSet_consistent_{receive,call,reply,replyRecv}` proofs** (the only churn) gain the
+  `replyId` parameter, bump one builder arity (`base_plus_{two,three,four}_opts`), and add the
+  `replyLock`-kind `hOpt` branch (`(replyLock rid).kind = .reply ∈ permittedKinds`, discharged by the
+  A.0 `permittedKinds` extension via `simp; decide`).
+
+`none` is passed everywhere this slice — no behavioural wiring yet (that is A.2). Full prod + staged
+build green; trace byte-identical.
+
 ## v0.31.115 — Reply objects (seL4-MCS): per-object reply lock foundation — key + permitted kinds (SM6.D, finding A.0)
 
 First slice of SM6.D finding A (the per-object Reply lock missing from the

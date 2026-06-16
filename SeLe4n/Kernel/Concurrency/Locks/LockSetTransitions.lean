@@ -274,13 +274,21 @@ Symmetric to `send`: caller TCB blocks/unblocks; endpoint queue
 mutates; optional sender TCB completes its handshake. -/
 def lockSet_endpointReceive (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
-    (senderTid : Option ThreadId) : LockSet :=
+    (senderTid : Option ThreadId)
+    (replyId : Option ReplyId := none) : LockSet :=
+  -- WS-SM SM6.D: a `Call` rendezvous on receive links a server-supplied Reply
+  -- object (`linkCallerReply` writes `reply.caller`) under the per-object reply
+  -- write-lock — folded in as an outermost optional.  `none` ⇒ the set is
+  -- definitionally the pre-SM6.D footprint (`lockSetExtendOpt S none = S`), so
+  -- every existing call site is unchanged.
   lockSetExtendOpt
-    (lockSetOfList
-      [(tcbLock callerTid, .write),
-       (cnodeLock cnodeRootObjId, .read),
-       (endpointLock endpointObjId, .write)])
-    (senderTid.map (fun st => (tcbLock st, .write)))
+    (lockSetExtendOpt
+      (lockSetOfList
+        [(tcbLock callerTid, .write),
+         (cnodeLock cnodeRootObjId, .read),
+         (endpointLock endpointObjId, .write)])
+      (senderTid.map (fun st => (tcbLock st, .write))))
+    (replyId.map (fun rid => (replyLock rid, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointCall` (syscall `.call`).
 
@@ -306,15 +314,21 @@ whenever the caller HAS an active SC to potentially donate. -/
 def lockSet_endpointCall (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (endpointObjId : ObjId)
     (receiverTid : Option ThreadId)
-    (donatedScId : Option SchedContextId) : LockSet :=
+    (donatedScId : Option SchedContextId)
+    (replyId : Option ReplyId := none) : LockSet :=
   let withReceiver := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
        (cnodeLock cnodeRootObjId, .read),
        (endpointLock endpointObjId, .write)])
     (receiverTid.map (fun rt => (tcbLock rt, .write)))
-  lockSetExtendOpt withReceiver
+  let withSc := lockSetExtendOpt withReceiver
     (donatedScId.map (fun sc => (schedContextLock sc, .write)))
+  -- WS-SM SM6.D: a Call that rendezvouses with a waiting server links its Reply
+  -- object under the per-object reply write-lock (outermost optional; `none` ⇒
+  -- definitionally unchanged).
+  lockSetExtendOpt withSc
+    (replyId.map (fun rid => (replyLock rid, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `endpointReply` (syscall `.reply`).
 
@@ -348,15 +362,21 @@ lockSet correctly covers both objects. -/
 def lockSet_endpointReply (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
     (donatedScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) : LockSet :=
+    (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId := none) : LockSet :=
   let withSc := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
        (cnodeLock cnodeRootObjId, .read),
        (tcbLock replyTargetTid, .write)])
     (donatedScId.map (fun sc => (schedContextLock sc, .write)))
-  lockSetExtendOpt withSc
+  let withOwner := lockSetExtendOpt withSc
     (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
+  -- WS-SM SM6.D: the reply consumes the first-class Reply object
+  -- (`consumeReply` writes `reply.caller := none`) under the per-object reply
+  -- write-lock (outermost optional; `none` ⇒ definitionally unchanged).
+  lockSetExtendOpt withOwner
+    (replyId.map (fun rid => (replyLock rid, .write)))
 
 /-- WS-SM SM3.B.3: `lockSet` for `replyRecv` (syscall `.replyRecv`).
 
@@ -387,7 +407,8 @@ def lockSet_replyRecv (callerTid : ThreadId)
     (cnodeRootObjId : ObjId) (replyTargetTid : ThreadId)
     (endpointObjId : ObjId) (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) : LockSet :=
+    (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId := none) : LockSet :=
   let withSender := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .write),
@@ -397,8 +418,13 @@ def lockSet_replyRecv (callerTid : ThreadId)
     (newSenderTid.map (fun st => (tcbLock st, .write)))
   let withSc := lockSetExtendOpt withSender
     (donatedScId.map (fun sc => (schedContextLock sc, .write)))
-  lockSetExtendOpt withSc
+  let withOwner := lockSetExtendOpt withSc
     (donatedOriginalOwnerTid.map (fun ot => (tcbLock ot, .write)))
+  -- WS-SM SM6.D: replyRecv consumes the prior Reply object and re-links it to the
+  -- next caller (one-object reuse) under the per-object reply write-lock
+  -- (outermost optional; `none` ⇒ definitionally unchanged).
+  lockSetExtendOpt withOwner
+    (replyId.map (fun rid => (replyLock rid, .write)))
 
 /-! ## Notification syscalls (2 transitions) -/
 
@@ -1237,10 +1263,11 @@ theorem lockSet_consistent_send (callerTid : ThreadId)
 
 /-- WS-SM SM3.B.4 for `.receive`. -/
 theorem lockSet_consistent_receive (callerTid : ThreadId)
-    (cnRoot epId : ObjId) (sTid : Option ThreadId) :
-    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid).pairs,
+    (cnRoot epId : ObjId) (sTid : Option ThreadId)
+    (replyId : Option ReplyId := none) :
+    ∀ p ∈ (lockSet_endpointReceive callerTid cnRoot epId sTid replyId).pairs,
       p.fst.kind ∈ permittedKinds .receive :=
-  lockSet_consistent_base_plus_opt _ _ _
+  lockSet_consistent_base_plus_two_opts _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1253,14 +1280,19 @@ theorem lockSet_consistent_receive (callerTid : ThreadId)
         cases sTid with
         | none => simp at hpp
         | some st => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases replyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.call` (audit-pass-3: donation extension). -/
 theorem lockSet_consistent_call (callerTid : ThreadId)
     (cnRoot epId : ObjId) (rTid : Option ThreadId)
-    (donatedScId : Option SchedContextId) :
-    ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId).pairs,
+    (donatedScId : Option SchedContextId)
+    (replyId : Option ReplyId := none) :
+    ∀ p ∈ (lockSet_endpointCall callerTid cnRoot epId rTid donatedScId replyId).pairs,
       p.fst.kind ∈ permittedKinds .call :=
-  lockSet_consistent_base_plus_two_opts _ _ _ _
+  lockSet_consistent_base_plus_three_opts _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1277,17 +1309,22 @@ theorem lockSet_consistent_call (callerTid : ThreadId)
         cases donatedScId with
         | none => simp at hpp
         | some sc => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases replyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.reply` (audit-pass-3 + audit-pass-4: donation-
 return extension with separate `donatedOriginalOwnerTid` arg). -/
 theorem lockSet_consistent_reply (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId)
     (donatedScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) :
+    (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId := none) :
     ∀ p ∈ (lockSet_endpointReply callerTid cnRoot rTid donatedScId
-              donatedOriginalOwnerTid).pairs,
+              donatedOriginalOwnerTid replyId).pairs,
       p.fst.kind ∈ permittedKinds .reply :=
-  lockSet_consistent_base_plus_two_opts _ _ _ _
+  lockSet_consistent_base_plus_three_opts _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1304,6 +1341,10 @@ theorem lockSet_consistent_reply (callerTid : ThreadId)
         cases donatedOriginalOwnerTid with
         | none => simp at hpp
         | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases replyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.replyRecv` (audit-pass-3 + audit-pass-4:
 donation-return extension with separate `donatedOriginalOwnerTid`
@@ -1312,11 +1353,12 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
     (cnRoot : ObjId) (rTid : ThreadId) (epId : ObjId)
     (newSenderTid : Option ThreadId)
     (donatedScId : Option SchedContextId)
-    (donatedOriginalOwnerTid : Option ThreadId) :
+    (donatedOriginalOwnerTid : Option ThreadId)
+    (replyId : Option ReplyId := none) :
     ∀ p ∈ (lockSet_replyRecv callerTid cnRoot rTid epId newSenderTid
-              donatedScId donatedOriginalOwnerTid).pairs,
+              donatedScId donatedOriginalOwnerTid replyId).pairs,
       p.fst.kind ∈ permittedKinds .replyRecv :=
-  lockSet_consistent_base_plus_three_opts _ _ _ _ _
+  lockSet_consistent_base_plus_four_opts _ _ _ _ _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem
         · rw [h]; simp; decide
@@ -1339,6 +1381,10 @@ theorem lockSet_consistent_replyRecv (callerTid : ThreadId)
         cases donatedOriginalOwnerTid with
         | none => simp at hpp
         | some ot => simp at hpp; rw [← hpp]; simp; decide)
+    (by intro pp hpp
+        cases replyId with
+        | none => simp at hpp
+        | some rid => simp at hpp; rw [← hpp]; simp; decide)
 
 /-- WS-SM SM3.B.4 for `.notificationSignal`. -/
 theorem lockSet_consistent_notificationSignal (callerTid : ThreadId)
