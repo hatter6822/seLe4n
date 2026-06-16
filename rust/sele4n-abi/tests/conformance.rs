@@ -477,14 +477,14 @@ fn kernel_error_exhaustive_roundtrip() {
     assert!(KernelError::from_u32(54).is_none());
 }
 
-/// Verify TypeTag roundtrip for all 7 variants (0–6, including SchedContext).
+/// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
 #[test]
 fn type_tag_exhaustive_roundtrip() {
-    for i in 0..=6u64 {
+    for i in 0..=7u64 {
         let tag = TypeTag::from_u64(i).expect("valid type tag");
         assert_eq!(tag.to_u64(), i);
     }
-    assert!(TypeTag::from_u64(7).is_err());
+    assert!(TypeTag::from_u64(8).is_err());
 }
 
 /// Verify all CSpace arg structures roundtrip.
@@ -838,9 +838,9 @@ fn thread_on_different_core_decode() {
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
 fn lifecycle_retype_invalid_type_tag() {
-    // Type tag 7 (first invalid, after SchedContext = 6)
+    // Type tag 8 (first invalid, after Reply = 7)
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, 7, 0]),
+        lifecycle::LifecycleRetypeArgs::decode(&[42, 8, 0]),
         Err(KernelError::InvalidTypeTag)
     );
 
@@ -850,8 +850,8 @@ fn lifecycle_retype_invalid_type_tag() {
         Err(KernelError::InvalidTypeTag)
     );
 
-    // All valid tags (0-6, including SchedContext) must succeed
-    for i in 0..=6u64 {
+    // All valid tags (0-7, including SchedContext + Reply) must succeed
+    for i in 0..=7u64 {
         assert!(lifecycle::LifecycleRetypeArgs::decode(&[42, i, 0]).is_ok());
     }
 }
@@ -1252,10 +1252,10 @@ fn lifecycle_retype_sched_context() {
     assert_eq!(decoded.new_type, TypeTag::SchedContext);
 }
 
-/// AA1-G-2: TypeTag boundary — 7 is first invalid value.
+/// AA1-G-2 / WS-SM SM6.D: TypeTag boundary — 8 is first invalid value (Reply = 7).
 #[test]
 fn type_tag_boundary() {
-    assert_eq!(TypeTag::from_u64(7), Err(KernelError::InvalidTypeTag));
+    assert_eq!(TypeTag::from_u64(8), Err(KernelError::InvalidTypeTag));
     assert_eq!(TypeTag::from_u64(u64::MAX), Err(KernelError::InvalidTypeTag));
 }
 

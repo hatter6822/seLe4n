@@ -1,3 +1,20 @@
+## v0.31.97 — Reply objects (seL4-MCS): Rust type-tag ABI for Reply retype (PR #822 review)
+
+The Lean retype path (`objectOfKernelType` / the validated `KernelObjectType`
+decode) accepts the first-class Reply object as type tag 7, but the Rust ABI mirror
+stopped at tag 6 (SchedContext) — a split where userspace following the Rust
+lifecycle wrapper could not create a Reply object the Lean syscall accepts.
+
+- `rust/sele4n-abi/src/args/type_tag.rs`: `TypeTag` gains `Reply = 7` (now 8
+  variants, 0–7, matching `KernelObjectType`); `from_u64` maps 7 → `Reply` and
+  rejects `> 7`; new `reply_discriminant` unit test.
+- `rust/sele4n-abi/src/args/lifecycle.rs`: doc + `> 7` bound; tests to the 0–7 range.
+- `rust/sele4n-abi/tests/conformance.rs`: `type_tag_exhaustive_roundtrip`,
+  `lifecycle_retype_invalid_type_tag`, `type_tag_boundary` updated to 0–7 / 8-invalid.
+
+Closes PR #822 review item (Structures:2688).  `cargo test -p sele4n-abi` (101 + 98
++ 1) + workspace clippy green; Lean unchanged (trace byte-identical).
+
 ## v0.31.96 — Reply objects (seL4-MCS): caller-side single-use for linkCallerReply (PR #822 review)
 
 `linkCallerReply` now fails closed (`.replyCapInvalid`) when the *caller* already
