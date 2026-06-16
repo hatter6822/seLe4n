@@ -79,7 +79,12 @@ def restoreToReady (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
         ipcState := .ready
         queuePrev := none
         queueNext := none
-        queuePPrev := none }) }
+        queuePPrev := none
+        -- PR #822 review: cancelling/restoring a (server-first) receive also
+        -- relinquishes its stashed reply object, else `replyIsStashed` keeps the
+        -- Reply permanently in-use and later lifecycle cleanup of it returns
+        -- `revocationRequired` even though no receive is still pending.
+        pendingReceiveReply := none }) }
   | none => st
 
 /-- R5.D / backward-compatibility shim. Pre-R5 the IPC-clearing helper was

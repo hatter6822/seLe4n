@@ -301,35 +301,35 @@ Returns `none` for a plain `Recv` that omits a reply object (the source may be a
 `Send`/`Notification`), an unresolvable slot, or a non-reply cap — the caller arm
 then links only on a genuine `Call` rendezvous. -/
 def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
-    (st : SystemState) : Option SeLe4n.ReplyId :=
+    (st : SystemState) : Except KernelError (Option SeLe4n.ReplyId) :=
   -- A plain `Recv` *omits* the reply object via message length 0 (PR #822 review):
   -- the ARM64 register decoder always materializes x2..x5, so MR0 is present even
-  -- for a no-reply receive (the Rust `endpoint_receive` wrapper sends x2 = 0).
-  -- Gate on the declared `msgInfo.length` so a length-0 receive never resolves a
-  -- (possibly stale / CPtr-0) reply cap — `endpoint_receive_with_reply` declares
-  -- length 1.  Fail-closed: no explicit reply slot ⇒ no reply object.
-  if decoded.msgInfo.length == 0 then none else
+  -- for a no-reply receive (the Rust `endpoint_receive` wrapper sends length 0 /
+  -- x2 = 0).  Gate on the declared `msgInfo.length`: **only** length 0 means "no
+  -- reply object" (→ `.ok none`).  At length ≥ 1 MR0 names an *explicit* reply
+  -- cap, so a failed resolution is a hard error (`.ok none` would silently
+  -- downgrade a bad/stale CPtr to a plain receive and then strand a later Call);
+  -- `endpoint_receive_with_reply` declares length 1.
+  if decoded.msgInfo.length == 0 then .ok none else
   match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
-  | .error _ => none
+  | .error e => .error e
   | .ok rargs =>
       let replyGate : SyscallGate :=
         { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
       match syscallLookupCap replyGate st with
-      | .error _ => none
+      | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error _ => none
+          | .error e => .error e
           | .ok rid =>
               -- PR #822 review: validate the reply object exists AND is FREE
               -- (`caller = none`) before treating the cap as a usable reply.  Both
               -- the caller-first link and the server-first stash need a live,
-              -- unlinked Reply object — stashing an absent / already-linked reply
-              -- would block the server (the later Call rendezvous would roll back
-              -- via `linkCallerReply`); fail-closed (→ `none`) symmetrically with
-              -- the caller-first path.
+              -- unlinked Reply object; an absent / already-linked reply named by an
+              -- explicit MR0 is `.replyCapInvalid` (fail-closed before the receive).
               match st.getReply? rid with
-              | some r => if r.caller.isNone then some rid else none
-              | none => none
+              | some r => if r.caller.isNone then .ok (some rid) else .error .replyCapInvalid
+              | none => .error .replyCapInvalid
 
 /-- WS-SM SM6.D (faithful seL4-MCS receive linkage): after `endpointReceiveDual`
 rendezvouses, link the woken caller to the server's reply object when (and only
@@ -416,7 +416,7 @@ non-reply cap or a reply object with no outstanding caller (authority now flows
 from *holding* the reply cap, exactly like the `.reply` arm — no raw-thread
 bypass). -/
 def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
-    (st : SystemState) : Option (SeLe4n.ReplyId × SeLe4n.ThreadId) :=
+    (st : SystemState) : Option (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge) :=
   -- PR #822 review: require MR0 explicitly present (`msgInfo.length ≥ 1`) before
   -- reading the reply CPtr — the ARM64 register decoder always materializes x2..x5,
   -- so a length-0 `ReplyRecv` must not resolve/consume a stale (x2) reply cap.
@@ -435,7 +435,11 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
               match st.getReply? rid with
               | some reply =>
                   match reply.caller with
-                  | some prevCaller => some (rid, prevCaller)
+                  -- PR #822 review: carry the *reply cap's* badge (the reply
+                  -- authority), not the endpoint receive cap's, so the previous
+                  -- caller receives the badge associated with the reply cap (as in
+                  -- the `.reply` arm) when the two differ.
+                  | some prevCaller => some (rid, prevCaller, rcap.badge)
                   | none => none
               | none => none
 
@@ -1097,10 +1101,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       -- kernel links that caller to the server's reply object so the server's
       -- later `.reply` resolves authority through `reply.caller`.
       fun st =>
-        let replyIdOpt := resolveRecvReplyId gate decoded st
-        match endpointReceiveDual epId tid st with
-        | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
+        -- PR #822 review: an explicit (length ≥ 1) but bad reply cap fails BEFORE
+        -- `endpointReceiveDual`, so a server is never blocked as a plain receive
+        -- on a stale/non-reply CPtr (only length 0 means "no reply object").
+        match resolveRecvReplyId gate decoded st with
         | .error e => .error e
+        | .ok replyIdOpt =>
+          match endpointReceiveDual epId tid st with
+          | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
+          | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
   | .call =>
@@ -1264,13 +1273,15 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       fun st =>
         match resolveReplyRecvReply gate decoded st with
         | none => .error .replyCapInvalid
-        | some (rid, prevCaller) =>
+        | some (rid, prevCaller, replyBadge) =>
             -- WS-SM SM6.D (PR #822 review): MR0 carries the reply CPtr (a control
             -- register), so the reply *payload* delivered to the previous caller is
             -- MR1.. — strip the leading control register before building the reply.
+            -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
+            -- endpoint receive cap's, matching the `.reply` arm.
             let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
             let body := full.extract 1 full.size
-            let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
+            let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
             let executingCore := determineExecutingCore st tid
             replyRecvBody epId tid rid prevCaller msg executingCore st
     | _ => fun _ => .error .invalidCapability
@@ -1340,10 +1351,14 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       -- `endpointReceiveDualChecked`; the reply linkage adds no cross-domain flow
       -- (the server already observes the sender it received from).
       fun st =>
-        let replyIdOpt := resolveRecvReplyId gate decoded st
-        match endpointReceiveDualChecked ctx epId tid st with
-        | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
+        -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
+        -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
+        match resolveRecvReplyId gate decoded st with
         | .error e => .error e
+        | .ok replyIdOpt =>
+          match endpointReceiveDualChecked ctx epId tid st with
+          | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
+          | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
@@ -1504,12 +1519,14 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       fun st =>
         match resolveReplyRecvReply gate decoded st with
         | none => .error .replyCapInvalid
-        | some (rid, prevCaller) =>
+        | some (rid, prevCaller, replyBadge) =>
             -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
             -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
+            -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
+            -- endpoint receive cap's.
             let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
             let body := full.extract 1 full.size
-            let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
+            let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
             let executingCore := determineExecutingCore st tid
             if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller)
                 && securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
@@ -1815,8 +1832,8 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (epId : SeLe4n.ObjId)
     (hCap : cap.target = .object epId)
     (st : SystemState)
-    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
-    (hResolve : resolveReplyRecvReply gate decoded st = some (rid, prevCaller))
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
+    (hResolve : resolveReplyRecvReply gate decoded st = some (rid, prevCaller, replyBadge))
     (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     dispatchWithCapChecked ctx decoded tid gate cap st =

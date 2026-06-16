@@ -1,3 +1,31 @@
+## v0.31.107 — Reply objects (seL4-MCS): receive/replyRecv reply-cap behavior hardening (PR #822 review)
+
+Four bounded behavior fixes to the reply-cap dispatch + lifecycle paths:
+
+- **Reject explicit bad receive reply caps** (`resolveRecvReplyId` → `Except`): only
+  message length 0 means "no reply object" (→ plain receive); at length ≥ 1 MR0
+  names an *explicit* reply cap, so a failed resolution (missing/non-reply/in-use)
+  is now a hard `.replyCapInvalid`/decode error *before* `endpointReceiveDual`
+  rather than a silent downgrade to a plain receive that strands a later Call.
+  Both unchecked and checked `.receive` arms updated.
+- **Clear stashed replies on receive cancel/restore** (`restoreToReady`): now also
+  clears `pendingReceiveReply`, so a cancelled/suspended/resumed server-first
+  receive relinquishes its stashed Reply — otherwise `replyIsStashed` kept the
+  Reply permanently in-use and later lifecycle cleanup returned `revocationRequired`
+  with no pending receive.
+- **Check retype stashes by the target ObjId** (`lifecyclePreRetypeCleanup`): the
+  in-use guard now derives the checked `ReplyId` from `target`
+  (`ReplyId.ofNat target.toNat`), not the reply's internal `r.replyId` field (which
+  can be the `Reply.empty` sentinel on a freshly retyped object), so a stash under
+  the canonical id is not missed.
+- **Use the reply cap's badge for replyRecv** (`resolveReplyRecvReply` now returns
+  `(rid, prevCaller, replyBadge)`): the reply delivered to the previous caller
+  carries the *reply cap's* badge (the reply authority), not the endpoint receive
+  cap's, matching the `.reply` arm.  Both dispatch arms + the checked-equivalence
+  theorem updated.
+
+Full prod + staged `lake build` + Tier 0/1/2 green; trace byte-identical.
+
 ## v0.31.106 — Reply objects (seL4-MCS): bidirectional Reply↔TCB linkage in the IPC invariant (PR #822 review)
 
 Adds `replyCallerLinkage` as the **16th conjunct** of `ipcInvariantFull` — the

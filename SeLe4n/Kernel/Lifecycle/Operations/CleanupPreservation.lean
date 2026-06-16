@@ -249,7 +249,12 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- fails `.replyCapInvalid`).  Mirrors seL4's revoke/clear-before-destroy: the
     -- holder must first reply to (or cancel) the outstanding caller, or the server
     -- must re-`Recv`, clearing the link before the object is freed.
-    if r.caller.isSome || replyIsStashed st r.replyId then
+    -- PR #822 review: check stashes by the *target* ObjId's canonical ReplyId, not
+    -- the reply's internal `r.replyId` field (which can be the `Reply.empty`
+    -- sentinel on a freshly retyped object); a server-first receive stashes
+    -- `pendingReceiveReply = some (ReplyId.ofNat target)`, so derive the id from
+    -- `target` to avoid missing the stash and freeing a still-referenced Reply.
+    if r.caller.isSome || replyIsStashed st (SeLe4n.ReplyId.ofNat target.toNat) then
       .error .revocationRequired
     else .ok st
   | _ => .ok st

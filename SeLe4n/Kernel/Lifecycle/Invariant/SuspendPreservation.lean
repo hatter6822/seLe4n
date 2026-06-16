@@ -319,7 +319,8 @@ theorem restoreToReady_objects_eq_at_tid
                 ipcState := .ready
                 queuePrev := none
                 queueNext := none
-                queuePPrev := none }) := by
+                queuePPrev := none
+                pendingReceiveReply := none }) := by
   unfold restoreToReady
   rw [hLook]
 
@@ -435,7 +436,8 @@ theorem restoreToReady_blockingServer_subgraph
       have hRRObj :
           (restoreToReady st tid).objects[t.toObjId]?
             = some (.tcb { origTcb with ipcState := .ready, queuePrev := none,
-                                        queueNext := none, queuePPrev := none }) := by
+                                        queueNext := none, queuePPrev := none,
+                                        pendingReceiveReply := none }) := by
         unfold restoreToReady
         rw [hPre]
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
