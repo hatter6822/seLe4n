@@ -679,6 +679,44 @@ private def sd051_receiveLinkCaller : IO Unit := do
      | .error _ => false)
     "a non-Call (ready) rendezvous must not establish a reply link"
 
+/-- SD-052: faithful seL4-MCS `.replyRecv` body (`replyRecvBody`). Replies to the
+    recorded previous caller (resolved from the reply object), CONSUMES the answered
+    single-use reply link, then receives — re-linking the same reply object to the
+    next caller (here none is queued, so the link stays consumed and the server
+    blocks on the endpoint). Closes the prior gap where `.replyRecv` delivered the
+    reply but left `reply.caller` / `replyObject` set (in-use reply cap leak). -/
+private def sd052_replyRecvBody : IO Unit := do
+  let server  : SeLe4n.ThreadId := ⟨1⟩
+  let clientA : SeLe4n.ThreadId := ⟨2⟩
+  let epId    : SeLe4n.ObjId := ⟨10⟩
+  let rid     : SeLe4n.ReplyId := ⟨707⟩
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject clientA.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      |>.withRunnable [server]
+      |>.build)
+  let msg : IpcMessage :=
+    { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+  match SeLe4n.Kernel.replyRecvBody epId server rid clientA msg bootCoreId st with
+  | .ok ((), st') =>
+      expect "sd052a_prev_caller_replied"
+        ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
+        "the previous caller should be unblocked by the reply leg"
+      expect "sd052b_reply_link_consumed"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
+        "the answered reply link should be consumed (reply.caller = none)"
+      expect "sd052c_caller_forward_link_cleared"
+        ((st'.getTcb? clientA).all (fun t => decide (t.replyObject = none)))
+        "the previous caller's replyObject forward link should be cleared"
+      expect "sd052d_server_blocked_on_receive"
+        ((st'.getTcb? server).any (fun t => decide (t.ipcState = .blockedOnReceive epId)))
+        "the server should block on the endpoint (no next sender queued)"
+  | .error _ => failLine "sd052_replyRecvBody" "replyRecvBody should succeed"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -711,4 +749,5 @@ def main : IO Unit := do
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
   sd051_receiveLinkCaller
+  sd052_replyRecvBody
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

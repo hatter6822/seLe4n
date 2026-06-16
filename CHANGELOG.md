@@ -1,3 +1,35 @@
+## v0.31.103 — Reply objects (seL4-MCS): faithful `.replyRecv` via the reply object + Rust receive-with-reply ABI (PR #822 review)
+
+The `.replyRecv` dispatch trusted a raw `args.replyTarget` thread id, called the
+cross-core reply-and-receive transition, and never **consumed** the answered reply
+link nor **re-linked** the reply object to the next caller — leaving `reply.caller`
+/ `replyObject` set (in-use reply cap leak) and bypassing the reply-cap authority
+`.reply` now requires.  Re-wired faithfully:
+
+- **ABI**: `ReplyRecvArgs.replyTarget : ThreadId` → `replyCPtr : Nat` (msgRegs[0] is
+  now the server-supplied reply *capability* pointer; the wire is unchanged — one
+  register — so the encoding conformance is byte-identical).
+- **Resolution** (`resolveReplyRecvReply`): resolve the reply cap → `(rid, prevCaller)`
+  via `reply.caller` (authority flows from *holding* the reply cap, exactly like
+  `.reply` — closing the raw-thread bypass).
+- **Body** (`replyRecvBody`, shared by both arms): reply leg
+  (`endpointReplyCrossCoreDispatch`, incl. donated-SC return + cross-core PIP) → 
+  **consume** the answered link (`consumeCallerReply`, single-use barrier) → receive
+  leg (`endpointReceiveDualOnCore`) → **re-link** the *same* reply object to the next
+  Call caller (`linkReceivedCaller`).  The checked arm is a single outer flow gate
+  (receiver→prevCaller, endpoint→receiver) over the same body, so
+  `checkedDispatch_replyRecv_eq_unchecked_when_allowed` is re-proven cleanly.
+- **Rust ABI**: `endpoint_reply_recv` / `_checked` now take a `reply_cap : CPtr`
+  (MR0); new `endpoint_receive_with_reply(recv_cap, reply_cap)` so a server can
+  accept `Call` IPC under the reply-object ABI (plain `endpoint_receive` stays the
+  no-reply Send/Notification path).  Conformance comments synced.
+
+New `SyscallDispatchSuite.sd052_replyRecvBody` (4 assertions: prev caller replied,
+link consumed both directions, server re-blocks).  Closes PR #822 review items
+(API:1093 replyRecv consume, EndpointReply:148 receive-leg re-link, API:975 Rust
+receive wrapper).  Full prod + staged `lake build` + Tier 0/1/2 green; trace
+byte-identical.
+
 ## v0.31.102 — Reply objects (seL4-MCS): re-wire faithful server-supplied `.receive` linking (PR #822 review)
 
 The `.receive` dispatch arms were gated to plain receive (no reply linking), so the

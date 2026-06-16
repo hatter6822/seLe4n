@@ -1035,20 +1035,20 @@ fn notification_wait_encoding() {
     assert_eq!(regs[6], 15, "x7=SyscallId::NotificationWait must be 15");
 }
 
-/// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16)
-/// and places reply_target in msg_regs[0].
+/// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16) and places the
+/// server-supplied reply capability pointer in msg_regs[0] (faithful seL4-MCS).
 #[test]
 fn endpoint_reply_recv_encoding() {
-    let reply_target: u64 = 7;
+    let reply_cap: u64 = 7;
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
         msg_info: MessageInfo::new(1, 0, 0).unwrap(),
-        msg_regs: [reply_target, 0, 0, 0],
+        msg_regs: [reply_cap, 0, 0, 0],
         syscall_id: SyscallId::ReplyRecv,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv must be 16");
-    assert_eq!(regs[2], reply_target, "x2=msg_regs[0] must carry reply_target");
+    assert_eq!(regs[2], reply_cap, "x2=msg_regs[0] must carry the reply cap pointer");
 }
 
 /// W1-D: MmioUnaligned variant exists at discriminant 40.
@@ -1059,24 +1059,24 @@ fn mmio_unaligned_variant() {
     assert_eq!(err as u32, 40);
 }
 
-/// W1-E audit: endpoint_reply_recv places reply_target in MR[0] and user
-/// data in MR[1..3]. MessageInfo.length = user_length + 1 (for reply_target).
+/// W1-E audit: endpoint_reply_recv places the reply cap pointer in MR[0] and user
+/// data in MR[1..3]. MessageInfo.length = user_length + 1 (for the reply cap slot).
 #[test]
 fn endpoint_reply_recv_register_layout() {
-    // Simulate: user wants 2 registers of reply data + reply_target
-    let reply_target: u64 = 7;
+    // Simulate: user wants 2 registers of reply data + the reply cap pointer
+    let reply_cap: u64 = 7;
     let user_data_0: u64 = 0xAAAA;
     let user_data_1: u64 = 0xBBBB;
-    // Kernel should encode: MR[0]=reply_target, MR[1]=user_data_0, MR[2]=user_data_1
+    // Kernel should encode: MR[0]=reply_cap, MR[1]=user_data_0, MR[2]=user_data_1
     // MessageInfo.length = 2 + 1 = 3
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
-        msg_info: MessageInfo::new(3, 0, 0).unwrap(), // 2 user regs + 1 reply_target
-        msg_regs: [reply_target, user_data_0, user_data_1, 0],
+        msg_info: MessageInfo::new(3, 0, 0).unwrap(), // 2 user regs + 1 reply cap ptr
+        msg_regs: [reply_cap, user_data_0, user_data_1, 0],
         syscall_id: SyscallId::ReplyRecv,
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[2], reply_target, "x2=MR[0] must be reply_target");
+    assert_eq!(regs[2], reply_cap, "x2=MR[0] must be the reply cap pointer");
     assert_eq!(regs[3], user_data_0, "x3=MR[1] must be user data[0]");
     assert_eq!(regs[4], user_data_1, "x4=MR[2] must be user data[1]");
     assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv");

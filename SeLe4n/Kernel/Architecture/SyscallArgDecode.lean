@@ -1051,11 +1051,14 @@ structure NotificationWaitArgs where
   deriving Repr, DecidableEq
 
 /-- V2-C/V2-I: Per-syscall argument structure for `replyRecv`.
-    Register mapping: x2=replyTarget thread ID.
+    Register mapping: `msgRegs[0]` = the server-supplied reply capability pointer.
+    WS-SM SM6.D (faithful seL4-MCS): `ReplyRecv` replies to the *previous* caller
+    via the reply *object* the cap names (`reply.caller`) — not a raw thread id —
+    and re-links that same reply object to the *next* caller on the receive leg.
     The endpoint is resolved from the capability target. Message body comes
     from the standard message registers (same as send). -/
 structure ReplyRecvArgs where
-  replyTarget : ThreadId
+  replyCPtr : Nat
   deriving Repr, DecidableEq
 
 /-- V2-I: Decode notification signal arguments from message registers.
@@ -1071,11 +1074,11 @@ def decodeNotificationWaitArgs (_decoded : SyscallDecodeResult)
   pure {}
 
 /-- V2-I: Decode replyRecv arguments from message registers.
-    Requires 1 message register (reply target thread ID). -/
+    Requires 1 message register (the server-supplied reply capability pointer). -/
 def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
     : Except KernelError ReplyRecvArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { replyTarget := ThreadId.ofNat r0.val }
+  pure { replyCPtr := r0.val }
 
 -- ============================================================================
 
@@ -1300,7 +1303,7 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
 
 /-- V2-I: Encode replyRecv arguments into message registers. -/
 @[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
-  #[⟨args.replyTarget.toNat⟩]
+  #[⟨args.replyCPtr⟩]
 
 /-- V2-I: NotificationSignalArgs decode round-trip.
     Requires badge validity for lossless round-trip through `ofNatMasked`. -/
