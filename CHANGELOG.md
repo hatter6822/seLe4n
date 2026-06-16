@@ -1,3 +1,18 @@
+## v0.31.99 — Reply objects (seL4-MCS): raw retype helper accepts SchedContext + Reply (PR #822 review)
+
+The raw `objectOfTypeTag` (Nat → KernelObject) handled only tags 0–5, sending 6
+(SchedContext) and 7 (Reply) to `.invalidTypeTag` — out of sync with the typed
+`objectOfKernelType` / `KernelObjectType.ofNat?` and the Rust ABI (which all accept
+0–7).  A direct helper caller or conformance test using the raw tag path would
+reject a Reply (or SchedContext) retype the rest of the stack now accepts.
+
+`objectOfTypeTag` gains the `6 → .schedContext` and `7 → .reply` arms (mirroring
+`objectOfKernelType`'s sentinel-initialized constructors; `_ + 8 → .invalidTypeTag`).
+`tests/NegativeStateSuite.lean` K-G-NEG-18 / K-G-DET-03 extended to the 0–7 range.
+
+Closes PR #822 review item (RetypeWrappers:207).  prod `lake build` (376) + Tier
+0/1/2 + negative-state green; trace byte-identical.
+
 ## v0.31.98 — Reply objects (seL4-MCS): restore the chain31 reply-unblock validation (PR #822 review)
 
 The cap-swap (v0.31.88) pointed `operation_chain_suite` chain31's reply cap at

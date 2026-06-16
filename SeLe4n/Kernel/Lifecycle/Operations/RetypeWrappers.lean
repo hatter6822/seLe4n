@@ -167,7 +167,12 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
       children := [],
       isDevice := false
     })
-  | _ + 6 => .error .invalidTypeTag
+  | 6 => .ok (.schedContext (SeLe4n.Kernel.SchedContext.empty SeLe4n.SchedContextId.sentinel))
+  -- WS-SM SM6.D / PR #822: keep the raw Nat helper in sync with the typed
+  -- `objectOfKernelType` + `KernelObjectType.ofNat?` + the Rust ABI (tags 0–7,
+  -- including SchedContext = 6 and the first-class Reply = 7).
+  | 7 => .ok (.reply (SeLe4n.Kernel.Reply.empty SeLe4n.ReplyId.sentinel))
+  | _ + 8 => .error .invalidTypeTag
 
 /-- R7-E/L-10: Typed version of `objectOfTypeTag` that takes `KernelObjectType` directly.
     Eliminates the invalid-tag error path since the type is already validated.
