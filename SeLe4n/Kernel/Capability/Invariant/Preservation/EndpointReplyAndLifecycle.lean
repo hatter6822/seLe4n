@@ -231,7 +231,13 @@ theorem coreIpcInvariantBundle_to_blockedOnReplyHasTarget {st : SystemState}
 (16th `ipcInvariantFull` conjunct) from the core bundle. -/
 theorem coreIpcInvariantBundle_to_replyCallerLinkage {st : SystemState}
     (h : coreIpcInvariantBundle st) : replyCallerLinkage st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- WS-SM SM6.D (PR #822 review): extract the server-first stash well-formedness
+(17th `ipcInvariantFull` conjunct) from the core bundle. -/
+theorem coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed {st : SystemState}
+    (h : coreIpcInvariantBundle st) : pendingReceiveReplyWellFormed st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -401,6 +407,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hDBT' : donationBudgetTransfer st')
     (hBRT' : blockedOnReplyHasTarget st')
     (hRCL' : replyCallerLinkage st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpcFull⟩
@@ -411,7 +418,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
       hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
            hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
-           hDCA', hDOV', hPSI', hDBT', hBRT', hRCL'⟩
+           hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
@@ -443,6 +450,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hDBT' : donationBudgetTransfer st')
     (hBRT' : blockedOnReplyHasTarget st')
     (hRCL' : replyCallerLinkage st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleCompositionInvariantBundle st' := by
@@ -450,7 +458,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hBRT' hRCL' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hBRT' hRCL' hPRR' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep

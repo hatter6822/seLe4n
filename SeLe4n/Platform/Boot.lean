@@ -3003,13 +3003,19 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro tid tcb _ _ hObj hIpc
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
       rw [hTcb.2.1] at hIpc; cases hIpc
-    · -- WS-SM SM6.D (PR #822): replyCallerLinkage (vacuous — boot TCBs have
-      -- replyObject = none and boot Replies have caller = none)
-      refine ⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩
+    · -- WS-SM SM6.D (PR #822): replyCallerLinkage (16th, vacuous — boot TCBs have
+      -- replyObject = none and boot Replies have caller = none) ∧
+      -- pendingReceiveReplyWellFormed (17th, vacuous — boot TCBs have
+      -- pendingReceiveReply = none).
+      refine ⟨⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩,
+        fun tid tcb rid hObj hRep => ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
       · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
         rw [hR.1] at hCaller; cases hCaller
+      · have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hObj
+        have hTcb := (hBS tid.toObjId _ hObjRaw).2.2.2.1 tcb rfl
+        rw [hTcb.2.2.2.2.2.2.2] at hRep; cases hRep
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

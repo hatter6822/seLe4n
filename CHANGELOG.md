@@ -1,3 +1,32 @@
+## v0.31.125 — Reply objects (seL4-MCS): pendingReceiveReply well-formedness as the 17th `ipcInvariantFull` conjunct (SM6.D, finding D.2 — closes 6J9Kjg/6J9Kp6)
+
+**P2, closes finding D.** Bundles `pendingReceiveReplyWellFormed` (landed standalone in v0.31.123) as the
+**17th conjunct** of `ipcInvariantFull`, so the invariant no longer *admits* a TCB whose
+`pendingReceiveReply` stash names an absent/already-linked Reply while the server stays blocked — the gap
+where a later server-first `Call` (`linkServerFirstCaller`) would fail `.replyCapInvalid` with the receive
+still pending. The conjunct is now part of the invariant's *definition*, not merely operationally
+unreachable.
+
+Keystone edit (`IPC/Invariant/Defs.lean`), built field-by-field: the tuple definition, the
+`ipcInvariantFull_of_core_replyCallerLinkage` assembly seam (3rd witness `hPRR`), the named
+`structure IpcInvariantFull` field, the `@[simp]` projection (`replyCallerLinkage` shifted to `.1`, new
+`pendingReceiveReplyWellFormed` tail projection), and the bidirectional
+`ipcInvariantFull_iff_IpcInvariantFull` bridge. The structural core (`ipcInvariantCore`, first 15
+conjuncts) and `ipcInvariantFull.toCore` are unchanged (the conjunct rides outside the core, exactly like
+`replyCallerLinkage`).
+
+`hPRR'` threaded through every `ipcInvariantFull` construction site (externalized as a post-state
+hypothesis, mirroring `hRCL'`): the 10 `DualQueueMembership` tuple-builders + `ipcInvariantFull_compositional`
++ the 2 reply-mutator seam-users (`linkCallerReply`/`consumeCallerReply`), `endpointCallOnCore`,
+`coreIpcInvariantBundle` (+ a new `coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed` extractor), the
+3 `Architecture/Invariant.lean` objects-frame timer/register/context theorems (discharged via the D.0 frame
+lemma), and the boot-state proof (`Platform/Boot.lean`, vacuous — boot TCBs carry
+`pendingReceiveReply = none`). `default_pendingReceiveReplyWellFormed` added for the default state.
+
+`ModelIntegritySuite` drift anchors updated to 17 (and the projection-signature / dot-notation tail-boundary
+tests extended to cover the 16th *and* 17th conjuncts — the 16th was previously uncovered). Full prod +
+staged build green (239 jobs, zero warnings); trace byte-identical.
+
 ## v0.31.124 — Reply objects (seL4-MCS): frozen reply authorized by the Reply object, not a fixed replier (PR #822 Codex review)
 
 **P2, frozen mirror of E.2.** After v0.31.122 removed the live `.reply` `replier == expected` gate,

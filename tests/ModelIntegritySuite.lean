@@ -1417,10 +1417,10 @@ def an2f3_02_coercion_roundtrip : IO Unit := do
 These tests exercise the named-projection layer over `ipcInvariantFull`.
 The discipline is:
 
-* `IpcInvariantFull` (structure) has 16 fields.
-* `ipcInvariantFull` (tuple form) has 16 conjuncts.
+* `IpcInvariantFull` (structure) has 17 fields.
+* `ipcInvariantFull` (tuple form) has 17 conjuncts.
 * `ipcInvariantFull_iff_IpcInvariantFull` bridges them bidirectionally.
-* 16 `@[simp]` projection theorems in the `ipcInvariantFull` namespace let
+* 17 `@[simp]` projection theorems in the `ipcInvariantFull` namespace let
   callers read conjuncts via dot notation (`hInv.donationOwnerValid`).
 
 If the arity of `ipcInvariantFull` grows (or shrinks) without the
@@ -1550,7 +1550,13 @@ def ipc_invariant_full_named_projection_signatures : IO Unit := do
   -- WS-RC R4.C.7: uniqueWaiters projection removed (conjunct retired in C2).
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
     @ipcInvariantFull.blockedOnReplyHasTarget
-  expect "all 15 ipcInvariantFull named projection signatures typecheck" (True == True)
+  -- WS-SM SM6.D: the 16th (reply linkage) and 17th (PR #822 review:
+  -- server-first stash well-formedness) conjuncts.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> replyCallerLinkage st :=
+    @ipcInvariantFull.replyCallerLinkage
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> pendingReceiveReplyWellFormed st :=
+    @ipcInvariantFull.pendingReceiveReplyWellFormed
+  expect "all 17 ipcInvariantFull named projection signatures typecheck" (True == True)
 
 
 open SeLe4n.Model in
@@ -1571,10 +1577,13 @@ def ipc_invariant_full_dot_notation_dispatch : IO Unit := do
   -- Dot notation also works on the structure form.
   let _ : ∀ {st : SystemState}, IpcInvariantFull st -> donationOwnerValid st :=
     fun {_} h => h.donationOwnerValid
-  -- Last conjunct `.blockedOnReplyHasTarget` uses `h.2.2...2.2` (no
-  -- trailing `.1`) -- verify it still dispatches.
-  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
-    fun {_} h => h.blockedOnReplyHasTarget
+  -- Last conjunct `.pendingReceiveReplyWellFormed` (WS-SM SM6.D, 17th) uses
+  -- `h.2.2...2.2` (no trailing `.1`) -- verify the tail boundary dispatches.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> pendingReceiveReplyWellFormed st :=
+    fun {_} h => h.pendingReceiveReplyWellFormed
+  -- Penultimate conjunct `.replyCallerLinkage` (16th) uses `h.2.2...2.1`.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> replyCallerLinkage st :=
+    fun {_} h => h.replyCallerLinkage
   -- First conjunct `.ipcInvariant` uses `h.1`.
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcInvariant st :=
     fun {_} h => h.ipcInvariant

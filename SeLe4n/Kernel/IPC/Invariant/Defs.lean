@@ -1248,7 +1248,10 @@ def ipcInvariantCore (st : SystemState) : Prop :=
 
 /-- WS-SM SM6.D (PR #822 review): the full IPC invariant — the 15 structural
 conjuncts (`ipcInvariantCore`) **plus** the bidirectional `replyCallerLinkage`
-(16th conjunct) tying every `TCB.replyObject` to a reciprocating `Reply.caller`.
+(16th conjunct) tying every `TCB.replyObject` to a reciprocating `Reply.caller`,
+**plus** the `pendingReceiveReplyWellFormed` server-first stash conjunct (17th,
+PR #822 review 6J9Kjg/6J9Kp6) tying every `TCB.pendingReceiveReply` to a still-
+`.blockedOnReceive` server holding a free existing Reply.
 The core is split out so the reply-store building blocks (`storeObject_reply` /
 `storeObject_tcb_replyObject`) — whose *intermediate* state legitimately breaks the
 reciprocal link — can be sequenced through the core before `linkCallerReply` /
@@ -1261,7 +1264,8 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
-  blockedOnReplyHasTarget st ∧ replyCallerLinkage st
+  blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
+  pendingReceiveReplyWellFormed st
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -1274,18 +1278,20 @@ theorem ipcInvariantFull.toCore {st : SystemState} (h : ipcInvariantFull st) :
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
 
 /-- WS-SM SM6.D (PR #822 review): assemble `ipcInvariantFull` from its structural
-core plus the reply linkage — the seam the reply mutators use (core preserved by
-the object stores, `replyCallerLinkage` re-established by `linkCallerReply` /
-`consumeCallerReply`). -/
+core plus the reply linkage and the server-first stash well-formedness — the seam
+the reply mutators use (core preserved by the object stores, `replyCallerLinkage`
+re-established by `linkCallerReply` / `consumeCallerReply`, and
+`pendingReceiveReplyWellFormed` framed/established on the final state). -/
 theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
-    (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st) :
+    (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
+    (hPRR : pendingReceiveReplyWellFormed st) :
     ipcInvariantFull st :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -1337,6 +1343,7 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   donationBudgetTransfer : donationBudgetTransfer st
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
   replyCallerLinkage : replyCallerLinkage st
+  pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
 
 namespace ipcInvariantFull
 
@@ -1426,7 +1433,12 @@ elaborator. -/
 @[simp] theorem replyCallerLinkage {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.replyCallerLinkage st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem pendingReceiveReplyWellFormed {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -1484,7 +1496,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
-           h.blockedOnReplyHasTarget, h.replyCallerLinkage⟩
+           h.blockedOnReplyHasTarget, h.replyCallerLinkage,
+           h.pendingReceiveReplyWellFormed⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -1494,7 +1507,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
-           h.blockedOnReplyHasTarget, h.replyCallerLinkage⟩
+           h.blockedOnReplyHasTarget, h.replyCallerLinkage,
+           h.pendingReceiveReplyWellFormed⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/
