@@ -918,50 +918,54 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
     match cap.target with
     | .object epId =>
       -- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): under MCS
-      -- `seL4_Recv(ep, reply)` the *server* supplies the single-use Reply object
-      -- capability; when a `Call`-sender rendezvouses, the kernel links that reply
-      -- object to the caller.  The server resolves the reply *capability* through
-      -- its own CSpace (`msgRegs[0]` a CPtr through the verified `syscallLookupCap`,
-      -- mirroring `tcbBindNotification`), so the link authority flows from *holding*
-      -- a reply capability, never from naming a raw `ReplyId`.  The
-      -- `endpointReceiveDual` transition (and its proofs) are untouched: the link
-      -- composes at this dispatch-arm layer through the already-proven
-      -- `SystemState.linkCallerReply` invariant-preservation.  The reply link is
-      -- established **iff** the rendezvoused sender's post-state is `.blockedOnReply`
-      -- (i.e. it was a Call); a plain `Send` rendezvous (sender now `.ready`) takes
-      -- no reply.  Fails closed (`.replyCapInvalid` on an in-use reply,
-      -- `.objectNotFound` on an absent caller TCB) — `linkCallerReply`'s own barrier.
-      fun st => match decodeRecvArgs decoded with
+      -- `seL4_Recv(ep, reply)` the *server* optionally supplies a single-use Reply
+      -- object capability; when a `Call`-sender rendezvouses and a valid reply cap
+      -- was supplied, the kernel links that reply object to the caller.  The reply
+      -- cap is resolved through the server's own CSpace (`msgRegs[0]` a CPtr through
+      -- the verified `syscallLookupCap`, mirroring `tcbBindNotification`), so the
+      -- link authority flows from *holding* a reply capability, never from naming a
+      -- raw `ReplyId`.  A receive with **no / invalid reply cap proceeds plainly**
+      -- (faithful seL4 null-reply `Recv` — no reply expected); the link is
+      -- established **iff** a valid reply object was supplied AND the rendezvoused
+      -- sender's post-state is `.blockedOnReply` (a `Call`) — a plain `Send`
+      -- rendezvous takes no reply.  The `endpointReceiveDual` transition (and its
+      -- proofs) are untouched: the link composes at this dispatch-arm layer through
+      -- the already-proven `SystemState.linkCallerReply` invariant-preservation, and
+      -- fails closed (`.replyCapInvalid` on an in-use reply) via its own barrier.
+      fun st =>
+        let replyIdOpt : Option SeLe4n.ReplyId :=
+          match decodeRecvArgs decoded with
+          | .error _ => none
+          | .ok args =>
+            match st.getTcb? tid with
+            | none => none
+            | some callerTcb =>
+              match st.getCNode? callerTcb.cspaceRoot with
+              | none => none
+              | some rootCn =>
+                match syscallLookupReplyId {
+                    callerId      := tid
+                    cspaceRoot    := callerTcb.cspaceRoot
+                    capAddr       := SeLe4n.CPtr.ofNat args.replyCPtr
+                    capDepth      := rootCn.depth
+                    requiredRight := .write } st with
+                | .error _ => none
+                | .ok (rid, _) => some rid
+        match endpointReceiveDual epId tid st with
+        | .ok (sender, st') =>
+          match replyIdOpt with
+          | none => .ok ((), st')
+          | some rid =>
+            match st'.getTcb? sender with
+            | some senderTcb =>
+              match senderTcb.ipcState with
+              | .blockedOnReply _ _ =>
+                  match SystemState.linkCallerReply sender rid st' with
+                  | .ok ((), st'') => .ok ((), st'')
+                  | .error e => .error e
+              | _ => .ok ((), st')
+            | none => .ok ((), st')
         | .error e => .error e
-        | .ok args =>
-          match st.getTcb? tid with
-          | none => .error .objectNotFound
-          | some callerTcb =>
-            match st.getCNode? callerTcb.cspaceRoot with
-            | none => .error .invalidCapability
-            | some rootCn =>
-              let replyGate : SyscallGate := {
-                callerId      := tid
-                cspaceRoot    := callerTcb.cspaceRoot
-                capAddr       := SeLe4n.CPtr.ofNat args.replyCPtr
-                capDepth      := rootCn.depth
-                requiredRight := .write
-              }
-              match syscallLookupReplyId replyGate st with
-              | .error e => .error e
-              | .ok (rid, st0) =>
-                match endpointReceiveDual epId tid st0 with
-                | .ok (sender, st') =>
-                  match st'.getTcb? sender with
-                  | some senderTcb =>
-                    match senderTcb.ipcState with
-                    | .blockedOnReply _ _ =>
-                        match SystemState.linkCallerReply sender rid st' with
-                        | .ok ((), st'') => .ok ((), st'')
-                        | .error e => .error e
-                    | _ => .ok ((), st')
-                  | none => .ok ((), st')
-                | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
   | .call =>
@@ -1196,37 +1200,40 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       -- via the already-proven `SystemState.linkCallerReply`.  Only the receive
       -- transition differs (checked vs unchecked); the reply-cap resolution and the
       -- conditional link are byte-for-byte the unchecked arm.
-      fun st => match decodeRecvArgs decoded with
+      fun st =>
+        let replyIdOpt : Option SeLe4n.ReplyId :=
+          match decodeRecvArgs decoded with
+          | .error _ => none
+          | .ok args =>
+            match st.getTcb? tid with
+            | none => none
+            | some callerTcb =>
+              match st.getCNode? callerTcb.cspaceRoot with
+              | none => none
+              | some rootCn =>
+                match syscallLookupReplyId {
+                    callerId      := tid
+                    cspaceRoot    := callerTcb.cspaceRoot
+                    capAddr       := SeLe4n.CPtr.ofNat args.replyCPtr
+                    capDepth      := rootCn.depth
+                    requiredRight := .write } st with
+                | .error _ => none
+                | .ok (rid, _) => some rid
+        match endpointReceiveDualChecked ctx epId tid st with
+        | .ok (sender, st') =>
+          match replyIdOpt with
+          | none => .ok ((), st')
+          | some rid =>
+            match st'.getTcb? sender with
+            | some senderTcb =>
+              match senderTcb.ipcState with
+              | .blockedOnReply _ _ =>
+                  match SystemState.linkCallerReply sender rid st' with
+                  | .ok ((), st'') => .ok ((), st'')
+                  | .error e => .error e
+              | _ => .ok ((), st')
+            | none => .ok ((), st')
         | .error e => .error e
-        | .ok args =>
-          match st.getTcb? tid with
-          | none => .error .objectNotFound
-          | some callerTcb =>
-            match st.getCNode? callerTcb.cspaceRoot with
-            | none => .error .invalidCapability
-            | some rootCn =>
-              let replyGate : SyscallGate := {
-                callerId      := tid
-                cspaceRoot    := callerTcb.cspaceRoot
-                capAddr       := SeLe4n.CPtr.ofNat args.replyCPtr
-                capDepth      := rootCn.depth
-                requiredRight := .write
-              }
-              match syscallLookupReplyId replyGate st with
-              | .error e => .error e
-              | .ok (rid, st0) =>
-                match endpointReceiveDualChecked ctx epId tid st0 with
-                | .ok (sender, st') =>
-                  match st'.getTcb? sender with
-                  | some senderTcb =>
-                    match senderTcb.ipcState with
-                    | .blockedOnReply _ _ =>
-                        match SystemState.linkCallerReply sender rid st' with
-                        | .ok ((), st'') => .ok ((), st'')
-                        | .error e => .error e
-                    | _ => .ok ((), st')
-                  | none => .ok ((), st')
-                | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated

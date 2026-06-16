@@ -1,3 +1,25 @@
+## v0.31.91 — Reply objects (seL4-MCS): `.receive` reply cap is optional (CI fix)
+
+Fixes a regression from v0.31.90: the `.receive` linking made the arm *require* a
+server-supplied reply capability, breaking existing `.receive` dispatch callers
+that pass none (`operation_chain_suite` chain10 → `.invalidCapability`).
+
+Faithful seL4 `Recv` accepts a null/absent reply cap (no reply expected).  Both
+`.receive` arms now resolve the reply cap into an `Option ReplyId` — any
+decode/lookup failure yields `none` and the receive **proceeds plainly with no
+link**; a *valid* reply cap still links the rendezvoused `Call`-caller.  The
+`endpointReceiveDual` transition stays untouched.  `sd051` negatives updated:
+no-cap / wrong-cap → receive succeeds with no reply object linked (linking is
+opt-in on a held reply capability).
+
+(PR #822 review follow-ups still open: the server-first `Recv`-then-`Call` path
+must persist the supplied reply object; `.replyRecv` must route through reply-object
+consumption; and the reply-object write must enter the 2PL lock set — these land
+as the next slices.)
+
+Trace byte-identical (233/233); prod `lake build` (376) + staged (234) + Tier
+0/1/2 + `operation_chain_suite` green.
+
 ## v0.31.90 — Reply objects (seL4-MCS): `.receive` links the server's reply object (C-wire-link-1)
 
 First faithful server-supplied linking (decision D4): `seL4_Recv(ep, reply)` — the

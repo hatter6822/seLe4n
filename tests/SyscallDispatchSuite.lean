@@ -693,25 +693,31 @@ private def sd051_recv_links_reply_to_call_sender : IO Unit := do
            (st'.getReply? rid).any (fun r => decide (r.caller = some sender))
        | .error _ => false)
       "receive did not set the reply object's caller to the rendezvoused Call-sender"
-  -- Negative 1: reply cap ABSENT (slot 1 empty) → fail-closed (invalidCapability).
+  -- Negative 1: reply cap ABSENT (slot 1 empty) → faithful null-reply `Recv`: the
+  -- receive proceeds plainly and links NO reply object (linking is opt-in on a
+  -- valid server-supplied reply cap).
   let stNoCap := mkSt [(SeLe4n.Slot.ofNat 0, epCap)]
   match SeLe4n.Kernel.endpointCall epId sender IpcMessage.empty stNoCap with
   | .error e => failLine "sd051_recv_nocap_setup" s!"endpointCall enqueue failed: {toString e}"
   | .ok ((), stCall) =>
     let rNoCap := dispatchSyscall decoded server stCall
-    expect "sd051_recv_no_reply_cap_rejected"
-      (match rNoCap with | .error .invalidCapability => true | _ => false)
-      "receive without a held reply cap should fail with invalidCapability"
-  -- Negative 2: wrong cap at slot 1 (the endpoint cap, not a reply cap) →
-  -- `extractReplyId` fails closed with invalidCapability.
+    expect "sd051_recv_no_reply_cap_unlinked"
+      (match rNoCap with
+       | .ok ((), st') => (st'.getTcb? sender).any (fun t => decide (t.replyObject = none))
+       | .error _ => false)
+      "receive with no held reply cap should proceed plainly and link no reply object"
+  -- Negative 2: wrong cap at slot 1 (the endpoint cap, not a reply cap) → the reply
+  -- cap fails to resolve, so the receive likewise proceeds plainly with no link.
   let stWrong := mkSt [(SeLe4n.Slot.ofNat 0, epCap), (SeLe4n.Slot.ofNat 1, epCap)]
   match SeLe4n.Kernel.endpointCall epId sender IpcMessage.empty stWrong with
   | .error e => failLine "sd051_recv_wrongcap_setup" s!"endpointCall enqueue failed: {toString e}"
   | .ok ((), stCall) =>
     let rWrong := dispatchSyscall decoded server stCall
-    expect "sd051_recv_wrong_cap_rejected"
-      (match rWrong with | .error .invalidCapability => true | _ => false)
-      "receive with a non-reply cap at the reply slot should fail with invalidCapability"
+    expect "sd051_recv_wrong_cap_unlinked"
+      (match rWrong with
+       | .ok ((), st') => (st'.getTcb? sender).any (fun t => decide (t.replyObject = none))
+       | .error _ => false)
+      "receive with a non-reply cap at the reply slot should proceed plainly and link no reply object"
 
 end SeLe4n.Testing.SyscallDispatchSuite
 
