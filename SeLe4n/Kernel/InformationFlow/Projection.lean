@@ -268,14 +268,36 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- Stripped structurally (not by a "no operation sets it yet" invariant
       -- witness) per the projection's pure-function discipline — mirrors AK6-G's
       -- structural stripping of pendingMessage/timedOut.
+      -- WS-SM SM6.D (PR #822 review, Reply objects): Strip `replyObject` — the
+      -- forward TCB→Reply link (seL4's `tcb->tcbReply`) names which first-class
+      -- Reply object a blocked caller is waiting on.  Linking a high caller to a
+      -- low-visible thread (or the cross-domain Call→Reply rendezvous) would
+      -- otherwise change the low projection and leak the reply-object identity.
+      -- Structurally erased — same class as `schedContextBinding`/`pipBoost`
+      -- above (internal IPC/donation plumbing, not the thread's observable
+      -- logical identity).  The matching `Reply.caller` back-link is erased by
+      -- the `.reply` arm below.
       .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
                        pipBoost := none, pendingMessage := none, timedOut := false,
-                       cpuAffinity := none }
+                       cpuAffinity := none, replyObject := none }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
       -- this field and must not leak through the NI projection.
       .schedContext { sc with boundThread := none }
+  | .reply r =>
+      -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
+      -- cross-domain linkage — `caller` (the back-link to the blocked caller
+      -- TCB), `donatedSc` (the MCS donated SchedContext), and `prev` (the
+      -- reply-stack link for nested calls).  These three fields name high-domain
+      -- thread / SchedContext / reply-stack identities; leaving them in the
+      -- low projection would leak who is blocked on (or donating to) a
+      -- low-visible reply object once the receive-path links it.  Mirrors the
+      -- `.schedContext` `boundThread := none` stripping and the TCB
+      -- `schedContextBinding`/`replyObject` stripping above — structural, per
+      -- the projection's pure-function discipline.  Only `replyId` (the object's
+      -- own identity, already gated by `objectObservable`) and `lock` survive.
+      .reply { r with caller := none, donatedSc := none, prev := none }
   | other => other
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields
@@ -347,6 +369,52 @@ theorem projectKernelObject_erases_cpuAffinity
     (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
     match projectKernelObject ctx observer (.tcb tcb) with
     | .tcb tcb' => tcb'.cpuAffinity = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM6.D (PR #822 review, Reply objects): `projectKernelObject` strips the
+    forward TCB→Reply link (`replyObject`) from projected TCBs (resets it to
+    `none`).  The link names which first-class Reply object a blocked caller is
+    waiting on; leaking it would expose the cross-domain Call→Reply rendezvous.
+    Mirrors `projectKernelObject_erases_cpuAffinity`. -/
+theorem projectKernelObject_erases_replyObject
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
+    match projectKernelObject ctx observer (.tcb tcb) with
+    | .tcb tcb' => tcb'.replyObject = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM6.D (PR #822 review, Reply objects): `projectKernelObject` strips the
+    Reply object's `caller` back-link (resets it to `none`).  The link names the
+    high-domain caller TCB blocked on this reply; leaking it through a
+    low-visible reply object would reveal who is awaiting a reply.  Mirrors the
+    `.schedContext` `boundThread` stripping. -/
+theorem projectKernelObject_erases_reply_caller
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
+    match projectKernelObject ctx observer (.reply r) with
+    | .reply r' => r'.caller = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM6.D (PR #822 review, Reply objects): `projectKernelObject` strips the
+    Reply object's `donatedSc` MCS donated-SchedContext link (resets it to
+    `none`).  Donation chain identities are internal scheduling plumbing — the
+    same class the TCB/SchedContext arms already erase. -/
+theorem projectKernelObject_erases_reply_donatedSc
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
+    match projectKernelObject ctx observer (.reply r) with
+    | .reply r' => r'.donatedSc = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- WS-SM SM6.D (PR #822 review, Reply objects): `projectKernelObject` strips the
+    Reply object's `prev` reply-stack link (resets it to `none`).  The nested-call
+    reply stack is internal IPC plumbing and names another reply object's
+    identity. -/
+theorem projectKernelObject_erases_reply_prev
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply) :
+    match projectKernelObject ctx observer (.reply r) with
+    | .reply r' => r'.prev = none
     | _ => True := by
   simp [projectKernelObject]
 

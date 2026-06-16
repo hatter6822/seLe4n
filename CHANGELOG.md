@@ -1,3 +1,22 @@
+## v0.31.100 — Reply objects (seL4-MCS): redact Reply links from low projections (PR #822 review)
+
+The information-flow projection passed `.reply` objects through unchanged and the
+TCB projection did not clear the new `replyObject` forward link.  Linking a high
+caller / donated SchedContext to a low-visible Reply object would therefore change
+the low projection and leak thread / SchedContext identities through the cross-domain
+Call→Reply rendezvous — a covert channel once the receive-path links a reply.
+
+`projectKernelObject` now strips the Reply object's cross-domain linkage in a new
+`.reply` arm (`caller := none`, `donatedSc := none`, `prev := none` — mirroring the
+`.schedContext` `boundThread` stripping; only the object's own `replyId`/`lock`
+survive), and the TCB arm additionally clears `replyObject := none` (the same class
+as the already-erased `schedContextBinding`/`pipBoost`).  Four `_erases_` lemmas
+(`projectKernelObject_erases_replyObject` / `_reply_caller` / `_reply_donatedSc` /
+`_reply_prev`) pin the redaction, mirroring `projectKernelObject_erases_cpuAffinity`.
+
+Closes PR #822 review item (Projection:201).  Full prod + staged `lake build` + Tier
+0/1/2 green; trace byte-identical (NI projection is not trace-exercised).
+
 ## v0.31.99 — Reply objects (seL4-MCS): raw retype helper accepts SchedContext + Reply (PR #822 review)
 
 The raw `objectOfTypeTag` (Nat → KernelObject) handled only tags 0–5, sending 6
