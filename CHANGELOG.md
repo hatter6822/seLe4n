@@ -1,3 +1,23 @@
+## v0.31.94 — Reply objects (seL4-MCS): surface anchors for the Reply object (PR #822 review)
+
+Two object-level hygiene closes (the Reply object exists regardless of the gated
+linkage):
+
+- `Testing/InvariantChecks.lean` (`checkCapTargetBacked`): a `.replyCap rid` is now
+  checked against `getReply? rid` (an actual `.reply` at `rid.toObjId`) rather than
+  mere `objects[rid.toObjId]?.isSome` — a reply cap pointing at a TCB/endpoint
+  sharing the ObjId namespace no longer passes `assertStateInvariantsFor`.
+- `Model/Object/PerObjectLockInventory.lean`: the Tier-3 lock-surface inventory now
+  pins the first-class Reply object's lock anchors — `Reply.lock` (fieldDefault),
+  `KernelObject.objectLockOf_reply` + `FrozenKernelObject.objectLockOf_reply`
+  (projection); counts 34→37, fieldDefault 7→8, projection 9→11
+  (`tests/PerObjectLockSuite.lean` count witnesses updated).  A regression that
+  removes/breaks the Reply lock projection now fails the compile-time surface gate.
+
+Closes PR #822 review items (InvariantChecks:123, PerObjectLockInventory:162).
+Trace byte-identical; prod `lake build` (376) + staged (234) + per-object-lock
+suite green.
+
 ## v0.31.93 — Reply objects (seL4-MCS): gate the live receive linkage (cohesive integration)
 
 Per the integration-approach decision: the live `.receive` Reply-object linkage
