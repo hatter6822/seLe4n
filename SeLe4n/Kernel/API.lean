@@ -448,30 +448,92 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
                   | none => none
               | none => none
 
+/-- WS-SM SM6.C (PR #822 review): the `ReplyRecv` post-receive donation
+resolution — seL4-MCS *"the scheduling context follows the message"*.  Run AFTER
+both the reply and the receive legs (so the server is never descheduled *before*
+it can rendezvous with a queued `Call`):
+
+* the server `tid` returns its OLD donated SchedContext to the client it was
+  serving (`returnDonatedSchedContextValid`); then
+* if the receive rendezvoused with a **Call** — `nextThread` is now
+  `.blockedOnReply`, i.e. a freshly dequeued request whose donation the queued
+  `Call` deferred — the new client's SchedContext is donated to the server
+  (`applyCallDonation`), so the passive server keeps running on the new request's
+  budget instead of being descheduled;
+* otherwise (a plain `Send` rendezvous, or the server blocked with no waiter) the
+  now-passive server is descheduled on its own core (`removeRunnableOnCore`).
+
+A server that holds **no** donated SC (an active server with its own budget, or an
+already-`.unbound` one) needs no donation change — its run-queue state is left to
+the receive leg.  Always reverts the reply-leg priority-inheritance boost via the
+cross-core chain walk (`propagatePipChainCrossCore`). -/
+def replyRecvReturnDonation (tid : SeLe4n.ThreadId) (nextThread : SeLe4n.ThreadId)
+    (executingCore : Concurrency.CoreId) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st tid with
+    | none => .error .objectNotFound
+    | some tidTcb =>
+        match tidTcb.schedContextBinding with
+        | .donated oldScId owner =>
+            match tid.toValid?, owner.toValid? with
+            | some tidV, some ownerV =>
+                match returnDonatedSchedContextValid st tidV oldScId ownerV with
+                | .error e => .error e
+                | .ok st1 =>
+                    -- Did the receive leg rendezvous with a queued `Call`?
+                    match lookupTcb st1 nextThread with
+                    | some nextTcb =>
+                        match nextTcb.ipcState with
+                        | .blockedOnReply _ _ =>
+                            match nextThread.toValid? with
+                            | some nextV =>
+                                match applyCallDonation st1 nextV tidV with
+                                | .error e => .error e
+                                | .ok st2 =>
+                                    .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 tid executingCore).1)
+                            | none => .error .invalidArgument
+                        | _ =>
+                            .ok ((), (PriorityInheritance.propagatePipChainCrossCore
+                              (removeRunnableOnCore st1 tid executingCore) tid executingCore).1)
+                    | none =>
+                        .ok ((), (PriorityInheritance.propagatePipChainCrossCore
+                          (removeRunnableOnCore st1 tid executingCore) tid executingCore).1)
+            | _, _ => .error .invalidArgument
+        | _ =>
+            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st tid executingCore).1)
+
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): the *unchecked* reply-and-receive
 body, shared by both dispatch arms (so the checked arm = a flow-gated wrapper over
-exactly this).  Three steps reusing the verified cross-core transitions:
-1. **reply leg** — `endpointReplyCrossCoreDispatch` delivers to `prevCaller` (the
-   recorded caller), including the reply-leg donated-SC return + cross-core PIP
-   reversion;
+exactly this).  Steps reusing the verified cross-core transitions:
+1. **reply leg** — `endpointReplyOnCore` delivers to `prevCaller` (the recorded
+   caller).  **Deliver only**: the donated-SC return + PIP reversion are deferred
+   to step 5 — returning the server's SC and descheduling it *before* the receive
+   leg would leave a server that immediately rendezvouses with a queued `Call`
+   stuck `.ready` but absent from the run queues (PR #822 review, 6J90-w);
 2. **consume** — `consumeCallerReply` tears down the answered reply link
    (single-use barrier);
-3. **receive leg** — `endpointReceiveDualOnCore` receives the next message and, on
-   a `Call` rendezvous, `linkReceivedCaller` re-links the *same* reply object to
-   the next caller (faithful one-object reuse). -/
+3. **receive leg** — `endpointReceiveDualOnCore` receives the next message;
+4. **re-link** — on a `Call` rendezvous, `linkReceivedCaller` re-links the *same*
+   reply object to the next caller (faithful one-object reuse);
+5. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
+   new `Call` rendezvoused, donates the new client's SC so the passive server keeps
+   running on the new request's budget (seL4-MCS SC-follows-message). -/
 def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
     : Kernel Unit :=
   fun st =>
-    match endpointReplyCrossCoreDispatch tid prevCaller msg executingCore st with
-    | (st1, .ok _) =>
+    match endpointReplyOnCore tid prevCaller msg executingCore st with
+    | (_, .error e) => .error e
+    | (st1, .ok _replySgi) =>
         match SystemState.consumeCallerReply prevCaller rid st1 with
         | .error e => .error e
         | .ok ((), st2) =>
             match endpointReceiveDualOnCore epId tid executingCore st2 with
-            | (st3, .ok (nextSender, _)) => linkReceivedCaller nextSender (some rid) st3
             | (_, .error e) => .error e
-    | (_, .error e) => .error e
+            | (st3, .ok (nextThread, _)) =>
+                match linkReceivedCaller nextThread (some rid) st3 with
+                | .error e => .error e
+                | .ok ((), st4) => replyRecvReturnDonation tid nextThread executingCore st4
 
 -- ============================================================================
 -- Syscall soundness theorems

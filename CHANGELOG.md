@@ -1,3 +1,37 @@
+## v0.31.112 — Reply objects (seL4-MCS): replyRecv returns/switches donation AFTER the receive leg (PR #822 review)
+
+The live cross-core `.replyRecv` body (`replyRecvBody`) returned the server's
+donated SchedContext and descheduled it (`endpointReplyCrossCoreDispatch` →
+`applyReplyDonationOnCore` → `removeRunnableOnCore`) **before** running the receive
+leg.  When the receive immediately rendezvoused with a queued `Call`, the server was
+left `.ready` with the new message but **absent from the run queues** (descheduled
+holding the *old* `.donated` binding), so a passive server handling back-to-back
+requests via `ReplyRecv` could stall (PR #822 review 6J90-w / 6JxLxW).
+
+Re-sequenced to the single-core `endpointReplyRecvWithDonation` ordering and the
+seL4-MCS *"scheduling context follows the message"* rule:
+
+- **Reply leg delivers only** — `replyRecvBody` now calls `endpointReplyOnCore`
+  (wake the recorded caller) and defers all donation/PIP work to step 5.
+- **New `replyRecvReturnDonation`** runs *after* the reply + receive legs: it returns
+  the server's OLD donated SC to the client it was serving
+  (`returnDonatedSchedContextValid`), then — **iff** the receive rendezvoused with a
+  `Call` (`nextThread` now `.blockedOnReply`, whose donation the queued `Call`
+  deferred) — donates the NEW client's SC to the server (`applyCallDonation`) so it
+  keeps running on the new request's budget.  Otherwise (plain `Send` rendezvous, or
+  the server blocked with no waiter) the now-passive server is descheduled
+  (`removeRunnableOnCore`).  A server holding no donated SC (active / already-unbound)
+  is unchanged.  Always reverts the reply-leg PIP boost
+  (`propagatePipChainCrossCore`).
+
+Behaviour is identical to before in every case **except** the `Call`-rendezvous case,
+which it fixes (server stays runnable on the new donation instead of being
+descheduled).  `replyRecvBody` returns `Kernel Unit` (SGIs are re-derived from the
+committed diff by the runtime), so the change is state-only; the checked/unchecked
+`.replyRecv` dispatch equivalence theorems gate on the flow guard (not the body) and
+are unaffected.  `SyscallDispatchSuite` sd052 (+ sd053) and the SM6.C cross-core reply
+suite stay green; trace byte-identical.
+
 ## v0.31.111 — Reply objects (seL4-MCS): a woken server's stash never keeps the Reply in use (PR #822 review)
 
 `replyIsStashed` answers "is this Reply reserved by a server *still waiting* to hand
