@@ -1,3 +1,37 @@
+## v0.31.127 — Reply objects (seL4-MCS): timeout clears the receive stash + reply donation deschedules the recorded server's core (PR #822 Codex review)
+
+Two reply-scheduling correctness follow-ons from the Codex review of v0.31.125/126:
+
+**P2 — timeout clears the server-first receive stash.** `timeoutThread` rewrote a budget-timed-out
+TCB to `.ready` but left `pendingReceiveReply` set, so a server-first receiver (`.blockedOnReceive`
+with a stashed Reply) that timed out became a `.ready` TCB still carrying the stash — violating the
+v0.31.125 `pendingReceiveReplyWellFormed` conjunct of `ipcInvariantFull`. The TCB rewrite now also
+clears `pendingReceiveReply := none` (a no-op for non-`blockedOnReceive` timed-out threads, which carry
+no stash). The clear rides inside the existing `tcb'` store, so every `timeoutThread`/
+`timeoutBlockedThreads` scheduler-preservation proof (object-generic) is unchanged — zero proof ripple.
+
+**P2 — reply donation deschedules the recorded server on its own core.** After v0.31.126 keyed the
+SchedContext donation return on the recorded server `expected` (not the delegated cap holder), the
+deschedule still passed the cap holder's syscall `executingCore` to `applyReplyDonationOnCore`. When a
+reply cap is delegated and the passive server runs on a different core, `removeRunnableOnCore` edited
+the wrong core's run queue, leaving the server current/runnable after its donated SC was returned.
+`endpointReplyCrossCoreDispatch` now derives the server's core via `determineExecutingCore st expected`
+for the deschedule (the PIP reversion keeps the syscall core for SGI accounting). In the non-delegated
+case `determineExecutingCore st expected = executingCore` (the server *is* the syscall thread), so the
+behaviour and trace are **identical**; only the delegated cross-core case changes. The dispatch's
+flow-equivalence / NI / chain-bound theorems are structural/parametric and unchanged.
+
+Full prod + staged build green (239 jobs); Lean Tier 0-2 green; trace byte-identical; cross-core reply
+suite green.
+
+**Tracked debt (reply-invariant soundness, PR #822 review cluster):** the reply invariants
+(`replyCallerLinkage`, `pendingReceiveReplyWellFormed`) still have open preservation/completeness items —
+timeout must also consume the `.blockedOnReply` caller→Reply link (`replyCallerLinkage`); the plain
+`endpointSendDual` rendezvous wake must clear the receive stash; `pendingReceiveReplyWellFormed` should
+exclude duplicate stashes of one ReplyId; and `replyCallerLinkage` should add the
+`blockedOnReply ⇒ replyObject` direction. These are interrelated invariant-hardening items (several widen
+the cross-transition preservation obligation) tracked for the SM6.D reply-invariant-soundness follow-on.
+
 ## v0.31.126 — Reply objects (seL4-MCS): reply donation returns from the recorded server, not the delegated cap holder (PR #822 Codex review)
 
 **P2, completes E.2 (delegation correctness).** After v0.31.122 let a *delegated*/copied reply cap

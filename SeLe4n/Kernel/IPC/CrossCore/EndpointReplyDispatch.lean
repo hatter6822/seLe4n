@@ -166,7 +166,16 @@ def endpointReplyCrossCoreDispatch
       | some expected =>
           match SeLe4n.ThreadId.toValid? expected with
           | some expectedV =>
-              match applyReplyDonationOnCore st1 expectedV executingCore with
+              -- WS-SM SM6.D (PR #822 review): deschedule the now-passive server on
+              -- **its own** core, derived from the pre-state (`determineExecutingCore
+              -- st expected`), not the (possibly delegated) cap holder's syscall core
+              -- `executingCore`.  Reusing the delegate's core would point
+              -- `removeRunnableOnCore` at the wrong run queue, leaving the recorded
+              -- server current/runnable on its own core after its donated SC was
+              -- returned.  In the non-delegated case the server *is* the syscall
+              -- thread, so `determineExecutingCore st expected = executingCore`.
+              let expectedCore := determineExecutingCore st expected
+              match applyReplyDonationOnCore st1 expectedV expectedCore with
               | .error e => (st, .error e)
               | .ok st2 =>
                   ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
