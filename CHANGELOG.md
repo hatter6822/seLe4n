@@ -1,3 +1,32 @@
+## v0.31.135 — Reply objects (seL4-MCS): close the reply-state covert channel in the checked IPC dispatch arms (PR #822 Codex review)
+
+**Finding (×3) — the flow-checked `.receive` / `.reply` / `.replyRecv` arms probed reply-object state
+*before* the information-flow gate, leaking it via the error code.** All three checked arms resolved the
+reply cap / scanned `replyIsStashed` / read `Reply.caller` ahead of the `securityFlowsTo` decision, so a
+holder of a copied reply cap could distinguish a linked/stashed Reply (`.replyCapInvalid`) from the
+flow-denied outcome (`.flowDenied`) even when the policy forbids the flow — a covert channel on exactly
+the `Reply.caller` / `pendingReceiveReply` state the low projection erases.
+
+- **`.receive`** — the endpoint→receiver flow (independent of the reply cap) is now checked **first**: a
+  denied receive returns `.flowDenied` before `resolveRecvReplyId` runs (no reply-cap validation, no
+  `replyIsStashed` scan). This is the exact predicate `endpointReceiveDualChecked` applies internally, so
+  a permitted receive is behaviourally unchanged.
+- **`.reply`** — resolving `reply.caller` is unavoidable (the flow gate needs the caller identity), so a
+  denied replier→caller flow now **collapses to `.replyCapInvalid`** — the same error the unlinked /
+  consumed arms return — instead of leaking via `.flowDenied` that the Reply is linked.
+- **`.replyRecv`** — the receive-leg flow is checked outermost (denied → `.flowDenied`, no reply probe);
+  a denied reply-leg flow (after a successful resolve) collapses to `.replyCapInvalid`.
+- **Theorems**: the two `checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed` equivalence
+  theorems are re-proven (the `hFlow*` hypotheses now also reduce the explicit flow `if`s), pinning the
+  *permitted* path unchanged. Three new theorems pin the *denied* path: `checkedDispatch_reply_flow_
+  denied_collapses` (denied `.reply` → `.replyCapInvalid`, indistinguishable from unlinked),
+  `checkedDispatch_receive_flow_denied` and `checkedDispatch_replyRecv_recv_flow_denied` (denied flow →
+  `.flowDenied` for *every* state and decode, so the reply probe provably never runs).
+
+Trace byte-identical (233/233, checked arms are not trace-exercised); `SeLe4n.Kernel.API` builds clean;
+information-flow suite green. Lean Tier 0-2 green. Refs:
+docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, Phase G information-flow).
+
 ## v0.31.134 — Reply objects (seL4-MCS): the server-first reply stash is invariant-injective (PR #822 Codex review)
 
 **Finding — `pendingReceiveReplyWellFormed` (17th `ipcInvariantFull` conjunct) admitted two blocked

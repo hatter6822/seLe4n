@@ -1457,18 +1457,29 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       -- WS-SM SM6.D (faithful seL4-MCS receive linkage, flow-checked): mirrors the
       -- unchecked `.receive` arm — resolve the server-supplied reply cap at
       -- `RecvArgs.replyCPtr` and, on a `Call` rendezvous, link the woken caller to
-      -- the server's reply object.  The endpoint→receiver flow gate stays in
-      -- `endpointReceiveDualChecked`; the reply linkage adds no cross-domain flow
-      -- (the server already observes the sender it received from).
+      -- the server's reply object.
       fun st =>
-        -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
-        -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
-        match resolveRecvReplyId gate decoded st with
-        | .error e => .error e
-        | .ok replyIdOpt =>
-          match endpointReceiveDualChecked ctx epId tid st with
-          | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
+        -- WS-SM SM6.D (PR #822 review, IF-ordering): gate the endpoint→receiver flow
+        -- *before* probing the reply cap.  `resolveRecvReplyId` validates the reply
+        -- cap and scans `replyIsStashed` across all TCBs, so running it ahead of the
+        -- flow gate let a receiver with a copied reply cap distinguish "some blocked
+        -- server has this Reply stashed" (`.replyCapInvalid`) from "no stash"
+        -- (`.flowDenied`) even when `endpoint→receiver` is denied — a covert channel
+        -- on reply state the low projection otherwise strips.  This is the exact
+        -- predicate `endpointReceiveDualChecked` applies internally, so a *permitted*
+        -- receive is behaviourally unchanged; a denied receive now returns
+        -- `.flowDenied` without ever probing reply state.
+        if !securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+          .error .flowDenied
+        else
+          -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
+          -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
+          match resolveRecvReplyId gate decoded st with
           | .error e => .error e
+          | .ok replyIdOpt =>
+            match endpointReceiveDualChecked ctx epId tid st with
+            | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
@@ -1519,14 +1530,24 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           match reply.caller with
           | none => .error .replyCapInvalid
           | some callerTid =>
-            let executingCore := determineExecutingCore st tid
-            match endpointReplyCrossCoreDispatchChecked ctx tid callerTid
-                { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) =>
-              match SystemState.consumeCallerReply callerTid rid st' with
-              | .ok ((), st'') => .ok ((), st'')
-              | .error e => .error e
-            | (_, .error e) => .error e
+            -- WS-SM SM6.D (PR #822 review, IF-ordering): a denied replier→caller flow
+            -- must be **indistinguishable** from an unlinked/consumed reply.  Probing
+            -- `reply.caller` (above) is unavoidable — the flow gate needs the caller
+            -- identity — so we collapse a denied flow to the *same* `.replyCapInvalid`
+            -- the `none` arms return, rather than letting `.flowDenied` leak that the
+            -- Reply *is* linked (to a caller the holder may not flow to).  When the
+            -- flow is permitted the body is exactly the prior checked dispatch +
+            -- consume, so `checkedDispatch_reply_eq_unchecked_when_allowed` holds.
+            if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) then
+              let executingCore := determineExecutingCore st tid
+              match endpointReplyCrossCoreDispatchChecked ctx tid callerTid
+                  { registers := body, caps := #[], badge := cap.badge } executingCore st with
+              | (st', .ok _) =>
+                match SystemState.consumeCallerReply callerTid rid st' with
+                | .ok ((), st'') => .ok ((), st'')
+                | .error e => .error e
+              | (_, .error e) => .error e
+            else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -1620,28 +1641,35 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   | .replyRecv =>
     match cap.target with
     | .object epId =>
-      -- WS-SM SM6.D (faithful checked `.replyRecv`): resolve the reply cap, then
-      -- gate BOTH legs — the reply leg (`securityFlowsTo receiver→prevCaller`) and
-      -- the receive leg (`securityFlowsTo endpoint→receiver`) — before running the
-      -- *same* `replyRecvBody` as the unchecked arm.  The single outer gate keeps
-      -- the checked arm a pure flow-precondition wrapper over the unchecked body,
-      -- so `checkedDispatch_replyRecv_eq_unchecked_when_allowed` stays provable.
+      -- WS-SM SM6.D (faithful checked `.replyRecv`): gate BOTH legs — the receive leg
+      -- (`securityFlowsTo endpoint→receiver`) and the reply leg (`securityFlowsTo
+      -- receiver→prevCaller`) — around the *same* `replyRecvBody` as the unchecked
+      -- arm, so `checkedDispatch_replyRecv_eq_unchecked_when_allowed` stays provable.
+      -- WS-SM SM6.D (PR #822 review, IF-ordering): the receive-leg flow is independent
+      -- of the reply cap, so it is checked **first** — a denied receive returns
+      -- `.flowDenied` without `resolveReplyRecvReply` ever probing reply state.  The
+      -- reply-leg gate needs `prevCaller` (so the resolve is unavoidable there), but a
+      -- denied reply-leg flow collapses to the *same* `.replyCapInvalid` a resolve
+      -- failure returns, rather than leaking via `.flowDenied` that the reply *is*
+      -- linked to an outstanding caller the receiver may not flow to.
       fun st =>
-        match resolveReplyRecvReply gate decoded st with
-        | .error e => .error e
-        | .ok (rid, prevCaller, replyBadge) =>
-            -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
-            -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
-            -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
-            -- endpoint receive cap's.
-            let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-            let body := full.extract 1 full.size
-            let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
-            let executingCore := determineExecutingCore st tid
-            if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller)
-                && securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
-              replyRecvBody epId tid rid prevCaller msg executingCore st
-            else .error .flowDenied
+        if !securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+          .error .flowDenied
+        else
+          match resolveReplyRecvReply gate decoded st with
+          | .error e => .error e
+          | .ok (rid, prevCaller, replyBadge) =>
+              -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
+              -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
+              -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
+              -- endpoint receive cap's.
+              let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+              let body := full.extract 1 full.size
+              let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
+              let executingCore := determineExecutingCore st tid
+              if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
+                replyRecvBody epId tid rid prevCaller msg executingCore st
+              else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
@@ -1924,17 +1952,17 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
   -- resolution hypotheses so both arms reduce to the same consume-wrapped
   -- cross-core dispatch, then collapse checked → unchecked under the flow guard.
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
-    hSyscall, hCap, hReply, hCaller]
+    hSyscall, hCap, hReply, hCaller, hFlow, if_true]
   rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid callerTid _ _ st hFlow]
 
 /-- AJ1-D (M-01) / WS-SM SM6.D: When the information-flow policy allows both legs
 (reply + receive), checked and unchecked `.replyRecv` dispatch produce identical
 results.  Faithful seL4-MCS: the reply target is the reply object's recorded
 `caller` resolved from the server-supplied reply cap
-(`resolveReplyRecvReply … = .ok (rid, prevCaller)`); the checked arm is a single
-outer flow gate — (1) receiver → prevCaller (reply leg), (2) endpoint → receiver
-(receive leg) — over the *same* `replyRecvBody` the unchecked arm runs, so when
-both flows hold the two arms coincide definitionally. -/
+(`resolveReplyRecvReply … = .ok (rid, prevCaller)`); the checked arm gates both
+legs — (1) endpoint → receiver (receive leg, checked first, ahead of the reply
+probe), (2) receiver → prevCaller (reply leg) — around the *same* `replyRecvBody`
+the unchecked arm runs, so when both flows hold the two arms coincide. -/
 theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
@@ -1950,10 +1978,67 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     dispatchWithCap decoded tid gate cap st := by
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
     hSyscall, hCap, hResolve]
-  -- The checked arm gates `replyRecvBody` behind `flowReply && flowRecv`; with both
-  -- `true` the `if` selects the same `replyRecvBody` the unchecked arm runs.
-  rw [hFlowReply, hFlowRecv]
-  simp
+  -- The checked arm now gates in two nested steps: the receive leg (`!flowRecv →
+  -- .flowDenied`) outermost, then the reply leg (`flowReply → replyRecvBody`,
+  -- else `.replyCapInvalid`).  With both flows `true` the outer `!true` is `false`
+  -- (else branch) and the inner `if true` selects the same `replyRecvBody` the
+  -- unchecked arm runs.
+  simp [hFlowRecv, hFlowReply]
+
+/-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.reply` whose replier→caller
+flow is **denied** returns `.replyCapInvalid` — the *same* error the `none`/unlinked
+arms return — so a reply-cap holder cannot distinguish a Reply linked to a caller it
+may not flow to (which would leak `Reply.caller`, erased from the low projection) from
+an unlinked/consumed Reply.  Together with `checkedDispatch_reply_eq_unchecked_when_allowed`
+this pins the full arm: identical to the unchecked path when the flow is permitted,
+collapsed to `.replyCapInvalid` when it is not. -/
+theorem checkedDispatch_reply_flow_denied_collapses
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .reply)
+    (rid : SeLe4n.ReplyId)
+    (hCap : cap.target = .replyCap rid)
+    (st : SystemState)
+    (reply : SeLe4n.Kernel.Reply) (callerTid : SeLe4n.ThreadId)
+    (hReply : st.getReply? rid = some reply)
+    (hCaller : reply.caller = some callerTid)
+    (hDenied : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .replyCapInvalid := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hReply, hCaller, hDenied]
+
+/-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.receive` whose
+endpoint→receiver flow is **denied** returns `.flowDenied` *for every state and decode*
+— the result is independent of `st` and the reply CPtr, so `resolveRecvReplyId`'s
+reply-cap validation + `replyIsStashed` scan never run.  A denied receiver therefore
+cannot probe "is some blocked server holding this Reply stashed" through the error
+code: the flow gate fires strictly before any reply-state read. -/
+theorem checkedDispatch_receive_flow_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .receive)
+    (epId : SeLe4n.ObjId)
+    (hCap : cap.target = .object epId)
+    (st : SystemState)
+    (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .flowDenied := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hDenied]
+
+/-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.replyRecv` whose receive-leg
+(endpoint→receiver) flow is **denied** returns `.flowDenied` *for every state and decode*
+— `resolveReplyRecvReply` never runs, so the denied receiver cannot probe whether the
+reply cap is linked.  The receive-leg gate is checked outermost, ahead of the reply
+probe; the reply-leg denial (after a successful resolve) collapses to `.replyCapInvalid`
+in the arm body. -/
+theorem checkedDispatch_replyRecv_recv_flow_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .replyRecv)
+    (epId : SeLe4n.ObjId)
+    (hCap : cap.target = .object epId)
+    (st : SystemState)
+    (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .flowDenied := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hDenied]
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
