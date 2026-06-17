@@ -1,3 +1,29 @@
+## v0.31.132 — Reply objects (seL4-MCS): frozen reply authority is the presented reply capability (PR #822 Codex review)
+
+**Finding — `frozenEndpointReply` derived the reply object from the *target*, not the *presented cap*.**
+The frozen-state mirror of the `.reply` path resolved the Reply object via `targetTcb.replyObject` (the
+caller's forward link) and only checked the back-link `reply.caller = some targetId`. That let *any*
+replier deliver and consume a blocked caller's reply without holding the reply capability — the frozen
+analogue of the confused-deputy gap the live `.reply` arm closed by resolving `reply.caller` from the
+*capability* (`CapTarget.replyCap rid`), never from the target. The frozen path must model the same
+authority: possession of the reply cap is what authorizes the reply.
+
+- `frozenEndpointReply` now takes an explicit `(replyId : SeLe4n.ReplyId)` — the **presented** reply
+  capability. It fails closed *before any store* unless the presented `replyId` is the caller's reciprocal
+  forward link (`targetTcb.replyObject = some replyId`), the Reply object resolves, and its back-link is
+  `caller = some targetId`. A replier that presents a non-matching `replyId` is rejected `.replyCapInvalid`,
+  even when the caller is `blockedOnReply` with a valid (different) linked Reply object. Delegated reply
+  caps remain legitimate (the `replier == expected` ThreadId gate stays dropped — authority flows from the
+  cap, not the issuer's identity).
+- `tests/FrozenOpsSuite.lean`: the three existing reply tests (FO-004 no-object reject, FO-004b
+  consume-link, FO-005 delegated-replier success) pass the presented `replyId`; new test **FO-005b**
+  (`fo005b_replyWrongPresentedCap`) asserts a replier presenting a `replyId` that is *not* the caller's
+  forward link is rejected `.replyCapInvalid`.
+
+Frozen-ops suite green (all reply assertions pass); `frozen_ops_suite` + `SeLe4n.Kernel.FrozenOps`
+(Operations/Invariant/Commutativity) build clean. Trace byte-identical (frozen ops are not
+trace-exercised). Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, Phase B/C lifecycle).
+
 ## v0.31.131 — Reply objects (seL4-MCS): server-first Call reply lock threaded through the live + WCRT footprints (PR #822 Codex review)
 
 **P2 — the server-first `Call` reply write is now inside the acquired 2PL footprint.** On a server-first

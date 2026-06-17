@@ -487,39 +487,44 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
 Mirrors `endpointReply`. -/
 def frozenEndpointReply (_replierId : SeLe4n.ThreadId)
-    (targetId : SeLe4n.ThreadId) (msg : IpcMessage) : FrozenKernel Unit :=
+    (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
+    FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st targetId with
     | some targetTcb =>
         match targetTcb.ipcState with
         | .blockedOnReply _epId _replyTarget =>
-            -- PR #822 review (Codex), frozen mirror of E.2: authority is the Reply
-            -- object's back-link (`r.caller = some targetId`), NOT the recorded
-            -- `replyTarget` — a delegated (copied/minted) reply cap held by a
-            -- *different* replier is legitimate, exactly like the live `.reply` path
-            -- (which dropped the `replier == expected` gate, 6J-lYm).  `_replierId` is
-            -- retained for documentation.  Deliver + consume the single-use Reply link
-            -- (clear the caller's `replyObject` forward link and the Reply object's
-            -- `caller` back-link, mirroring `consumeCallerReply`).  Require a resolved
-            -- Reply object whose `caller = some targetId` BEFORE any store (fail-closed):
-            -- a missing forward link, or a Reply whose `caller` is `none`/another thread,
-            -- must NOT authorize the reply.
+            -- PR #822 review (Codex), frozen mirror of E.2: authority is the **presented
+            -- reply capability** `replyId` — the replier must hold a reply cap naming
+            -- `targetId` as its caller, exactly like the live `.reply` arm resolves
+            -- `reply.caller = target` from the *cap* (it does NOT derive the reply from the
+            -- target, so a thread that does not hold the cap cannot deliver and consume it).
+            -- `_replierId` is retained for documentation (a delegated/copied reply cap held
+            -- by a *different* replier is legitimate — the `replier == expected` gate was
+            -- dropped, 6J-lYm — so authority flows from the cap, not the issuer's identity).
+            -- Fail-closed BEFORE any store on: a `blockedOnReply` caller with no forward
+            -- link; a presented `replyId` that is not the caller's reciprocal forward link
+            -- (`replyObject ≠ some replyId`); a missing Reply object; or a Reply whose
+            -- `caller` is not `some targetId`.  Deliver + consume the single-use Reply link
+            -- (clear both reciprocal sides, mirroring `consumeCallerReply`).
             let targetTcb' := { targetTcb with
               ipcState := ThreadIpcState.ready
               pendingMessage := some msg
               replyObject := none }
             match targetTcb.replyObject with
             | none => .error .replyCapInvalid
-            | some rid =>
-                match st.objects.get? rid.toObjId with
-                | some (.reply r) =>
-                    if r.caller = some targetId then
-                      match frozenStoreTcb targetId targetTcb' st with
-                      | .error e => .error e
-                      | .ok ((), st') =>
-                          frozenStoreObject rid.toObjId (.reply { r with caller := none }) st'
-                    else .error .replyCapInvalid
-                | _ => .error .replyCapInvalid
+            | some fwdRid =>
+                if fwdRid == replyId then
+                  match st.objects.get? replyId.toObjId with
+                  | some (.reply r) =>
+                      if r.caller = some targetId then
+                        match frozenStoreTcb targetId targetTcb' st with
+                        | .error e => .error e
+                        | .ok ((), st') =>
+                            frozenStoreObject replyId.toObjId (.reply { r with caller := none }) st'
+                      else .error .replyCapInvalid
+                  | _ => .error .replyCapInvalid
+                else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound
 

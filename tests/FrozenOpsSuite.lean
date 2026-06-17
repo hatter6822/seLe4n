@@ -115,7 +115,7 @@ private def fo004_endpointReply : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ (⟨505⟩ : SeLe4n.ReplyId) msg fst with
   | .ok _ => throw <| IO.userError "reply to a caller with no Reply object must be rejected"
   | .error e => expect "no-reply-object frozen reply → replyCapInvalid" (e == .replyCapInvalid)
 
@@ -130,7 +130,7 @@ private def fo004b_endpointReplyConsumesLink : IO Unit := do
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb =>
@@ -154,13 +154,30 @@ private def fo005_replyDelegatedReplier : IO Unit := do
   let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
-  -- replier ⟨99⟩ ≠ the recorded server ⟨3⟩, but holds the linked Reply object.
-  match frozenEndpointReply ⟨99⟩ ⟨2⟩ msg fst with
+  -- replier ⟨99⟩ ≠ the recorded server ⟨3⟩, but presents the linked Reply cap (rid).
+  match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb => expect "delegated replier delivers (target ready)" (tcb.ipcState == .ready)
       | none => throw <| IO.userError "target TCB missing"
-  | .error _ => throw <| IO.userError "delegated replier with a valid linked Reply object should succeed"
+  | .error _ => throw <| IO.userError "delegated replier with a valid linked Reply cap should succeed"
+
+/-- FO-005b (PR #822 review 489): authority is the **presented** reply cap.  A replier
+that presents a `replyId` which is NOT the caller's reciprocal forward link (it does
+not hold the caller's reply cap) is rejected `.replyCapInvalid`, even though the caller
+is `blockedOnReply` with a valid (different) linked Reply object — modelling that a
+thread without the reply cap cannot deliver/consume the reply. -/
+private def fo005b_replyWrongPresentedCap : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB :=
+    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- replier presents ⟨999⟩, NOT the caller's forward link rid (⟨505⟩) → rejected.
+  match frozenEndpointReply ⟨99⟩ ⟨2⟩ (⟨999⟩ : SeLe4n.ReplyId) msg fst with
+  | .ok _ => throw <| IO.userError "a replier presenting a non-matching reply cap must be rejected"
+  | .error e => expect "wrong presented reply cap → replyCapInvalid" (e == .replyCapInvalid)
 
 -- ============================================================================
 -- TPH-006: Frozen Scheduler Tick
@@ -477,6 +494,7 @@ def main : IO Unit := do
   fo004_endpointReply
   fo004b_endpointReplyConsumesLink
   fo005_replyDelegatedReplier
+  fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"
   fo006_timerTickIdle
   IO.println "--- TPH-007: Frozen CSpace Lookup ---"
