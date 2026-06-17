@@ -448,8 +448,8 @@ def lockSet_notificationSignal (callerTid : ThreadId)
   -- optionals so the canonical `.notificationSignal` footprint upper-bounds the
   -- bound case.  `none` ⇒ the set is definitionally the non-bound footprint, so
   -- every existing call site is unchanged.  (`permittedKinds .notificationSignal`
-  -- already lists `.endpoint`/`.tcb`.)  The state-resolved instance is
-  -- `lockSet_notificationSignalBoundOnCore`.
+  -- already lists `.endpoint`/`.tcb`.)  The state-resolved instance that sets these
+  -- optionals from `boundDeliveryTarget?` is `lockSet_notificationSignalOnCore`.
   let withWaiter := lockSetExtendOpt
     (lockSetOfList
       [(tcbLock callerTid, .read),

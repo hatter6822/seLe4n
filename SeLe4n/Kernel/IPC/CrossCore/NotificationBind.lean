@@ -347,111 +347,45 @@ theorem unbindNotification_preserves_ipcInvariant
               (hInv1 notificationId ntfn hObjRaw)
 
 -- ============================================================================
--- §6  Bound-delivery lock-set footprint (codex review #5)
+-- §6  Bound-delivery lock-set coverage (PR #822 review)
+--
+-- The canonical state-resolved footprint `lockSet_notificationSignalOnCore`
+-- (`CrossCore/NotificationSignal`) is now **bound-aware**: on the bound-delivery
+-- path (`boundDeliveryTarget? = some (boundTcb, ep)`) it sets the canonical
+-- footprint's `boundEndpoint` / `boundTcb` optionals, so the live bound signal's
+-- endpoint-dequeue + bound-TCB writes fall inside the acquired 2PL set.  The separate
+-- `lockSet_notificationSignalBoundOnCore` that previously carried this — a
+-- proven-but-unwired footprint the live path never selected — has been removed as
+-- redundant; these state-resolved coverage witnesses delegate to the parametric
+-- `lockSet_notificationSignal_bound_{tcb,endpoint}_write_mem`.
 -- ============================================================================
 
-/-- WS-SM SM6.B: the lock-set footprint a cross-core **bound** notification signal
-acquires.  On the bound-delivery path (`boundDeliveryTarget? = some (t, ep)`) the
-signal additionally dequeues the bound TCB `t` from its endpoint `ep`
-(`endpointQueueRemoveDual`) and writes `t` (badge + `.ready`), so the footprint
-extends the base signal lock-set — signaller TCB (read), CNode (read), notification
-(write); there is no notification waiter on this path — with the **endpoint write**
-and the **bound-TCB write** locks.  Off the bound path it is exactly
-`lockSet_notificationSignalOnCore`.  This is the footprint the runtime `withLockSet`
-bracket must acquire so the bound-delivery endpoint/TCB writes fall inside the 2PL
-footprint (codex review #5); the prior `lockSet_notificationSignalOnCore` declared
-only signaller/CNode/notification, leaving those writes unprotected. -/
-def lockSet_notificationSignalBoundOnCore (st : SystemState) (notificationId : SeLe4n.ObjId)
-    (signaller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) : LockSet :=
-  match boundDeliveryTarget? st notificationId with
-  | some (boundTcb, epId) =>
-      lockSetOfList
-        [(tcbLock signaller, .read),
-         (cnodeLock cnodeRootObjId, .read),
-         (notificationLock notificationId, .write),
-         (endpointLock epId, .write),
-         (tcbLock boundTcb, .write)]
-  | none =>
-      lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId
-
-/-- WS-SM SM6.B: the bound-signal lock-set is **hierarchically correct** — every
-declared lock has a kind in `permittedKinds .notificationSignal` (which SM6.B
-extends with `.endpoint` for the bound-delivery dequeue).  Off the bound path this
-is `lockSet_notificationSignalOnCore_correct`; on it, each of the five footprint
-locks (signaller / bound TCB, CNode, notification, endpoint) has a permitted kind. -/
-theorem lockSet_notificationSignalBoundOnCore_correct
-    (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
-    (cnodeRootObjId : SeLe4n.ObjId) :
-    ∀ p ∈ (lockSet_notificationSignalBoundOnCore st notificationId signaller cnodeRootObjId).pairs,
-      p.fst.kind ∈ permittedKinds .notificationSignal := by
-  unfold lockSet_notificationSignalBoundOnCore
-  cases hT : boundDeliveryTarget? st notificationId with
-  | none =>
-      exact lockSet_notificationSignalOnCore_correct st notificationId signaller cnodeRootObjId
-  | some pair =>
-      obtain ⟨boundTcb, epId⟩ := pair
-      refine lockSet_consistent_of_extended_base _ (permittedKinds .notificationSignal) ?_
-      intro p hMem
-      rcases List.mem_cons.mp hMem with h | hMem
-      · rw [h]; simp; decide
-      rcases List.mem_cons.mp hMem with h | hMem
-      · rw [h]; simp; decide
-      rcases List.mem_cons.mp hMem with h | hMem
-      · rw [h]; simp; decide
-      rcases List.mem_cons.mp hMem with h | hMem
-      · rw [h]; simp; decide
-      rcases List.mem_cons.mp hMem with h | hMem
-      · rw [h]; simp; decide
-      exact absurd hMem (by intro h; cases h)
-
--- ============================================================================
--- §7  Bound-delivery lock-set coverage (codex review #5 — the writes ARE covered)
--- ============================================================================
-
-/-- A write-mode `insertOrMerge` preserves any pair already present whose key differs
-from the inserted key — the insert only rewrites its own key.  The forward companion
-of `LockSet.insertOrMerge_mem`, letting an earlier footprint member survive a later
-distinct-key insert. -/
-theorem insertOrMerge_preserves_mem_of_ne (S : LockSet) (l : LockId) (m : AccessMode)
-    (p : LockId × AccessMode) (hMem : p ∈ S.pairs) (hNe : p.fst ≠ l) :
-    p ∈ (S.insertOrMerge l m).pairs := by
-  unfold LockSet.insertOrMerge
-  split
-  · exact List.mem_map.mpr ⟨p, hMem, by rw [if_neg hNe]⟩
-  · exact List.mem_cons.mpr (Or.inr hMem)
-
-/-- WS-SM SM6.B (review #5, coverage): on the bound-delivery path the **bound-TCB
-write lock** is a declared member of the footprint — the lock under which the badge +
-`.ready` write to the dequeued bound TCB happens.  Proves the bound-TCB write the
-prior `lockSet_notificationSignalOnCore` left uncovered is now inside the 2PL set. -/
-theorem lockSet_notificationSignalBoundOnCore_boundTcb_write_mem
+/-- WS-SM SM6.B / PR #822 review (coverage): on the bound-delivery path the **bound-TCB
+write lock** is a declared member of the canonical signal footprint — the lock under
+which the badge + `.ready` write to the dequeued bound TCB happens. -/
+theorem lockSet_notificationSignalOnCore_bound_tcb_write_mem
     (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId)) :
     (tcbLock t, AccessMode.write) ∈
-      (lockSet_notificationSignalBoundOnCore st notificationId signaller cnodeRootObjId).pairs := by
-  unfold lockSet_notificationSignalBoundOnCore
+      (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).pairs := by
+  unfold lockSet_notificationSignalOnCore
   rw [hTarget]
-  simp only [lockSetOfList, List.foldl_cons, List.foldl_nil]
-  exact self_write_mem_insertOrMerge _ (tcbLock t)
+  exact lockSet_notificationSignal_bound_tcb_write_mem signaller cnodeRootObjId notificationId
+    (notificationSignalWaiter? st notificationId) (some epId) t
 
-/-- WS-SM SM6.B (review #5, coverage): on the bound-delivery path the **endpoint write
-lock** is a declared member of the footprint — the lock under which the bound TCB is
-dequeued from its endpoint (`endpointQueueRemoveDual`).  This is exactly the write the
-prior `lockSet_notificationSignalOnCore` (signaller / CNode / notification only) left
-outside the footprint; it is now covered (kind permitted by
-`lockSet_notificationSignalBoundOnCore_correct`). -/
-theorem lockSet_notificationSignalBoundOnCore_endpoint_write_mem
+/-- WS-SM SM6.B / PR #822 review (coverage): on the bound-delivery path the **endpoint
+write lock** is a declared member of the canonical signal footprint — the lock under
+which the bound TCB is dequeued from its endpoint (`endpointQueueRemoveDual`). -/
+theorem lockSet_notificationSignalOnCore_bound_endpoint_write_mem
     (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (t : SeLe4n.ThreadId) (epId : SeLe4n.ObjId)
     (hTarget : boundDeliveryTarget? st notificationId = some (t, epId)) :
     (endpointLock epId, AccessMode.write) ∈
-      (lockSet_notificationSignalBoundOnCore st notificationId signaller cnodeRootObjId).pairs := by
-  unfold lockSet_notificationSignalBoundOnCore
+      (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).pairs := by
+  unfold lockSet_notificationSignalOnCore
   rw [hTarget]
-  simp only [lockSetOfList, List.foldl_cons, List.foldl_nil]
-  apply insertOrMerge_preserves_mem_of_ne
-  · exact self_write_mem_insertOrMerge _ (endpointLock epId)
-  · simp [endpointLock, tcbLock]
+  exact lockSet_notificationSignal_bound_endpoint_write_mem signaller cnodeRootObjId notificationId
+    (notificationSignalWaiter? st notificationId) epId t
 
 end SeLe4n.Kernel

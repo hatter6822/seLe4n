@@ -1,3 +1,31 @@
+## v0.31.129 — Bound notifications: canonical signal footprint is bound-aware + redundant bound footprint removed (PR #822 Codex review)
+
+**P1 — the live `.notificationSignal` 2PL footprint now covers the bound-delivery writes.** The live
+dispatch routes through `notificationSignalBoundOnCore`, which on the bound-delivery path
+(`boundDeliveryTarget? = some (boundTcb, ep)` — a bound TCB `.blockedOnReceive` while the notification's
+waiter list is empty) dequeues that TCB from its endpoint (`endpointQueueRemoveDual` — an endpoint write)
+and writes the bound TCB (badge + `.ready`). But the canonical footprint it acquired,
+`lockSet_notificationSignalOnCore`, resolved only the waiter — leaving `endpointLock ep` and
+`tcbLock boundTcb` outside the acquired lock set, so under SMP a bound signal could race concurrent
+endpoint receive/cancel paths on those objects.
+
+`lockSet_notificationSignalOnCore` is now **bound-aware**: it resolves `boundDeliveryTarget?` and, on the
+bound path, sets the canonical footprint's `boundEndpoint` / `boundTcb` optionals (added to
+`lockSet_notificationSignal` in the SM6.B/A.1 work) — so the endpoint-dequeue + bound-TCB writes fall
+inside the live 2PL footprint. `boundDeliveryTarget?` returns `some` exactly when bound delivery occurs, so
+ordinary signals are unchanged (the optionals default to `none`). `_correct` delegates to the parametric
+`lockSet_consistent_notificationSignal`; the state-resolved coverage witnesses
+(`lockSet_notificationSignalOnCore_bound_{tcb,endpoint}_write_mem`) delegate to the parametric
+`lockSet_notificationSignal_bound_*_write_mem`.
+
+**Redundancy removed.** `lockSet_notificationSignalBoundOnCore` was a separate bound footprint that was
+proven correct + coverage but **never wired into the live path** (the exact gap the finding identified) —
+now fully subsumed by the bound-aware canonical footprint, so its def, its `_correct`, and a duplicate
+`insertOrMerge_preserves_mem_of_ne` helper are deleted; the suite `#check`s and a documentation reference
+re-point to the canonical names.
+
+Full prod + staged build green (239 jobs); cross-core notification suite green; trace byte-identical.
+
 ## v0.31.128 — Reply objects (seL4-MCS): receive-with-reply ABI — decode-roundtrip coverage + ReplyRecv reply-cap error propagation (PR #822 Codex review)
 
 Two receive-with-reply ABI correctness fixes from the Codex review:

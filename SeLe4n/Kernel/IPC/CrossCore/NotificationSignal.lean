@@ -15,6 +15,9 @@
 -- implement-the-improvement rule; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §5.)
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+-- PR #822 review: `boundDeliveryTarget?` (the bound-delivery resolver) so the
+-- canonical signal footprint covers the bound-delivery endpoint/TCB writes.
+import SeLe4n.Kernel.IPC.Operations.NotificationBind
 
 /-!
 # WS-SM SM6.B — Notification across cores
@@ -189,14 +192,32 @@ def notificationSignalWaiter? (st : SystemState) (notificationId : SeLe4n.ObjId)
   | none => none
 
 /-- WS-SM SM6.B.1: the concrete lock-set a cross-core `notificationSignalOnCore`
-on state `st` acquires — `lockSet_notificationSignal` with the woken waiter
-**pre-resolved from `st`** via `notificationSignalWaiter?` (the notification's
-waiter-list head).  This is the footprint the runtime `withLockSet` bracket
-acquires before invoking `notificationSignalOnCore`. -/
+on state `st` acquires.  **Bound-aware** (PR #822 review): the live
+`.notificationSignal` dispatch routes through `notificationSignalBoundOnCore`,
+which on the bound-delivery path (`boundDeliveryTarget? st = some (boundTcb, epId)`
+— a bound TCB `.blockedOnReceive` while the notification's waiter list is empty)
+**dequeues that TCB from its endpoint** (`endpointQueueRemoveDual`) and **writes it**
+(badge + `.ready`).  So the canonical footprint extends the base waiter footprint —
+signaller (read), CNode (read), notification (write) — with the **endpoint write**
+and **bound-TCB write** locks on that path; otherwise the live bound signal would
+mutate the endpoint receive queue + receiver TCB outside the acquired 2PL set,
+racing concurrent endpoint receive/cancel paths.  Off the bound path it is exactly
+the base footprint (`lockSet_notificationSignal` with the waiter pre-resolved via
+`notificationSignalWaiter?`).  This is the footprint the runtime `withLockSet`
+bracket acquires before invoking the signal. -/
 def lockSet_notificationSignalOnCore (st : SystemState) (notificationId : SeLe4n.ObjId)
     (signaller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) : LockSet :=
-  lockSet_notificationSignal signaller cnodeRootObjId notificationId
-    (notificationSignalWaiter? st notificationId)
+  match boundDeliveryTarget? st notificationId with
+  | some (boundTcb, epId) =>
+      -- bound-delivery path: fold the endpoint-dequeue + bound-TCB writes in via the
+      -- canonical footprint's `boundEndpoint` / `boundTcb` optionals (no waiter — the
+      -- bound path requires an empty waiter list, so `notificationSignalWaiter?` is
+      -- `none` here).
+      lockSet_notificationSignal signaller cnodeRootObjId notificationId
+        (notificationSignalWaiter? st notificationId) (some epId) (some boundTcb)
+  | none =>
+      lockSet_notificationSignal signaller cnodeRootObjId notificationId
+        (notificationSignalWaiter? st notificationId)
 
 /-- WS-SM SM6.B.1: the concrete lock-set a cross-core `notificationWaitOnCore`
 on state `st` acquires — `lockSet_notificationWait` (caller TCB write, CNode
@@ -358,9 +379,20 @@ theorem lockSet_notificationSignalOnCore_correct
     (st : SystemState) (notificationId : SeLe4n.ObjId) (signaller : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) :
     ∀ p ∈ (lockSet_notificationSignalOnCore st notificationId signaller cnodeRootObjId).pairs,
-      p.fst.kind ∈ permittedKinds .notificationSignal :=
-  lockSet_consistent_notificationSignal signaller cnodeRootObjId notificationId
-    (notificationSignalWaiter? st notificationId)
+      p.fst.kind ∈ permittedKinds .notificationSignal := by
+  unfold lockSet_notificationSignalOnCore
+  cases hT : boundDeliveryTarget? st notificationId with
+  | none =>
+      exact lockSet_consistent_notificationSignal signaller cnodeRootObjId notificationId
+        (notificationSignalWaiter? st notificationId)
+  | some pair =>
+      -- PR #822 review: the bound-delivery footprint is the canonical signal footprint
+      -- with the `boundEndpoint` / `boundTcb` optionals set; the parametric consistency
+      -- lemma already proves all its locks have a permitted kind (SM6.B extended
+      -- `permittedKinds .notificationSignal` with `.endpoint` for the dequeue).
+      obtain ⟨boundTcb, epId⟩ := pair
+      exact lockSet_consistent_notificationSignal signaller cnodeRootObjId notificationId
+        (notificationSignalWaiter? st notificationId) (some epId) (some boundTcb)
 
 /-- WS-SM SM6.B.1: the `notificationWait` lock-set is hierarchically correct —
 every declared lock has a kind in `permittedKinds .notificationWait`, and its keys
@@ -451,8 +483,8 @@ lock** — under which `notificationSignalBoundOnCore` writes the dequeued bound
 (`.ready` + badge) — is a declared member of the canonical `notificationSignal`
 footprint once the bound TCB is resolved (`boundTcb := some bt`).  This is the
 endpoint-receive-queue/receiver-TCB write that the prior footprint left outside the
-2PL set; it is now covered (the live state-resolved form is
-`lockSet_notificationSignalBoundOnCore`). -/
+2PL set; it is now covered (the live state-resolved form is the bound-aware
+`lockSet_notificationSignalOnCore`). -/
 theorem lockSet_notificationSignal_bound_tcb_write_mem
     (signaller : SeLe4n.ThreadId) (cnRoot notificationId : SeLe4n.ObjId)
     (waiter? : Option SeLe4n.ThreadId) (boundEp? : Option SeLe4n.ObjId)
