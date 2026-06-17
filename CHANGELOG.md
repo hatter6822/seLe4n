@@ -1,3 +1,25 @@
+## v0.31.131 — Reply objects (seL4-MCS): server-first Call reply lock threaded through the live + WCRT footprints (PR #822 Codex review)
+
+**P2 — the server-first `Call` reply write is now inside the acquired 2PL footprint.** On a server-first
+`Call` rendezvous the popped receiver is a server already `.blockedOnReceive` having pre-supplied a reply
+object (`pendingReceiveReply`); the rendezvous links the woken caller to it (`linkServerFirstCaller` writes
+`reply.caller`), but the footprint the runtime acquired (`lockSet_endpointCallOnCore`) resolved only the
+receiver + donated SC, defaulting the new `replyId` optional to `none` — so the per-object reply write-lock
+was outside the acquired/formally-bounded lock set.
+
+- New resolver `endpointCallServerFirstReply? st endpointId` (the receive-queue head's
+  `pendingReceiveReply`); `lockSet_endpointCallOnCore` now passes it as `lockSet_endpointCall`'s `replyId`,
+  so the reply write-lock is in the live footprint on a server-first Call (and absent on a plain receive,
+  where the optional resolves `none`). `lockSet_endpointCallOnCore_correct` delegates to the parametric
+  `lockSet_consistent_call` with the optional.
+- `KernelOperation.ofEndpointCall` + `lockSet_endpointCall_size_le` gain the `replyId` optional (the
+  three-extension size bound, as `replyRecv`), so the deadlock / WCRT static analysis no longer silently
+  models the no-Reply footprint.
+
+`SmpCrossCoreCallSuite` gains the resolver `#check` + a footprint-membership assertion (the resolved reply
+write lock is a declared member). Full prod + staged build green (239 jobs); cross-core call suite green;
+trace byte-identical.
+
 ## v0.31.130 — Rust HAL: de-flake the cross-thread UART-lock stress test (CI fix)
 
 The `sele4n-hal` test `sm1g3_cross_thread_kprintln_stress_no_lock_leak` intermittently failed CI with
