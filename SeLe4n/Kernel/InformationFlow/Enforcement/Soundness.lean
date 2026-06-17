@@ -316,13 +316,15 @@ theorem enforcementSoundness_registerServiceChecked
     WS-SM SM5.H.4 expanded from 33 to 34 entries with the CPU-affinity configuration
     capability-only operation.
     WS-SM SM6.B expanded from 34 to 36 entries with the notification-binding
-    capability-only operations (bindNotification / unbindNotification). -/
+    capability-only operations (bindNotification / unbindNotification).
+    WS-SM SM6.D / PR #822 Phase H expanded from 36 to 37 entries with the
+    reply-cap mint (mintReplyCapWithCdt). -/
 abbrev enforcementBoundaryExtended : List EnforcementClass := enforcementBoundary
 
 /-- V6-L/Z8-M/D2/D3/AC4-D (L-IF-3): Completeness assertion — `enforcementBoundaryExtended`
-    has exactly 36 entries, matching the canonical `enforcementBoundary`. -/
+    has exactly 37 entries, matching the canonical `enforcementBoundary`. -/
 theorem enforcementBoundaryExtended_count :
-    enforcementBoundaryExtended.length = 36 := by rfl
+    enforcementBoundaryExtended.length = 37 := by rfl
 
 /-- W2-G (M-3): Element-wise correspondence — `enforcementBoundaryExtended` and
     `enforcementBoundary` are definitionally equal. This closes the M-3 finding

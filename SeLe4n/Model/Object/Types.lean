@@ -1519,6 +1519,7 @@ inductive SyscallId where
   | tcbSetAffinity         -- WS-SM SM5.H.4: set thread CPU affinity (+ migration)
   | tcbBindNotification    -- WS-SM SM6.B: bind a notification to a TCB (seL4 NotificationBind)
   | tcbUnbindNotification  -- WS-SM SM6.B: unbind a TCB's bound notification
+  | mintReplyCap           -- WS-SM SM6.D / PR #822 Phase H: derive a `.replyCap` from an `.object` cap to a retyped Reply
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1554,9 +1555,10 @@ namespace SyscallId
   | .tcbSetAffinity        => 25
   | .tcbBindNotification   => 26
   | .tcbUnbindNotification => 27
+  | .mintReplyCap          => 28
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 28
+def count : Nat := 29
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1589,6 +1591,7 @@ def count : Nat := 28
   | 25 => some .tcbSetAffinity
   | 26 => some .tcbBindNotification
   | 27 => some .tcbUnbindNotification
+  | 28 => some .mintReplyCap
   | _  => none
 
 instance : ToString SyscallId where
@@ -1621,6 +1624,7 @@ instance : ToString SyscallId where
     | .tcbSetAffinity        => "tcbSetAffinity"
     | .tcbBindNotification   => "tcbBindNotification"
     | .tcbUnbindNotification => "tcbUnbindNotification"
+    | .mintReplyCap          => "mintReplyCap"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1635,7 +1639,8 @@ def all : List SyscallId :=
   , .schedContextConfigure, .schedContextBind, .schedContextUnbind
   , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
   , .tcbSetIPCBuffer, .tcbSetAffinity
-  , .tcbBindNotification, .tcbUnbindNotification ]
+  , .tcbBindNotification, .tcbUnbindNotification
+  , .mintReplyCap ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1666,9 +1671,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
-  | 26 | 27 =>
+  | 26 | 27 | 28 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 28 => intro s h; simp [ofNat?] at h
+  | n + 29 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

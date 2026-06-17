@@ -721,6 +721,9 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetAffinity        => .write
   | .tcbBindNotification   => .write
   | .tcbUnbindNotification => .write
+  -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
+  -- grant authority on that object cap (consistent with the cspaceMint/Copy/Move family).
+  | .mintReplyCap          => .grant
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -902,6 +905,21 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
+  -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Same src/dst-slot
+  -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
+  -- `mintReplyCapWithCdt` derives `.replyCap (ReplyId.ofObjId target)` at the dst slot
+  -- (fail-closed when the src is not an `.object`-to-Reply cap).  CDT-tracked so the
+  -- minted reply cap is revocable through `cspaceRevokeCdt`.
+  | .mintReplyCap =>
+    some <| match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceCopyArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            mintReplyCapWithCdt src dst st
     | _ => fun _ => .error .invalidCapability
   | .lifecycleRetype =>
     some <| match cap.target with
@@ -2109,7 +2127,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
+            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -2128,7 +2146,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
+            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

@@ -494,6 +494,16 @@ def lockSet_cspaceCopy (callerTid : ThreadId)
      (cnodeLock srcCnodeObjId, .read),
      (cnodeLock dstCnodeObjId, .write)]
 
+/-- WS-SM SM6.D / PR #822 Phase H: `lockSet` for `mintReplyCap`.
+
+Derives a `.replyCap` from the `.object`-to-Reply cap at the source slot and installs it
+at the destination slot — same CNode footprint as `cspaceCopy` (source CNode read,
+destination CNode write, caller TCB read).  It does **not** write the Reply object itself
+(only the dst CNode slot), so no `.reply` lock is in the footprint. -/
+def lockSet_mintReplyCap (callerTid : ThreadId)
+    (srcCnodeObjId dstCnodeObjId : ObjId) : LockSet :=
+  lockSet_cspaceCopy callerTid srcCnodeObjId dstCnodeObjId
+
 /-- WS-SM SM3.B.3: `lockSet` for `cspaceMove`.
 
 Both source and destination CNodes are mutated (cap removed from
@@ -985,8 +995,10 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
       [.tcb, .cnode, .notification, .endpoint]
   | .notificationWait =>
       [.tcb, .cnode, .notification]
-  -- Capability syscalls
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete =>
+  -- Capability syscalls.  `.mintReplyCap` (PR #822 Phase H) derives a `.replyCap`
+  -- from an `.object`-to-Reply cap into a CNode slot — same CNode/TCB footprint as
+  -- the other cap-insert ops (it does not write the Reply object itself).
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap =>
       [.tcb, .cnode]
   -- Lifecycle
   | .lifecycleRetype =>
@@ -1465,6 +1477,23 @@ theorem lockSet_consistent_cspaceCopy (callerTid : ThreadId)
     (srcCn dstCn : ObjId) :
     ∀ p ∈ (lockSet_cspaceCopy callerTid srcCn dstCn).pairs,
       p.fst.kind ∈ permittedKinds .cspaceCopy :=
+  lockSet_consistent_of_extended_base _ _
+    (by intro p hMem
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        rcases List.mem_cons.mp hMem with h | hMem
+        · rw [h]; simp; decide
+        exact absurd hMem (by intro h; cases h))
+
+/-- WS-SM SM6.D / PR #822 Phase H: the `mintReplyCap` lock-set's kinds
+(`.tcb`, `.cnode`) are permitted for `.mintReplyCap` (`[.tcb, .cnode]`).  Shares the
+`cspaceCopy` footprint, so the proof is identical modulo the syscall tag. -/
+theorem lockSet_consistent_mintReplyCap (callerTid : ThreadId)
+    (srcCn dstCn : ObjId) :
+    ∀ p ∈ (lockSet_mintReplyCap callerTid srcCn dstCn).pairs,
+      p.fst.kind ∈ permittedKinds .mintReplyCap :=
   lockSet_consistent_of_extended_base _ _
     (by intro p hMem
         rcases List.mem_cons.mp hMem with h | hMem

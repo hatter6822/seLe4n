@@ -1,3 +1,31 @@
+## v0.31.141 — Reply objects (seL4-MCS): mintReplyCap goes live — full syscall ABI wiring (PR #822 Codex review, Phase H #2.c)
+
+**Deferred item #2 (retype → reply-cap authority), sub-step #2.c.** Makes the `mintReplyCap`
+op (v0.31.140) a **live syscall** — so a server can retype Untyped → Reply, mint the reply
+cap, and use it on `endpoint_receive_with_reply`. New `SyscallId.mintReplyCap` (id 28) threaded
+through the complete ABI:
+
+- **Lean ABI**: `SyscallId` enum + `toNat`/`ofNat?`/`ToString`/`all` + `count` 28→29 +
+  `toNat_ofNat` roundtrip; `syscallRequiredRight .mintReplyCap = .grant`; the
+  `dispatchCapabilityOnly` arm (reuses `decodeCSpaceCopyArgs` — same src/dst-slot shape as
+  `cspaceCopy` — and calls `mintReplyCapWithCdt`); both `dispatchWithCap{,Checked}_wildcard_
+  unreachable` lists; `permittedKinds .mintReplyCap = [.tcb, .cnode]`; the enforcement boundary
+  (`syscallIdToEnforcementName` + `.capabilityOnly "mintReplyCapWithCdt"`, count 36→37).
+- **Lock-set inventory (SM3.B)**: `lockSet_mintReplyCap` (= `cspaceCopy`'s footprint) +
+  `lockSet_consistent_mintReplyCap`; two inventory entries (`.lockSet` + `.consistency`); the
+  coverage theorem `#consistency = SyscallId.count` holds (29 = 29); counts 96→98, 28→29.
+- **Rust mirror**: `sele4n-types` + `sele4n-hal` (`svc_dispatch`) `SyscallId::MintReplyCap = 28`,
+  `COUNT` 28→29, `from_u64`/`from_u32`, `required_right = Grant`, `min_inline_args = 2`;
+  `sele4n-abi` conformance `mint_reply_cap_roundtrip` + boundary moved to 29. Also fixed the
+  stale `from_u64_roundtrip`/`injective` test bounds (`0..25` → `0..COUNT`) that under-covered
+  the SM5.H.4/SM6.B variants. `cargo check --profile test --workspace` clean.
+- **Trace fixture**: `[XVAL-002] SyscallId roundtrip ok: all 28 variants` → `29` (intentional;
+  SHA companion regenerated).
+
+Full production + staged build green; trace passes (233/233); model-integrity + syscall-dispatch
+suites green; Rust workspace checks clean. Lean Tier 0-2 green. Per the completion plan (#2.c).
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.c).
+
 ## v0.31.140 — Reply objects (seL4-MCS): mintReplyCap — the retype → reply-cap authority production path (PR #822 Codex review, Phase H #2.a)
 
 **Deferred item #2 (retype → reply-cap authority), sub-step #2.a.** `lifecycleRetypeDirect`

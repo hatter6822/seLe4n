@@ -73,19 +73,19 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 28 (WS-SM SM6.B added tcbBind/UnbindNotification at 26/27)
-  let r28 := decodeSyscallId ⟨28⟩
-  expect "invalid=28" (isErrEq r28 .invalidSyscallNumber)
+  -- First invalid: 29 (WS-SM SM6.D / PR #822 Phase H added mintReplyCap at 28)
+  let r29 := decodeSyscallId ⟨29⟩
+  expect "invalid=29" (isErrEq r29 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 27/28. -/
+/-- RD-003: decodeSyscallId — boundary edge 28/29 (mintReplyCap=28 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r27 := decodeSyscallId ⟨27⟩
   let r28 := decodeSyscallId ⟨28⟩
-  expect "boundary=27 ok" (r27.isOk)
-  expect "boundary=28 err" (!r28.isOk)
+  let r29 := decodeSyscallId ⟨29⟩
+  expect "boundary=28 ok (mintReplyCap)" (isOkEq r28 .mintReplyCap)
+  expect "boundary=29 err" (!r29.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

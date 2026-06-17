@@ -1372,13 +1372,24 @@ fn tcb_unbind_notification_roundtrip() {
     assert_eq!(sid.to_u64(), 27);
 }
 
-/// D6-D5: Boundary — discriminant 28 is out of range for SyscallId
-/// (WS-SM SM6.B added bind/unbind-notification, moving the boundary from 25 to 27).
+/// WS-SM SM6.D / PR #822 Phase H: MintReplyCap roundtrip (discriminant 28).
+#[test]
+fn mint_reply_cap_roundtrip() {
+    let sid = SyscallId::from_u64(28).expect("MintReplyCap must exist");
+    assert_eq!(sid, SyscallId::MintReplyCap);
+    assert_eq!(sid.to_u64(), 28);
+    // Deriving a reply cap requires grant authority on the source object cap
+    // (matches API.lean `syscallRequiredRight .mintReplyCap = .grant`).
+    assert_eq!(sid.required_right(), AccessRight::Grant);
+}
+
+/// D6-D5: Boundary — discriminant 29 is out of range for SyscallId
+/// (PR #822 Phase H added mintReplyCap, moving the boundary from 27 to 28).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(27).is_some()); // Last valid
-    assert!(SyscallId::from_u64(28).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 28);
+    assert!(SyscallId::from_u64(28).is_some()); // Last valid
+    assert!(SyscallId::from_u64(29).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 29);
 }
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-392).

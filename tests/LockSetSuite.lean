@@ -686,15 +686,15 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 96 := by decide
+example : lockSetTheorems.length = 98 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 28 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 29 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 28 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 29 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -1217,14 +1217,14 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 96"
-    (decide (lockSetTheorems.length = 96))
+  assertBool "lockSetTheorems.length = 98"
+    (decide (lockSetTheorems.length = 98))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
-  assertBool "lockSet category count = 28 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 28))
-  assertBool "consistency category count = 28 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 28))
+  assertBool "lockSet category count = 29 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 29))
+  assertBool "consistency category count = 29 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 29))
   assertBool "acquireSort category count = 6"
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"
