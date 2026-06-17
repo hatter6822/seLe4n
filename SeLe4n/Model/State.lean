@@ -2705,6 +2705,22 @@ theorem getCNode?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): Unfolding lemma — `lookupCNode`
+returns `some cn` iff the store holds exactly `KernelObject.cnode cn` at `id`.
+Mirrors `getCNode?_eq_some_iff` (the two helpers share a definition); used by the
+reply-cap backing discharge (`replyCapBacked_of_source_slot`) that connects a
+`cspaceLookupSlot` result to the slot's containing CNode object. -/
+theorem lookupCNode_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode) :
+    st.lookupCNode id = some cn ↔ st.objects[id]? = some (.cnode cn) := by
+  unfold lookupCNode
+  split
+  · rename_i cn' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
 /-- AN10-B: Unfolding lemma — `getVSpaceRoot?` returns `some root` iff
 the store holds exactly `KernelObject.vspaceRoot root` at `id`. -/
 theorem getVSpaceRoot?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)

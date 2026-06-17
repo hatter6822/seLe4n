@@ -874,6 +874,23 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
   exact RHTable.filter_preserves_key node.slots.table _ sourceSlot
     (fun k' _ hBeq => by simp [eq_of_beq hBeq]) hUniq.1
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): `revokeTargetLocal` only *removes* slots (it filters
+the slot map), so any capability present after a revoke was already present before — the post-revoke
+lookups are a sub-relation of the pre-revoke ones.  Mirrors the private `revokeTargetLocal_slots_sub`
+at `lookup` level; used by reply-cap backing preservation across `cspaceRevoke`. -/
+theorem lookup_revokeTargetLocal_sub
+    (node : CNode)
+    (sourceSlot : SeLe4n.Slot)
+    (target : CapTarget)
+    (slot : SeLe4n.Slot)
+    (cap : Capability)
+    (hUniq : node.slotsUnique)
+    (hLookup : (node.revokeTargetLocal sourceSlot target).lookup slot = some cap) :
+    node.lookup slot = some cap := by
+  simp only [revokeTargetLocal, lookup, SeLe4n.UniqueSlotMap.get?,
+    SeLe4n.UniqueSlotMap.filter] at hLookup ⊢
+  exact RHTable.filter_get_subset node.slots.table _ slot cap hUniq.1 hLookup
+
 /-- T2-J (L-NEW-4): The empty CNode trivially satisfies `guardBounded`
     (guardValue = 0 < 2^0 = 1). -/
 theorem empty_guardBounded : CNode.empty.guardBounded := by

@@ -2481,11 +2481,18 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   (∀ notif, obj = .notification notif →
     notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
   -- CNodes must satisfy slot-count bound, depth consistency, and badge validity
+  -- WS-SM SM6.D / PR #822 Phase H (#1.a): a boot CNode holds no reply capabilities —
+  -- reply caps are minted at runtime (`mintReplyCap`) from retyped Reply objects, never
+  -- planted at boot, so a boot reply cap could only dangle.  This makes the
+  -- `replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle` vacuously true
+  -- for the boot state.
   (∀ cn, obj = .cnode cn →
     cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
     (cn.bitsConsumed > 0 → cn.wellFormed) ∧
     (∀ slot cap badge, cn.lookup slot = some cap →
-      cap.badge = some badge → badge.valid)) ∧
+      cap.badge = some badge → badge.valid) ∧
+    (∀ slot cap rid, cn.lookup slot = some cap →
+      cap.target ≠ .replyCap rid)) ∧
   -- TCBs must have clean boot state: no pending messages, ready IPC state,
   -- no queue links (queueNext/queuePrev = none), no timeout budget
   (∀ tcb, obj = .tcb tcb →
@@ -2873,7 +2880,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     -- `UniqueSlotMap` value; the builder-phase `hSlots` witness is preserved
     -- by the boot path for backward compatibility but no longer flows through
     -- this bundle.
-    refine ⟨?_, ?_, ?_, ?_, ?_, hAllTables.1.1⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, hAllTables.1.1, ?_⟩
     · -- cspaceLookupSound
       intro cnodeId cn slot cap hObj hLookupSlot
       show SystemState.lookupSlotCap _ _ = some cap
@@ -2893,6 +2900,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro cnodeId cn hObj
       have hCN := (hBS cnodeId _ hObj).2.2.1 cn rfl
       exact ⟨hCN.2.1, hCN.2.2.1⟩
+    · -- replyCapPointsToValidReply: boot CNodes hold no reply caps (`bootSafeObject`),
+      -- so the reply-cap hypothesis is contradicted and the conjunct is vacuous.
+      intro oid cn slot cap rid hObj hLookupSlot hTgt
+      exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.2 slot cap rid hLookupSlot)
   -- 5. lifecycleInvariantBundle
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
@@ -2952,7 +2963,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · -- capabilityBadgesWellFormed
         intro oid cn slot cap badge hObj hSlotLookup hBadge
         have hCN := (hBS oid _ hObj).2.2.1 cn rfl
-        exact hCN.2.2.2 slot cap badge hSlotLookup hBadge
+        exact hCN.2.2.2.1 slot cap badge hSlotLookup hBadge
     · -- waitingThreadsPendingMessageNone
       intro tid tcb hObj
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

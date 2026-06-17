@@ -365,6 +365,8 @@ All components are vacuously true (empty objects/cdtNodeSlot) or use
 private theorem default_capabilityInvariantBundle :
     capabilityInvariantBundle (default : SystemState) :=
   -- WS-RC R4.A.6: bundle has 6 conjuncts (cspaceSlotUnique dropped).
+  -- WS-SM SM6.D / PR #822 Phase H (#1.a): 7th conjunct `replyCapPointsToValidReply` is
+  -- vacuous on the empty default state (no CNode objects to hold a reply cap).
   ⟨by intro oid cn s c hObj; exact default_objects_absurd hObj,
    by intro oid cn hObj; exact default_objects_absurd hObj,
    by
@@ -374,7 +376,8 @@ private theorem default_capabilityInvariantBundle :
     rw [hempty] at h; exact absurd h (by simp),
    by exact CapDerivationTree.empty_edgeWellFounded,
    by intro cnodeId cn hObj; exact default_objects_absurd hObj,
-   by exact RHTable_empty_invExt 16 (by omega)⟩
+   by exact RHTable_empty_invExt 16 (by omega),
+   by intro oid cn slot cap rid hObj hLook hTgt; exact default_objects_absurd hObj⟩
 
 -- WS-H12e: Default-state proofs for new invariant components
 

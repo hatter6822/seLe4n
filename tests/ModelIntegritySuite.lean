@@ -830,6 +830,36 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == .invalidCapability)
   | .ok _ => throw <| IO.userError "mintReplyCap from a non-Reply object must be rejected"
 
+/-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for the new
+`replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle`.  The invariant states that
+a reply cap held in a CNode is *backed* — its `ReplyId` resolves through `getReply?` to a live
+Reply object — and forbids a dangling reply cap.  This test exhibits both sides so the invariant
+carries genuine content: a CNode reply cap pointing at an allocated Reply resolves (`isSome`),
+while one pointing at a never-allocated id does not (`isNone`); a state holding the latter would
+fail `replyCapPointsToValidReply` and is exactly what every preservation theorem now rules out. -/
+def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
+  let liveObj : SeLe4n.ObjId := ⟨300⟩
+  let liveRid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId liveObj
+  let danglingRid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId ⟨301⟩
+  let cnId : SeLe4n.ObjId := ⟨110⟩
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF
+        [ ((SeLe4n.Slot.ofNat 0),
+            { target := .replyCap liveRid, rights := AccessRightSet.ofList [.read, .write], badge := none })
+        , ((SeLe4n.Slot.ofNat 1),
+            { target := .replyCap danglingRid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject liveObj (.reply { replyId := liveRid })
+      |>.withObject cnId mkCn
+      |>.build)
+  -- The live reply cap is backed: `getReply?` resolves — `replyCapPointsToValidReply` is satisfied.
+  expect "live reply cap is backed (getReply? isSome)" ((st.getReply? liveRid).isSome)
+  -- The dangling reply cap is NOT backed: `getReply?` is none — a slot holding only this cap is
+  -- precisely the configuration `replyCapPointsToValidReply` forbids.
+  expect "dangling reply cap is unbacked (getReply? isNone)" ((st.getReply? danglingRid).isNone)
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -2121,6 +2151,7 @@ def main : IO Unit := do
   reply_inUse_retype_rejected
   pendingReceiveReply_stash_injective
   mintReplyCap_derives_backed_reply_cap
+  replyCapPointsToValidReply_distinguishes_backed_and_dangling
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

@@ -1,3 +1,44 @@
+## v0.31.146 — Reply objects (seL4-MCS): replyCapPointsToValidReply bundled into capabilityInvariantBundle (PR #822 Codex review, Phase C-inv #1.a)
+
+**Deferred item #1, sub-step #1.a — the contract step.** Promotes `replyCapPointsToValidReply`
+from a standalone predicate (#1 foundations) to the **7th conjunct of `capabilityInvariantBundle`**,
+so "no dangling reply caps" is now a kernel-wide maintained invariant rather than a property the
+production capability surface was blind to. Bundle is a 7-tuple
+(`cspaceLookupSound ∧ cspaceSlotCountBounded ∧ cdtCompleteness ∧ cdtAcyclicity ∧
+cspaceDepthConsistent ∧ objects.invExt ∧ replyCapPointsToValidReply`); `replyCapPointsToValidReply_of_capabilityInvariantBundle`
+extracts it.
+
+Every `_preserves_capabilityInvariantBundle` theorem now establishes the 7th conjunct — **proven
+concretely wherever the property is derivable from the pre-state** (no `sorry`):
+
+- **cspace cap ops** — `cspaceInsertSlot`/`Mint`/`Copy`/`Move`/`Delete(Core)`/`Revoke`/`Mutate`.
+  The unifying discharge is `replyCapBacked_of_source_slot` (a cap resolved from a CSpace slot is
+  reply-backed via the pre-invariant); `cspaceMint` composes it with
+  `mintDerivedCap_target_preserved_with_badge_override` (the minted child shares the parent's
+  target), `cspaceMutate` with the fact that a rights/badge mutation preserves `cap.target`, and
+  `cspaceRevoke` with the new `CNode.lookup_revokeTargetLocal_sub` (revoke only removes slots).
+- **TCB-store reply paths** — `endpointReply` + the lifecycle/IPC stores via the shared
+  `storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply` (a `.tcb` store touches no
+  CNode and no `.reply` object, so backing frames through).
+- **IPC capability transfer** — `ipcTransferSingleCap`/`ipcUnwrapCaps(Loop)` take a `hCapBacked`
+  hypothesis (the transferred reply cap is backed), externalized exactly like the existing
+  `hCdtPost` CDT obligation.
+- **`lifecycleRetypeObject`** — takes `replyCapPointsToValidReply st'` as an **externalized
+  post-state hypothesis** (`hReplyBacked'`), mirroring `hCdtPost`/`hRCL'`/`hPRR'`: retype can
+  orphan a reply cap (retyping a referenced reply) or introduce one (fresh CNode), so the property
+  is not pre-state-derivable and is discharged by the caller that knows the target is unreferenced.
+- **boot + default** — `default_capabilityInvariantBundle` is vacuous (empty store);
+  `bootFromPlatform`'s bundle is discharged by a new `bootSafeObject` CNode clause **a boot CNode
+  holds no reply capabilities** (reply caps are minted at runtime, never planted at boot, so a
+  boot reply cap could only dangle) — `bootSafeObjectCheck` (the Bool mirror, test-exercised) is
+  unchanged.
+
+New supporting lemmas: `SystemState.lookupCNode_eq_some_iff` (mirrors `getCNode?_eq_some_iff`),
+`CNode.lookup_revokeTargetLocal_sub`. Test: `replyCapPointsToValidReply_distinguishes_backed_and_dangling`
+(ModelIntegritySuite) exhibits the backed/dangling distinction so the invariant carries content.
+Production + staged (234) build clean; Lean Tier 0-2 green; trace byte-identical. Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1.a).
+
 ## v0.31.145 — Reply objects (seL4-MCS): replyCapPointsToValidReply preservation keystones (PR #822 Codex review, Phase C-inv #1.b)
 
 **Deferred item #1, sub-step #1.b — the hard, unifying preservation lemmas** (the keystone that

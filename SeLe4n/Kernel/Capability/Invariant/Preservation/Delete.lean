@@ -36,7 +36,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
   -- WS-H4: Prove new components through storeObject → storeCapabilityRef → detachSlotFromCdt
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -81,7 +81,8 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
               cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef,
               (SystemState.detachSlotFromCdt_objects_eq stRef addr) ▸ hObjInvRef⟩
   exact ⟨cspaceLookupSound_holds st',
-    hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
+    hBounded', hComp', hAcyclic', hDepth', hObjInv',
+    cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot` (guarded wrapper).
 Delegates to `cspaceDeleteSlotCore_preserves_capabilityInvariantBundle` after discharging
@@ -147,6 +148,63 @@ theorem cspaceDeleteSlot_preserves_cdtNodeSlot
   · simp at hStep
   · exact cspaceDeleteSlotCore_preserves_cdtNodeSlot st st' addr hNodeSlotK hStep
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceRevoke` preserves `replyCapPointsToValidReply`.
+Revoke only *removes* caps with the revoked target from the local CNode (`revokeTargetLocal`) and
+clears their lifecycle refs (`revokeAndClearRefsState`, which leaves `objects` untouched), so every
+reply cap surviving in the post-state was already present pre-revoke (backed by the pre-invariant),
+and `getReply?` frames through the single CNode store (`lookup_revokeTargetLocal_sub`). -/
+theorem cspaceRevoke_preserves_replyCapPointsToValidReply
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hRCPV : replyCapPointsToValidReply st)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    replyCapPointsToValidReply st' := by
+  unfold cspaceRevoke at hStep
+  cases hLookup2 : cspaceLookupSlot addr st with
+  | error e => simp [hLookup2] at hStep
+  | ok pair =>
+    rcases pair with ⟨parent, st1⟩
+    have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup2; subst st1
+    cases hPre : st.objects[addr.cnode]? with
+    | none => simp [hLookup2, hPre] at hStep
+    | some preObj =>
+      cases preObj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+          simp [hLookup2, hPre] at hStep
+      | cnode preCn =>
+        simp [hLookup2, hPre] at hStep
+        cases hStore : storeObject addr.cnode (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) st with
+        | error e => simp [hStore] at hStep
+        | ok pair =>
+          obtain ⟨_, stMid⟩ := pair; simp [hStore] at hStep
+          -- `hStep : revokeAndClearRefsState preCn addr.slot parent.target addr.cnode stMid = st'`
+          have hObjFrame : st'.objects = stMid.objects := by
+            rw [← hStep]
+            exact revokeAndClearRefsState_preserves_objects preCn addr.slot parent.target addr.cnode stMid
+          have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) :=
+            storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
+          have hMidNe : ∀ oid, oid ≠ addr.cnode → stMid.objects[oid]? = st.objects[oid]? :=
+            fun oid h => storeObject_objects_ne st stMid addr.cnode oid _ h hObjInv hStore
+          have hGetReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid := by
+            intro rid
+            simp only [SystemState.getReply?, hObjFrame]
+            by_cases hc : rid.toObjId = addr.cnode
+            · rw [hc, hMidSelf, hPre]
+            · rw [hMidNe rid.toObjId hc]
+          intro oid cn slot cap' rid hObj hLook hTgt
+          rw [hGetReply]
+          by_cases hc : oid = addr.cnode
+          · subst hc
+            rw [hObjFrame, hMidSelf] at hObj
+            simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
+            subst hObj
+            have hLookPre : preCn.lookup slot = some cap' :=
+              CNode.lookup_revokeTargetLocal_sub preCn addr.slot parent.target slot cap'
+                (CNode.slotsUnique_holds preCn) hLook
+            exact hRCPV addr.cnode preCn slot cap' rid hPre hLookPre hTgt
+          · rw [hObjFrame, hMidNe oid hc] at hObj
+            exact hRCPV oid cn slot cap' rid hObj hLook hTgt
+
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
 WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
 `CNode.slots : UniqueSlotMap` (`UniqueSlotMap.hWF`); the historical
@@ -158,7 +216,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
   -- WS-H4: storeObject(CNode.revokeTargetLocal) → revokeAndClearRefsState (M-P01)
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -200,7 +258,8 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               cspaceDepthConsistent_of_objects_eq stMid _ hDepthMid hClearObj,
               hClearObj ▸ hObjInvMid⟩
   exact ⟨cspaceLookupSound_holds st',
-    hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
+    hBounded', hComp', hAcyclic', hDepth', hObjInv',
+    cspaceRevoke_preserves_replyCapPointsToValidReply st st' addr hRCPV hObjInv hStep⟩
 
 
 end SeLe4n.Kernel

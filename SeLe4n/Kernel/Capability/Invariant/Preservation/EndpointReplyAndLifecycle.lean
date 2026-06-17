@@ -32,6 +32,39 @@ open Internal
 -- WS-E4: Preservation theorems for endpointReply
 -- ============================================================================
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): a TCB-payload store preserves
+`replyCapPointsToValidReply`.  `storeTcbIpcStateAndMessage` only rewrites the `.tcb` object at
+`target` (no `.cnode` is created or altered, so every CNode in the post-state was a CNode in the
+pre-state with the same caps) and leaves every `.reply` object untouched (`getReply?` frames
+through), so the backing of every reply cap carries over.  Shared by every TCB-store reply path
+(`endpointReply`, the lifecycle cleanup paths, IPC capability transfer). -/
+theorem storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply
+    (st st1 : SystemState) (target : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage) (tcb : TCB)
+    (hRCPV : replyCapPointsToValidReply st)
+    (hObjInv : st.objects.invExt)
+    (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1)
+    (hLookup : lookupTcb st target = some tcb) :
+    replyCapPointsToValidReply st1 := by
+  -- `lookupTcb_some_objects` is the typed bridge from the resolved TCB to its object-store slot,
+  -- avoiding a raw thread-id object-store projection.
+  have hStTcb := lookupTcb_some_objects st target tcb hLookup
+  obtain ⟨t1, hTcb1⟩ :=
+    storeTcbIpcStateAndMessage_tcb_exists_at_target st st1 target ipc msg hObjInv hTcb ⟨tcb, hStTcb⟩
+  have hGR : ∀ rid : SeLe4n.ReplyId, st1.getReply? rid = st.getReply? rid := by
+    intro rid
+    by_cases hEq : rid.toObjId = target.toObjId
+    · simp only [SystemState.getReply?, hEq, hTcb1, hStTcb]
+    · simp only [SystemState.getReply?,
+        storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg rid.toObjId hEq hObjInv hTcb]
+  intro oid cn slot cap rid hObj1 hLook hTgt
+  rw [hGR]
+  by_cases hEq : oid = target.toObjId
+  · subst hEq
+    rw [hTcb1] at hObj1; exact absurd hObj1 (by simp)
+  · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg oid hEq hObjInv hTcb] at hObj1
+    exact hRCPV oid cn slot cap rid hObj1 hLook hTgt
+
 /-- M-P05: Shared reply-path infrastructure — if `storeTcbIpcStateAndMessage`
 succeeds and the target was a TCB (evidenced by `lookupTcb`), then
 `ensureRunnable` on the result preserves the capability invariant bundle.
@@ -47,6 +80,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
     (hDepthPre : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt)
+    (hRCPV : replyCapPointsToValidReply st)
     (hTcb : storeTcbIpcStateAndMessage st target ipc msg = .ok st1)
     (hLookup : lookupTcb st target = some tcb) :
     capabilityInvariantBundle (ensureRunnable st1 target) := by
@@ -77,7 +111,10 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the
   -- predicate is structurally trivial.
   exact ⟨cspaceLookupSound_holds _,
-    hBndE, hCompE, hAcyclicE, hDepthE, hObjInvE⟩
+    hBndE, hCompE, hAcyclicE, hDepthE, hObjInvE,
+    replyCapPointsToValidReply_of_objects_eq (ensureRunnable_preserves_objects st1 target)
+      (storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply
+        st st1 target ipc msg tcb hRCPV hObjInv hTcb hLookup)⟩
 
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
@@ -90,7 +127,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -132,7 +169,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
             st st1 target .ready (some msg) tcb
-            hBounded hComp hAcyclic hDepthPre hObjInv hTcb hLookup
+            hBounded hComp hAcyclic hDepthPre hObjInv hRCPV hTcb hLookup
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 
@@ -309,7 +346,16 @@ theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle
 
 /-- WS-E2 / H-01: Compositional preservation of `lifecycleRetypeObject`.
 Requires new CNode objects to have unique slots (analogous to existing
-`hNewObjEndpointInv` / `hNewObjNotificationInv` side conditions on IPC proofs). -/
+`hNewObjEndpointInv` / `hNewObjNotificationInv` side conditions on IPC proofs).
+
+WS-SM SM6.D / PR #822 Phase H (#1.a): `replyCapPointsToValidReply st'` is taken as an
+**externalized post-state hypothesis** (`hReplyBacked'`), exactly like the `hCdtPost`
+discharge for CDT-modifying ops and the `hRCL'`/`hPRR'`/`hDOV'` externalizations at this
+layer.  Retype overwrites the object at `target`: it can *orphan* a reply cap (if a cap
+references a reply that is retyped away) or introduce a reply cap (in a fresh CNode), so —
+unlike `cspaceCopy`/`Move`/`Mutate`, which preserve the property from the pre-state — the
+property is not derivable from the pre-state alone and is discharged by the caller that knows
+the retype target is unreferenced and the new object is fresh. -/
 theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -320,9 +366,10 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
     (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
+    (hReplyBacked' : replyCapPointsToValidReply st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, _hRCPV⟩
   -- WS-H4: lifecycleRetypeObject delegates to storeObject, which preserves CDT fields
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -351,7 +398,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
     · exact storeObject_preserves_objects_invExt st st' target newObj hObjInv hStore
   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
   exact ⟨cspaceLookupSound_holds st',
-    hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
+    hBounded', hComp', hAcyclic', hDepth', hObjInv', hReplyBacked'⟩
 
 theorem lifecycleRetypeObject_preserves_ipcInvariant
     (st st' : SystemState)
@@ -408,6 +455,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hBRT' : blockedOnReplyHasTarget st')
     (hRCL' : replyCallerLinkage st')
     (hPRR' : pendingReceiveReplyWellFormed st')
+    (hReplyBacked' : replyCapPointsToValidReply st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpcFull⟩
@@ -415,7 +463,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
-      hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hStep
+      hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
            hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
            hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
@@ -451,6 +499,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hBRT' : blockedOnReplyHasTarget st')
     (hRCL' : replyCallerLinkage st')
     (hPRR' : pendingReceiveReplyWellFormed st')
+    (hReplyBacked' : replyCapPointsToValidReply st')
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     lifecycleCompositionInvariantBundle st' := by
@@ -458,7 +507,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hBRT' hRCL' hPRR' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hBRT' hRCL' hPRR' hReplyBacked' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep
@@ -475,6 +524,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     (hNewObjCNodeBounded : ∀ cn, newObj = .cnode cn → cn.slotCountBounded)
     (hNewObjCNodeDepth : ∀ cn, newObj = .cnode cn →
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
+    (hReplyBacked' : replyCapPointsToValidReply st')
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
@@ -510,7 +560,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle
     cspaceDeleteSlot_preserves_capabilityInvariantBundle stRevoked stDeleted cleanup hRevoked
       (hRevokedNS ▸ hNodeSlotK) hDelete
   exact lifecycleRetypeObject_preserves_capabilityInvariantBundle stDeleted st' authority target newObj
-    hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hRetype
+    hDeleted hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hRetype
 
 theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityInvariant
     (st st' : SystemState)
@@ -538,6 +588,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
         cspaceRevoke cleanup st = .ok ((), stRevoked) →
         cspaceDeleteSlot cleanup stRevoked = .ok ((), stDeleted) →
         stDeleted.lifecycle.objectTypes.invExt)
+    (hReplyBacked' : replyCapPointsToValidReply st')
     (hNodeSlotK : st.cdtNodeSlot.invExtK)
     (hObjInvFinal : st'.objects.invExt)
     (hStep : lifecycleRevokeDeleteRetype authority cleanup target newObj st = .ok ((), st')) :
@@ -546,7 +597,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
     ⟨stRevoked, stDeleted, _hNe, hRevoke, hDelete, hLookupDeleted, hRetype⟩
   have hCap' : capabilityInvariantBundle st' :=
     lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle st st' authority cleanup target
-      newObj hCap hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hNodeSlotK hStep
+      newObj hCap hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hNodeSlotK hStep
   have hLifecycleDeleted : lifecycleInvariantBundle stDeleted :=
     hLifecycleAfterCleanup stRevoked stDeleted hRevoke hDelete hLookupDeleted
   have hLifecycle' : lifecycleInvariantBundle st' :=

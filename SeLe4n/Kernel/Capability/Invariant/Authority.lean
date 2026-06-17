@@ -681,8 +681,9 @@ theorem capabilityInvariantBundle_of_components
     (hComp : cdtCompleteness st)
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st)
-    (hObjInv : st.objects.invExt) :
+    (hObjInv : st.objects.invExt)
+    (hRCPV : replyCapPointsToValidReply st) :
     capabilityInvariantBundle st :=
   ⟨cspaceLookupSound_holds st,
-    hBounded, hComp, hAcyclic, hDepth, hObjInv⟩
+    hBounded, hComp, hAcyclic, hDepth, hObjInv, hRCPV⟩
 
