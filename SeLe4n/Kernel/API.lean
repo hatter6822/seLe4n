@@ -1373,8 +1373,14 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- it, otherwise the cross-core `notificationSignalOnCore` runs (head
           -- waiter woken on its home core).  The surfaced cross-core SGI is
           -- re-derived from the committed state diff by the runtime entry.
+          -- WS-SM SM6.D (PR #822 review): a bound delivery wakes a `.blockedOnReceive`
+          -- bound TCB to `.ready`; if that server stashed a server-first reply object,
+          -- clear the stash (it lives only on a blocked receiver) — symmetric to the
+          -- plain-Send wake (`clearWokenReceiverStash`).  No-op when no bound receiver
+          -- is woken or it carries no stash, so the trace is byte-identical.
+          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           match notificationSignalBoundCrossCoreDispatch notifId args.badge tid st with
-          | (st', .ok _) => .ok ((), st')
+          | (st', .ok _) => clearWokenReceiverStash woken? st'
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification wait — consume pending badge or block.
@@ -1652,8 +1658,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           -- info-flow-checked analogue of the unchecked arm, gating on
           -- `securityFlowsTo signaler→notification` before the bound-aware
           -- cross-core dispatch.
+          -- WS-SM SM6.D (PR #822 review): clear a woken bound receiver's server-first
+          -- reply stash (mirrors the unchecked arm + the plain-Send wake).
+          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid args.badge st with
-          | (st', .ok _) => .ok ((), st')
+          | (st', .ok _) => clearWokenReceiverStash woken? st'
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow

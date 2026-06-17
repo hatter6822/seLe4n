@@ -924,6 +924,52 @@ private def sd053_serverFirstLink : IO Unit := do
         "clearing with no stash present leaves the receiver unchanged"
   | .error _ => failLine "sd053f" "clearWokenReceiverStash no-op should succeed"
 
+/-- SD-053g (PR #822 review): a bound-notification wake also clears a server-first
+    reply stash.  A server blocked on a server-first `Recv` (stashing a reply object)
+    that is bound to a notification can be woken by a signal via the bound-delivery
+    path (`boundDeliveryTarget?` → `.ready`); the dispatch then clears its stash with
+    `clearWokenReceiverStash`, just like the plain-`Send` wake — a stash lives only on
+    a `.blockedOnReceive` TCB. -/
+private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
+  let server    : SeLe4n.ThreadId := ⟨1⟩
+  let signaller : SeLe4n.ThreadId := ⟨2⟩
+  let epId      : SeLe4n.ObjId := ⟨10⟩
+  let nId       : SeLe4n.ObjId := ⟨20⟩
+  let rid       : SeLe4n.ReplyId := ⟨707⟩
+  let _ := signaller
+  -- (a) capture: the `.notificationSignal` dispatch resolves the bound delivery target
+  -- (`boundDeliveryTarget?` → the `.blockedOnReceive` bound server) before the signal.
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject nId (.notification
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, boundTCB := some server })
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  expect "sd053g_bound_target_resolved"
+    (decide ((SeLe4n.Kernel.boundDeliveryTarget? st0 nId).map (·.1) = some server))
+    "the bound BlockedOnReceive server is the captured wake target"
+  -- (b) clear: after the bound delivery wakes the server (`.ready`), the dispatch
+  -- clears its stash via `clearWokenReceiverStash` (the stash lives only on a blocked
+  -- receiver) — the reply object stays free.
+  let stWoken : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
+  | .ok ((), st') =>
+      expect "sd053g_stash_cleared"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "the bound-woken server's stale reply stash must be cleared"
+      expect "sd053g_reply_stays_free"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
+        "clearing the stash must not consume the reply object"
+  | .error _ => failLine "sd053g" "clearWokenReceiverStash should succeed"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -960,4 +1006,5 @@ def main : IO Unit := do
   sd052b_replyRecv_donation_switch
   sd052c_replyRecv_delegated_returns_recorded_server_donation
   sd053_serverFirstLink
+  sd053g_bound_notification_wake_clears_stash
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

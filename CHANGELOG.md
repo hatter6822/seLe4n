@@ -1,3 +1,30 @@
+## v0.31.138 — Reply objects (seL4-MCS): a bound-notification wake clears the server-first reply stash (PR #822 Codex review)
+
+**Finding — a bound-notification delivery woke a `.blockedOnReceive` server without clearing its
+server-first reply stash.** A server that blocked on a server-first `Recv` (stashing a reply object on
+`TCB.pendingReceiveReply`) and is bound to a notification can be woken by a signal via the bound-delivery
+path (`notificationSignalBoundOnCore` stores the TCB `.ready` with the badge). Like the plain-`Send` wake
+(v0.31.133), this left the stash on a now-`.ready` TCB — violating `pendingReceiveReplyWellFormed` (a
+stash lives only on a `.blockedOnReceive` TCB). (The practical "Reply permanently in-use" harm is already
+bounded by `replyIsStashed` keying on `.blockedOnReceive`, so a ready server's stale stash no longer
+blocks retype; this restores the invariant-level discipline and matches the other wake paths.)
+
+- Both `.notificationSignal` dispatch arms — unchecked and flow-checked — capture the bound delivery
+  target `woken? := (boundDeliveryTarget? st notifId).map (·.1)` (the `.blockedOnReceive` bound server)
+  **before** the signal, and clear its stash after via the existing `clearWokenReceiverStash` (the
+  plain-Send wake helper). A literal no-op when no bound receiver is woken or it carries no stash, so the
+  trace is byte-identical.
+- The stash lifecycle is now uniformly cleared on every exit from `.blockedOnReceive`: the receive arm
+  (next `Recv`), the `Send` wake (v0.31.133), lifecycle cancel/suspend (`restoreToReady`), and now the
+  bound-notification wake.
+- `tests/SyscallDispatchSuite.lean`: `sd053g_bound_notification_wake_clears_stash` — `boundDeliveryTarget?`
+  resolves the stashed bound server (the captured wake target), and the woken server's stash is cleared
+  while the reply object stays free.
+
+Trace byte-identical (233/233); `SeLe4n.Kernel.API` builds clean; syscall-dispatch + notification suites
+green. Lean Tier 0-2 green. Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects,
+server-first receive stash discipline).
+
 ## v0.31.137 — Reply objects (seL4-MCS): the receive-with-reply dispatch routes through the per-core receive transition (PR #822 Codex review)
 
 **Finding — both `.receive` dispatch arms called the single-core `endpointReceiveDual`, mis-placing a
