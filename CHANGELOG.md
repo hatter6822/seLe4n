@@ -1,3 +1,20 @@
+## v0.31.142 — Reply objects (seL4-MCS): mintReplyCap ABI — Rust conformance count fixes (PR #822 Codex review, Phase H #2.c CI follow-up)
+
+**CI fix for v0.31.141.** Three `sele4n-abi` conformance tests carried hardcoded SyscallId
+counts (`= 28`) that `cargo check` compiles but `cargo test` (run by the "Rust ABI Tests"
+CI job) fails at runtime once `MintReplyCap` (id 28) makes the count 29:
+
+- `syscall_id_exhaustive_roundtrip`: `0..28` + `from_u64(28).is_none()` → `0..(COUNT as u64)`
+  + `from_u64(COUNT).is_none()` (robust to future variants).
+- `syscall_id_variant_count`: `SYSCALL_COUNT` 28 → 29.
+- `syscall_count_updated`: `assert_eq!(SyscallId::COUNT, 28)` → 29.
+- Stale docstring "26 variants, 0-25" → "29 variants, 0-28".
+
+`cargo test -p sele4n-abi --test conformance` (99/0) and `-p sele4n-types --lib` (all syscall
+roundtrip/injective/required-right tests) pass locally. (The `sele4n-hal` UART stress test
+hangs in this container — an environment issue, not a code one; CI runs it.) Lean unchanged;
+trace byte-identical. Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.c).
+
 ## v0.31.141 — Reply objects (seL4-MCS): mintReplyCap goes live — full syscall ABI wiring (PR #822 Codex review, Phase H #2.c)
 
 **Deferred item #2 (retype → reply-cap authority), sub-step #2.c.** Makes the `mintReplyCap`
