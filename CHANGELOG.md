@@ -1,3 +1,26 @@
+## v0.31.143 — Reply objects (seL4-MCS): mintReplyCap preserves capabilityInvariantBundle (PR #822 Codex review, Phase H #2.b)
+
+**Deferred item #2, sub-step #2.b.** Establishes `mintReplyCap` / `mintReplyCapWithCdt` (the
+live `.mintReplyCap` dispatch op) as first-class capability operations that preserve
+`capabilityInvariantBundle` — on par with `cspaceMint`/`cspaceCopy`/`cspaceMove`.
+
+- `mintReplyCap_preserves_capabilityInvariantBundle` (`Capability/Invariant/Preservation/
+  Insert.lean`) — the source lookup is read-only (`cspaceLookupSlot_preserves_state`), and the
+  only success path is a single `cspaceInsertSlot` of the derived `.replyCap` at `dst`, so
+  preservation reduces to the shared `cspaceInsertSlot_preserves_capabilityInvariantBundle`
+  exactly like `cspaceMint` (the child-cap *derivation* is irrelevant to the insert's bundle
+  preservation — only the slot write matters).
+- `mintReplyCapWithCdt_preserves_capabilityInvariantBundle` (`…/CopyMoveMutate.lean`) — mirrors
+  `cspaceMintWithCdt_preserves_*`: the reply-cap insert preserves the bundle, then the CDT
+  mint-edge addition only touches `cdt` (objects unchanged across both `ensureCdtNodeForSlot`
+  writes and `addEdge`), so the remaining conjuncts frame past `objects` and the CDT pair is
+  supplied by `hCdtPost` (dischargeable via `cspaceMintWithCdt_cdtAcyclicity_of_freshDst`).
+
+These pre-stage #1 (the `replyCapPointsToValidReply` 7th conjunct): when the bundle grows, the
+mintReplyCap preservation extends incrementally. Capability-preservation modules build clean;
+Lean Tier 0-2 green; trace byte-identical. Per the completion plan (#2.b). Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.b).
+
 ## v0.31.142 — Reply objects (seL4-MCS): mintReplyCap ABI — Rust conformance count fixes (PR #822 Codex review, Phase H #2.c CI follow-up)
 
 **CI fix for v0.31.141.** Three `sele4n-abi` conformance tests carried hardcoded SyscallId

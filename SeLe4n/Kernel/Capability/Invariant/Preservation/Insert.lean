@@ -193,5 +193,40 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
             (fun cn hObj => hDstCapacity cn child hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
 
+/-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCap` preserves `capabilityInvariantBundle`.
+The source lookup is read-only (`cspaceLookupSlot_preserves_state`); the only success path
+is a single `cspaceInsertSlot` of the derived `.replyCap` at `dst`, so preservation reduces
+to the shared `cspaceInsertSlot_preserves_capabilityInvariantBundle` — exactly like
+`cspaceMint` (the derivation of the child cap is irrelevant to the insert's bundle
+preservation; only the slot write matters). -/
+theorem mintReplyCap_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
+      (cn.insert dst.slot cap).slotCountBounded)
+    (hStep : mintReplyCap src dst st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold mintReplyCap at hStep
+  cases hSrc : cspaceLookupSlot src st with
+  | error e => simp [hSrc] at hStep
+  | ok pair =>
+      rcases pair with ⟨parent, st1⟩
+      have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
+      subst st1
+      cases hTgt : parent.target with
+      | object target =>
+          cases hRep : st.getReply? (SeLe4n.ReplyId.ofObjId target) with
+          | none => simp [hSrc, hTgt, hRep] at hStep
+          | some r =>
+              have hInsert : cspaceInsertSlot dst
+                  { target := .replyCap (SeLe4n.ReplyId.ofObjId target),
+                    rights := AccessRightSet.ofList [.read, .write], badge := none } st
+                  = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
+              exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst _ hInv
+                (fun cn hObj => hDstCapacity cn _ hObj)
+                (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
+      | cnodeSlot a b => simp [hSrc, hTgt] at hStep
+      | replyCap rid => simp [hSrc, hTgt] at hStep
+
 
 end SeLe4n.Kernel

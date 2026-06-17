@@ -207,6 +207,47 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
                 cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
                 hObjFinal ▸ hObjInv1⟩
 
+/-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCapWithCdt` (the live `.mintReplyCap` dispatch
+op) preserves `capabilityInvariantBundle`.  Mirrors `cspaceMintWithCdt_preserves_*`: the
+reply-cap insert preserves the bundle (`mintReplyCap_preserves_*`), then the CDT mint-edge
+addition only touches `cdt` (objects unchanged across both `ensureCdtNodeForSlot` writes and
+the `addEdge`), so the remaining conjuncts frame past `objects` and the CDT pair is supplied
+by `hCdtPost` (dischargeable via `cspaceMintWithCdt_cdtAcyclicity_of_freshDst` for a fresh
+destination, exactly as for `cspaceMintWithCdt`). -/
+theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
+      (cn.insert dst.slot cap).slotCountBounded)
+    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
+    (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold mintReplyCapWithCdt at hStep
+  cases hMint : mintReplyCap src dst st with
+  | error e => simp [hMint] at hStep
+  | ok pair =>
+      rcases pair with ⟨_, st1⟩
+      have hBundle := mintReplyCap_preserves_capabilityInvariantBundle st st1 src dst hInv
+        hDstCapacity hMint
+      rcases hBundle with ⟨_, hBnd1, _, _, hDepth1, hObjInv1⟩
+      cases hEnsSrc : SystemState.ensureCdtNodeForSlot st1 src with
+      | mk srcNode stSrc =>
+          cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
+          | mk dstNode stDst =>
+              simp [hMint, hEnsSrc, hEnsDst] at hStep
+              cases hStep
+              have hObjSrc : stSrc.objects = st1.objects := by
+                simpa [hEnsSrc] using SystemState.ensureCdtNodeForSlot_objects_eq st1 src
+              have hObjDst : stDst.objects = stSrc.objects := by
+                simpa [hEnsDst] using SystemState.ensureCdtNodeForSlot_objects_eq stSrc dst
+              have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint }).objects = st1.objects := by
+                simp [hObjDst, hObjSrc]
+              exact ⟨cspaceLookupSound_holds _,
+                cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
+                hCdtPost.1, hCdtPost.2,
+                cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
+                hObjFinal ▸ hObjInv1⟩
+
 /-- AE4-C (U-18/CAP-02): Discharge CDT acyclicity for `cspaceMintWithCdt`
 when the destination CDT node is fresh (no edges reference it).
 
