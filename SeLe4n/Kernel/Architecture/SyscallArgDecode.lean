@@ -1353,6 +1353,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
     (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) ∧
+    (∀ args, decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args) :=
@@ -1368,6 +1369,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    fun args h => decodeNotificationSignalArgs_roundtrip args h,
    decodeNotificationWaitArgs_roundtrip,
    decodeReplyRecvArgs_roundtrip,
+   decodeRecvArgs_roundtrip,
    decodeSchedContextConfigureArgs_roundtrip,
    decodeSchedContextBindArgs_roundtrip,
    decodeSchedContextUnbindArgs_roundtrip⟩

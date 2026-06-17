@@ -416,26 +416,35 @@ capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pai
 it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
 the reply leg answers.  Resolves the reply cap from the caller's CSpace at
 `replyCPtr` (a gate whose `capAddr` is that slot), then `getReply?` + reads
-`reply.caller`.  Read-only.  `none` (→ `.replyCapInvalid`) on a missing /
-non-reply cap or a reply object with no outstanding caller (authority now flows
-from *holding* the reply cap, exactly like the `.reply` arm — no raw-thread
-bypass). -/
+`reply.caller`.  Read-only.  Returns `Except KernelError`: a CSpace / cap
+resolution failure (`decodeReplyRecvArgs` / `syscallLookupCap` / `extractReplyId`)
+**propagates** its explicit error (`invalidCapability` / `illegalAuthority` / …),
+mirroring `resolveRecvReplyId`, so a malformed or unauthorized reply-cap slot is
+distinguishable from a valid-but-consumed Reply.  `.replyCapInvalid` is reserved for
+a missing MR0, a missing Reply object, or a present Reply object with **no
+outstanding caller** (authority now flows from *holding* the reply cap, exactly like
+the `.reply` arm — no raw-thread bypass). -/
 def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
-    (st : SystemState) : Option (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge) :=
+    (st : SystemState) :
+    Except KernelError (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge) :=
   -- PR #822 review: require MR0 explicitly present (`msgInfo.length ≥ 1`) before
   -- reading the reply CPtr — the ARM64 register decoder always materializes x2..x5,
   -- so a length-0 `ReplyRecv` must not resolve/consume a stale (x2) reply cap.
-  if decoded.msgInfo.length == 0 then none else
+  if decoded.msgInfo.length == 0 then .error .replyCapInvalid else
   match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
-  | .error _ => none
+  | .error e => .error e
   | .ok rargs =>
       let replyGate : SyscallGate :=
         { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
+      -- PR #822 review: propagate the explicit CSpace cap error (a missing slot or a
+      -- cap without write authority is `invalidCapability` / `illegalAuthority`), not
+      -- a collapsed `.replyCapInvalid` — the latter is reserved for a resolved Reply
+      -- object with no outstanding caller (mirrors `resolveRecvReplyId`).
       match syscallLookupCap replyGate st with
-      | .error _ => none
+      | .error e => .error e
       | .ok (rcap, _) =>
           match extractReplyId rcap with
-          | .error _ => none
+          | .error e => .error e
           | .ok rid =>
               match st.getReply? rid with
               | some reply =>
@@ -444,9 +453,9 @@ def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
                   -- authority), not the endpoint receive cap's, so the previous
                   -- caller receives the badge associated with the reply cap (as in
                   -- the `.reply` arm) when the two differ.
-                  | some prevCaller => some (rid, prevCaller, rcap.badge)
-                  | none => none
-              | none => none
+                  | some prevCaller => .ok (rid, prevCaller, rcap.badge)
+                  | none => .error .replyCapInvalid
+              | none => .error .replyCapInvalid
 
 /-- WS-SM SM6.C (PR #822 review): the `ReplyRecv` post-receive donation
 resolution — seL4-MCS *"the scheduling context follows the message"*.  Run AFTER
@@ -1339,8 +1348,8 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       -- message, and **re-links** the same reply object to the next caller.
       fun st =>
         match resolveReplyRecvReply gate decoded st with
-        | none => .error .replyCapInvalid
-        | some (rid, prevCaller, replyBadge) =>
+        | .error e => .error e
+        | .ok (rid, prevCaller, replyBadge) =>
             -- WS-SM SM6.D (PR #822 review): MR0 carries the reply CPtr (a control
             -- register), so the reply *payload* delivered to the previous caller is
             -- MR1.. — strip the leading control register before building the reply.
@@ -1585,8 +1594,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
       -- so `checkedDispatch_replyRecv_eq_unchecked_when_allowed` stays provable.
       fun st =>
         match resolveReplyRecvReply gate decoded st with
-        | none => .error .replyCapInvalid
-        | some (rid, prevCaller, replyBadge) =>
+        | .error e => .error e
+        | .ok (rid, prevCaller, replyBadge) =>
             -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
             -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
             -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
@@ -1888,7 +1897,7 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
 (reply + receive), checked and unchecked `.replyRecv` dispatch produce identical
 results.  Faithful seL4-MCS: the reply target is the reply object's recorded
 `caller` resolved from the server-supplied reply cap
-(`resolveReplyRecvReply … = some (rid, prevCaller)`); the checked arm is a single
+(`resolveReplyRecvReply … = .ok (rid, prevCaller)`); the checked arm is a single
 outer flow gate — (1) receiver → prevCaller (reply leg), (2) endpoint → receiver
 (receive leg) — over the *same* `replyRecvBody` the unchecked arm runs, so when
 both flows hold the two arms coincide definitionally. -/
@@ -1900,7 +1909,7 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (hCap : cap.target = .object epId)
     (st : SystemState)
     (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
-    (hResolve : resolveReplyRecvReply gate decoded st = some (rid, prevCaller, replyBadge))
+    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
     (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
     (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     dispatchWithCapChecked ctx decoded tid gate cap st =

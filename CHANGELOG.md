@@ -1,3 +1,25 @@
+## v0.31.128 — Reply objects (seL4-MCS): receive-with-reply ABI — decode-roundtrip coverage + ReplyRecv reply-cap error propagation (PR #822 Codex review)
+
+Two receive-with-reply ABI correctness fixes from the Codex review:
+
+**`RecvArgs` threaded into the aggregate decode-roundtrip bundle** (`Architecture/SyscallArgDecode.lean`).
+The production `decodeRecvArgs` decoder (used by `endpoint_receive_with_reply`) had a
+`decodeRecvArgs_roundtrip` proof, but the aggregate `decode_layer2_roundtrip_all` theorem enumerated only
+the older decoders (it included `decodeReplyRecvArgs_roundtrip` but not `decodeRecvArgs_roundtrip`), so any
+proof/test consuming the "all layer-2 decoders round-trip" bundle was blind to the MR0 reply-cap receive
+ABI. The conjunct is now threaded through the bundle alongside `decodeReplyRecvArgs_roundtrip`.
+
+**`resolveReplyRecvReply` propagates explicit reply-cap lookup errors** (`API.lean`). The `.replyRecv`
+reply-cap resolver returned `Option` and collapsed *every* failure to `none → .replyCapInvalid`, so a
+malformed or unauthorized reply-cap slot (`syscallLookupCap` → `invalidCapability` / `illegalAuthority`,
+or a non-reply cap → `extractReplyId` error) was indistinguishable from a valid-but-consumed Reply object,
+diverging from `resolveRecvReplyId`. It now returns `Except KernelError`: decode / `syscallLookupCap` /
+`extractReplyId` failures **propagate** their explicit error, and `.replyCapInvalid` is reserved for a
+missing MR0, a missing Reply object, or a present Reply with no outstanding caller. Both dispatch arms
+(unchecked + checked) and the `checkedDispatch_replyRecv_eq_unchecked_when_allowed` hypothesis updated.
+
+Full prod + staged build green; Lean Tier 0-2 green; error-matrix suite green; trace byte-identical.
+
 ## v0.31.127 — Reply objects (seL4-MCS): timeout clears the receive stash + reply donation deschedules the recorded server's core (PR #822 Codex review)
 
 Two reply-scheduling correctness follow-ons from the Codex review of v0.31.125/126:
