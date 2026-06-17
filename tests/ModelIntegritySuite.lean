@@ -788,6 +788,48 @@ def pendingReceiveReply_stash_injective : IO Unit := do
   expect "a distinct reply id stays free for another server"
     (!SeLe4n.Kernel.replyIsStashed st otherRid)
 
+/-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
+derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.
+`lifecycleRetypeDirect` retypes in place (the holder keeps an `.object target` cap), so
+without this a retyped Reply is unusable by the receive-with-reply ABI.  This test mints
+a reply cap from an object-to-Reply cap and confirms it targets the Reply
+(`.replyCap (ReplyId.ofObjId target)`) and resolves (`getReply?`), and that minting from
+an object cap whose target is NOT a Reply fails closed. -/
+def mintReplyCap_derives_backed_reply_cap : IO Unit := do
+  let target : SeLe4n.ObjId := ⟨200⟩
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId target
+  let plain : SeLe4n.ObjId := ⟨201⟩   -- a non-Reply object (endpoint)
+  let cnId : SeLe4n.ObjId := ⟨100⟩
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF
+        [ ((SeLe4n.Slot.ofNat 0),
+            { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+        , ((SeLe4n.Slot.ofNat 2),
+            { target := .object plain, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject target (.reply { replyId := rid })
+      |>.withObject plain (.endpoint {})
+      |>.withObject cnId mkCn
+      |>.build)
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
+  match SeLe4n.Kernel.mintReplyCap src dst st with
+  | .ok ((), st') =>
+      match SeLe4n.Kernel.cspaceLookupSlot dst st' with
+      | .ok (cap, _) =>
+          expect "minted cap targets the Reply object" (decide (cap.target = .replyCap rid))
+          expect "minted reply cap is backed (getReply? resolves)" ((st'.getReply? rid).isSome)
+      | .error _ => throw <| IO.userError "minted reply cap should be present at dst"
+  | .error _ => throw <| IO.userError "mintReplyCap from an object-to-Reply cap should succeed"
+  -- negative: minting from an `.object` cap whose target is NOT a Reply → invalidCapability.
+  let badSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
+  let badDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 3 }
+  match SeLe4n.Kernel.mintReplyCap badSrc badDst st with
+  | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == .invalidCapability)
+  | .ok _ => throw <| IO.userError "mintReplyCap from a non-Reply object must be rejected"
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -2078,6 +2120,7 @@ def main : IO Unit := do
   -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
   reply_inUse_retype_rejected
   pendingReceiveReply_stash_injective
+  mintReplyCap_derives_backed_reply_cap
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

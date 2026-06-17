@@ -1,3 +1,30 @@
+## v0.31.140 — Reply objects (seL4-MCS): mintReplyCap — the retype → reply-cap authority production path (PR #822 Codex review, Phase H #2.a)
+
+**Deferred item #2 (retype → reply-cap authority), sub-step #2.a.** `lifecycleRetypeDirect`
+retypes an ObjId **in place**, so after retyping Untyped → Reply the holder's authority is
+still an `.object target` cap; the receive-with-reply ABI (`resolveRecvReplyId` /
+`extractReplyId`) needs a `.replyCap rid`, so dynamically-retyped Reply objects were
+unusable (only boot-preinstalled reply caps worked). This adds the missing production path.
+
+- `mintReplyCap (src dst : CSpaceAddr)` (`Capability/Operations.lean`) — given an
+  `.object target` cap at `src` where `target` holds a Reply object
+  (`getReply? (ReplyId.ofObjId target)` resolves), installs
+  `.replyCap (ReplyId.ofObjId target)` at `dst`. The round-trip
+  `(ReplyId.ofObjId target).toObjId = target` makes the minted cap resolve back to the same
+  Reply, so the result satisfies `replyCapPointsToValidReply` by construction. Fails closed:
+  `.nullCapability` on empty `src`; `.invalidCapability` on a non-`.object` cap or an
+  `.object` whose target is not a Reply. Mirrors `cspaceMint`'s lookup → derive → insert.
+- `mintReplyCapWithCdt` — CDT-tracked form (records the mint edge `src → dst`), so the minted
+  reply cap is revocable through `cspaceRevokeCdt` exactly like `cspaceMintWithCdt`.
+- `tests/ModelIntegritySuite.lean`: `mintReplyCap_derives_backed_reply_cap` — mints from an
+  object-to-Reply cap and confirms the dst slot holds `.replyCap (ReplyId.ofObjId target)`
+  and resolves via `getReply?`; minting from a non-Reply object fails `.invalidCapability`.
+
+Per the completion plan (#2.a); the ABI/dispatch wiring (#2.c) and bundle preservation
+(#2.b) follow. `Capability.Operations` builds clean; model-integrity suite green. Lean
+Tier 0-2 green; trace byte-identical (the op is not yet dispatch-wired). Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.a).
+
 ## v0.31.139 — Reply objects (seL4-MCS): completion plan for the deferred Phase-C-invariants / D6 / H items
 
 **Planning.** Adds `docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` — a precise,

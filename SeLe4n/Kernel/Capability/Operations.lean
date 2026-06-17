@@ -1136,6 +1136,53 @@ def cspaceMintWithCdt (src dst : CSpaceAddr) (rights : AccessRightSet)
         let cdt' := stDst.cdt.addEdge srcNode dstNode .mint
         .ok ((), { stDst with cdt := cdt' })
 
+/-- WS-SM SM6.D (PR #822 review, Phase H): **mint a reply capability** from an
+`.object` capability that targets a `.reply` object.  `lifecycleRetypeDirect` retypes
+an ObjId in place, so after retyping Untyped → Reply the holder's authority is still an
+`.object target` cap; the receive-with-reply ABI (`resolveRecvReplyId`/`extractReplyId`)
+needs a `.replyCap rid`.  This is the production path that derives it: given an
+`.object target` cap at `src` where `target` holds a Reply object (`getReply?
+(ReplyId.ofObjId target)` resolves), install `.replyCap (ReplyId.ofObjId target)` at
+`dst`.  Authority flows from holding the `.object` cap to the Reply (the object *is* the
+reply object); single-use semantics are unchanged (consume clears `reply.caller`).
+
+Fails closed: `.nullCapability` on an empty `src`; `.invalidCapability` on a non-`.object`
+cap or an `.object` whose target is not a Reply object.  The round-trip
+`(ReplyId.ofObjId target).toObjId = target` (Prelude) makes the minted cap resolve back
+to the same Reply, so the result satisfies `replyCapPointsToValidReply` by construction.
+Mirrors `cspaceMint`'s lookup → derive → insert shape. -/
+def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match cspaceLookupSlot src st with
+    | .error e => .error e
+    | .ok (parent, st') =>
+        match parent.target with
+        | .object target =>
+            let rid := SeLe4n.ReplyId.ofObjId target
+            match st'.getReply? rid with
+            | some _ =>
+                let child : Capability :=
+                  { target := .replyCap rid
+                    rights := AccessRightSet.ofList [.read, .write]
+                    badge := none }
+                cspaceInsertSlot dst child st'
+            | none => .error .invalidCapability
+        | _ => .error .invalidCapability
+
+/-- WS-SM SM6.D (PR #822 review, Phase H): CDT-tracked `mintReplyCap` — derives the reply
+cap (above) then records the mint edge `src → dst` in the CDT, so the minted reply cap is
+revocable through the standard `cspaceRevokeCdt` path (exactly like `cspaceMintWithCdt`).
+Production dispatch routes through this CDT-tracked form. -/
+def mintReplyCapWithCdt (src dst : CSpaceAddr) : Kernel Unit :=
+  fun st =>
+    match mintReplyCap src dst st with
+    | .error e => .error e
+    | .ok ((), st') =>
+        let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st' src
+        let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+        let cdt' := stDst.cdt.addEdge srcNode dstNode .mint
+        .ok ((), { stDst with cdt := cdt' })
+
 -- ============================================================================
 -- M-P04/M5: Shared per-node revocation step
 -- ============================================================================
