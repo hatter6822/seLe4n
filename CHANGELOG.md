@@ -1,3 +1,28 @@
+## v0.31.139 — Reply objects (seL4-MCS): completion plan for the deferred Phase-C-invariants / D6 / H items
+
+**Planning.** Adds `docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` — a precise,
+green-sub-step implementation plan for the three remaining reply-object *completeness*
+items surfaced by the PR #822 review, all of which are **fail-closed-safe at runtime
+today** (the live `.reply` path rejects a dangling reply cap via `getReply?`; the live
+dispatch always links `replyObject`):
+
+- **#2 retype → reply-cap authority** (Phase H ABI) — a verified `mintReplyCap`
+  production path, since `lifecycleRetypeDirect` retypes in-place and leaves the
+  authority cap as `.object target` (unusable as `.replyCap`).
+- **#1 `replyCapPointsToValidReply`** (Phase C-invariants) — the 7th conjunct of the
+  step-preserved `capabilityInvariantBundle` (the only meaningful home; the
+  cross-subsystem composition and `cdtMintCompleteness` are boot-only), mirroring the
+  runtime `cspaceSlotCoherencyChecks` backing check.
+- **#7 `blockedOnReply ⇒ replyObject`** (Phase D6) — fold reply-linking into the IPC
+  transitions so blocking and linking are atomic (the faithful seL4-MCS fold; today the
+  rid is linked by a separate dispatch step, so the invariant holds at syscall — not
+  transition — boundaries).
+
+Sequencing #2→#1→#7 with per-item green sub-steps, preservation arguments, risk notes,
+and verification. The plan survives the context reset so execution is guided and the
+60-site `capabilityInvariantBundle` expansion / IPC-transition re-base are de-risked.
+Doc-only; no Lean sources changed. Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md.
+
 ## v0.31.138 — Reply objects (seL4-MCS): a bound-notification wake clears the server-first reply stash (PR #822 Codex review)
 
 **Finding — a bound-notification delivery woke a `.blockedOnReceive` server without clearing its
