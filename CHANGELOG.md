@@ -1,3 +1,26 @@
+## v0.31.137 — Reply objects (seL4-MCS): the receive-with-reply dispatch routes through the per-core receive transition (PR #822 Codex review)
+
+**Finding — both `.receive` dispatch arms called the single-core `endpointReceiveDual`, mis-placing a
+non-boot-core receiver's run-queue state.** When a server on a non-boot core receives (the
+receive-with-reply ABI) and no sender is queued, the single-core block path removed the receiver with the
+boot-core `removeRunnable` rather than `removeRunnableOnCore … executingCore`: the TCB was stored
+`.blockedOnReceive` (and could stash a reply object) yet could remain current/runnable on its *actual*
+core. A queued plain-`Send` rendezvous had the same single-core placement of the woken sender.
+
+- Both `.receive` arms — unchecked (`dispatchCapabilityOnly`) and flow-checked (`dispatchWithCapChecked`)
+  — now derive `executingCore := determineExecutingCore st tid` (as the `.call` / `.replyRecv` arms do)
+  and route through `endpointReceiveDualOnCore epId tid executingCore`, which removes the blocking
+  receiver from *its own* core and routes a woken `blockedOnSend` sender to *its* home core (surfacing
+  the cross-core `.reschedule` SGI the syscall seam fires). On the boot core this is definitionally the
+  prior `endpointReceiveDual`, so the trace is byte-identical.
+- The flow-checked arm uses the *unchecked* per-core transition because the endpoint→receiver flow is
+  already gated by the explicit pre-check (v0.31.135); `checkedDispatch_receive_flow_denied` (denied →
+  `.flowDenied`, no reply probe) is unaffected (the transition sits in the permitted branch).
+
+Trace byte-identical (233/233); `SeLe4n.Kernel.API` builds clean; syscall-dispatch + cross-core reply
+suites green. Lean Tier 0-2 green. Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects,
+per-core receive placement).
+
 ## v0.31.136 — Reply objects (seL4-MCS): a delegated ReplyRecv returns the previous caller's donation from the recorded server (PR #822 Codex review)
 
 **Finding — `replyRecvReturnDonation` returned the previous caller's donated SchedContext from the cap

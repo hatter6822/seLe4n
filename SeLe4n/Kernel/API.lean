@@ -1225,14 +1225,22 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
       -- later `.reply` resolves authority through `reply.caller`.
       fun st =>
         -- PR #822 review: an explicit (length ≥ 1) but bad reply cap fails BEFORE
-        -- `endpointReceiveDual`, so a server is never blocked as a plain receive
-        -- on a stale/non-reply CPtr (only length 0 means "no reply object").
+        -- the receive, so a server is never blocked as a plain receive on a
+        -- stale/non-reply CPtr (only length 0 means "no reply object").
         match resolveRecvReplyId gate decoded st with
         | .error e => .error e
         | .ok replyIdOpt =>
-          match endpointReceiveDual epId tid st with
-          | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
-          | .error e => .error e
+          -- WS-SM SM6.D (PR #822 review): route through the **per-core** receive
+          -- transition (like `.call`/`.replyRecv`).  The single-core `endpointReceiveDual`
+          -- block path removes the receiver with the boot-core `removeRunnable`, so a
+          -- server receiving on a non-boot core could block `.blockedOnReceive` yet stay
+          -- current/runnable on its actual core; `endpointReceiveDualOnCore … executingCore`
+          -- removes it from *its own* core and routes a woken `blockedOnSend` sender to
+          -- *its* home core.  On the boot core this is definitionally `endpointReceiveDual`.
+          let executingCore := determineExecutingCore st tid
+          match endpointReceiveDualOnCore epId tid executingCore st with
+          | (st', .ok (sender, _sgi)) => linkReceivedCaller sender replyIdOpt st'
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
   | .call =>
@@ -1493,9 +1501,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           match resolveRecvReplyId gate decoded st with
           | .error e => .error e
           | .ok replyIdOpt =>
-            match endpointReceiveDualChecked ctx epId tid st with
-            | .ok (sender, st') => linkReceivedCaller sender replyIdOpt st'
-            | .error e => .error e
+            -- WS-SM SM6.D (PR #822 review): route through the per-core receive
+            -- transition (the endpoint→receiver flow is already gated above, so the
+            -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
+            -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
+            -- `endpointReceiveDualChecked` when the flow is permitted.
+            let executingCore := determineExecutingCore st tid
+            match endpointReceiveDualOnCore epId tid executingCore st with
+            | (st', .ok (sender, _sgi)) => linkReceivedCaller sender replyIdOpt st'
+            | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
