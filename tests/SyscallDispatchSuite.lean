@@ -848,6 +848,38 @@ private def sd053_serverFirstLink : IO Unit := do
         (e == .replyCapInvalid)
         "a server-first Call with no stashed reply object must be rejected"
   | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
+  -- (e) PR #822 review: a plain `Send` that wakes a server-first receiver clears the
+  -- server's reply stash — the server left `.blockedOnReceive` for `.ready`, so the
+  -- stash (which lives only on a blocked receiver) must not survive, and a future
+  -- Call rendezvous must not be able to mis-link the stale `rid`.
+  let stWoken : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
+  | .ok ((), st') =>
+      expect "sd053e_send_wake_clears_stash"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "a Send-woken receiver's stale reply stash must be cleared"
+      expect "sd053e_reply_stays_free"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
+        "clearing the stash must not consume the reply object (it stays free)"
+  | .error _ => failLine "sd053e" "clearWokenReceiverStash should succeed"
+  -- (f) `clearWokenReceiverStash` is a no-op when the woken receiver carries no stash
+  -- (the common case — guarantees the byte-identical trace on stash-free sends).
+  let stNoStashReceiver : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.build)
+  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stNoStashReceiver with
+  | .ok ((), st') =>
+      expect "sd053f_no_stash_noop"
+        ((st'.getTcb? server).all (fun t =>
+          decide (t.pendingReceiveReply = none) && decide (t.ipcState = .ready)))
+        "clearing with no stash present leaves the receiver unchanged"
+  | .error _ => failLine "sd053f" "clearWokenReceiverStash no-op should succeed"
 
 end SeLe4n.Testing.SyscallDispatchSuite
 

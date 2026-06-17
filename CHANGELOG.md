@@ -1,3 +1,31 @@
+## v0.31.133 — Reply objects (seL4-MCS): a plain Send woken receiver clears its server-first reply stash (PR #822 Codex review)
+
+**Finding — a `Send` that wakes a server-first receiver left a stale `pendingReceiveReply` stash.**
+A server that blocks on `Recv` having supplied a reply object stashes it on `TCB.pendingReceiveReply`
+so a later `Call` rendezvous can be linked to it (`linkServerFirstCaller`). But if a *one-way* `Send`
+rendezvouses with that blocked server first, the server leaves `.blockedOnReceive` for `.ready` while
+the stash survives — violating `pendingReceiveReplyWellFormed` (the 17th `ipcInvariantFull` conjunct: a
+stash lives only on a `.blockedOnReceive` TCB) and leaving a stale `rid` that a *future* `Call`
+rendezvous could mis-link via `linkServerFirstCaller`.
+
+- New dispatch-layer hook `clearWokenReceiverStash (receiver? : Option ThreadId)` — symmetric to
+  `linkReceivedCaller` (the stash *setter*). It clears `TCB.pendingReceiveReply` on the receive-queue
+  head the send wakes (captured *before* the rendezvous dequeues it). The reply object is untouched (it
+  stays free, `caller = none`; the server still holds its cap and may re-supply it on the next `Recv`) —
+  only the stash pointer is cleared. A literal no-op (no store, state returned unchanged) when there is
+  no woken receiver or it carries no stash, so the trace is byte-identical on every stash-free send.
+- Wired into both `.send` dispatch arms — unchecked (`dispatchCapabilityOnly`, via
+  `endpointSendDualWithCaps`) and flow-checked (`dispatchWithCapChecked`, via `endpointSendDualChecked`).
+  The `dispatchWithCap_send_uses_withCaps` equation theorem updated to the new RHS.
+- The stash lifecycle now lives entirely in the dispatch layer (set on the receive arm, cleared on the
+  send and call arms), keeping the `endpointSendDual` transition and its preservation surface untouched.
+- `tests/SyscallDispatchSuite.lean`: `sd053e_send_wake_clears_stash` (+ `sd053e_reply_stays_free`) and
+  `sd053f_no_stash_noop` assert the clear and the no-op.
+
+Trace byte-identical (233/233); `SeLe4n.Kernel.API` builds clean; syscall-dispatch suite green
+(including all sd053 stash assertions). Lean Tier 0-2 green. Refs:
+docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, server-first receive stash discipline).
+
 ## v0.31.132 — Reply objects (seL4-MCS): frozen reply authority is the presented reply capability (PR #822 Codex review)
 
 **Finding — `frozenEndpointReply` derived the reply object from the *target*, not the *presented cap*.**

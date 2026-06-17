@@ -411,6 +411,33 @@ def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
         | _ => .ok ((), st)
     | none => .ok ((), st)
 
+/-- WS-SM SM6.D (PR #822 review): clear a server-first reply **stash**
+(`TCB.pendingReceiveReply`) on a receiver woken by a plain `Send`.  A server that
+blocked on `Recv` having supplied a reply object carries the stash so a later `Call`
+can be linked to it (`linkServerFirstCaller`); but if a *one-way* `Send` rendezvouses
+first, the server leaves `.blockedOnReceive` for `.ready` while the stash survives —
+violating `pendingReceiveReplyWellFormed` (a stash lives only on a `.blockedOnReceive`
+TCB) and leaving a stale `rid` a *future* `Call` rendezvous could mis-link.  The
+reply object itself is untouched (it stays free, `caller = none`; the server still
+holds its cap and may re-supply it on the next `Recv`); only the stash pointer is
+cleared.  `receiver?` is the pre-send receive-queue head — the thread the send wakes
+— captured before the rendezvous dequeues it.  A no-op (returns the state unchanged,
+no store) when there is no woken receiver or it carries no stash, so the trace is
+byte-identical on every stash-free send.  Symmetric to `linkReceivedCaller`. -/
+def clearWokenReceiverStash (receiver? : Option SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match receiver? with
+    | none => .ok ((), st)
+    | some receiver =>
+        match st.getTcb? receiver with
+        | some rTcb =>
+            match rTcb.pendingReceiveReply with
+            | some _ =>
+                storeObject receiver.toObjId
+                  (.tcb { rTcb with pendingReceiveReply := none }) st
+            | none => .ok ((), st)
+        | none => .ok ((), st)
+
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): resolve the server-supplied reply
 capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pair
 it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
@@ -1161,10 +1188,14 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- WS-SM SM6.D (PR #822 review): capture the receive-queue head the send will
+        -- wake, so its server-first reply stash is cleared once it leaves
+        -- `.blockedOnReceive` (a stash lives only on a blocked receiver).
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st'
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
@@ -1411,10 +1442,13 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- AH1-B (H-01 fix): Pass capability transfer params to checked send
+        -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
+        -- stash (mirrors the unchecked `.send` arm).
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendDualChecked ctx epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st'
     | _ => fun _ => .error .invalidCapability
   -- T6-I: IPC receive — checked for endpoint→receiver flow
   | .receive =>
@@ -2300,10 +2334,11 @@ theorem dispatchWithCap_send_uses_withCaps
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st') := by
+        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st' := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
