@@ -1,3 +1,24 @@
+## v0.31.147 — Reply objects (seL4-MCS): end-to-end retype→mint→link reply-cap test (PR #822 Codex review, Phase H #2.d)
+
+**Deferred item #2, sub-step #2.d — the end-to-end provisioning test** (closes the optional
+follow-on to the `mintReplyCap` production path). `reply_cap_end_to_end_retype_mint_link`
+(ModelIntegritySuite) drives the full chain the #2 finding established, with no synthetic
+shortcuts:
+
+1. **Retype** an Untyped object in place to a fresh Reply via `lifecycleRetypeDirect` (using the
+   production `objectOfKernelType .reply` factory) — the holder keeps its `.object target` cap.
+2. **Mint** a reply cap from that object cap via `mintReplyCap` → `.replyCap (ReplyId.ofObjId target)`
+   (rid derived from the object id; backed by construction since the retype made `getReply?` resolve).
+3. **Link** a blocked caller through the production `SystemState.linkCallerReply` and assert the
+   bidirectional `reply.caller = some caller` / `tcb.replyObject = some rid` linkage holds.
+
+This exercises retype + mint + link as a single composed path (the existing
+`mintReplyCap_derives_backed_reply_cap` covered mint from a pre-built Reply; this adds the retype
+provisioning step and the caller link). The receive-path auto-linking on `.recv`/`.replyRecv`
+remains the gated re-wire; the test drives the same `linkCallerReply` op the dispatch composes.
+Test-only; Lean Tier 0-2 green; trace byte-identical. Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.d).
+
 ## v0.31.146 — Reply objects (seL4-MCS): replyCapPointsToValidReply bundled into capabilityInvariantBundle (PR #822 Codex review, Phase C-inv #1.a)
 
 **Deferred item #1, sub-step #1.a — the contract step.** Promotes `replyCapPointsToValidReply`

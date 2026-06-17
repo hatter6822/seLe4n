@@ -860,6 +860,65 @@ def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
   -- precisely the configuration `replyCapPointsToValidReply` forbids.
   expect "dangling reply cap is unbacked (getReply? isNone)" ((st.getReply? danglingRid).isNone)
 
+/-- WS-SM SM6.D (PR #822 review, Phase H #2.d): end-to-end provisioning chain for a reply
+capability — **retype** Untyped → Reply, **`mintReplyCap`** to derive the `.replyCap`, then **link**
+a blocked caller through the production `linkCallerReply`.  This drives the full production path #2
+established: a Reply object is provisioned by an in-place retype (the holder keeps an `.object` cap),
+`mintReplyCap` converts that authority into the reply ABI's `.replyCap rid` (rid derived from the
+object id), and the resulting cap is a functional handle whose reply resolves (`getReply?`) and
+accepts a caller link.  (The receive-path auto-linking on `.recv`/`.replyRecv` is the gated re-wire;
+this test drives the linkage via the verified `linkCallerReply` op, the same one the dispatch
+composes.) -/
+def reply_cap_end_to_end_retype_mint_link : IO Unit := do
+  let target : SeLe4n.ObjId := ⟨400⟩
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId target
+  let caller : SeLe4n.ThreadId := ⟨401⟩
+  let cnId : SeLe4n.ObjId := ⟨100⟩
+  -- Slot 0 holds an `.object target` cap with retype authority — it is both the retype-authority
+  -- cap and the `mintReplyCap` source.
+  let authCap : Capability :=
+    { target := .object target,
+      rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ] }
+  let callerTcb : TCB :=
+    { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject target (SeLe4n.Kernel.objectOfKernelType .untyped 0)
+      |>.withLifecycleObjectType target .untyped
+      |>.withObject caller.toObjId (.tcb callerTcb)
+      |>.withObject cnId mkCn
+      |>.build)
+  -- 1. Retype the Untyped in place to a fresh Reply object.
+  match SeLe4n.Kernel.lifecycleRetypeDirect authCap target (SeLe4n.Kernel.objectOfKernelType .reply 0) st0 with
+  | .error _ => throw <| IO.userError "retype Untyped → Reply should succeed"
+  | .ok ((), st1) =>
+      expect "after retype, the Reply resolves via getReply?" ((st1.getReply? rid).isSome)
+      -- 2. Mint a reply cap from the object cap at slot 0 into slot 1.
+      let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+      let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
+      match SeLe4n.Kernel.mintReplyCap src dst st1 with
+      | .error _ => throw <| IO.userError "mintReplyCap from the retyped Reply should succeed"
+      | .ok ((), st2) =>
+          match SeLe4n.Kernel.cspaceLookupSlot dst st2 with
+          | .error _ => throw <| IO.userError "minted reply cap should be present at dst"
+          | .ok (cap, _) =>
+              expect "minted cap targets the retyped Reply" (decide (cap.target = .replyCap rid))
+              expect "minted reply cap resolves (getReply?)" ((st2.getReply? rid).isSome)
+              -- 3. Use the reply cap: link the blocked caller through the production op.
+              match SystemState.linkCallerReply caller rid st2 with
+              | .error _ => throw <| IO.userError "linkCallerReply should attach the caller to the fresh Reply"
+              | .ok ((), st3) =>
+                  match st3.getReply? rid with
+                  | some r => expect "linked Reply names the caller" (decide (r.caller = some caller))
+                  | none => throw <| IO.userError "Reply must still resolve after linking"
+                  match st3.getTcb? caller with
+                  | some tcb => expect "caller TCB records the reply object (TCB↔Reply linkage)" (decide (tcb.replyObject = some rid))
+                  | none => throw <| IO.userError "caller TCB must persist after linking"
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -2152,6 +2211,7 @@ def main : IO Unit := do
   pendingReceiveReply_stash_injective
   mintReplyCap_derives_backed_reply_cap
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
+  reply_cap_end_to_end_retype_mint_link
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants
