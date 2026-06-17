@@ -1,3 +1,26 @@
+## v0.31.145 — Reply objects (seL4-MCS): replyCapPointsToValidReply preservation keystones (PR #822 Codex review, Phase C-inv #1.b)
+
+**Deferred item #1, sub-step #1.b — the hard, unifying preservation lemmas** (the keystone that
+makes #1.a's `capabilityInvariantBundle` tuple expansion mechanical). Both proven concretely
+(no `sorry`/externalization):
+
+- `cspaceInsertSlot_preserves_replyCapPointsToValidReply` (`…/Preservation/Insert.lean`) — the
+  **unifying** lemma: `cspaceCopy`/`Move`/`Mint`/`mintReplyCap` all insert through
+  `cspaceInsertSlot`, so they inherit it by discharging one precondition `hCapBacked`
+  (the inserted cap, if a reply cap, is backed — a copy of a backed source, or backed by
+  construction for `mintReplyCap`). Proof: a CNode store never affects `getReply?` (it reads
+  only `.reply` objects; the stored object is a `.cnode`), so backing frames through; the new
+  slot is backed by `hCapBacked`, every other by the pre-invariant (`CNode.lookup_insert_eq`/`_ne`).
+- `cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply` — deletion only *removes* a cap
+  (clearing its ref / detaching its CDT node, neither touching the object store beyond the one
+  CNode), so every post-state reply cap pre-existed and is backed (`CNode.lookup_remove_eq_none`/
+  `_ne`). Covers `cspaceDelete` + the CDT-revoke fold.
+
+With `mintReplyCap_preserves_*` (v0.31.143) these cover the cap-op preservation surface #1.a
+needs. `Capability.Invariant.Preservation.Insert` builds clean; Lean Tier 0-2 green; trace
+byte-identical. Per the (enhanced) completion plan (#1.b before #1.a). Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1.b).
+
 ## v0.31.144 — Reply objects (seL4-MCS): replyCapPointsToValidReply predicate + frame (PR #822 Codex review, Phase C-inv #1 foundations)
 
 **Deferred item #1 (no dangling reply caps), foundations.** Defines the Prop invariant the
