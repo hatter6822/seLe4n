@@ -1,3 +1,15 @@
+## v0.31.130 — Rust HAL: de-flake the cross-thread UART-lock stress test (CI fix)
+
+The `sele4n-hal` test `sm1g3_cross_thread_kprintln_stress_no_lock_leak` intermittently failed CI with
+"UART_LOCK leaked after cross-thread stress: still held". Diagnosis: a **test-isolation flake**, not a
+lock leak. The test's own worker threads are joined before the final `!UART_LOCK.is_held()` assertion, but
+`cargo` runs tests in parallel and `SM1G4_OBSERVATION_MUTEX` serialises only the *observation* tests — a
+concurrently-running non-observation `UART_LOCK` user (e.g. `uart_puts`, the per-line macro tests) can
+transiently hold the global lock at the instant of the assertion. The assertion now tolerates a transient
+cross-test hold with a short (2 s) time-bounded `yield_now` retry; a genuine leak (the lock held
+indefinitely) still fails once the deadline elapses. `cargo check --profile test` green; no production
+code changed.
+
 ## v0.31.129 — Bound notifications: canonical signal footprint is bound-aware + redundant bound footprint removed (PR #822 Codex review)
 
 **P1 — the live `.notificationSignal` 2PL footprint now covers the bound-delivery writes.** The live
