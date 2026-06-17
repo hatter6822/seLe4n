@@ -489,31 +489,38 @@ resolution — seL4-MCS *"the scheduling context follows the message"*.  Run AFT
 both the reply and the receive legs (so the server is never descheduled *before*
 it can rendezvous with a queued `Call`):
 
-* the server `tid` returns its OLD donated SchedContext to the client it was
-  serving (`returnDonatedSchedContextValid`); then
+* the **recorded server** returns its OLD donated SchedContext to the client it was
+  serving (`returnDonatedSchedContextValid`).  On a *delegated* reply cap the cap
+  holder / receiver `tid` is **not** the server the previous caller donated to —
+  the donation lives on `recordedServer` (`recordedReplyServer? st prevCaller`,
+  captured by the caller *before* the reply consumed `prevCaller.blockedOnReply`),
+  so the return and the run-queue/PIP bookkeeping are keyed on `recordedServer` and
+  its own home core `serverCore`, never on the delegate (PR #822 review,
+  "Return ReplyRecv donations from the recorded server").  In the non-delegated case
+  `recordedServer = tid` and `serverCore = executingCore`, so this is unchanged; then
 * if the receive rendezvoused with a **Call** — `nextThread` is now
   `.blockedOnReply`, i.e. a freshly dequeued request whose donation the queued
-  `Call` deferred — the new client's SchedContext is donated to the server
-  (`applyCallDonation`), so the passive server keeps running on the new request's
-  budget instead of being descheduled;
+  `Call` deferred — the new client's SchedContext is donated to the **receiver**
+  `tid` (`applyCallDonation`, still keyed on `tid` — the thread that will serve the
+  next request), so the passive server keeps running on the new request's budget;
 * otherwise (a plain `Send` rendezvous, or the server blocked with no waiter) the
-  now-passive server is descheduled on its own core (`removeRunnableOnCore`).
+  now-passive `recordedServer` is descheduled on its own core (`removeRunnableOnCore`).
 
-A server that holds **no** donated SC (an active server with its own budget, or an
-already-`.unbound` one) needs no donation change — its run-queue state is left to
-the receive leg.  Always reverts the reply-leg priority-inheritance boost via the
-cross-core chain walk (`propagatePipChainCrossCore`). -/
-def replyRecvReturnDonation (tid : SeLe4n.ThreadId) (nextThread : SeLe4n.ThreadId)
-    (executingCore : Concurrency.CoreId) : Kernel Unit :=
+A recorded server that holds **no** donated SC (an active server with its own budget,
+or an already-`.unbound` one) needs no donation change — its run-queue state is left
+to the receive leg.  Always reverts the reply-leg priority-inheritance boost via the
+cross-core chain walk (`propagatePipChainCrossCore`) from `recordedServer`. -/
+def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
+    (nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId) : Kernel Unit :=
   fun st =>
-    match lookupTcb st tid with
+    match lookupTcb st recordedServer with
     | none => .error .objectNotFound
-    | some tidTcb =>
-        match tidTcb.schedContextBinding with
+    | some srvTcb =>
+        match srvTcb.schedContextBinding with
         | .donated oldScId owner =>
-            match tid.toValid?, owner.toValid? with
-            | some tidV, some ownerV =>
-                match returnDonatedSchedContextValid st tidV oldScId ownerV with
+            match recordedServer.toValid?, owner.toValid? with
+            | some srvV, some ownerV =>
+                match returnDonatedSchedContextValid st srvV oldScId ownerV with
                 | .error e => .error e
                 | .ok st1 =>
                     -- Did the receive leg rendezvous with a queued `Call`?
@@ -521,22 +528,24 @@ def replyRecvReturnDonation (tid : SeLe4n.ThreadId) (nextThread : SeLe4n.ThreadI
                     | some nextTcb =>
                         match nextTcb.ipcState with
                         | .blockedOnReply _ _ =>
-                            match nextThread.toValid? with
-                            | some nextV =>
+                            -- New Call: donate to the RECEIVER `tid`, not the (possibly
+                            -- delegated) recorded server.
+                            match nextThread.toValid?, tid.toValid? with
+                            | some nextV, some tidV =>
                                 match applyCallDonation st1 nextV tidV with
                                 | .error e => .error e
                                 | .ok st2 =>
-                                    .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 tid executingCore).1)
-                            | none => .error .invalidArgument
+                                    .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
+                            | _, _ => .error .invalidArgument
                         | _ =>
                             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
-                              (removeRunnableOnCore st1 tid executingCore) tid executingCore).1)
+                              (removeRunnableOnCore st1 recordedServer serverCore) recordedServer serverCore).1)
                     | none =>
                         .ok ((), (PriorityInheritance.propagatePipChainCrossCore
-                          (removeRunnableOnCore st1 tid executingCore) tid executingCore).1)
+                          (removeRunnableOnCore st1 recordedServer serverCore) recordedServer serverCore).1)
             | _, _ => .error .invalidArgument
         | _ =>
-            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st tid executingCore).1)
+            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1)
 
 /-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): the *unchecked* reply-and-receive
 body, shared by both dispatch arms (so the checked arm = a flow-gated wrapper over
@@ -558,6 +567,12 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
     (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
     : Kernel Unit :=
   fun st =>
+    -- WS-SM SM6.D (PR #822 review): capture the recorded server (the passive server
+    -- `prevCaller` donated its SC to) and its home core BEFORE the reply leg consumes
+    -- `prevCaller.blockedOnReply` — on a delegated reply cap this differs from the
+    -- receiver `tid`, and the OLD donation return must key on it (not on `tid`).
+    let recordedServer := (recordedReplyServer? st prevCaller).getD tid
+    let serverCore := determineExecutingCore st recordedServer
     match endpointReplyOnCore tid prevCaller msg executingCore st with
     | (_, .error e) => .error e
     | (st1, .ok _replySgi) =>
@@ -569,7 +584,8 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
             | (st3, .ok (nextThread, _)) =>
                 match linkReceivedCaller nextThread (some rid) st3 with
                 | .error e => .error e
-                | .ok ((), st4) => replyRecvReturnDonation tid nextThread executingCore st4
+                | .ok ((), st4) =>
+                    replyRecvReturnDonation tid recordedServer nextThread serverCore st4
 
 -- ============================================================================
 -- Syscall soundness theorems

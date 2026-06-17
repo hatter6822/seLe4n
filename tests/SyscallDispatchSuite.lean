@@ -772,6 +772,49 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
               match t.ipcState with | .blockedOnReply _ _ => true | _ => false))
             "the new caller should rendezvous and become blockedOnReply"
 
+/-- SD-052c (PR #822 review): a *delegated* `ReplyRecv` — a copied/minted reply-cap
+    holder `delegate` (≠ the recorded server) — must return the previous caller's OLD
+    donation from the RECORDED server (the thread `clientA` actually donated its SC to),
+    not from the delegate.  Pre-fix, `replyRecvReturnDonation` read the delegate's
+    binding (`.unbound`), found no donation, and left the recorded server's
+    `.donated scA clientA` dangling forever. -/
+private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Unit := do
+  let server   : SeLe4n.ThreadId := ⟨1⟩   -- recorded server (holds the donation)
+  let clientA  : SeLe4n.ThreadId := ⟨2⟩   -- previous caller (donor)
+  let delegate : SeLe4n.ThreadId := ⟨5⟩   -- copied-reply-cap holder doing ReplyRecv
+  let epId     : SeLe4n.ObjId := ⟨10⟩
+  let rid      : SeLe4n.ReplyId := ⟨707⟩
+  let scA      : SeLe4n.SchedContextId := ⟨800⟩
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
+      |>.withObject clientA.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := .bound scA })
+      |>.withObject delegate.toObjId
+          (.tcb { mkTcb 5 with ipcState := .ready, schedContextBinding := .unbound })
+      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      |>.withObject scA.toObjId
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with boundThread := some server })
+      |>.withRunnable [server, delegate]
+      |>.build)
+  let msg : IpcMessage :=
+    { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- No queued sender on the endpoint → the delegate blocks on the receive leg.
+  match SeLe4n.Kernel.replyRecvBody epId delegate rid clientA msg bootCoreId st0 with
+  | .error _ => failLine "sd052c" "delegated replyRecvBody should succeed (cap-based authority)"
+  | .ok ((), st') =>
+      expect "sd052c_prev_caller_replied"
+        ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
+        "the previous caller should be unblocked by the (delegated) reply leg"
+      expect "sd052c_recorded_server_donation_returned"
+        ((st'.getTcb? server).all (fun t => decide (t.schedContextBinding ≠ .donated scA clientA)))
+        "the recorded server's donation must be RETURNED (not left dangling on a delegated replyRecv)"
+      expect "sd052c_delegate_unaffected"
+        ((st'.getTcb? delegate).any (fun t => decide (t.schedContextBinding = .unbound)))
+        "the delegate held no donation and must keep its .unbound binding"
+
 /-- SD-053: faithful seL4-MCS server-first receive linkage. (a) A server that blocks
     on `Recv` with a reply object STASHES it on `pendingReceiveReply` (it cannot link
     yet — no caller is queued). (b) When a later `Call` rendezvouses with that waiting
@@ -915,5 +958,6 @@ def main : IO Unit := do
   sd051_receiveLinkCaller
   sd052_replyRecvBody
   sd052b_replyRecv_donation_switch
+  sd052c_replyRecv_delegated_returns_recorded_server_donation
   sd053_serverFirstLink
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

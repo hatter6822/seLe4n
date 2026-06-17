@@ -1,3 +1,35 @@
+## v0.31.136 — Reply objects (seL4-MCS): a delegated ReplyRecv returns the previous caller's donation from the recorded server (PR #822 Codex review)
+
+**Finding — `replyRecvReturnDonation` returned the previous caller's donated SchedContext from the cap
+holder `tid`, not from the recorded server.** seL4-MCS reply caps are delegatable: a copied/minted reply
+cap can be held by a thread (`tid`) that is *not* the passive server the previous caller (`prevCaller`)
+donated its SC to. `prevCaller`'s `blockedOnReply … (some server)` records that server; the donation
+lives on it. The ReplyRecv donation-return step read `tid.schedContextBinding` — on a delegated
+ReplyRecv that is `.unbound` (the delegate holds no donation), so the OLD donation was never returned
+and the recorded server's `.donated scA prevCaller` dangled forever (the SC never went back to the
+client). This mirrors the `.reply` cross-core fix (v0.31.126) which already keys the return on the
+recorded server.
+
+- `replyRecvBody` captures `recordedServer := (recordedReplyServer? st prevCaller).getD tid` and its home
+  core `serverCore := determineExecutingCore st recordedServer` **before** the reply leg consumes
+  `prevCaller.blockedOnReply`, and threads them into `replyRecvReturnDonation`.
+- `replyRecvReturnDonation` now keys the **OLD** donation return, the passive-server descheduling, and the
+  PIP reversion on `recordedServer` / `serverCore` — while still donating any **new** received `Call` to
+  the receiver `tid` (the thread that serves the next request). In the non-delegated common case
+  `recordedServer = tid` and `serverCore = executingCore`, so the path is behaviourally identical (the
+  normal-case `sd052b` donation-switch test is unchanged).
+- The `lockSet_endpointReplyRecvOnCore` docstring cross-reference (which described the old `tid`-keyed
+  return) is corrected.
+- `tests/SyscallDispatchSuite.lean`: `sd052c_replyRecv_delegated_returns_recorded_server_donation` — a
+  delegate (`.unbound`, ≠ the recorded server) does ReplyRecv; the recorded server's donation is RETURNED
+  (`schedContextBinding ≠ .donated scA clientA`), the delegate's `.unbound` binding is untouched, and the
+  previous caller is replied to.
+
+Trace byte-identical (233/233, ReplyRecv dispatch is not trace-exercised, normal case unchanged);
+`SeLe4n.Kernel.API` builds clean; syscall-dispatch + cross-core reply suites green
+(`checkedDispatch_replyRecv_eq_unchecked_when_allowed` preserved — `replyRecvBody` signature unchanged).
+Lean Tier 0-2 green. Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, MCS donation).
+
 ## v0.31.135 — Reply objects (seL4-MCS): close the reply-state covert channel in the checked IPC dispatch arms (PR #822 Codex review)
 
 **Finding (×3) — the flow-checked `.receive` / `.reply` / `.replyRecv` arms probed reply-object state

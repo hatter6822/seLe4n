@@ -302,10 +302,13 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
 state `st` acquires — `lockSet_replyRecv` with the new sender (the receive-leg
 rendezvous head), the returned SchedContext, and its original owner all
 **pre-resolved from `st`**.  The new sender is the endpoint's send-queue head (the
-thread the receive leg rendezvouses with, if any); the donation pair is the
-replyRecv invoker's (`replier` = the server `tid`, which *is* the donee in
-`replyRecv` since it receives the next message — `replyRecvReturnDonation` keys the
-return on `tid`, unlike the delegatable plain `.reply` path). -/
+thread the receive leg rendezvouses with, if any); the donation pair is resolved
+from the replyRecv invoker `replier` — the common non-delegated case, where
+`replier` *is* the recorded server it received the request on.  (The live dispatch's
+post-receive donation return, `replyRecvReturnDonation`, keys the **old** return on
+the *recorded* server — like the delegatable plain `.reply` path — so a delegated
+`replyRecv` returns the previous caller's donation from the server that actually
+holds it, while still donating any new received `Call` to the receiver.) -/
 def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
     (endpointObjId : SeLe4n.ObjId) : LockSet :=
