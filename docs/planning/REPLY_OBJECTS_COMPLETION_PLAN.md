@@ -95,19 +95,39 @@ bidirectional bridge + `@[simp]` projection abbrev.
   ⇒ no dangling.
 
 **Green sub-steps**
-- **#1.a** — define predicate + `default_` + `_of_objects_eq` frame + the tuple/struct/
-  bridge/projection expansion; update every destructure/construct site (~60, build-driven).
-- **#1.b** — concrete preservation across the ~15 per-op theorems (`cspaceCopy/Move/
-  MintWithCdt/Mutate`, `cspaceDeleteSlot{,Core}`, `cspaceRevoke*`, `ipcTransferSingleCap`,
-  `ipcUnwrapCaps{,Loop}`, `mintReplyCap`, retype). Externalize (`hRCPV'`, mirroring the
-  IPC `hRCL'`/`hPRR'` discipline) only where a concrete proof is disproportionate.
-- **#1.c** — boot construction (`Boot.lean`) carries the new conjunct (vacuous — boot has
-  no reply caps); `crossSubsystemInvariantWithCdtCoverage` threads it.
+- **#1-prep (LANDED)** — define `replyCapPointsToValidReply` + `_of_objects_eq` frame
+  (`Capability/Invariant/Defs.lean`, after the `capabilityInvariantBundle` projections).
+  Standalone-green; not yet bundled.
+- **#1.b (the keystone — do BEFORE #1.a)** — the preservation lemmas, so #1.a's tuple
+  expansion is mechanical. **Key unifying insight:** most cap ops delegate to
+  `cspaceInsertSlot_preserves_capabilityInvariantBundle`, so extend the predicate's
+  preservation via the *one* lemma `cspaceInsertSlot_preserves_replyCapPointsToValidReply
+  (… hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none …)` and let
+  `cspaceCopy`/`Move`/`Mint`/`mintReplyCap`/`ipcUnwrap` discharge `hCapBacked` (the inserted
+  cap copies a backed source, or — for `mintReplyCap` — is backed by construction).
+  **Proof argument (worked out):** a CNode store never affects `getReply?` (it reads only
+  `.reply` objects; the stored object is a `.cnode`), so `st'.getReply? rid = st.getReply?
+  rid`; then case-split the post-state reply cap `(oid, slot)` — if `oid = addr.cnode` use
+  `CNode.lookup_insert_eq` (slot = addr.slot ⇒ the inserted cap, backed by `hCapBacked`) /
+  `lookup_insert_ne` (slot ≠ addr.slot ⇒ a pre-existing cap, backed by the pre-invariant);
+  if `oid ≠ addr.cnode` the slot is unchanged (pre-invariant).  `cspaceDeleteSlotCore` (and
+  revoke) only *remove* caps ⇒ trivially preserved.  Then the per-op `_preserves_*` theorems
+  build the 7th conjunct from these.
+- **#1.a (contract)** — add `replyCapPointsToValidReply` as the 7th `capabilityInvariantBundle`
+  conjunct (tuple `… ∧ st.objects.invExt ∧ replyCapPointsToValidReply st`): the FIRST FIVE
+  `@[simp] abbrev` projections are unchanged (prefixes); only `objectsInvExt` shifts
+  `.2.2.2.2.2 → .2.2.2.2.2.1` and the new projection is `.2.2.2.2.2.2`.  `lake build` to
+  enumerate the ~60 construct/destructure breaks (each preservation theorem appends the #1.b
+  witness; raw `⟨…6…⟩` destructures gain a 7th binder), fix systematically.
+- **#1.c** — `default_capabilityInvariantBundle` (`Architecture/Invariant.lean`) gains
+  `default_replyCapPointsToValidReply` (empty objects ⇒ vacuous); `Boot.lean` carries it
+  (boot has no reply caps); `crossSubsystemInvariantWithCdtCoverage` threads it.
 - **#1.d** — `ModelIntegritySuite` test: dangling reply cap rejected by the Prop predicate;
   backed reply cap admitted.
 
-**Risk.** The tuple expansion (#1.a) is atomic (one commit). Mitigate: change the def,
-`lake build` to enumerate every break, fix systematically, commit only when fully green.
+**Risk.** The tuple expansion (#1.a) is atomic (one commit). Mitigate: do #1.b FIRST (the
+preservation lemmas exist), then change the def, `lake build` to enumerate every break, fix
+systematically, commit only when fully green.
 
 ---
 

@@ -1,3 +1,27 @@
+## v0.31.144 — Reply objects (seL4-MCS): replyCapPointsToValidReply predicate + frame (PR #822 Codex review, Phase C-inv #1 foundations)
+
+**Deferred item #1 (no dangling reply caps), foundations.** Defines the Prop invariant the
+production capability surface was blind to — the live `.reply` path rejects a dangling reply
+cap via `getReply?`, but `capabilityInvariantBundle` only constrained `.object` cap targets, so
+the model admitted a `.replyCap rid` pointing at an absent/non-Reply object.
+
+- `replyCapPointsToValidReply (st) : Prop` (`Capability/Invariant/Defs.lean`) — every
+  `.replyCap rid` in a CNode slot has `getReply? rid ≠ none`. Mirrors the runtime
+  `cspaceSlotCoherencyChecks` backing check.
+- `replyCapPointsToValidReply_of_objects_eq` — the frame lemma (the predicate reads only the
+  object store via CNode slots + `getReply?`).
+
+Standalone-green; not yet bundled (the bundle integration is the #1.a contract step). The plan
+(`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` #1) is enhanced with the **unifying
+preservation strategy**: extend the single `cspaceInsertSlot_preserves_*` lemma with a
+"the inserted cap, if a reply cap, is backed" precondition (propagating to cspaceCopy/Move/
+Mint/mintReplyCap at once), plus the worked-out proof argument (a CNode store never affects
+`getReply?`; case-split via `CNode.lookup_insert_eq`/`_ne`). `mintReplyCap` already preserves
+the bundle (v0.31.143), pre-staging the tuple expansion.
+
+`Capability.Invariant.Defs` builds clean; Lean Tier 0-2 green; trace byte-identical. Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1).
+
 ## v0.31.143 — Reply objects (seL4-MCS): mintReplyCap preserves capabilityInvariantBundle (PR #822 Codex review, Phase H #2.b)
 
 **Deferred item #2, sub-step #2.b.** Establishes `mintReplyCap` / `mintReplyCapWithCdt` (the

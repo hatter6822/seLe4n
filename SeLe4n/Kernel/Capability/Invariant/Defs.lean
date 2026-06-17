@@ -275,6 +275,30 @@ namespace capabilityInvariantBundle
 
 end capabilityInvariantBundle
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1): **no dangling reply caps** — every `.replyCap rid`
+held in a CNode slot is backed by an existing Reply object.  Mirrors the runtime
+`cspaceSlotCoherencyChecks` backing check (`.replyCap rid => getReply? rid .isSome` in
+`Testing/InvariantChecks.lean`); the production capability/lifecycle invariants previously
+only constrained `.object` cap targets, so the model admitted a `.replyCap rid` pointing at
+an absent/non-Reply object that the live `.reply` path then rejects (`getReply?`).  Its
+preservation lemmas (insert/delete) are the building blocks for #1's contract step that
+bundles it into `capabilityInvariantBundle` (the only step-preserved home). -/
+def replyCapPointsToValidReply (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot)
+    (cap : Capability) (rid : SeLe4n.ReplyId),
+    st.objects[oid]? = some (.cnode cn) →
+    cn.lookup slot = some cap →
+    cap.target = .replyCap rid →
+    st.getReply? rid ≠ none
+
+/-- #1: `replyCapPointsToValidReply` reads only the object store (CNode slots +
+`getReply?`), so any transition leaving `st.objects` unchanged frames it. -/
+theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : replyCapPointsToValidReply st) :
+    replyCapPointsToValidReply st' := by
+  unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
+  rw [hObjs]; exact h
+
 /-- AE4-D (U-36/C-CAP06): Extended capability invariant bundle with mint
 completeness. Conjoins the standard 7-property `capabilityInvariantBundle`
 with `cdtMintCompleteness`, ensuring CDT-based revocation via `cspaceRevokeCdt`
