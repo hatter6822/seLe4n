@@ -3008,7 +3008,8 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       -- pendingReceiveReplyWellFormed (17th, vacuous — boot TCBs have
       -- pendingReceiveReply = none).
       refine ⟨⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩,
-        fun tid tcb rid hObj hRep => ?_⟩
+        ⟨fun tid tcb rid hObj hRep => ?_,
+         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
       · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
@@ -3016,6 +3017,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hObj
         have hTcb := (hBS tid.toObjId _ hObjRaw).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.2] at hRep; cases hRep
+      · -- pendingReceiveReplyWellFormed uniqueness (17th.2): boot TCBs carry no stash.
+        have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
+        have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
+        rw [hTcb.2.2.2.2.2.2.2] at hRep₁; cases hRep₁
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

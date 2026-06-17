@@ -762,6 +762,32 @@ def reply_inUse_retype_rejected : IO Unit := do
   | .ok _ => expect "free TCB retype allowed" true
   | .error _ => throw <| IO.userError "retyping a TCB with no reply link must succeed"
 
+/-- WS-SM SM6.D (PR #822 review): the server-first reply stash is **injective** —
+the 17th `ipcInvariantFull` conjunct (`pendingReceiveReplyWellFormed`) now requires
+no two blocked receivers to stash the same Reply id.  Operationally this is the
+`!replyIsStashed` guard `resolveRecvReplyId` applies before stashing: once a blocked
+server reserves `rid`, a second server's `Recv` naming the same reply cap is rejected
+(`.replyCapInvalid`), so the model can never reach a two-stash state.  This test
+exercises the `replyIsStashed` mechanism that enforces it: a blocked server reserves
+its `rid`, while a *distinct* `rid` stays free for another server. -/
+def pendingReceiveReply_stash_injective : IO Unit := do
+  let reservedRid : SeLe4n.ReplyId := ⟨505⟩
+  let otherRid    : SeLe4n.ReplyId := ⟨506⟩
+  let serverTcb : TCB :=
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .blockedOnReceive ⟨700⟩,
+      pendingReceiveReply := some reservedRid }
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb serverTcb) |>.build)
+  -- the reserved rid is detected as stashed → a second `resolveRecvReplyId` for it
+  -- fails closed, so no second server can stash it (injectivity maintained).
+  expect "a blocked server's stash reserves its reply id (blocks a duplicate stash)"
+    (SeLe4n.Kernel.replyIsStashed st reservedRid)
+  -- a distinct reply id is not stashed → another server may stash it independently.
+  expect "a distinct reply id stays free for another server"
+    (!SeLe4n.Kernel.replyIsStashed st otherRid)
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -2051,6 +2077,7 @@ def main : IO Unit := do
   r4b_scrubToken_to_retypeTarget_endToEnd
   -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
   reply_inUse_retype_rejected
+  pendingReceiveReply_stash_injective
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

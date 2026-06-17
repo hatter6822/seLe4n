@@ -649,13 +649,25 @@ an absent or already-linked Reply, which a later server-first `Call` (`linkServe
 then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
 already maintained: `resolveRecvReplyId` only stashes a free, present `rid`, and
 exit from `.blockedOnReceive` clears the stash (v0.31.111 / `replyIsStashed`); this
-conjunct *states* it. -/
+conjunct *states* it.  The second clause states the stash is **injective** (no two
+blocked receivers stash the same Reply id) — see its inline note. -/
 def pendingReceiveReplyWellFormed (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
     st.getTcb? tid = some tcb →
     tcb.pendingReceiveReply = some rid →
     (∃ ep, tcb.ipcState = .blockedOnReceive ep) ∧
-    (∃ r, st.getReply? rid = some r ∧ r.caller = none)
+    (∃ r, st.getReply? rid = some r ∧ r.caller = none)) ∧
+  -- WS-SM SM6.D (PR #822 review): the stash is **injective** — at most one blocked
+  -- receiver stashes any given Reply id.  Without this a model state could have two
+  -- blocked servers stashing the same `rid`; a server-first `Call` linking one
+  -- (`linkServerFirstCaller` → `linkCallerReply`, which consumes `reply.caller`) would
+  -- silently invalidate the other's stash, so its later `Call` fails closed
+  -- `.replyCapInvalid` while its receive completes.  Operationally maintained by
+  -- `resolveRecvReplyId` (it stashes only an un-stashed `rid`, `!replyIsStashed`).
+  (∀ (tid₁ tid₂ : SeLe4n.ThreadId) (tcb₁ tcb₂ : TCB) (rid : SeLe4n.ReplyId),
+    st.getTcb? tid₁ = some tcb₁ → st.getTcb? tid₂ = some tcb₂ →
+    tcb₁.pendingReceiveReply = some rid → tcb₂.pendingReceiveReply = some rid →
+    tid₁ = tid₂)
 
 /-- WS-SM SM6.D (PR #822 review): `pendingReceiveReplyWellFormed` reads only the
 object store (through the typed `getTcb?` / `getReply?` accessors), so any transition

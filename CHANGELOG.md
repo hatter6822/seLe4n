@@ -1,3 +1,32 @@
+## v0.31.134 — Reply objects (seL4-MCS): the server-first reply stash is invariant-injective (PR #822 Codex review)
+
+**Finding — `pendingReceiveReplyWellFormed` (17th `ipcInvariantFull` conjunct) admitted two blocked
+receivers stashing the same Reply id.** The stash well-formedness invariant constrained each stash to a
+`.blockedOnReceive` TCB naming a free Reply, but said nothing about *uniqueness* — so a model state
+could have two distinct servers both stashing the same `rid`. A server-first `Call` linking one
+(`linkServerFirstCaller` → `linkCallerReply`, which consumes `reply.caller`) would silently invalidate
+the other's stash, so the second server's later `Call` fails closed `.replyCapInvalid` while its receive
+completes — a latent confused-deputy-shaped fault.
+
+- `pendingReceiveReplyWellFormed` gains a second clause: the stash is **injective** — `getTcb? tid₁`,
+  `getTcb? tid₂` both stashing the same `rid` forces `tid₁ = tid₂`. The predicate's *name* is unchanged,
+  so the named `IpcInvariantFull` structure field, the `ipcInvariantFull` projections, and the iff-bridge
+  are all untouched; only the three witness *constructors* needed updating.
+- Operationally already maintained: `resolveRecvReplyId` stashes a `rid` only when `!replyIsStashed st
+  rid` (no blocked server already holds it), so no transition can reach a two-stash state — the invariant
+  now *states* what the guard enforces.
+- Witness constructors updated to the conjunction form: `default_pendingReceiveReplyWellFormed` (empty
+  state, both clauses vacuous), the `Boot.lean` boot-state construction (boot TCBs carry no stash, the
+  uniqueness clause vacuous), and the `pendingReceiveReplyWellFormed_of_objects_eq` frame lemma re-proves
+  unchanged (the whole predicate reads only the object store).
+- `tests/ModelIntegritySuite.lean`: `pendingReceiveReply_stash_injective` exercises the enforcing
+  `replyIsStashed` mechanism — a blocked server reserves its `rid` (blocking a duplicate stash) while a
+  distinct `rid` stays free for another server.
+
+Trace byte-identical (233/233); `Defs` / `Architecture.Invariant` / `Boot` build clean; model-integrity
++ capability-preservation suites green. Lean Tier 0-3 green. Refs:
+docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, server-first receive stash discipline).
+
 ## v0.31.133 — Reply objects (seL4-MCS): a plain Send woken receiver clears its server-first reply stash (PR #822 Codex review)
 
 **Finding — a `Send` that wakes a server-first receiver left a stale `pendingReceiveReply` stash.**

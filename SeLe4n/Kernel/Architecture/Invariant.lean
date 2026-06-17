@@ -452,10 +452,15 @@ private theorem default_replyCallerLinkage :
 
 private theorem default_pendingReceiveReplyWellFormed :
     pendingReceiveReplyWellFormed (default : SystemState) := by
-  intro tid tcb rid h _
-  unfold SystemState.getTcb? at h
-  rw [default_objects_none] at h
-  simp at h
+  refine ⟨?_, ?_⟩
+  · intro tid tcb rid h _
+    unfold SystemState.getTcb? at h
+    rw [default_objects_none] at h
+    simp at h
+  · intro tid₁ tid₂ tcb₁ tcb₂ rid h₁ _ _ _
+    unfold SystemState.getTcb? at h₁
+    rw [default_objects_none] at h₁
+    simp at h₁
 
 private theorem default_ipcInvariantFull :
     ipcInvariantFull (default : SystemState) :=
