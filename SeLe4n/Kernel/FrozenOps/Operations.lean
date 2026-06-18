@@ -486,22 +486,45 @@ def frozenEndpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
 
 /-- Q7-C2: Frozen endpoint reply — reply to a blocked caller.
 Mirrors `endpointReply`. -/
-def frozenEndpointReply (replierId : SeLe4n.ThreadId)
-    (targetId : SeLe4n.ThreadId) (msg : IpcMessage) : FrozenKernel Unit :=
+def frozenEndpointReply (_replierId : SeLe4n.ThreadId)
+    (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
+    FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st targetId with
     | some targetTcb =>
         match targetTcb.ipcState with
-        | .blockedOnReply _epId replyTarget =>
-            if replyTarget = some replierId then
-              -- Deliver message and unblock
-              let targetTcb' := { targetTcb with
-                ipcState := ThreadIpcState.ready
-                pendingMessage := some msg }
-              match frozenStoreTcb targetId targetTcb' st with
-              | .error e => .error e
-              | .ok ((), st') => .ok ((), st')
-            else .error .replyCapInvalid
+        | .blockedOnReply _epId _replyTarget =>
+            -- PR #822 review (Codex), frozen mirror of E.2: authority is the **presented
+            -- reply capability** `replyId` — the replier must hold a reply cap naming
+            -- `targetId` as its caller, exactly like the live `.reply` arm resolves
+            -- `reply.caller = target` from the *cap* (it does NOT derive the reply from the
+            -- target, so a thread that does not hold the cap cannot deliver and consume it).
+            -- `_replierId` is retained for documentation (a delegated/copied reply cap held
+            -- by a *different* replier is legitimate — the `replier == expected` gate was
+            -- dropped, 6J-lYm — so authority flows from the cap, not the issuer's identity).
+            -- Fail-closed BEFORE any store on: a `blockedOnReply` caller with no forward
+            -- link; a presented `replyId` that is not the caller's reciprocal forward link
+            -- (`replyObject ≠ some replyId`); a missing Reply object; or a Reply whose
+            -- `caller` is not `some targetId`.  Deliver + consume the single-use Reply link
+            -- (clear both reciprocal sides, mirroring `consumeCallerReply`).
+            let targetTcb' := { targetTcb with
+              ipcState := ThreadIpcState.ready
+              pendingMessage := some msg
+              replyObject := none }
+            match targetTcb.replyObject with
+            | none => .error .replyCapInvalid
+            | some fwdRid =>
+                if fwdRid == replyId then
+                  match st.objects.get? replyId.toObjId with
+                  | some (.reply r) =>
+                      if r.caller = some targetId then
+                        match frozenStoreTcb targetId targetTcb' st with
+                        | .error e => .error e
+                        | .ok ((), st') =>
+                            frozenStoreObject replyId.toObjId (.reply { r with caller := none }) st'
+                      else .error .replyCapInvalid
+                  | _ => .error .replyCapInvalid
+                else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
     | none => .error .objectNotFound
 
@@ -983,11 +1006,13 @@ def frozenOpCoverage : SyscallId → Bool
   | .tcbSetAffinity => false         -- WS-SM SM5.H.4: runtime scheduler op (run/replenish-queue migration)
   | .tcbBindNotification => false    -- WS-SM SM6.B: production object-store op; no frozen-phase variant defined
   | .tcbUnbindNotification => false  -- WS-SM SM6.B: ditto
+  | .mintReplyCap => false           -- PR #822 Phase H: structural cap insertion (like cspaceCopy); builder-only, no frozen-phase variant
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 6 uncovered arms are builder-only operations (cspaceCopy, cspaceMove,
-    lifecycleRetype, serviceRegister, serviceRevoke) plus the runtime-scheduler
-    `tcbSetAffinity` (WS-SM SM5.H.4). -/
+    The 9 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
+    lifecycleRetype, serviceRegister, serviceRevoke, mintReplyCap) plus the
+    runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4) and the production-only
+    notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B). -/
 theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
@@ -995,11 +1020,12 @@ theorem frozenOpCoverage_count :
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind,
        .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
-       .tcbSetIPCBuffer, .tcbSetAffinity].filter
+       .tcbSetIPCBuffer, .tcbSetAffinity,
+       .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap].filter
          frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2/D3: All 26 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 29 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

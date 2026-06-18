@@ -331,7 +331,7 @@ theorem endpointQueuePopHead_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -385,7 +385,7 @@ theorem endpointQueueEnqueue_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -521,7 +521,7 @@ theorem endpointQueueRemove_preserves_objects_invExt
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
@@ -625,7 +625,7 @@ theorem endpointQueueRemove_getTcb_upToReg
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at h
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp [hObj] at h
     | endpoint ep =>
       simp only [hObj] at h
@@ -663,7 +663,7 @@ theorem endpointQueueRemove_getTcb_upToReg
                     simp only []
                     exact RegCtxRefines.insert_link_update st.objects st.objects
                       nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                     simp only []; exact RegCtxRefines.rfl_self st.objects
             | some prevTid =>
               simp only []
@@ -678,7 +678,7 @@ theorem endpointQueueRemove_getTcb_upToReg
                     simp only []
                     exact RegCtxRefines.insert_link_update st.objects st.objects
                       prevTid.toObjId pt _ hInv (RegCtxRefines.rfl_self st.objects) hP1 rfl
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                     simp only []; exact RegCtxRefines.rfl_self st.objects
               | some nextTid =>
                 simp only []
@@ -693,7 +693,7 @@ theorem endpointQueueRemove_getTcb_upToReg
                       simp only []
                       exact RegCtxRefines.insert_link_update st.objects st.objects
                         nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
-                    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                       simp only []; exact RegCtxRefines.rfl_self st.objects
                 | some pobj => cases pobj with
                   | tcb pt =>
@@ -717,9 +717,9 @@ theorem endpointQueueRemove_getTcb_upToReg
                           (st.objects.insert prevTid.toObjId
                             (.tcb { pt with queueNext := some nextTid }))
                           nextTid.toObjId nt _ hT1 hR1 hN1 rfl
-                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                         simp only []; exact hR1
-                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                  | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                     simp only []
                     -- objs₁ = st.objects (predecessor lookup is not a TCB)
                     cases hN1 : st.objects[nextTid.toObjId]? with
@@ -729,7 +729,7 @@ theorem endpointQueueRemove_getTcb_upToReg
                         simp only []
                         exact RegCtxRefines.insert_link_update st.objects st.objects
                           nextTid.toObjId nt _ hInv (RegCtxRefines.rfl_self st.objects) hN1 rfl
-                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+                      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
                         simp only []; exact RegCtxRefines.rfl_self st.objects
           · -- hSide (endpoint update): vacuous, base holds .endpoint at endpointId.
             intro x hx

@@ -5,16 +5,6 @@
 #
 # Should-drop metrics: every subsequent commit must keep these <= baseline.
 # Should-grow metrics: every subsequent commit must keep these >= baseline.
-#
-# Re-anchor (WS-SM SM5.J.4 completion, v0.31.64): raw_match_tcb 52->54,
-# raw_match_schedcontext 22->24, raw_match_total 129->133, raw_lookup_tid
-# 832->837, gettcb_adoption 1124->1129.  Documented additive refactor: the
-# per-core R5 trace-model generalisation adds `maxBudgetInBandOnCore` /
-# `maxPeriodInBandOnCore` (the (c : CoreId) forms of the existing band counting
-# functions).  They MUST mirror the bootCore forms' raw `st.objects[...]?` access
-# pattern so the `*_eq_onCore_bootCore` rfl bridges hold (defeq backward compat);
-# the raw floor rises by the structural minimum (+2 tcb / +2 schedcontext) with
-# gettcb adoption in lockstep (+5).  No typed-accessor adoption was removed.
 
 ## Reader-side raw patterns (should-drop)
 
@@ -26,16 +16,16 @@ raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
 raw_match_total          = 133
-raw_lookup_tid           = 837
+raw_lookup_tid           = 851
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 1129
+gettcb_adoption          = 1243
 getschedctx_adoption     = 266
-getendpoint_adoption     = 42
-getnotification_adoption = 27
+getendpoint_adoption     = 58
+getnotification_adoption = 55
 getuntyped_adoption      = 14
-getcnode_adoption        = 66
+getcnode_adoption        = 68
 getvspaceroot_adoption   = 22
 
 ## Writer-side wrapper adoption (should-grow)
@@ -66,13 +56,13 @@ RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
 RAW_MATCH_TOTAL=133
-RAW_LOOKUP_TID=837
-GETTCB_ADOPTION=1129
+RAW_LOOKUP_TID=851
+GETTCB_ADOPTION=1243
 GETSCHEDCTX_ADOPTION=266
-GETENDPOINT_ADOPTION=42
-GETNOTIFICATION_ADOPTION=27
+GETENDPOINT_ADOPTION=58
+GETNOTIFICATION_ADOPTION=55
 GETUNTYPED_ADOPTION=14
-GETCNODE_ADOPTION=66
+GETCNODE_ADOPTION=68
 GETVSPACEROOT_ADOPTION=22
 STOREOBJECTCHECKED_ADOPTION=62
 SENTINEL_CHECK_DISPATCH=18

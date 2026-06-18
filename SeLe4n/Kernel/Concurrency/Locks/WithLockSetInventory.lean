@@ -139,11 +139,11 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       acquireLockOnObject .combinator,
     wlst! "releaseLockOnObject — per-object lock release primitive"
       releaseLockOnObject .combinator,
-    wlst! "acquireLockOnObject_reply: .reply LockId is no-op (SM3.A.5 N/A)"
+    wlst! "acquireLockOnObject_reply: .reply LockId routes through updateObjectLockAt (SM6.D)"
       acquireLockOnObject_reply .combinator,
     wlst! "acquireLockOnObject_page: .page LockId is no-op (SM3.A.8 N/A)"
       acquireLockOnObject_page .combinator,
-    wlst! "releaseLockOnObject_reply: .reply LockId is no-op"
+    wlst! "releaseLockOnObject_reply: .reply LockId routes through updateObjectLockAt (SM6.D)"
       releaseLockOnObject_reply .combinator,
     wlst! "releaseLockOnObject_page: .page LockId is no-op"
       releaseLockOnObject_page .combinator,
@@ -191,7 +191,7 @@ def withLockSetTheorems : List WithLockSetTheorem :=
       RwLockState.coreHolds .held,
     wlst! "lockHeld: per-lock held predicate"
       lockHeld .held,
-    wlst! "lockHeld_reply: .reply LockId always not held (SM3.A.5 N/A)"
+    wlst! "lockHeld_reply: .reply LockId not held when no Reply object present (SM6.D)"
       lockHeld_reply .held,
     wlst! "lockHeld_page: .page LockId always not held (SM3.A.8 N/A)"
       lockHeld_page .held,

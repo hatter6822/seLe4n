@@ -91,6 +91,25 @@ def lifecycleCapabilityRefObjectTargetBacked (st : SystemState) : Prop :=
     SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
     ∃ cap, SystemState.lookupSlotCap st ref = some cap ∧ cap.target = .object oid
 
+/-- WS-SM SM6.D / PR #822 review (#02/#13 — "cover replyCap targets in lifecycle invariants"):
+the reply-cap analogue of `lifecycleCapabilityRefObjectTargetBacked`.  With `CapTarget.replyCap`
+now naming a first-class `ReplyId`, a CSpace slot whose metadata is `.replyCap rid` must resolve
+to an actual `.reply` object (`getReply? rid ≠ none`), exactly as the live `.reply` path requires
+— otherwise the lifecycle stale-reference family would admit a dangling reply cap that the runtime
+rejects.
+
+The *binding* enforcement lives in `capabilityInvariantBundle.replyCapPointsToValidReply`
+(PR #822 #1.a, the step-preserved 7th conjunct); this lifecycle-layer predicate is **provably
+implied** by it — see `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`
+(`Capability/Invariant/Defs.lean`, the layer that sees both) — so the stale-reference family is no
+longer blind to reply caps even though the reply-backing fact itself is owned by the capability
+layer.  (It is therefore *not* added to the Lifecycle-layer bundles, whose construction derives
+from `lifecycleInvariantBundle` and cannot reach the capability layer.) -/
+def lifecycleCapabilityRefReplyCapBacked (st : SystemState) : Prop :=
+  ∀ ref rid,
+    SystemState.lookupCapabilityRefMeta st ref = some (.replyCap rid) →
+    st.getReply? rid ≠ none
+
 /-- Lifecycle capability-reference constraint bundle (separate from identity/aliasing constraints). -/
 def lifecycleCapabilityReferenceInvariant (st : SystemState) : Prop :=
   lifecycleCapabilityRefExact st ∧ lifecycleCapabilityRefObjectTargetBacked st
@@ -483,7 +502,7 @@ theorem retypeFromUntyped_ok_childId_ne
   | none => simp [hObj] at hStep
   | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
+      | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ | reply _ =>
           simp [hObj] at hStep
       | untyped _ =>
           simp only [hObj] at hStep

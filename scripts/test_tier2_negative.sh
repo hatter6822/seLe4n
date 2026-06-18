@@ -340,4 +340,15 @@ run_check_with_timeout "TRACE" lake exe smp_cross_core_call_suite
 # NoDup), and the SM6.B.1/.4 per-core caller blocking on notificationWait.
 run_check_with_timeout "TRACE" lake exe smp_cross_core_notification_suite
 
+# WS-SM SM6.C — Cross-core reply runtime checks.  Exercises the actual
+# endpointReplyOnCore / endpointReplyRecvOnCore / endpointReplyCrossCoreDispatch /
+# lockSet_endpointReply computations: the SM6.C.1/.6 lock-set footprint +
+# caller-TCB write-lock membership (the reply-state lifecycle write), the SM6.C.4
+# payload delivery to the right TCB (the original caller, not the replier), the
+# SM6.C.2 local vs remote caller-wake SGI emission (cross-core wake routed to the
+# caller's home core), the SM6.C.7 reply-replay barrier + confused-deputy
+# rejection, the SM6.C.5 replyRecv combined op, the SM6.C.3 donation-chain
+# lock-set extension, and the SM6.C.9 PIP-reversion chain-length bound.
+run_check_with_timeout "TRACE" lake exe smp_cross_core_reply_suite
+
 finalize_report

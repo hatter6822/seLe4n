@@ -61,8 +61,9 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
             (fun cn hObj => hDstCapacity cn cap hObj)
-            (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
-          rcases hBundleSt2 with ⟨_, hBnd2, hComp2, _, hDepth2, hObjInv2⟩
+            (objects_invExt_of_capabilityInvariantBundle st hInv)
+            (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
+          rcases hBundleSt2 with ⟨_, hBnd2, hComp2, _, hDepth2, hObjInv2, hRCPV2⟩
           cases hEnsSrc : SystemState.ensureCdtNodeForSlot st2 src with
           | mk srcNode stSrc =>
               cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
@@ -82,7 +83,8 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
                     cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
                     hCdtPost.1, hCdtPost.2,
                     cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,
-                    hObjFinal ▸ hObjInv2⟩
+                    hObjFinal ▸ hObjInv2,
+                    replyCapPointsToValidReply_of_objects_eq hObjFinal hRCPV2⟩
 
 /-- WS-E4/C-02: cspaceMove preserves capabilityInvariantBundle.
 Move composes lookup + insert + delete, all of which preserve the bundle. -/
@@ -124,7 +126,8 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               rcases pair3 with ⟨_, st3⟩
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
                 (fun cn hObj => hDstCapacity cn cap hObj)
-                (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
+                (objects_invExt_of_capabilityInvariantBundle st hInv)
+                (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
               have hNSSt2 : st2.cdtNodeSlot = st.cdtNodeSlot := by
                 unfold cspaceInsertSlot at hInsert
                 cases hPre : st.objects[dst.cnode]? with
@@ -145,16 +148,16 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                         have hNS1 := (storeObject_cdtNodeSlot_eq st stM dst.cnode _ hS).1
                         have ⟨_, hNS2, _, _⟩ := storeCapabilityRef_cdt_eq stM st2 dst (some cap.target) hInsert
                         rw [hNS2, hNS1]
-                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hInsert
+                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
                 (by rw [hNSSt2]; exact hNodeSlotK) hDelete
-              rcases hBundleSt3 with ⟨_, hBnd3, _, _, hDepth3, hObjInv3⟩
+              rcases hBundleSt3 with ⟨_, hBnd3, _, _, hDepth3, hObjInv3, hRCPV3⟩
               cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
               | none =>
                   simp [hSrc, hToNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
                   exact ⟨cspaceLookupSound_holds _,
-                    hBnd3, hCdtPost.1, hCdtPost.2, hDepth3, hObjInv3⟩
+                    hBnd3, hCdtPost.1, hCdtPost.2, hDepth3, hObjInv3, hRCPV3⟩
               | some srcNode =>
                   simp [hSrc, hToNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
@@ -165,7 +168,8 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                     cspaceSlotCountBounded_of_objects_eq st3 _ hBnd3 hObjEq,
                     hCdtPost.1, hCdtPost.2,
                     cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq,
-                    hObjEq ▸ hObjInv3⟩
+                    hObjEq ▸ hObjInv3,
+                    replyCapPointsToValidReply_of_objects_eq hObjEq hRCPV3⟩
 
 /-- WS-E4/C-03: cspaceMintWithCdt preserves capabilityInvariantBundle.
 Composes cspaceMint (already proven) + CDT edge addition. -/
@@ -207,6 +211,47 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
                 cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
                 hObjFinal ▸ hObjInv1⟩
 
+/-- WS-SM SM6.D / PR #822 Phase H: `mintReplyCapWithCdt` (the live `.mintReplyCap` dispatch
+op) preserves `capabilityInvariantBundle`.  Mirrors `cspaceMintWithCdt_preserves_*`: the
+reply-cap insert preserves the bundle (`mintReplyCap_preserves_*`), then the CDT mint-edge
+addition only touches `cdt` (objects unchanged across both `ensureCdtNodeForSlot` writes and
+the `addEdge`), so the remaining conjuncts frame past `objects` and the CDT pair is supplied
+by `hCdtPost` (dischargeable via `cspaceMintWithCdt_cdtAcyclicity_of_freshDst` for a fresh
+destination, exactly as for `cspaceMintWithCdt`). -/
+theorem mintReplyCapWithCdt_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (src dst : CSpaceAddr)
+    (hInv : capabilityInvariantBundle st)
+    (hDstCapacity : ∀ cn cap, st.objects[dst.cnode]? = some (.cnode cn) →
+      (cn.insert dst.slot cap).slotCountBounded)
+    (hCdtPost : cdtCompleteness st' ∧ cdtAcyclicity st')
+    (hStep : mintReplyCapWithCdt src dst st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  unfold mintReplyCapWithCdt at hStep
+  cases hMint : mintReplyCap src dst st with
+  | error e => simp [hMint] at hStep
+  | ok pair =>
+      rcases pair with ⟨_, st1⟩
+      have hBundle := mintReplyCap_preserves_capabilityInvariantBundle st st1 src dst hInv
+        hDstCapacity hMint
+      rcases hBundle with ⟨_, hBnd1, _, _, hDepth1, hObjInv1⟩
+      cases hEnsSrc : SystemState.ensureCdtNodeForSlot st1 src with
+      | mk srcNode stSrc =>
+          cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
+          | mk dstNode stDst =>
+              simp [hMint, hEnsSrc, hEnsDst] at hStep
+              cases hStep
+              have hObjSrc : stSrc.objects = st1.objects := by
+                simpa [hEnsSrc] using SystemState.ensureCdtNodeForSlot_objects_eq st1 src
+              have hObjDst : stDst.objects = stSrc.objects := by
+                simpa [hEnsDst] using SystemState.ensureCdtNodeForSlot_objects_eq stSrc dst
+              have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint }).objects = st1.objects := by
+                simp [hObjDst, hObjSrc]
+              exact ⟨cspaceLookupSound_holds _,
+                cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
+                hCdtPost.1, hCdtPost.2,
+                cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
+                hObjFinal ▸ hObjInv1⟩
+
 /-- AE4-C (U-18/CAP-02): Discharge CDT acyclicity for `cspaceMintWithCdt`
 when the destination CDT node is fresh (no edges reference it).
 
@@ -232,6 +277,78 @@ theorem cspaceMintWithCdt_cdtAcyclicity_of_freshDst
 -- WS-F4/F-06: cspaceMutate preservation
 -- ============================================================================
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): `cspaceMutate` preserves `replyCapPointsToValidReply`.
+Mutate overwrites the target slot with a cap carrying new rights/badge but the **same target**
+(`{ cap with rights, badge }.target = cap.target` definitionally), so the set of reply-cap-bearing
+slots is unchanged: the mutated slot inherits the pre-state slot's backing (via the read-only
+`cspaceLookupSlot` that resolved `cap`) and every other slot frames through the single CNode store
+(`getReply?` reads only `.reply` objects). -/
+theorem cspaceMutate_preserves_replyCapPointsToValidReply
+    (st st' : SystemState) (addr : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (hRCPV : replyCapPointsToValidReply st)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
+    replyCapPointsToValidReply st' := by
+  unfold cspaceMutate at hStep
+  cases hLookup2 : cspaceLookupSlot addr st with
+  | error e => simp [hLookup2] at hStep
+  | ok pair =>
+    rcases pair with ⟨cap, st1⟩
+    have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr cap hLookup2; subst st1
+    by_cases hNull : cap.isNull
+    · simp [hLookup2, hNull] at hStep
+    by_cases hRights : rightsSubset rights cap.rights
+    · simp only [hLookup2, hNull, Bool.false_eq_true, ↓reduceIte, hRights] at hStep
+      cases hPre : st.objects[addr.cnode]? with
+      | none => simp_all
+      | some preObj =>
+        cases preObj with
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp_all
+        | cnode preCn =>
+          simp only [hPre] at hStep
+          cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot
+            { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) st with
+          | error e => simp_all
+          | ok pair =>
+            obtain ⟨_, stMid⟩ := pair; simp only [hStore] at hStep
+            have hRefObj : st'.objects = stMid.objects :=
+              storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+            have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.insert addr.slot
+                { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) :=
+              storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
+            have hMidNe : ∀ oid, oid ≠ addr.cnode → stMid.objects[oid]? = st.objects[oid]? :=
+              fun oid h => storeObject_objects_ne st stMid addr.cnode oid _ h hObjInv hStore
+            have hGetReply : ∀ rid : SeLe4n.ReplyId, st'.getReply? rid = st.getReply? rid := by
+              intro rid
+              simp only [SystemState.getReply?, hRefObj]
+              by_cases hc : rid.toObjId = addr.cnode
+              · rw [hc, hMidSelf, hPre]
+              · rw [hMidNe rid.toObjId hc]
+            have hPreLook : preCn.lookup addr.slot = some cap := by
+              have hLk := (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).1 hLookup2
+              rw [SystemState.lookupSlotCap,
+                (SystemState.lookupCNode_eq_some_iff st addr.cnode preCn).2 hPre] at hLk
+              exact hLk
+            intro oid cn slot cap' rid hObj hLook hTgt
+            rw [hGetReply]
+            by_cases hc : oid = addr.cnode
+            · subst hc
+              rw [hRefObj, hMidSelf] at hObj
+              simp only [Option.some.injEq, KernelObject.cnode.injEq] at hObj
+              subst hObj
+              by_cases hs : slot = addr.slot
+              · rw [hs, CNode.lookup_insert_eq preCn addr.slot _ (CNode.slotsUnique_holds preCn)] at hLook
+                simp only [Option.some.injEq] at hLook
+                subst hLook
+                -- `{ cap with rights, badge }.target = cap.target` definitionally, so the
+                -- mutated reply cap's backing is the pre-state slot's backing.
+                exact hRCPV addr.cnode preCn addr.slot cap rid hPre hPreLook hTgt
+              · rw [CNode.lookup_insert_ne preCn addr.slot slot _ (Ne.symm hs) (CNode.slotsUnique_holds preCn)] at hLook
+                exact hRCPV addr.cnode preCn slot cap' rid hPre hLook hTgt
+            · rw [hRefObj, hMidNe oid hc] at hObj
+              exact hRCPV oid cn slot cap' rid hObj hLook hTgt
+    · simp_all
+
 /-- WS-F4/F-06: cspaceMutate preserves capabilityInvariantBundle.
 Mutate composes cspaceLookupSlot (read-only) + cn.insert (which preserves
 slotsUnique) + storeObject + storeCapabilityRef. -/
@@ -245,7 +362,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
       (cn.insert addr.slot cap).slotCountBounded)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
   -- WS-H4: cspaceMutate goes through storeObject(CNode.insert) → storeCapabilityRef, same as insertSlot
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -264,7 +381,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
         | none => simp_all
         | some preObj =>
           cases preObj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp_all
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp_all
           | cnode preCn =>
             simp only [hPre] at hStep
             cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot
@@ -292,7 +409,8 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 hRefObj ▸ hObjInvMid⟩
       · simp_all
   exact ⟨cspaceLookupSound_holds st',
-    hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
+    hBounded', hComp', hAcyclic', hDepth', hObjInv',
+    cspaceMutate_preserves_replyCapPointsToValidReply st st' addr rights badge hRCPV hObjInv hStep⟩
 
 -- ============================================================================
 -- WS-RC R4.D: `cspaceMutate` null-capability rejection — structural witnesses

@@ -2671,7 +2671,7 @@ theorem condTcbPatch_get? (objs objs' : RobinHood.RHTable SeLe4n.ObjId KernelObj
       | cnode _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
       | vspaceRoot _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
       | untyped _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
-      | schedContext _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
+      | schedContext _ | reply _ => simp only [hNew, hk]; exact ⟨hInv, fun a obj0 ha => ⟨obj0, ha, Or.inl rfl⟩⟩
 
 -- ── §8.3c  endpointQueueRemove → timeoutThread → timeoutBlockedThreads
 --           base-safety preservation (the IPC dequeue feeding the budget tick) ──
@@ -3265,7 +3265,7 @@ theorem updatePipBoost_preserves_allThreadsTimeSlicePositive (st : SystemState)
           cases obj with
           | tcb t => exact absurd ⟨t, hpre⟩ hc
           | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-          | schedContext _ => rfl
+          | schedContext _ | reply _ => rfl
       rw [heq] at hx
       exact hc ⟨tcb', hx⟩
   · have hEq : (PriorityInheritance.updatePipBoost st tid).getTcb? x = st.getTcb? x := by
@@ -3373,7 +3373,7 @@ private theorem tsAgree_next_step (st : SystemState) (tcb : TCB)
           ha1 nextTid.toObjId nextTcb (by rw [← RHTable_getElem?_eq_get?]; exact hnl)
         exact tsAgree_insert_tcb ha1 hi1 hst hts
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-      | schedContext _ => simpa only [] using ha1
+      | schedContext _ | reply _ => simpa only [] using ha1
 
 /-- WS-SM SM5.I global strengthening: `endpointQueueRemove` preserves
 `allThreadsTimeSlicePositive`.  Its four object writes are all `timeSlice`-
@@ -3428,12 +3428,12 @@ theorem endpointQueueRemove_preserves_allThreadsTimeSlicePositive
                         (by rw [← RHTable_getElem?_eq_get?]; exact hpl) rfl,
                       RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv⟩
                   | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-                  | schedContext _ => exact ⟨tsAgree_rfl _, hInv⟩
+                  | schedContext _ | reply _ => exact ⟨tsAgree_rfl _, hInv⟩
             exact tsAgree_next_step st tcb _ hprev.1 hprev.2
           · -- objs2.invExt
             repeat (first | exact hInv | apply RobinHood.RHTable.insert_preserves_invExt | split)
       | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ => simp [hep] at hStep
+      | schedContext _ | reply _ => simp [hep] at hStep
   intro x tcb' hx
   have hx' : st'.objects.get? x.toObjId = some (.tcb tcb') := by
     rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st' x tcb').mp hx

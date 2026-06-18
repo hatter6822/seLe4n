@@ -286,7 +286,7 @@ def capability_cnodeSlot_not_null : IO Unit := do
       rights := AccessRightSet.empty, badge := none }
   expect "cnodeSlot not null" (cap.isNull = false)
   let reply : Capability :=
-    { target := .replyCap ⟨0⟩
+    { target := .replyCap SeLe4n.ReplyId.sentinel
       rights := AccessRightSet.empty, badge := none }
   expect "replyCap not null" (reply.isNull = false)
 
@@ -698,6 +698,261 @@ def r4b_scrubToken_to_retypeTarget_endToEnd : IO Unit := do
       SeLe4n.Kernel.mkRetypeTarget stClean target hTypeMeta hNoStaleRefs
         (SeLe4n.Kernel.ScrubToken.fromCleanup hCleanup)
   expect "WS-RC R4 close-out: end-to-end ScrubToken→RetypeTarget chain reachable" true
+
+/-- WS-SM SM6.D (PR #822 review): `lifecyclePreRetypeCleanup` rejects retyping an
+    **in-use** Reply object (a caller is still blocked awaiting its reply) with
+    `.revocationRequired`, fail-closed — otherwise the caller would be stranded
+    `blockedOnReply` while its Reply object is destroyed.  A **free** Reply (no
+    `caller`) retypes cleanly.  The `newObj` is irrelevant for the `.reply`
+    current-object arm, so any KernelObject witnesses the path. -/
+def reply_inUse_retype_rejected : IO Unit := do
+  let st : SystemState := default
+  let target : SeLe4n.ObjId := ⟨505⟩
+  let newObj : KernelObject := .reply { replyId := ⟨999⟩ }
+  let inUseReply : KernelObject := .reply { replyId := ⟨505⟩, caller := some ⟨2⟩ }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st target inUseReply newObj with
+  | .error e => expect "in-use Reply retype → revocationRequired" (e == .revocationRequired)
+  | .ok _ => throw <| IO.userError "in-use Reply retype must be rejected"
+  let freeReply : KernelObject := .reply { replyId := ⟨505⟩ }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st target freeReply newObj with
+  | .ok _ => expect "free Reply retype allowed" true
+  | .error _ => throw <| IO.userError "free Reply retype must succeed"
+  -- PR #822 review: a FREE reply (caller = none) that is STASHED in a server's
+  -- `pendingReceiveReply` (server-first receive awaiting its next Call) is also
+  -- in-use and must be rejected — else the waiting server's stash dangles.  The
+  -- stash reserves the Reply only while the server is STILL `.blockedOnReceive`
+  -- (a woken `.ready` server no longer reserves it — see `replyIsStashed`).
+  let stashTcb : TCB :=
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .blockedOnReceive ⟨700⟩,
+      pendingReceiveReply := some ⟨505⟩ }
+  let stStashed : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb stashTcb) |>.build)
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stStashed target freeReply newObj with
+  | .error e => expect "stashed Reply retype → revocationRequired" (e == .revocationRequired)
+  | .ok _ => throw <| IO.userError "stashed (pendingReceiveReply) Reply retype must be rejected"
+  -- PR #822 review: a server that was woken (e.g. by a bound notification) is now
+  -- `.ready` — its receive is OVER, so a leftover `pendingReceiveReply` does NOT
+  -- reserve the Reply, and retyping that free Reply must SUCCEED.  Guards the
+  -- "ready server keeps the Reply permanently in use" regression.
+  let wokenStashTcb : TCB :=
+    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .ready,
+      pendingReceiveReply := some ⟨505⟩ }
+  let stWokenStash : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb wokenStashTcb) |>.build)
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup stWokenStash target freeReply newObj with
+  | .ok _ => expect "woken (.ready) server with stale stash → Reply free, retype allowed" true
+  | .error _ => throw <| IO.userError "a woken server's stale stash must not keep the Reply in use"
+  -- PR #822 review: retyping a caller TCB that still holds a reply link
+  -- (`replyObject = some rid`) is rejected — else the Reply's `caller` dangles.
+  let linkedTcb : TCB :=
+    { tid := ⟨601⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      replyObject := some ⟨505⟩ }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨601⟩ (.tcb linkedTcb) newObj with
+  | .error e => expect "linked caller TCB retype → revocationRequired" (e == .revocationRequired)
+  | .ok _ => throw <| IO.userError "retyping a TCB with an outstanding reply link must be rejected"
+  let freeTcb : TCB :=
+    { tid := ⟨602⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  match SeLe4n.Kernel.lifecyclePreRetypeCleanup st ⟨602⟩ (.tcb freeTcb) newObj with
+  | .ok _ => expect "free TCB retype allowed" true
+  | .error _ => throw <| IO.userError "retyping a TCB with no reply link must succeed"
+
+/-- WS-SM SM6.D (PR #822 review): the server-first reply stash is **injective** —
+the 17th `ipcInvariantFull` conjunct (`pendingReceiveReplyWellFormed`) now requires
+no two blocked receivers to stash the same Reply id.  Operationally this is the
+`!replyIsStashed` guard `resolveRecvReplyId` applies before stashing: once a blocked
+server reserves `rid`, a second server's `Recv` naming the same reply cap is rejected
+(`.replyCapInvalid`), so the model can never reach a two-stash state.  This test
+exercises the `replyIsStashed` mechanism that enforces it: a blocked server reserves
+its `rid`, while a *distinct* `rid` stays free for another server. -/
+def pendingReceiveReply_stash_injective : IO Unit := do
+  let reservedRid : SeLe4n.ReplyId := ⟨505⟩
+  let otherRid    : SeLe4n.ReplyId := ⟨506⟩
+  let serverTcb : TCB :=
+    { tid := ⟨600⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .blockedOnReceive ⟨700⟩,
+      pendingReceiveReply := some reservedRid }
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨600⟩ (.tcb serverTcb) |>.build)
+  -- the reserved rid is detected as stashed → a second `resolveRecvReplyId` for it
+  -- fails closed, so no second server can stash it (injectivity maintained).
+  expect "a blocked server's stash reserves its reply id (blocks a duplicate stash)"
+    (SeLe4n.Kernel.replyIsStashed st reservedRid)
+  -- a distinct reply id is not stashed → another server may stash it independently.
+  expect "a distinct reply id stays free for another server"
+    (!SeLe4n.Kernel.replyIsStashed st otherRid)
+
+/-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
+derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.
+`lifecycleRetypeDirect` retypes in place (the holder keeps an `.object target` cap), so
+without this a retyped Reply is unusable by the receive-with-reply ABI.  This test mints
+a reply cap from an object-to-Reply cap and confirms it targets the Reply
+(`.replyCap (ReplyId.ofObjId target)`) and resolves (`getReply?`), and that minting from
+an object cap whose target is NOT a Reply fails closed. -/
+def mintReplyCap_derives_backed_reply_cap : IO Unit := do
+  let target : SeLe4n.ObjId := ⟨200⟩
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId target
+  let plain : SeLe4n.ObjId := ⟨201⟩   -- a non-Reply object (endpoint)
+  let cnId : SeLe4n.ObjId := ⟨100⟩
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF
+        [ ((SeLe4n.Slot.ofNat 0),
+            { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+        , ((SeLe4n.Slot.ofNat 2),
+            { target := .object plain, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject target (.reply { replyId := rid })
+      |>.withObject plain (.endpoint {})
+      |>.withObject cnId mkCn
+      |>.build)
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
+  match SeLe4n.Kernel.mintReplyCap src dst st with
+  | .ok ((), st') =>
+      match SeLe4n.Kernel.cspaceLookupSlot dst st' with
+      | .ok (cap, _) =>
+          expect "minted cap targets the Reply object" (decide (cap.target = .replyCap rid))
+          expect "minted reply cap is backed (getReply? resolves)" ((st'.getReply? rid).isSome)
+      | .error _ => throw <| IO.userError "minted reply cap should be present at dst"
+  | .error _ => throw <| IO.userError "mintReplyCap from an object-to-Reply cap should succeed"
+  -- negative: minting from an `.object` cap whose target is NOT a Reply → invalidCapability.
+  let badSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 2 }
+  let badDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 3 }
+  match SeLe4n.Kernel.mintReplyCap badSrc badDst st with
+  | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == .invalidCapability)
+  | .ok _ => throw <| IO.userError "mintReplyCap from a non-Reply object must be rejected"
+
+/-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for the new
+`replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle`.  The invariant states that
+a reply cap held in a CNode is *backed* — its `ReplyId` resolves through `getReply?` to a live
+Reply object — and forbids a dangling reply cap.  This test exhibits both sides so the invariant
+carries genuine content: a CNode reply cap pointing at an allocated Reply resolves (`isSome`),
+while one pointing at a never-allocated id does not (`isNone`); a state holding the latter would
+fail `replyCapPointsToValidReply` and is exactly what every preservation theorem now rules out. -/
+def replyCapPointsToValidReply_distinguishes_backed_and_dangling : IO Unit := do
+  let liveObj : SeLe4n.ObjId := ⟨300⟩
+  let liveRid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId liveObj
+  let danglingRid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId ⟨301⟩
+  let cnId : SeLe4n.ObjId := ⟨110⟩
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF
+        [ ((SeLe4n.Slot.ofNat 0),
+            { target := .replyCap liveRid, rights := AccessRightSet.ofList [.read, .write], badge := none })
+        , ((SeLe4n.Slot.ofNat 1),
+            { target := .replyCap danglingRid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject liveObj (.reply { replyId := liveRid })
+      |>.withObject cnId mkCn
+      |>.build)
+  -- The live reply cap is backed: `getReply?` resolves — `replyCapPointsToValidReply` is satisfied.
+  expect "live reply cap is backed (getReply? isSome)" ((st.getReply? liveRid).isSome)
+  -- The dangling reply cap is NOT backed: `getReply?` is none — a slot holding only this cap is
+  -- precisely the configuration `replyCapPointsToValidReply` forbids.
+  expect "dangling reply cap is unbacked (getReply? isNone)" ((st.getReply? danglingRid).isNone)
+
+/-- WS-SM SM6.D (PR #822 review, Phase H #2.d): end-to-end provisioning chain for a reply
+capability — **retype** Untyped → Reply, **`mintReplyCap`** to derive the `.replyCap`, then **link**
+a blocked caller through the production `linkCallerReply`.  This drives the full production path #2
+established: a Reply object is provisioned by an in-place retype (the holder keeps an `.object` cap),
+`mintReplyCap` converts that authority into the reply ABI's `.replyCap rid` (rid derived from the
+object id), and the resulting cap is a functional handle whose reply resolves (`getReply?`) and
+accepts a caller link.  (The receive-path auto-linking on `.recv`/`.replyRecv` is the gated re-wire;
+this test drives the linkage via the verified `linkCallerReply` op, the same one the dispatch
+composes.) -/
+def reply_cap_end_to_end_retype_mint_link : IO Unit := do
+  let target : SeLe4n.ObjId := ⟨400⟩
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId target
+  let caller : SeLe4n.ThreadId := ⟨401⟩
+  let cnId : SeLe4n.ObjId := ⟨100⟩
+  -- Slot 0 holds an `.object target` cap with retype authority — it is both the retype-authority
+  -- cap and the `mintReplyCap` source.
+  let authCap : Capability :=
+    { target := .object target,
+      rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF [ ((SeLe4n.Slot.ofNat 0), authCap) ] }
+  let callerTcb : TCB :=
+    { tid := caller, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0 }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject target (SeLe4n.Kernel.objectOfKernelType .untyped 0)
+      |>.withLifecycleObjectType target .untyped
+      |>.withObject caller.toObjId (.tcb callerTcb)
+      |>.withObject cnId mkCn
+      |>.build)
+  -- 1. Retype the Untyped in place to a fresh Reply object.
+  match SeLe4n.Kernel.lifecycleRetypeDirect authCap target (SeLe4n.Kernel.objectOfKernelType .reply 0) st0 with
+  | .error _ => throw <| IO.userError "retype Untyped → Reply should succeed"
+  | .ok ((), st1) =>
+      expect "after retype, the Reply resolves via getReply?" ((st1.getReply? rid).isSome)
+      -- 2. Mint a reply cap from the object cap at slot 0 into slot 1.
+      let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+      let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnId, slot := SeLe4n.Slot.ofNat 1 }
+      match SeLe4n.Kernel.mintReplyCap src dst st1 with
+      | .error _ => throw <| IO.userError "mintReplyCap from the retyped Reply should succeed"
+      | .ok ((), st2) =>
+          match SeLe4n.Kernel.cspaceLookupSlot dst st2 with
+          | .error _ => throw <| IO.userError "minted reply cap should be present at dst"
+          | .ok (cap, _) =>
+              expect "minted cap targets the retyped Reply" (decide (cap.target = .replyCap rid))
+              expect "minted reply cap resolves (getReply?)" ((st2.getReply? rid).isSome)
+              -- 3. Use the reply cap: link the blocked caller through the production op.
+              match SystemState.linkCallerReply caller rid st2 with
+              | .error _ => throw <| IO.userError "linkCallerReply should attach the caller to the fresh Reply"
+              | .ok ((), st3) =>
+                  match st3.getReply? rid with
+                  | some r => expect "linked Reply names the caller" (decide (r.caller = some caller))
+                  | none => throw <| IO.userError "Reply must still resolve after linking"
+                  match st3.getTcb? caller with
+                  | some tcb => expect "caller TCB records the reply object (TCB↔Reply linkage)" (decide (tcb.replyObject = some rid))
+                  | none => throw <| IO.userError "caller TCB must persist after linking"
+
+/-- WS-SM SM6.D (PR #822 review #02/#13, lifecycle): the lifecycle capability-reference metadata
+covers reply caps.  `lookupCapabilityRefMeta` derives a slot's metadata from its cap target, so a
+CNode slot holding `.replyCap rid` presents `.replyCap rid` metadata; the new
+`lifecycleCapabilityRefReplyCapBacked` predicate (provably implied by
+`capabilityInvariantBundle.replyCapPointsToValidReply`) requires such metadata to resolve through
+`getReply?`.  This exhibits both sides at the lifecycle-metadata level: a backed reply-cap slot's
+metadata resolves; a dangling one does not (and is exactly what the predicate forbids). -/
+def lifecycle_reply_cap_metadata_backed : IO Unit := do
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId ⟨320⟩
+  let cnId : SeLe4n.ObjId := ⟨115⟩
+  let ref : SeLe4n.Model.SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF
+        [ ((SeLe4n.Slot.ofNat 0),
+            { target := .replyCap rid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+  -- Backed: the Reply object exists, so the slot's reply-cap metadata resolves.
+  let stBacked : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject ⟨320⟩ (.reply { replyId := rid })
+      |>.withObject cnId mkCn |>.build)
+  expect "lifecycle metadata for the slot is the reply cap"
+    (decide (SystemState.lookupCapabilityRefMeta stBacked ref = some (.replyCap rid)))
+  expect "backed reply-cap metadata resolves (lifecycleCapabilityRefReplyCapBacked holds)"
+    ((stBacked.getReply? rid).isSome)
+  -- Dangling: same reply-cap metadata, but no Reply object — the predicate's conclusion fails, so
+  -- this is precisely the state `lifecycleCapabilityRefReplyCapBacked` (and capabilityInvariantBundle)
+  -- now forbids.
+  let stDangling : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject cnId mkCn |>.build)
+  expect "dangling reply-cap metadata is still the reply cap"
+    (decide (SystemState.lookupCapabilityRefMeta stDangling ref = some (.replyCap rid)))
+  expect "dangling reply-cap metadata has no backing (forbidden state)"
+    ((stDangling.getReply? rid).isNone)
 
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
@@ -1354,10 +1609,10 @@ def an2f3_02_coercion_roundtrip : IO Unit := do
 These tests exercise the named-projection layer over `ipcInvariantFull`.
 The discipline is:
 
-* `IpcInvariantFull` (structure) has 16 fields.
-* `ipcInvariantFull` (tuple form) has 16 conjuncts.
+* `IpcInvariantFull` (structure) has 17 fields.
+* `ipcInvariantFull` (tuple form) has 17 conjuncts.
 * `ipcInvariantFull_iff_IpcInvariantFull` bridges them bidirectionally.
-* 16 `@[simp]` projection theorems in the `ipcInvariantFull` namespace let
+* 17 `@[simp]` projection theorems in the `ipcInvariantFull` namespace let
   callers read conjuncts via dot notation (`hInv.donationOwnerValid`).
 
 If the arity of `ipcInvariantFull` grows (or shrinks) without the
@@ -1487,7 +1742,13 @@ def ipc_invariant_full_named_projection_signatures : IO Unit := do
   -- WS-RC R4.C.7: uniqueWaiters projection removed (conjunct retired in C2).
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
     @ipcInvariantFull.blockedOnReplyHasTarget
-  expect "all 15 ipcInvariantFull named projection signatures typecheck" (True == True)
+  -- WS-SM SM6.D: the 16th (reply linkage) and 17th (PR #822 review:
+  -- server-first stash well-formedness) conjuncts.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> replyCallerLinkage st :=
+    @ipcInvariantFull.replyCallerLinkage
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> pendingReceiveReplyWellFormed st :=
+    @ipcInvariantFull.pendingReceiveReplyWellFormed
+  expect "all 17 ipcInvariantFull named projection signatures typecheck" (True == True)
 
 
 open SeLe4n.Model in
@@ -1508,10 +1769,13 @@ def ipc_invariant_full_dot_notation_dispatch : IO Unit := do
   -- Dot notation also works on the structure form.
   let _ : ∀ {st : SystemState}, IpcInvariantFull st -> donationOwnerValid st :=
     fun {_} h => h.donationOwnerValid
-  -- Last conjunct `.blockedOnReplyHasTarget` uses `h.2.2...2.2` (no
-  -- trailing `.1`) -- verify it still dispatches.
-  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
-    fun {_} h => h.blockedOnReplyHasTarget
+  -- Last conjunct `.pendingReceiveReplyWellFormed` (WS-SM SM6.D, 17th) uses
+  -- `h.2.2...2.2` (no trailing `.1`) -- verify the tail boundary dispatches.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> pendingReceiveReplyWellFormed st :=
+    fun {_} h => h.pendingReceiveReplyWellFormed
+  -- Penultimate conjunct `.replyCallerLinkage` (16th) uses `h.2.2...2.1`.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> replyCallerLinkage st :=
+    fun {_} h => h.replyCallerLinkage
   -- First conjunct `.ipcInvariant` uses `h.1`.
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcInvariant st :=
     fun {_} h => h.ipcInvariant
@@ -1977,6 +2241,13 @@ def main : IO Unit := do
   r4b_mkRetypeTarget_reachable
   -- WS-RC R4 close-out: end-to-end B1+B2+B3 chain pin
   r4b_scrubToken_to_retypeTarget_endToEnd
+  -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
+  reply_inUse_retype_rejected
+  pendingReceiveReply_stash_injective
+  mintReplyCap_derives_backed_reply_cap
+  replyCapPointsToValidReply_distinguishes_backed_and_dangling
+  reply_cap_end_to_end_retype_mint_link
+  lifecycle_reply_cap_metadata_backed
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

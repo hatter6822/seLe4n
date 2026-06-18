@@ -108,17 +108,34 @@ def endpointCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
       | _           => none
   | none => none
 
+/-- WS-SM SM6.D (PR #822 review): the server-first stashed Reply object this call
+links, if any.  On a **server-first** `Call` rendezvous the popped receiver is a
+server already `.blockedOnReceive` having pre-supplied a reply object via
+`endpoint_receive_with_reply` (`TCB.pendingReceiveReply = some rid`); the rendezvous
+links the woken caller to it (`linkServerFirstCaller` writes `reply.caller := caller`
+and clears the server's stash), so the per-object **reply write-lock** must be in the
+Call footprint.  `none` for a receiver that did a plain receive (no stash) or when
+there is no receiver (the caller blocks). -/
+def endpointCallServerFirstReply? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ReplyId :=
+  (endpointCallReceiver? st endpointId).bind fun receiver =>
+    (st.getTcb? receiver).bind (·.pendingReceiveReply)
+
 /-- WS-SM SM6.A.1: the concrete lock-set a cross-core `endpointCallOnCore` on
-state `st` acquires — `lockSet_endpointCall` with the receiver and donated
-SchedContext **pre-resolved from `st`** via `endpointCallReceiver?` /
-`endpointCallDonatedSc?` (the receiver is the endpoint's receive-queue head; the
-donated SC is the caller's own bound SC).  This is the footprint the runtime
-`withLockSet` bracket (the SM5.I FFI seam) acquires before invoking
+state `st` acquires — `lockSet_endpointCall` with the receiver, donated
+SchedContext, and (SM6.D, PR #822 review) the server-first stashed reply object
+**pre-resolved from `st`** via `endpointCallReceiver?` / `endpointCallDonatedSc?` /
+`endpointCallServerFirstReply?` (the receiver is the endpoint's receive-queue head;
+the donated SC is the caller's own bound SC; the reply object is the server's
+pre-supplied `pendingReceiveReply`, which `linkServerFirstCaller` writes on a
+server-first rendezvous).  This is the footprint the runtime `withLockSet` bracket
+(the SM5.I FFI seam) acquires before invoking
 `endpointCallOnCore endpointId caller … executingCore st`. -/
 def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     (caller : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
+    (endpointCallServerFirstReply? st endpointId)
 
 -- ============================================================================
 -- §3  WithCaps lock-set (plan §3.1)
@@ -357,6 +374,7 @@ theorem lockSet_endpointCallOnCore_correct
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
     (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
+    (endpointCallServerFirstReply? st endpointId)
 
 -- ============================================================================
 -- §8  SM6.A.5 — Donation-chain lock-set extension

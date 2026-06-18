@@ -2048,10 +2048,10 @@ def runWSJ1DecodeChecks : IO Unit := do
     (SeLe4n.Kernel.Architecture.RegisterDecode.validateRegBound ⟨31⟩ 32)
 
   -- J1-NEG-04: decodeSyscallId with value beyond modeled set → invalidSyscallNumber
-  -- WS-SM SM6.B: SyscallId now covers 0..27 (count=28, +tcbBind/UnbindNotification);
-  -- value 28 is the first invalid number.
-  expectErr "J1 decodeSyscallId invalid (28)"
-    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨28⟩)
+  -- WS-SM SM6.D / PR #822 Phase H: SyscallId now covers 0..28 (count=29, +mintReplyCap);
+  -- value 29 is the first invalid number.
+  expectErr "J1 decodeSyscallId invalid (29)"
+    (SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallId ⟨29⟩)
     .invalidSyscallNumber
 
   -- J1-NEG-05: decodeSyscallId with large invalid number → invalidSyscallNumber
@@ -2348,12 +2348,12 @@ private def runWSKGServiceIpcChecks : IO Unit := do
     throw <| IO.userError s!"K-G-NEG-17: expected size 4 (capped by msgRegs), got {cappedExtract.size}"
   IO.println "negative check passed [K-G-NEG-17 extractMessageRegisters oversized length capped]"
 
-  -- K-G-NEG-18: objectOfTypeTag success for all 6 valid tags
-  for tag in [0, 1, 2, 3, 4, 5] do
+  -- K-G-NEG-18: objectOfTypeTag success for all 8 valid tags (WS-SM SM6.D: +6 SchedContext, +7 Reply)
+  for tag in [0, 1, 2, 3, 4, 5, 6, 7] do
     match SeLe4n.Kernel.objectOfTypeTag tag 64 with
     | .ok _ => pure ()
     | .error e => throw <| IO.userError s!"K-G-NEG-18: objectOfTypeTag tag {tag} failed: {toString e}"
-  IO.println "negative check passed [K-G-NEG-18 objectOfTypeTag all 6 valid tags succeed]"
+  IO.println "negative check passed [K-G-NEG-18 objectOfTypeTag all 8 valid tags succeed]"
 
   IO.println "service/IPC boundary tests passed"
 
@@ -2415,7 +2415,7 @@ private def runWSKGDeterminismChecks : IO Unit := do
   IO.println "determinism check passed [K-G-DET-02 extractMessageRegisters deterministic]"
 
   -- K-G-DET-03: objectOfTypeTag determinism across all valid tags
-  for tag in [0, 1, 2, 3, 4, 5] do
+  for tag in [0, 1, 2, 3, 4, 5, 6, 7] do
     let o1 := SeLe4n.Kernel.objectOfTypeTag tag 64
     let o2 := SeLe4n.Kernel.objectOfTypeTag tag 64
     unless o1 == o2 do

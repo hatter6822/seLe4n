@@ -247,6 +247,10 @@ def enforcementBoundary : List EnforcementClass :=
   -- relation; gated by the TCB capability, not an information-flow policy)
   , .capabilityOnly "bindNotification"
   , .capabilityOnly "unbindNotification"
+  -- WS-SM SM6.D / PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap
+  -- (authority from holding the object cap to the Reply; no information-flow policy —
+  -- a local CSpace cap derivation, CDT-tracked like the other mint paths).
+  , .capabilityOnly "mintReplyCapWithCdt"
   -- AC4-D: VSpace operations (capability-only; internally delegate to storeObject)
   , .capabilityOnly "vspaceMapPageCheckedWithFlushFromState"
   , .capabilityOnly "vspaceUnmapPageWithFlush"
@@ -291,6 +295,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .tcbSetAffinity        => "setThreadCpuAffinity"
   | .tcbBindNotification   => "bindNotification"
   | .tcbUnbindNotification => "unbindNotification"
+  | .mintReplyCap          => "mintReplyCapWithCdt"
 
 /-- AC4-D: Check whether every SyscallId maps to an operation name present in
     the enforcement boundary list. Returns `true` iff every syscall is covered. -/

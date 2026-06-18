@@ -1057,7 +1057,7 @@ theorem notificationWait_badge_path_notification
   | some obj =>
     cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
+    | schedContext _ | reply _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hBadge : ntfn.pendingBadge with
@@ -1142,7 +1142,7 @@ theorem notificationWait_wait_path_notification
   | some obj =>
     cases obj with
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
+    | schedContext _ | reply _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hBadge : ntfn.pendingBadge with

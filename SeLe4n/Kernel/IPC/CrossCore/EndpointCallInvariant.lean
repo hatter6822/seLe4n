@@ -280,7 +280,7 @@ theorem dualQueueEndpointWellFormed_of_getElem_eq {s1 s2 : SystemState}
     | endpoint ep =>
       exact fun h => ⟨intrusiveQueueWellFormed_of_getElem_eq hEq h.1,
                       intrusiveQueueWellFormed_of_getElem_eq hEq h.2⟩
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
       exact fun _ => trivial
 
 /-- WS-SM SM6.A.1: the dual-queue system invariant is preserved by any state
@@ -656,7 +656,9 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st') :
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCL' : replyCallerLinkage st')
+    (hPRR' : pendingReceiveReplyWellFormed st') :
     ipcInvariantFull st' := by
   subst hStep
   exact ⟨endpointCallOnCore_preserves_ipcInvariant endpointId caller msg executingCore st hInv.1 hObjInv,
@@ -666,6 +668,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hInv.2.2.1 hObjInv,
     endpointCallOnCore_preserves_badgeWellFormed endpointId caller msg executingCore st
       hInv.2.2.2.1 hObjInv,
-    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT'⟩
+    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
 
 end SeLe4n.Kernel

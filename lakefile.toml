@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.76"
+version = "0.31.149"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -509,3 +509,17 @@ root = "tests.SmpCrossCoreCallSuite"
 [[lean_exe]]
 name = "smp_cross_core_notification_suite"
 root = "tests.SmpCrossCoreNotificationSuite"
+
+# WS-SM SM6.C — Cross-core reply test suite.  Surface anchors +
+# elaboration-time theorem-application witnesses + runtime assertions for the
+# SM6.C.10 cross-core reply scenarios: the SM6.C.1/.6 lock-set footprint +
+# caller-TCB write-lock membership (the reply-state lifecycle write), the SM6.C.4
+# payload delivery to the right TCB (the original caller, not the replier), the
+# SM6.C.2 local vs remote caller-wake SGI emission (the cross-core wake routed to
+# the caller's home core), the SM6.C.7 reply-replay barrier + confused-deputy
+# rejection, the SM6.C.5 replyRecv combined op, the SM6.C.3 donation-chain
+# lock-set extension, and the SM6.C.9 PIP-reversion chain-length bound.  Tier-2 +
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_cross_core_reply_suite"
+root = "tests.SmpCrossCoreReplySuite"

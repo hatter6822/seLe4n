@@ -2024,7 +2024,7 @@ theorem storeObject_asidTable_vspaceRoot_ne
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
     | tcb _ | cnode _ | endpoint _ | notification _ | untyped _
-    | schedContext _ =>
+    | schedContext _ | reply _ =>
       simp only [hOld, RHTable_getElem?_eq_get?] at hAsidInv ⊢
       rw [RHTable.getElem?_insert_ne _ _ _ _ hNeBeq hAsidInv]
 
@@ -2047,6 +2047,7 @@ theorem storeObject_asidTable_non_vspaceRoot
   | notification _ => rfl
   | untyped _ => rfl
   | schedContext _ => rfl
+  | reply _ => rfl
 
 /-- WS-G2: objectIndex and objectIndexSet contain the same ids. -/
 def objectIndexSetSync (st : SystemState) : Prop :=
@@ -2136,6 +2137,13 @@ def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
   match st.objects[scId.toObjId]? with
   | some (.schedContext sc) => some sc
   | _                       => none
+
+/-- WS-SM SM6.D: Read a Reply from the global object store. -/
+def getReply? (st : SystemState) (replyId : SeLe4n.ReplyId)
+    : Option SeLe4n.Kernel.Reply :=
+  match st.objects[replyId.toObjId]? with
+  | some (.reply r) => some r
+  | _               => none
 
 /-- AL2-A: Read an Endpoint from the global object store. -/
 def getEndpoint? (st : SystemState) (id : SeLe4n.ObjId) : Option Endpoint :=
@@ -2291,6 +2299,357 @@ theorem getSchedContext?_eq_some_iff (st : SystemState) (scId : SeLe4n.SchedCont
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- WS-SM SM6.D: Unfolding lemma — `getReply?` returns `some r` iff the store
+holds exactly `KernelObject.reply r` at `replyId.toObjId`. -/
+theorem getReply?_eq_some_iff (st : SystemState) (replyId : SeLe4n.ReplyId)
+    (r : SeLe4n.Kernel.Reply) :
+    st.getReply? replyId = some r ↔
+      st.objects[replyId.toObjId]? = some (.reply r) := by
+  unfold getReply?
+  split
+  · rename_i r' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- WS-SM SM6.D: link a Reply object to the caller about to block on it
+(sets `reply.caller`).  Fails closed with `.replyCapInvalid` if the reply is
+absent or already in use (`caller ≠ none`) — an in-use reply cannot be
+re-linked, the structural half of reply caps' single-use semantics.  Pure
+prep (Phase B): wired into the `Call` path in Phase C. -/
+def linkReply (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r =>
+        if r.caller.isNone then
+          storeObject rid.toObjId (.reply { r with caller := some caller }) st
+        else .error .replyCapInvalid
+    | none => .error .replyCapInvalid
+
+/-- WS-SM SM6.D: consume a Reply object's linkage (clears `reply.caller`).  A
+delivered reply is consumed so a replay finds `caller = none` and fails closed —
+the dynamic half of single-use.  No-op if the reply is absent. -/
+def consumeReply (rid : SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match st.getReply? rid with
+    | some r => storeObject rid.toObjId (.reply { r with caller := none }) st
+    | none => .ok ((), st)
+
+/-- WS-SM SM6.D: `consumeReply` on a present reply clears its `caller`. -/
+theorem consumeReply_getReply?_caller_none (st : SystemState) (rid : SeLe4n.ReplyId)
+    (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) :
+    ∀ result, consumeReply rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := none } := by
+  intro result hRun
+  unfold consumeReply at hRun
+  rw [hGet] at hRun
+  have hStore := storeObject_inserted_object_lookup st rid.toObjId
+    (.reply { r with caller := none }) hObjInv result hRun
+  rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
+  exact hStore
+
+/-- WS-SM SM6.D: `linkReply` on a present, free reply sets its `caller`. -/
+theorem linkReply_getReply?_caller_some (st : SystemState) (rid : SeLe4n.ReplyId)
+    (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
+    (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) (hFree : r.caller = none) :
+    ∀ result, linkReply rid caller st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := some caller } := by
+  intro result hRun
+  unfold linkReply at hRun
+  rw [hGet] at hRun
+  simp only [hFree, Option.isNone_none, if_true] at hRun
+  have hStore := storeObject_inserted_object_lookup st rid.toObjId
+    (.reply { r with caller := some caller }) hObjInv result hRun
+  rw [getReply?_eq_some_iff, RHTable_getElem?_eq_get?]
+  exact hStore
+
+/-- WS-SM SM6.D: `linkReply` fails closed on an already-linked (in-use) reply. -/
+theorem linkReply_inUse_error (st : SystemState) (rid : SeLe4n.ReplyId)
+    (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
+    (hGet : st.getReply? rid = some r) (hInUse : r.caller ≠ none) :
+    linkReply rid caller st = .error .replyCapInvalid := by
+  have hNot : r.caller.isNone = false := by
+    cases hc : r.caller with
+    | none => exact absurd hc hInUse
+    | some _ => rfl
+  simp [linkReply, hGet, hNot]
+
+/-- WS-SM SM6.D (Reply-cap linkage, Call path): establish the bidirectional
+TCB↔Reply link that the `Call` syscall creates.  Sets `reply.caller := some
+caller` (via `linkReply`, which **fails closed** with `.replyCapInvalid` on an
+absent or already-in-use reply — `caller ≠ none`) and the inverse forward link
+`caller.replyObject := some rid` on the caller TCB (seL4's `tcb->tcbReply`).
+Fails with `.objectNotFound` if the caller TCB is absent.  Composed after
+`endpointCall` by the `.call` dispatch (Phase C-wire); the `replyCallerLinkage`
+invariant (Phase D) reads exactly this pair of links.  Standalone prep —
+unreferenced by any live path this slice, so the trace fixture is unchanged. -/
+def linkCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match linkReply rid caller st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+        match st1.getTcb? caller with
+        | none => .error .objectNotFound
+        | some tcb =>
+            -- WS-SM SM6.D (PR #822): caller-side single-use — a caller already
+            -- holding a reply object must not be re-linked, else the old Reply is
+            -- orphaned with a stale `caller` (a later reply cap could resolve to
+            -- this caller, and `consumeCallerReply` would clear the newer link).
+            -- Fail closed unless `replyObject` is `none`.
+            if tcb.replyObject.isNone then
+              storeObject caller.toObjId (.tcb { tcb with replyObject := some rid }) st1
+            else .error .replyCapInvalid
+
+/-- WS-SM SM6.D (Reply-cap linkage, Reply path): tear down the TCB↔Reply link
+when a reply is delivered/consumed.  Clears `reply.caller := none` (via
+`consumeReply` — the single-use barrier, so a replay finds `caller = none` and
+fails closed) and the inverse `caller.replyObject := none` on the
+(now-unblocked) caller TCB.  No-op on the TCB leg if the caller is absent
+(the link is then already moot).  Composed by the reply transitions
+(Phase C-wire).  Standalone prep — unreferenced this slice, trace unchanged. -/
+def consumeCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match consumeReply rid st with
+    | .error e => .error e
+    | .ok ((), st1) =>
+        match st1.getTcb? caller with
+        | none => .ok ((), st1)
+        | some tcb =>
+            storeObject caller.toObjId (.tcb { tcb with replyObject := none }) st1
+
+/-- WS-SM SM6.D: `linkCallerReply` fails closed (`.replyCapInvalid`) on an
+already-linked (in-use) reply — it never touches the caller TCB.  Inherits
+`linkReply`'s single-use barrier: a second `Call` cannot re-bind a reply that
+already has a `caller`, so a reply capability authorizes at most one
+outstanding caller at a time. -/
+theorem linkCallerReply_inUse_error (st : SystemState) (rid : SeLe4n.ReplyId)
+    (caller : SeLe4n.ThreadId) (r : SeLe4n.Kernel.Reply)
+    (hGet : st.getReply? rid = some r) (hInUse : r.caller ≠ none) :
+    linkCallerReply caller rid st = .error .replyCapInvalid := by
+  unfold linkCallerReply
+  rw [linkReply_inUse_error st rid caller r hGet hInUse]
+
+/-- WS-SM SM6.D: `linkReply` preserves the object-store extensional invariant
+(its success path is a single `storeObject`). -/
+theorem linkReply_preserves_objects_invExt (st st' : SystemState)
+    (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkReply rid caller st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; simp at hStep
+  | some r =>
+    simp only [hGet] at hStep
+    cases hFree : r.caller.isNone with
+    | true =>
+      rw [if_pos hFree] at hStep
+      exact storeObject_preserves_objects_invExt st st' rid.toObjId _ hObjInv hStep
+    | false =>
+      rw [if_neg (by simp [hFree])] at hStep
+      simp at hStep
+
+/-- WS-SM SM6.D: `consumeReply` preserves the object-store extensional invariant
+(no-op when the reply is absent; otherwise a single `storeObject`). -/
+theorem consumeReply_preserves_objects_invExt (st st' : SystemState)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeReply rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold consumeReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; cases hStep; exact hObjInv
+  | some r =>
+    rw [hGet] at hStep
+    exact storeObject_preserves_objects_invExt st st' rid.toObjId _ hObjInv hStep
+
+/-- WS-SM SM6.D: a TCB slot and a Reply slot are distinct.  A single object-store
+slot holds exactly one `KernelObject`, so if `caller.toObjId` resolves to a TCB
+and `rid.toObjId` to a Reply they cannot be the same `ObjId` — the disjointness
+that lets the reply-linkage post-conditions frame one store past the other. -/
+theorem getTcb?_getReply?_slot_ne (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (tcb : TCB) (r : SeLe4n.Kernel.Reply)
+    (hT : st.getTcb? caller = some tcb) (hR : st.getReply? rid = some r) :
+    caller.toObjId ≠ rid.toObjId := by
+  intro hEq
+  have hTobj := (getTcb?_eq_some_iff st caller tcb).mp hT
+  have hRobj := (getReply?_eq_some_iff st rid r).mp hR
+  rw [hEq, hRobj] at hTobj
+  simp at hTobj
+
+/-- WS-SM SM6.D: `linkCallerReply` establishes the forward TCB→Reply link —
+on success the caller TCB's `replyObject` points at `rid`.  (The final store
+of the op writes exactly this field.) -/
+theorem linkCallerReply_replyObject_some (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    ∀ result, linkCallerReply caller rid st = .ok ((), result) →
+      ∃ tcb', result.getTcb? caller = some tcb' ∧ tcb'.replyObject = some rid := by
+  intro result hRun
+  unfold linkCallerReply at hRun
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hRun
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hRun
+    | some tcb =>
+      simp only [hT] at hRun
+      split at hRun
+      · have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        have hStore := storeObject_inserted_object_lookup st1 caller.toObjId
+          (.tcb { tcb with replyObject := some rid }) hInv1 result hRun
+        exact ⟨{ tcb with replyObject := some rid },
+          by rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore, rfl⟩
+      · simp at hRun
+
+/-- WS-SM SM6.D (PR #822 review): `linkCallerReply` preserves the caller's IPC
+state — its final store rewrites only `replyObject`, so a caller blocked on reply
+*stays* blocked.  The `replyCallerLinkage` invariant reads this to require a linked
+Reply's caller to be `blockedOnReply` (the only state `.reply` can consume). -/
+theorem linkCallerReply_caller_ipcState_preserved (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (tcbC : TCB) (hObjInv : st.objects.invExt)
+    (hPre : st.getTcb? caller = some tcbC) :
+    ∀ result tcb', linkCallerReply caller rid st = .ok ((), result) →
+      result.getTcb? caller = some tcb' → tcb'.ipcState = tcbC.ipcState := by
+  intro result tcb' hRun hPost
+  unfold linkCallerReply at hRun
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hRun
+    have hNe : caller.toObjId ≠ rid.toObjId := by
+      cases hGetR : st.getReply? rid with
+      | none => unfold linkReply at hLink; rw [hGetR] at hLink; simp at hLink
+      | some r0 => exact getTcb?_getReply?_slot_ne st caller rid tcbC r0 hPre hGetR
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hFrame : st1.objects[caller.toObjId]? = st.objects[caller.toObjId]? := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r0 =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_objects_ne st st1 rid.toObjId caller.toObjId _ hNe hObjInv hLink
+        · simp at hLink
+    have hT1 : st1.getTcb? caller = some tcbC := by
+      rw [getTcb?_eq_some_iff] at hPre ⊢; rw [hFrame]; exact hPre
+    cases hT : st1.getTcb? caller with
+    | none => rw [hT1] at hT; cases hT
+    | some tcb =>
+      have htcb : tcbC = tcb := by rw [hT1] at hT; injection hT
+      subst htcb
+      simp only [hT] at hRun
+      split at hRun
+      · have hStore := storeObject_inserted_object_lookup st1 caller.toObjId
+          (.tcb { tcbC with replyObject := some rid }) hObjInv1 result hRun
+        have hRes : result.getTcb? caller = some { tcbC with replyObject := some rid } := by
+          rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore
+        rw [hRes] at hPost; injection hPost with hPost; rw [← hPost]
+      · simp at hRun
+
+/-- WS-SM SM6.D: `consumeCallerReply` tears down the forward TCB→Reply link —
+any caller TCB still present after the op has `replyObject = none`.  (The TCB
+leg writes exactly this field; the no-op leg leaves no TCB to observe.) -/
+theorem consumeCallerReply_replyObject_none (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    ∀ result tcb', consumeCallerReply caller rid st = .ok ((), result) →
+      result.getTcb? caller = some tcb' → tcb'.replyObject = none := by
+  intro result tcb' hRun hGetT
+  unfold consumeCallerReply at hRun
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hRun
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hRun
+      subst hRun
+      rw [hT] at hGetT; simp at hGetT
+    | some tcb =>
+      simp only [hT] at hRun
+      have hInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+      have hStore := storeObject_inserted_object_lookup st1 caller.toObjId
+        (.tcb { tcb with replyObject := none }) hInv1 result hRun
+      have hRes : result.getTcb? caller = some { tcb with replyObject := none } := by
+        rw [getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]; exact hStore
+      rw [hRes] at hGetT; injection hGetT with hEq; rw [← hEq]
+
+/-- WS-SM SM6.D: `linkCallerReply` establishes the Reply→TCB back-link — on
+success the reply's `caller` points at the linking thread.  `linkReply` sets
+`reply.caller := some caller`; the subsequent caller-TCB store lands at a slot
+distinct from the reply (`getTcb?_getReply?_slot_ne`), so it frames past and the
+reply is still observed with `caller = some caller`.  Together with
+`linkCallerReply_replyObject_some` this pins both halves of the bidirectional
+TCB↔Reply link the Phase-D `replyCallerLinkage` invariant reads. -/
+theorem linkCallerReply_getReply?_caller_some (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) (hFree : r.caller = none) :
+    ∀ result, linkCallerReply caller rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := some caller } := by
+  intro result hRun
+  unfold linkCallerReply at hRun
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hRun
+    have hR1 : st1.getReply? rid = some { r with caller := some caller } :=
+      linkReply_getReply?_caller_some st rid caller r hObjInv hGet hFree st1 hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hRun
+    | some tcb =>
+      simp only [hT] at hRun
+      split at hRun
+      · have hInv1 : st1.objects.invExt :=
+          linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        have hNe : caller.toObjId ≠ rid.toObjId :=
+          getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := some caller } hT hR1
+        have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
+          storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
+        rw [getReply?_eq_some_iff] at hR1 ⊢
+        rw [hFrame]; exact hR1
+      · simp at hRun
+
+/-- WS-SM SM6.D: `consumeCallerReply` tears down the Reply→TCB back-link — on a
+present reply the reply's `caller` is cleared.  `consumeReply` clears it; the
+TCB leg (when the caller is present) stores at a distinct slot
+(`getTcb?_getReply?_slot_ne`) and frames past, so the reply is observed with
+`caller = none` — the dynamic single-use barrier surfaced as a post-condition. -/
+theorem consumeCallerReply_getReply?_caller_none (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply) (hObjInv : st.objects.invExt)
+    (hGet : st.getReply? rid = some r) :
+    ∀ result, consumeCallerReply caller rid st = .ok ((), result) →
+      result.getReply? rid = some { r with caller := none } := by
+  intro result hRun
+  unfold consumeCallerReply at hRun
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hRun
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hRun
+    have hR1 : st1.getReply? rid = some { r with caller := none } :=
+      consumeReply_getReply?_caller_none st rid r hObjInv hGet st1 hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hRun
+      subst hRun
+      exact hR1
+    | some tcb =>
+      simp only [hT] at hRun
+      have hInv1 : st1.objects.invExt :=
+        consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+      have hNe : caller.toObjId ≠ rid.toObjId :=
+        getTcb?_getReply?_slot_ne st1 caller rid tcb { r with caller := none } hT hR1
+      have hFrame : result.objects[rid.toObjId]? = st1.objects[rid.toObjId]? :=
+        storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
+      rw [getReply?_eq_some_iff] at hR1 ⊢
+      rw [hFrame]; exact hR1
+
 /-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
 `some ep` iff the store holds exactly `KernelObject.endpoint ep` at
 `id`. -/
@@ -2338,6 +2697,22 @@ store holds exactly `KernelObject.cnode cn` at `id`. -/
 theorem getCNode?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode) :
     st.getCNode? id = some cn ↔ st.objects[id]? = some (.cnode cn) := by
   unfold getCNode?
+  split
+  · rename_i cn' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- WS-SM SM6.D / PR #822 Phase H (#1.a): Unfolding lemma — `lookupCNode`
+returns `some cn` iff the store holds exactly `KernelObject.cnode cn` at `id`.
+Mirrors `getCNode?_eq_some_iff` (the two helpers share a definition); used by the
+reply-cap backing discharge (`replyCapBacked_of_source_slot`) that connects a
+`cspaceLookupSlot` result to the slot's containing CNode object. -/
+theorem lookupCNode_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode) :
+    st.lookupCNode id = some cn ↔ st.objects[id]? = some (.cnode cn) := by
+  unfold lookupCNode
   split
   · rename_i cn' heq; constructor
     · intro h; cases h; exact heq

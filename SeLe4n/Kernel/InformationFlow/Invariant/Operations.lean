@@ -560,7 +560,7 @@ private theorem saveOutgoingContext_preserves_projectObjects
               | cnode _ => simp_all
               | vspaceRoot _ => simp_all
               | untyped _ => simp_all
-              | schedContext _ => simp_all
+              | schedContext _ | reply _ => simp_all
   · rfl
 
 /-- WS-H12c: saveOutgoingContext preserves the information-flow projection.
@@ -601,7 +601,7 @@ private theorem saveOutgoingContext_preserves_projection
           | cnode _ => simp_all
           | vspaceRoot _ => simp_all
           | untyped _ => simp_all
-          | schedContext _ => simp_all
+          | schedContext _ | reply _ => simp_all
 
 /-- WS-H12c: restoreIncomingContext preserves the information-flow projection
 when the current thread is non-observable. -/
@@ -630,7 +630,7 @@ private theorem restoreIncomingContext_preserves_projection
       | cnode _ => simp_all
       | vspaceRoot _ => simp_all
       | untyped _ => simp_all
-      | schedContext _ => simp_all
+      | schedContext _ | reply _ => simp_all
 
 /-- WS-H12c: projectObjects depends only on the objects field. -/
 private theorem projectObjects_ext_objects
@@ -680,7 +680,7 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
           | cnode _ => simp_all
           | vspaceRoot _ => simp_all
           | untyped _ => simp_all
-          | schedContext _ => simp_all
+          | schedContext _ | reply _ => simp_all
 
 /-- WS-H9/H12c: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread >> save >> dequeue >> restore >> setCurrentThread.
@@ -1043,7 +1043,7 @@ theorem cspaceDeleteSlotCore_preserves_projection
   | none => simp [hObj] at hStep
   | some obj =>
     cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | cnode cn =>
       simp only [hObj] at hStep
       cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
@@ -1115,7 +1115,7 @@ theorem cspaceRevoke_preserves_projection
     | none => simp [hL, hC] at hStep
     | some obj =>
       cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hL, hC] at hStep
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp [hL, hC, storeObject] at hStep; cases hStep
         rw [revokeAndClearRefsState_preserves_projectState]
@@ -1365,7 +1365,7 @@ theorem endpointQueuePopHead_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep; revert hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -1440,7 +1440,7 @@ theorem endpointQueueEnqueue_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -1538,7 +1538,7 @@ theorem endpointSendDual_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
@@ -1764,7 +1764,7 @@ theorem endpointReceiveDual_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hSendHead : ep.sendQ.head with
@@ -2009,7 +2009,7 @@ theorem endpointCall_preserves_projection
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hRecvHead : ep.receiveQ.head with
@@ -2612,7 +2612,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
       | none => simp [hL, hC] at hRevoke
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hL, hC] at hRevoke
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hRevoke
         | cnode cn =>
           simp [hL, hC, storeObject] at hRevoke; cases hRevoke
           rw [revokeAndClearRefsState_preserves_objects]
@@ -2628,7 +2628,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
       | none => simp [hObj] at hDelete
       | some obj =>
         cases obj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hDelete
+        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hDelete
         | cnode cn =>
           simp only [hObj] at hDelete
           cases hSt : storeObject cleanup.cnode (.cnode (cn.remove cleanup.slot)) stRevoked with

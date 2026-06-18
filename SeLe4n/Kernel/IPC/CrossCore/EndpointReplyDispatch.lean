@@ -1,0 +1,280 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+/-
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+-/
+
+-- WS-SM SM6.C: PRODUCTION (LANDED).  The pure cross-core `.reply` dispatch op below
+-- the API layer; the live `API.dispatchWithCap{,Checked}` `.reply` arm routes through
+-- `endpointReplyCrossCoreDispatch{,Checked}` here, deriving the executing core from
+-- the live state (`determineExecutingCore`).  The live `.replyRecv` arm routes
+-- through the reply-object-aware `replyRecvBody` (in `API`), which resolves the
+-- *reply capability* (authority flows from holding the reply cap, exactly like
+-- `.reply`) and consumes / re-links the first-class Reply object — it does NOT use a
+-- raw-thread dispatch here.  See docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §4.3,
+-- §5 (SM6.C).
+
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyInvariant
+import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.Operations.Donation.Primitives
+import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
+
+/-!
+# WS-SM SM6.C — Cross-core `.reply` / `.replyRecv` dispatch (pure; below the API layer)
+
+The pure cross-core `.reply` dispatch operation — `endpointReplyCrossCoreDispatch`
+and the information-flow-checked `endpointReplyCrossCoreDispatchChecked`.  These live
+*below* `SeLe4n.Kernel.API` (no `Platform.FFI` dependency) so the live `.reply`
+dispatch arm can route through them — the cross-core generalisation of the
+single-core `endpointReplyWithDonation`.
+
+The live `.replyRecv` syscall is handled one layer up by `API.replyRecvBody`, which
+resolves the reply *capability* and consumes / re-links the first-class Reply object;
+the underlying combined reply-and-receive transition (`endpointReplyRecvOnCore`, in
+`EndpointReply`) remains available as a below-API building block.  There is
+deliberately **no** raw-thread `.replyRecv` dispatch wrapper here — it would expose a
+reply-without-the-reply-cap surface that bypasses the single-use Reply object.
+
+Each dispatch composes:
+
+* the cross-core reply (`endpointReplyOnCore` / `endpointReplyRecvOnCore` — wakes
+  the original caller on its *home* core);
+* the SchedContext **donation return** (`applyReplyDonationOnCore` — returns the
+  replier's donated SC to the original owner and deschedules the now-passive
+  replier on *its own* core); and
+* the cross-core priority-inheritance **reversion** (`propagatePipChainCrossCore`
+  — `revert_eq_propagate`: reversion is functionally propagation, walking the
+  blocking chain up from the unblocked caller, migrating each link's run-queue
+  bucket on its home core, plan §4.3).
+
+The surfaced SGI is the reply-leg caller wake's; the cross-core PIP-chain SGIs are
+re-derived from the committed-state diff by the live syscall entry
+(`computeCrossCoreSgis`), exactly as the SM6.A `.call` dispatch surfaces only the
+receiver-wake SGI and takes `propagatePipChainCrossCore.1` for the state.
+-/
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency
+
+-- ============================================================================
+-- §1  SM6.C.3 — Cross-core donation return (`applyReplyDonationOnCore`)
+-- ============================================================================
+
+/-- WS-SM SM6.C.3 (plan §4.3): the cross-core generalisation of
+`applyReplyDonation`.  Returns the replier's donated SchedContext to its original
+owner (`returnDonatedSchedContextValid`, an object-store-only rebinding that is
+cross-core-safe) and deschedules the now-passive replier on *its own* core via
+`removeRunnableOnCore … executingCore` (rather than the boot-pinned
+`removeRunnable`).  A replier that holds no donated SC is a no-op (the common
+non-donating reply). -/
+def applyReplyDonationOnCore (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
+    (executingCore : CoreId) : Except KernelError SystemState :=
+  let replier : SeLe4n.ThreadId := replierVtid.val
+  match lookupTcb st replier with
+  | none => .ok st
+  | some replierTcb =>
+    match replierTcb.schedContextBinding with
+    | .donated scId originalOwner =>
+      match SeLe4n.ThreadId.toValid? originalOwner with
+      | some ownerVtid =>
+          match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+          | .error e => .error e
+          | .ok st' => .ok (removeRunnableOnCore st' replier executingCore)
+      | none => .error .invalidArgument
+    | _ => .ok st
+
+/-- WS-SM SM6.C.3 (bootCore bridge): `applyReplyDonationOnCore … bootCoreId` is
+exactly the single-core `applyReplyDonation` — the `removeRunnableOnCore …
+bootCoreId = removeRunnable` backward-compatibility bridge carried through the
+donation return. -/
+theorem applyReplyDonationOnCore_bootCoreId (st : SystemState)
+    (replierVtid : SeLe4n.ValidThreadId) :
+    applyReplyDonationOnCore st replierVtid bootCoreId = applyReplyDonation st replierVtid := rfl
+
+-- ============================================================================
+-- §2  SM6.C.3 — Donation-chain lock-set extension
+-- ============================================================================
+
+/-- WS-SM SM6.C.3 (plan §4.3): the cross-core donation-chain lock-set extension
+for reply.  When the reply returns a SchedContext to its original owner, the
+`endpointReply` lock-set is *exactly* the non-returning lock-set extended with the
+returned SchedContext's **write** lock and the original owner's TCB **write**
+lock — so the SC migration (`returnDonatedSchedContextValid` rebinding
+`boundThread` across cores, SM5.H.4) and the owner's re-activation both run under
+held write locks, serialised against every other core. -/
+theorem lockSet_endpointReply_donation_extension
+    (replier : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
+    lockSet_endpointReply replier cnRoot target (some scId) (some originalOwner)
+      = lockSetExtendOpt
+          (lockSetExtendOpt
+            (lockSet_endpointReply replier cnRoot target none none)
+            (some (schedContextLock scId, .write)))
+          (some (tcbLock originalOwner, .write)) := by
+  unfold lockSet_endpointReply
+  rfl
+
+-- ============================================================================
+-- §3  SM6.C — Full cross-core `.reply` dispatch (reply + donation + PIP revert)
+-- ============================================================================
+
+/-- WS-SM SM6.C (operation): the cross-core `Reply` **delivery + scheduling**
+primitive — below the API layer.  The cross-core reply (`endpointReplyOnCore` —
+caller woken on its home core), then the SchedContext donation **return**
+(`applyReplyDonationOnCore` — the passive **recorded server** returns the donated
+SC and is descheduled on its own core), then the cross-core priority-inheritance
+**reversion** (`propagatePipChainCrossCore` over the recorded server's blocking
+chain — re-derives each holder's boost from its remaining waiters, migrating
+buckets on home cores).  The donation/PIP target is the server recorded in the
+caller's `blockedOnReply` link (`recordedReplyServer? st target`), **not** the
+reply-cap holder `replier` (a delegated cap holder is not the donee — PR #822
+review).  Surfaces the reply-leg caller-wake SGI; the chain-walk SGIs are
+re-derived from the committed diff.
+
+**Delivery-only — does NOT consume the first-class Reply linkage** (PR #822 Codex
+review): this helper takes raw `replier`/`target` threads and performs the wake +
+donation + PIP only.  The single-use Reply-object teardown (`consumeCallerReply` —
+clear `target.replyObject` *and* `reply.caller := none`) is **composed separately
+by the live `.reply` dispatch arm** (`API.dispatchWithCap{,Checked}`), which first
+resolves the reply *capability* to `(rid, reply.caller = target)` and, after this
+primitive delivers, calls `consumeCallerReply target rid`.  A direct caller of this
+below-API helper (e.g. the SM6.C cross-core suite, which anchors it as a
+building-block) **must not** treat it as full reply semantics — it must compose the
+consume itself, or the Reply object is left in-use (`reply.caller`/`replyObject`
+stale), so later lifecycle cleanup / reuse of that Reply is rejected. -/
+def endpointReplyCrossCoreDispatch
+    (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  match endpointReplyOnCore replier target msg executingCore st with
+  | (_, .error e) => (st, .error e)
+  | (st1, .ok replySgi?) =>
+      -- WS-SM SM6.D (PR #822 review): the SchedContext donation **return** and the
+      -- priority-inheritance **reversion** are keyed on the **recorded server**
+      -- (`target`'s `blockedOnReply` link, resolved from the pre-state `st` —
+      -- `endpointReplyOnCore` succeeded, so it is `some expected`), who holds the
+      -- donated SC and the PIP boost, NOT the reply-cap holder `replier` (which may
+      -- be a *delegate* after the 6J-lYm gate removal).  In the non-delegated case
+      -- (`replier = expected`) this is identical to the legacy `replier`-keyed path.
+      match recordedReplyServer? st target with
+      | some expected =>
+          match SeLe4n.ThreadId.toValid? expected with
+          | some expectedV =>
+              -- WS-SM SM6.D (PR #822 review): deschedule the now-passive server on
+              -- **its own** core, derived from the pre-state (`determineExecutingCore
+              -- st expected`), not the (possibly delegated) cap holder's syscall core
+              -- `executingCore`.  Reusing the delegate's core would point
+              -- `removeRunnableOnCore` at the wrong run queue, leaving the recorded
+              -- server current/runnable on its own core after its donated SC was
+              -- returned.  In the non-delegated case the server *is* the syscall
+              -- thread, so `determineExecutingCore st expected = executingCore`.
+              let expectedCore := determineExecutingCore st expected
+              match applyReplyDonationOnCore st1 expectedV expectedCore with
+              | .error e => (st, .error e)
+              | .ok st2 =>
+                  ((PriorityInheritance.propagatePipChainCrossCore st2 expected executingCore).1, .ok replySgi?)
+          | none => (st, .error .invalidArgument)
+      | none => (st, .error .replyCapInvalid)
+
+/-- WS-SM SM6.C (live `.reply` enforcement): the **information-flow-checked**
+cross-core reply dispatch — the cross-core analogue of `endpointReplyChecked`
+composed with `endpointReplyCrossCoreDispatch`.  Mirrors the single-core checked
+`.reply` arm: it first applies the SM-IF security guard
+(`securityFlowsTo replierLabel targetLabel`, rejecting with `.flowDenied` on a
+disallowed flow — the reply may flow information from the replier's domain to the
+caller's), then runs the full cross-core dispatch. -/
+def endpointReplyCrossCoreDispatchChecked
+    (ctx : LabelingContext) (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState) :
+    SystemState × Except KernelError (Option (CoreId × SgiKind)) :=
+  if securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) then
+    endpointReplyCrossCoreDispatch replier target msg executingCore st
+  else
+    (st, .error .flowDenied)
+
+/-- WS-SM SM6.C: a disallowed flow is rejected before any state change — the
+checked cross-core reply dispatch is fail-closed (state unchanged, `.flowDenied`). -/
+theorem endpointReplyCrossCoreDispatchChecked_flow_denied
+    (ctx : LabelingContext) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hDeny : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) = false) :
+    endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st
+      = (st, .error .flowDenied) := by
+  simp [endpointReplyCrossCoreDispatchChecked, hDeny]
+
+/-- WS-SM SM6.C: when the flow is permitted, the checked dispatch is exactly the
+unchecked cross-core reply dispatch — the guard is a pure precondition. -/
+theorem endpointReplyCrossCoreDispatchChecked_flow_allowed
+    (ctx : LabelingContext) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hAllow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) = true) :
+    endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st
+      = endpointReplyCrossCoreDispatch replier target msg executingCore st := by
+  simp [endpointReplyCrossCoreDispatchChecked, hAllow]
+
+-- ============================================================================
+-- §4  SM6.C — `.reply` checked-dispatch equivalence
+-- ============================================================================
+--
+-- NOTE: there is deliberately no raw-thread cross-core `.replyRecv` dispatch
+-- wrapper here.  The live `.replyRecv` syscall routes through `API.replyRecvBody`,
+-- which resolves the reply *capability* and consumes / re-links the first-class
+-- Reply object; the underlying combined transition `endpointReplyRecvOnCore`
+-- (in `EndpointReply`) remains the below-API building block.  A raw `(replyTarget :
+-- ThreadId)` dispatch wrapper was removed because it exposed a reply-without-the-
+-- reply-cap surface that bypassed the single-use Reply object (PR #822 review).
+
+/-- WS-SM SM6.C: when the reply leg flow is permitted, the checked reply dispatch
+is exactly the unchecked cross-core dispatch — the guard is a pure precondition.
+The single-gate companion of the `.replyRecv` flow-allowed lemma. -/
+theorem endpointReplyCrossCoreDispatchChecked_eq_unchecked_of_flow
+    (ctx : LabelingContext) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hAllow : securityFlowsTo (ctx.threadLabelOf replier) (ctx.threadLabelOf target) = true) :
+    endpointReplyCrossCoreDispatchChecked ctx replier target msg executingCore st
+      = endpointReplyCrossCoreDispatch replier target msg executingCore st :=
+  endpointReplyCrossCoreDispatchChecked_flow_allowed ctx replier target msg executingCore st hAllow
+
+-- ============================================================================
+-- §5  SM6.C.9 — Reply donation-chain length bound (donation k > 2)
+-- ============================================================================
+
+/-- WS-SM SM6.C.9 (reply chain length bound): the cross-core priority-inheritance
+**reversion** the reply dispatch runs (`propagatePipChainCrossCore` over the
+unblocked caller's blocking chain) emits **at most `fuel`** cross-core SGIs —
+with the default `fuel := objectIndex.length`, at most one per kernel object.  A
+deep donation chain (k > 2 nested passive servers) therefore terminates and pokes
+a bounded number of remote cores: the chain walk is structurally recursive on
+fuel, and the acyclicity invariant
+(`propagatePipChainCrossCore_preserves_blockingAcyclic`) guarantees it never
+revisits a holder, so `objectIndex.length` fuel always exhausts the chain. -/
+theorem endpointReply_donation_chain_length_bounded
+    (st : SystemState) (caller : SeLe4n.ThreadId) (executingCore : CoreId) (fuel : Nat) :
+    (PriorityInheritance.propagatePipChainCrossCore st caller executingCore fuel).2.length ≤ fuel := by
+  induction fuel generalizing st caller with
+  | zero => simp [PriorityInheritance.propagatePipChainCrossCore]
+  | succ n ih =>
+    rw [PriorityInheritance.propagatePipChainCrossCore_step]
+    cases hsgi : (PriorityInheritance.pipBoostWithWake st caller executingCore).2 with
+    | none =>
+      cases hbs : PriorityInheritance.blockingServer st caller with
+      | none => simp [hsgi]
+      | some nextServer =>
+        simp only [hsgi]
+        exact Nat.le_trans
+          (by simpa using ih (PriorityInheritance.pipBoostWithWake st caller executingCore).1 nextServer)
+          (Nat.le_succ n)
+    | some s =>
+      cases hbs : PriorityInheritance.blockingServer st caller with
+      | none => simp only [hsgi]; exact Nat.succ_le_succ (Nat.zero_le n)
+      | some nextServer =>
+        simp only [hsgi, List.singleton_append, List.length_cons]
+        exact Nat.succ_le_succ (ih (PriorityInheritance.pipBoostWithWake st caller executingCore).1 nextServer)
+
+end SeLe4n.Kernel

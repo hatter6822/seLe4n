@@ -51,6 +51,9 @@ open SeLe4n.Testing
 #check @removeRunnableOnCore
 #check @endpointCallReceiver?
 #check @endpointCallDonatedSc?
+-- PR #822 review: the server-first stashed reply the rendezvous links, resolved into
+-- the Call footprint so the `linkServerFirstCaller` reply write is 2PL-covered:
+#check @endpointCallServerFirstReply?
 #check @lockSet_endpointCallOnCore
 #check @lockSet_endpointCallOnCore_correct
 #check @lockSet_endpointCallWithCaps
@@ -258,6 +261,13 @@ private def runLockSetChecks : IO Unit := do
   assertBool "caller-TCB write lock is in the endpointCall footprint"
     (decide ((tcbLock callerTid, AccessMode.write) ∈
       (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)).pairs))
+  -- PR #822 review (finding 6J… server-first reply lock): once the server-first
+  -- stashed reply is resolved, its per-object **write** lock is a declared member of
+  -- the Call footprint, so the `linkServerFirstCaller` reply write is 2PL-covered.
+  assertBool "server-first reply write lock is in the endpointCall footprint"
+    (decide ((replyLock (⟨700⟩ : SeLe4n.ReplyId), AccessMode.write) ∈
+      (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)
+        (some (⟨700⟩ : SeLe4n.ReplyId))).pairs))
   -- SM6.A.8: the WithCaps lock-set is still hierarchically correct.
   assertBool "endpointCallWithCaps lock-set kinds all permitted (adds dest CNode W)"
     (decide (∀ p ∈ (lockSet_endpointCallWithCaps callerTid cnRoot destCnode epId

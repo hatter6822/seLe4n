@@ -106,28 +106,78 @@ private def fo003_storeObject : IO Unit := do
 -- TPH-005: Frozen IPC Send/Receive
 -- ============================================================================
 
-/-- FO-004: frozenEndpointReply — reply to blocked caller -/
+/-- FO-004 (PR #822 review, Codex): frozenEndpointReply requires a resolved Reply
+object.  A `blockedOnReply` caller with NO `replyObject` link is rejected
+`.replyCapInvalid` — the frozen mirror of the live `.reply` path, which resolves
+`reply.caller` and consumes it.  (The success path with a linked Reply object is
+FO-004b.) -/
 private def fo004_endpointReply : IO Unit := do
   let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointReply ⟨3⟩ ⟨2⟩ msg fst with
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ (⟨505⟩ : SeLe4n.ReplyId) msg fst with
+  | .ok _ => throw <| IO.userError "reply to a caller with no Reply object must be rejected"
+  | .error e => expect "no-reply-object frozen reply → replyCapInvalid" (e == .replyCapInvalid)
+
+/-- FO-004b: frozenEndpointReply consumes the linked Reply object (PR #822
+review): a successful reply clears the caller's `replyObject` forward link and
+the Reply object's `caller` back-link, mirroring the runtime `consumeCallerReply`
+single-use semantics. -/
+private def fo004b_endpointReplyConsumesLink : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB := { mkTcb 2 with
+    ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  match frozenEndpointReply ⟨3⟩ ⟨2⟩ rid msg fst with
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb =>
           expect "target unblocked" (tcb.ipcState == .ready)
-          expect "message delivered" (tcb.pendingMessage.isSome)
+          expect "forward reply link cleared" (tcb.replyObject == none)
       | none => throw <| IO.userError "target TCB missing"
+      match fst'.objects.get? rid.toObjId with
+      | some (.reply r) => expect "reply caller back-link consumed" (r.caller == none)
+      | _ => throw <| IO.userError "reply object missing/retyped"
   | .error _ => throw <| IO.userError "reply should succeed"
 
-/-- FO-005: frozenEndpointReply — wrong replier rejected -/
-private def fo005_replyWrongReplier : IO Unit := do
-  let callerTcb : TCB := { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩) }
-  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
+/-- FO-005 (PR #822 review, frozen mirror of E.2 / 6J-lYm): a DELEGATED replier —
+NOT the recorded `replyTarget` server (⟨3⟩), but the reply is authorized by the
+linked Reply object whose `caller` names the target — now SUCCEEDS.  Authority is
+the Reply object, not the recorded replier (a copied/minted reply cap is
+delegatable), exactly like the live `.reply` path. -/
+private def fo005_replyDelegatedReplier : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB :=
+    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
-  match frozenEndpointReply ⟨99⟩ ⟨2⟩ msg fst with
-  | .ok _ => throw <| IO.userError "wrong replier should fail"
-  | .error e => expect "wrong replier → replyCapInvalid" (e == .replyCapInvalid)
+  -- replier ⟨99⟩ ≠ the recorded server ⟨3⟩, but presents the linked Reply cap (rid).
+  match frozenEndpointReply ⟨99⟩ ⟨2⟩ rid msg fst with
+  | .ok ((), fst') =>
+      match frozenLookupTcb fst' ⟨2⟩ with
+      | some tcb => expect "delegated replier delivers (target ready)" (tcb.ipcState == .ready)
+      | none => throw <| IO.userError "target TCB missing"
+  | .error _ => throw <| IO.userError "delegated replier with a valid linked Reply cap should succeed"
+
+/-- FO-005b (PR #822 review 489): authority is the **presented** reply cap.  A replier
+that presents a `replyId` which is NOT the caller's reciprocal forward link (it does
+not hold the caller's reply cap) is rejected `.replyCapInvalid`, even though the caller
+is `blockedOnReply` with a valid (different) linked Reply object — modelling that a
+thread without the reply cap cannot deliver/consume the reply. -/
+private def fo005b_replyWrongPresentedCap : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  let callerTcb : TCB :=
+    { mkTcb 2 with ipcState := .blockedOnReply ⟨10⟩ (some ⟨3⟩), replyObject := some rid }
+  let replyObj : SeLe4n.Kernel.Reply := { replyId := rid, caller := some ⟨2⟩ }
+  let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb), (rid.toObjId, .reply replyObj)]
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- replier presents ⟨999⟩, NOT the caller's forward link rid (⟨505⟩) → rejected.
+  match frozenEndpointReply ⟨99⟩ ⟨2⟩ (⟨999⟩ : SeLe4n.ReplyId) msg fst with
+  | .ok _ => throw <| IO.userError "a replier presenting a non-matching reply cap must be rejected"
+  | .error e => expect "wrong presented reply cap → replyCapInvalid" (e == .replyCapInvalid)
 
 -- ============================================================================
 -- TPH-006: Frozen Scheduler Tick
@@ -442,7 +492,9 @@ def main : IO Unit := do
   fo003_storeObject
   IO.println "--- TPH-005: Frozen IPC ---"
   fo004_endpointReply
-  fo005_replyWrongReplier
+  fo004b_endpointReplyConsumesLink
+  fo005_replyDelegatedReplier
+  fo005b_replyWrongPresentedCap
   IO.println "--- TPH-006: Frozen Scheduler Tick ---"
   fo006_timerTickIdle
   IO.println "--- TPH-007: Frozen CSpace Lookup ---"
@@ -468,4 +520,4 @@ def main : IO Unit := do
   fo020_frozenCspaceMint
   IO.println "--- U-H01: Multi-round IPC Regression ---"
   fo021_popThenPushRegression
-  IO.println "=== All Q7 frozen ops tests passed (21 scenarios) ==="
+  IO.println "=== All Q7 frozen ops tests passed (22 scenarios) ==="

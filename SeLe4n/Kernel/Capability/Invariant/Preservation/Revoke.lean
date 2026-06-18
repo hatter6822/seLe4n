@@ -207,7 +207,7 @@ theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle
         | none => simp [hObj] at hRevoke
         | some obj =>
           cases obj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hRevoke
           | cnode preCn =>
             simp [hObj] at hRevoke
             cases hStore : storeObject addr.cnode
@@ -282,7 +282,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
         | none => simp [hObj] at hRevoke
         | some obj =>
           cases obj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hRevoke
           | cnode preCn =>
             simp [hObj] at hRevoke
             cases hStore : storeObject addr.cnode
@@ -440,7 +440,7 @@ theorem cspaceRevokeCdtStreaming_preserves_capabilityInvariantBundle
         | none => simp [hObj] at hRevoke
         | some obj =>
           cases obj with
-          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hRevoke
+          | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hRevoke
           | cnode preCn =>
             simp [hObj] at hRevoke
             cases hStore : storeObject addr.cnode

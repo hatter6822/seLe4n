@@ -87,7 +87,7 @@ theorem dualQueueEndpointWellFormed_non_endpoint
   | none => trivial
   | some obj => cases obj with
     | endpoint ep => exact absurd hObj (hNoEp ep)
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => trivial
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => trivial
 
 -- ---- A-23 / A-24 closure ----
 
@@ -299,7 +299,7 @@ theorem ensureRunnable_preserves_dualQueueEndpointWellFormed
   cases hObjCase : st.objects[epId]? with
   | none => trivial
   | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => trivial
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => trivial
     | endpoint ep =>
         simp only [hObjCase] at hWf
         exact ⟨ensureRunnable_preserves_intrusiveQueueWellFormed st tid ep.sendQ hWf.1,
@@ -314,7 +314,7 @@ theorem removeRunnable_preserves_dualQueueEndpointWellFormed
   cases hObjCase : st.objects[epId]? with
   | none => trivial
   | some obj => cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => trivial
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => trivial
     | endpoint ep =>
         simp only [hObjCase] at hWf
         exact ⟨removeRunnable_preserves_intrusiveQueueWellFormed st tid ep.sendQ hWf.1,
@@ -572,7 +572,7 @@ theorem storeTcbIpcState_preserves_dualQueueSystemInvariant
               | none => simp [h] at hLookup
               | some obj => cases obj with
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
-                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
+                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
                     simp [h] at hLookup
           have hPrev : ({ tcb with ipcState := ipc } : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ({ tcb with ipcState := ipc } : TCB).queueNext = tcb.queueNext := rfl
@@ -619,7 +619,7 @@ theorem storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
               | none => simp [h] at hLookup
               | some obj => cases obj with
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
-                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
+                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
                     simp [h] at hLookup
           have hPrev : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ({ tcb with ipcState := ipc, pendingMessage := msg } : TCB).queueNext = tcb.queueNext := rfl
@@ -664,7 +664,7 @@ theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
               | none => simp [h] at hLookup
               | some obj => cases obj with
                 | tcb t => simp only [h, Option.some.injEq] at hLookup; cases hLookup; rfl
-                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
+                | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ =>
                     simp [h] at hLookup
           have hPrev : ({ tcb with pendingMessage := msg } : TCB).queuePrev = tcb.queuePrev := rfl
           have hNext : ({ tcb with pendingMessage := msg } : TCB).queueNext = tcb.queueNext := rfl
@@ -1177,7 +1177,7 @@ theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
       | none => simp [hHead] at hStep
@@ -1549,7 +1549,7 @@ theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hLookup : lookupTcb st enqueueTid with
       | none => simp [hLookup] at hStep

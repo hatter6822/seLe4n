@@ -454,6 +454,78 @@ theorem toObjId_injective (a b : SchedContextId) (h : a.toObjId = b.toObjId) : a
 
 end SchedContextId
 
+/-- Reply object identifier. WS-SM SM6.D: Reply objects are first-class kernel
+objects carrying the `Call`/`Reply` IPC linkage — the back-link to the blocked
+caller TCB, the donated SchedContext (MCS), and the reply-stack link for nested
+calls. A single-use reply capability (`CapTarget.replyCap`) names a `ReplyId`;
+replying consumes the linkage (`Reply.caller := none`). Mirrors `SchedContextId`:
+shares the `ObjId` namespace via an identity mapping, with the object store's
+functional-map property preventing type confusion. -/
+structure ReplyId where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+
+@[inline] instance : Hashable ReplyId where
+  hash a := hash a.val
+
+namespace ReplyId
+
+@[inline] def ofNat (n : Nat) : ReplyId := ⟨n⟩
+@[inline] def toNat (id : ReplyId) : Nat := id.val
+
+/-- Convert ReplyId to ObjId for object store lookups.  Shares the `ObjId`
+    namespace with the other typed identifiers via the identity mapping; the
+    object store's functional-map property guarantees that each ObjId maps to at
+    most one `KernelObject` variant, preventing type confusion.  See
+    `typedIdDisjointness` (CrossSubsystem.lean). -/
+@[inline] def toObjId (id : ReplyId) : ObjId := ObjId.ofNat id.toNat
+
+/-- Convert ObjId to ReplyId. -/
+@[inline] def ofObjId (oid : ObjId) : ReplyId := ⟨oid.toNat⟩
+
+/-- Checked conversion that rejects the reserved sentinel (value 0).  Mirrors
+    `SchedContextId.ofObjIdChecked`.  Prefer this at ABI boundaries where ObjId 0
+    could indicate an uninitialized or invalid reference.  The unchecked
+    `ofObjId` remains available for internal paths where validity is established
+    by context. -/
+@[inline] def ofObjIdChecked (oid : ObjId) : Option ReplyId :=
+  if oid.toNat = 0 then .none else .some ⟨oid.toNat⟩
+
+/-- `ofObjIdChecked` agrees with `ofObjId` on non-sentinel inputs. -/
+theorem ofObjIdChecked_eq_some_of_nonzero (oid : ObjId)
+    (hNonZero : oid.toNat ≠ 0) :
+    ofObjIdChecked oid = some (ofObjId oid) := by
+  simp [ofObjIdChecked, ofObjId, hNonZero]
+
+/-- `ofObjIdChecked` rejects the sentinel (ObjId with value 0). -/
+theorem ofObjIdChecked_sentinel :
+    ofObjIdChecked (ObjId.ofNat 0) = none := by
+  simp [ofObjIdChecked, ObjId.toNat, ObjId.ofNat]
+
+instance : ToString ReplyId where
+  toString id := toString id.toNat
+
+@[inline] def isReserved (id : ReplyId) : Bool := id.val = 0
+@[inline] def sentinel : ReplyId := ⟨0⟩
+
+/-- A ReplyId is valid (non-sentinel). -/
+@[inline] def valid (id : ReplyId) : Bool := !id.isReserved
+
+/-- Round-trip: ofNat then toNat is identity. -/
+theorem toNat_ofNat (n : Nat) : (ReplyId.ofNat n).toNat = n := rfl
+
+/-- Round-trip: toNat then ofNat is identity. -/
+theorem ofNat_toNat (id : ReplyId) : ReplyId.ofNat id.toNat = id := by
+  cases id; rfl
+
+/-- toObjId is injective. -/
+theorem toObjId_injective (a b : ReplyId) (h : a.toObjId = b.toObjId) : a = b := by
+  cases a with | mk va => cases b with | mk vb =>
+  simp [toObjId, toNat, ObjId.ofNat] at h
+  subst h; rfl
+
+end ReplyId
+
 /-! ### Machine-word bounds (hoisted before `CPtr`/`Slot` so both can
     delegate their hardware-width predicate to `isWord64Dec` — AN2-F.1 /
     FND-M01). These constants are used throughout the kernel to assert
@@ -1054,6 +1126,9 @@ instance : LawfulHashable PAddr where
 instance : LawfulHashable SchedContextId where
   hash_eq _ _ h := by cases eq_of_beq h; rfl
 
+instance : LawfulHashable ReplyId where
+  hash_eq _ _ h := by cases eq_of_beq h; rfl
+
 -- ============================================================================
 -- WS-H14a: EquivBEq and LawfulBEq instances for typed identifiers
 -- ============================================================================
@@ -1072,6 +1147,7 @@ instance : EquivBEq ASID := ⟨⟩
 instance : EquivBEq VAddr := ⟨⟩
 instance : EquivBEq PAddr := ⟨⟩
 instance : EquivBEq SchedContextId := ⟨⟩
+instance : EquivBEq ReplyId := ⟨⟩
 
 instance : LawfulBEq ObjId where
   eq_of_beq h := eq_of_beq h
@@ -1113,6 +1189,9 @@ instance : LawfulBEq PAddr where
   eq_of_beq h := eq_of_beq h
   rfl := beq_self_eq_true _
 instance : LawfulBEq SchedContextId where
+  eq_of_beq h := eq_of_beq h
+  rfl := beq_self_eq_true _
+instance : LawfulBEq ReplyId where
   eq_of_beq h := eq_of_beq h
   rfl := beq_self_eq_true _
 

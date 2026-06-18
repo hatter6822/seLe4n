@@ -135,6 +135,60 @@ def cspaceDepthConsistent (st : SystemState) : Prop :=
     cn.depth ≤ maxCSpaceDepth ∧
     (cn.bitsConsumed > 0 → cn.wellFormed)
 
+/-- WS-SM SM6.D / PR #822 Phase H (#1): **no dangling reply caps** — every `.replyCap rid`
+held in a CNode slot is backed by an existing Reply object.  Mirrors the runtime
+`cspaceSlotCoherencyChecks` backing check (`.replyCap rid => getReply? rid .isSome` in
+`Testing/InvariantChecks.lean`); the production capability/lifecycle invariants previously
+only constrained `.object` cap targets, so the model admitted a `.replyCap rid` pointing at
+an absent/non-Reply object that the live `.reply` path then rejects (`getReply?`).  The
+7th conjunct of `capabilityInvariantBundle`; preserved by the cap ops via the keystone
+`cspaceInsertSlot_preserves_replyCapPointsToValidReply` (+ delete dual). -/
+def replyCapPointsToValidReply (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (cn : CNode) (slot : SeLe4n.Slot)
+    (cap : Capability) (rid : SeLe4n.ReplyId),
+    st.objects[oid]? = some (.cnode cn) →
+    cn.lookup slot = some cap →
+    cap.target = .replyCap rid →
+    st.getReply? rid ≠ none
+
+/-- #1: `replyCapPointsToValidReply` reads only the object store (CNode slots +
+`getReply?`), so any transition leaving `st.objects` unchanged frames it. -/
+theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : replyCapPointsToValidReply st) :
+    replyCapPointsToValidReply st' := by
+  unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
+  rw [hObjs]; exact h
+
+/-- WS-SM SM6.D / PR #822 review (#02/#13 — "cover replyCap targets in lifecycle invariants"):
+the Lifecycle-layer `lifecycleCapabilityRefReplyCapBacked` predicate is **implied** by the
+step-preserved `replyCapPointsToValidReply` (the 7th `capabilityInvariantBundle` conjunct, #1.a).
+Lifecycle capability-reference metadata is *derived* from the slot cap
+(`lookupCapabilityRefMeta st ref = (lookupSlotCap st ref).map (·.target)`), so a `.replyCap rid`
+metadata witnesses a CNode slot holding that reply cap (`lookupSlotCap` resolves a CNode via
+`lookupCNode` + `CNode.lookup`), which `replyCapPointsToValidReply` backs.  This closes the
+review's residual — the lifecycle stale-reference family is no longer blind to reply caps —
+without rippling the Lifecycle-layer preservation surface, since the reply-backing fact is owned
+by the capability layer and the lifecycle predicate is a proven consequence of it. -/
+theorem lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply
+    (st : SystemState) (hRCPV : replyCapPointsToValidReply st) :
+    lifecycleCapabilityRefReplyCapBacked st := by
+  intro ref rid hMeta
+  unfold SystemState.lookupCapabilityRefMeta at hMeta
+  cases hCap : SystemState.lookupSlotCap st ref with
+  | none => rw [hCap] at hMeta; simp at hMeta
+  | some cap =>
+      rw [hCap] at hMeta
+      -- `(some cap).map Capability.target` reduces to `some cap.target`.
+      have hTgt : cap.target = .replyCap rid := by simpa using hMeta
+      rw [SystemState.lookupSlotCap] at hCap
+      cases hCN : SystemState.lookupCNode st ref.cnode with
+      | none => rw [hCN] at hCap; exact absurd hCap (by simp)
+      | some cn =>
+          rw [hCN] at hCap
+          have hObjCN : st.objects[ref.cnode]? = some (.cnode cn) :=
+            (SystemState.lookupCNode_eq_some_iff st ref.cnode cn).1 hCN
+          exact hRCPV ref.cnode cn ref.slot cap rid hObjCN hCap hTgt
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with security-meaningful
@@ -176,7 +230,7 @@ directly via `SeLe4n.Model.CNode.slotsUnique_holds`. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
-    cspaceDepthConsistent st ∧ st.objects.invExt
+    cspaceDepthConsistent st ∧ st.objects.invExt ∧ replyCapPointsToValidReply st
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
@@ -223,6 +277,9 @@ structure CapabilityInvariantBundle (st : SystemState) : Prop where
   /-- The kernel-level `objects` `RHTable` invariant holds (external hash,
       capacity positive, no duplicate keys). -/
   objectsInvExt : st.objects.invExt
+  /-- WS-SM SM6.D / PR #822 Phase H (#1): every `.replyCap rid` in a CNode slot is
+      backed by an existing Reply object (no dangling reply caps). -/
+  replyCapBacked : replyCapPointsToValidReply st
 
 /-- AN4-F.5.1 (CAP-M05): Bidirectional bridge between the tuple and named
 forms. Consumers can move freely between the two representations; the
@@ -232,14 +289,15 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     (st : SystemState) :
     capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
   constructor
-  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj⟩
+  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj, hRCPV⟩
     exact { lookupSound := hS, slotCountBounded := hB
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
-          , depthConsistent := hDep, objectsInvExt := hObj }
+          , depthConsistent := hDep, objectsInvExt := hObj
+          , replyCapBacked := hRCPV }
   · intro h
     exact ⟨h.lookupSound, h.slotCountBounded,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
-           h.objectsInvExt⟩
+           h.objectsInvExt, h.replyCapBacked⟩
 
 /-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
 
@@ -271,7 +329,12 @@ namespace capabilityInvariantBundle
 
 /-- Extract `st.objects.invExt` from the tuple form. -/
 @[simp] abbrev objectsInvExt {st : SystemState} (h : capabilityInvariantBundle st) :
-    st.objects.invExt := h.2.2.2.2.2
+    st.objects.invExt := h.2.2.2.2.2.1
+
+/-- WS-SM SM6.D / PR #822 Phase H (#1): extract `replyCapPointsToValidReply` from the
+tuple form (the 7th conjunct). -/
+@[simp] abbrev replyCapBacked {st : SystemState} (h : capabilityInvariantBundle st) :
+    _root_.SeLe4n.Kernel.replyCapPointsToValidReply st := h.2.2.2.2.2.2
 
 end capabilityInvariantBundle
 
@@ -661,7 +724,12 @@ theorem cspaceDepthConsistent_of_capabilityInvariantBundle
 
 theorem objects_invExt_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    st.objects.invExt := hInv.2.2.2.2.2
+    st.objects.invExt := hInv.2.2.2.2.2.1
+
+/-- WS-SM SM6.D / PR #822 Phase H (#1): extract the reply-cap backing invariant. -/
+theorem replyCapPointsToValidReply_of_capabilityInvariantBundle
+    (st : SystemState) (hInv : capabilityInvariantBundle st) :
+    replyCapPointsToValidReply st := hInv.2.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4/M-G02: Transfer theorems for cdtMintCompleteness
@@ -703,7 +771,7 @@ private theorem cspaceSlotCountBounded_of_storeObject_nonCNode
     rw [this] at hObj
     cases obj with
     | cnode cn' => exact absurd rfl (hNotCNode cn')
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => cases hObj
   · have hPre := storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore
     rw [hPre] at hObj
     exact hBounded cnodeId cn hObj
@@ -962,7 +1030,7 @@ private theorem cspaceDepthConsistent_of_storeObject_nonCNode
     have := storeObject_objects_eq st st' cnodeId obj hObjInv hStore
     rw [this] at hObj; cases obj with
     | cnode cn' => exact absurd rfl (hNotCNode cn')
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => cases hObj
   · rw [storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore] at hObj
     exact hDepth cnodeId cn hObj
 

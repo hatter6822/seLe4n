@@ -159,7 +159,7 @@ a regression that renames or removes a theorem fails this
 module's build at the elaboration step, before any test or
 runtime check is reached. -/
 def perObjectLockTheorems : List PerObjectLockTheorem :=
-  [-- §1 fieldDefault (7 entries — SM3.A.1..A.9 lock fields)
+  [-- §1 fieldDefault (8 entries — SM3.A.1..A.9 lock fields + Reply)
     polt! "TCB carries a per-object RwLockState lock field"
       TCB.lock .fieldDefault,
     polt! "Endpoint carries a per-object RwLockState lock field"
@@ -174,7 +174,9 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       SeLe4n.Kernel.SchedContext.lock .fieldDefault,
     polt! "VSpaceRoot carries a per-object RwLockState lock field"
       VSpaceRoot.lock .fieldDefault,
-    -- §2 projection (9 entries — objectLockOf def + 7 unfolds + FrozenKernelObject.objectLockOf def)
+    polt! "Reply carries a per-object RwLockState lock field"
+      SeLe4n.Kernel.Reply.lock .fieldDefault,
+    -- §2 projection (11 entries — objectLockOf def + 8 KernelObject unfolds + FrozenKernelObject.objectLockOf def + frozen .reply unfold)
     polt! "KernelObject.objectLockOf projects the per-variant lock"
       KernelObject.objectLockOf .projection,
     polt! "objectLockOf on .tcb reduces to t.lock"
@@ -191,8 +193,12 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectLockOf_untyped .projection,
     polt! "objectLockOf on .schedContext reduces to s.lock"
       KernelObject.objectLockOf_schedContext .projection,
+    polt! "objectLockOf on .reply reduces to r.lock"
+      KernelObject.objectLockOf_reply .projection,
     polt! "FrozenKernelObject.objectLockOf projects the frozen per-variant lock"
       FrozenKernelObject.objectLockOf .projection,
+    polt! "FrozenKernelObject.objectLockOf on .reply reduces to r.lock"
+      FrozenKernelObject.objectLockOf_reply .projection,
     -- §3 defaultState (5 entries — 4 SM3.A.11 + objStoreLock unheld)
     polt! "Default SystemState has objStoreLock = .unheld"
       default_objStoreLock_unheld .defaultState,
@@ -228,25 +234,27 @@ def perObjectLockTheorems : List PerObjectLockTheorem :=
       KernelObject.objectType_and_lockOf_total .consistency,
     polt! "objectLockOf is consistent with the kind tag"
       KernelObject.objectLockOf_consistent_with_type .consistency,
-    polt! "KernelObjectType has exactly 7 variants (locks down Reply / Page N/A decisions)"
-      KernelObjectType.variants_count_exactly_seven .consistency,
-    polt! "KernelObjectType variants_total — every value is one of the 7 enumerated kinds"
+    polt! "KernelObjectType has exactly 8 variants (reply now a real object; locks down Page N/A)"
+      KernelObjectType.variants_count_exactly_eight .consistency,
+    polt! "KernelObjectType variants_total — every value is one of the 8 enumerated kinds"
       KernelObjectType.variants_total .consistency]
 
-/-- WS-SM SM3.A audit-pass-5: the inventory has exactly 34 entries.
+/-- WS-SM SM3.A audit-pass-5: the inventory has exactly 37 entries (WS-SM SM6.D:
++3 for the first-class Reply object — `Reply.lock`, `KernelObject.objectLockOf_reply`,
+`FrozenKernelObject.objectLockOf_reply`).
 A regression that adds a new SM3.A theorem without updating the
 inventory fails this count witness at the Tier-3 surface check. -/
 theorem perObjectLockTheorems_count :
-    perObjectLockTheorems.length = 34 := by decide
+    perObjectLockTheorems.length = 37 := by decide
 
-/-- WS-SM SM3.A audit-pass-5: 7 entries in the `fieldDefault` category. -/
+/-- WS-SM SM3.A audit-pass-5: 8 entries in the `fieldDefault` category (+Reply). -/
 theorem perObjectLockTheorems_fieldDefault_count :
-    (perObjectLockTheorems.filter (fun t => t.category == .fieldDefault)).length = 7 := by
+    (perObjectLockTheorems.filter (fun t => t.category == .fieldDefault)).length = 8 := by
   decide
 
-/-- WS-SM SM3.A audit-pass-5: 9 entries in the `projection` category. -/
+/-- WS-SM SM3.A audit-pass-5: 11 entries in the `projection` category (+Reply unfolds). -/
 theorem perObjectLockTheorems_projection_count :
-    (perObjectLockTheorems.filter (fun t => t.category == .projection)).length = 9 := by
+    (perObjectLockTheorems.filter (fun t => t.category == .projection)).length = 11 := by
   decide
 
 /-- WS-SM SM3.A audit-pass-5: 5 entries in the `defaultState` category. -/

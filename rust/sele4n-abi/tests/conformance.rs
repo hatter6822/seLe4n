@@ -453,15 +453,16 @@ fn message_info_exhaustive_bounds() {
     }
 }
 
-/// Verify SyscallId roundtrip for all 26 variants (D6: +D1/D2/D3 TCB ops;
-/// WS-SM SM5.H.4: +TcbSetAffinity).
+/// Verify SyscallId roundtrip for all variants (D6: +D1/D2/D3 TCB ops;
+/// WS-SM SM5.H.4: +TcbSetAffinity; SM6.B: +Tcb{Bind,Unbind}Notification;
+/// PR #822 Phase H: +MintReplyCap).
 #[test]
 fn syscall_id_exhaustive_roundtrip() {
-    for i in 0..28u64 {
+    for i in 0..(SyscallId::COUNT as u64) {
         let sid = SyscallId::from_u64(i).expect("valid syscall id");
         assert_eq!(sid.to_u64(), i);
     }
-    assert!(SyscallId::from_u64(28).is_none());
+    assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
 }
 
 /// Verify KernelError roundtrip for all 54 variants.
@@ -477,14 +478,14 @@ fn kernel_error_exhaustive_roundtrip() {
     assert!(KernelError::from_u32(54).is_none());
 }
 
-/// Verify TypeTag roundtrip for all 7 variants (0–6, including SchedContext).
+/// Verify TypeTag roundtrip for all 8 variants (0–7, including SchedContext + Reply).
 #[test]
 fn type_tag_exhaustive_roundtrip() {
-    for i in 0..=6u64 {
+    for i in 0..=7u64 {
         let tag = TypeTag::from_u64(i).expect("valid type tag");
         assert_eq!(tag.to_u64(), i);
     }
-    assert!(TypeTag::from_u64(7).is_err());
+    assert!(TypeTag::from_u64(8).is_err());
 }
 
 /// Verify all CSpace arg structures roundtrip.
@@ -838,9 +839,9 @@ fn thread_on_different_core_decode() {
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
 fn lifecycle_retype_invalid_type_tag() {
-    // Type tag 7 (first invalid, after SchedContext = 6)
+    // Type tag 8 (first invalid, after Reply = 7)
     assert_eq!(
-        lifecycle::LifecycleRetypeArgs::decode(&[42, 7, 0]),
+        lifecycle::LifecycleRetypeArgs::decode(&[42, 8, 0]),
         Err(KernelError::InvalidTypeTag)
     );
 
@@ -850,8 +851,8 @@ fn lifecycle_retype_invalid_type_tag() {
         Err(KernelError::InvalidTypeTag)
     );
 
-    // All valid tags (0-6, including SchedContext) must succeed
-    for i in 0..=6u64 {
+    // All valid tags (0-7, including SchedContext + Reply) must succeed
+    for i in 0..=7u64 {
         assert!(lifecycle::LifecycleRetypeArgs::decode(&[42, i, 0]).is_ok());
     }
 }
@@ -979,11 +980,12 @@ fn kernel_error_variant_count() {
     );
 }
 
-/// W1-H / AA1 / D6: SyscallId variant count matches Lean (26 variants, 0-25;
-/// WS-SM SM5.H.4 added TcbSetAffinity at 25).
+/// W1-H / AA1 / D6: SyscallId variant count matches Lean (29 variants, 0-28;
+/// WS-SM SM6.B added Tcb{Bind,Unbind}Notification at 26/27; PR #822 Phase H added
+/// MintReplyCap at 28).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 28;
+    const SYSCALL_COUNT: u64 = 29;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1035,20 +1037,20 @@ fn notification_wait_encoding() {
     assert_eq!(regs[6], 15, "x7=SyscallId::NotificationWait must be 15");
 }
 
-/// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16)
-/// and places reply_target in msg_regs[0].
+/// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16) and places the
+/// server-supplied reply capability pointer in msg_regs[0] (faithful seL4-MCS).
 #[test]
 fn endpoint_reply_recv_encoding() {
-    let reply_target: u64 = 7;
+    let reply_cap: u64 = 7;
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
         msg_info: MessageInfo::new(1, 0, 0).unwrap(),
-        msg_regs: [reply_target, 0, 0, 0],
+        msg_regs: [reply_cap, 0, 0, 0],
         syscall_id: SyscallId::ReplyRecv,
     };
     let regs = encode_syscall(&req).unwrap();
     assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv must be 16");
-    assert_eq!(regs[2], reply_target, "x2=msg_regs[0] must carry reply_target");
+    assert_eq!(regs[2], reply_cap, "x2=msg_regs[0] must carry the reply cap pointer");
 }
 
 /// W1-D: MmioUnaligned variant exists at discriminant 40.
@@ -1059,24 +1061,24 @@ fn mmio_unaligned_variant() {
     assert_eq!(err as u32, 40);
 }
 
-/// W1-E audit: endpoint_reply_recv places reply_target in MR[0] and user
-/// data in MR[1..3]. MessageInfo.length = user_length + 1 (for reply_target).
+/// W1-E audit: endpoint_reply_recv places the reply cap pointer in MR[0] and user
+/// data in MR[1..3]. MessageInfo.length = user_length + 1 (for the reply cap slot).
 #[test]
 fn endpoint_reply_recv_register_layout() {
-    // Simulate: user wants 2 registers of reply data + reply_target
-    let reply_target: u64 = 7;
+    // Simulate: user wants 2 registers of reply data + the reply cap pointer
+    let reply_cap: u64 = 7;
     let user_data_0: u64 = 0xAAAA;
     let user_data_1: u64 = 0xBBBB;
-    // Kernel should encode: MR[0]=reply_target, MR[1]=user_data_0, MR[2]=user_data_1
+    // Kernel should encode: MR[0]=reply_cap, MR[1]=user_data_0, MR[2]=user_data_1
     // MessageInfo.length = 2 + 1 = 3
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
-        msg_info: MessageInfo::new(3, 0, 0).unwrap(), // 2 user regs + 1 reply_target
-        msg_regs: [reply_target, user_data_0, user_data_1, 0],
+        msg_info: MessageInfo::new(3, 0, 0).unwrap(), // 2 user regs + 1 reply cap ptr
+        msg_regs: [reply_cap, user_data_0, user_data_1, 0],
         syscall_id: SyscallId::ReplyRecv,
     };
     let regs = encode_syscall(&req).unwrap();
-    assert_eq!(regs[2], reply_target, "x2=MR[0] must be reply_target");
+    assert_eq!(regs[2], reply_cap, "x2=MR[0] must be the reply cap pointer");
     assert_eq!(regs[3], user_data_0, "x3=MR[1] must be user data[0]");
     assert_eq!(regs[4], user_data_1, "x4=MR[2] must be user data[1]");
     assert_eq!(regs[6], 16, "x7=SyscallId::ReplyRecv");
@@ -1122,10 +1124,11 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 28 (WS-SM SM6.B added Tcb{Bind,Unbind}Notification).
+/// AA1-B-5: COUNT is updated to 29 (PR #822 Phase H added MintReplyCap, on top of
+/// WS-SM SM6.B's Tcb{Bind,Unbind}Notification).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 28);
+    assert_eq!(SyscallId::COUNT, 29);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1252,10 +1255,10 @@ fn lifecycle_retype_sched_context() {
     assert_eq!(decoded.new_type, TypeTag::SchedContext);
 }
 
-/// AA1-G-2: TypeTag boundary — 7 is first invalid value.
+/// AA1-G-2 / WS-SM SM6.D: TypeTag boundary — 8 is first invalid value (Reply = 7).
 #[test]
 fn type_tag_boundary() {
-    assert_eq!(TypeTag::from_u64(7), Err(KernelError::InvalidTypeTag));
+    assert_eq!(TypeTag::from_u64(8), Err(KernelError::InvalidTypeTag));
     assert_eq!(TypeTag::from_u64(u64::MAX), Err(KernelError::InvalidTypeTag));
 }
 
@@ -1372,13 +1375,24 @@ fn tcb_unbind_notification_roundtrip() {
     assert_eq!(sid.to_u64(), 27);
 }
 
-/// D6-D5: Boundary — discriminant 28 is out of range for SyscallId
-/// (WS-SM SM6.B added bind/unbind-notification, moving the boundary from 25 to 27).
+/// WS-SM SM6.D / PR #822 Phase H: MintReplyCap roundtrip (discriminant 28).
+#[test]
+fn mint_reply_cap_roundtrip() {
+    let sid = SyscallId::from_u64(28).expect("MintReplyCap must exist");
+    assert_eq!(sid, SyscallId::MintReplyCap);
+    assert_eq!(sid.to_u64(), 28);
+    // Deriving a reply cap requires grant authority on the source object cap
+    // (matches API.lean `syscallRequiredRight .mintReplyCap = .grant`).
+    assert_eq!(sid.required_right(), AccessRight::Grant);
+}
+
+/// D6-D5: Boundary — discriminant 29 is out of range for SyscallId
+/// (PR #822 Phase H added mintReplyCap, moving the boundary from 27 to 28).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(27).is_some()); // Last valid
-    assert!(SyscallId::from_u64(28).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 28);
+    assert!(SyscallId::from_u64(28).is_some()); // Last valid
+    assert!(SyscallId::from_u64(29).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 29);
 }
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-392).

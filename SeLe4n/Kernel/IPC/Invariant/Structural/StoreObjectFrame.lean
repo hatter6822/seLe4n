@@ -77,7 +77,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.receiveQ.head with
       | some rcvr =>
@@ -148,7 +148,7 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.sendQ.head with
       | some sndr =>
@@ -392,7 +392,7 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.receiveQ.head with
       | some rcvr =>
@@ -789,7 +789,7 @@ theorem endpointQueuePopHead_preserves_allPendingMessagesBounded
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -850,7 +850,7 @@ theorem endpointQueuePopHead_preserves_badgeWellFormed
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
@@ -911,7 +911,7 @@ theorem endpointQueueEnqueue_preserves_allPendingMessagesBounded
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -971,7 +971,7 @@ theorem endpointQueueEnqueue_preserves_badgeWellFormed
   cases hObj : st.objects[endpointId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | endpoint ep =>
       simp only [hObj] at hStep
       cases hLookup : lookupTcb st tid with
@@ -1036,7 +1036,7 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
@@ -1087,7 +1087,7 @@ theorem notificationWait_preserves_allPendingMessagesBounded
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hBadge : ntfn.pendingBadge with
@@ -1212,7 +1212,7 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
@@ -1256,7 +1256,7 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
   cases hObj : st.objects[notificationId]? with
   | none => simp [hObj] at hStep
   | some obj => cases obj with
-    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
+    | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
       cases hPending : ntfn.pendingBadge with
@@ -1440,7 +1440,7 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.receiveQ.head with
       | some rcvr =>
@@ -1502,7 +1502,7 @@ theorem endpointSendDual_preserves_badgeWellFormed
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.receiveQ.head with
       | some rcvr =>
@@ -1561,7 +1561,7 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.sendQ.head with
       | some _ =>
@@ -1661,7 +1661,7 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.sendQ.head with
       | some _ =>
@@ -1760,7 +1760,7 @@ theorem endpointCall_preserves_allPendingMessagesBounded
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.receiveQ.head with
       | some _ =>
@@ -1832,7 +1832,7 @@ theorem endpointCall_preserves_badgeWellFormed
   | some obj =>
     simp only [hObj] at hStep
     cases obj with
-    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ => simp at hStep
+    | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ | reply _ => simp at hStep
     | endpoint ep =>
       cases hHead : ep.receiveQ.head with
       | some _ =>

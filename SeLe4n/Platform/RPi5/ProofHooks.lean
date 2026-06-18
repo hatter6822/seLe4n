@@ -146,7 +146,7 @@ private theorem registerContextStable_writeRegister_contextMatch
       simp only [Bool.and_eq_true] at hStable
       exact hStable.1.1.1.1.1
     | some (.endpoint _) | some (.notification _) | some (.cnode _) |
-      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | none =>
+      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | some (.reply _) | none =>
       trivial
 
 open SeLe4n.Kernel in
@@ -200,7 +200,7 @@ def rpi5ProductionAdapterProofHooks :
         newTid newRegs st tcb hInv hObj hRegs hNotRunnable hTimeSlice
         hIpcReady hDeadline hBudgetPost
     | some (.endpoint _) | some (.notification _) | some (.cnode _) |
-      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | none =>
+      some (.vspaceRoot _) | some (.schedContext _) | some (.untyped _) | some (.reply _) | none =>
       simp [hObj] at hStable
 
 /-- AG7-D/F: End-to-end context-switch preservation for RPi5 production contract.

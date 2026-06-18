@@ -69,6 +69,12 @@ open SeLe4n.Testing
 #check @self_write_mem_insertOrMerge
 #check @lockSet_notificationSignal_notification_write_mem
 #check @lockSet_notificationSignal_waiter_tcb_write_mem
+-- WS-SM SM6.D (PR #822 Codex review): the canonical `.notificationSignal` footprint
+-- upper-bounds the bound-delivery endpoint + bound-TCB writes (the
+-- endpointQueueRemoveDual dequeue + bound-TCB write that the prior footprint left
+-- outside the 2PL set).
+#check @lockSet_notificationSignal_bound_tcb_write_mem
+#check @lockSet_notificationSignal_bound_endpoint_write_mem
 
 -- SM6.B.5 per-core wake locality:
 #check @notificationSignalOnCore_perCore_consistent
@@ -125,10 +131,13 @@ open SeLe4n.Testing
 -- SM6.B audit closure (codex review #4 wait wiring, #5 bound lock-set):
 #check @notificationWaitCrossCoreDispatch
 #check @notificationWaitCrossCoreDispatchChecked
-#check @lockSet_notificationSignalBoundOnCore_correct
--- SM6.B review #5 coverage: the bound-delivery endpoint + bound-TCB writes are members:
-#check @lockSet_notificationSignalBoundOnCore_endpoint_write_mem
-#check @lockSet_notificationSignalBoundOnCore_boundTcb_write_mem
+-- PR #822 review: the canonical signal footprint is bound-aware, so its `_correct`
+-- covers the bound path (the redundant separate bound footprint was removed):
+#check @lockSet_notificationSignalOnCore_correct
+-- SM6.B review #5 / PR #822 coverage: the bound-delivery endpoint + bound-TCB writes
+-- are members of the canonical footprint:
+#check @lockSet_notificationSignalOnCore_bound_endpoint_write_mem
+#check @lockSet_notificationSignalOnCore_bound_tcb_write_mem
 -- SM6.B bound-delivery semantics + invariant preservation:
 #check @notificationSignalBoundOnCore_fallthrough_eq
 #check @notificationSignalBoundOnCore_delivery_eq
@@ -511,7 +520,7 @@ private def runReviewFixChecks : IO Unit := do
       | .ok ((), stBnd) =>
           assertBool "review #5 precond: bound-delivery target resolves"
             (decide (boundDeliveryTarget? stBnd nId = some (boundTid, epId)))
-          let ls := lockSet_notificationSignalBoundOnCore stBnd nId signallerTid cnRoot
+          let ls := lockSet_notificationSignalOnCore stBnd nId signallerTid cnRoot
           assertBool "review #5: bound lock-set includes the endpoint write lock"
             (ls.pairs.any (fun p => p.fst == endpointLock epId && p.snd == AccessMode.write))
           assertBool "review #5: bound lock-set includes the bound-TCB write lock"

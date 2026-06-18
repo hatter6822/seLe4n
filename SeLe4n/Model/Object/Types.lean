@@ -328,12 +328,16 @@ end AccessRightSet
 
 /-- The addressable target of a capability in the abstract object universe.
 
-WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities that
-reference a specific sender's TCB, enabling bidirectional IPC. -/
+WS-E4/M-12: Added `replyCap` variant for one-shot reply capabilities.
+
+WS-SM SM6.D (seL4-MCS Reply objects): `replyCap` references a first-class
+`Reply` *object* by `ReplyId` (the single-use reply authority), not a raw
+sender `ThreadId`.  The reply path resolves the `ReplyId` to its `reply.caller`
+linkage and consumes it (`reply.caller := none`) on use. -/
 inductive CapTarget where
   | object (id : SeLe4n.ObjId)
   | cnodeSlot (cnode : SeLe4n.ObjId) (slot : SeLe4n.Slot)
-  | replyCap (senderTcb : SeLe4n.ThreadId)
+  | replyCap (replyId : SeLe4n.ReplyId)
   deriving Repr, DecidableEq
 
 /-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
@@ -773,6 +777,33 @@ structure TCB where
       operation (SM5.C.8) and the boot-time default-affinity wiring
       (SM5.C.9). -/
   cpuAffinity : Option SeLe4n.Kernel.Concurrency.CoreId := none
+  /-- WS-SM Reply objects (seL4-MCS): link to the first-class `Reply` object
+      that records this thread's outstanding `Call`.  Mirrors seL4's
+      `tcb->tcbReply`.  Set when the thread issues a `Call` (carried unchanged
+      through the `blockedOnCall → blockedOnReply` transition); cleared when the
+      reply is delivered/consumed.
+
+      Stored on the TCB rather than inside the `blockedOnReply` `ipcState`
+      payload so the `ThreadIpcState` arity is unchanged — the dozens of
+      exhaustive `match`/`cases` over `ThreadIpcState` stay byte-for-byte intact,
+      and `{ tcb with … }` record updates that touch `ipcState` do not have to
+      thread a reply id.  This is also the seL4-faithful layout (the kernel links
+      a thread to its reply via `tcb->tcbReply`, not via the blocking-state word).
+
+      `none` = no outstanding reply object.  The default keeps every existing TCB
+      construction and the boot trace byte-identical. -/
+  replyObject : Option SeLe4n.ReplyId := none
+  /-- WS-SM SM6.D (faithful seL4-MCS, server-first receive): the Reply object a
+      *server* supplied on its `Recv` while no caller was yet queued.  Stashed here
+      when the server blocks on receive (`.blockedOnReceive`) so that a later `Call`
+      that rendezvouses with this waiting server can be linked to the reply object
+      (`linkCallerReply caller rid`), then cleared.  Distinct from `replyObject`
+      (this thread's *own* outstanding-Call reply): `pendingReceiveReply` is the
+      reply object this thread, acting as a server, will hand to the *next* caller.
+      `none` = the server provided no reply object (a plain receive that cannot
+      answer a Call).  Default keeps every existing construction + boot trace
+      byte-identical. -/
+  pendingReceiveReply : Option SeLe4n.ReplyId := none
   deriving Repr
 
 /-- WS-H12c: Manual `BEq` for `TCB`. `DecidableEq` cannot be derived because
@@ -805,7 +836,12 @@ instance : BEq TCB where
     -- WS-SM SM5.B.4: per-TCB CPU affinity participates in structural equality.
     -- `Option CoreId` (`CoreId = Fin numCores`) derives `DecidableEq`, so its
     -- `==` agrees with `=`.
-    a.cpuAffinity == b.cpuAffinity
+    a.cpuAffinity == b.cpuAffinity &&
+    -- WS-SM Reply objects: per-TCB reply-object links participate in structural
+    -- equality.  `Option ReplyId` derives `DecidableEq`, so its `==` agrees
+    -- with `=`.
+    a.replyObject == b.replyObject &&
+    a.pendingReceiveReply == b.pendingReceiveReply
 
 /-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
     Returns `true` if the TCB's identity or address-space references use
@@ -871,13 +907,16 @@ theorem TCB.ext {a b : TCB}
     -- WS-SM SM3.A.1: extensionality covers the per-TCB lock field.
     (hLock : a.lock = b.lock)
     -- WS-SM SM5.B.4: extensionality covers the per-TCB CPU-affinity field.
-    (hCpuAff : a.cpuAffinity = b.cpuAffinity) :
+    (hCpuAff : a.cpuAffinity = b.cpuAffinity)
+    -- WS-SM Reply objects: extensionality covers the per-TCB reply-object links.
+    (hReply : a.replyObject = b.replyObject)
+    (hPendReply : a.pendingReceiveReply = b.pendingReceiveReply) :
     a = b := by
   cases a; cases b
   simp at *
   exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
          hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo,
-         hLock, hCpuAff⟩
+         hLock, hCpuAff, hReply, hPendReply⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -1480,6 +1519,7 @@ inductive SyscallId where
   | tcbSetAffinity         -- WS-SM SM5.H.4: set thread CPU affinity (+ migration)
   | tcbBindNotification    -- WS-SM SM6.B: bind a notification to a TCB (seL4 NotificationBind)
   | tcbUnbindNotification  -- WS-SM SM6.B: unbind a TCB's bound notification
+  | mintReplyCap           -- WS-SM SM6.D / PR #822 Phase H: derive a `.replyCap` from an `.object` cap to a retyped Reply
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -1515,9 +1555,10 @@ namespace SyscallId
   | .tcbSetAffinity        => 25
   | .tcbBindNotification   => 26
   | .tcbUnbindNotification => 27
+  | .mintReplyCap          => 28
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 28
+def count : Nat := 29
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -1550,6 +1591,7 @@ def count : Nat := 28
   | 25 => some .tcbSetAffinity
   | 26 => some .tcbBindNotification
   | 27 => some .tcbUnbindNotification
+  | 28 => some .mintReplyCap
   | _  => none
 
 instance : ToString SyscallId where
@@ -1582,6 +1624,7 @@ instance : ToString SyscallId where
     | .tcbSetAffinity        => "tcbSetAffinity"
     | .tcbBindNotification   => "tcbBindNotification"
     | .tcbUnbindNotification => "tcbUnbindNotification"
+    | .mintReplyCap          => "mintReplyCap"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -1596,7 +1639,8 @@ def all : List SyscallId :=
   , .schedContextConfigure, .schedContextBind, .schedContextUnbind
   , .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority
   , .tcbSetIPCBuffer, .tcbSetAffinity
-  , .tcbBindNotification, .tcbUnbindNotification ]
+  , .tcbBindNotification, .tcbUnbindNotification
+  , .mintReplyCap ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -1627,9 +1671,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 7  | 8  | 9  | 10 | 11 | 12 | 13
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
-  | 26 | 27 =>
+  | 26 | 27 | 28 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 28 => intro s h; simp [ofNat?] at h
+  | n + 29 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

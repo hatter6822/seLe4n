@@ -1091,13 +1091,22 @@ mod tests {
                    "expected {} CS completions, got {}",
                    N_THREADS * M_ITERATIONS, total);
 
-        // UART_LOCK must be released after all threads complete.
-        // (If a worker panicked or the lock release was missed, this
-        // would catch it.)  This check is race-free because we hold
-        // SM1G4_OBSERVATION_MUTEX: no other observation test can be
-        // touching UART_LOCK concurrently, and our worker threads
-        // have all joined (so they're not touching it either).
-        assert!(!UART_LOCK.is_held(),
+        // UART_LOCK must be released after all threads complete.  (If a worker
+        // panicked or a lock release was missed, this catches it.)  Our own workers
+        // have all joined, so any *residual* hold is necessarily another test's:
+        // `cargo` runs tests in parallel and `SM1G4_OBSERVATION_MUTEX` serialises
+        // only the *observation* tests, not every `UART_LOCK` user (e.g. `uart_puts`,
+        // the per-line macro tests).  Such a cross-test hold is transient — the other
+        // test releases within its own tiny (host-mmio no-op) critical section — so
+        // tolerate it with a short time-bounded retry.  A genuine leak (the lock held
+        // indefinitely) still fails once the deadline elapses.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let mut held = UART_LOCK.is_held();
+        while held && std::time::Instant::now() < deadline {
+            std::thread::yield_now();
+            held = UART_LOCK.is_held();
+        }
+        assert!(!held,
                 "UART_LOCK leaked after cross-thread stress: still held");
     }
 }

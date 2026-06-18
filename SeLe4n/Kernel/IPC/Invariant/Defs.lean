@@ -602,6 +602,83 @@ def blockedOnReplyHasTarget (st : SystemState) : Prop :=
     tcb.ipcState = .blockedOnReply endpointId replyTarget →
     replyTarget.isSome
 
+/-- WS-SM SM6.D (PR #822 review): **bidirectional** consistency between a TCB's
+`replyObject` forward link and the Reply object's `caller` back-link.  The public
+`.reply` path resolves authority through `reply.caller`, and `consumeCallerReply`
+clears `tcb.replyObject`, so the two must stay reciprocal — without this conjunct
+`ipcInvariantFull` would admit a state where a TCB points at an absent/different
+Reply, or a `reply.caller` is not reciprocated, letting a stale reply cap act on
+or erase the wrong outstanding reply link.  Two directions:
+
+* **forward** (`tcb.replyObject = some rid` ⇒ the Reply exists and names this TCB);
+* **backward** (`reply.caller = some tid` ⇒ that TCB exists, points back, **and is
+  `blockedOnReply`** — the only state from which the public `.reply` path can
+  consume it; without this the invariant would admit a Reply linked to a `.ready`
+  caller that `.reply` then rejects, leaving the Reply in-use and unconsumable).
+
+Established by `linkCallerReply` (sets both fields reciprocally on a `blockedOnReply`
+caller, fail-closed on an in-use reply) and preserved by `consumeCallerReply`
+(clears both reciprocally); all other IPC transitions frame it (they touch neither
+field nor a linked caller's IPC state). -/
+def replyCallerLinkage (st : SystemState) : Prop :=
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.replyObject = some rid →
+      ∃ r, st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = some tid) ∧
+  (∀ (rid : SeLe4n.ReplyId) (r : Reply) (tid : SeLe4n.ThreadId),
+      st.objects[rid.toObjId]? = some (.reply r) →
+      r.caller = some tid →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid ∧
+        ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+          tcb.ipcState = .blockedOnReply ep rt)
+
+/-- WS-SM SM6.D (PR #822 review): `replyCallerLinkage` reads only `st.objects`, so
+any transition that leaves the object store unchanged frames it.  Used by the
+non-IPC transitions (timer tick, register/context writes) and the default state. -/
+theorem replyCallerLinkage_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : replyCallerLinkage st) :
+    replyCallerLinkage st' := by
+  unfold replyCallerLinkage at h ⊢; rw [hObjs]; exact h
+
+/-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
+(`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still
+`.blockedOnReceive` (the only state in which the server is awaiting its next `Call`
+to link the Reply), and it names an **existing free** Reply object (`reply.caller =
+none`).  Without this conjunct `ipcInvariantFull` admits a blocked receiver stashing
+an absent or already-linked Reply, which a later server-first `Call` (`linkServerFirstCaller`)
+then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
+already maintained: `resolveRecvReplyId` only stashes a free, present `rid`, and
+exit from `.blockedOnReceive` clears the stash (v0.31.111 / `replyIsStashed`); this
+conjunct *states* it.  The second clause states the stash is **injective** (no two
+blocked receivers stash the same Reply id) — see its inline note. -/
+def pendingReceiveReplyWellFormed (st : SystemState) : Prop :=
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+    st.getTcb? tid = some tcb →
+    tcb.pendingReceiveReply = some rid →
+    (∃ ep, tcb.ipcState = .blockedOnReceive ep) ∧
+    (∃ r, st.getReply? rid = some r ∧ r.caller = none)) ∧
+  -- WS-SM SM6.D (PR #822 review): the stash is **injective** — at most one blocked
+  -- receiver stashes any given Reply id.  Without this a model state could have two
+  -- blocked servers stashing the same `rid`; a server-first `Call` linking one
+  -- (`linkServerFirstCaller` → `linkCallerReply`, which consumes `reply.caller`) would
+  -- silently invalidate the other's stash, so its later `Call` fails closed
+  -- `.replyCapInvalid` while its receive completes.  Operationally maintained by
+  -- `resolveRecvReplyId` (it stashes only an un-stashed `rid`, `!replyIsStashed`).
+  (∀ (tid₁ tid₂ : SeLe4n.ThreadId) (tcb₁ tcb₂ : TCB) (rid : SeLe4n.ReplyId),
+    st.getTcb? tid₁ = some tcb₁ → st.getTcb? tid₂ = some tcb₂ →
+    tcb₁.pendingReceiveReply = some rid → tcb₂.pendingReceiveReply = some rid →
+    tid₁ = tid₂)
+
+/-- WS-SM SM6.D (PR #822 review): `pendingReceiveReplyWellFormed` reads only the
+object store (through the typed `getTcb?` / `getReply?` accessors), so any transition
+that leaves the object store unchanged frames it (timer tick, register/context
+writes, the default state). -/
+theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed st' := by
+  unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
+  rw [hObjs]; exact h
+
 /-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
 Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
 explicit target. This theorem is the formal discharge of the claim that the
@@ -1171,7 +1248,7 @@ direct via `SeLe4n.Kernel.notification_waiters_nodup`.  The bundle now
 has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the 15th.  The
 historical `uniqueWaiters` state-level predicate (and its `_holds` /
 `_trivial` discharge helpers) were deleted in the close-out. -/
-def ipcInvariantFull (st : SystemState) : Prop :=
+def ipcInvariantCore (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
   endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
@@ -1180,6 +1257,53 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st
+
+/-- WS-SM SM6.D (PR #822 review): the full IPC invariant — the 15 structural
+conjuncts (`ipcInvariantCore`) **plus** the bidirectional `replyCallerLinkage`
+(16th conjunct) tying every `TCB.replyObject` to a reciprocating `Reply.caller`,
+**plus** the `pendingReceiveReplyWellFormed` server-first stash conjunct (17th,
+PR #822 review 6J9Kjg/6J9Kp6) tying every `TCB.pendingReceiveReply` to a still-
+`.blockedOnReceive` server holding a free existing Reply.
+The core is split out so the reply-store building blocks (`storeObject_reply` /
+`storeObject_tcb_replyObject`) — whose *intermediate* state legitimately breaks the
+reciprocal link — can be sequenced through the core before `linkCallerReply` /
+`consumeCallerReply` re-establish the linkage on the final state. -/
+def ipcInvariantFull (st : SystemState) : Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
+  blockedThreadTimeoutConsistent st ∧
+  donationChainAcyclic st ∧ donationOwnerValid st ∧
+  passiveServerIdle st ∧ donationBudgetTransfer st ∧
+  blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
+  pendingReceiveReplyWellFormed st
+
+/-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
+conjuncts of `ipcInvariantFull`. -/
+theorem ipcInvariantFull.toCore {st : SystemState} (h : ipcInvariantFull st) :
+    ipcInvariantCore st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+
+/-- WS-SM SM6.D (PR #822 review): assemble `ipcInvariantFull` from its structural
+core plus the reply linkage and the server-first stash well-formedness — the seam
+the reply mutators use (core preserved by the object stores, `replyCallerLinkage`
+re-established by `linkCallerReply` / `consumeCallerReply`, and
+`pendingReceiveReplyWellFormed` framed/established on the final state). -/
+theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
+    (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
+    (hPRR : pendingReceiveReplyWellFormed st) :
+    ipcInvariantFull st :=
+  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
+   hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -1230,6 +1354,8 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   passiveServerIdle : passiveServerIdle st
   donationBudgetTransfer : donationBudgetTransfer st
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
+  replyCallerLinkage : replyCallerLinkage st
+  pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
 
 namespace ipcInvariantFull
 
@@ -1314,9 +1440,57 @@ elaborator. -/
 @[simp] theorem blockedOnReplyHasTarget {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem replyCallerLinkage {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.replyCallerLinkage st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem pendingReceiveReplyWellFormed {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
+
+/- WS-SM SM6.D (PR #822 review): named projections for the structural core
+(`ipcInvariantCore` = the first 15 conjuncts of `ipcInvariantFull`), so the
+reply-store building blocks can read `hInv.ipcInvariant` etc. on a core hypothesis. -/
+namespace ipcInvariantCore
+
+theorem ipcInvariant {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.ipcInvariant st := h.1
+theorem dualQueueSystemInvariant {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.dualQueueSystemInvariant st := h.2.1
+theorem allPendingMessagesBounded {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.allPendingMessagesBounded st := h.2.2.1
+theorem badgeWellFormed {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.badgeWellFormed st := h.2.2.2.1
+theorem waitingThreadsPendingMessageNone {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.waitingThreadsPendingMessageNone st := h.2.2.2.2.1
+theorem endpointQueueNoDup {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.endpointQueueNoDup st := h.2.2.2.2.2.1
+theorem ipcStateQueueMembershipConsistent {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.ipcStateQueueMembershipConsistent st := h.2.2.2.2.2.2.1
+theorem queueNextBlockingConsistent {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.queueNextBlockingConsistent st := h.2.2.2.2.2.2.2.1
+theorem queueHeadBlockedConsistent {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.queueHeadBlockedConsistent st := h.2.2.2.2.2.2.2.2.1
+theorem blockedThreadTimeoutConsistent {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.blockedThreadTimeoutConsistent st := h.2.2.2.2.2.2.2.2.2.1
+theorem donationChainAcyclic {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.donationChainAcyclic st := h.2.2.2.2.2.2.2.2.2.2.1
+theorem donationOwnerValid {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.donationOwnerValid st := h.2.2.2.2.2.2.2.2.2.2.2.1
+theorem passiveServerIdle {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.passiveServerIdle st := h.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem donationBudgetTransfer {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.donationBudgetTransfer st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem blockedOnReplyHasTarget {st : SystemState} (h : ipcInvariantCore st) :
+    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
+end ipcInvariantCore
 
 /-- AN3-B.1 bridge: `ipcInvariantFull` (tuple form) and `IpcInvariantFull`
 (named-field form) are logically equivalent.  Proven by constructor-then-
@@ -1334,7 +1508,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
-           h.blockedOnReplyHasTarget⟩
+           h.blockedOnReplyHasTarget, h.replyCallerLinkage,
+           h.pendingReceiveReplyWellFormed⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -1344,7 +1519,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
-           h.blockedOnReplyHasTarget⟩
+           h.blockedOnReplyHasTarget, h.replyCallerLinkage,
+           h.pendingReceiveReplyWellFormed⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/

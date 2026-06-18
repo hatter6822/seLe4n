@@ -1,3 +1,1847 @@
+## v0.31.149 — Reply objects (seL4-MCS): lifecycle invariants cover reply caps (PR #822 review #02/#13)
+
+Closes the residual of review items #02/#13 ("cover replyCap targets in lifecycle invariants").
+The *binding* enforcement already landed in #1.a (`replyCapPointsToValidReply` as the 7th
+`capabilityInvariantBundle` conjunct rejects a dangling `.replyCap rid`), but the lifecycle
+stale-reference family's `lifecycleCapabilityRefObjectTargetBacked` still matched only `.object`
+metadata, leaving it textually blind to reply caps.
+
+- New `lifecycleCapabilityRefReplyCapBacked` (`Lifecycle/Invariant.lean`) — the reply-cap analogue:
+  a slot whose metadata is `.replyCap rid` must resolve through `getReply? rid`.
+- New `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`
+  (`Capability/Invariant/Defs.lean`, the layer that sees both) — **proves the lifecycle predicate
+  is implied by the step-preserved capability invariant**.  Lifecycle metadata is *derived* from the
+  slot cap (`lookupCapabilityRefMeta = (lookupSlotCap ·).map target`), so `.replyCap rid` metadata
+  witnesses a CNode slot that `replyCapPointsToValidReply` already backs.  This respects the layering
+  (the reply-backing fact is owned by the capability layer; Lifecycle-bundle construction derives
+  from `lifecycleInvariantBundle` and cannot reach it) and adds **zero** preservation ripple — the
+  property is a consequence, not a new maintained conjunct.
+
+`ModelIntegritySuite.lifecycle_reply_cap_metadata_backed` witnesses backed-resolves / dangling-fails
+at the lifecycle-metadata level.  Full prod + staged build + Tier 0-2 green; trace byte-identical.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1)
+
+## v0.31.148 — Reply objects (seL4-MCS): validated #7 transition-threading design + execution recipe (PR #822 review)
+
+Design-capture for finding #7 (`blockedOnReply ⇒ replyObject`).  A throwaway spike threaded
+`endpointReceiveDual` end-to-end and confirmed: the threaded transition body **compiles**, the
+proof composition is **sound** (every needed frame already exists —
+`linkCallerReply_objects_frame`, `linkCallerReply_preserves_ipcInvariantFull`,
+`storeObject_tcb_preserves_ipcInvariant`, `storeObject_tcb_replyObject_preserves_ipcInvariantCore`),
+and the scope is a **~90-call-site + 300+-proof-error atomic re-base across ~15 files** with no
+green intermediate (a required-`replyId` param breaks every call site at once).
+
+`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` §#7 now carries the **validated design + execution
+recipe**: the exact threaded body (caller-first `linkCallerReply` fold + server-first
+`pendingReceiveReply` stash + Call-without-reply reject), the per-proof pattern (`cases replyId`;
+`none` ⇒ reject contradicts `.ok`; `some rid` ⇒ thread the existing frames), the first execution
+step (prove the *bare* reusable frames once, then the ~300 per-site fixes are mechanical), and the
+full blast radius by file.  The wrapper alternative is explicitly rejected (it leaves the raw
+transition producing an unanswerable state).  No transition change is committed here — the spike
+was reverted to keep the tree green; the re-base is a dedicated focused slice.  Tier 0-2 green.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#7)
+
+## v0.31.147 — Reply objects (seL4-MCS): end-to-end retype→mint→link reply-cap test (PR #822 Codex review, Phase H #2.d)
+
+**Deferred item #2, sub-step #2.d — the end-to-end provisioning test** (closes the optional
+follow-on to the `mintReplyCap` production path). `reply_cap_end_to_end_retype_mint_link`
+(ModelIntegritySuite) drives the full chain the #2 finding established, with no synthetic
+shortcuts:
+
+1. **Retype** an Untyped object in place to a fresh Reply via `lifecycleRetypeDirect` (using the
+   production `objectOfKernelType .reply` factory) — the holder keeps its `.object target` cap.
+2. **Mint** a reply cap from that object cap via `mintReplyCap` → `.replyCap (ReplyId.ofObjId target)`
+   (rid derived from the object id; backed by construction since the retype made `getReply?` resolve).
+3. **Link** a blocked caller through the production `SystemState.linkCallerReply` and assert the
+   bidirectional `reply.caller = some caller` / `tcb.replyObject = some rid` linkage holds.
+
+This exercises retype + mint + link as a single composed path (the existing
+`mintReplyCap_derives_backed_reply_cap` covered mint from a pre-built Reply; this adds the retype
+provisioning step and the caller link). The receive-path auto-linking on `.recv`/`.replyRecv`
+remains the gated re-wire; the test drives the same `linkCallerReply` op the dispatch composes.
+Test-only; Lean Tier 0-2 green; trace byte-identical. Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.d).
+
+## v0.31.146 — Reply objects (seL4-MCS): replyCapPointsToValidReply bundled into capabilityInvariantBundle (PR #822 Codex review, Phase C-inv #1.a)
+
+**Deferred item #1, sub-step #1.a — the contract step.** Promotes `replyCapPointsToValidReply`
+from a standalone predicate (#1 foundations) to the **7th conjunct of `capabilityInvariantBundle`**,
+so "no dangling reply caps" is now a kernel-wide maintained invariant rather than a property the
+production capability surface was blind to. Bundle is a 7-tuple
+(`cspaceLookupSound ∧ cspaceSlotCountBounded ∧ cdtCompleteness ∧ cdtAcyclicity ∧
+cspaceDepthConsistent ∧ objects.invExt ∧ replyCapPointsToValidReply`); `replyCapPointsToValidReply_of_capabilityInvariantBundle`
+extracts it.
+
+Every `_preserves_capabilityInvariantBundle` theorem now establishes the 7th conjunct — **proven
+concretely wherever the property is derivable from the pre-state** (no `sorry`):
+
+- **cspace cap ops** — `cspaceInsertSlot`/`Mint`/`Copy`/`Move`/`Delete(Core)`/`Revoke`/`Mutate`.
+  The unifying discharge is `replyCapBacked_of_source_slot` (a cap resolved from a CSpace slot is
+  reply-backed via the pre-invariant); `cspaceMint` composes it with
+  `mintDerivedCap_target_preserved_with_badge_override` (the minted child shares the parent's
+  target), `cspaceMutate` with the fact that a rights/badge mutation preserves `cap.target`, and
+  `cspaceRevoke` with the new `CNode.lookup_revokeTargetLocal_sub` (revoke only removes slots).
+- **TCB-store reply paths** — `endpointReply` + the lifecycle/IPC stores via the shared
+  `storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply` (a `.tcb` store touches no
+  CNode and no `.reply` object, so backing frames through).
+- **IPC capability transfer** — `ipcTransferSingleCap`/`ipcUnwrapCaps(Loop)` take a `hCapBacked`
+  hypothesis (the transferred reply cap is backed), externalized exactly like the existing
+  `hCdtPost` CDT obligation.
+- **`lifecycleRetypeObject`** — takes `replyCapPointsToValidReply st'` as an **externalized
+  post-state hypothesis** (`hReplyBacked'`), mirroring `hCdtPost`/`hRCL'`/`hPRR'`: retype can
+  orphan a reply cap (retyping a referenced reply) or introduce one (fresh CNode), so the property
+  is not pre-state-derivable and is discharged by the caller that knows the target is unreferenced.
+- **boot + default** — `default_capabilityInvariantBundle` is vacuous (empty store);
+  `bootFromPlatform`'s bundle is discharged by a new `bootSafeObject` CNode clause **a boot CNode
+  holds no reply capabilities** (reply caps are minted at runtime, never planted at boot, so a
+  boot reply cap could only dangle) — `bootSafeObjectCheck` (the Bool mirror, test-exercised) is
+  unchanged.
+
+New supporting lemmas: `SystemState.lookupCNode_eq_some_iff` (mirrors `getCNode?_eq_some_iff`),
+`CNode.lookup_revokeTargetLocal_sub`. Test: `replyCapPointsToValidReply_distinguishes_backed_and_dangling`
+(ModelIntegritySuite) exhibits the backed/dangling distinction so the invariant carries content.
+Production + staged (234) build clean; Lean Tier 0-2 green; trace byte-identical. Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1.a).
+
+## v0.31.145 — Reply objects (seL4-MCS): replyCapPointsToValidReply preservation keystones (PR #822 Codex review, Phase C-inv #1.b)
+
+**Deferred item #1, sub-step #1.b — the hard, unifying preservation lemmas** (the keystone that
+makes #1.a's `capabilityInvariantBundle` tuple expansion mechanical). Both proven concretely
+(no `sorry`/externalization):
+
+- `cspaceInsertSlot_preserves_replyCapPointsToValidReply` (`…/Preservation/Insert.lean`) — the
+  **unifying** lemma: `cspaceCopy`/`Move`/`Mint`/`mintReplyCap` all insert through
+  `cspaceInsertSlot`, so they inherit it by discharging one precondition `hCapBacked`
+  (the inserted cap, if a reply cap, is backed — a copy of a backed source, or backed by
+  construction for `mintReplyCap`). Proof: a CNode store never affects `getReply?` (it reads
+  only `.reply` objects; the stored object is a `.cnode`), so backing frames through; the new
+  slot is backed by `hCapBacked`, every other by the pre-invariant (`CNode.lookup_insert_eq`/`_ne`).
+- `cspaceDeleteSlotCore_preserves_replyCapPointsToValidReply` — deletion only *removes* a cap
+  (clearing its ref / detaching its CDT node, neither touching the object store beyond the one
+  CNode), so every post-state reply cap pre-existed and is backed (`CNode.lookup_remove_eq_none`/
+  `_ne`). Covers `cspaceDelete` + the CDT-revoke fold.
+
+With `mintReplyCap_preserves_*` (v0.31.143) these cover the cap-op preservation surface #1.a
+needs. `Capability.Invariant.Preservation.Insert` builds clean; Lean Tier 0-2 green; trace
+byte-identical. Per the (enhanced) completion plan (#1.b before #1.a). Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1.b).
+
+## v0.31.144 — Reply objects (seL4-MCS): replyCapPointsToValidReply predicate + frame (PR #822 Codex review, Phase C-inv #1 foundations)
+
+**Deferred item #1 (no dangling reply caps), foundations.** Defines the Prop invariant the
+production capability surface was blind to — the live `.reply` path rejects a dangling reply
+cap via `getReply?`, but `capabilityInvariantBundle` only constrained `.object` cap targets, so
+the model admitted a `.replyCap rid` pointing at an absent/non-Reply object.
+
+- `replyCapPointsToValidReply (st) : Prop` (`Capability/Invariant/Defs.lean`) — every
+  `.replyCap rid` in a CNode slot has `getReply? rid ≠ none`. Mirrors the runtime
+  `cspaceSlotCoherencyChecks` backing check.
+- `replyCapPointsToValidReply_of_objects_eq` — the frame lemma (the predicate reads only the
+  object store via CNode slots + `getReply?`).
+
+Standalone-green; not yet bundled (the bundle integration is the #1.a contract step). The plan
+(`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` #1) is enhanced with the **unifying
+preservation strategy**: extend the single `cspaceInsertSlot_preserves_*` lemma with a
+"the inserted cap, if a reply cap, is backed" precondition (propagating to cspaceCopy/Move/
+Mint/mintReplyCap at once), plus the worked-out proof argument (a CNode store never affects
+`getReply?`; case-split via `CNode.lookup_insert_eq`/`_ne`). `mintReplyCap` already preserves
+the bundle (v0.31.143), pre-staging the tuple expansion.
+
+`Capability.Invariant.Defs` builds clean; Lean Tier 0-2 green; trace byte-identical. Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1).
+
+## v0.31.143 — Reply objects (seL4-MCS): mintReplyCap preserves capabilityInvariantBundle (PR #822 Codex review, Phase H #2.b)
+
+**Deferred item #2, sub-step #2.b.** Establishes `mintReplyCap` / `mintReplyCapWithCdt` (the
+live `.mintReplyCap` dispatch op) as first-class capability operations that preserve
+`capabilityInvariantBundle` — on par with `cspaceMint`/`cspaceCopy`/`cspaceMove`.
+
+- `mintReplyCap_preserves_capabilityInvariantBundle` (`Capability/Invariant/Preservation/
+  Insert.lean`) — the source lookup is read-only (`cspaceLookupSlot_preserves_state`), and the
+  only success path is a single `cspaceInsertSlot` of the derived `.replyCap` at `dst`, so
+  preservation reduces to the shared `cspaceInsertSlot_preserves_capabilityInvariantBundle`
+  exactly like `cspaceMint` (the child-cap *derivation* is irrelevant to the insert's bundle
+  preservation — only the slot write matters).
+- `mintReplyCapWithCdt_preserves_capabilityInvariantBundle` (`…/CopyMoveMutate.lean`) — mirrors
+  `cspaceMintWithCdt_preserves_*`: the reply-cap insert preserves the bundle, then the CDT
+  mint-edge addition only touches `cdt` (objects unchanged across both `ensureCdtNodeForSlot`
+  writes and `addEdge`), so the remaining conjuncts frame past `objects` and the CDT pair is
+  supplied by `hCdtPost` (dischargeable via `cspaceMintWithCdt_cdtAcyclicity_of_freshDst`).
+
+These pre-stage #1 (the `replyCapPointsToValidReply` 7th conjunct): when the bundle grows, the
+mintReplyCap preservation extends incrementally. Capability-preservation modules build clean;
+Lean Tier 0-2 green; trace byte-identical. Per the completion plan (#2.b). Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.b).
+
+## v0.31.142 — Reply objects (seL4-MCS): mintReplyCap ABI — Rust conformance count fixes (PR #822 Codex review, Phase H #2.c CI follow-up)
+
+**CI fix for v0.31.141.** Three `sele4n-abi` conformance tests carried hardcoded SyscallId
+counts (`= 28`) that `cargo check` compiles but `cargo test` (run by the "Rust ABI Tests"
+CI job) fails at runtime once `MintReplyCap` (id 28) makes the count 29:
+
+- `syscall_id_exhaustive_roundtrip`: `0..28` + `from_u64(28).is_none()` → `0..(COUNT as u64)`
+  + `from_u64(COUNT).is_none()` (robust to future variants).
+- `syscall_id_variant_count`: `SYSCALL_COUNT` 28 → 29.
+- `syscall_count_updated`: `assert_eq!(SyscallId::COUNT, 28)` → 29.
+- Stale docstring "26 variants, 0-25" → "29 variants, 0-28".
+
+`cargo test -p sele4n-abi --test conformance` (99/0) and `-p sele4n-types --lib` (all syscall
+roundtrip/injective/required-right tests) pass locally. (The `sele4n-hal` UART stress test
+hangs in this container — an environment issue, not a code one; CI runs it.) Lean unchanged;
+trace byte-identical. Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.c).
+
+## v0.31.141 — Reply objects (seL4-MCS): mintReplyCap goes live — full syscall ABI wiring (PR #822 Codex review, Phase H #2.c)
+
+**Deferred item #2 (retype → reply-cap authority), sub-step #2.c.** Makes the `mintReplyCap`
+op (v0.31.140) a **live syscall** — so a server can retype Untyped → Reply, mint the reply
+cap, and use it on `endpoint_receive_with_reply`. New `SyscallId.mintReplyCap` (id 28) threaded
+through the complete ABI:
+
+- **Lean ABI**: `SyscallId` enum + `toNat`/`ofNat?`/`ToString`/`all` + `count` 28→29 +
+  `toNat_ofNat` roundtrip; `syscallRequiredRight .mintReplyCap = .grant`; the
+  `dispatchCapabilityOnly` arm (reuses `decodeCSpaceCopyArgs` — same src/dst-slot shape as
+  `cspaceCopy` — and calls `mintReplyCapWithCdt`); both `dispatchWithCap{,Checked}_wildcard_
+  unreachable` lists; `permittedKinds .mintReplyCap = [.tcb, .cnode]`; the enforcement boundary
+  (`syscallIdToEnforcementName` + `.capabilityOnly "mintReplyCapWithCdt"`, count 36→37).
+- **Lock-set inventory (SM3.B)**: `lockSet_mintReplyCap` (= `cspaceCopy`'s footprint) +
+  `lockSet_consistent_mintReplyCap`; two inventory entries (`.lockSet` + `.consistency`); the
+  coverage theorem `#consistency = SyscallId.count` holds (29 = 29); counts 96→98, 28→29.
+- **Rust mirror**: `sele4n-types` + `sele4n-hal` (`svc_dispatch`) `SyscallId::MintReplyCap = 28`,
+  `COUNT` 28→29, `from_u64`/`from_u32`, `required_right = Grant`, `min_inline_args = 2`;
+  `sele4n-abi` conformance `mint_reply_cap_roundtrip` + boundary moved to 29. Also fixed the
+  stale `from_u64_roundtrip`/`injective` test bounds (`0..25` → `0..COUNT`) that under-covered
+  the SM5.H.4/SM6.B variants. `cargo check --profile test --workspace` clean.
+- **Trace fixture**: `[XVAL-002] SyscallId roundtrip ok: all 28 variants` → `29` (intentional;
+  SHA companion regenerated).
+
+Full production + staged build green; trace passes (233/233); model-integrity + syscall-dispatch
+suites green; Rust workspace checks clean. Lean Tier 0-2 green. Per the completion plan (#2.c).
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.c).
+
+## v0.31.140 — Reply objects (seL4-MCS): mintReplyCap — the retype → reply-cap authority production path (PR #822 Codex review, Phase H #2.a)
+
+**Deferred item #2 (retype → reply-cap authority), sub-step #2.a.** `lifecycleRetypeDirect`
+retypes an ObjId **in place**, so after retyping Untyped → Reply the holder's authority is
+still an `.object target` cap; the receive-with-reply ABI (`resolveRecvReplyId` /
+`extractReplyId`) needs a `.replyCap rid`, so dynamically-retyped Reply objects were
+unusable (only boot-preinstalled reply caps worked). This adds the missing production path.
+
+- `mintReplyCap (src dst : CSpaceAddr)` (`Capability/Operations.lean`) — given an
+  `.object target` cap at `src` where `target` holds a Reply object
+  (`getReply? (ReplyId.ofObjId target)` resolves), installs
+  `.replyCap (ReplyId.ofObjId target)` at `dst`. The round-trip
+  `(ReplyId.ofObjId target).toObjId = target` makes the minted cap resolve back to the same
+  Reply, so the result satisfies `replyCapPointsToValidReply` by construction. Fails closed:
+  `.nullCapability` on empty `src`; `.invalidCapability` on a non-`.object` cap or an
+  `.object` whose target is not a Reply. Mirrors `cspaceMint`'s lookup → derive → insert.
+- `mintReplyCapWithCdt` — CDT-tracked form (records the mint edge `src → dst`), so the minted
+  reply cap is revocable through `cspaceRevokeCdt` exactly like `cspaceMintWithCdt`.
+- `tests/ModelIntegritySuite.lean`: `mintReplyCap_derives_backed_reply_cap` — mints from an
+  object-to-Reply cap and confirms the dst slot holds `.replyCap (ReplyId.ofObjId target)`
+  and resolves via `getReply?`; minting from a non-Reply object fails `.invalidCapability`.
+
+Per the completion plan (#2.a); the ABI/dispatch wiring (#2.c) and bundle preservation
+(#2.b) follow. `Capability.Operations` builds clean; model-integrity suite green. Lean
+Tier 0-2 green; trace byte-identical (the op is not yet dispatch-wired). Refs:
+docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#2.a).
+
+## v0.31.139 — Reply objects (seL4-MCS): completion plan for the deferred Phase-C-invariants / D6 / H items
+
+**Planning.** Adds `docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` — a precise,
+green-sub-step implementation plan for the three remaining reply-object *completeness*
+items surfaced by the PR #822 review, all of which are **fail-closed-safe at runtime
+today** (the live `.reply` path rejects a dangling reply cap via `getReply?`; the live
+dispatch always links `replyObject`):
+
+- **#2 retype → reply-cap authority** (Phase H ABI) — a verified `mintReplyCap`
+  production path, since `lifecycleRetypeDirect` retypes in-place and leaves the
+  authority cap as `.object target` (unusable as `.replyCap`).
+- **#1 `replyCapPointsToValidReply`** (Phase C-invariants) — the 7th conjunct of the
+  step-preserved `capabilityInvariantBundle` (the only meaningful home; the
+  cross-subsystem composition and `cdtMintCompleteness` are boot-only), mirroring the
+  runtime `cspaceSlotCoherencyChecks` backing check.
+- **#7 `blockedOnReply ⇒ replyObject`** (Phase D6) — fold reply-linking into the IPC
+  transitions so blocking and linking are atomic (the faithful seL4-MCS fold; today the
+  rid is linked by a separate dispatch step, so the invariant holds at syscall — not
+  transition — boundaries).
+
+Sequencing #2→#1→#7 with per-item green sub-steps, preservation arguments, risk notes,
+and verification. The plan survives the context reset so execution is guided and the
+60-site `capabilityInvariantBundle` expansion / IPC-transition re-base are de-risked.
+Doc-only; no Lean sources changed. Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md.
+
+## v0.31.138 — Reply objects (seL4-MCS): a bound-notification wake clears the server-first reply stash (PR #822 Codex review)
+
+**Finding — a bound-notification delivery woke a `.blockedOnReceive` server without clearing its
+server-first reply stash.** A server that blocked on a server-first `Recv` (stashing a reply object on
+`TCB.pendingReceiveReply`) and is bound to a notification can be woken by a signal via the bound-delivery
+path (`notificationSignalBoundOnCore` stores the TCB `.ready` with the badge). Like the plain-`Send` wake
+(v0.31.133), this left the stash on a now-`.ready` TCB — violating `pendingReceiveReplyWellFormed` (a
+stash lives only on a `.blockedOnReceive` TCB). (The practical "Reply permanently in-use" harm is already
+bounded by `replyIsStashed` keying on `.blockedOnReceive`, so a ready server's stale stash no longer
+blocks retype; this restores the invariant-level discipline and matches the other wake paths.)
+
+- Both `.notificationSignal` dispatch arms — unchecked and flow-checked — capture the bound delivery
+  target `woken? := (boundDeliveryTarget? st notifId).map (·.1)` (the `.blockedOnReceive` bound server)
+  **before** the signal, and clear its stash after via the existing `clearWokenReceiverStash` (the
+  plain-Send wake helper). A literal no-op when no bound receiver is woken or it carries no stash, so the
+  trace is byte-identical.
+- The stash lifecycle is now uniformly cleared on every exit from `.blockedOnReceive`: the receive arm
+  (next `Recv`), the `Send` wake (v0.31.133), lifecycle cancel/suspend (`restoreToReady`), and now the
+  bound-notification wake.
+- `tests/SyscallDispatchSuite.lean`: `sd053g_bound_notification_wake_clears_stash` — `boundDeliveryTarget?`
+  resolves the stashed bound server (the captured wake target), and the woken server's stash is cleared
+  while the reply object stays free.
+
+Trace byte-identical (233/233); `SeLe4n.Kernel.API` builds clean; syscall-dispatch + notification suites
+green. Lean Tier 0-2 green. Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects,
+server-first receive stash discipline).
+
+## v0.31.137 — Reply objects (seL4-MCS): the receive-with-reply dispatch routes through the per-core receive transition (PR #822 Codex review)
+
+**Finding — both `.receive` dispatch arms called the single-core `endpointReceiveDual`, mis-placing a
+non-boot-core receiver's run-queue state.** When a server on a non-boot core receives (the
+receive-with-reply ABI) and no sender is queued, the single-core block path removed the receiver with the
+boot-core `removeRunnable` rather than `removeRunnableOnCore … executingCore`: the TCB was stored
+`.blockedOnReceive` (and could stash a reply object) yet could remain current/runnable on its *actual*
+core. A queued plain-`Send` rendezvous had the same single-core placement of the woken sender.
+
+- Both `.receive` arms — unchecked (`dispatchCapabilityOnly`) and flow-checked (`dispatchWithCapChecked`)
+  — now derive `executingCore := determineExecutingCore st tid` (as the `.call` / `.replyRecv` arms do)
+  and route through `endpointReceiveDualOnCore epId tid executingCore`, which removes the blocking
+  receiver from *its own* core and routes a woken `blockedOnSend` sender to *its* home core (surfacing
+  the cross-core `.reschedule` SGI the syscall seam fires). On the boot core this is definitionally the
+  prior `endpointReceiveDual`, so the trace is byte-identical.
+- The flow-checked arm uses the *unchecked* per-core transition because the endpoint→receiver flow is
+  already gated by the explicit pre-check (v0.31.135); `checkedDispatch_receive_flow_denied` (denied →
+  `.flowDenied`, no reply probe) is unaffected (the transition sits in the permitted branch).
+
+Trace byte-identical (233/233); `SeLe4n.Kernel.API` builds clean; syscall-dispatch + cross-core reply
+suites green. Lean Tier 0-2 green. Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects,
+per-core receive placement).
+
+## v0.31.136 — Reply objects (seL4-MCS): a delegated ReplyRecv returns the previous caller's donation from the recorded server (PR #822 Codex review)
+
+**Finding — `replyRecvReturnDonation` returned the previous caller's donated SchedContext from the cap
+holder `tid`, not from the recorded server.** seL4-MCS reply caps are delegatable: a copied/minted reply
+cap can be held by a thread (`tid`) that is *not* the passive server the previous caller (`prevCaller`)
+donated its SC to. `prevCaller`'s `blockedOnReply … (some server)` records that server; the donation
+lives on it. The ReplyRecv donation-return step read `tid.schedContextBinding` — on a delegated
+ReplyRecv that is `.unbound` (the delegate holds no donation), so the OLD donation was never returned
+and the recorded server's `.donated scA prevCaller` dangled forever (the SC never went back to the
+client). This mirrors the `.reply` cross-core fix (v0.31.126) which already keys the return on the
+recorded server.
+
+- `replyRecvBody` captures `recordedServer := (recordedReplyServer? st prevCaller).getD tid` and its home
+  core `serverCore := determineExecutingCore st recordedServer` **before** the reply leg consumes
+  `prevCaller.blockedOnReply`, and threads them into `replyRecvReturnDonation`.
+- `replyRecvReturnDonation` now keys the **OLD** donation return, the passive-server descheduling, and the
+  PIP reversion on `recordedServer` / `serverCore` — while still donating any **new** received `Call` to
+  the receiver `tid` (the thread that serves the next request). In the non-delegated common case
+  `recordedServer = tid` and `serverCore = executingCore`, so the path is behaviourally identical (the
+  normal-case `sd052b` donation-switch test is unchanged).
+- The `lockSet_endpointReplyRecvOnCore` docstring cross-reference (which described the old `tid`-keyed
+  return) is corrected.
+- `tests/SyscallDispatchSuite.lean`: `sd052c_replyRecv_delegated_returns_recorded_server_donation` — a
+  delegate (`.unbound`, ≠ the recorded server) does ReplyRecv; the recorded server's donation is RETURNED
+  (`schedContextBinding ≠ .donated scA clientA`), the delegate's `.unbound` binding is untouched, and the
+  previous caller is replied to.
+
+Trace byte-identical (233/233, ReplyRecv dispatch is not trace-exercised, normal case unchanged);
+`SeLe4n.Kernel.API` builds clean; syscall-dispatch + cross-core reply suites green
+(`checkedDispatch_replyRecv_eq_unchecked_when_allowed` preserved — `replyRecvBody` signature unchanged).
+Lean Tier 0-2 green. Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, MCS donation).
+
+## v0.31.135 — Reply objects (seL4-MCS): close the reply-state covert channel in the checked IPC dispatch arms (PR #822 Codex review)
+
+**Finding (×3) — the flow-checked `.receive` / `.reply` / `.replyRecv` arms probed reply-object state
+*before* the information-flow gate, leaking it via the error code.** All three checked arms resolved the
+reply cap / scanned `replyIsStashed` / read `Reply.caller` ahead of the `securityFlowsTo` decision, so a
+holder of a copied reply cap could distinguish a linked/stashed Reply (`.replyCapInvalid`) from the
+flow-denied outcome (`.flowDenied`) even when the policy forbids the flow — a covert channel on exactly
+the `Reply.caller` / `pendingReceiveReply` state the low projection erases.
+
+- **`.receive`** — the endpoint→receiver flow (independent of the reply cap) is now checked **first**: a
+  denied receive returns `.flowDenied` before `resolveRecvReplyId` runs (no reply-cap validation, no
+  `replyIsStashed` scan). This is the exact predicate `endpointReceiveDualChecked` applies internally, so
+  a permitted receive is behaviourally unchanged.
+- **`.reply`** — resolving `reply.caller` is unavoidable (the flow gate needs the caller identity), so a
+  denied replier→caller flow now **collapses to `.replyCapInvalid`** — the same error the unlinked /
+  consumed arms return — instead of leaking via `.flowDenied` that the Reply is linked.
+- **`.replyRecv`** — the receive-leg flow is checked outermost (denied → `.flowDenied`, no reply probe);
+  a denied reply-leg flow (after a successful resolve) collapses to `.replyCapInvalid`.
+- **Theorems**: the two `checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed` equivalence
+  theorems are re-proven (the `hFlow*` hypotheses now also reduce the explicit flow `if`s), pinning the
+  *permitted* path unchanged. Three new theorems pin the *denied* path: `checkedDispatch_reply_flow_
+  denied_collapses` (denied `.reply` → `.replyCapInvalid`, indistinguishable from unlinked),
+  `checkedDispatch_receive_flow_denied` and `checkedDispatch_replyRecv_recv_flow_denied` (denied flow →
+  `.flowDenied` for *every* state and decode, so the reply probe provably never runs).
+
+Trace byte-identical (233/233, checked arms are not trace-exercised); `SeLe4n.Kernel.API` builds clean;
+information-flow suite green. Lean Tier 0-2 green. Refs:
+docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, Phase G information-flow).
+
+## v0.31.134 — Reply objects (seL4-MCS): the server-first reply stash is invariant-injective (PR #822 Codex review)
+
+**Finding — `pendingReceiveReplyWellFormed` (17th `ipcInvariantFull` conjunct) admitted two blocked
+receivers stashing the same Reply id.** The stash well-formedness invariant constrained each stash to a
+`.blockedOnReceive` TCB naming a free Reply, but said nothing about *uniqueness* — so a model state
+could have two distinct servers both stashing the same `rid`. A server-first `Call` linking one
+(`linkServerFirstCaller` → `linkCallerReply`, which consumes `reply.caller`) would silently invalidate
+the other's stash, so the second server's later `Call` fails closed `.replyCapInvalid` while its receive
+completes — a latent confused-deputy-shaped fault.
+
+- `pendingReceiveReplyWellFormed` gains a second clause: the stash is **injective** — `getTcb? tid₁`,
+  `getTcb? tid₂` both stashing the same `rid` forces `tid₁ = tid₂`. The predicate's *name* is unchanged,
+  so the named `IpcInvariantFull` structure field, the `ipcInvariantFull` projections, and the iff-bridge
+  are all untouched; only the three witness *constructors* needed updating.
+- Operationally already maintained: `resolveRecvReplyId` stashes a `rid` only when `!replyIsStashed st
+  rid` (no blocked server already holds it), so no transition can reach a two-stash state — the invariant
+  now *states* what the guard enforces.
+- Witness constructors updated to the conjunction form: `default_pendingReceiveReplyWellFormed` (empty
+  state, both clauses vacuous), the `Boot.lean` boot-state construction (boot TCBs carry no stash, the
+  uniqueness clause vacuous), and the `pendingReceiveReplyWellFormed_of_objects_eq` frame lemma re-proves
+  unchanged (the whole predicate reads only the object store).
+- `tests/ModelIntegritySuite.lean`: `pendingReceiveReply_stash_injective` exercises the enforcing
+  `replyIsStashed` mechanism — a blocked server reserves its `rid` (blocking a duplicate stash) while a
+  distinct `rid` stays free for another server.
+
+Trace byte-identical (233/233); `Defs` / `Architecture.Invariant` / `Boot` build clean; model-integrity
++ capability-preservation suites green. Lean Tier 0-3 green. Refs:
+docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, server-first receive stash discipline).
+
+## v0.31.133 — Reply objects (seL4-MCS): a plain Send woken receiver clears its server-first reply stash (PR #822 Codex review)
+
+**Finding — a `Send` that wakes a server-first receiver left a stale `pendingReceiveReply` stash.**
+A server that blocks on `Recv` having supplied a reply object stashes it on `TCB.pendingReceiveReply`
+so a later `Call` rendezvous can be linked to it (`linkServerFirstCaller`). But if a *one-way* `Send`
+rendezvouses with that blocked server first, the server leaves `.blockedOnReceive` for `.ready` while
+the stash survives — violating `pendingReceiveReplyWellFormed` (the 17th `ipcInvariantFull` conjunct: a
+stash lives only on a `.blockedOnReceive` TCB) and leaving a stale `rid` that a *future* `Call`
+rendezvous could mis-link via `linkServerFirstCaller`.
+
+- New dispatch-layer hook `clearWokenReceiverStash (receiver? : Option ThreadId)` — symmetric to
+  `linkReceivedCaller` (the stash *setter*). It clears `TCB.pendingReceiveReply` on the receive-queue
+  head the send wakes (captured *before* the rendezvous dequeues it). The reply object is untouched (it
+  stays free, `caller = none`; the server still holds its cap and may re-supply it on the next `Recv`) —
+  only the stash pointer is cleared. A literal no-op (no store, state returned unchanged) when there is
+  no woken receiver or it carries no stash, so the trace is byte-identical on every stash-free send.
+- Wired into both `.send` dispatch arms — unchecked (`dispatchCapabilityOnly`, via
+  `endpointSendDualWithCaps`) and flow-checked (`dispatchWithCapChecked`, via `endpointSendDualChecked`).
+  The `dispatchWithCap_send_uses_withCaps` equation theorem updated to the new RHS.
+- The stash lifecycle now lives entirely in the dispatch layer (set on the receive arm, cleared on the
+  send and call arms), keeping the `endpointSendDual` transition and its preservation surface untouched.
+- `tests/SyscallDispatchSuite.lean`: `sd053e_send_wake_clears_stash` (+ `sd053e_reply_stays_free`) and
+  `sd053f_no_stash_noop` assert the clear and the no-op.
+
+Trace byte-identical (233/233); `SeLe4n.Kernel.API` builds clean; syscall-dispatch suite green
+(including all sd053 stash assertions). Lean Tier 0-2 green. Refs:
+docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, server-first receive stash discipline).
+
+## v0.31.132 — Reply objects (seL4-MCS): frozen reply authority is the presented reply capability (PR #822 Codex review)
+
+**Finding — `frozenEndpointReply` derived the reply object from the *target*, not the *presented cap*.**
+The frozen-state mirror of the `.reply` path resolved the Reply object via `targetTcb.replyObject` (the
+caller's forward link) and only checked the back-link `reply.caller = some targetId`. That let *any*
+replier deliver and consume a blocked caller's reply without holding the reply capability — the frozen
+analogue of the confused-deputy gap the live `.reply` arm closed by resolving `reply.caller` from the
+*capability* (`CapTarget.replyCap rid`), never from the target. The frozen path must model the same
+authority: possession of the reply cap is what authorizes the reply.
+
+- `frozenEndpointReply` now takes an explicit `(replyId : SeLe4n.ReplyId)` — the **presented** reply
+  capability. It fails closed *before any store* unless the presented `replyId` is the caller's reciprocal
+  forward link (`targetTcb.replyObject = some replyId`), the Reply object resolves, and its back-link is
+  `caller = some targetId`. A replier that presents a non-matching `replyId` is rejected `.replyCapInvalid`,
+  even when the caller is `blockedOnReply` with a valid (different) linked Reply object. Delegated reply
+  caps remain legitimate (the `replier == expected` ThreadId gate stays dropped — authority flows from the
+  cap, not the issuer's identity).
+- `tests/FrozenOpsSuite.lean`: the three existing reply tests (FO-004 no-object reject, FO-004b
+  consume-link, FO-005 delegated-replier success) pass the presented `replyId`; new test **FO-005b**
+  (`fo005b_replyWrongPresentedCap`) asserts a replier presenting a `replyId` that is *not* the caller's
+  forward link is rejected `.replyCapInvalid`.
+
+Frozen-ops suite green (all reply assertions pass); `frozen_ops_suite` + `SeLe4n.Kernel.FrozenOps`
+(Operations/Invariant/Commutativity) build clean. Trace byte-identical (frozen ops are not
+trace-exercised). Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (Reply objects, Phase B/C lifecycle).
+
+## v0.31.131 — Reply objects (seL4-MCS): server-first Call reply lock threaded through the live + WCRT footprints (PR #822 Codex review)
+
+**P2 — the server-first `Call` reply write is now inside the acquired 2PL footprint.** On a server-first
+`Call` rendezvous the popped receiver is a server already `.blockedOnReceive` having pre-supplied a reply
+object (`pendingReceiveReply`); the rendezvous links the woken caller to it (`linkServerFirstCaller` writes
+`reply.caller`), but the footprint the runtime acquired (`lockSet_endpointCallOnCore`) resolved only the
+receiver + donated SC, defaulting the new `replyId` optional to `none` — so the per-object reply write-lock
+was outside the acquired/formally-bounded lock set.
+
+- New resolver `endpointCallServerFirstReply? st endpointId` (the receive-queue head's
+  `pendingReceiveReply`); `lockSet_endpointCallOnCore` now passes it as `lockSet_endpointCall`'s `replyId`,
+  so the reply write-lock is in the live footprint on a server-first Call (and absent on a plain receive,
+  where the optional resolves `none`). `lockSet_endpointCallOnCore_correct` delegates to the parametric
+  `lockSet_consistent_call` with the optional.
+- `KernelOperation.ofEndpointCall` + `lockSet_endpointCall_size_le` gain the `replyId` optional (the
+  three-extension size bound, as `replyRecv`), so the deadlock / WCRT static analysis no longer silently
+  models the no-Reply footprint.
+
+`SmpCrossCoreCallSuite` gains the resolver `#check` + a footprint-membership assertion (the resolved reply
+write lock is a declared member). Full prod + staged build green (239 jobs); cross-core call suite green;
+trace byte-identical.
+
+## v0.31.130 — Rust HAL: de-flake the cross-thread UART-lock stress test (CI fix)
+
+The `sele4n-hal` test `sm1g3_cross_thread_kprintln_stress_no_lock_leak` intermittently failed CI with
+"UART_LOCK leaked after cross-thread stress: still held". Diagnosis: a **test-isolation flake**, not a
+lock leak. The test's own worker threads are joined before the final `!UART_LOCK.is_held()` assertion, but
+`cargo` runs tests in parallel and `SM1G4_OBSERVATION_MUTEX` serialises only the *observation* tests — a
+concurrently-running non-observation `UART_LOCK` user (e.g. `uart_puts`, the per-line macro tests) can
+transiently hold the global lock at the instant of the assertion. The assertion now tolerates a transient
+cross-test hold with a short (2 s) time-bounded `yield_now` retry; a genuine leak (the lock held
+indefinitely) still fails once the deadline elapses. `cargo check --profile test` green; no production
+code changed.
+
+## v0.31.129 — Bound notifications: canonical signal footprint is bound-aware + redundant bound footprint removed (PR #822 Codex review)
+
+**P1 — the live `.notificationSignal` 2PL footprint now covers the bound-delivery writes.** The live
+dispatch routes through `notificationSignalBoundOnCore`, which on the bound-delivery path
+(`boundDeliveryTarget? = some (boundTcb, ep)` — a bound TCB `.blockedOnReceive` while the notification's
+waiter list is empty) dequeues that TCB from its endpoint (`endpointQueueRemoveDual` — an endpoint write)
+and writes the bound TCB (badge + `.ready`). But the canonical footprint it acquired,
+`lockSet_notificationSignalOnCore`, resolved only the waiter — leaving `endpointLock ep` and
+`tcbLock boundTcb` outside the acquired lock set, so under SMP a bound signal could race concurrent
+endpoint receive/cancel paths on those objects.
+
+`lockSet_notificationSignalOnCore` is now **bound-aware**: it resolves `boundDeliveryTarget?` and, on the
+bound path, sets the canonical footprint's `boundEndpoint` / `boundTcb` optionals (added to
+`lockSet_notificationSignal` in the SM6.B/A.1 work) — so the endpoint-dequeue + bound-TCB writes fall
+inside the live 2PL footprint. `boundDeliveryTarget?` returns `some` exactly when bound delivery occurs, so
+ordinary signals are unchanged (the optionals default to `none`). `_correct` delegates to the parametric
+`lockSet_consistent_notificationSignal`; the state-resolved coverage witnesses
+(`lockSet_notificationSignalOnCore_bound_{tcb,endpoint}_write_mem`) delegate to the parametric
+`lockSet_notificationSignal_bound_*_write_mem`.
+
+**Redundancy removed.** `lockSet_notificationSignalBoundOnCore` was a separate bound footprint that was
+proven correct + coverage but **never wired into the live path** (the exact gap the finding identified) —
+now fully subsumed by the bound-aware canonical footprint, so its def, its `_correct`, and a duplicate
+`insertOrMerge_preserves_mem_of_ne` helper are deleted; the suite `#check`s and a documentation reference
+re-point to the canonical names.
+
+Full prod + staged build green (239 jobs); cross-core notification suite green; trace byte-identical.
+
+## v0.31.128 — Reply objects (seL4-MCS): receive-with-reply ABI — decode-roundtrip coverage + ReplyRecv reply-cap error propagation (PR #822 Codex review)
+
+Two receive-with-reply ABI correctness fixes from the Codex review:
+
+**`RecvArgs` threaded into the aggregate decode-roundtrip bundle** (`Architecture/SyscallArgDecode.lean`).
+The production `decodeRecvArgs` decoder (used by `endpoint_receive_with_reply`) had a
+`decodeRecvArgs_roundtrip` proof, but the aggregate `decode_layer2_roundtrip_all` theorem enumerated only
+the older decoders (it included `decodeReplyRecvArgs_roundtrip` but not `decodeRecvArgs_roundtrip`), so any
+proof/test consuming the "all layer-2 decoders round-trip" bundle was blind to the MR0 reply-cap receive
+ABI. The conjunct is now threaded through the bundle alongside `decodeReplyRecvArgs_roundtrip`.
+
+**`resolveReplyRecvReply` propagates explicit reply-cap lookup errors** (`API.lean`). The `.replyRecv`
+reply-cap resolver returned `Option` and collapsed *every* failure to `none → .replyCapInvalid`, so a
+malformed or unauthorized reply-cap slot (`syscallLookupCap` → `invalidCapability` / `illegalAuthority`,
+or a non-reply cap → `extractReplyId` error) was indistinguishable from a valid-but-consumed Reply object,
+diverging from `resolveRecvReplyId`. It now returns `Except KernelError`: decode / `syscallLookupCap` /
+`extractReplyId` failures **propagate** their explicit error, and `.replyCapInvalid` is reserved for a
+missing MR0, a missing Reply object, or a present Reply with no outstanding caller. Both dispatch arms
+(unchecked + checked) and the `checkedDispatch_replyRecv_eq_unchecked_when_allowed` hypothesis updated.
+
+Full prod + staged build green; Lean Tier 0-2 green; error-matrix suite green; trace byte-identical.
+
+## v0.31.127 — Reply objects (seL4-MCS): timeout clears the receive stash + reply donation deschedules the recorded server's core (PR #822 Codex review)
+
+Two reply-scheduling correctness follow-ons from the Codex review of v0.31.125/126:
+
+**P2 — timeout clears the server-first receive stash.** `timeoutThread` rewrote a budget-timed-out
+TCB to `.ready` but left `pendingReceiveReply` set, so a server-first receiver (`.blockedOnReceive`
+with a stashed Reply) that timed out became a `.ready` TCB still carrying the stash — violating the
+v0.31.125 `pendingReceiveReplyWellFormed` conjunct of `ipcInvariantFull`. The TCB rewrite now also
+clears `pendingReceiveReply := none` (a no-op for non-`blockedOnReceive` timed-out threads, which carry
+no stash). The clear rides inside the existing `tcb'` store, so every `timeoutThread`/
+`timeoutBlockedThreads` scheduler-preservation proof (object-generic) is unchanged — zero proof ripple.
+
+**P2 — reply donation deschedules the recorded server on its own core.** After v0.31.126 keyed the
+SchedContext donation return on the recorded server `expected` (not the delegated cap holder), the
+deschedule still passed the cap holder's syscall `executingCore` to `applyReplyDonationOnCore`. When a
+reply cap is delegated and the passive server runs on a different core, `removeRunnableOnCore` edited
+the wrong core's run queue, leaving the server current/runnable after its donated SC was returned.
+`endpointReplyCrossCoreDispatch` now derives the server's core via `determineExecutingCore st expected`
+for the deschedule (the PIP reversion keeps the syscall core for SGI accounting). In the non-delegated
+case `determineExecutingCore st expected = executingCore` (the server *is* the syscall thread), so the
+behaviour and trace are **identical**; only the delegated cross-core case changes. The dispatch's
+flow-equivalence / NI / chain-bound theorems are structural/parametric and unchanged.
+
+Full prod + staged build green (239 jobs); Lean Tier 0-2 green; trace byte-identical; cross-core reply
+suite green.
+
+**Tracked debt (reply-invariant soundness, PR #822 review cluster):** the reply invariants
+(`replyCallerLinkage`, `pendingReceiveReplyWellFormed`) still have open preservation/completeness items —
+timeout must also consume the `.blockedOnReply` caller→Reply link (`replyCallerLinkage`); the plain
+`endpointSendDual` rendezvous wake must clear the receive stash; `pendingReceiveReplyWellFormed` should
+exclude duplicate stashes of one ReplyId; and `replyCallerLinkage` should add the
+`blockedOnReply ⇒ replyObject` direction. These are interrelated invariant-hardening items (several widen
+the cross-transition preservation obligation) tracked for the SM6.D reply-invariant-soundness follow-on.
+
+## v0.31.126 — Reply objects (seL4-MCS): reply donation returns from the recorded server, not the delegated cap holder (PR #822 Codex review)
+
+**P2, completes E.2 (delegation correctness).** After v0.31.122 let a *delegated*/copied reply cap
+authorize a holder other than the originally-called server, the cross-core `.reply` dispatch still ran the
+SchedContext donation **return** and the priority-inheritance **reversion** on the cap holder `replier`.
+In the passive-server case the donated SC is attached to the **recorded server** (`some expected` in the
+caller's `blockedOnReply` link), so a delegated `.reply` woke the client while leaving its SC bound/donated
+to the old server — the client never got its budget back (a liveness/resource bug), and the recorded
+server's donation-clear + deschedule writes fell outside the acquired 2PL lock set.
+
+Fix — the reply's scheduling bookkeeping is keyed on the **recorded server**, not `replier`:
+- New `recordedReplyServer? st target` (the `blockedOnReply` server) and `endpointReplyServerDonation? st
+  target` (that server's `.donated` binding) resolvers.
+- `endpointReplyCrossCoreDispatch` runs `applyReplyDonationOnCore` + `propagatePipChainCrossCore` on the
+  recorded server (resolved from the pre-state), not the cap holder.
+- `lockSet_endpointReplyOnCore` resolves the returned SC / owner from the recorded server **and** keys its
+  first TCB **write** lock on that server (whose donation-clear + deschedule writes it must cover); the cap
+  holder is only CSpace-read-locked. The parametric lock-set, its `_consistent_`/`_correct` theorems, the
+  dispatch reduction/NI/flow-equivalence theorems, and the chain-length bound are all unchanged (parametric
+  over the donation thread / structural over the flow gate).
+- In the non-delegated case (`replier = expected`) the footprint and behaviour are **identical** to before.
+- `.replyRecv` is unchanged: its invoker `tid` *is* the donee (it receives the next message), so
+  `replyRecvReturnDonation`/`lockSet_endpointReplyRecvOnCore` correctly stay keyed on the invoker.
+
+`SmpCrossCoreReplySuite` gains delegated-donation tests (donation resolved from the recorded server, lock-set
+covers the server's SC + TCB writes even when the cap holder is a different thread). Full prod + staged build
+green (239 jobs); Lean Tier 0-2 green; trace byte-identical.
+
+## v0.31.125 — Reply objects (seL4-MCS): pendingReceiveReply well-formedness as the 17th `ipcInvariantFull` conjunct (SM6.D, finding D.2 — closes 6J9Kjg/6J9Kp6)
+
+**P2, closes finding D.** Bundles `pendingReceiveReplyWellFormed` (landed standalone in v0.31.123) as the
+**17th conjunct** of `ipcInvariantFull`, so the invariant no longer *admits* a TCB whose
+`pendingReceiveReply` stash names an absent/already-linked Reply while the server stays blocked — the gap
+where a later server-first `Call` (`linkServerFirstCaller`) would fail `.replyCapInvalid` with the receive
+still pending. The conjunct is now part of the invariant's *definition*, not merely operationally
+unreachable.
+
+Keystone edit (`IPC/Invariant/Defs.lean`), built field-by-field: the tuple definition, the
+`ipcInvariantFull_of_core_replyCallerLinkage` assembly seam (3rd witness `hPRR`), the named
+`structure IpcInvariantFull` field, the `@[simp]` projection (`replyCallerLinkage` shifted to `.1`, new
+`pendingReceiveReplyWellFormed` tail projection), and the bidirectional
+`ipcInvariantFull_iff_IpcInvariantFull` bridge. The structural core (`ipcInvariantCore`, first 15
+conjuncts) and `ipcInvariantFull.toCore` are unchanged (the conjunct rides outside the core, exactly like
+`replyCallerLinkage`).
+
+`hPRR'` threaded through every `ipcInvariantFull` construction site (externalized as a post-state
+hypothesis, mirroring `hRCL'`): the 10 `DualQueueMembership` tuple-builders + `ipcInvariantFull_compositional`
++ the 2 reply-mutator seam-users (`linkCallerReply`/`consumeCallerReply`), `endpointCallOnCore`,
+`coreIpcInvariantBundle` (+ a new `coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed` extractor), the
+3 `Architecture/Invariant.lean` objects-frame timer/register/context theorems (discharged via the D.0 frame
+lemma), and the boot-state proof (`Platform/Boot.lean`, vacuous — boot TCBs carry
+`pendingReceiveReply = none`). `default_pendingReceiveReplyWellFormed` added for the default state.
+
+`ModelIntegritySuite` drift anchors updated to 17 (and the projection-signature / dot-notation tail-boundary
+tests extended to cover the 16th *and* 17th conjuncts — the 16th was previously uncovered). Full prod +
+staged build green (239 jobs, zero warnings); trace byte-identical.
+
+## v0.31.124 — Reply objects (seL4-MCS): frozen reply authorized by the Reply object, not a fixed replier (PR #822 Codex review)
+
+**P2, frozen mirror of E.2.** After v0.31.122 removed the live `.reply` `replier == expected` gate,
+`frozenEndpointReply` still rejected any replier different from the recorded `blockedOnReply` server
+*before* validating the Reply object — so a frozen experiment with a valid linked Reply object and a
+delegated replier had production `.reply` succeed while the frozen mirror returned `replyCapInvalid`,
+modeling the obsolete authority rule. The `if replyTarget = some replierId` gate is removed; authority is
+the Reply object's back-link (`r.caller = some targetId`, already validated, fail-closed before any
+store), exactly like the live path. `_replierId` retained for documentation. `FrozenOpsSuite` FO-005
+repurposed from "wrong replier rejected" to "delegated replier (holding the linked Reply object) succeeds".
+
+Full prod + staged build green (zero warnings); trace byte-identical; FrozenOps suite green.
+
+## v0.31.123 — Reply objects (seL4-MCS): pendingReceiveReply well-formedness predicate (SM6.D, finding D.0 — foundation)
+
+Foundation slice of SM6.D finding D (PR #822 review `6J9Kjg`/`6J9Kp6`: `ipcInvariantFull` admits an
+ill-formed `pendingReceiveReply` stash). Standalone, unbundled, trace byte-identical:
+
+- **`pendingReceiveReplyWellFormed`** predicate (`IPC/Invariant/Defs.lean`): a server-first receive stash
+  (`TCB.pendingReceiveReply = some rid`) occurs only on a `.blockedOnReceive` TCB and names an existing
+  **free** Reply (`reply.caller = none`). Modeled on `replyCallerLinkage`.
+- **`pendingReceiveReplyWellFormed_of_objects_eq`** frame lemma (preserved when the object store is
+  unchanged), the lever that discharges the object-frame preservation sites in the bundle step.
+
+Operationally already maintained (`resolveRecvReplyId` only stashes a free/present `rid`; exit from
+`.blockedOnReceive` clears the stash, v0.31.111). Bundling as the 17th conjunct of `ipcInvariantFull`
+(D.2) is the next slice. Full prod + staged build green; trace byte-identical.
+
+## v0.31.122 — Reply objects (seL4-MCS): authorize `.reply` by the reply capability, not a fixed replier (SM6.D, finding E.2 — closes 6J-lYm)
+
+**Closes PR #822 review 6J-lYm.** A reply cap copied/minted (`cspaceCopy`/`cspaceMint`) to another server
+thread is legitimate delegated authority (seL4-MCS reply caps are delegatable), but `endpointReplyOnCore`
+gated on `replier == expected` — the syscall issuer being the *originally-called* server — so a delegated
+cap always failed `.replyCapInvalid`. The live `.reply`/`.replyRecv` arms already resolve the reply
+*capability* to `reply.caller = target` and pass the cap holder as `replier`, so the gate was a redundant
+identity check. Removed it; authority now flows from holding the cap. Trace byte-identical:
+
+- **Gate deleted** in `endpointReplyOnCore`: a caller in `.blockedOnReply` is delivered regardless of
+  `replier`. The replay barrier is unchanged (a consumed reply leaves the caller `.ready`, so a replay
+  finds it not-`blockedOnReply` and fails closed); the cross-domain IFC edge stays enforced by the checked
+  dispatch's `securityFlowsTo`. `_replier` retained for documentation (the cap holder the dispatch passes).
+- **`endpointReplyOnCore_reply_eq`** and the SGI/wake/`_perCore_delivery`/`ipcInvariant`/`objects.invExt`
+  reductions + the boot-core + ∀-core NI theorems (`_reply_path_NI{,_smp}`) drop the `hReplier` hypothesis
+  (the NI conclusion was always gate-independent — it depends on the target being high, not on the
+  replier). `endpointReplyOnCore_wrong_replier_eq` → `endpointReplyOnCore_delegated_replier_eq` (a
+  delegated-cap holder now *succeeds*). `endpointReplyOnCore_state_eq`'s split drops the gate level.
+- `SmpCrossCoreReplySuite`: the confused-deputy assertion is flipped — a copied-reply-cap holder now
+  succeeds (cap-based authority); the replay + non-`blockedOnReply` + absent-target rejections stay.
+
+Full prod + staged build green (zero warnings); trace byte-identical; Lean Tier 0-2 + reply suite green.
+
+## v0.31.121 — Reply objects (seL4-MCS): reply lock in the receive/call linking footprints (SM6.D, finding A.3 — closes 6J-NL9)
+
+Final slice of SM6.D finding A — proves the per-object reply write-lock is in the `.receive` / `.call`
+2PL footprints once the linked reply object is resolved, **closing PR #822 review 6J-NL9**. (A.1 added the
+defaulted `replyId` opt + `permittedKinds += .reply` for both; A.3 proves the coverage.) Trace
+byte-identical:
+
+- **Coverage witnesses** `lockSet_endpointReceive_reply_write_mem` + `lockSet_endpointCall_reply_write_mem`:
+  `(replyLock rid, .write)` is a member of `lockSet_endpointReceive … (some rid)` /
+  `lockSet_endpointCall … (some rid)`. A `Call` rendezvous on the receive path links a server-supplied
+  Reply object to the dequeued caller (`linkCallerReply` writes `reply.caller`), and a server-first `Call`
+  links via `linkServerFirstCaller` — both writes now fall inside the 2PL set, closing the race where two
+  cores with copied caps to the same Reply both observe it free.
+- `SmpCrossCoreReplySuite`: `#check` anchors + runtime asserts that the reply write-lock is in the
+  resolved `.receive` / `.call` footprints.
+
+With A.0–A.3, finding A is complete: the per-object Reply lock is in the `.reply`/`.replyRecv`/`.receive`/
+`.call` footprints (6J90-5 + 6J-NL9 closed). Full prod + staged build green; trace byte-identical;
+Lean Tier 0-2 + reply suite green.
+
+## v0.31.120 — Reply objects (seL4-MCS): frozen reply back-link validation + cross-core reply primitive demotion (PR #822 Codex review)
+
+Two Codex-review hardening fixes (both Lean-only, trace byte-identical):
+
+- **Frozen reply validates the Reply back-link (P2)** — refines v0.31.118.  When
+  `targetTcb.replyObject = some rid` but the Reply object at `rid` has `caller = none` or names a
+  *different* thread, `frozenEndpointReply` still delivered and cleared `r.caller`, letting a stale/forged
+  forward link on the TCB authorize a reply the Reply object itself did not.  It now resolves the Reply
+  from `rid` and requires `r.caller = some targetId` **before** any store (fail-closed), mirroring the
+  live `.reply` path that resolves the target *from* `reply.caller`.  `FrozenOpsSuite` FO-004b (the linked
+  success case) stays green.
+- **`endpointReplyCrossCoreDispatch` demoted to a documented delivery primitive (P2)** — the below-API
+  cross-core `.reply` dispatch performs the wake + donation-return + PIP reversion only; it does **not**
+  consume the first-class Reply linkage.  Its docstring (and the SM6.C suite `#check` anchor) now state
+  this explicitly: the single-use `consumeCallerReply` teardown is composed by the live `.reply` API arm
+  (`API.dispatchWithCap{,Checked}`), which resolves the reply cap then calls `consumeCallerReply target rid`
+  after this primitive delivers.  A direct caller must compose the consume — it is not full reply semantics.
+  (No behavioural change; the live `.reply` path already composes the consume.)
+
+Full prod + staged build green; trace byte-identical; Lean Tier 0-2 + FrozenOps suite green.
+
+## v0.31.119 — Bound notifications: per-object lock footprint covers the bound-delivery endpoint/TCB writes (PR #822 Codex review)
+
+**P1.** A notification bound to a TCB blocked on receive takes the bound-delivery path
+(`notificationSignalBoundOnCore`), which dequeues that TCB from its endpoint
+(`endpointQueueRemoveDual` — an endpoint-queue **write**) and writes the bound TCB (`.ready` + badge — a
+TCB **write**). The canonical `.notificationSignal` 2PL footprint (`lockSet_notificationSignal`) declared
+only signaller/CNode/notification + an optional waiter, so under SMP a bound signal could mutate the
+endpoint receive queue and receiver TCB **without the corresponding locks**, racing concurrent endpoint
+receive/cancel paths. The same fix idiom as SM6.D finding A:
+
+- **`lockSet_notificationSignal` gains defaulted `(boundEndpoint : Option ObjId := none)` +
+  `(boundTcb : Option ThreadId := none)`** opts, folding `(endpointLock ep, .write)` + `(tcbLock bt, .write)`
+  in as outermost extensions. `none` ⇒ the set is definitionally the prior footprint, so all existing call
+  sites and witnesses (`_notification_write_mem`, `_waiter_tcb_write_mem`) are unchanged.
+  `permittedKinds .notificationSignal` already lists `.endpoint`/`.tcb`.
+- **`lockSet_consistent_notificationSignal`** bumps to `base_plus_three_opts` (+2 `hOpt` branches).
+- **Coverage witnesses** `lockSet_notificationSignal_bound_{tcb,endpoint}_write_mem`: the bound-TCB and
+  endpoint write-locks are members of the canonical footprint once resolved — so the dequeue + receiver-TCB
+  write fall inside the 2PL set. (The live state-resolved form `lockSet_notificationSignalBoundOnCore`
+  already proves the same coverage.) `SmpCrossCoreNotificationSuite` `#check` anchors added.
+
+Full prod + staged build green; trace byte-identical; Lean Tier 0-2 + notification suites green.
+
+## v0.31.118 — Reply objects (seL4-MCS): projection replyId normalization + frozen reply authority (PR #822 Codex review)
+
+Two Codex-review hardening fixes against the live Reply-object surface (both Lean-only, trace
+byte-identical):
+
+- **Projection: normalize the Reply `replyId` (P2)** — `projectKernelObject`'s `.reply` arm stripped
+  `caller`/`donatedSc`/`prev` but kept the internal `replyId`. That field need not equal the object-store
+  key (`wellFormed` does not enforce it; a retyped Reply is built with `ReplyId.sentinel`), so an
+  un-normalized internal id leaked a hidden ReplyId through a low-visible Reply via `projectObjects`. The
+  `.reply` projection now also sets `replyId := ReplyId.sentinel`; new theorem
+  `projectKernelObject_normalizes_reply_replyId`. The full InformationFlow invariant/NI surface re-proves
+  (more erasure only strengthens low-equivalence).
+- **Frozen reply requires a resolved Reply object (P2)** — `frozenEndpointReply`'s consume branch
+  succeeded when `targetTcb.replyObject = none`, bypassing reply-object authority + the single-use
+  barrier (a frozen Call creates `blockedOnReply` callers without a `replyObject`). It now fails closed
+  `.replyCapInvalid` on a missing reply link (and on a `replyObject` that does not resolve to a `.reply`),
+  mirroring the live `.reply` path that resolves `reply.caller` and consumes it. `FrozenOpsSuite` FO-004
+  repurposed to the negative case (no reply object → rejected); FO-004b keeps the linked-success case.
+
+Full prod + staged build green; trace byte-identical; Lean Tier 0-2 + FrozenOps/InformationFlow suites
+green (Rust `cargo test` is the known container hang — no Rust change this slice).
+
+## v0.31.117 — Reply objects (seL4-MCS): reply-path per-object lock wired live + coverage witness (SM6.D, finding A.2)
+
+Third slice of SM6.D finding A — wires the per-object reply write-lock into the **live** cross-core
+reply/replyRecv footprints and proves the 2PL coverage. **Closes PR #822 review 6J90-5** (the reply
+path's single-use `reply.caller` race). Trace byte-identical:
+
+- **State-resolved wrappers** `lockSet_endpointReplyOnCore` / `lockSet_endpointReplyRecvOnCore` now
+  resolve the reply object from `target.replyObject` (the caller's forward C-link set by
+  `linkCallerReply`) and pass it as `replyId`, so the footprint the runtime `withLockSet` bracket
+  acquires contains `(replyLock rid, .write)` whenever a reply object is being consumed. The
+  `*OnCore_correct` consistency theorems thread the extra resolved-opt (`_`).
+- **Coverage witness** `lockSet_endpointReply_reply_write_mem`: `(replyLock rid, .write)` is a member of
+  `lockSet_endpointReply … (some rid)`. Together with `lockSet_endpointReply_target_tcb_write_mem` and
+  `endpointReplyOnCore_perCore_delivery` this makes the SM6.C.6 reply-object lifecycle concrete — the
+  `reply.caller := none` consume lands on a held per-object write lock, serialised under 2PL against a
+  second core using a copied reply cap.
+- `SmpCrossCoreReplySuite`: `#check` + runtime asserts that the reply write-lock is in the resolved-rid
+  footprint and the kinds stay all-permitted.
+
+The companion `.receive`/`.call` linking footprints (PR #822 review 6J-NL9) follow in A.3 — the
+parameter and permitted kind already landed in A.0/A.1; A.3 wires the rid resolution at the link sites.
+Full prod + staged build green; trace byte-identical.
+
+## v0.31.116 — Reply objects (seL4-MCS): thread the reply lock into the 2PL footprints (SM6.D, finding A.1)
+
+Second slice of SM6.D finding A. Adds the per-object reply lock to the four reply-touching
+lock-set *values* (the keystone), trace byte-identical, with all ~174 existing call sites unchanged:
+
+- **Defaulted `(replyId : Option ReplyId := none)`** parameter on `lockSet_endpointReceive`,
+  `lockSet_endpointCall`, `lockSet_endpointReply`, `lockSet_replyRecv`, folding
+  `(replyLock rid, .write)` in as the **outermost** `lockSetExtendOpt`. Because
+  `lockSetExtendOpt S none = S` *definitionally*, omitting the argument leaves every set value
+  unchanged — so the ~174 existing call sites, the `rfl`-proved
+  `lockSet_endpointReply_donation_extension`, the hand-built `lockSet_endpointReply_target_tcb_write_mem`,
+  the `*OnCore_correct` theorems, and the `LockSetInventory` `lkst!` entries all stay green with **no
+  edits** (cleaner than the naïve "~6 proofs" estimate).
+- **The four `lockSet_consistent_{receive,call,reply,replyRecv}` proofs** (the only churn) gain the
+  `replyId` parameter, bump one builder arity (`base_plus_{two,three,four}_opts`), and add the
+  `replyLock`-kind `hOpt` branch (`(replyLock rid).kind = .reply ∈ permittedKinds`, discharged by the
+  A.0 `permittedKinds` extension via `simp; decide`).
+
+`none` is passed everywhere this slice — no behavioural wiring yet (that is A.2). Full prod + staged
+build green; trace byte-identical.
+
+## v0.31.115 — Reply objects (seL4-MCS): per-object reply lock foundation — key + permitted kinds (SM6.D, finding A.0)
+
+First slice of SM6.D finding A (the per-object Reply lock missing from the
+`.reply`/`.replyRecv`/`.receive`/`.call` 2PL footprints, PR #822 review `6J90-5`/`6J-NL9`).
+Foundation only — no lock-set value change yet, trace byte-identical:
+
+- **`replyLock` lock-key constructor** (`Concurrency/Locks/LockSetTransitions.lean`):
+  `replyLock (rid : ReplyId) : LockId := ⟨.reply, rid.toObjId⟩`, beside `schedContextLock`, with
+  the `@[simp] replyLock_kind` lemma. (The `.reply` `LockKind` is already a live level-6 per-object
+  lock — `lookup_reply`/`LockSetHeld` — so only the key constructor was missing.)
+- **`permittedKinds += .reply`** for `.receive` (split out from `.send`), `.call`, `.reply`,
+  `.replyRecv` — the four syscalls that link or consume a Reply object. Monotonic-safe: the lock-sets
+  are unchanged in this slice, and `lockSet_consistent_*` discharge by `simp; decide`, so growing the
+  permitted-kind list only weakens the obligation. `LockSetSuite` exact-value assertions updated.
+- **Corrected the stale `EndpointReply.lean` model note** that claimed "no separate Reply object / the
+  `.reply` lock-kind is N/A / `lockHeld` is `False`" — the first-class `Reply` object and its live
+  `.reply` per-object lock have landed; the note now describes `reply.caller` as the linkage written
+  under the per-object reply write-lock.
+
+Full prod + staged build green; `LockSetSuite` green; trace byte-identical.
+
+## v0.31.114 — Reply objects (seL4-MCS): remove the raw-thread cross-core replyRecv dispatch surface (PR #822 review)
+
+`EndpointReplyDispatch` exposed `endpointReplyRecvCrossCoreDispatch{,Checked}` — a
+cross-core `.replyRecv` dispatch taking a **raw `replyTarget : ThreadId`** and calling
+`endpointReplyRecvOnCore` directly, and the module header advertised it as the live
+`.replyRecv` surface.  But the live `.replyRecv` syscall actually routes through
+`API.replyRecvBody`, which resolves the reply *capability* (authority flows from
+*holding* the reply cap, exactly like `.reply`) and consumes / re-links the
+first-class Reply object.  The raw-thread wrappers were therefore a redundant,
+non-live surface that let a direct caller reply to a thread **without holding or
+resolving the reply cap**, bypassing the single-use Reply object (PR #822 review
+6J-NMF).
+
+- **Removed** `endpointReplyRecvCrossCoreDispatch`, `endpointReplyRecvCrossCoreDispatchChecked`,
+  and their three flow theorems (`_reply_flow_denied`, `_recv_flow_denied`,
+  `_flow_allowed`); nothing in production referenced them (the live `.reply` dispatch
+  `endpointReplyCrossCoreDispatch{,Checked}` is untouched).  The below-API combined
+  transition `endpointReplyRecvOnCore` (in `EndpointReply`) stays as the building
+  block; the lock-set theorems and the SM6.C suite continue to anchor it.
+- **Corrected** the stale module header / docstring that advertised the removed
+  wrapper as the live `.replyRecv` surface — it now points at `API.replyRecvBody`.
+- `SmpCrossCoreReplySuite` `#check`s for the removed symbols dropped (the reply suite
+  stays green).
+
+`declaration_count` −5; full prod + staged build green; trace byte-identical.
+
+## v0.31.113 — Reply objects (seL4-MCS): regression test for the replyRecv donation switch (PR #822 review)
+
+Adds `SyscallDispatchSuite.sd052b_replyRecv_donation_switch`, an end-to-end
+regression test for the v0.31.112 fix.  A passive server (running on a SchedContext
+donated by `clientA`) replies-and-receives while a second client's `Call` is queued
+`blockedOnCall` (enqueued via `endpointCallOnCore`, which defers donation).  After
+`replyRecvBody` it asserts:
+
+- the previous caller (`clientA`) is unblocked (`.ready`);
+- **the server stays runnable** (`scheduler.runQueueOnCore bootCoreId` still contains
+  it) — this is the assertion that fails under the old descheduled-before-receive
+  body;
+- the server's donation **switched** to the new caller's SchedContext
+  (`schedContextBinding = .donated scB clientB`);
+- the new caller rendezvoused (`.blockedOnReply`).
+
+Test-only; full prod + staged build unaffected; trace byte-identical.
+
+## v0.31.112 — Reply objects (seL4-MCS): replyRecv returns/switches donation AFTER the receive leg (PR #822 review)
+
+The live cross-core `.replyRecv` body (`replyRecvBody`) returned the server's
+donated SchedContext and descheduled it (`endpointReplyCrossCoreDispatch` →
+`applyReplyDonationOnCore` → `removeRunnableOnCore`) **before** running the receive
+leg.  When the receive immediately rendezvoused with a queued `Call`, the server was
+left `.ready` with the new message but **absent from the run queues** (descheduled
+holding the *old* `.donated` binding), so a passive server handling back-to-back
+requests via `ReplyRecv` could stall (PR #822 review 6J90-w / 6JxLxW).
+
+Re-sequenced to the single-core `endpointReplyRecvWithDonation` ordering and the
+seL4-MCS *"scheduling context follows the message"* rule:
+
+- **Reply leg delivers only** — `replyRecvBody` now calls `endpointReplyOnCore`
+  (wake the recorded caller) and defers all donation/PIP work to step 5.
+- **New `replyRecvReturnDonation`** runs *after* the reply + receive legs: it returns
+  the server's OLD donated SC to the client it was serving
+  (`returnDonatedSchedContextValid`), then — **iff** the receive rendezvoused with a
+  `Call` (`nextThread` now `.blockedOnReply`, whose donation the queued `Call`
+  deferred) — donates the NEW client's SC to the server (`applyCallDonation`) so it
+  keeps running on the new request's budget.  Otherwise (plain `Send` rendezvous, or
+  the server blocked with no waiter) the now-passive server is descheduled
+  (`removeRunnableOnCore`).  A server holding no donated SC (active / already-unbound)
+  is unchanged.  Always reverts the reply-leg PIP boost
+  (`propagatePipChainCrossCore`).
+
+Behaviour is identical to before in every case **except** the `Call`-rendezvous case,
+which it fixes (server stays runnable on the new donation instead of being
+descheduled).  `replyRecvBody` returns `Kernel Unit` (SGIs are re-derived from the
+committed diff by the runtime), so the change is state-only; the checked/unchecked
+`.replyRecv` dispatch equivalence theorems gate on the flow guard (not the body) and
+are unaffected.  `SyscallDispatchSuite` sd052 (+ sd053) and the SM6.C cross-core reply
+suite stay green; trace byte-identical.
+
+## v0.31.111 — Reply objects (seL4-MCS): a woken server's stash never keeps the Reply in use (PR #822 review)
+
+`replyIsStashed` answers "is this Reply reserved by a server *still waiting* to hand
+it to its next `Call`?".  It previously counted **any** TCB whose
+`pendingReceiveReply` field named the Reply, regardless of IPC state — so a
+server-first receiver woken by something other than a `Call` (a bound notification
+via `notificationSignalBoundOnCore`, a `Send` rendezvous, a cancellation) became
+`.ready` with a stale stash field that kept the Reply **permanently** marked in use:
+`resolveRecvReplyId` would reject re-acquiring it and `lifecyclePreRetypeCleanup`
+would reject retyping it (`revocationRequired`), even though no receive is pending.
+
+- **Tie "stashed" to `.blockedOnReceive`**: `replyIsStashed` now counts a stash only
+  while the holding TCB is still `.blockedOnReceive` — the only state in which the
+  server is actually awaiting the next `Call` to link.  A woken `.ready` (or any
+  non-receiving) server no longer reserves the Reply.  A server woken *by* its `Call`
+  is unaffected: its outstanding link is recorded in `reply.caller` (set in the same
+  atomic transition), which the in-use check already covers via `r.caller.isSome`.
+
+This makes the predicate **robust to any wake path** that does not eager-clear the
+stash (the bound-notification path being the first such gap the reviewer found),
+rather than chasing each wake site individually.  The established eager clears
+(`linkServerFirstCaller`, plain-receive in `linkReceivedCaller`, suspend) remain and
+keep the state tidy; correctness no longer depends on their exhaustiveness.
+
+`ModelIntegritySuite.reply_inUse_retype_rejected`: the stashed-rejection TCB is now
+realistically `.blockedOnReceive`, and a new assertion proves a woken `.ready` server
+with a stale stash leaves the Reply free (retype allowed).  No proof cascade
+(`replyIsStashed` is consumed opaquely in `if` guards, never unfolded).  Full prod +
+staged build green; trace byte-identical.
+
+## v0.31.110 — Reply objects (seL4-MCS): a retyped/created Reply must start inert (PR #822 review)
+
+`KernelObject.wellFormed` is the retype gate validated by
+`lifecycleRetypeWithCleanup` / `lifecycleRetypeDirectWithCleanup` before the new
+object is installed (`RetypeWrappers.lean`: `if ¬ newObj.wellFormed st.objects`).
+Its `.reply` arm previously returned `True`, so retype would happily install a
+Reply carrying a live `caller` / `donatedSc` / `prev` link — bypassing the
+`linkCallerReply` / `replyCallerLinkage` setup path and seeding a stale or in-use
+link the way the boot-safe Reply requirement already forbids at boot.
+
+- **Require inertness in the retype gate**: `KernelObject.wellFormed (.reply r)`
+  now demands `r.caller = none ∧ r.donatedSc = none ∧ r.prev = none`, mirroring the
+  boot-safe Reply requirement.  A retyped/created Reply must therefore start with no
+  caller, no donated scheduling context, and no previous-reply link.
+- Decidability instance (`KernelObject.wellFormed` `Decidable`) updated: the
+  `.reply` arm now uses `inferInstance` (decidable conjunction of `Option`
+  equalities) instead of `instDecidableTrue`.
+
+`KernelObject.wellFormed` is a retype/creation gate, not a state-wide invariant
+(idle TCBs deliberately fail it — see `Boot.lean`), so in-use Replies elsewhere in
+the state are unaffected.  Full prod + staged build green; trace byte-identical.
+
+## v0.31.109 — Reply objects (seL4-MCS): reject TCB retype with reply link + stashed reply receive (PR #822 review)
+
+Two more in-use Reply guards:
+
+- **Reject retyping a caller TCB that still holds a reply link**
+  (`lifecyclePreRetypeCleanup`): a `.tcb` arm now rejects (`revocationRequired`)
+  when `tcb.replyObject.isSome` — else the TCB is replaced while the Reply keeps
+  `caller = some tid` pointing at the gone thread, so the later `.reply` resolves a
+  stale caller and never consumes the Reply.  Mirrors the Reply reject + seL4
+  revoke-before-destroy.  Cleanup-preservation proofs (CleanupPreservation,
+  RetypeWrappers) reduce the reject-`if` on the `.ok` path.
+- **Treat stashed Reply objects as in-use on receive** (`resolveRecvReplyId`): the
+  free-reply check now requires both `caller = none` AND not already stashed in a
+  server's `pendingReceiveReply` (`replyIsStashed`), so a second
+  `endpoint_receive_with_reply` via a copied cap cannot block another server on the
+  same `rid` and later roll back on a stale stash.
+
+`ModelIntegritySuite.reply_inUse_retype_rejected` extended (linked-TCB reject +
+free-TCB allow).  Closes PR #822 review items (CleanupPreservation:242, API:331).
+Full prod + staged build + Tier 0/1/2 green; trace byte-identical.
+
+## v0.31.108 — Reply objects (seL4-MCS): require linked reply callers to be blockedOnReply (PR #822 review)
+
+Strengthens the `replyCallerLinkage` IPC-invariant conjunct (v0.31.106): the
+backward direction (`reply.caller = some tid ⇒ reciprocating TCB`) now **also**
+requires that TCB to be `blockedOnReply` — the only state from which the public
+`.reply` path can consume it.  Without this, `ipcInvariantFull` admitted a Reply
+linked to a `.ready` caller that `.reply` then rejects, leaving the Reply
+permanently in-use and unconsumable.
+
+- New post-condition `linkCallerReply_caller_ipcState_preserved` (the final store
+  rewrites only `replyObject`, so a `blockedOnReply` caller stays blocked).
+- `linkCallerReply_establishes_replyCallerLinkage` gains a `blockedOnReply` caller
+  precondition (threaded through `linkCallerReply_preserves_ipcInvariantFull`);
+  `consumeCallerReply` and the framing transitions carry the stronger clause
+  through unchanged; boot/default discharge it vacuously.
+
+Closes PR #822 review item (Defs:627).  Full prod + staged build + Tier 0/1/2
+green; trace byte-identical (proof-only surface); zero `sorry`/`axiom`.
+
+## v0.31.107 — Reply objects (seL4-MCS): receive/replyRecv reply-cap behavior hardening (PR #822 review)
+
+Four bounded behavior fixes to the reply-cap dispatch + lifecycle paths:
+
+- **Reject explicit bad receive reply caps** (`resolveRecvReplyId` → `Except`): only
+  message length 0 means "no reply object" (→ plain receive); at length ≥ 1 MR0
+  names an *explicit* reply cap, so a failed resolution (missing/non-reply/in-use)
+  is now a hard `.replyCapInvalid`/decode error *before* `endpointReceiveDual`
+  rather than a silent downgrade to a plain receive that strands a later Call.
+  Both unchecked and checked `.receive` arms updated.
+- **Clear stashed replies on receive cancel/restore** (`restoreToReady`): now also
+  clears `pendingReceiveReply`, so a cancelled/suspended/resumed server-first
+  receive relinquishes its stashed Reply — otherwise `replyIsStashed` kept the
+  Reply permanently in-use and later lifecycle cleanup returned `revocationRequired`
+  with no pending receive.
+- **Check retype stashes by the target ObjId** (`lifecyclePreRetypeCleanup`): the
+  in-use guard now derives the checked `ReplyId` from `target`
+  (`ReplyId.ofNat target.toNat`), not the reply's internal `r.replyId` field (which
+  can be the `Reply.empty` sentinel on a freshly retyped object), so a stash under
+  the canonical id is not missed.
+- **Use the reply cap's badge for replyRecv** (`resolveReplyRecvReply` now returns
+  `(rid, prevCaller, replyBadge)`): the reply delivered to the previous caller
+  carries the *reply cap's* badge (the reply authority), not the endpoint receive
+  cap's, matching the `.reply` arm.  Both dispatch arms + the checked-equivalence
+  theorem updated.
+
+Full prod + staged `lake build` + Tier 0/1/2 green; trace byte-identical.
+
+## v0.31.106 — Reply objects (seL4-MCS): bidirectional Reply↔TCB linkage in the IPC invariant (PR #822 review)
+
+Adds `replyCallerLinkage` as the **16th conjunct** of `ipcInvariantFull` — the
+bidirectional consistency tying every `TCB.replyObject` forward link to a
+reciprocating `Reply.caller` back-link (and vice versa).  Without it
+`ipcInvariantFull` admitted a state where a TCB points at an absent/different
+Reply, or a `reply.caller` is not reciprocated, so a stale reply cap could act on
+or erase the wrong outstanding reply link.
+
+- **New predicate** `replyCallerLinkage` (forward `replyObject ⇒ reciprocating
+  reply`; backward `reply.caller ⇒ reciprocating TCB`).
+- **Established/preserved by the live reply mutators**: `linkCallerReply`
+  establishes it (sets both halves reciprocally, fail-closed on an in-use reply;
+  `linkCallerReply_establishes_replyCallerLinkage`), `consumeCallerReply` preserves
+  it on a mutually linked pair (`consumeCallerReply_preserves_replyCallerLinkage`).
+  Supporting frame + precondition lemmas (`linkCallerReply_objects_frame`,
+  `consumeCallerReply_objects_frame`, `linkCallerReply_pre`).
+- **Core/Full split**: `ipcInvariantCore` = the 15 structural conjuncts; the generic
+  reply-store building blocks (`storeObject_reply` / `storeObject_tcb_replyObject`)
+  now preserve only `ipcInvariantCore` — **not** the linkage — directly answering
+  the review (an arbitrary `replyObject` store is no longer `ipcInvariantFull`-
+  preserving).  `linkCallerReply` / `consumeCallerReply` re-assemble the full
+  invariant from the core (sequenced through the intermediate state, which
+  legitimately breaks the reciprocal link) plus the re-established linkage.
+- Cascade: the 16th conjunct threaded through the construction surface (10
+  non-mutating IPC transitions + the cross-core lifecycle bundle externalize it
+  alongside `blockedOnReplyHasTarget`; the timer/register/context and boot/default
+  states frame it via `replyCallerLinkage_of_objects_eq`); named projection +
+  bridge + `ipcInvariantCore` projection layer added.  AK7 baseline re-anchored
+  (additive invariant, `RAW_LOOKUP_TID` 837→851).
+
+Closes PR #822 review item (DualQueueMembership:2508 — "Add replyObject to the IPC
+invariant").  Full prod + staged `lake build` + Tier 0/1/2 green; trace
+byte-identical (proof-only surface); zero `sorry`/`axiom`.
+
+## v0.31.105 — Reply objects (seL4-MCS): harden the server-first reply stash (PR #822 review)
+
+Five edge-case fixes to the `pendingReceiveReply` server-first stash from v0.31.104:
+
+- **Validate before stashing** (`resolveRecvReplyId`): a reply cap is resolved only
+  if `getReply? rid` is a live, **free** Reply (`caller = none`) — an absent /
+  already-linked reply fails closed (→ `none`) symmetrically with the caller-first
+  path instead of stashing a reply the later Call would roll back on.
+- **Clear stale stashes** (`linkReceivedCaller`): a plain receive (no reply object)
+  now **clears** any stale `pendingReceiveReply` left by a prior server-first receive
+  that woke via `Send` / was cancelled, so a later Call cannot reuse a stale reply id.
+- **Reject server-first Calls without a reply** (`linkServerFirstCaller`): a Call that
+  rendezvouses with a waiting server holding **no** reply object is rejected
+  `.replyCapInvalid` fail-closed (post-state discarded — caller not stranded, server
+  not spuriously woken), symmetric to the caller-first reject.
+- **ReplyRecv length gate** (`resolveReplyRecvReply`): require `msgInfo.length ≥ 1`
+  before reading MR0 — a length-0 `ReplyRecv` must not resolve/consume a stale x2
+  reply cap (mirrors the v0.31.104 receive length gate).
+- **Reject retyping stashed Replies** (`lifecyclePreRetypeCleanup` + new
+  `replyIsStashed`): a free Reply (`caller = none`) **stashed** in a server's
+  `pendingReceiveReply` is now also `.revocationRequired` — freeing it would dangle
+  the waiting server's stash.
+
+`SyscallDispatchSuite.sd053` extended (clear-stale, reject-no-reply) and
+`ModelIntegritySuite.reply_inUse_retype_rejected` extended (stashed-reject).  Closes
+PR #822 review items (API:353/354/382/397, CleanupPreservation:239).  Full prod +
+staged `lake build` + Tier 0/1/2 + Rust conformance green; trace byte-identical.
+
+## v0.31.104 — Reply objects (seL4-MCS): server-first receive linkage + reply-ABI control-register fixes (PR #822 review)
+
+Completes the faithful seL4-MCS receive linkage (both Call/Recv orderings) and
+fixes two MR0 control-register bugs in the receive/replyRecv ABI:
+
+- **Server-first linkage** (the `server-blocks-then-client-Calls` ordering): a new
+  `TCB.pendingReceiveReply : Option ReplyId` stashes the Reply object a *server*
+  supplies on its `Recv` while no caller is queued.  `linkReceivedCaller`'s
+  `.blockedOnReceive` arm stashes it; the `.call` arms then run
+  `linkServerFirstCaller` after `endpointCallCrossCoreDispatch` — when the call
+  rendezvouses with a waiting server (caller `.blockedOnReply ep (some server)`)
+  it links the caller to the server's stashed reply object and clears the stash.
+  Together with the v0.31.102 caller-first path this closes both orderings.  The
+  field is stripped by the NI projection (`projectKernelObject_erases_pendingReceiveReply`)
+  and required `none` by `bootSafeObjectCheck` + the Prop-level `bootSafeObject`
+  (mirroring `replyObject`).  New `SyscallDispatchSuite.sd053_serverFirstLink`.
+
+- **Receive length gate** (`resolveRecvReplyId`): the ARM64 register decoder always
+  materializes x2..x5, so MR0 is present even for a no-reply `Recv`.  Gate on
+  `decoded.msgInfo.length == 0` so a plain receive (length 0) never resolves a
+  stale / CPtr-0 reply cap — fail-closed.  `endpoint_receive_with_reply` declares
+  length 1.
+
+- **ReplyRecv payload strip** (both `.replyRecv` arms): MR0 carries the reply CPtr
+  (a control register), so the reply *payload* to the previous caller is MR1.. —
+  strip the leading control register (`full.extract 1 full.size`) before building
+  the reply message, instead of delivering the reply CPtr as the first payload word.
+
+Closes PR #822 review items (server-first linkage; API:305 receive length gate;
+API:1193 replyRecv payload strip).  Full prod + staged `lake build` + Tier 0/1/2 +
+Rust conformance green; trace byte-identical; codebase map regenerated.
+
+## v0.31.103 — Reply objects (seL4-MCS): faithful `.replyRecv` via the reply object + Rust receive-with-reply ABI (PR #822 review)
+
+The `.replyRecv` dispatch trusted a raw `args.replyTarget` thread id, called the
+cross-core reply-and-receive transition, and never **consumed** the answered reply
+link nor **re-linked** the reply object to the next caller — leaving `reply.caller`
+/ `replyObject` set (in-use reply cap leak) and bypassing the reply-cap authority
+`.reply` now requires.  Re-wired faithfully:
+
+- **ABI**: `ReplyRecvArgs.replyTarget : ThreadId` → `replyCPtr : Nat` (msgRegs[0] is
+  now the server-supplied reply *capability* pointer; the wire is unchanged — one
+  register — so the encoding conformance is byte-identical).
+- **Resolution** (`resolveReplyRecvReply`): resolve the reply cap → `(rid, prevCaller)`
+  via `reply.caller` (authority flows from *holding* the reply cap, exactly like
+  `.reply` — closing the raw-thread bypass).
+- **Body** (`replyRecvBody`, shared by both arms): reply leg
+  (`endpointReplyCrossCoreDispatch`, incl. donated-SC return + cross-core PIP) → 
+  **consume** the answered link (`consumeCallerReply`, single-use barrier) → receive
+  leg (`endpointReceiveDualOnCore`) → **re-link** the *same* reply object to the next
+  Call caller (`linkReceivedCaller`).  The checked arm is a single outer flow gate
+  (receiver→prevCaller, endpoint→receiver) over the same body, so
+  `checkedDispatch_replyRecv_eq_unchecked_when_allowed` is re-proven cleanly.
+- **Rust ABI**: `endpoint_reply_recv` / `_checked` now take a `reply_cap : CPtr`
+  (MR0); new `endpoint_receive_with_reply(recv_cap, reply_cap)` so a server can
+  accept `Call` IPC under the reply-object ABI (plain `endpoint_receive` stays the
+  no-reply Send/Notification path).  Conformance comments synced.
+
+New `SyscallDispatchSuite.sd052_replyRecvBody` (4 assertions: prev caller replied,
+link consumed both directions, server re-blocks).  Closes PR #822 review items
+(API:1093 replyRecv consume, EndpointReply:148 receive-leg re-link, API:975 Rust
+receive wrapper).  Full prod + staged `lake build` + Tier 0/1/2 green; trace
+byte-identical.
+
+## v0.31.102 — Reply objects (seL4-MCS): re-wire faithful server-supplied `.receive` linking (PR #822 review)
+
+The `.receive` dispatch arms were gated to plain receive (no reply linking), so the
+live `.reply` path — which resolves authority through `reply.caller` — had no
+producer of that link in the common caller-already-queued case.  Both `.receive`
+arms (unchecked + flow-checked) now perform faithful seL4-MCS server-supplied
+linking:
+
+- **Resolve the server-supplied reply cap at the right slot** (new
+  `resolveRecvReplyId`): the reply cap lives at `RecvArgs.replyCPtr` (msgRegs[0]),
+  a *different* CSpace slot than the endpoint receive cap, so it is resolved through
+  a gate whose `capAddr` is `replyCPtr` — not the primary syscall gate (which names
+  the endpoint).  Read-only; `none` for a plain Recv that omits a reply object.
+- **Link the rendezvoused caller** (new `linkReceivedCaller`): when
+  `endpointReceiveDual` moves a `Call` sender to `.blockedOnReply`, the kernel links
+  it to the server's reply object via `linkCallerReply` (bidirectional
+  `reply.caller` / `tcb.replyObject`).  A `Call` rendezvous carrying **no** reply
+  object is rejected `.replyCapInvalid` fail-closed (the post-state is discarded, so
+  the caller is not stranded `.blockedOnReply` with no reply object).  A plain Send
+  rendezvous / block path links nothing (so plain receive is unchanged — `chain10`
+  green).
+
+New `SyscallDispatchSuite.sd051_receiveLinkCaller` (3 assertions: link / reject /
+no-link).  Closes PR #822 review items (API:281 helper-gate, the "dequeue Call
+without reply" stranding).  Full prod + staged `lake build` + Tier 0/1/2 + Rust
+conformance green; trace byte-identical (the `.receive` dispatch is not
+trace-exercised, and the resolution is read-only / Send path unchanged).
+
+## v0.31.101 — Reply objects (seL4-MCS): consume/reject the reply link on lifecycle teardown (PR #822 review)
+
+Three teardown paths could strand a first-class Reply object permanently in-use
+(`reply.caller` set, the caller TCB's `replyObject` pointing at it), so a later
+receive re-supplying that single-use reply cap would fail `.replyCapInvalid`:
+
+- **Cancel / suspend of a blocked caller** (`cancelIpcBlocking`, Suspend.lean):
+  the `.blockedOnReply` arm restored IPC/queue fields but never severed the reply
+  link.  New pure-total helper `consumeReplyLink` (factored into
+  `clearReplyObjectCaller` + the `getTcb?`-typed `clearTcbReplyObject`, each with
+  scheduler / serviceRegistry / lifecycle preservation lemmas) now clears both the
+  Reply object's `caller` back-link and the TCB's `replyObject` forward link —
+  the pure analogue of the runtime `consumeCallerReply`.  The three
+  `cancelIpcBlocking_*_eq` preservation arms are extended accordingly.
+
+- **Frozen reply** (`frozenEndpointReply`, FrozenOps): a successful frozen reply
+  now consumes the frozen Reply link (clears `replyObject` + the frozen reply
+  object's `caller`), mirroring runtime semantics.  New `FrozenOpsSuite` FO-004b
+  exercises the consume (22 scenarios).
+
+- **Retype / delete of an in-use Reply** (`lifecyclePreRetypeCleanup`): now
+  fail-closed with `.revocationRequired` when the current Reply object still has a
+  `caller` (seL4's revoke-before-destroy discipline); a free Reply retypes
+  cleanly.  `lifecyclePreRetypeCleanup_flat_subset` gains the `.reply` arm; new
+  `ModelIntegritySuite.reply_inUse_retype_rejected` covers both cases.
+
+Closes PR #822 review items (Types:795 / cancel, FrozenState:243, Structures:2648).
+Full prod + staged `lake build` + Tier 0/1/2 + Rust conformance green; trace
+byte-identical; codebase map regenerated.
+
+## v0.31.100 — Reply objects (seL4-MCS): redact Reply links from low projections (PR #822 review)
+
+The information-flow projection passed `.reply` objects through unchanged and the
+TCB projection did not clear the new `replyObject` forward link.  Linking a high
+caller / donated SchedContext to a low-visible Reply object would therefore change
+the low projection and leak thread / SchedContext identities through the cross-domain
+Call→Reply rendezvous — a covert channel once the receive-path links a reply.
+
+`projectKernelObject` now strips the Reply object's cross-domain linkage in a new
+`.reply` arm (`caller := none`, `donatedSc := none`, `prev := none` — mirroring the
+`.schedContext` `boundThread` stripping; only the object's own `replyId`/`lock`
+survive), and the TCB arm additionally clears `replyObject := none` (the same class
+as the already-erased `schedContextBinding`/`pipBoost`).  Four `_erases_` lemmas
+(`projectKernelObject_erases_replyObject` / `_reply_caller` / `_reply_donatedSc` /
+`_reply_prev`) pin the redaction, mirroring `projectKernelObject_erases_cpuAffinity`.
+
+Closes PR #822 review item (Projection:201).  Full prod + staged `lake build` + Tier
+0/1/2 green; trace byte-identical (NI projection is not trace-exercised).
+
+## v0.31.99 — Reply objects (seL4-MCS): raw retype helper accepts SchedContext + Reply (PR #822 review)
+
+The raw `objectOfTypeTag` (Nat → KernelObject) handled only tags 0–5, sending 6
+(SchedContext) and 7 (Reply) to `.invalidTypeTag` — out of sync with the typed
+`objectOfKernelType` / `KernelObjectType.ofNat?` and the Rust ABI (which all accept
+0–7).  A direct helper caller or conformance test using the raw tag path would
+reject a Reply (or SchedContext) retype the rest of the stack now accepts.
+
+`objectOfTypeTag` gains the `6 → .schedContext` and `7 → .reply` arms (mirroring
+`objectOfKernelType`'s sentinel-initialized constructors; `_ + 8 → .invalidTypeTag`).
+`tests/NegativeStateSuite.lean` K-G-NEG-18 / K-G-DET-03 extended to the 0–7 range.
+
+Closes PR #822 review item (RetypeWrappers:207).  prod `lake build` (376) + Tier
+0/1/2 + negative-state green; trace byte-identical.
+
+## v0.31.98 — Reply objects (seL4-MCS): restore the chain31 reply-unblock validation (PR #822 review)
+
+The cap-swap (v0.31.88) pointed `operation_chain_suite` chain31's reply cap at
+`ReplyId 503`, but ObjId 503 is the caller TCB — no backing `.reply` object — so
+the live `.reply` dispatch (which resolves `getReply? rid`) degraded to
+`replyCapInvalid`, masked by the scenario's permissive error branch, and the test
+no longer validated that a reply unblocks its caller.
+
+The fixture now installs a real `.reply` object (fresh ObjId via `ReplyId 505`,
+`caller := some 503`) and sets the blocked sender to `blockedOnReply epId (some
+replier)` with `replyObject := some 505`.  chain31 now takes the success path — the
+`.reply` dispatch resolves the reply object, unblocks the caller (`.ready`), and
+consumes the link — so it asserts "reply unblocked caller" again.
+
+Closes PR #822 review item (OperationChainSuite:1934).  prod `lake build` + Tier
+0/1/2 + `operation_chain_suite` green; trace byte-identical.
+
+## v0.31.97 — Reply objects (seL4-MCS): Rust type-tag ABI for Reply retype (PR #822 review)
+
+The Lean retype path (`objectOfKernelType` / the validated `KernelObjectType`
+decode) accepts the first-class Reply object as type tag 7, but the Rust ABI mirror
+stopped at tag 6 (SchedContext) — a split where userspace following the Rust
+lifecycle wrapper could not create a Reply object the Lean syscall accepts.
+
+- `rust/sele4n-abi/src/args/type_tag.rs`: `TypeTag` gains `Reply = 7` (now 8
+  variants, 0–7, matching `KernelObjectType`); `from_u64` maps 7 → `Reply` and
+  rejects `> 7`; new `reply_discriminant` unit test.
+- `rust/sele4n-abi/src/args/lifecycle.rs`: doc + `> 7` bound; tests to the 0–7 range.
+- `rust/sele4n-abi/tests/conformance.rs`: `type_tag_exhaustive_roundtrip`,
+  `lifecycle_retype_invalid_type_tag`, `type_tag_boundary` updated to 0–7 / 8-invalid.
+
+Closes PR #822 review item (Structures:2688).  `cargo test -p sele4n-abi` (101 + 98
++ 1) + workspace clippy green; Lean unchanged (trace byte-identical).
+
+## v0.31.96 — Reply objects (seL4-MCS): caller-side single-use for linkCallerReply (PR #822 review)
+
+`linkCallerReply` now fails closed (`.replyCapInvalid`) when the *caller* already
+holds a reply object (`tcb.replyObject ≠ none`) — caller-side single-use, dual to
+the existing reply-side `linkCallerReply_inUse_error` barrier.  Previously the store
+overwrote the forward TCB→Reply link, orphaning the old Reply with a stale `caller`
+(a later reply cap could resolve to the caller, and `consumeCallerReply` could clear
+the newer link).
+
+The three `linkCallerReply` post-condition / preservation theorems
+(`_replyObject_some`, `_getReply?_caller_some`, `_preserves_ipcInvariantFull`)
+re-proven through the added `if tcb.replyObject.isNone` branch (a `split` whose
+`else` arm is `.error = .ok`, vacuous).  `linkCallerReply_inUse_error` is unchanged
+(its error precedes the new branch).
+
+Closes PR #822 review item (State.lean:2398).  Trace byte-identical
+(`linkCallerReply` is gated-off foundation); prod `lake build` (376) + staged (234)
++ Tier 0/1/2 green.
+
+## v0.31.95 — Reply objects (seL4-MCS): boot Reply/TCB safety (PR #822 review)
+
+Boot safety now covers the first-class Reply object and the TCB reply link (the
+runtime check rejected stale boot Reply linkage, but the Prop-level boot predicate
+did not — a checked config could boot a TCB with a live `replyObject` or a Reply
+carrying a caller/donatedSc/prev):
+
+- `bootSafeObjectCheck` (runtime): the `.tcb` arm now requires `replyObject.isNone`
+  (the `.reply` arm already rejected non-inert boot Replies).
+- `bootSafeObject` (Prop): the `.tcb` clause requires `replyObject = none`, and a new
+  `.reply` conjunct requires `r.caller = none ∧ r.donatedSc = none ∧ r.prev = none` —
+  so `PlatformConfig.bootSafe` no longer admits a stale-linked boot Reply.
+- `bootSafeObjectCheck_sound_structural` extended to bridge both new requirements;
+  the boot-invariant-bundle proofs over `bootSafeObject`'s conjuncts updated for the
+  added `.reply` clause (off-by-one accessor shifts only).
+
+Closes PR #822 review items (Boot:707, Types:795).  Trace byte-identical; prod
+`lake build` (376) + staged (234) + two-phase + AN9 hardware-binding suites green.
+
+## v0.31.94 — Reply objects (seL4-MCS): surface anchors for the Reply object (PR #822 review)
+
+Two object-level hygiene closes (the Reply object exists regardless of the gated
+linkage):
+
+- `Testing/InvariantChecks.lean` (`checkCapTargetBacked`): a `.replyCap rid` is now
+  checked against `getReply? rid` (an actual `.reply` at `rid.toObjId`) rather than
+  mere `objects[rid.toObjId]?.isSome` — a reply cap pointing at a TCB/endpoint
+  sharing the ObjId namespace no longer passes `assertStateInvariantsFor`.
+- `Model/Object/PerObjectLockInventory.lean`: the Tier-3 lock-surface inventory now
+  pins the first-class Reply object's lock anchors — `Reply.lock` (fieldDefault),
+  `KernelObject.objectLockOf_reply` + `FrozenKernelObject.objectLockOf_reply`
+  (projection); counts 34→37, fieldDefault 7→8, projection 9→11
+  (`tests/PerObjectLockSuite.lean` count witnesses updated).  A regression that
+  removes/breaks the Reply lock projection now fails the compile-time surface gate.
+
+Closes PR #822 review items (InvariantChecks:123, PerObjectLockInventory:162).
+Trace byte-identical; prod `lake build` (376) + staged (234) + per-object-lock
+suite green.
+
+## v0.31.93 — Reply objects (seL4-MCS): gate the live receive linkage (cohesive integration)
+
+Per the integration-approach decision: the live `.receive` Reply-object linkage
+(v0.31.90/91) is **staged off** — both `.receive` arms revert to plain receive —
+so the cross-cutting Reply integration (lifecycle consume/reject across
+retype/cancel/frozen, info-flow projection redaction + NI, `replyRecv` consumption
++ donation, boot/invariant hygiene, server-first persist) lands as a cohesive set
+and the live linkage is re-wired ONCE, complete, rather than exposing transient
+integration gaps (PR #822 review surfaced ~10 such gaps across those subsystems).
+
+The sound foundation remains in place: the first-class `Reply` object, its full
+15-conjunct `ipcInvariantFull` preservation, `linkCallerReply` /
+`consumeCallerReply`, the `CapTarget.replyCap` `ReplyId` cap-swap, and the
+`RecvArgs` / `syscallLookupReplyId` / `extractReplyId` resolution (staged for the
+re-wire).  `sd051` (which exercised the gated linkage) removed.
+
+Trace byte-identical (233/233); prod `lake build` (376) + staged (234) + Tier
+0/1/2 green.
+
+## v0.31.92 — Reply objects (seL4-MCS): remove dead Call reply-cap ABI (PR #822 review)
+
+Decision D4 was revised to faithful seL4-MCS *server-supplied* reply objects (the
+receiver supplies the reply cap on `Recv`/`ReplyRecv`; `Call` carries no reply
+cap).  The `IpcCallArgs` decode/encode ABI added under the earlier
+caller-supplied framing is therefore dead and inconsistent with the live `.call`
+dispatch (which treats all message registers as payload) — removed
+(`Architecture/SyscallArgDecode.lean`): `IpcCallArgs`, `decodeIpcCallArgs`,
+`encodeIpcCallArgs`, and the `_error_iff` / `_roundtrip` theorems.  The reply-CPtr
+ABI lives on the receive path (`RecvArgs`, v0.31.90).
+
+Closes PR #822 review item (SyscallArgDecode:1097).  Trace byte-identical; prod
+`lake build` (376) + Tier 0/1 green.
+
+## v0.31.91 — Reply objects (seL4-MCS): `.receive` reply cap is optional (CI fix)
+
+Fixes a regression from v0.31.90: the `.receive` linking made the arm *require* a
+server-supplied reply capability, breaking existing `.receive` dispatch callers
+that pass none (`operation_chain_suite` chain10 → `.invalidCapability`).
+
+Faithful seL4 `Recv` accepts a null/absent reply cap (no reply expected).  Both
+`.receive` arms now resolve the reply cap into an `Option ReplyId` — any
+decode/lookup failure yields `none` and the receive **proceeds plainly with no
+link**; a *valid* reply cap still links the rendezvoused `Call`-caller.  The
+`endpointReceiveDual` transition stays untouched.  `sd051` negatives updated:
+no-cap / wrong-cap → receive succeeds with no reply object linked (linking is
+opt-in on a held reply capability).
+
+(PR #822 review follow-ups still open: the server-first `Recv`-then-`Call` path
+must persist the supplied reply object; `.replyRecv` must route through reply-object
+consumption; and the reply-object write must enter the 2PL lock set — these land
+as the next slices.)
+
+Trace byte-identical (233/233); prod `lake build` (376) + staged (234) + Tier
+0/1/2 + `operation_chain_suite` green.
+
+## v0.31.90 — Reply objects (seL4-MCS): `.receive` links the server's reply object (C-wire-link-1)
+
+First faithful server-supplied linking (decision D4): `seL4_Recv(ep, reply)` — the
+server supplies a Reply object capability, and on a `Call`-rendezvous the kernel
+links it to the caller.  Wired at the **dispatch-arm layer**, so the
+`endpointReceiveDual` transition and its SM6.C proof suite stay untouched — the
+link composes through the already-proven `linkCallerReply_preserves_ipcInvariantFull`
+(C-preserve-B).
+
+- `RecvArgs { replyCPtr }` + `decodeRecvArgs` / `encodeRecvArgs` + `_error_iff` /
+  `_roundtrip` (`Architecture/SyscallArgDecode.lean`).
+- Both `.receive` arms (`dispatchWithCap{,Checked}`): resolve the server-supplied
+  reply capability from the server's *own* CSpace (`syscallLookupReplyId`, via the
+  `tcbBindNotification` secondary-cap pattern), run the unchanged receive, then
+  **iff** the rendezvoused sender's post-state is `.blockedOnReply` (a `Call`),
+  `linkCallerReply sender rid` — fail-closed on an in-use reply or absent caller.
+  A plain `Send` rendezvous takes no reply; the checked arm differs only in
+  `endpointReceiveDualChecked`.
+- `tests/SyscallDispatchSuite.lean` `sd051`: a queued `Call`-sender + a server reply
+  cap → `.receive` dispatch → caller's `replyObject = some rid` and `getReply? rid
+  |>.caller = some sender`; no-cap / wrong-cap → `.invalidCapability`.
+
+Trace byte-identical (233/233); prod `lake build` (376) + staged anchor (234) +
+Tier 0/1/2 green.  The `.replyRecv` reply-leg conversion and the server-first
+(`endpointCall`) path follow.
+
+## v0.31.89 — Reply objects (seL4-MCS): reply-cap resolution foundation (C-wire-link prep)
+
+Foundation for faithful server-supplied reply-object linking (decision D4 revised
+→ the receiver supplies the reply object): the helpers that resolve a *reply
+capability* (held by the server) to the `ReplyId` the kernel will link to the
+rendezvoused caller.
+
+- `extractReplyId : Capability → Except KernelError ReplyId` — yields the reply
+  object a `.replyCap` authorizes; `.invalidCapability` otherwise.
+- `syscallLookupReplyId : SyscallGate → Kernel ReplyId` — resolves a reply
+  capability held at a CSpace slot through the verified `syscallLookupCap` (like
+  `tcbBindNotification`), so authority flows from *holding* a reply capability,
+  not naming a raw `ReplyId`.  Read-only.
+- Lemmas: `extractReplyId_eq_ok_iff` (succeeds exactly on a `.replyCap` target);
+  `syscallLookupReplyId_preserves_state` (lookup leaves state unchanged).
+
+Standalone prep, unreferenced this slice (the receive-path linking consumes it
+next).  Trace byte-identical (233/233); prod `lake build` + staged anchor + Tier
+0/1/2 green.
+
+## v0.31.88 — Reply objects (seL4-MCS): reply cap names a ReplyId (C-wire cap-swap)
+
+The atomic keystone of the live wiring: `CapTarget.replyCap` now references a
+first-class `Reply` *object* by `ReplyId` (the single-use reply authority),
+replacing the raw sender `ThreadId`.  The `.reply` syscall resolves the `ReplyId`
+to its recorded `reply.caller`, replies to that caller, and **consumes** the
+single-use linkage.
+
+- `CapTarget.replyCap (replyId : SeLe4n.ReplyId)` (`Model/Object/Types.lean`),
+  was `(senderTcb : ThreadId)`.
+- `API.dispatchWithCap{,Checked}` `.reply` arms: resolve `getReply? rid →
+  reply.caller = some callerTid` (fail closed `.replyCapInvalid` on a dangling
+  reply or an unlinked caller) → feed the UNCHANGED `endpointReplyCrossCoreDispatch
+  {,Checked} tid callerTid …` (its internal `replier == blockedOnReply.replyTarget`
+  confused-deputy gate intact) → `consumeCallerReply callerTid rid`
+  (`reply.caller := none`, the structural single-use barrier).  The C-preserve-2
+  `consumeCallerReply_preserves_ipcInvariantFull` composes through.
+- `capTargetObservable .replyCap rid` projects the reply object's identity
+  (`objectObservable … rid.toObjId`), stateless and consistent with the
+  `.object`/`.cnodeSlot` arms (`InformationFlow/Projection.lean`).
+- Re-proved `checkedDispatch_reply_eq_unchecked_when_allowed` (now conditioned on
+  the resolved caller) and `dispatchWithCap_reply_populates_msg`.
+- Fixtures (`OperationChainSuite`/`InformationFlowSuite`/`ModelIntegritySuite`)
+  updated to `.replyCap (ReplyId.ofNat n)` / `ReplyId.sentinel`.
+
+Per the faithful-seL4-MCS decision (D4 revised → server-supplied reply objects),
+the reply-object *linking* moves to the receive path (`Recv`/`ReplyRecv`) — the
+next slice; `.call` is unchanged by the cap-swap.  Trace byte-identical (233/233);
+prod `lake build` + staged anchor + Tier 0/1/2 + all affected suites green.
+
+## v0.31.87 — Reply objects (seL4-MCS): MCS Call ABI decode (slice C-abi)
+
+The argument-decode surface for the faithful MCS `Call` syscall, which passes a
+single-use reply capability (`SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`).
+Standalone (unreferenced until the C-wire dispatch), no `sorry`; trace
+byte-identical (233/233).
+
+`IpcCallArgs { replyCPtr : Nat }` + `decodeIpcCallArgs` (1 register: the reply
+capability pointer) + `encodeIpcCallArgs` (inverse) + the characterization
+`decodeIpcCallArgs_error_iff` (fails iff `< 1` message register) and round-trip
+`decodeIpcCallArgs_roundtrip`.  The reply CPtr mirrors `tcbBindNotification`'s
+`notificationCPtr`: reply authority is resolved through the caller's CSpace via
+`syscallLookupCap` (a caller must *hold* a reply cap, not name a raw `ReplyId`),
+unlike the legacy `replyRecv` raw thread-ID target.  Full CSpaceMint-style
+structure + decode + encode + error-characterization + round-trip treatment.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical.
+
+## v0.31.86 — Reply objects (seL4-MCS): TCB-store frame + linkage-op ipcInvariantFull preservation (store B + compose)
+
+Completes the linkage-op invariant preservation
+(`SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`): the
+TCB-`replyObject` store frame (store B) and the composition of stores A+B into
+full `ipcInvariantFull` preservation of both reply-linkage operations.
+Standalone (no `sorry`; axioms = `propext` / `Classical.choice` / `Quot.sound`
+for all three theorems).
+
+**Store B** `storeObject_tcb_replyObject_preserves_ipcInvariantFull` — storing a
+`.tcb` that differs from the slot's previous TCB only in `replyObject` preserves
+all 15 conjuncts.  No conjunct reads `replyObject`, so every field a conjunct
+does read (ipcState, pendingMessage, queueNext/Prev/PPrev, schedContextBinding,
+timeoutBudget) is unchanged.  Three helpers: a non-`.tcb` lookup-agreement iff
+(`tcb_replyObject_store_nonTcb_agree`) plus forward/backward TCB helpers that
+expose the read-field equalities (all `rfl` under the `replyObject` update); the
+conjunct-2 queue sub-predicates and the conjunct-7 blocking arms transport
+through them.
+
+**Composition** `linkCallerReply_preserves_ipcInvariantFull` /
+`consumeCallerReply_preserves_ipcInvariantFull` — each op is a `.reply` store
+(B1 `linkReply` / `consumeReply`) followed by a caller-TCB `replyObject` store,
+so preservation chains store A (the reply write) and store B (the TCB write),
+threading `objects.invExt` via `linkReply_preserves_objects_invExt` /
+`consumeReply_preserves_objects_invExt`.  `consumeReply`'s reply-absent path
+carries `hInv` through unchanged; the caller-absent TCB leg is the identity.
+This is the preservation the live `.call` / `.reply` dispatch (Phase C-wire)
+needs once it composes these ops after `endpointCall` / `endpointReply`.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical
+(233/233).
+
+## v0.31.85 — Reply objects (seL4-MCS): reply-store ipcInvariantFull frame (store A)
+
+First half of the linkage-op invariant preservation: storing a `.reply` object
+over a slot that already held a `.reply` preserves the full 15-conjunct
+`ipcInvariantFull` (`SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean`).
+A reusable building block for every reply transition; proved standalone (no
+`sorry`; axioms = `propext` / `Classical.choice` / `Quot.sound` only).
+
+`storeObject_reply_preserves_ipcInvariantFull` — no `ipcInvariantFull` conjunct
+dereferences a `.reply`, and the slot held a `.reply` both before and after, so
+every notification / TCB / endpoint / cnode / schedContext lookup is unchanged.
+The uniform helper `reply_store_kind_agree` captures that single fact (for any
+non-`.reply` kind `k`, `st'.objects[s]? = some k ↔ st.objects[s]? = some k`, via
+`storeObject_objects_eq` / `_ne`); all fifteen conjuncts transport through it —
+hypothesis lookups pulled back with `.mp`, the schedContext / owner-TCB
+existentials in the donation conjuncts pushed forward with `.mpr`, and
+`passiveServerIdle`'s scheduler read rewritten via `storeObject_scheduler_eq`.
+Conjunct 2's queue sub-predicates (`intrusiveQueueWellFormed` /
+`tcbQueueLinkIntegrity` / `QueueNextPath` acyclicity) use three private transport
+helpers; conjunct 7 reuses the existing non-ep/non-tcb frame lemma.
+
+The TCB-`replyObject` store (store B) and the composition into
+`linkCallerReply` / `consumeCallerReply` preservation land next.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical.
+
+## v0.31.84 — Reply objects (seL4-MCS): Reply→TCB back-link post-conditions
+
+The Reply→TCB direction of the caller↔reply link, completing the post-condition
+pair the Phase-D `replyCallerLinkage` invariant reads (`SeLe4n/Model/State.lean`).
+Both proved standalone (no `sorry`); trace fixture **byte-identical** (233/233).
+
+- `linkCallerReply_getReply?_caller_some` — on success the reply's `caller`
+  points at the linking thread.  `linkReply` sets `reply.caller := some caller`;
+  the subsequent caller-TCB store lands at a slot distinct from the reply
+  (`getTcb?_getReply?_slot_ne`), so it frames past (`storeObject_objects_ne`) and
+  the reply is still observed with `caller = some caller`.
+- `consumeCallerReply_getReply?_caller_none` — on a present reply the `caller` is
+  cleared; the TCB leg frames past identically, surfacing the dynamic single-use
+  barrier as a post-condition.
+
+With the C-preserve forward-link post-conditions (`linkCallerReply_replyObject_some`
+/ `consumeCallerReply_replyObject_none`) these pin **both** halves of the
+bidirectional TCB↔Reply link to the transition behaviour.  The full
+`ipcInvariantFull` frame preservation of the two linkage ops lands as the next
+slice.
+
+Production `lake build` + staged anchor + Tier 0/1/2 green; trace byte-identical.
+
+## v0.31.83 — Reply objects (seL4-MCS): linkage-op proof foundation (slice C-preserve)
+
+The reusable proof foundation under the C-link linkage operations: object-store
+frame infrastructure plus the forward-link (TCB→Reply) post-conditions, all
+proved standalone (no `sorry`), trace fixture **byte-identical** (233/233).
+
+**Object-store frame helpers** (`SeLe4n/Model/State.lean`).
+`linkReply_preserves_objects_invExt` / `consumeReply_preserves_objects_invExt`
+carry `objects.invExt` through the B1 reply mutators (each success path is a
+single `storeObject`).  `getTcb?_getReply?_slot_ne` proves a TCB slot and a Reply
+slot are distinct `ObjId`s — a single store slot holds exactly one
+`KernelObject`, so a slot resolving to a TCB and one resolving to a Reply cannot
+coincide.  This is the disjointness that lets a reply-linkage proof frame one of
+the two stores past the other.
+
+**Forward-link post-conditions.**  `linkCallerReply_replyObject_some` — on
+success the caller TCB's `replyObject` points at `rid` (the op's final store
+writes exactly this field).  `consumeCallerReply_replyObject_none` — any caller
+TCB still present after the op has `replyObject = none`.  Together they pin the
+TCB→Reply half of the `replyCallerLinkage` invariant (Phase D) to the
+transition behaviour.  Both discharge via `storeObject_inserted_object_lookup` +
+`getTcb?_eq_some_iff`.
+
+(The Reply→TCB back-link post-conditions — that the op establishes/clears
+`reply.caller`, framed past the TCB store via the new disjointness lemma — plus
+the full `ipcInvariantFull` frame preservation of both ops, land as the next
+standalone proof slice, ahead of the cap-swap + reply-path wiring that consumes
+them.  Both linkage stores miss all fifteen conjuncts — a Reply store is
+kind-invisible and the TCB store touches only `replyObject`, which no conjunct
+reads — so the preservation needs no concrete dispatch context.)
+
+Production `lake build` + the staged anchor + Tier 0/1/2 green; trace
+byte-identical.
+
+## v0.31.82 — Reply objects (seL4-MCS): caller↔reply linkage ops (slice C-link)
+
+The two **inverse linkage operations** the Phase-C `Call`/`Reply` re-base composes
+to establish and tear down the bidirectional TCB↔Reply link, added
+standalone-additive (unreferenced by any live path, so the trace fixture is
+**byte-identical**, 233/233).
+
+**`linkCallerReply` / `consumeCallerReply`** (`SeLe4n/Model/State.lean`,
+`Kernel Unit`).  `linkCallerReply caller rid` is what the `Call` syscall runs
+after `endpointCall`: it sets `reply.caller := some caller` (via the B1
+`linkReply`, **failing closed** with `.replyCapInvalid` on an absent or in-use
+reply) **and** the inverse forward link `caller.replyObject := some rid` on the
+caller TCB — the seL4 `tcb->tcbReply` pairing the C2 field models.
+`consumeCallerReply caller rid` is the reply-path inverse: it clears
+`reply.caller := none` (via B1 `consumeReply`, the single-use barrier) and
+`caller.replyObject := none` on the now-unblocked caller.  Both compose the
+existing reply mutators with a `getTcb?`/`storeObject` TCB update; neither
+touches `endpointCall`/`endpointReply` or their preservation theorems, so the
+IPC transition proof surface is untouched this slice.
+
+**Spec lemma** (proved, no `sorry`): `linkCallerReply_inUse_error` — the link op
+inherits `linkReply`'s single-use barrier and never touches the caller TCB when
+the reply is already bound, so a reply capability authorizes at most one
+outstanding caller at a time.  The full `ipcInvariantFull` preservation of both
+ops (frame-based: neither `replyObject` nor `reply.caller` appears in any of the
+15 conjuncts) lands in the next slice, where the cross-object disjointness
+(`caller.toObjId ≠ rid.toObjId`) is set up once for the post-conditions.
+
+Production `lake build` + the staged anchor + Tier 0/1/2 green; trace
+byte-identical.
+
+## v0.31.81 — Reply objects (seL4-MCS): TCB→Reply link field (slice C2)
+
+Phase C's migration seam: the per-thread link from a TCB to its outstanding
+**Reply object**, added standalone-additive so the Phase-C `Call`/`Reply`
+re-base can populate it path-by-path while every un-migrated path keeps
+authorizing via the existing `blockedOnReply` `replyTarget`.  No transition
+writes the field yet, so the trace fixture is **byte-identical** (233/233).
+
+**`TCB.replyObject`** (`SeLe4n/Model/Object/Types.lean`).  A new
+`replyObject : Option SeLe4n.ReplyId := none` field on the `TCB` structure —
+the seL4-faithful `tcb->tcbReply` layout: a thread links to its reply object
+**directly**, not through the IPC blocking-state word.  Set when a thread
+issues a `Call` (and carried unchanged through the
+`blockedOnCall → blockedOnReply` transition); cleared when the reply is
+delivered/consumed.  `none` = no outstanding reply.
+
+**Why a TCB field, not a `blockedOnReply` constructor payload.**  Putting the
+`ReplyId` inside the `blockedOnReply` constructor would change
+`ThreadIpcState`'s arity and cascade through dozens of exhaustive
+`match`/`cases` sites and every `rfl`/`simp` proof that reduces
+`blockedOnReply` (`blockingServer` / `blockingChain` / `tcbReplyServer` /
+`timeoutThread` and their consumers across `BlockingGraph` → `Timeout` →
+`Core` → the IPC-invariant files).  A *structure* field with a default is
+non-breaking for record syntax (`{ tcb with … }` and named constructions are
+unchanged), so the `ThreadIpcState` arity — and the whole IPC blocking-graph
+proof surface — stays byte-for-byte intact.  This is also more seL4-faithful
+(the real kernel uses `tcb->tcbReply`).
+
+The migration target invariant `replyCallerLinkage` (Phase C/D) reads
+`tcb.replyObject = some rid ↔ reply.caller = some tid`.  The manual `BEq TCB`
+(24 → 25 conjuncts) and `TCB.ext` extensionality lemma gain the matching
+`replyObject` / `hReply` field; `Option ReplyId` derives `DecidableEq`, so its
+`==` agrees with `=`.  Production `lake build` + the staged anchor + Tier 0/2/3
+green; trace byte-identical.
+
+## v0.31.80 — Reply objects (seL4-MCS): verified reply mutators (slice B1)
+
+Phase B prep for the first-class Reply object: the two core, **verified** reply-object
+mutators that the Phase-C `Call`/`Reply` re-base will build on, added standalone
+(unreferenced by any live path, so the trace fixture is **byte-identical**, 233/233).
+
+**`linkReply` / `consumeReply`** (`SeLe4n/Model/State.lean`, `Kernel Unit`).
+`linkReply rid caller` sets `reply.caller := some caller` — **failing closed** with
+`.replyCapInvalid` if the reply is absent or already in use (`caller ≠ none`), the
+structural half of reply caps' single-use semantics. `consumeReply rid` clears
+`reply.caller := none` — the dynamic half (a delivered reply is consumed so a replay
+finds `caller = none` and fails closed). Both route through the existing `storeObject`
+mutation primitive and `getReply?` accessor.
+
+**Spec lemmas** (proved, no `sorry`): `linkReply_getReply?_caller_some` (link on a
+present, free reply sets `caller`), `consumeReply_getReply?_caller_none` (consume clears
+`caller`), `linkReply_inUse_error` (link fails closed on an in-use reply) — discharged via
+`storeObject_inserted_object_lookup` + `getReply?_eq_some_iff`. These give Phase C a
+verified linkage/consumption contract to compose against.
+
+(Phase B's cleanup wiring is deferred into Phase C: until the IPC linkage populates
+`reply.caller`, destroying a Reply has nothing to clear, so the cleanup lands with the
+linkage it protects.) Production `lake build` + the staged anchor + Tier 0/2/3 green.
+
+## v0.31.79 — Reply objects (seL4-MCS): `KernelObject.reply` variant + reply lock (slice A2)
+
+Second slice of the first-class Reply-object workstream: the `Reply` structure
+and the `KernelObject.reply` / `KernelObjectType.reply` (tag 7) variant land,
+making Reply a real kernel object.  No IPC transition constructs a `.reply` yet,
+so the trace fixture is **byte-identical** and the reply linkage is still the
+caller TCB's `blockedOnReply` state (re-based in slice C); this slice is the
+pure model-variant addition the SM3.A.5 "Reply N/A" tripwires were planted to
+force.
+
+**`Reply` structure** (`SeLe4n/Model/Object/Reply.lean`, new).  Mirrors
+`SchedContext`: `replyId` + the (Phase-E) MCS linkage fields `caller` /
+`donatedSc` / `prev` (all `none` for now) + a per-object `lock : RwLockState`.
+`Reply.empty` / `wellFormed` / `Inhabited` / manual `BEq` (lock-state-aware, like
+`BEq SchedContext`).  `getReply?` + `getReply?_eq_some_iff`
+(`SeLe4n/Model/State.lean`) clone `getSchedContext?`.
+
+**Variant threaded through the model.**  `KernelObject` (`BEq`, `objectType`,
+`objectLockOf`, `wellFormed`, `lockKind`, `updateLock`), `FrozenKernelObject`
+(+freeze mirror), `objectOfKernelType` (retype → empty Reply), `projectKernelObject`,
+`StateBuilder`, and ~250 exhaustive-match arms across the IPC / scheduler /
+capability / lifecycle / platform proof surface each gain the mechanical `.reply`
+case (a non-scheduling object, treated like `schedContext` in the trivial arms).
+
+**Reply lock is now first-class (SM3.B/C).**  Because `lookup_some_of_kindMatch`
+quantifies over every `KernelObject`, the new variant forces the reply lock to be
+genuinely modeled at hierarchy level 6: `KernelObject.lockKind .reply ↦
+LockKind.reply`; `LockId.lookup` dispatches the `.reply` kind through `getReply?`;
+`lockHeld` / `acquireLockOnObject` / `releaseLockOnObject` and the SM3
+serializability / frame lemmas treat `.reply` as a modeled kind rather than the
+former N/A no-op.  The planted tripwires flip accordingly:
+`variants_count_exactly_seven` → `variants_count_exactly_eight` (+ `variants_total`,
+`lockKind_in_modeledKinds`); `lockKind_ne_reply` is removed (`.reply` is reachable);
+`lookup_reply` / `lockHeld_reply` / `acquireLockOnObject_reply` /
+`releaseLockOnObject_reply` are repurposed from their N/A `= none` / `= s` forms to
+the positive dispatch / absence-conditioned forms (names preserved so the
+LockSet inventories and Tier-3 surface checks keep resolving).
+
+Production `lake build`, the staged-module anchor (`Platform/Staged.lean`, 56
+modules), and the trace/negative-state suites are green; trace byte-identical.
+The `CapTarget.replyCap` payload swap, reply lifecycle/caps, and the IPC linkage
+re-base follow in slices B / C.
+
+## v0.31.78 — Reply objects (seL4-MCS): `ReplyId` typed identifier (slice A1)
+
+First slice of the workstream promoting the implicit `Call`/`Reply` IPC linkage
+into a first-class **Reply kernel object** with single-use reply capabilities, to
+the full seL4-MCS standard (the donated SchedContext re-homes onto the Reply +
+reply-stack).  Today the reply linkage is the caller TCB's `blockedOnReply`
+state, the confused-deputy gate is a raw `replier == expected` ThreadId compare,
+and single-use is emergent; the workstream replaces that with a genuine
+single-use, revocable capability to a real object.  This slice lands only the
+foundational typed identifier so the later slices build on it incrementally
+rather than as one monolithic model change.
+
+**`ReplyId`** (`SeLe4n/Prelude.lean`).  A wrapper `structure ReplyId where
+val : Nat` mirroring `SchedContextId`: the full helper surface (`ofNat` /
+`toNat` / `toObjId` / `ofObjId` / `ofObjIdChecked` / `isReserved` / `sentinel` /
+`valid`), the round-trip and injectivity lemmas (`toNat_ofNat`, `ofNat_toNat`,
+`toObjId_injective`, `ofObjIdChecked_eq_some_of_nonzero`,
+`ofObjIdChecked_sentinel`), and the `Hashable` / `LawfulHashable` / `EquivBEq` /
+`LawfulBEq` / `ToString` instances.  `ReplyId.toObjId` shares the `ObjId`
+namespace via the identity mapping, as the other typed identifiers do; the
+object store's functional-map property keeps the kinds disjoint.
+
+No transition, invariant, or object-kind change yet — `ReplyId` is unreferenced
+this slice, so the trace fixture is byte-identical and every existing proof is
+untouched.  The `KernelObject.reply` variant, the `Reply` structure, and
+`getReply?` follow in slice A2.
+
+## v0.31.77 — WS-SM SM6.C: reply path across cores (live `.reply` / `.replyRecv` cross-core dispatch)
+
+The SM6.C deliverable of the WS-SM Phase 6 cross-core IPC workstream: the reply
+syscalls now work across cores under the SM3.B per-object lock-set discipline, wired
+**live** into the kernel's `.reply` / `.replyRecv` dispatch.  Axiom-clean (`propext` /
+`Classical.choice` / `Quot.sound` only); Tier 0–3 green; trace fixture byte-identical;
+partition 56 staged.
+
+**Cross-core reply transitions** (`SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`).
+`endpointReplyOnCore` lifts the single-core `endpointReply` rendezvous: on a reply that
+unblocks the recorded caller (the `blockedOnReply` thread, validated against its recorded
+authorised replier — the confused-deputy gate is unchanged), the caller is woken through
+the SM5.C `wakeThread … executingCore` — enqueued on its *home* core, surfacing the
+optional `.reschedule` SGI (plan SM6.C.2 `endpointReply_remote_wake`) — and the replier
+does **not** block.  `endpointReceiveDualOnCore` (the receive leg of `replyRecv`) blocks
+the server on *its own* core via `removeRunnableOnCore … executingCore` and wakes a
+`blockedOnSend` rendezvous sender on *its* home core; `endpointReplyRecvOnCore` composes
+the two legs, surfacing the union of their cross-core SGIs.
+
+**Theorems** (SM6.C.1–.9): path reductions; the cross-core wake SGI + local / error duals
+(SM6.C.2); lock-set hierarchical correctness for reply and replyRecv + the state-resolved
+forms (SM6.C.1/.5); reply-payload delivery to the *right* TCB — the original caller, not
+the replier (`endpointReplyOnCore_perCore_delivery`, SM6.C.4); the reply-state lifecycle —
+the `blockedOnReply → .ready` write lands on the caller-TCB **write** lock declared in
+`lockSet_endpointReply` (`lockSet_endpointReply_target_tcb_write_mem`, SM6.C.6); the
+reply-replay barrier — a delivered reply leaves the caller `.ready`, so a replay (or a
+confused-deputy reply) fails closed with `.replyCapInvalid`
+(`endpointReplyOnCore_replay_rejected` / `_not_blocked_eq` / `_wrong_replier_eq`, SM6.C.7);
+2PL atomicity under the lock-set; per-core wake locality; `objects.invExt` + `ipcInvariant`
+preservation (`EndpointReplyInvariant.lean`); boot-core + per-core / ∀-core
+(`lowEquivalent_smp`) non-interference (`EndpointReplyNI.lean`, SM6.C.8 — a high reply
+unblocking a high caller is invisible to a low observer on *every* core, including the
+remote core the caller is woken onto); the donation-chain lock-set extension
+(`lockSet_endpointReply_donation_extension`) + the cross-core donation return
+(`applyReplyDonationOnCore`, bootCore-bridged) + PIP reversion via
+`propagatePipChainCrossCore` (SM6.C.3); and the reply donation-chain length bound
+(`endpointReply_donation_chain_length_bounded` — ≤ `fuel = objectIndex.length` SGIs, so a
+k-deep donation chain terminates and pokes a bounded number of remote cores, SM6.C.9).
+
+**Live `.reply` / `.replyRecv` dispatch** (`EndpointReplyDispatch.lean`).  The pure
+cross-core reply dispatch ops live below the API layer:
+`endpointReplyCrossCoreDispatch` / `endpointReplyRecvCrossCoreDispatch` (reply +
+`applyReplyDonationOnCore` + cross-core PIP reversion) and the info-flow-checked
+`endpointReplyCrossCoreDispatchChecked` / `endpointReplyRecvCrossCoreDispatchChecked`
+(the same SM-IF flow gates as the single-core `endpointReply{,Recv}Checked` — one gate for
+reply, two for replyRecv).  The live `API.dispatchWithCap{,Checked}` `.reply` /
+`.replyRecv` arms now route through them, deriving the executing core from the live state
+(`determineExecutingCore st tid`) so the woken caller / blocked server land on the right
+cores.  The cross-core reply stack (`EndpointReply` / `EndpointReplyInvariant` /
+`EndpointReplyDispatch`) is **promoted to production** (only `EndpointReplyNI` remains
+staged — partition 55→56 staged); the two
+`checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed` equivalence theorems are
+re-proven through the cross-core flow-allowed lemmas, and `dispatchWithCap_reply_populates_msg`
+restated for the cross-core dispatch.  The boot trace is byte-identical (the trace harness
+exercises the reply transitions directly, and `endpointReplyOnCore … bootCoreId` coincides
+observably with `endpointReply` on a single-core trace).
+
+**Tests** (`tests/SmpCrossCoreReplySuite.lean`, SM6.C.10): 27 runtime assertions across the
+lock-set footprint + caller-TCB write-lock membership, payload delivery, local vs remote
+caller-wake SGI emission, the reply-replay barrier + confused-deputy rejection, the
+replyRecv combined op, the donation-chain lock-set extension, and the chain-length bound;
+plus surface anchors + elaboration-time theorem-application witnesses.  Wired into
+`scripts/test_tier2_negative.sh`.
+
+Refs: docs/planning/SMP_CROSS_CORE_IPC_PLAN.md §3.1, §4.3, §5 (SM6.C)
+
 ## v0.31.76 — WS-SM SM6.B: deep-audit closure (bound-delivery lock coverage proven; NI debt recorded)
 
 A final deep audit of the SM6.B surface elevated the bound-delivery 2PL footprint from

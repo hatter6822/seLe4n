@@ -639,6 +639,337 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     (match rRO with | .error .illegalAuthority => true | _ => false)
     "bind with a read-only notification cap should fail with illegalAuthority"
 
+
+/-- SD-051: faithful seL4-MCS receive linkage (`linkReceivedCaller`, the new
+    `.receive`-arm step). After `endpointReceiveDual` rendezvouses a `Call` (moving
+    the caller to `.blockedOnReply`), the kernel links that caller to the
+    server-supplied reply object so the server's later `.reply` resolves authority
+    through `reply.caller`. A `Call` rendezvous carrying NO reply object is rejected
+    fail-closed (`.replyCapInvalid`) — the post-state is discarded, so the caller is
+    not stranded. A non-`Call` (`.ready`) rendezvous links nothing. -/
+private def sd051_receiveLinkCaller : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  -- (a) link the Call caller (now blockedOnReply) to the server-supplied reply object
+  expect "sd051a_receive_links_caller"
+    (match SeLe4n.Kernel.linkReceivedCaller caller (some rid) st with
+     | .ok ((), st') =>
+        (st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+        (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid))
+     | .error _ => false)
+    "Call caller should be linked to the server-supplied reply object"
+  -- (b) a Call rendezvous with NO reply object is rejected fail-closed (not stranded)
+  expect "sd051b_call_without_reply_rejected"
+    (match SeLe4n.Kernel.linkReceivedCaller caller none st with
+     | .error .replyCapInvalid => true | _ => false)
+    "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
+  -- (c) a non-Call (.ready) rendezvous links nothing
+  expect "sd051c_ready_rendezvous_no_link"
+    (match SeLe4n.Kernel.linkReceivedCaller server (some rid) st with
+     | .ok ((), st') => (st'.getTcb? server).all (fun t => decide (t.replyObject = none))
+     | .error _ => false)
+    "a non-Call (ready) rendezvous must not establish a reply link"
+
+/-- SD-052: faithful seL4-MCS `.replyRecv` body (`replyRecvBody`). Replies to the
+    recorded previous caller (resolved from the reply object), CONSUMES the answered
+    single-use reply link, then receives — re-linking the same reply object to the
+    next caller (here none is queued, so the link stays consumed and the server
+    blocks on the endpoint). Closes the prior gap where `.replyRecv` delivered the
+    reply but left `reply.caller` / `replyObject` set (in-use reply cap leak). -/
+private def sd052_replyRecvBody : IO Unit := do
+  let server  : SeLe4n.ThreadId := ⟨1⟩
+  let clientA : SeLe4n.ThreadId := ⟨2⟩
+  let epId    : SeLe4n.ObjId := ⟨10⟩
+  let rid     : SeLe4n.ReplyId := ⟨707⟩
+  let st : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject clientA.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      |>.withRunnable [server]
+      |>.build)
+  let msg : IpcMessage :=
+    { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+  match SeLe4n.Kernel.replyRecvBody epId server rid clientA msg bootCoreId st with
+  | .ok ((), st') =>
+      expect "sd052a_prev_caller_replied"
+        ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
+        "the previous caller should be unblocked by the reply leg"
+      expect "sd052b_reply_link_consumed"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
+        "the answered reply link should be consumed (reply.caller = none)"
+      expect "sd052c_caller_forward_link_cleared"
+        ((st'.getTcb? clientA).all (fun t => decide (t.replyObject = none)))
+        "the previous caller's replyObject forward link should be cleared"
+      expect "sd052d_server_blocked_on_receive"
+        ((st'.getTcb? server).any (fun t => decide (t.ipcState = .blockedOnReceive epId)))
+        "the server should block on the endpoint (no next sender queued)"
+  | .error _ => failLine "sd052_replyRecvBody" "replyRecvBody should succeed"
+
+/-- SD-052b (PR #822 review): a PASSIVE server (running on a donated SchedContext)
+    that does `.replyRecv` and immediately rendezvouses with a *queued* `Call` must
+    stay runnable on the NEW request's budget — not be descheduled holding the old
+    donation.  The old body returned the donation + descheduled the server BEFORE the
+    receive leg, leaving it `.ready` but absent from the run queues.  Validates the
+    seL4-MCS "scheduling context follows the message" fix (return old SC, donate the
+    new caller's SC, keep the server runnable). -/
+private def sd052b_replyRecv_donation_switch : IO Unit := do
+  let server  : SeLe4n.ThreadId := ⟨1⟩
+  let clientA : SeLe4n.ThreadId := ⟨2⟩
+  let clientB : SeLe4n.ThreadId := ⟨3⟩
+  let epId    : SeLe4n.ObjId := ⟨10⟩
+  let rid     : SeLe4n.ReplyId := ⟨707⟩
+  let scA     : SeLe4n.SchedContextId := ⟨800⟩
+  let scB     : SeLe4n.SchedContextId := ⟨801⟩
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
+      |>.withObject clientA.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := .bound scA })
+      |>.withObject clientB.toObjId
+          (.tcb { mkTcb 3 with ipcState := .ready, schedContextBinding := .bound scB })
+      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      |>.withObject scA.toObjId
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with boundThread := some server })
+      |>.withObject scB.toObjId
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scB with boundThread := some clientB })
+      |>.withRunnable [server]
+      |>.build)
+  -- clientB issues a Call while the server is busy → it enqueues `blockedOnCall`
+  -- (the queued-Call path does NOT donate; the donation is deferred to rendezvous).
+  match SeLe4n.Kernel.endpointCallOnCore epId clientB IpcMessage.empty bootCoreId st0 with
+  | (_, .error _) => failLine "sd052b" "clientB Call should enqueue (blockedOnCall)"
+  | (st1, .ok _) =>
+      let msg : IpcMessage :=
+        { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+      match SeLe4n.Kernel.replyRecvBody epId server rid clientA msg bootCoreId st1 with
+      | .error _ => failLine "sd052b" "replyRecvBody should succeed"
+      | .ok ((), st') =>
+          expect "sd052b_prev_caller_replied"
+            ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
+            "the previous caller should be unblocked by the reply leg"
+          expect "sd052b_server_stays_runnable"
+            ((st'.scheduler.runQueueOnCore bootCoreId).contains server)
+            "the passive server must stay runnable after rendezvousing with a queued Call"
+          expect "sd052b_donation_switched"
+            ((st'.getTcb? server).any (fun t => decide (t.schedContextBinding = .donated scB clientB)))
+            "the server's donated SchedContext should switch to the new caller's"
+          expect "sd052b_new_caller_rendezvoused"
+            ((st'.getTcb? clientB).any (fun t =>
+              match t.ipcState with | .blockedOnReply _ _ => true | _ => false))
+            "the new caller should rendezvous and become blockedOnReply"
+
+/-- SD-052c (PR #822 review): a *delegated* `ReplyRecv` — a copied/minted reply-cap
+    holder `delegate` (≠ the recorded server) — must return the previous caller's OLD
+    donation from the RECORDED server (the thread `clientA` actually donated its SC to),
+    not from the delegate.  Pre-fix, `replyRecvReturnDonation` read the delegate's
+    binding (`.unbound`), found no donation, and left the recorded server's
+    `.donated scA clientA` dangling forever. -/
+private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Unit := do
+  let server   : SeLe4n.ThreadId := ⟨1⟩   -- recorded server (holds the donation)
+  let clientA  : SeLe4n.ThreadId := ⟨2⟩   -- previous caller (donor)
+  let delegate : SeLe4n.ThreadId := ⟨5⟩   -- copied-reply-cap holder doing ReplyRecv
+  let epId     : SeLe4n.ObjId := ⟨10⟩
+  let rid      : SeLe4n.ReplyId := ⟨707⟩
+  let scA      : SeLe4n.SchedContextId := ⟨800⟩
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
+      |>.withObject clientA.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := .bound scA })
+      |>.withObject delegate.toObjId
+          (.tcb { mkTcb 5 with ipcState := .ready, schedContextBinding := .unbound })
+      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      |>.withObject scA.toObjId
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with boundThread := some server })
+      |>.withRunnable [server, delegate]
+      |>.build)
+  let msg : IpcMessage :=
+    { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- No queued sender on the endpoint → the delegate blocks on the receive leg.
+  match SeLe4n.Kernel.replyRecvBody epId delegate rid clientA msg bootCoreId st0 with
+  | .error _ => failLine "sd052c" "delegated replyRecvBody should succeed (cap-based authority)"
+  | .ok ((), st') =>
+      expect "sd052c_prev_caller_replied"
+        ((st'.getTcb? clientA).any (fun t => decide (t.ipcState = .ready)))
+        "the previous caller should be unblocked by the (delegated) reply leg"
+      expect "sd052c_recorded_server_donation_returned"
+        ((st'.getTcb? server).all (fun t => decide (t.schedContextBinding ≠ .donated scA clientA)))
+        "the recorded server's donation must be RETURNED (not left dangling on a delegated replyRecv)"
+      expect "sd052c_delegate_unaffected"
+        ((st'.getTcb? delegate).any (fun t => decide (t.schedContextBinding = .unbound)))
+        "the delegate held no donation and must keep its .unbound binding"
+
+/-- SD-053: faithful seL4-MCS server-first receive linkage. (a) A server that blocks
+    on `Recv` with a reply object STASHES it on `pendingReceiveReply` (it cannot link
+    yet — no caller is queued). (b) When a later `Call` rendezvouses with that waiting
+    server (caller `.blockedOnReply ep (some server)`), `linkServerFirstCaller` links
+    the caller to the stashed reply object and clears the stash. Together with sd051
+    (caller-first) this closes both receive/Call orderings. -/
+private def sd053_serverFirstLink : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  -- (a) server blocked on receive stashes the reply object (no premature link)
+  let stA : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.linkReceivedCaller server (some rid) stA with
+  | .ok ((), st') =>
+      expect "sd053a_server_stashes_reply"
+        ((st'.getTcb? server).any (fun t => decide (t.pendingReceiveReply = some rid)))
+        "a server blocked on receive should stash the reply object"
+      expect "sd053a_no_premature_link"
+        ((st'.getReply? rid).all (fun r => decide (r.caller = none)))
+        "the stash must not prematurely set reply.caller"
+  | .error _ => failLine "sd053a" "linkReceivedCaller (server block path) should succeed"
+  -- (b) a later Call rendezvous links the caller to the server's stashed reply object
+  let stB : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withObject caller.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.linkServerFirstCaller caller stB with
+  | .ok ((), st') =>
+      expect "sd053b_caller_linked"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+         (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid)))
+        "the Call caller should be linked to the server's stashed reply object"
+      expect "sd053b_stash_cleared"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "the server's stash should be cleared after linking"
+  | .error _ => failLine "sd053b" "linkServerFirstCaller should succeed"
+  -- (c) PR #822 review: a plain receive (no reply object) CLEARS a stale stash so a
+  -- later Call cannot reuse it (server woke via Send / was cancelled, then re-Recv's).
+  let stStale : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
+      |>.build)
+  match SeLe4n.Kernel.linkReceivedCaller server none stStale with
+  | .ok ((), st') =>
+      expect "sd053c_plain_receive_clears_stale_stash"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "a plain (no-reply) receive must clear any stale pendingReceiveReply"
+  | .error _ => failLine "sd053c" "plain receive (clear stash) should succeed"
+  -- (d) PR #822 review: a Call that rendezvouses with a waiting server holding NO
+  -- reply object (plain Recv) is rejected fail-closed (cannot answer a Call).
+  let stNoStash : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject caller.toObjId
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.build)
+  match SeLe4n.Kernel.linkServerFirstCaller caller stNoStash with
+  | .error e =>
+      expect "sd053d_server_first_call_without_reply_rejected"
+        (e == .replyCapInvalid)
+        "a server-first Call with no stashed reply object must be rejected"
+  | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
+  -- (e) PR #822 review: a plain `Send` that wakes a server-first receiver clears the
+  -- server's reply stash — the server left `.blockedOnReceive` for `.ready`, so the
+  -- stash (which lives only on a blocked receiver) must not survive, and a future
+  -- Call rendezvous must not be able to mis-link the stale `rid`.
+  let stWoken : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
+  | .ok ((), st') =>
+      expect "sd053e_send_wake_clears_stash"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "a Send-woken receiver's stale reply stash must be cleared"
+      expect "sd053e_reply_stays_free"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
+        "clearing the stash must not consume the reply object (it stays free)"
+  | .error _ => failLine "sd053e" "clearWokenReceiverStash should succeed"
+  -- (f) `clearWokenReceiverStash` is a no-op when the woken receiver carries no stash
+  -- (the common case — guarantees the byte-identical trace on stash-free sends).
+  let stNoStashReceiver : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.build)
+  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stNoStashReceiver with
+  | .ok ((), st') =>
+      expect "sd053f_no_stash_noop"
+        ((st'.getTcb? server).all (fun t =>
+          decide (t.pendingReceiveReply = none) && decide (t.ipcState = .ready)))
+        "clearing with no stash present leaves the receiver unchanged"
+  | .error _ => failLine "sd053f" "clearWokenReceiverStash no-op should succeed"
+
+/-- SD-053g (PR #822 review): a bound-notification wake also clears a server-first
+    reply stash.  A server blocked on a server-first `Recv` (stashing a reply object)
+    that is bound to a notification can be woken by a signal via the bound-delivery
+    path (`boundDeliveryTarget?` → `.ready`); the dispatch then clears its stash with
+    `clearWokenReceiverStash`, just like the plain-`Send` wake — a stash lives only on
+    a `.blockedOnReceive` TCB. -/
+private def sd053g_bound_notification_wake_clears_stash : IO Unit := do
+  let server    : SeLe4n.ThreadId := ⟨1⟩
+  let signaller : SeLe4n.ThreadId := ⟨2⟩
+  let epId      : SeLe4n.ObjId := ⟨10⟩
+  let nId       : SeLe4n.ObjId := ⟨20⟩
+  let rid       : SeLe4n.ReplyId := ⟨707⟩
+  let _ := signaller
+  -- (a) capture: the `.notificationSignal` dispatch resolves the bound delivery target
+  -- (`boundDeliveryTarget?` → the `.blockedOnReceive` bound server) before the signal.
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject nId (.notification
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, boundTCB := some server })
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  expect "sd053g_bound_target_resolved"
+    (decide ((SeLe4n.Kernel.boundDeliveryTarget? st0 nId).map (·.1) = some server))
+    "the bound BlockedOnReceive server is the captured wake target"
+  -- (b) clear: after the bound delivery wakes the server (`.ready`), the dispatch
+  -- clears its stash via `clearWokenReceiverStash` (the stash lives only on a blocked
+  -- receiver) — the reply object stays free.
+  let stWoken : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject server.toObjId
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.build)
+  match SeLe4n.Kernel.clearWokenReceiverStash (some server) stWoken with
+  | .ok ((), st') =>
+      expect "sd053g_stash_cleared"
+        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+        "the bound-woken server's stale reply stash must be cleared"
+      expect "sd053g_reply_stays_free"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = none)))
+        "clearing the stash must not consume the reply object"
+  | .error _ => failLine "sd053g" "clearWokenReceiverStash should succeed"
+
 end SeLe4n.Testing.SyscallDispatchSuite
 
 open SeLe4n.Testing.SyscallDispatchSuite in
@@ -670,4 +1001,10 @@ def main : IO Unit := do
   sd042_bootInitialise_malformed_config_rejects
   IO.println "--- WS-SM SM6.B: tcbBindNotification capability authority ---"
   sd050_bindNotification_requires_ntfn_cap
+  sd051_receiveLinkCaller
+  sd052_replyRecvBody
+  sd052b_replyRecv_donation_switch
+  sd052c_replyRecv_delegated_returns_recorded_server_donation
+  sd053_serverFirstLink
+  sd053g_bound_notification_wake_clears_stash
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

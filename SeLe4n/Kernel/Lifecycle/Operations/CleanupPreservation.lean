@@ -189,6 +189,31 @@ theorem detachCNodeSlots_lifecycle_eq
     rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_lifecycle_eq acc
       { cnode := cnodeId, slot := slot }).trans hAcc)
 
+/-- WS-SM SM6.D (PR #822 review): does any TCB stash `rid` in its
+`pendingReceiveReply` (a *server-first* receive that is waiting to hand this Reply
+object to its next `Call`)?  Such a Reply is "in use" even though its `caller` is
+still `none` — retyping/deleting it would leave the waiting server pointing at a
+removed Reply, so the next `Call` rendezvous rolls back and the server cannot
+accept Call IPC.  Used by `lifecyclePreRetypeCleanup` to reject the retype. -/
+def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  st.objects.fold (init := false) fun acc _oid obj =>
+    acc || match obj with
+      -- PR #822 review: a stash reserves the Reply only while the server is STILL
+      -- blocked on its server-first receive, awaiting the next `Call` to link.  The
+      -- moment the server is woken by anything *other* than that Call — a bound
+      -- notification (`notificationSignalBoundOnCore`), a `Send` rendezvous, a
+      -- cancellation — its receive is over and the Reply is free, even if the
+      -- now-`.ready` TCB's `pendingReceiveReply` field has not yet been scrubbed.
+      -- (A server woken *by* its Call is covered by `reply.caller`, set in the same
+      -- atomic transition.)  Tying "stashed" to `.blockedOnReceive` makes the
+      -- predicate robust to any wake path that does not eager-clear the stash, so a
+      -- ready server never keeps the Reply permanently in use.
+      | .tcb t =>
+          match t.ipcState with
+          | .blockedOnReceive _ => t.pendingReceiveReply == some rid
+          | _ => false
+      | _ => false
+
 /-- WS-H2, R4-B.2 (M-13): Pre-retype cleanup combining TCB reference cleanup,
     CDT detach, and service registration cleanup.
     - If the current object is a TCB: clean up scheduler + IPC references.
@@ -227,6 +252,32 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     match newObj with
     | .cnode _ => .ok st  -- CNode → CNode: no CDT cleanup needed
     | _ => .ok (detachCNodeSlots st target cn)
+  | .reply r =>
+    -- WS-SM SM6.D (PR #822 review): reject retyping/deleting a Reply object that
+    -- is still in use.  Two in-use forms: (1) a caller is blocked awaiting its
+    -- reply (`r.caller.isSome` — caller-first link); (2) a server-first receiver
+    -- has stashed this Reply in its `pendingReceiveReply` awaiting its next Call
+    -- (`replyIsStashed`, `r.caller` still `none`).  Either way, freeing it strands
+    -- the caller / blocks the server (the later `.reply` / `linkServerFirstCaller`
+    -- fails `.replyCapInvalid`).  Mirrors seL4's revoke/clear-before-destroy: the
+    -- holder must first reply to (or cancel) the outstanding caller, or the server
+    -- must re-`Recv`, clearing the link before the object is freed.
+    -- PR #822 review: check stashes by the *target* ObjId's canonical ReplyId, not
+    -- the reply's internal `r.replyId` field (which can be the `Reply.empty`
+    -- sentinel on a freshly retyped object); a server-first receive stashes
+    -- `pendingReceiveReply = some (ReplyId.ofNat target)`, so derive the id from
+    -- `target` to avoid missing the stash and freeing a still-referenced Reply.
+    if r.caller.isSome || replyIsStashed st (SeLe4n.ReplyId.ofNat target.toNat) then
+      .error .revocationRequired
+    else .ok st
+  | .tcb tcb =>
+    -- WS-SM SM6.D (PR #822 review): reject retyping a caller TCB that still holds a
+    -- reply link (`replyObject = some rid`, a `blockedOnReply` caller awaiting its
+    -- reply).  Freeing the TCB would leave the Reply with `caller = some tid`
+    -- pointing at the gone thread, so the later `.reply` resolves a stale caller and
+    -- never consumes the Reply.  Mirrors the Reply reject + seL4 revoke-before-
+    -- destroy: the outstanding reply must be replied-to / cancelled first.
+    if tcb.replyObject.isSome then .error .revocationRequired else .ok st
   | _ => .ok st
 
 /-- AN4-G.2 (LIF-M02) — **named `lifecycleCleanupPipeline` wrapper** over
@@ -314,6 +365,15 @@ theorem lifecyclePreRetypeCleanup_flat_subset
       rw [hDon] at hOk
       have hDonSched : stDon.scheduler = st.scheduler :=
         cleanupDonatedSchedContext_scheduler_eq st stDon tcb.tid hDon
+      -- PR #822 review: with the donation resolved, the final `.tcb` arm rejects a
+      -- TCB still holding a reply link (`.error`, vacuous on `.ok`); reduce the
+      -- reject-`if` away on the `.ok` path and finish the cleanup-identity proof.
+      simp only [] at hOk
+      have hRO : tcb.replyObject.isSome = false := by
+        cases hr : tcb.replyObject.isSome with
+        | false => rfl
+        | true => rw [if_pos hr] at hOk; exact absurd hOk (by simp)
+      rw [if_neg (by simp [hRO])] at hOk
       injection hOk with hOk; subst hOk
       -- S-05/PERF-O1: scThreadIndex cleanup preserves scheduler (both branches)
       have hScIdxSched : (match tcb.schedContextBinding with
@@ -342,6 +402,13 @@ theorem lifecyclePreRetypeCleanup_flat_subset
   | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
+  | reply r =>
+    -- WS-SM SM6.D (PR #822 review): an in-use reply errors (vacuous on `.ok`);
+    -- a free reply is a scheduler-identity cleanup like the kinds above.
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    split at hOk
+    · cases hOk
+    · injection hOk with hOk; subst hOk; exact h
 
 namespace Internal
 

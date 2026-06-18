@@ -1051,11 +1051,14 @@ structure NotificationWaitArgs where
   deriving Repr, DecidableEq
 
 /-- V2-C/V2-I: Per-syscall argument structure for `replyRecv`.
-    Register mapping: x2=replyTarget thread ID.
+    Register mapping: `msgRegs[0]` = the server-supplied reply capability pointer.
+    WS-SM SM6.D (faithful seL4-MCS): `ReplyRecv` replies to the *previous* caller
+    via the reply *object* the cap names (`reply.caller`) — not a raw thread id —
+    and re-links that same reply object to the *next* caller on the receive leg.
     The endpoint is resolved from the capability target. Message body comes
     from the standard message registers (same as send). -/
 structure ReplyRecvArgs where
-  replyTarget : ThreadId
+  replyCPtr : Nat
   deriving Repr, DecidableEq
 
 /-- V2-I: Decode notification signal arguments from message registers.
@@ -1071,11 +1074,59 @@ def decodeNotificationWaitArgs (_decoded : SyscallDecodeResult)
   pure {}
 
 /-- V2-I: Decode replyRecv arguments from message registers.
-    Requires 1 message register (reply target thread ID). -/
+    Requires 1 message register (the server-supplied reply capability pointer). -/
 def decodeReplyRecvArgs (decoded : SyscallDecodeResult)
     : Except KernelError ReplyRecvArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { replyTarget := ThreadId.ofNat r0.val }
+  pure { replyCPtr := r0.val }
+
+-- ============================================================================
+
+-- WS-SM SM6.D: MCS `Recv` ABI (faithful server-supplied reply objects)
+-- ============================================================================
+
+/-- WS-SM SM6.D: argument structure for the MCS `Recv` syscall — `msgRegs[0]` =
+    the reply capability pointer (the server-supplied Reply object cap slot the
+    kernel links to a rendezvousing Call-caller). -/
+structure RecvArgs where
+  replyCPtr : Nat
+  deriving Repr, DecidableEq
+
+/-- WS-SM SM6.D: decode MCS `Recv` arguments (1 register: the reply capability
+    pointer the server supplies, resolved through the server's CSpace — like
+    `tcbBindNotification` — so the link authority flows from *holding* a reply
+    capability, never from naming a raw `ReplyId`). -/
+def decodeRecvArgs (decoded : SyscallDecodeResult) : Except KernelError RecvArgs := do
+  let r0 ← requireMsgReg decoded.msgRegs 0
+  pure { replyCPtr := r0.val }
+
+/-- WS-SM SM6.D: encode MCS `Recv` arguments into message registers.  Inverse of
+    `decodeRecvArgs`. -/
+@[inline] def encodeRecvArgs (args : RecvArgs) : Array RegValue :=
+  #[⟨args.replyCPtr⟩]
+
+/-- WS-SM SM6.D: `Recv` decode fails iff fewer than 1 message register. -/
+theorem decodeRecvArgs_error_iff (d : SyscallDecodeResult) :
+    (∃ e, decodeRecvArgs d = .error e) ↔ d.msgRegs.size < 1 := by
+  constructor
+  · intro ⟨e, he⟩
+    by_cases hlt : d.msgRegs.size < 1
+    · exact hlt
+    · exfalso
+      simp only [decodeRecvArgs, bind, Except.bind,
+        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+        pure, Except.pure] at he
+      nomatch he
+  · intro h
+    refine ⟨.invalidMessageInfo, ?_⟩
+    simp only [decodeRecvArgs, bind, Except.bind]
+    rw [requireMsgReg_unfold_err _ _ (by omega)]
+
+/-- WS-SM SM6.D: round-trip — encoding then decoding `RecvArgs` recovers the
+    original. -/
+theorem decodeRecvArgs_roundtrip (args : RecvArgs) :
+    decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args := by
+  rcases args with ⟨c⟩; rfl
 
 -- ============================================================================
 -- Z5-A/B/C: SchedContext argument structures
@@ -1252,7 +1303,7 @@ theorem decodeSchedContextUnbindArgs_roundtrip (args : SchedContextUnbindArgs) :
 
 /-- V2-I: Encode replyRecv arguments into message registers. -/
 @[inline] def encodeReplyRecvArgs (args : ReplyRecvArgs) : Array RegValue :=
-  #[⟨args.replyTarget.toNat⟩]
+  #[⟨args.replyCPtr⟩]
 
 /-- V2-I: NotificationSignalArgs decode round-trip.
     Requires badge validity for lossless round-trip through `ofNatMasked`. -/
@@ -1302,6 +1353,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
     (∀ args, decodeNotificationWaitArgs (stubDecoded (encodeNotificationWaitArgs args)) = .ok args) ∧
     (∀ args, decodeReplyRecvArgs (stubDecoded (encodeReplyRecvArgs args)) = .ok args) ∧
+    (∀ args, decodeRecvArgs (stubDecoded (encodeRecvArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextConfigureArgs (stubDecoded (encodeSchedContextConfigureArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextBindArgs (stubDecoded (encodeSchedContextBindArgs args)) = .ok args) ∧
     (∀ args, decodeSchedContextUnbindArgs (stubDecoded (encodeSchedContextUnbindArgs args)) = .ok args) :=
@@ -1317,6 +1369,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    fun args h => decodeNotificationSignalArgs_roundtrip args h,
    decodeNotificationWaitArgs_roundtrip,
    decodeReplyRecvArgs_roundtrip,
+   decodeRecvArgs_roundtrip,
    decodeSchedContextConfigureArgs_roundtrip,
    decodeSchedContextBindArgs_roundtrip,
    decodeSchedContextUnbindArgs_roundtrip⟩

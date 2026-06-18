@@ -52,11 +52,14 @@ pub enum SyscallId {
     // Notification binding (WS-SM, SM6.B)
     TcbBindNotification = 26,
     TcbUnbindNotification = 27,
+    // Reply-cap mint (WS-SM, SM6.D / PR #822 Phase H): derive a `.replyCap` from an
+    // `.object` cap to a retyped Reply object.
+    MintReplyCap = 28,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 28;
+    pub const COUNT: usize = 29;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -90,6 +93,7 @@ impl SyscallId {
             25 => Some(Self::TcbSetAffinity),
             26 => Some(Self::TcbBindNotification),
             27 => Some(Self::TcbUnbindNotification),
+            28 => Some(Self::MintReplyCap),
             _ => None,
         }
     }
@@ -120,6 +124,9 @@ impl SyscallId {
             Self::TcbSetIPCBuffer => AccessRight::Write,
             Self::TcbSetAffinity => AccessRight::Write,
             Self::TcbBindNotification | Self::TcbUnbindNotification => AccessRight::Write,
+            // PR #822 Phase H: deriving a reply cap requires grant authority on the
+            // source object cap (matches the cspaceMint/Copy/Move family).
+            Self::MintReplyCap => AccessRight::Grant,
         }
     }
 }
@@ -130,7 +137,7 @@ mod tests {
 
     #[test]
     fn from_u64_roundtrip() {
-        for i in 0..25u64 {
+        for i in 0..(SyscallId::COUNT as u64) {
             let sid = SyscallId::from_u64(i).unwrap();
             assert_eq!(sid.to_u64(), i);
         }
@@ -138,15 +145,15 @@ mod tests {
 
     #[test]
     fn from_u64_out_of_range() {
-        assert!(SyscallId::from_u64(28).is_none());
+        assert!(SyscallId::from_u64(SyscallId::COUNT as u64).is_none());
         assert!(SyscallId::from_u64(255).is_none());
     }
 
     #[test]
     fn injective() {
-        // All 25 variants produce distinct values
-        let mut seen = [false; 25];
-        for i in 0..25u64 {
+        // All variants produce distinct values
+        let mut seen = [false; SyscallId::COUNT];
+        for i in 0..(SyscallId::COUNT as u64) {
             let sid = SyscallId::from_u64(i).unwrap();
             let idx = sid.to_u64() as usize;
             assert!(!seen[idx]);

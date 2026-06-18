@@ -1134,12 +1134,12 @@ theorem resumeReadyMidState_getTcb?_ready (st : SystemState) (tid : ThreadId) (t
     ∃ tm, (resumeReadyMidState st tid).getTcb? tid = some tm ∧ tm.threadState = .Ready := by
   have hst1Inv : (restoreToReady st tid).objects.invExt := restoreToReady_objects_invExt st tid hInv
   have hst1 : (restoreToReady st tid).getTcb? tid
-      = some { tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none } := by
+      = some { tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } := by
     unfold restoreToReady
     simp only [hGet, SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
     exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
   simp only [resumeReadyMidState, hst1]
-  refine ⟨{ ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none }) with threadState := .Ready, pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid }, ?_, rfl⟩
+  refine ⟨{ ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none }) with threadState := .Ready, pipBoost := computeMaxWaiterPriority (restoreToReady st tid) tid }, ?_, rfl⟩
   simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
   exact RHTable_get?_insert_self (restoreToReady st tid).objects tid.toObjId _ hst1Inv
 

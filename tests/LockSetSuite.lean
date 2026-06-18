@@ -60,7 +60,7 @@ open SeLe4n.Kernel.Concurrency
 #check @KernelObject.lockKind_eq_of_objectType
 #check @KernelObject.lockKind_in_modeledKinds
 #check @KernelObject.lockKind_ne_objStore
-#check @KernelObject.lockKind_ne_reply
+#check @KernelObject.lockKind_reply
 #check @KernelObject.lockKind_ne_page
 #check @LockId.fromObject
 #check @LockId.fromObject_kind
@@ -497,12 +497,16 @@ example :
 -- ============================================================================
 
 example : permittedKinds .send = [.tcb, .cnode, .endpoint] := by decide
-example : permittedKinds .receive = [.tcb, .cnode, .endpoint] := by decide
--- Audit-pass-3: `.call`/`.reply`/`.replyRecv` now include `.schedContext`
--- to cover the donation extension.
-example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext] := by decide
-example : permittedKinds .reply = [.tcb, .cnode, .schedContext] := by decide
-example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext] := by decide
+-- WS-SM SM6.D: `.receive` gains `.reply` — a `Call` rendezvous on the receive
+-- path links a server-supplied Reply object (`linkCallerReply` writes `reply.caller`
+-- under the per-object reply write-lock).
+example : permittedKinds .receive = [.tcb, .cnode, .endpoint, .reply] := by decide
+-- Audit-pass-3: `.call`/`.reply`/`.replyRecv` include `.schedContext` for the
+-- donation extension.  WS-SM SM6.D: they also gain `.reply` — each links or
+-- consumes a first-class Reply object under the per-object reply write-lock.
+example : permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
+example : permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply] := by decide
+example : permittedKinds .replyRecv = [.tcb, .cnode, .endpoint, .schedContext, .reply] := by decide
 -- WS-SM SM6.B: `.notificationSignal` gains `.endpoint` for the bound-delivery
 -- dequeue (a signal to a notification whose bound TCB is BlockedOnReceive removes
 -- it from its endpoint); `.notificationWait` is unchanged.
@@ -682,15 +686,15 @@ example :
 -- §7 — Inventory examples (decidable)
 -- ============================================================================
 
-example : lockSetTheorems.length = 96 := by decide
+example : lockSetTheorems.length = 98 := by decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .projection)).length = 22 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 28 := by
+example : (lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 29 := by
   decide
 
-example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 28 := by
+example : (lockSetTheorems.filter (fun t => t.category == .consistency)).length = 29 := by
   decide
 
 example : (lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6 := by
@@ -786,13 +790,14 @@ private def runPermittedKindsChecks : IO Unit := do
   assertBool "permittedKinds .schedContextBind"
     (decide (permittedKinds .schedContextBind = [.tcb, .cnode, .schedContext]))
   -- Audit-pass-3: .call, .reply, .replyRecv include .schedContext (donation).
-  assertBool "permittedKinds .call (with donation kind)"
-    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext]))
-  assertBool "permittedKinds .reply (with donation-return kind)"
-    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext]))
-  assertBool "permittedKinds .replyRecv (with donation-return kind)"
+  -- WS-SM SM6.D: they also include .reply (per-object reply write-lock).
+  assertBool "permittedKinds .call (donation + reply-object kind)"
+    (decide (permittedKinds .call = [.tcb, .cnode, .endpoint, .schedContext, .reply]))
+  assertBool "permittedKinds .reply (donation-return + reply-object kind)"
+    (decide (permittedKinds .reply = [.tcb, .cnode, .schedContext, .reply]))
+  assertBool "permittedKinds .replyRecv (donation-return + reply-object kind)"
     (decide (permittedKinds .replyRecv =
-      [.tcb, .cnode, .endpoint, .schedContext]))
+      [.tcb, .cnode, .endpoint, .schedContext, .reply]))
   -- Audit-pass-6: .tcbSetPriority / .tcbSetMCPriority include .schedContext.
   -- updatePrioritySource writes the bound SC if binding is .bound/.donated.
   assertBool "permittedKinds .tcbSetPriority (audit-pass-6: includes .schedContext)"
@@ -1212,14 +1217,14 @@ private def runLookupFixtureChecks : IO Unit := do
 
 private def runInventoryChecks : IO Unit := do
   IO.println "--- §8 Inventory aggregator ---"
-  assertBool "lockSetTheorems.length = 96"
-    (decide (lockSetTheorems.length = 96))
+  assertBool "lockSetTheorems.length = 98"
+    (decide (lockSetTheorems.length = 98))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
-  assertBool "lockSet category count = 28 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 28))
-  assertBool "consistency category count = 28 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 28))
+  assertBool "lockSet category count = 29 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 29))
+  assertBool "consistency category count = 29 (one per SyscallId variant)"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 29))
   assertBool "acquireSort category count = 6"
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"

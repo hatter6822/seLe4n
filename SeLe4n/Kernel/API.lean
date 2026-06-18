@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.IPC.DualQueue
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.IPC.CrossCore.NotificationBindDispatch
 import SeLe4n.Kernel.Capability.Invariant
 import SeLe4n.Kernel.Scheduler.Operations
@@ -262,6 +263,330 @@ def syscallInvoke (gate : SyscallGate) (op : Capability → Kernel α) : Kernel 
     | .error e => .error e
     | .ok (cap, st') => op cap st'
 
+/-- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): extract the
+single-use `ReplyId` a reply capability authorizes.  Fails `.invalidCapability`
+if the capability does not target a reply object. -/
+def extractReplyId (cap : Capability) : Except KernelError SeLe4n.ReplyId :=
+  match cap.target with
+  | .replyCap rid => .ok rid
+  | _ => .error .invalidCapability
+
+/-- WS-SM SM6.D: resolve a reply capability held at a CSpace slot to its
+`ReplyId`.  Under faithful seL4-MCS the *server* passes the reply *capability*
+slot (a CPtr through the verified `syscallLookupCap`, like `tcbBindNotification`),
+not a raw `ReplyId`, so authority flows from *holding* a reply capability rather
+than naming an arbitrary reply object.  Read-only (state unchanged on success). -/
+def syscallLookupReplyId (gate : SyscallGate) : Kernel SeLe4n.ReplyId :=
+  fun st =>
+    match syscallLookupCap gate st with
+    | .error e => .error e
+    | .ok (cap, st') =>
+        match extractReplyId cap with
+        | .error e => .error e
+        | .ok rid => .ok (rid, st')
+
+/-- `extractReplyId` succeeds with `rid` exactly when the capability targets the
+reply object `rid`. -/
+theorem extractReplyId_eq_ok_iff (cap : Capability) (rid : SeLe4n.ReplyId) :
+    extractReplyId cap = .ok rid ↔ cap.target = .replyCap rid := by
+  unfold extractReplyId
+  cases cap.target <;> simp
+
+/-- WS-SM SM6.D (faithful seL4-MCS receive linkage): resolve the *server-supplied*
+reply capability the `Recv` syscall names in `RecvArgs.replyCPtr` (msgRegs[0]) to
+its `ReplyId`.  Crucially the reply cap lives at a **different** CSpace slot than
+the endpoint receive cap, so we resolve it through a gate whose `capAddr` is
+`replyCPtr` (not the primary syscall gate, which names the endpoint).  Read-only.
+Returns `none` for a plain `Recv` that omits a reply object (the source may be a
+`Send`/`Notification`), an unresolvable slot, or a non-reply cap — the caller arm
+then links only on a genuine `Call` rendezvous. -/
+def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) : Except KernelError (Option SeLe4n.ReplyId) :=
+  -- A plain `Recv` *omits* the reply object via message length 0 (PR #822 review):
+  -- the ARM64 register decoder always materializes x2..x5, so MR0 is present even
+  -- for a no-reply receive (the Rust `endpoint_receive` wrapper sends length 0 /
+  -- x2 = 0).  Gate on the declared `msgInfo.length`: **only** length 0 means "no
+  -- reply object" (→ `.ok none`).  At length ≥ 1 MR0 names an *explicit* reply
+  -- cap, so a failed resolution is a hard error (`.ok none` would silently
+  -- downgrade a bad/stale CPtr to a plain receive and then strand a later Call);
+  -- `endpoint_receive_with_reply` declares length 1.
+  if decoded.msgInfo.length == 0 then .ok none else
+  match Architecture.SyscallArgDecode.decodeRecvArgs decoded with
+  | .error e => .error e
+  | .ok rargs =>
+      let replyGate : SyscallGate :=
+        { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
+      match syscallLookupCap replyGate st with
+      | .error e => .error e
+      | .ok (rcap, _) =>
+          match extractReplyId rcap with
+          | .error e => .error e
+          | .ok rid =>
+              -- PR #822 review: validate the reply object exists AND is FREE before
+              -- treating the cap as usable.  "Free" means BOTH `caller = none` (no
+              -- caller-first link) AND not already stashed in some server's
+              -- `pendingReceiveReply` (`replyIsStashed` — a server-first link in
+              -- progress); else a second `endpoint_receive_with_reply` via a copied
+              -- cap could block another server on the same `rid` and later roll back
+              -- `.replyCapInvalid` on a stale stash.  Matches the lifecycle-cleanup
+              -- in-use treatment.  Explicit-MR0 failure is fail-closed before receive.
+              match st.getReply? rid with
+              | some r =>
+                  if r.caller.isNone && !replyIsStashed st rid then .ok (some rid)
+                  else .error .replyCapInvalid
+              | none => .error .replyCapInvalid
+
+/-- WS-SM SM6.D (faithful seL4-MCS receive linkage): after `endpointReceiveDual`
+rendezvouses, link the woken caller to the server's reply object when (and only
+when) the caller is a `Call` — i.e. the receive moved it to `.blockedOnReply`.
+`linkCallerReply` establishes the bidirectional `reply.caller` / `tcb.replyObject`
+link (fail-closed on an in-use reply).  A `Call` rendezvous that carries **no**
+reply object is rejected `.replyCapInvalid` (the post-state is discarded, so the
+caller is *not* stranded `.blockedOnReply` with no reply object — seL4-MCS
+requires the server to provide a reply object to answer a Call).  A plain `Send`
+rendezvous (`.ready`) or the no-sender block path (`.blockedOnReceive`) links
+nothing. -/
+def linkReceivedCaller (sender : SeLe4n.ThreadId)
+    (replyIdOpt : Option SeLe4n.ReplyId) : Kernel Unit :=
+  fun st =>
+    match st.getTcb? sender with
+    | some sTcb =>
+        match sTcb.ipcState with
+        | .blockedOnReply _ _ =>
+            -- caller-first: a queued `Call` was just dequeued (now `.blockedOnReply`)
+            -- — link it to the server's reply object, or reject a Call carrying none.
+            match replyIdOpt with
+            | some rid => SystemState.linkCallerReply sender rid st
+            | none => .error .replyCapInvalid
+        | .blockedOnReceive _ =>
+            -- server-first: the *server* itself blocked on receive (no caller was
+            -- queued).  Stash the supplied reply object on the server so a later
+            -- `Call` rendezvous can be linked to it (`linkServerFirstCaller`).
+            match replyIdOpt with
+            | some rid =>
+                storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := some rid }) st
+            | none =>
+                -- PR #822 review: a plain receive (no reply object) must CLEAR any
+                -- stale `pendingReceiveReply` left by a prior server-first receive
+                -- that woke via `Send` / was cancelled — else a later `Call` could be
+                -- linked to a stale reply id (`linkServerFirstCaller`).  Fail-closed:
+                -- the current receive supplies no reply ⇒ no stash.
+                storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := none }) st
+        | _ => .ok ((), st)
+    | none => .ok ((), st)
+
+/-- WS-SM SM6.D (faithful seL4-MCS, server-first receive linkage): after a `Call`
+rendezvouses with a *waiting* server — the caller lands `.blockedOnReply ep (some
+server)` and the server is woken — link the caller to the Reply object the server
+stashed on its earlier `Recv` (`server.pendingReceiveReply`), then clear the stash
+(one-shot).  A no-op when the call did not rendezvous with a waiting server (caller
+`.blockedOnCall`, i.e. it was enqueued) or the server supplied no reply object.
+Composed by the `.call` dispatch after `endpointCallCrossCoreDispatch`; mirrors the
+caller-first `linkReceivedCaller` for the symmetric ordering. -/
+def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.getTcb? caller with
+    | some cTcb =>
+        match cTcb.ipcState with
+        | .blockedOnReply _ (some server) =>
+            match (st.getTcb? server).bind (·.pendingReceiveReply) with
+            | some rid =>
+                match SystemState.linkCallerReply caller rid st with
+                | .error e => .error e
+                | .ok ((), st1) =>
+                    match st1.getTcb? server with
+                    | some sTcb =>
+                        storeObject server.toObjId
+                          (.tcb { sTcb with pendingReceiveReply := none }) st1
+                    | none => .ok ((), st1)
+            | none =>
+                -- PR #822 review: the Call rendezvoused with a waiting server that
+                -- provided NO reply object (a plain `Recv`).  seL4-MCS cannot answer
+                -- a Call without a reply object, so reject fail-closed — the
+                -- post-state is discarded, so the caller is *not* stranded
+                -- `.blockedOnReply` with no linked Reply, and the server is not
+                -- spuriously woken.  Symmetric to the caller-first reject in
+                -- `linkReceivedCaller`.
+                .error .replyCapInvalid
+        | _ => .ok ((), st)
+    | none => .ok ((), st)
+
+/-- WS-SM SM6.D (PR #822 review): clear a server-first reply **stash**
+(`TCB.pendingReceiveReply`) on a receiver woken by a plain `Send`.  A server that
+blocked on `Recv` having supplied a reply object carries the stash so a later `Call`
+can be linked to it (`linkServerFirstCaller`); but if a *one-way* `Send` rendezvouses
+first, the server leaves `.blockedOnReceive` for `.ready` while the stash survives —
+violating `pendingReceiveReplyWellFormed` (a stash lives only on a `.blockedOnReceive`
+TCB) and leaving a stale `rid` a *future* `Call` rendezvous could mis-link.  The
+reply object itself is untouched (it stays free, `caller = none`; the server still
+holds its cap and may re-supply it on the next `Recv`); only the stash pointer is
+cleared.  `receiver?` is the pre-send receive-queue head — the thread the send wakes
+— captured before the rendezvous dequeues it.  A no-op (returns the state unchanged,
+no store) when there is no woken receiver or it carries no stash, so the trace is
+byte-identical on every stash-free send.  Symmetric to `linkReceivedCaller`. -/
+def clearWokenReceiverStash (receiver? : Option SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match receiver? with
+    | none => .ok ((), st)
+    | some receiver =>
+        match st.getTcb? receiver with
+        | some rTcb =>
+            match rTcb.pendingReceiveReply with
+            | some _ =>
+                storeObject receiver.toObjId
+                  (.tcb { rTcb with pendingReceiveReply := none }) st
+            | none => .ok ((), st)
+        | none => .ok ((), st)
+
+/-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): resolve the server-supplied reply
+capability named in `ReplyRecvArgs.replyCPtr` to the `(ReplyId, prevCaller)` pair
+it authorizes — `prevCaller` is the reply object's `caller`, the previous caller
+the reply leg answers.  Resolves the reply cap from the caller's CSpace at
+`replyCPtr` (a gate whose `capAddr` is that slot), then `getReply?` + reads
+`reply.caller`.  Read-only.  Returns `Except KernelError`: a CSpace / cap
+resolution failure (`decodeReplyRecvArgs` / `syscallLookupCap` / `extractReplyId`)
+**propagates** its explicit error (`invalidCapability` / `illegalAuthority` / …),
+mirroring `resolveRecvReplyId`, so a malformed or unauthorized reply-cap slot is
+distinguishable from a valid-but-consumed Reply.  `.replyCapInvalid` is reserved for
+a missing MR0, a missing Reply object, or a present Reply object with **no
+outstanding caller** (authority now flows from *holding* the reply cap, exactly like
+the `.reply` arm — no raw-thread bypass). -/
+def resolveReplyRecvReply (gate : SyscallGate) (decoded : SyscallDecodeResult)
+    (st : SystemState) :
+    Except KernelError (SeLe4n.ReplyId × SeLe4n.ThreadId × Option SeLe4n.Badge) :=
+  -- PR #822 review: require MR0 explicitly present (`msgInfo.length ≥ 1`) before
+  -- reading the reply CPtr — the ARM64 register decoder always materializes x2..x5,
+  -- so a length-0 `ReplyRecv` must not resolve/consume a stale (x2) reply cap.
+  if decoded.msgInfo.length == 0 then .error .replyCapInvalid else
+  match Architecture.SyscallArgDecode.decodeReplyRecvArgs decoded with
+  | .error e => .error e
+  | .ok rargs =>
+      let replyGate : SyscallGate :=
+        { gate with capAddr := SeLe4n.CPtr.ofNat rargs.replyCPtr, requiredRight := .write }
+      -- PR #822 review: propagate the explicit CSpace cap error (a missing slot or a
+      -- cap without write authority is `invalidCapability` / `illegalAuthority`), not
+      -- a collapsed `.replyCapInvalid` — the latter is reserved for a resolved Reply
+      -- object with no outstanding caller (mirrors `resolveRecvReplyId`).
+      match syscallLookupCap replyGate st with
+      | .error e => .error e
+      | .ok (rcap, _) =>
+          match extractReplyId rcap with
+          | .error e => .error e
+          | .ok rid =>
+              match st.getReply? rid with
+              | some reply =>
+                  match reply.caller with
+                  -- PR #822 review: carry the *reply cap's* badge (the reply
+                  -- authority), not the endpoint receive cap's, so the previous
+                  -- caller receives the badge associated with the reply cap (as in
+                  -- the `.reply` arm) when the two differ.
+                  | some prevCaller => .ok (rid, prevCaller, rcap.badge)
+                  | none => .error .replyCapInvalid
+              | none => .error .replyCapInvalid
+
+/-- WS-SM SM6.C (PR #822 review): the `ReplyRecv` post-receive donation
+resolution — seL4-MCS *"the scheduling context follows the message"*.  Run AFTER
+both the reply and the receive legs (so the server is never descheduled *before*
+it can rendezvous with a queued `Call`):
+
+* the **recorded server** returns its OLD donated SchedContext to the client it was
+  serving (`returnDonatedSchedContextValid`).  On a *delegated* reply cap the cap
+  holder / receiver `tid` is **not** the server the previous caller donated to —
+  the donation lives on `recordedServer` (`recordedReplyServer? st prevCaller`,
+  captured by the caller *before* the reply consumed `prevCaller.blockedOnReply`),
+  so the return and the run-queue/PIP bookkeeping are keyed on `recordedServer` and
+  its own home core `serverCore`, never on the delegate (PR #822 review,
+  "Return ReplyRecv donations from the recorded server").  In the non-delegated case
+  `recordedServer = tid` and `serverCore = executingCore`, so this is unchanged; then
+* if the receive rendezvoused with a **Call** — `nextThread` is now
+  `.blockedOnReply`, i.e. a freshly dequeued request whose donation the queued
+  `Call` deferred — the new client's SchedContext is donated to the **receiver**
+  `tid` (`applyCallDonation`, still keyed on `tid` — the thread that will serve the
+  next request), so the passive server keeps running on the new request's budget;
+* otherwise (a plain `Send` rendezvous, or the server blocked with no waiter) the
+  now-passive `recordedServer` is descheduled on its own core (`removeRunnableOnCore`).
+
+A recorded server that holds **no** donated SC (an active server with its own budget,
+or an already-`.unbound` one) needs no donation change — its run-queue state is left
+to the receive leg.  Always reverts the reply-leg priority-inheritance boost via the
+cross-core chain walk (`propagatePipChainCrossCore`) from `recordedServer`. -/
+def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
+    (nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId) : Kernel Unit :=
+  fun st =>
+    match lookupTcb st recordedServer with
+    | none => .error .objectNotFound
+    | some srvTcb =>
+        match srvTcb.schedContextBinding with
+        | .donated oldScId owner =>
+            match recordedServer.toValid?, owner.toValid? with
+            | some srvV, some ownerV =>
+                match returnDonatedSchedContextValid st srvV oldScId ownerV with
+                | .error e => .error e
+                | .ok st1 =>
+                    -- Did the receive leg rendezvous with a queued `Call`?
+                    match lookupTcb st1 nextThread with
+                    | some nextTcb =>
+                        match nextTcb.ipcState with
+                        | .blockedOnReply _ _ =>
+                            -- New Call: donate to the RECEIVER `tid`, not the (possibly
+                            -- delegated) recorded server.
+                            match nextThread.toValid?, tid.toValid? with
+                            | some nextV, some tidV =>
+                                match applyCallDonation st1 nextV tidV with
+                                | .error e => .error e
+                                | .ok st2 =>
+                                    .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
+                            | _, _ => .error .invalidArgument
+                        | _ =>
+                            .ok ((), (PriorityInheritance.propagatePipChainCrossCore
+                              (removeRunnableOnCore st1 recordedServer serverCore) recordedServer serverCore).1)
+                    | none =>
+                        .ok ((), (PriorityInheritance.propagatePipChainCrossCore
+                          (removeRunnableOnCore st1 recordedServer serverCore) recordedServer serverCore).1)
+            | _, _ => .error .invalidArgument
+        | _ =>
+            .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1)
+
+/-- WS-SM SM6.D (faithful seL4-MCS `ReplyRecv`): the *unchecked* reply-and-receive
+body, shared by both dispatch arms (so the checked arm = a flow-gated wrapper over
+exactly this).  Steps reusing the verified cross-core transitions:
+1. **reply leg** — `endpointReplyOnCore` delivers to `prevCaller` (the recorded
+   caller).  **Deliver only**: the donated-SC return + PIP reversion are deferred
+   to step 5 — returning the server's SC and descheduling it *before* the receive
+   leg would leave a server that immediately rendezvouses with a queued `Call`
+   stuck `.ready` but absent from the run queues (PR #822 review, 6J90-w);
+2. **consume** — `consumeCallerReply` tears down the answered reply link
+   (single-use barrier);
+3. **receive leg** — `endpointReceiveDualOnCore` receives the next message;
+4. **re-link** — on a `Call` rendezvous, `linkReceivedCaller` re-links the *same*
+   reply object to the next caller (faithful one-object reuse);
+5. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
+   new `Call` rendezvoused, donates the new client's SC so the passive server keeps
+   running on the new request's budget (seL4-MCS SC-follows-message). -/
+def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : Concurrency.CoreId)
+    : Kernel Unit :=
+  fun st =>
+    -- WS-SM SM6.D (PR #822 review): capture the recorded server (the passive server
+    -- `prevCaller` donated its SC to) and its home core BEFORE the reply leg consumes
+    -- `prevCaller.blockedOnReply` — on a delegated reply cap this differs from the
+    -- receiver `tid`, and the OLD donation return must key on it (not on `tid`).
+    let recordedServer := (recordedReplyServer? st prevCaller).getD tid
+    let serverCore := determineExecutingCore st recordedServer
+    match endpointReplyOnCore tid prevCaller msg executingCore st with
+    | (_, .error e) => .error e
+    | (st1, .ok _replySgi) =>
+        match SystemState.consumeCallerReply prevCaller rid st1 with
+        | .error e => .error e
+        | .ok ((), st2) =>
+            match endpointReceiveDualOnCore epId tid executingCore st2 with
+            | (_, .error e) => .error e
+            | (st3, .ok (nextThread, _)) =>
+                match linkReceivedCaller nextThread (some rid) st3 with
+                | .error e => .error e
+                | .ok ((), st4) =>
+                    replyRecvReturnDonation tid recordedServer nextThread serverCore st4
+
 -- ============================================================================
 -- Syscall soundness theorems
 -- ============================================================================
@@ -396,6 +721,9 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .tcbSetAffinity        => .write
   | .tcbBindNotification   => .write
   | .tcbUnbindNotification => .write
+  -- PR #822 Phase H: deriving a reply cap from the object cap to a Reply requires
+  -- grant authority on that object cap (consistent with the cspaceMint/Copy/Move family).
+  | .mintReplyCap          => .grant
 
 /-- M-D01: Resolve extra capability addresses from the sender's CSpace
 into actual capabilities for IPC message transfer.
@@ -577,6 +905,21 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
+  -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Same src/dst-slot
+  -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
+  -- `mintReplyCapWithCdt` derives `.replyCap (ReplyId.ofObjId target)` at the dst slot
+  -- (fail-closed when the src is not an `.object`-to-Reply cap).  CDT-tracked so the
+  -- minted reply cap is revocable through `cspaceRevokeCdt`.
+  | .mintReplyCap =>
+    some <| match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceCopyArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let src : CSpaceAddr := { cnode := cnodeId, slot := args.srcSlot }
+            let dst : CSpaceAddr := { cnode := cnodeId, slot := args.dstSlot }
+            mintReplyCapWithCdt src dst st
     | _ => fun _ => .error .invalidCapability
   | .lifecycleRetype =>
     some <| match cap.target with
@@ -879,17 +1222,43 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        -- WS-SM SM6.D (PR #822 review): capture the receive-queue head the send will
+        -- wake, so its server-first reply stash is cleared once it leaves
+        -- `.blockedOnReceive` (a stash lives only on a blocked receiver).
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st'
     | _ => fun _ => .error .invalidCapability
   | .receive =>
     match cap.target with
     | .object epId =>
-      fun st => match endpointReceiveDual epId tid st with
-        | .ok (_, st') => .ok ((), st')
+      -- WS-SM SM6.D (faithful seL4-MCS, server-supplied reply objects): the
+      -- server supplies a Reply object capability at `RecvArgs.replyCPtr`
+      -- (msgRegs[0]) — a *separate* CPtr from the endpoint receive cap, resolved
+      -- from the caller's own CSpace via a gate whose `capAddr` is that slot.
+      -- On a `Call` rendezvous (the popped sender lands `.blockedOnReply`) the
+      -- kernel links that caller to the server's reply object so the server's
+      -- later `.reply` resolves authority through `reply.caller`.
+      fun st =>
+        -- PR #822 review: an explicit (length ≥ 1) but bad reply cap fails BEFORE
+        -- the receive, so a server is never blocked as a plain receive on a
+        -- stale/non-reply CPtr (only length 0 means "no reply object").
+        match resolveRecvReplyId gate decoded st with
         | .error e => .error e
+        | .ok replyIdOpt =>
+          -- WS-SM SM6.D (PR #822 review): route through the **per-core** receive
+          -- transition (like `.call`/`.replyRecv`).  The single-core `endpointReceiveDual`
+          -- block path removes the receiver with the boot-core `removeRunnable`, so a
+          -- server receiving on a non-boot core could block `.blockedOnReceive` yet stay
+          -- current/runnable on its actual core; `endpointReceiveDualOnCore … executingCore`
+          -- removes it from *its own* core and routes a woken `blockedOnSend` sender to
+          -- *its* home core.  On the boot core this is definitionally `endpointReceiveDual`.
+          let executingCore := determineExecutingCore st tid
+          match endpointReceiveDualOnCore epId tid executingCore st with
+          | (st', .ok (sender, _sgi)) => linkReceivedCaller sender replyIdOpt st'
+          | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
   | .call =>
@@ -908,16 +1277,38 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let executingCore := determineExecutingCore st tid
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- WS-SM SM6.D (server-first linkage): if the call rendezvoused with a
+        -- waiting server, link the caller to the server's stashed reply object.
+        | (st', .ok _) => linkServerFirstCaller tid st'
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
   | .reply =>
     match cap.target with
-    | .replyCap targetTid =>
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      -- Z7: Use donation-aware reply wrapper to return SchedContext
-      endpointReplyWithDonation tid targetTid { registers := body, caps := #[], badge := cap.badge }
+    | .replyCap rid =>
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        -- WS-SM SM6.D (seL4-MCS reply object): resolve the reply cap's `ReplyId`
+        -- to its recorded caller (`reply.caller`), reply to that caller through
+        -- the cross-core dispatch (the `blockedOnReply` caller woken on its
+        -- *home* core via `wakeThread`, donated SchedContext returned, PIP
+        -- reverted cross-core; replier descheduled on `executingCore`), then
+        -- **consume** the single-use linkage (`reply.caller := none`).  Fails
+        -- closed (`.replyCapInvalid`) on a dangling reply or an unlinked caller.
+        match st.getReply? rid with
+        | none => .error .replyCapInvalid
+        | some reply =>
+          match reply.caller with
+          | none => .error .replyCapInvalid
+          | some callerTid =>
+            let executingCore := determineExecutingCore st tid
+            match endpointReplyCrossCoreDispatch tid callerTid
+                { registers := body, caps := #[], badge := cap.badge } executingCore st with
+            | (st', .ok _) =>
+              match SystemState.consumeCallerReply callerTid rid st' with
+              | .ok ((), st'') => .ok ((), st'')
+              | .error e => .error e
+            | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
   -- carry slot indices, rights, and badge. Decoded via SyscallArgDecode.
@@ -1000,8 +1391,14 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- it, otherwise the cross-core `notificationSignalOnCore` runs (head
           -- waiter woken on its home core).  The surfaced cross-core SGI is
           -- re-derived from the committed state diff by the runtime entry.
+          -- WS-SM SM6.D (PR #822 review): a bound delivery wakes a `.blockedOnReceive`
+          -- bound TCB to `.ready`; if that server stashed a server-first reply object,
+          -- clear the stash (it lives only on a blocked receiver) — symmetric to the
+          -- plain-Send wake (`clearWokenReceiverStash`).  No-op when no bound receiver
+          -- is woken or it carries no stash, so the trace is byte-identical.
+          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           match notificationSignalBoundCrossCoreDispatch notifId args.badge tid st with
-          | (st', .ok _) => .ok ((), st')
+          | (st', .ok _) => clearWokenReceiverStash woken? st'
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A: Notification wait — consume pending badge or block.
@@ -1022,15 +1419,26 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
   | .replyRecv =>
     match cap.target with
     | .object epId =>
-      fun st => match decodeReplyRecvArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-          let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-          let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
-          -- Z7: Use donation-aware replyRecv wrapper
-          match endpointReplyRecvWithDonation epId tid args.replyTarget msg st with
-          | .error e => .error e
-          | .ok ((), st') => .ok ((), st')
+      -- WS-SM SM6.D (faithful seL4-MCS `.replyRecv`): resolve the server-supplied
+      -- reply cap (`ReplyRecvArgs.replyCPtr`) to its `(rid, prevCaller)` — authority
+      -- flows from *holding* the reply cap (`reply.caller`), exactly like `.reply`,
+      -- closing the prior raw-thread bypass.  `replyRecvBody` then replies to the
+      -- prev caller, **consumes** the answered reply link, receives the next
+      -- message, and **re-links** the same reply object to the next caller.
+      fun st =>
+        match resolveReplyRecvReply gate decoded st with
+        | .error e => .error e
+        | .ok (rid, prevCaller, replyBadge) =>
+            -- WS-SM SM6.D (PR #822 review): MR0 carries the reply CPtr (a control
+            -- register), so the reply *payload* delivered to the previous caller is
+            -- MR1.. — strip the leading control register before building the reply.
+            -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
+            -- endpoint receive cap's, matching the `.reply` arm.
+            let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+            let body := full.extract 1 full.size
+            let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
+            let executingCore := determineExecutingCore st tid
+            replyRecvBody epId tid rid prevCaller msg executingCore st
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B: tcbSetPriority, tcbSetMCPriority, tcbSetIPCBuffer are now handled
   -- by dispatchCapabilityOnly above. Together with cspaceDelete, lifecycleRetype,
@@ -1082,18 +1490,50 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- AH1-B (H-01 fix): Pass capability transfer params to checked send
+        -- WS-SM SM6.D (PR #822 review): clear the woken receiver's server-first reply
+        -- stash (mirrors the unchecked `.send` arm).
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendDualChecked ctx epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st')
+        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st'
     | _ => fun _ => .error .invalidCapability
   -- T6-I: IPC receive — checked for endpoint→receiver flow
   | .receive =>
     match cap.target with
     | .object epId =>
-      fun st => match endpointReceiveDualChecked ctx epId tid st with
-        | .ok (_, st') => .ok ((), st')
-        | .error e => .error e
+      -- WS-SM SM6.D (faithful seL4-MCS receive linkage, flow-checked): mirrors the
+      -- unchecked `.receive` arm — resolve the server-supplied reply cap at
+      -- `RecvArgs.replyCPtr` and, on a `Call` rendezvous, link the woken caller to
+      -- the server's reply object.
+      fun st =>
+        -- WS-SM SM6.D (PR #822 review, IF-ordering): gate the endpoint→receiver flow
+        -- *before* probing the reply cap.  `resolveRecvReplyId` validates the reply
+        -- cap and scans `replyIsStashed` across all TCBs, so running it ahead of the
+        -- flow gate let a receiver with a copied reply cap distinguish "some blocked
+        -- server has this Reply stashed" (`.replyCapInvalid`) from "no stash"
+        -- (`.flowDenied`) even when `endpoint→receiver` is denied — a covert channel
+        -- on reply state the low projection otherwise strips.  This is the exact
+        -- predicate `endpointReceiveDualChecked` applies internally, so a *permitted*
+        -- receive is behaviourally unchanged; a denied receive now returns
+        -- `.flowDenied` without ever probing reply state.
+        if !securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+          .error .flowDenied
+        else
+          -- PR #822 review: an explicit (length ≥ 1) bad reply cap fails before the
+          -- receive (mirrors the unchecked arm); only length 0 means "no reply object".
+          match resolveRecvReplyId gate decoded st with
+          | .error e => .error e
+          | .ok replyIdOpt =>
+            -- WS-SM SM6.D (PR #822 review): route through the per-core receive
+            -- transition (the endpoint→receiver flow is already gated above, so the
+            -- *unchecked* `endpointReceiveDualOnCore` is correct here).  Per-core block
+            -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
+            -- `endpointReceiveDualChecked` when the flow is permitted.
+            let executingCore := determineExecutingCore st tid
+            match endpointReceiveDualOnCore epId tid executingCore st with
+            | (st', .ok (sender, _sgi)) => linkReceivedCaller sender replyIdOpt st'
+            | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
   -- This ensures `.call` uses the same enforcement layer as all other policy-gated
@@ -1118,7 +1558,8 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let executingCore := determineExecutingCore st tid
         match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
             gate.cspaceRoot decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- WS-SM SM6.D (server-first linkage): mirror the unchecked arm.
+        | (st', .ok _) => linkServerFirstCaller tid st'
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -1127,24 +1568,40 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   -- is auditable and consistent with all other cross-domain operations.
   | .reply =>
     match cap.target with
-    | .replyCap targetTid =>
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      -- Z7: Apply donation return after checked reply
-      -- D4-M: Revert PIP — the client is unblocked, so the replier's pipBoost
-      -- must be recomputed from remaining waiters.
+    | .replyCap rid =>
       fun st =>
-        match endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge } st with
-        | .error e => .error e
-        | .ok ((), st') =>
-          -- AH2-C: Propagate donation return errors.
-          -- AN10-residual-1 deep-audit: applyReplyDonation requires ValidThreadId.
-          match SeLe4n.ThreadId.toValid? tid with
-          | some tidVtid =>
-            match applyReplyDonation st' tidVtid with
-            | .error e => .error e
-            | .ok st'' =>
-              .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
-          | none => .error .invalidArgument
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        -- WS-SM SM6.D (seL4-MCS reply object, checked): resolve the reply cap's
+        -- `ReplyId` to its recorded caller (`reply.caller`), then route through
+        -- the info-flow-checked cross-core dispatch (same SM-IF flow guard
+        -- `securityFlowsTo replierLabel callerLabel`, caller woken on its *home*
+        -- core, donated-SC return, cross-core PIP reversion), then **consume**
+        -- the single-use linkage.  Fails closed (`.replyCapInvalid`) on a
+        -- dangling reply or an unlinked caller.
+        match st.getReply? rid with
+        | none => .error .replyCapInvalid
+        | some reply =>
+          match reply.caller with
+          | none => .error .replyCapInvalid
+          | some callerTid =>
+            -- WS-SM SM6.D (PR #822 review, IF-ordering): a denied replier→caller flow
+            -- must be **indistinguishable** from an unlinked/consumed reply.  Probing
+            -- `reply.caller` (above) is unavoidable — the flow gate needs the caller
+            -- identity — so we collapse a denied flow to the *same* `.replyCapInvalid`
+            -- the `none` arms return, rather than letting `.flowDenied` leak that the
+            -- Reply *is* linked (to a caller the holder may not flow to).  When the
+            -- flow is permitted the body is exactly the prior checked dispatch +
+            -- consume, so `checkedDispatch_reply_eq_unchecked_when_allowed` holds.
+            if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) then
+              let executingCore := determineExecutingCore st tid
+              match endpointReplyCrossCoreDispatchChecked ctx tid callerTid
+                  { registers := body, caps := #[], badge := cap.badge } executingCore st with
+              | (st', .ok _) =>
+                match SystemState.consumeCallerReply callerTid rid st' with
+                | .ok ((), st'') => .ok ((), st'')
+                | .error e => .error e
+              | (_, .error e) => .error e
+            else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -1219,8 +1676,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           -- info-flow-checked analogue of the unchecked arm, gating on
           -- `securityFlowsTo signaler→notification` before the bound-aware
           -- cross-core dispatch.
+          -- WS-SM SM6.D (PR #822 review): clear a woken bound receiver's server-first
+          -- reply stash (mirrors the unchecked arm + the plain-Send wake).
+          let woken? := (boundDeliveryTarget? st notifId).map (·.1)
           match notificationSignalBoundCrossCoreDispatchChecked ctx notifId tid args.badge st with
-          | (st', .ok _) => .ok ((), st')
+          | (st', .ok _) => clearWokenReceiverStash woken? st'
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- V2-A/T6-I: Notification wait — checked for notification→waiter flow
@@ -1238,25 +1698,35 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
   | .replyRecv =>
     match cap.target with
     | .object epId =>
-      fun st => match decodeReplyRecvArgs decoded with
-      | .error e => .error e
-      | .ok args =>
-          let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-          let msg : IpcMessage := { registers := body, caps := #[], badge := cap.badge }
-          -- Z7: Apply donation return after checked replyRecv
-          -- D4-M: Revert PIP for the reply portion
-          match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
+      -- WS-SM SM6.D (faithful checked `.replyRecv`): gate BOTH legs — the receive leg
+      -- (`securityFlowsTo endpoint→receiver`) and the reply leg (`securityFlowsTo
+      -- receiver→prevCaller`) — around the *same* `replyRecvBody` as the unchecked
+      -- arm, so `checkedDispatch_replyRecv_eq_unchecked_when_allowed` stays provable.
+      -- WS-SM SM6.D (PR #822 review, IF-ordering): the receive-leg flow is independent
+      -- of the reply cap, so it is checked **first** — a denied receive returns
+      -- `.flowDenied` without `resolveReplyRecvReply` ever probing reply state.  The
+      -- reply-leg gate needs `prevCaller` (so the resolve is unavoidable there), but a
+      -- denied reply-leg flow collapses to the *same* `.replyCapInvalid` a resolve
+      -- failure returns, rather than leaking via `.flowDenied` that the reply *is*
+      -- linked to an outstanding caller the receiver may not flow to.
+      fun st =>
+        if !securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) then
+          .error .flowDenied
+        else
+          match resolveReplyRecvReply gate decoded st with
           | .error e => .error e
-          | .ok ((), st') =>
-            -- AH2-C: Propagate donation return errors.
-            -- AN10-residual-1 deep-audit: applyReplyDonation requires ValidThreadId.
-            match SeLe4n.ThreadId.toValid? tid with
-            | some tidVtid =>
-              match applyReplyDonation st' tidVtid with
-              | .error e => .error e
-              | .ok st'' =>
-                .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
-            | none => .error .invalidArgument
+          | .ok (rid, prevCaller, replyBadge) =>
+              -- WS-SM SM6.D (PR #822 review): strip the leading reply-CPtr control
+              -- register (MR0); the reply payload is MR1.. (mirrors the unchecked arm).
+              -- The reply badge is the *reply cap's* badge (`replyBadge`), not the
+              -- endpoint receive cap's.
+              let full := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+              let body := full.extract 1 full.size
+              let msg : IpcMessage := { registers := body, caps := #[], badge := replyBadge }
+              let executingCore := determineExecutingCore st tid
+              if securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) then
+                replyRecvBody epId tid rid prevCaller msg executingCore st
+              else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
@@ -1505,85 +1975,127 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
 -- AJ1-D (M-01): Reply/ReplyRecv conditional equivalence theorems
 -- ============================================================================
 
-/-- AJ1-D (M-01): When the information flow policy allows the reply, checked
-and unchecked `.reply` dispatch produce identical results. The checked path
-(`endpointReplyChecked`) gates on `securityFlowsTo replierLabel targetLabel`;
-when this condition holds, both paths execute the identical three-step sequence:
-`endpointReply` → `applyReplyDonation` → `revertPriorityInheritance`.
+/-- AJ1-D (M-01) / WS-SM SM6.C: When the information flow policy allows the reply,
+checked and unchecked `.reply` dispatch produce identical results. The checked path
+(`endpointReplyCrossCoreDispatchChecked`) gates on `securityFlowsTo replierLabel
+targetLabel`; when this condition holds it is *exactly* the unchecked cross-core
+dispatch (`endpointReplyCrossCoreDispatchChecked_flow_allowed`), so the two arms —
+which apply the identical outer `match … | (st', .ok _) => …` wrapping to the same
+dispatch — coincide.
 
 This is a conditional equivalence: unlike the capability-only arms which are
 structurally identical (unconditional), `.reply` requires the flow hypothesis.
-The unchecked path bundles these steps in `endpointReplyWithDonation`; the
-checked path inlines them after `endpointReplyChecked`. -/
+
+WS-SM SM6.D: the reply cap names a `ReplyId`; both arms perform the identical
+`getReply? rid → reply.caller` resolution and the identical post-dispatch
+`consumeCallerReply` consume, differing only in the checked-vs-unchecked
+cross-core dispatch.  The equivalence therefore holds, at a state where the
+resolution yields `callerTid`, exactly when the flow to that resolved caller is
+allowed. -/
 theorem checkedDispatch_reply_eq_unchecked_when_allowed
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .reply)
-    (targetTid : SeLe4n.ThreadId)
-    (hCap : cap.target = .replyCap targetTid)
-    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf targetTid) = true)
-    : ∀ (st : SystemState),
-    dispatchWithCapChecked ctx decoded tid gate cap st =
+    (rid : SeLe4n.ReplyId)
+    (hCap : cap.target = .replyCap rid)
+    (st : SystemState)
+    (reply : SeLe4n.Kernel.Reply) (callerTid : SeLe4n.ThreadId)
+    (hReply : st.getReply? rid = some reply)
+    (hCaller : reply.caller = some callerTid)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = true)
+    : dispatchWithCapChecked ctx decoded tid gate cap st =
     dispatchWithCap decoded tid gate cap st := by
-  -- Both sides reduce to `endpointReply → applyReplyDonation → revertPIP` when flow allows.
-  intro st
-  -- Unfold both dispatch to reach the .reply arm with .replyCap targetTid
-  -- dispatchCapabilityOnly returns `none` for .reply (not capability-only),
-  -- so the match falls through to the explicit .reply arm.
-  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hCap]
-  -- Both sides now have endpointReply-based pipelines. Unfold checked wrapper.
-  simp only [endpointReplyChecked, hFlow, ite_true]
-  -- RHS is endpointReplyWithDonation applied to st — definitionally equal to LHS
-  rfl
+  -- Unfold both dispatch to the `.reply` arm; resolve the reply linkage with the
+  -- resolution hypotheses so both arms reduce to the same consume-wrapped
+  -- cross-core dispatch, then collapse checked → unchecked under the flow guard.
+  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
+    hSyscall, hCap, hReply, hCaller, hFlow, if_true]
+  rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid callerTid _ _ st hFlow]
 
-/-- AJ1-D (M-01): When the information flow policy allows both legs (reply +
-receive), checked and unchecked `.replyRecv` dispatch produce identical results.
-The checked path (`endpointReplyRecvChecked`) gates on TWO `securityFlowsTo`
-checks: (1) receiver → replyTarget (reply leg), (2) endpoint → receiver
-(receive leg). When both hold, both paths execute: `endpointReplyRecv` →
-`applyReplyDonation` → `revertPriorityInheritance`. -/
+/-- AJ1-D (M-01) / WS-SM SM6.D: When the information-flow policy allows both legs
+(reply + receive), checked and unchecked `.replyRecv` dispatch produce identical
+results.  Faithful seL4-MCS: the reply target is the reply object's recorded
+`caller` resolved from the server-supplied reply cap
+(`resolveReplyRecvReply … = .ok (rid, prevCaller)`); the checked arm gates both
+legs — (1) endpoint → receiver (receive leg, checked first, ahead of the reply
+probe), (2) receiver → prevCaller (reply leg) — around the *same* `replyRecvBody`
+the unchecked arm runs, so when both flows hold the two arms coincide. -/
 theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
     (hSyscall : decoded.syscallId = .replyRecv)
     (epId : SeLe4n.ObjId)
     (hCap : cap.target = .object epId)
-    (args : ReplyRecvArgs)
-    (hDecode : decodeReplyRecvArgs decoded = .ok args)
-    (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf args.replyTarget) = true)
-    (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
-    (st : SystemState) :
+    (st : SystemState)
+    (rid : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (replyBadge : Option SeLe4n.Badge)
+    (hResolve : resolveReplyRecvReply gate decoded st = .ok (rid, prevCaller, replyBadge))
+    (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf prevCaller) = true)
+    (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true) :
     dispatchWithCapChecked ctx decoded tid gate cap st =
     dispatchWithCap decoded tid gate cap st := by
-  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hCap, hDecode]
-  -- Unfold checked wrapper with flow guards, and unchecked wrapper
-  simp only [endpointReplyRecvChecked, hFlowReply, hFlowRecv, ite_true]
-  -- The unchecked path wraps the result in `match ... with | .error e => .error e | .ok ((), st') => .ok ((), st')`
-  -- which is identity. The checked path doesn't have this wrapper.
-  -- Collapse by cases on the shared inner expression.
-  -- The RHS still has endpointReplyRecvWithDonation wrapped in identity match.
-  -- Unfold endpointReplyRecvWithDonation, then the identity match collapses.
-  simp only [endpointReplyRecvWithDonation]
-  -- Now both sides match on endpointReplyRecv. The RHS has an extra wrapper
-  -- `match ... with | .error e => .error e | .ok ((), st') => .ok ((), st')`.
-  -- Collapse by cases on the shared inner expression.
-  cases endpointReplyRecv epId tid args.replyTarget
-    { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
-      caps := #[], badge := cap.badge } st with
-  | error => rfl
-  | ok p =>
-    obtain ⟨⟨⟩, s⟩ := p
-    simp only []
-    -- AN10-residual-1 deep-audit: both checked and unchecked dispatch paths
-    -- now route applyReplyDonation through the same `toValid? tid` shim
-    -- (added at the typed-wrapper signatures).  Match the case-split.
-    cases SeLe4n.ThreadId.toValid? tid with
-    | none => rfl
-    | some tidVtid =>
-      simp only []
-      cases applyReplyDonation s tidVtid with
-      | error => rfl
-      | ok => rfl
+  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
+    hSyscall, hCap, hResolve]
+  -- The checked arm now gates in two nested steps: the receive leg (`!flowRecv →
+  -- .flowDenied`) outermost, then the reply leg (`flowReply → replyRecvBody`,
+  -- else `.replyCapInvalid`).  With both flows `true` the outer `!true` is `false`
+  -- (else branch) and the inner `if true` selects the same `replyRecvBody` the
+  -- unchecked arm runs.
+  simp [hFlowRecv, hFlowReply]
+
+/-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.reply` whose replier→caller
+flow is **denied** returns `.replyCapInvalid` — the *same* error the `none`/unlinked
+arms return — so a reply-cap holder cannot distinguish a Reply linked to a caller it
+may not flow to (which would leak `Reply.caller`, erased from the low projection) from
+an unlinked/consumed Reply.  Together with `checkedDispatch_reply_eq_unchecked_when_allowed`
+this pins the full arm: identical to the unchecked path when the flow is permitted,
+collapsed to `.replyCapInvalid` when it is not. -/
+theorem checkedDispatch_reply_flow_denied_collapses
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .reply)
+    (rid : SeLe4n.ReplyId)
+    (hCap : cap.target = .replyCap rid)
+    (st : SystemState)
+    (reply : SeLe4n.Kernel.Reply) (callerTid : SeLe4n.ThreadId)
+    (hReply : st.getReply? rid = some reply)
+    (hCaller : reply.caller = some callerTid)
+    (hDenied : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf callerTid) = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .replyCapInvalid := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hReply, hCaller, hDenied]
+
+/-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.receive` whose
+endpoint→receiver flow is **denied** returns `.flowDenied` *for every state and decode*
+— the result is independent of `st` and the reply CPtr, so `resolveRecvReplyId`'s
+reply-cap validation + `replyIsStashed` scan never run.  A denied receiver therefore
+cannot probe "is some blocked server holding this Reply stashed" through the error
+code: the flow gate fires strictly before any reply-state read. -/
+theorem checkedDispatch_receive_flow_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .receive)
+    (epId : SeLe4n.ObjId)
+    (hCap : cap.target = .object epId)
+    (st : SystemState)
+    (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .flowDenied := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hDenied]
+
+/-- WS-SM SM6.D (PR #822 review, IF-ordering): a checked `.replyRecv` whose receive-leg
+(endpoint→receiver) flow is **denied** returns `.flowDenied` *for every state and decode*
+— `resolveReplyRecvReply` never runs, so the denied receiver cannot probe whether the
+reply cap is linked.  The receive-leg gate is checked outermost, ahead of the reply
+probe; the reply-leg denial (after a successful resolve) collapses to `.replyCapInvalid`
+in the arm body. -/
+theorem checkedDispatch_replyRecv_recv_flow_denied
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .replyRecv)
+    (epId : SeLe4n.ObjId)
+    (hCap : cap.target = .object epId)
+    (st : SystemState)
+    (hDenied : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = false) :
+    dispatchWithCapChecked ctx decoded tid gate cap st = .error .flowDenied := by
+  simp [dispatchWithCapChecked, dispatchCapabilityOnly, hSyscall, hCap, hDenied]
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
@@ -1615,7 +2127,7 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
+            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -1634,7 +2146,7 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .schedContextUnbind, .tcbSuspend, .tcbResume,
             .tcbSetPriority, .tcbSetMCPriority,
             .tcbSetIPCBuffer, .tcbSetAffinity,
-            .tcbBindNotification, .tcbUnbindNotification] : List SyscallId) := by
+            .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated
@@ -1964,10 +2476,11 @@ theorem dispatchWithCap_send_uses_withCaps
         let extraCapAddrs := decodeExtraCapAddrs decoded
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
+        let wokenReceiver? := (st.getEndpoint? epId).bind (·.receiveQ.head)
         match endpointSendDualWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
-        | .ok (_, st') => .ok ((), st') := by
+        | .ok (_, st') => clearWokenReceiverStash wokenReceiver? st' := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 /-- WS-K-E/M-D01 / WS-SM SM6.A: When call dispatch is invoked, the IPC message
@@ -1989,21 +2502,41 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         let executingCore := determineExecutingCore st tid
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        | (st', .ok _) => .ok ((), st')
+        -- WS-SM SM6.D: server-first reply linkage composed after the dispatch.
+        | (st', .ok _) => linkServerFirstCaller tid st'
         | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
-/-- WS-K-E: When reply dispatch is invoked, the IPC message body is populated
-from decoded message registers via `extractMessageRegisters`. -/
+/-- WS-K-E / WS-SM SM6.D: When reply dispatch is invoked, the IPC message body is
+populated from decoded message registers via `extractMessageRegisters`; the reply
+cap's `ReplyId` is resolved to its recorded caller (`reply.caller`), the reply is
+routed through the **cross-core** dispatch (`endpointReplyCrossCoreDispatch` — the
+caller woken on its home core, the donated SchedContext returned, and
+priority-inheritance reverted cross-core, at `determineExecutingCore st tid` —
+the replier's own core), and the single-use linkage is **consumed**
+(`consumeCallerReply`).  Fails closed on a dangling reply or an unlinked caller. -/
 theorem dispatchWithCap_reply_populates_msg
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
-    (cap : Capability) (targetTid : SeLe4n.ThreadId)
+    (cap : Capability) (rid : SeLe4n.ReplyId)
     (hSyscall : decoded.syscallId = .reply)
-    (hTarget : cap.target = .replyCap targetTid) :
+    (hTarget : cap.target = .replyCap rid) :
     dispatchWithCap decoded tid gate cap =
-      let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
-      -- Z7: Donation-aware reply
-      endpointReplyWithDonation tid targetTid { registers := body, caps := #[], badge := cap.badge } := by
+      fun st =>
+        let body := extractMessageRegisters decoded.msgRegs decoded.msgInfo
+        match st.getReply? rid with
+        | none => .error .replyCapInvalid
+        | some reply =>
+          match reply.caller with
+          | none => .error .replyCapInvalid
+          | some callerTid =>
+            let executingCore := determineExecutingCore st tid
+            match endpointReplyCrossCoreDispatch tid callerTid
+                { registers := body, caps := #[], badge := cap.badge } executingCore st with
+            | (st', .ok _) =>
+              match SystemState.consumeCallerReply callerTid rid st' with
+              | .ok ((), st'') => .ok ((), st'')
+              | .error e => .error e
+            | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 
 -- ============================================================================
@@ -2017,6 +2550,22 @@ theorem syscallLookupCap_preserves_state
     st' = st := by
   rcases syscallLookupCap_implies_capability_held gate st cap st' hOk with ⟨_, _, _, _, hEq⟩
   exact hEq
+
+/-- WS-SM SM6.D: `syscallLookupReplyId` is read-only — it only resolves and
+inspects a capability, so the state is unchanged on success. -/
+theorem syscallLookupReplyId_preserves_state
+    (gate : SyscallGate) (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hOk : syscallLookupReplyId gate st = .ok (rid, st')) :
+    st' = st := by
+  unfold syscallLookupReplyId at hOk
+  split at hOk
+  · simp at hOk
+  · next cap st'' hLook =>
+    split at hOk
+    · simp at hOk
+    · next rid' hExtract =>
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
+      exact hOk.2 ▸ syscallLookupCap_preserves_state gate st st'' cap hLook
 
 /-- WS-J1-D: `syscallEntry` error paths preserve `proofLayerInvariantBundle`
 trivially — the state is unchanged on error. -/

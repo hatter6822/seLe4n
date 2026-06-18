@@ -24,7 +24,40 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.B notification across cores LANDED (v0.31.68 → v0.31.73).**
+**Current sub-phase: SM6.C reply path across cores LANDED (v0.31.77).**  The reply
+syscalls are lifted to SMP and wired **live** into the kernel's `.reply` /
+`.replyRecv` dispatch.  `endpointReplyOnCore`
+([`SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean))
+generalises the single-core `endpointReply` to an explicit `executingCore`: the
+unblocked caller (the recorded `blockedOnReply` thread, validated against its
+recorded authorised replier — the confused-deputy gate) is woken through the SM5.C
+cross-core `wakeThread` (enqueued on its home core, surfacing a `.reschedule` SGI
+when that core is remote — `endpointReplyOnCore_remote_wake`, SM6.C.2), while the
+replier does **not** block.  `endpointReceiveDualOnCore` (the replyRecv receive
+leg) blocks the server on *its own* core via `removeRunnableOnCore` and wakes a
+`blockedOnSend` rendezvous sender on *its* home core; `endpointReplyRecvOnCore`
+composes both legs.  All ten SM6.C sub-tasks landed axiom-clean: lock-set
+correctness (`endpointReplyOnCore_lockSet_correct` / `endpointReplyRecv_lockSet_correct`,
+SM6.C.1/.5); reply-payload delivery to the *right* TCB
+(`endpointReplyOnCore_perCore_delivery`, SM6.C.4); the reply-state lifecycle — the
+`blockedOnReply → .ready` write under the caller-TCB write lock
+(`lockSet_endpointReply_target_tcb_write_mem`, SM6.C.6); the reply-replay barrier +
+confused-deputy rejection (`endpointReplyOnCore_replay_rejected`, SM6.C.7); 2PL
+atomicity; per-core wake locality; `objects.invExt` + `ipcInvariant` preservation;
+boot-core + per-core / ∀-core (`lowEquivalent_smp`) non-interference
+(`endpointReplyOnCore_reply_path_NI{,_smp}`, SM6.C.8); the donation-chain lock-set
+extension + cross-core return (`applyReplyDonationOnCore`) + PIP reversion (SM6.C.3);
+and the chain-length bound (`endpointReply_donation_chain_length_bounded`, SM6.C.9).
+**Live**: `API.dispatchWithCap{,Checked}` `.reply` / `.replyRecv` route through
+`endpointReply{,Recv}CrossCoreDispatch{,Checked}` (executing core via
+`determineExecutingCore`); the cross-core reply trio is promoted to production (only
+`EndpointReplyNI` staged); the two `checkedDispatch_{reply,replyRecv}_eq_unchecked_when_allowed`
+equivalence theorems are re-proven through the cross-core flow-allowed lemmas; the
+boot trace is byte-identical.  Tests:
+[`tests/SmpCrossCoreReplySuite.lean`](../tests/SmpCrossCoreReplySuite.lean) (27 runtime
+assertions + theorem witnesses, SM6.C.10).
+
+**Prior sub-phase: SM6.B notification across cores LANDED (v0.31.68 → v0.31.73).**
 The cross-core IPC phase continues with the notification syscalls lifted to SMP.
 `notificationSignalOnCore`
 ([`SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean`](../SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean))

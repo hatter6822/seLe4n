@@ -107,12 +107,18 @@ def timeoutThread
       -- Step 3: Reset IPC state, clear pending message and timeout budget,
       -- set explicit timedOut flag, update thread state.
       -- AG8-A: Uses timedOut := true instead of sentinel in register x0.
+      -- WS-SM SM6.D (PR #822 review): a server-first receive that timed out also
+      -- relinquishes its stashed reply (`pendingReceiveReply`) — the stash is only
+      -- well-formed while the server is `.blockedOnReceive`, so leaving it set on the
+      -- now-`.ready` thread would violate `pendingReceiveReplyWellFormed`.  (No-op for
+      -- non-`blockedOnReceive` timed-out threads, which carry no stash.)
       let tcb' : TCB := { tcb with
         ipcState := .ready,
         pendingMessage := none,
         timeoutBudget := none,
         threadState := .Ready,
-        timedOut := true }
+        timedOut := true,
+        pendingReceiveReply := none }
       match storeObject tid.toObjId (.tcb tcb') st1 with
       | .error e => .error e
       | .ok ((), st2) =>

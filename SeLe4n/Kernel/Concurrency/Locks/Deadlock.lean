@@ -708,10 +708,13 @@ theorem lockSet_endpointReceive_size_le (a : ThreadId) (b c : ObjId) (d : Option
   exact Nat.le_trans (size_le_1 _ _) (by size_bound)
 
 theorem lockSet_endpointCall_size_le (a : ThreadId) (b c : ObjId)
-    (d : Option ThreadId) (e : Option SchedContextId) :
-    (lockSet_endpointCall a b c d e).size ≤ maxLockSetSize := by
+    (d : Option ThreadId) (e : Option SchedContextId)
+    (f : Option ReplyId := none) :
+    (lockSet_endpointCall a b c d e f).size ≤ maxLockSetSize := by
   unfold lockSet_endpointCall maxLockSetSize
-  exact Nat.le_trans (size_le_2 _ _ _) (by size_bound)
+  -- PR #822 review: the server-first stashed reply is folded in as the outermost
+  -- (third) optional, so the bound is the three-extension form (as `replyRecv`).
+  exact Nat.le_trans (size_le_3 _ _ _ _) (by size_bound)
 
 theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (e : Option ThreadId) :
@@ -894,10 +897,14 @@ structure KernelOperation where
       in §6b). -/
   sizeWithinBound : lockSet.size ≤ maxLockSetSize
 
-/-- WS-SM SM3.D.6: build the `KernelOperation` for an `endpointCall`. -/
+/-- WS-SM SM3.D.6: build the `KernelOperation` for an `endpointCall`.  The optional
+`f` (PR #822 review) is the server-first stashed reply object the rendezvous links
+(`linkServerFirstCaller`), so the deadlock/WCRT footprint accounts for the per-object
+reply write-lock on a server-first `Call`. -/
 def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
-    (d : Option ThreadId) (e : Option SchedContextId) : KernelOperation :=
-  ⟨lockSet_endpointCall a b c d e, lockSet_endpointCall_size_le a b c d e⟩
+    (d : Option ThreadId) (e : Option SchedContextId)
+    (f : Option ReplyId := none) : KernelOperation :=
+  ⟨lockSet_endpointCall a b c d e f, lockSet_endpointCall_size_le a b c d e f⟩
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for a `replyRecv` (a 7-arg,
 3-extension transition — the deepest static footprint). -/

@@ -178,11 +178,14 @@ backing, so no preconditions are needed.
 
 Bundle level:
 
-- `capabilityInvariantBundle` (WS-RC R4.A.6 close-out: 6-tuple conjunction —
+- `capabilityInvariantBundle` (7-tuple conjunction —
   `cspaceLookupSound`, `cspaceSlotCountBounded`, `cdtCompleteness`,
-  `cdtAcyclicity`, `cspaceDepthConsistent`, `st.objects.invExt`; the legacy
-  `cspaceSlotUnique` 1st-slot conjunct was retired when the per-CNode
-  uniqueness witness was promoted to `UniqueSlotMap.hWF`)
+  `cdtAcyclicity`, `cspaceDepthConsistent`, `st.objects.invExt`,
+  `replyCapPointsToValidReply`; the legacy `cspaceSlotUnique` 1st-slot conjunct
+  was retired at WS-RC R4.A.6 when the per-CNode uniqueness witness was promoted
+  to `UniqueSlotMap.hWF`, and the `replyCapPointsToValidReply` conjunct — every
+  `.replyCap rid` in a CNode slot resolves through `getReply?` to a live Reply
+  object, no dangling reply caps — was added at PR #822 Phase H #1.a)
 - `capabilityInvariantBundleWithCdtMaps` (S3-D: base bundle + `cdtMapsConsistent`)
 - `capabilityInvariantBundleFull` (S3-D: base bundle + `cdtMapsConsistent` + `cdtMintCompleteness`)
 

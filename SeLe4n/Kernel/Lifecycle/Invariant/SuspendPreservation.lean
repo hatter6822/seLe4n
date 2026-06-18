@@ -54,7 +54,8 @@ theorem cancelIpcBlocking_scheduler_eq
     -- clearTcbIpcFields preserves scheduler, removeFromAllEndpointQueues preserves scheduler
     rw [clearTcbIpcFields_scheduler_eq, removeFromAllEndpointQueues_scheduler_eq]
   | blockedOnReply _ _ =>
-    rw [clearTcbIpcFields_scheduler_eq]
+    -- WS-SM SM6.D (PR #822 review): the reply-link consume only writes `objects`.
+    rw [consumeReplyLink_scheduler_eq, clearTcbIpcFields_scheduler_eq]
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_scheduler_eq, removeFromAllNotificationWaitLists_scheduler_eq]
 
@@ -129,7 +130,7 @@ theorem cancelIpcBlocking_serviceRegistry_eq
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllEndpointQueues_serviceRegistry_eq]
   | blockedOnReply _ _ =>
-    rw [clearTcbIpcFields_serviceRegistry_eq]
+    rw [consumeReplyLink_serviceRegistry_eq, clearTcbIpcFields_serviceRegistry_eq]
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_serviceRegistry_eq, removeFromAllNotificationWaitLists_serviceRegistry_eq]
 
@@ -261,7 +262,7 @@ theorem cancelIpcBlocking_lifecycle_eq
   | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _ =>
     rw [clearTcbIpcFields_lifecycle_eq, removeFromAllEndpointQueues_lifecycle_eq]
   | blockedOnReply _ _ =>
-    rw [clearTcbIpcFields_lifecycle_eq]
+    rw [consumeReplyLink_lifecycle_eq, clearTcbIpcFields_lifecycle_eq]
   | blockedOnNotification _ =>
     rw [clearTcbIpcFields_lifecycle_eq, removeFromAllNotificationWaitLists_lifecycle_eq]
 
@@ -318,7 +319,8 @@ theorem restoreToReady_objects_eq_at_tid
                 ipcState := .ready
                 queuePrev := none
                 queueNext := none
-                queuePPrev := none }) := by
+                queuePPrev := none
+                pendingReceiveReply := none }) := by
   unfold restoreToReady
   rw [hLook]
 
@@ -434,7 +436,8 @@ theorem restoreToReady_blockingServer_subgraph
       have hRRObj :
           (restoreToReady st tid).objects[t.toObjId]?
             = some (.tcb { origTcb with ipcState := .ready, queuePrev := none,
-                                        queueNext := none, queuePPrev := none }) := by
+                                        queueNext := none, queuePPrev := none,
+                                        pendingReceiveReply := none }) := by
         unfold restoreToReady
         rw [hPre]
         show (st.objects.insert tid.toObjId _).get? t.toObjId = _
@@ -605,7 +608,7 @@ theorem saveOutgoingContext_lookup_equiv
       | cnode _ => left; simp only []
       | vspaceRoot _ => left; simp only []
       | untyped _ => left; simp only []
-      | schedContext _ => left; simp only []
+      | schedContext _ | reply _ => left; simp only []
 
 /-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves the
     `getSchedContext?` lookup at every SchedContextId.  Only TCB slots
@@ -648,7 +651,7 @@ theorem saveOutgoingContext_getSchedContext?_eq
       | cnode _ => simp only []
       | vspaceRoot _ => simp only []
       | untyped _ => simp only []
-      | schedContext _ => simp only []
+      | schedContext _ | reply _ => simp only []
 
 /-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves
     `objectIndex`. -/

@@ -42,14 +42,15 @@ which extracts the ObjId from the LockId itself and uses it as
 both the lookup key and the LockId's `objId` component.
 
 The Lean elaborator's pattern-match exhaustivity check on
-`KernelObject` (a 7-variant inductive) is the structural
-enforcement that a future variant addition — for example a
-post-1.0 `Reply` or `Page` kernel object — forces the per-variant
-`lockKind` arm to be added in the same PR (otherwise this module
-fails to elaborate).  This is the SM3.A.5 / SM3.A.8 N/A decision's
+`KernelObject` (an 8-variant inductive, now including the first-class
+`reply` object) is the structural enforcement that a future variant
+addition — for example a post-1.0 `Page` kernel object — forces the
+per-variant `lockKind` arm to be added in the same PR (otherwise this
+module fails to elaborate).  This is the SM3.A.8 (Page) N/A decision's
 SM3.B-layer enforcement counterpart, analogous to the
-`KernelObjectType.variants_count_exactly_seven` pin in the SM3.A
-audit-pass-5 inventory.
+`KernelObjectType.variants_count_exactly_eight` pin in the SM3.A
+inventory.  (SM3.A.5 Reply is no longer N/A — WS-SM SM6.D promotes it
+to a real object with `LockKind.reply` at hierarchy level 6.)
 -/
 
 namespace SeLe4n.Model
@@ -94,6 +95,7 @@ def lockKind : KernelObject → LockKind
   | .vspaceRoot _   => .vspaceRoot
   | .untyped _      => .untyped
   | .schedContext _ => .schedContext
+  | .reply _        => .reply
 
 /-- WS-SM SM3.B.1: per-variant `@[simp]` unfold lemma for `.tcb`. -/
 @[simp] theorem lockKind_tcb (t : TCB) :
@@ -123,6 +125,10 @@ def lockKind : KernelObject → LockKind
 @[simp] theorem lockKind_schedContext (s : SeLe4n.Kernel.SchedContext) :
     (KernelObject.schedContext s).lockKind = .schedContext := rfl
 
+/-- WS-SM SM6.D: per-variant `@[simp]` unfold lemma for `.reply`. -/
+@[simp] theorem lockKind_reply (r : SeLe4n.Kernel.Reply) :
+    (KernelObject.reply r).lockKind = .reply := rfl
+
 /-- WS-SM SM3.B.1: totality witness — `lockKind` is defined for every
 `KernelObject`.  Trivial (every total function returns a value of
 its codomain), but consumed by SM3.C as the "every object has a
@@ -132,12 +138,13 @@ theorem lockKind_exists (obj : KernelObject) :
     ∃ k : LockKind, obj.lockKind = k :=
   ⟨obj.lockKind, rfl⟩
 
-/-- WS-SM SM3.B.1 audit-pass-2: substantive co-domain witness —
-`lockKind` returns one of the seven kernel-object kinds
-(`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
-`.untyped`, `.schedContext`).  It NEVER returns `.objStore`,
-`.reply`, or `.page` — the three `LockKind` variants that have
-no corresponding kernel-object struct in seLe4n's model.
+/-- WS-SM SM3.B.1 audit-pass-2 (updated WS-SM SM6.D): substantive
+co-domain witness — `lockKind` returns one of the eight kernel-object
+kinds (`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
+`.untyped`, `.schedContext`, `.reply`).  It NEVER returns `.objStore`
+or `.page` — the two `LockKind` variants that have no corresponding
+kernel-object struct in seLe4n's model (`.objStore` is the table-level
+lock; pages are inline `VSpaceRoot.mappings` entries).
 
 This is the substantive counterpart to `lockKind_exists`: it tells
 consumers something useful (the actual range of `lockKind`) rather
@@ -148,7 +155,7 @@ theorem lockKind_in_modeledKinds (obj : KernelObject) :
     obj.lockKind = .tcb ∨ obj.lockKind = .endpoint ∨
     obj.lockKind = .notification ∨ obj.lockKind = .cnode ∨
     obj.lockKind = .vspaceRoot ∨ obj.lockKind = .untyped ∨
-    obj.lockKind = .schedContext := by
+    obj.lockKind = .schedContext ∨ obj.lockKind = .reply := by
   cases obj
   case tcb _ => exact Or.inl rfl
   case endpoint _ => exact Or.inr (Or.inl rfl)
@@ -159,7 +166,9 @@ theorem lockKind_in_modeledKinds (obj : KernelObject) :
   case untyped _ =>
     exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl)))))
   case schedContext _ =>
-    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl)))))
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl rfl))))))
+  case reply _ =>
+    exact Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr rfl))))))
 
 /-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.objStore`.
 
@@ -171,11 +180,11 @@ theorem lockKind_ne_objStore (obj : KernelObject) :
     obj.lockKind ≠ .objStore := by
   cases obj <;> intro h <;> cases h
 
-/-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.reply`
-(SM3.A.5 N/A — Reply not modeled as a kernel-object struct). -/
-theorem lockKind_ne_reply (obj : KernelObject) :
-    obj.lockKind ≠ .reply := by
-  cases obj <;> intro h <;> cases h
+-- WS-SM SM6.D: `lockKind_ne_reply` removed — `.reply` is now a real
+-- kernel-object kind (`KernelObject.reply` → `LockKind.reply`, hierarchy
+-- level 6), so the former "never .reply" pin is false by construction.
+-- Its single-core / cross-core consumers resolve the `.reply` lock instead
+-- of discharging it as impossible.
 
 /-- WS-SM SM3.B.1 audit-pass-2: `lockKind` is NEVER `.page`
 (SM3.A.8 N/A — page mappings stored inline in VSpaceRoot.mappings). -/
@@ -199,7 +208,8 @@ theorem lockKind_eq_of_objectType (obj : KernelObject) :
     | .cnode        => obj.lockKind = .cnode
     | .vspaceRoot   => obj.lockKind = .vspaceRoot
     | .untyped      => obj.lockKind = .untyped
-    | .schedContext => obj.lockKind = .schedContext := by
+    | .schedContext => obj.lockKind = .schedContext
+    | .reply        => obj.lockKind = .reply := by
   cases obj <;> rfl
 
 end KernelObject
@@ -342,9 +352,12 @@ def lookup (s : SystemState) (l : LockId) :
           (sc.lock, KernelObject.schedContext sc))
   -- SM3.A.10's table-level lock is on SystemState, not in objects.
   | .objStore => none
-  -- SM3.A.5 / SM3.A.8: Reply / Page are N/A for seLe4n's object model
-  -- (Reply is encoded in TCB state; Page is encoded in VSpaceRoot.mappings).
-  | .reply => none
+  -- WS-SM SM6.D: Reply is now a first-class kernel object — dispatch to its
+  -- per-object lock via `getReply?` (hierarchy level 6), mirroring schedContext.
+  | .reply =>
+      (s.getReply? ⟨l.objId.val⟩).map
+        (fun (r : SeLe4n.Kernel.Reply) => (r.lock, KernelObject.reply r))
+  -- SM3.A.8: Page is N/A (mappings stored inline in VSpaceRoot.mappings).
   | .page => none
 
 /-- WS-SM SM3.B.2: lookup at a present ObjId with matching kind returns
@@ -408,6 +421,15 @@ theorem lookup_some_of_kindMatch (s : SystemState) (l : LockId)
         exact SeLe4n.ObjId.ofNat_toNat l.objId
       rw [hObjIdEq, hPresent]
       subst hVar; simp
+  | reply r =>
+      have hKindRp : l.kind = .reply := by rw [← hKind]; subst hVar; rfl
+      rw [hKindRp]
+      simp only [SystemState.getReply?]
+      have hObjIdEq : (⟨l.objId.val⟩ : SeLe4n.ReplyId).toObjId = l.objId := by
+        show SeLe4n.ObjId.ofNat l.objId.val = l.objId
+        exact SeLe4n.ObjId.ofNat_toNat l.objId
+      rw [hObjIdEq, hPresent]
+      subst hVar; simp
 
 /-- WS-SM SM3.B.2: `lookup`-`fromObject` round-trip — looking up a
 `LockId` built from a present object recovers the object and its
@@ -430,10 +452,15 @@ deliberately does not handle this kind. -/
 @[simp] theorem lookup_objStore (s : SystemState) (oid : SeLe4n.ObjId) :
     LockId.lookup s ⟨.objStore, oid⟩ = none := rfl
 
-/-- WS-SM SM3.B.2: lookup at the `.reply` kind is always `none`
-(SM3.A.5 N/A decision). -/
+/-- WS-SM SM6.D: lookup at the `.reply` kind dispatches to the Reply
+object's per-object lock via `getReply?` (was a fail-closed `none` under
+the SM3.A.5 N/A decision; Reply is now a first-class kernel object at
+hierarchy level 6).  Mirrors the modeled-kind dispatch of the other
+object kinds. -/
 @[simp] theorem lookup_reply (s : SystemState) (oid : SeLe4n.ObjId) :
-    LockId.lookup s ⟨.reply, oid⟩ = none := rfl
+    LockId.lookup s ⟨.reply, oid⟩ =
+      (s.getReply? ⟨oid.val⟩).map
+        (fun (r : SeLe4n.Kernel.Reply) => (r.lock, KernelObject.reply r)) := rfl
 
 /-- WS-SM SM3.B.2: lookup at the `.page` kind is always `none`
 (SM3.A.8 N/A decision). -/
@@ -451,7 +478,15 @@ theorem lookup_kindMatch (s : SystemState) (l : LockId)
   unfold LockId.lookup at hLookup
   cases hK : l.kind with
   | objStore => rw [hK] at hLookup; cases hLookup
-  | reply => rw [hK] at hLookup; cases hLookup
+  | reply =>
+      rw [hK] at hLookup
+      cases hG : s.getReply? ⟨l.objId.val⟩ with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some r =>
+          rw [hG] at hLookup
+          simp at hLookup
+          obtain ⟨_, hoEq⟩ := hLookup
+          rw [← hoEq]; rfl
   | page => rw [hK] at hLookup; cases hLookup
   | tcb =>
       rw [hK] at hLookup
@@ -526,7 +561,15 @@ theorem lookup_lockState_eq (s : SystemState) (l : LockId)
   unfold LockId.lookup at hLookup
   cases hK : l.kind with
   | objStore => rw [hK] at hLookup; cases hLookup
-  | reply => rw [hK] at hLookup; cases hLookup
+  | reply =>
+      rw [hK] at hLookup
+      cases hG : s.getReply? ⟨l.objId.val⟩ with
+      | none => rw [hG] at hLookup; cases hLookup
+      | some r =>
+          rw [hG] at hLookup
+          simp at hLookup
+          obtain ⟨hSt, hO⟩ := hLookup
+          rw [← hSt, ← hO]; rfl
   | page => rw [hK] at hLookup; cases hLookup
   | tcb =>
       rw [hK] at hLookup
