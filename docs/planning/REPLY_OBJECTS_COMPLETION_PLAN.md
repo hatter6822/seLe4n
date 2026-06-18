@@ -170,6 +170,61 @@ rid atomically.
 keeps each sub-step green: #7.a is additive (defaulted param), #7.b removes now-dead steps,
 #7.c strengthens the invariant only once the transitions establish it.
 
+### VALIDATED DESIGN & EXECUTION RECIPE (2026-06-18 spike — transition compiles; full re-base scoped)
+
+A throwaway spike threaded `endpointReceiveDual` end-to-end and confirmed three things:
+the **transition body compiles**, the **proof composition is sound** (every needed frame
+lemma already exists), and the **scope is a ~90-call-site + 300+-proof-error atomic re-base
+across ~15 files** — there is *no green intermediate* (a required-`replyId` param breaks every
+call site at once), so it must be executed as one focused, uninterrupted slice.
+
+**(a) The threaded transition body (validated to compile).** `endpointReceiveDual (endpointId)
+(receiver) (replyId : Option ReplyId)` folds the former `linkReceivedCaller` dispatch step in
+at the two branches that already distinguish the cases:
+- **Call path** (`senderWasCall`, sender → `.blockedOnReply`): after the `blockedOnReply`
+  store, `match replyId with | none => .error .replyCapInvalid | some rid => SystemState.linkCallerReply
+  sender rid …`, then the receiver `.ready` store.  (Reject when a Call rendezvous carries no
+  Reply — the post-state is discarded, so no stranding.)
+- **Send path** (sender → `.ready`): unchanged (a one-way Send links nothing).
+- **No-sender path** (receiver → `.blockedOnReceive`): after the `storeTcbIpcState`, read the
+  receiver TCB and `storeObject … { rTcb with pendingReceiveReply := replyId }` (server-first
+  stash; `none` clears any stale stash).
+Make `replyId` **required** (not defaulted) — a defaulted param before the `Kernel` monad arg
+is mis-bound by every positional-state call `endpointReceiveDual ep recv st` anyway, so required
+is cleaner.  `endpointReplyRecv`'s legacy single-core receive leg passes `none`.
+`endpointReceiveDualWithCaps` gains the param and forwards it.
+
+**(b) The proof re-base pattern (per `endpointReceiveDual_preserves_X`).** Each proof gains
+`(replyId : Option ReplyId)` and, where it unfolds the body: in the Call branch, `cases replyId`
+— `none` ⇒ `simp [hStep]` (the reject contradicts `hStep = .ok`); `some rid` ⇒ thread the
+`linkCallerReply` frame between the two stores.  In the no-sender branch, thread the
+`pendingReceiveReply` `storeObject` frame.  **Reusable frames that already exist:**
+`linkCallerReply_objects_frame` (only `rid.toObjId` + `caller.toObjId` change),
+`linkCallerReply_preserves_ipcInvariantFull`, `storeObject_tcb_preserves_ipcInvariant`
+(NotificationBind.lean), `storeObject_tcb_replyObject_preserves_ipcInvariantCore`.  **First step
+of execution: prove the *bare* reusable frames once** — `linkCallerReply_preserves_ipcInvariant`,
+`linkCallerReply_preserves_objects_invExt`, and the `pendingReceiveReply`-store duals (each a
+short consequence of `linkCallerReply_objects_frame` / `storeObject_tcb_*`) — then the ~300
+per-site fixes are a *mechanical* application of those frames, not novel proofs.
+
+**(c) Blast radius (90 applications / ~15 files).** Production: `WithCaps` (the
+`endpointReceiveDualWithCaps` forward + its 3 preservation statements), the `.receive`/`.replyRecv`
+dispatch in `API.lean` (pass the resolved `rid`, delete the now-dead `linkReceivedCaller`).
+Proofs (Tier-3, the bulk — 64 errors in `EndpointPreservation.lean` alone):
+`EndpointPreservation`, `DualQueueMembership`, `PerOperation`, `StoreObjectFrame`,
+`CallReplyRecv/ReplyRecv`.  Info-flow: `Composition`, `Operations`, `Wrappers`, `Soundness`.
+Cross-subsystem: `CrossSubsystemPerCorePreservation`.  Tests/harness (`replyId := none`):
+`MainTraceHarness`, `NegativeStateSuite`, `SmpCrossCoreCallSuite`, `SmpCrossCoreNotificationSuite`,
+`InformationFlowSuite`, `OperationChainSuite`.  Then #7.b removes `linkReceivedCaller`
+(`API.lean:349`); #7.a-call repeats for `endpointCall`'s server-waiting rendezvous (folding
+`linkServerFirstCaller`, `API.lean:386`); #7.a-percore repeats for `endpointReceiveDualOnCore`
+(the SM6.C cross-core suite); #7.c strengthens `replyCallerLinkage` once all paths link.
+
+**Note on approach:** a wrapper transition (a separate `endpointReceiveDualLinked` the dispatch
+composes) is **rejected** — it leaves the raw `endpointReceiveDual` producing an unanswerable
+`blockedOnReply` state, defeating the transition-boundary invariant.  The fold must be **inside**
+the public `endpointReceiveDual`.
+
 ---
 
 ## Verification (every sub-step)

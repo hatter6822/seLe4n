@@ -1,3 +1,24 @@
+## v0.31.148 — Reply objects (seL4-MCS): validated #7 transition-threading design + execution recipe (PR #822 review)
+
+Design-capture for finding #7 (`blockedOnReply ⇒ replyObject`).  A throwaway spike threaded
+`endpointReceiveDual` end-to-end and confirmed: the threaded transition body **compiles**, the
+proof composition is **sound** (every needed frame already exists —
+`linkCallerReply_objects_frame`, `linkCallerReply_preserves_ipcInvariantFull`,
+`storeObject_tcb_preserves_ipcInvariant`, `storeObject_tcb_replyObject_preserves_ipcInvariantCore`),
+and the scope is a **~90-call-site + 300+-proof-error atomic re-base across ~15 files** with no
+green intermediate (a required-`replyId` param breaks every call site at once).
+
+`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` §#7 now carries the **validated design + execution
+recipe**: the exact threaded body (caller-first `linkCallerReply` fold + server-first
+`pendingReceiveReply` stash + Call-without-reply reject), the per-proof pattern (`cases replyId`;
+`none` ⇒ reject contradicts `.ok`; `some rid` ⇒ thread the existing frames), the first execution
+step (prove the *bare* reusable frames once, then the ~300 per-site fixes are mechanical), and the
+full blast radius by file.  The wrapper alternative is explicitly rejected (it leaves the raw
+transition producing an unanswerable state).  No transition change is committed here — the spike
+was reverted to keep the tree green; the re-base is a dedicated focused slice.  Tier 0-2 green.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#7)
+
 ## v0.31.147 — Reply objects (seL4-MCS): end-to-end retype→mint→link reply-cap test (PR #822 Codex review, Phase H #2.d)
 
 **Deferred item #2, sub-step #2.d — the end-to-end provisioning test** (closes the optional
