@@ -1,3 +1,35 @@
+## v0.31.150 — Reply objects (seL4-MCS): completion plan refreshed to reality (#2/#1 LANDED, #7 expanded into green-incremental slices)
+
+Documentation-only refresh of `docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` to match the
+landed code. A codebase-grounded re-read found the plan stale: items **#2** (`mintReplyCap`,
+v0.31.140–143/147) and **#1** (`replyCapPointsToValidReply` as the 7th
+`capabilityInvariantBundle` conjunct, v0.31.144–146/149) are **already landed in production**,
+while the plan still described them as future work. Per the implement-the-improvement rule the
+plan (the inferior artefact here — it described a *worse*, pre-landing state than the code) is
+brought current:
+
+- **Status table + Context** rewritten: #2 and #1 marked ✅ LANDED with version cites; #7 (the
+  D6 transition fold) flagged as the sole remaining slice.
+- **§#2 and §#1** converted to completion records with exact file/line cites
+  (`Operations.lean:1154`, `Defs.lean:230–233`, `API.lean:914`, etc.) and their realized
+  break-set (#1.a's tuple expansion: estimated ~60, realized ~155 sites).
+- **§#7 expanded** from the coarse `#7.a–d` into a finer, green-incremental decomposition
+  (#7.0 frames → independent per-function folds #7.1 single-core / #7.2 per-core / #7.3 call →
+  gated invariant strengthening #7.4 → tests #7.5), with a dependency graph, per-slice verify
+  steps, and a risk table. Exploits that the three blocking transitions are *separate
+  functions*, so each signature change is an independently-green slice rather than one
+  ~300-error atomic re-base. The validated 2026-06-18 spike recipe (v0.31.148) is preserved
+  and cross-referenced to the new slice numbers.
+- **Two actionable residuals surfaced** for follow-up: the minted reply cap carries
+  `[.read, .write]` rights while seL4-MCS reply caps are rights-less (reconcile, do not weaken
+  the design note); and `capabilityInvariantBundle`'s doc-comment still says "6 conjuncts"
+  when the live tuple has 7 (one-line fix).
+
+No Lean/Rust sources changed; trace byte-identical. Version bumped 0.31.149 → 0.31.150.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md
+Refs: CHANGELOG.md v0.31.140–v0.31.149 (#2/#1 landing record; #7 design validation)
+
 ## v0.31.149 — Reply objects (seL4-MCS): lifecycle invariants cover reply caps (PR #822 review #02/#13)
 
 Closes the residual of review items #02/#13 ("cover replyCap targets in lifecycle invariants").
