@@ -1,3 +1,27 @@
+## v0.31.149 — Reply objects (seL4-MCS): lifecycle invariants cover reply caps (PR #822 review #02/#13)
+
+Closes the residual of review items #02/#13 ("cover replyCap targets in lifecycle invariants").
+The *binding* enforcement already landed in #1.a (`replyCapPointsToValidReply` as the 7th
+`capabilityInvariantBundle` conjunct rejects a dangling `.replyCap rid`), but the lifecycle
+stale-reference family's `lifecycleCapabilityRefObjectTargetBacked` still matched only `.object`
+metadata, leaving it textually blind to reply caps.
+
+- New `lifecycleCapabilityRefReplyCapBacked` (`Lifecycle/Invariant.lean`) — the reply-cap analogue:
+  a slot whose metadata is `.replyCap rid` must resolve through `getReply? rid`.
+- New `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`
+  (`Capability/Invariant/Defs.lean`, the layer that sees both) — **proves the lifecycle predicate
+  is implied by the step-preserved capability invariant**.  Lifecycle metadata is *derived* from the
+  slot cap (`lookupCapabilityRefMeta = (lookupSlotCap ·).map target`), so `.replyCap rid` metadata
+  witnesses a CNode slot that `replyCapPointsToValidReply` already backs.  This respects the layering
+  (the reply-backing fact is owned by the capability layer; Lifecycle-bundle construction derives
+  from `lifecycleInvariantBundle` and cannot reach it) and adds **zero** preservation ripple — the
+  property is a consequence, not a new maintained conjunct.
+
+`ModelIntegritySuite.lifecycle_reply_cap_metadata_backed` witnesses backed-resolves / dangling-fails
+at the lifecycle-metadata level.  Full prod + staged build + Tier 0-2 green; trace byte-identical.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md (#1)
+
 ## v0.31.148 — Reply objects (seL4-MCS): validated #7 transition-threading design + execution recipe (PR #822 review)
 
 Design-capture for finding #7 (`blockedOnReply ⇒ replyObject`).  A throwaway spike threaded

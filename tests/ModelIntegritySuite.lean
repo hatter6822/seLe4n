@@ -919,6 +919,41 @@ def reply_cap_end_to_end_retype_mint_link : IO Unit := do
                   | some tcb => expect "caller TCB records the reply object (TCB↔Reply linkage)" (decide (tcb.replyObject = some rid))
                   | none => throw <| IO.userError "caller TCB must persist after linking"
 
+/-- WS-SM SM6.D (PR #822 review #02/#13, lifecycle): the lifecycle capability-reference metadata
+covers reply caps.  `lookupCapabilityRefMeta` derives a slot's metadata from its cap target, so a
+CNode slot holding `.replyCap rid` presents `.replyCap rid` metadata; the new
+`lifecycleCapabilityRefReplyCapBacked` predicate (provably implied by
+`capabilityInvariantBundle.replyCapPointsToValidReply`) requires such metadata to resolve through
+`getReply?`.  This exhibits both sides at the lifecycle-metadata level: a backed reply-cap slot's
+metadata resolves; a dangling one does not (and is exactly what the predicate forbids). -/
+def lifecycle_reply_cap_metadata_backed : IO Unit := do
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofObjId ⟨320⟩
+  let cnId : SeLe4n.ObjId := ⟨115⟩
+  let ref : SeLe4n.Model.SlotRef := { cnode := cnId, slot := SeLe4n.Slot.ofNat 0 }
+  let mkCn : KernelObject := .cnode
+    { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+      slots := SeLe4n.UniqueSlotMap.ofListWF
+        [ ((SeLe4n.Slot.ofNat 0),
+            { target := .replyCap rid, rights := AccessRightSet.ofList [.read, .write], badge := none }) ] }
+  -- Backed: the Reply object exists, so the slot's reply-cap metadata resolves.
+  let stBacked : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject ⟨320⟩ (.reply { replyId := rid })
+      |>.withObject cnId mkCn |>.build)
+  expect "lifecycle metadata for the slot is the reply cap"
+    (decide (SystemState.lookupCapabilityRefMeta stBacked ref = some (.replyCap rid)))
+  expect "backed reply-cap metadata resolves (lifecycleCapabilityRefReplyCapBacked holds)"
+    ((stBacked.getReply? rid).isSome)
+  -- Dangling: same reply-cap metadata, but no Reply object — the predicate's conclusion fails, so
+  -- this is precisely the state `lifecycleCapabilityRefReplyCapBacked` (and capabilityInvariantBundle)
+  -- now forbids.
+  let stDangling : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject cnId mkCn |>.build)
+  expect "dangling reply-cap metadata is still the reply cap"
+    (decide (SystemState.lookupCapabilityRefMeta stDangling ref = some (.replyCap rid)))
+  expect "dangling reply-cap metadata has no backing (forbidden state)"
+    ((stDangling.getReply? rid).isNone)
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -2212,6 +2247,7 @@ def main : IO Unit := do
   mintReplyCap_derives_backed_reply_cap
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
   reply_cap_end_to_end_retype_mint_link
+  lifecycle_reply_cap_metadata_backed
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

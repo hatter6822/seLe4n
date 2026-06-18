@@ -159,6 +159,36 @@ theorem replyCapPointsToValidReply_of_objects_eq {st st' : SystemState}
   unfold replyCapPointsToValidReply SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+/-- WS-SM SM6.D / PR #822 review (#02/#13 — "cover replyCap targets in lifecycle invariants"):
+the Lifecycle-layer `lifecycleCapabilityRefReplyCapBacked` predicate is **implied** by the
+step-preserved `replyCapPointsToValidReply` (the 7th `capabilityInvariantBundle` conjunct, #1.a).
+Lifecycle capability-reference metadata is *derived* from the slot cap
+(`lookupCapabilityRefMeta st ref = (lookupSlotCap st ref).map (·.target)`), so a `.replyCap rid`
+metadata witnesses a CNode slot holding that reply cap (`lookupSlotCap` resolves a CNode via
+`lookupCNode` + `CNode.lookup`), which `replyCapPointsToValidReply` backs.  This closes the
+review's residual — the lifecycle stale-reference family is no longer blind to reply caps —
+without rippling the Lifecycle-layer preservation surface, since the reply-backing fact is owned
+by the capability layer and the lifecycle predicate is a proven consequence of it. -/
+theorem lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply
+    (st : SystemState) (hRCPV : replyCapPointsToValidReply st) :
+    lifecycleCapabilityRefReplyCapBacked st := by
+  intro ref rid hMeta
+  unfold SystemState.lookupCapabilityRefMeta at hMeta
+  cases hCap : SystemState.lookupSlotCap st ref with
+  | none => rw [hCap] at hMeta; simp at hMeta
+  | some cap =>
+      rw [hCap] at hMeta
+      -- `(some cap).map Capability.target` reduces to `some cap.target`.
+      have hTgt : cap.target = .replyCap rid := by simpa using hMeta
+      rw [SystemState.lookupSlotCap] at hCap
+      cases hCN : SystemState.lookupCNode st ref.cnode with
+      | none => rw [hCN] at hCap; exact absurd hCap (by simp)
+      | some cn =>
+          rw [hCN] at hCap
+          have hObjCN : st.objects[ref.cnode]? = some (.cnode cn) :=
+            (SystemState.lookupCNode_eq_some_iff st ref.cnode cn).1 hCN
+          exact hRCPV ref.cnode cn ref.slot cap rid hObjCN hCap hTgt
+
 /-- Composed capability invariant bundle entrypoint.
 
 The active lifecycle slice extends the M2 foundation bundle with security-meaningful
