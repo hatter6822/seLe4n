@@ -3,7 +3,7 @@
 > Companion to the SM6.C/SM6.D reply-object slices in
 > [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the
 > PR #822 hardening pass. This plan tracked the three remaining **completeness**
-> items — the ABI / Prop-invariant / transition-fold tail. **As of v0.31.149,
+> items — the ABI / Prop-invariant / transition-fold tail. **As of v0.31.151,
 > items #2 and #1 are LANDED; item #7 (the D6 transition fold) is the sole
 > remaining slice.** Sections #2 and #1 below are retained as completion records
 > (with cites and residual-debt notes); the live work is **§#7**, expanded into
@@ -39,15 +39,18 @@ single open slice and the entire focus of **§#7** below.
 1. **Rights-less reply cap (from #2).** `mintReplyCap` (`Operations.lean:1154`)
    mints `.replyCap rid` with `rights := AccessRightSet.ofList [.read, .write]`,
    but **seL4-MCS reply caps are rights-less**. Per the implement-the-improvement
-   rule the design intent (rights-less) is the better artefact; the mint should be
-   reconciled to it (or the rights model justified) — see *Out-of-scope / tracked
-   debt*. Originally filed as "confirm after #2"; now a concrete reconciliation.
+   rule the design intent (rights-less) is the better artefact; the follow-up is
+   to make the mint rights-less. Do **not** close this by documenting the current
+   `[.read, .write]` behaviour as acceptable. Originally filed as "confirm after
+   #2"; now a concrete implementation task tracked below.
 2. **Stale conjunct-count comment (from #1).** `capabilityInvariantBundle`'s
    doc-comment (`Capability/Invariant/Defs.lean:228` / :237) still reads "the
    bundle now has **6** conjuncts", but #1.a added the 7th
    (`replyCapPointsToValidReply`), so the live tuple has **7**. The comment
-   describes a *worse* (out-of-date) state than the code; update it to "7" (a
-   one-line doc fix; fold into the next touch of that file or #7's invariant work).
+   describes a *worse* (out-of-date) state than the code; update it to "7" in
+   the next `Capability/Invariant/Defs.lean` touch, and no later than #7.4
+   (where `replyCallerLinkage`/bundle destructuring work already revisits the
+   invariant surface).
 
 ---
 
@@ -91,8 +94,8 @@ rejected as diluting the deliberate `.replyCap` authority distinction.
   receive-with-reply path.
 
 **Residual debt (carried forward).** The minted cap carries `[.read, .write]` rights;
-seL4-MCS reply caps are **rights-less**. Reconcile (rights-less mint, or justify the
-rights model) — see *Out-of-scope / tracked debt* item 1.
+seL4-MCS reply caps are **rights-less**. Reconcile by making the mint rights-less —
+see *Follow-up / tracked debt* item 1.
 
 ---
 
@@ -154,7 +157,7 @@ named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
 
 **Residual debt (carried forward).** The `capabilityInvariantBundle` doc-comment
 (`Defs.lean:228`/:237) still says the bundle "now has **6** conjuncts"; the live tuple has
-**7**. One-line doc fix — see *Out-of-scope / tracked debt* item 2.
+**7**. One-line doc fix — see *Follow-up / tracked debt* item 2.
 
 **Lesson learned for #7.** #1.a's tuple-expansion break-set was estimated at ~60 and
 realized at ~155 (extraction lemmas + multi-layer preservation chains widen the surface).
@@ -207,22 +210,26 @@ re-base. But the three blocking transitions — `endpointReceiveDual` (single-co
 `endpointReceiveDualOnCore` (per-core, `IPC/CrossCore/EndpointReply.lean:150`), and
 `endpointCall`'s server-waiting rendezvous — are **separate functions**. Changing one
 function's signature does **not** break the others' call sites. Therefore the work splits
-into **independently-green slices, one per function**, bracketed by a frame-pre-land slice
-(#7.0) and an invariant slice (#7.4). Each numbered slice below compiles green on its own
-(`replyCallerLinkage` unchanged until #7.4); the invariant is strengthened only after all
-producers link. This converts "one ~300-error atomic slice" into "one additive green PR +
-three smaller atomic-but-mechanical folds + one invariant PR".
+into **separately green slices, one per producer family**, bracketed by a frame-pre-land
+slice (#7.0) and an invariant slice (#7.4). The only ordering constraint among the three
+folds is semantic, not signature-driven: #7.3 (server-waiting `endpointCall`) consumes the
+server-first stash that #7.1 moves into `endpointReceiveDual`, so #7.3 must land after
+#7.1. #7.2 remains independent of both. Each numbered slice below compiles green on its
+own once its stated prerequisites have landed (`replyCallerLinkage` unchanged until #7.4);
+the invariant is strengthened only after all producers link. This converts "one ~300-error
+atomic slice" into "one additive green PR + three smaller atomic-but-mechanical folds +
+one invariant PR".
 
 **Dependency graph (topological execution order):**
 ```
 #7.0 (frames, additive)
-   └─> #7.1 (single-core receive fold) ──┐
-   └─> #7.2 (per-core receive fold)    ──┤
-   └─> #7.3 (call-path fold)           ──┴─> #7.4 (strengthen replyCallerLinkage) ─> #7.5 (tests)
+   ├─> #7.1 (single-core receive fold) ──┬─> #7.3 (call-path fold) ──┐
+   └─> #7.2 (per-core receive fold)    ──┴──────────────────────────┴─> #7.4 (strengthen replyCallerLinkage) ─> #7.5 (tests)
 ```
-`#7.1`–`#7.3` are mutually independent (different functions) and may land in any order or
-in parallel branches; **#7.4 is gated on all three** (the clause is false while any producer
-still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
+`#7.1` and `#7.2` may land in either order. `#7.3` is intentionally ordered after
+`#7.1` because it relies on the server-first `pendingReceiveReply` stash becoming
+transition-sourced there. **#7.4 is gated on all three** (the clause is false while
+any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
 
 **Green sub-steps (each commits only when its module set is fully green):**
 
@@ -264,7 +271,8 @@ still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   resolved `rid` from `endpointReceiveDualCrossCoreDispatch{,Checked}`. Re-point
   `CrossSubsystemPerCorePreservation` and the cross-core suites
   (`SmpCrossCoreCallSuite`, `SmpCrossCoreNotificationSuite`, `SmpCrossCoreReplySuite`).
-  Independent of #7.1 (separate function). **Verify:** per-module build of the CrossCore +
+  Independent of #7.1 and #7.3 (separate function and separate call-site family).
+  **Verify:** per-module build of the CrossCore +
   per-core preservation files; the three SMP suites; trace byte-identical.
 
 - **#7.3 — call-path fold (`endpointCall` server-waiting rendezvous).** Fold
@@ -382,17 +390,17 @@ staged. Rust ABI mirrors (already landed for #2.c) are verified via
 The pre-commit hook (module build + `sorry`/`axiom` scan) must remain installed and **not**
 be bypassed with `--no-verify`.
 
-## Out-of-scope / tracked debt
+## Follow-up / tracked debt
 1. **Rights-less reply cap (#2 residual, actionable).** `mintReplyCap` mints `.replyCap`
    with `[.read, .write]` rights; seL4-MCS reply caps are rights-less. Reconcile the mint to
-   the rights-less design (or record an explicit justification for the rights model). Per the
-   implement-the-improvement rule, weakening the design note to match the code is **not** an
-   acceptable outcome — the mint should match the rights-less intent. Closure target: a
-   follow-on slice after #7, or fold into #7.3 if it touches the reply-cap mint surface.
+   the rights-less design by removing reply-cap rights at the mint site and updating any
+   affected preservation/test expectations. Per the implement-the-improvement rule, weakening
+   the design note to match the code is **not** an acceptable outcome. Closure target: the
+   first reply-cap mint follow-up after #7, unless #7.3 expands to touch the mint surface.
 2. **Stale `capabilityInvariantBundle` conjunct-count comment (#1 residual).**
    `Capability/Invariant/Defs.lean:228`/:237 still say the bundle has "6 conjuncts"; the live
-   tuple has 7 (the #1.a `replyCapPointsToValidReply` addition). One-line doc fix; fold into
-   the next touch of that file or #7.4's invariant work.
+   tuple has 7 (the #1.a `replyCapPointsToValidReply` addition). One-line doc fix; close in
+   the next `Capability/Invariant/Defs.lean` touch, and no later than #7.4's invariant work.
 3. **Reply-cap badge model** (seL4 reply caps are badge-less) — confirm alongside item 1.
 4. **Full HW-tier reply-lock contention stress** — CI/QEMU, post-v1.0.0.
 

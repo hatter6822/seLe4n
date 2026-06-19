@@ -1,3 +1,23 @@
+## v0.31.151 — Reply objects plan review follow-up: clarify #7 ordering and tracked residuals
+
+Documentation-only follow-up to the reply-objects completion plan review. The plan now makes
+the intended recommendations explicit instead of leaving ambiguous wording:
+
+- Corrects the #7 dependency story: #7.1 (single-core receive) and #7.2 (per-core receive)
+  may land in either order, but #7.3 (server-waiting call fold) must land after #7.1 because
+  it consumes the server-first `pendingReceiveReply` stash that #7.1 makes transition-sourced.
+- Rewords the rights-less reply-cap residual as an implementation task: make `mintReplyCap`
+  rights-less rather than closing the issue by justifying/documenting the current
+  `[.read, .write]` behaviour.
+- Tightens the stale `capabilityInvariantBundle` conjunct-count comment follow-up with a
+  concrete closure boundary: fix it on the next `Capability/Invariant/Defs.lean` touch, and
+  no later than #7.4.
+
+No Lean/Rust sources changed beyond the required version-site sync. Version bumped
+0.31.150 → 0.31.151.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md
+
 ## v0.31.150 — Reply objects (seL4-MCS): completion plan refreshed to reality (#2/#1 LANDED, #7 expanded into green-incremental slices)
 
 Documentation-only refresh of `docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` to match the
