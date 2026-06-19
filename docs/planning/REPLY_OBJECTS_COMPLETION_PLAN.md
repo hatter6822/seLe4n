@@ -2,175 +2,317 @@
 
 > Companion to the SM6.C/SM6.D reply-object slices in
 > [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the
-> in-flight PR #822 hardening pass (landed v0.31.132–v0.31.138). This plan covers
-> the three remaining **completeness** items — the Prop-invariant / ABI tail.
+> PR #822 hardening pass. This plan tracked the three remaining **completeness**
+> items — the ABI / Prop-invariant / transition-fold tail. **As of v0.31.151,
+> items #2 and #1 are LANDED; item #7 (the D6 transition fold) is the sole
+> remaining slice.** Sections #2 and #1 below are retained as completion records
+> (with cites and residual-debt notes); the live work is **§#7**, expanded into
+> green-incremental sub-steps.
 
 ## Context & status
 
 The reply-object workstream landed the first-class `Reply` object, single-use
 `.replyCap rid` capabilities, faithful Call/Receive/Reply/ReplyRecv linkage, the
-cross-core dispatch, and the full PR-#822 hardening pass. Three items remain. **All
-three are fail-closed-safe at runtime today** — the live `.reply` path rejects a
-dangling reply cap via `getReply?`, and the live dispatch always links `replyObject`
-— so these close **model/ABI completeness gaps, not safety holes**.
+cross-core dispatch, and the full PR-#822 hardening pass. **All three completion
+items are fail-closed-safe at runtime regardless of completion state** — the live
+`.reply` path rejects a dangling reply cap via `getReply?`, and the live dispatch
+always links `replyObject` — so these close **model/ABI completeness gaps, not
+safety holes**.
 
-| # | Item | Layer | Codex thread(s) |
-|---|------|-------|-----------------|
-| **#2** | retype → reply-cap authority | ABI (Phase H) | "Produce a reply cap for retyped Reply objects" |
-| **#1** | `replyCapPointsToValidReply` | Capability invariant (Phase C-inv) | "Cover replyCap targets in lifecycle invariants" / "Extend lifecycle invariants to cover reply caps" |
-| **#7** | `blockedOnReply ⇒ replyObject` | IPC invariant + transitions (Phase D6) | "Require blocked replies to name a Reply object" |
+| # | Item | Layer | Status | Landed |
+|---|------|-------|--------|--------|
+| **#2** | retype → reply-cap authority (`mintReplyCap`) | ABI (Phase H) | ✅ **LANDED** | v0.31.140–143, 147 |
+| **#1** | `replyCapPointsToValidReply` (7th bundle conjunct) | Capability invariant (Phase C-inv) | ✅ **LANDED** | v0.31.144–146, 149 |
+| **#7** | `blockedOnReply ⇒ replyObject` (transition fold) | IPC invariant + transitions (Phase D6) | ⏳ **REMAINING** | design validated v0.31.148 |
 
-## Sequencing: #2 → #1 → #7
+**Original sequencing rationale (#2 → #1 → #7), preserved for the record.** #2 went
+first (most self-contained ABI feature, establishing the `.replyCap`-from-retype
+production path #1's invariant reasons about as "backed"); #1 second (Prop-invariant
+completeness, cleanest once the cap-acquisition story was settled); #7 last (the
+deepest re-base — folding reply-linking into the IPC transitions — the plan's D6
+contract and the natural culmination). #2 and #1 executed in that order
+(v0.31.140 → v0.31.146, lifecycle-coverage follow-on v0.31.149); #7 is now the
+single open slice and the entire focus of **§#7** below.
 
-- **#2 first** — most self-contained (an ABI feature); unblocks dynamically-usable
-  Reply caps and establishes the `.replyCap`-from-retype production path that #1's
-  invariant reasons about as "backed".
-- **#1 second** — the Prop-invariant completeness; cleanest once the cap-acquisition
-  story (#2) is settled so the invariant covers the production path.
-- **#7 last** — the deepest re-base (fold reply-linking into the IPC transitions);
-  the plan's D6 contract, the natural culmination.
+### Residual-debt carried by the landed items (actionable)
 
----
-
-## #2 — retype → reply-cap authority
-
-**Problem.** `lifecycleRetypeDirect` (`RetypeWrappers.lean:246`) retypes an ObjId
-**in place**: the authority cap stays `.object target` while the object becomes
-`.reply`. `resolveRecvReplyId`/`extractReplyId` require `.replyCap rid`, so a retyped
-Reply's `.object` cap yields `.invalidCapability` — dynamically-retyped Reply objects
-are unusable; only boot-preinstalled reply caps work.
-
-**Optimal approach (decision).** Add a verified **mint-reply-cap** production path: a
-`cspaceMint`-family op that, given an `.object target` cap (with `.write`/`.retype`
-right) where `target` holds a `.reply` object, installs `.replyCap (ReplyId.ofObjId
-target)` into a destination slot — CDT-tracked exactly like `cspaceMint`. Authority:
-the holder of the `.object` cap to the Reply object may derive its reply cap (the
-object *is* the reply object). Single-use semantics unchanged (consume clears
-`reply.caller`).
-
-*Alternative considered + rejected:* make `extractReplyId` accept an `.object target`
-cap that points at a `.reply` — rejected; it dilutes the deliberate `.replyCap`
-authority distinction the C-wire swap established.
-
-**Green sub-steps**
-- **#2.a** — `mintReplyCap` in `Capability/Operations.lean` (resolve `.object target`
-  → require `getReply? (ReplyId.ofObjId target) ≠ none` → CDT-tracked insert
-  `.replyCap rid` at dst) + spec lemmas mirroring `cspaceMint`.
-- **#2.b** — `mintReplyCap_preserves_capabilityInvariantBundle` (it inserts a
-  `.replyCap` whose rid is backed by construction — depends only on the existing
-  6-tuple until #1 adds the 7th conjunct).
-- **#2.c** — ABI: `mintReplyCap` SyscallId + decode + dispatch arm + Rust
-  `sele4n-types`/`sele4n-hal` mirror + conformance.
-- **#2.d** — end-to-end test: retype Untyped→Reply, `mintReplyCap`, use the resulting
-  `.replyCap` in `endpoint_receive_with_reply`.
+1. **Rights-less reply cap (from #2).** `mintReplyCap` (`Operations.lean:1154`)
+   mints `.replyCap rid` with `rights := AccessRightSet.ofList [.read, .write]`,
+   but **seL4-MCS reply caps are rights-less**. Per the implement-the-improvement
+   rule the design intent (rights-less) is the better artefact; the follow-up is
+   to make the mint rights-less. Do **not** close this by documenting the current
+   `[.read, .write]` behaviour as acceptable. Originally filed as "confirm after
+   #2"; now a concrete implementation task tracked below.
+2. **Stale conjunct-count comment (from #1).** `capabilityInvariantBundle`'s
+   doc-comment (`Capability/Invariant/Defs.lean:228` / :237) still reads "the
+   bundle now has **6** conjuncts", but #1.a added the 7th
+   (`replyCapPointsToValidReply`), so the live tuple has **7**. The comment
+   describes a *worse* (out-of-date) state than the code; update it to "7" in
+   the next `Capability/Invariant/Defs.lean` touch, and no later than #7.4
+   (where `replyCallerLinkage`/bundle destructuring work already revisits the
+   invariant surface).
 
 ---
 
-## #1 — `replyCapPointsToValidReply`
+## #2 — retype → reply-cap authority  ✅ LANDED (v0.31.140–143, 147)
 
-**Problem.** The step-preserved `capabilityInvariantBundle` (and
-`lifecycleStaleReferenceExclusionInvariant`) only constrain `.object` cap targets; a
-`.replyCap rid` slot pointing at an absent/non-Reply object satisfies them while live
-`.reply` rejects it. The model admits a dangling reply cap. (The runtime check
-`cspaceSlotCoherencyChecks` in `InvariantChecks.lean` already validates
-`.replyCap rid => getReply? rid .isSome`; only the **Prop** invariant is blind.)
+**Problem (closed).** `lifecycleRetypeDirect` (`Lifecycle/Operations/RetypeWrappers.lean:246`)
+retypes an ObjId **in place**: the authority cap stays `.object target` while the object
+becomes `.reply`. `resolveRecvReplyId`/`extractReplyId` (`API.lean:269`, `:303`) require
+`.replyCap rid`, so a retyped Reply's `.object` cap yielded `.invalidCapability` —
+dynamically-retyped Reply objects were unusable; only boot-preinstalled reply caps worked.
 
-**Optimal approach.** Add, mirroring the runtime check:
+**Approach taken (decision honoured).** A verified **mint-reply-cap** production path: a
+`cspaceMint`-family op that, given an `.object target` cap where `target` holds a `.reply`
+object, installs `.replyCap (ReplyId.ofObjId target)` into a destination slot —
+CDT-tracked exactly like `cspaceMint`. Authority: the holder of the `.object` cap to the
+Reply object may derive its reply cap (the object *is* the reply object). The round-trip
+`(ReplyId.ofObjId target).toObjId = target` (Prelude) makes the minted cap resolve back to
+the same Reply, so the result satisfies `replyCapPointsToValidReply` **by construction**.
+*Alternative rejected:* making `extractReplyId` accept an `.object`-to-`.reply` cap —
+rejected as diluting the deliberate `.replyCap` authority distinction.
+
+**Sub-steps — all landed:**
+- **#2.a** ✅ — `mintReplyCap` (`Capability/Operations.lean:1154`): resolve `.object target`
+  via `cspaceLookupSlot` → require `getReply? (ReplyId.ofObjId target) ≠ none` (else
+  `.invalidCapability`) → `cspaceInsertSlot` the `.replyCap rid` at dst. CDT-tracked variant
+  `mintReplyCapWithCdt` (`:1172`). Mirrors `cspaceMint`'s lookup → derive → insert shape.
+- **#2.b** ✅ — `mintReplyCap_preserves_capabilityInvariantBundle`
+  (`Capability/Invariant/Preservation/Insert.lean:362`) +
+  `mintReplyCapWithCdt_preserves_capabilityInvariantBundle`
+  (`…/Preservation/CopyMoveMutate.lean:221`): the inserted `.replyCap`'s rid is backed by
+  construction, discharging the `hCapBacked` hypothesis of the unifying keystone
+  `cspaceInsertSlot_preserves_replyCapPointsToValidReply` (see #1.b).
+- **#2.c** ✅ — ABI: `SyscallId.mintReplyCap = 28` (`Model/Object/Types.lean`; `count := 29`),
+  decode (reuses `decodeCSpaceCopyArgs`), dispatch arm (`API.lean:914`, via
+  `dispatchCapabilityOnly` → `mintReplyCapWithCdt`), `lockSet_mintReplyCap` +
+  consistency + inventory (`LockSetTransitions.lean` / `LockSetInventory.lean`, 29 lockSet
+  + 29 consistency entries), Rust `sele4n-types`/`sele4n-hal` mirror (`MintReplyCap = 28`,
+  `COUNT = 29`) + conformance; trace fixture `[XVAL-002]` updated to "all 29 variants".
+- **#2.d** ✅ — end-to-end test `reply_cap_end_to_end_retype_mint_link` (v0.31.147):
+  retype Untyped→Reply, `mintReplyCap`, use the resulting `.replyCap` in the
+  receive-with-reply path.
+
+**Residual debt (carried forward).** The minted cap carries `[.read, .write]` rights;
+seL4-MCS reply caps are **rights-less**. Reconcile by making the mint rights-less —
+see *Follow-up / tracked debt* item 1.
+
+---
+
+## #1 — `replyCapPointsToValidReply`  ✅ LANDED (v0.31.144–146, lifecycle-coverage follow-on v0.31.149)
+
+**Problem (closed).** The step-preserved `capabilityInvariantBundle` (and
+`lifecycleStaleReferenceExclusionInvariant`) only constrained `.object` cap targets; a
+`.replyCap rid` slot pointing at an absent/non-Reply object satisfied them while live
+`.reply` rejects it. The model admitted a dangling reply cap. (The runtime check
+`cspaceSlotCoherencyChecks` in `Testing/InvariantChecks.lean:126` already validated
+`.replyCap rid => getReply? rid .isSome`; only the **Prop** invariant was blind.)
+
+**Approach taken.** Added, mirroring the runtime check
+(`Capability/Invariant/Defs.lean:146`):
 ```
 def replyCapPointsToValidReply (st) : Prop :=
   ∀ oid cn slot cap rid, st.objects[oid]? = some (.cnode cn) →
     cn.lookup slot = some cap → cap.target = .replyCap rid → st.getReply? rid ≠ none
 ```
-as the **7th conjunct of `capabilityInvariantBundle`** (`Capability/Invariant/Defs.lean:176`)
-— the only *step-preserved* home (`cdtMintCompleteness` and the cross-subsystem
-composition are **boot-only**, so adding there is vacuous-enforcement). Follow the
-AN4-F.5 named-projection idiom: tuple + `structure CapabilityInvariantBundle` field +
-bidirectional bridge + `@[simp]` projection abbrev.
+as the **7th conjunct of `capabilityInvariantBundle`** (`Defs.lean:230–233`) — the only
+*step-preserved* home (`cdtMintCompleteness` and the cross-subsystem composition are
+**boot-only**, so adding there would be vacuous-enforcement). Followed the AN4-F.5
+named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
+(`replyCapBacked`) + bidirectional bridge + `@[simp]` projection (`.2.2.2.2.2.2`).
 
-**Preservation (uniform).**
+**Preservation (uniform — as proven).**
 - Cap ops change CNodes, not Reply objects ⇒ `getReply? rid` frame-stable; an inserted
-  `.replyCap` copies a backed source (or #2.a's mint, backed by construction) ⇒ backed.
+  `.replyCap` copies a backed source (or #2's mint, backed by construction) ⇒ backed.
 - Delete/revoke remove caps ⇒ fewer reply caps ⇒ preserved.
 - Retype: `lifecyclePreRetypeCleanup` + CDT-revoke remove a Reply's caps before destroy
   ⇒ no dangling.
 
-**Green sub-steps**
-- **#1-prep (LANDED)** — define `replyCapPointsToValidReply` + `_of_objects_eq` frame
-  (`Capability/Invariant/Defs.lean`, after the `capabilityInvariantBundle` projections).
-  Standalone-green; not yet bundled.
-- **#1.b (the keystone — do BEFORE #1.a)** — the preservation lemmas, so #1.a's tuple
-  expansion is mechanical. **Key unifying insight:** most cap ops delegate to
-  `cspaceInsertSlot_preserves_capabilityInvariantBundle`, so extend the predicate's
-  preservation via the *one* lemma `cspaceInsertSlot_preserves_replyCapPointsToValidReply
-  (… hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none …)` and let
-  `cspaceCopy`/`Move`/`Mint`/`mintReplyCap`/`ipcUnwrap` discharge `hCapBacked` (the inserted
-  cap copies a backed source, or — for `mintReplyCap` — is backed by construction).
-  **Proof argument (worked out):** a CNode store never affects `getReply?` (it reads only
-  `.reply` objects; the stored object is a `.cnode`), so `st'.getReply? rid = st.getReply?
-  rid`; then case-split the post-state reply cap `(oid, slot)` — if `oid = addr.cnode` use
-  `CNode.lookup_insert_eq` (slot = addr.slot ⇒ the inserted cap, backed by `hCapBacked`) /
-  `lookup_insert_ne` (slot ≠ addr.slot ⇒ a pre-existing cap, backed by the pre-invariant);
-  if `oid ≠ addr.cnode` the slot is unchanged (pre-invariant).  `cspaceDeleteSlotCore` (and
-  revoke) only *remove* caps ⇒ trivially preserved.  Then the per-op `_preserves_*` theorems
-  build the 7th conjunct from these.
-- **#1.a (contract)** — add `replyCapPointsToValidReply` as the 7th `capabilityInvariantBundle`
-  conjunct (tuple `… ∧ st.objects.invExt ∧ replyCapPointsToValidReply st`): the FIRST FIVE
-  `@[simp] abbrev` projections are unchanged (prefixes); only `objectsInvExt` shifts
-  `.2.2.2.2.2 → .2.2.2.2.2.1` and the new projection is `.2.2.2.2.2.2`.  `lake build` to
-  enumerate the ~60 construct/destructure breaks (each preservation theorem appends the #1.b
-  witness; raw `⟨…6…⟩` destructures gain a 7th binder), fix systematically.
-- **#1.c** — `default_capabilityInvariantBundle` (`Architecture/Invariant.lean`) gains
-  `default_replyCapPointsToValidReply` (empty objects ⇒ vacuous); `Boot.lean` carries it
-  (boot has no reply caps); `crossSubsystemInvariantWithCdtCoverage` threads it.
-- **#1.d** — `ModelIntegritySuite` test: dangling reply cap rejected by the Prop predicate;
-  backed reply cap admitted.
+**Sub-steps — all landed:**
+- **#1 foundations** ✅ (v0.31.144) — `replyCapPointsToValidReply` + `_of_objects_eq` frame
+  (`Defs.lean:146–160`).
+- **#1.b (the keystone)** ✅ (v0.31.145) — the preservation lemmas. **Unifying insight:**
+  most cap ops delegate to `cspaceInsertSlot`, so the *one* lemma
+  `cspaceInsertSlot_preserves_replyCapPointsToValidReply
+  (… hCapBacked : ∀ rid, cap.target = .replyCap rid → st.getReply? rid ≠ none …)`
+  (`…/Preservation/Insert.lean`) carries it; `cspaceCopy`/`Move`/`Mint`/`mintReplyCap`/`ipcUnwrap`
+  discharge `hCapBacked` (inserted cap copies a backed source, or — for `mintReplyCap` —
+  backed by construction). `cspaceDeleteSlotCore` dual: deletion only removes caps ⇒
+  trivially preserved.
+- **#1.a (contract)** ✅ (v0.31.146) — `replyCapPointsToValidReply` added as the 7th
+  `capabilityInvariantBundle` conjunct; the ~155 construct/destructure sites repointed
+  (each preservation theorem appends the #1.b witness; raw destructures gained a 7th binder).
+  (The initial atomic-slice estimate was ~60 sites; the realized surface was ~155 — see
+  the *lesson learned* note below, which informs #7's blast-radius planning.)
+- **#1.c** ✅ — `default_capabilityInvariantBundle` (`Architecture/Invariant.lean:365`)
+  discharges the 7th conjunct vacuously on empty objects; `Boot.lean` carries it (boot has
+  no reply caps); `crossSubsystemInvariantWithCdtCoverage` threads it.
+- **#1.d** ✅ — `replyCapPointsToValidReply_distinguishes_backed_and_dangling`
+  (`ModelIntegritySuite`): dangling reply cap rejected by the Prop predicate; backed admitted.
+- **Lifecycle-coverage follow-on** ✅ (v0.31.149, PR #822 review #02/#13) —
+  `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`: the Lifecycle-layer
+  stale-reference family (whose `.replyCap` metadata is *derived* from the slot cap) is
+  **implied** by the step-preserved #1 conjunct, closing the review residual without a
+  parallel lifecycle predicate.
 
-**Risk.** The tuple expansion (#1.a) is atomic (one commit). Mitigate: do #1.b FIRST (the
-preservation lemmas exist), then change the def, `lake build` to enumerate every break, fix
-systematically, commit only when fully green.
+**Residual debt (carried forward).** The `capabilityInvariantBundle` doc-comment
+(`Defs.lean:228`/:237) still says the bundle "now has **6** conjuncts"; the live tuple has
+**7**. One-line doc fix — see *Follow-up / tracked debt* item 2.
+
+**Lesson learned for #7.** #1.a's tuple-expansion break-set was estimated at ~60 and
+realized at ~155 (extraction lemmas + multi-layer preservation chains widen the surface).
+**#7's atomic re-base estimate (~90 call sites / ~300 proof errors) should be treated as a
+floor, not a ceiling** — budget the slice with the #1.a multiplier in mind, and front-load
+every reusable frame lemma (#7.0) so the realized errors are *re-pointing*, not novel proof.
 
 ---
 
-## #7 — `blockedOnReply ⇒ replyObject` (D6 contract)
+## #7 — `blockedOnReply ⇒ replyObject` (D6 contract) ⏳ REMAINING
 
-**Problem.** `replyCallerLinkage` (`IPC/Invariant/Defs.lean:~623`) only constrains TCBs
-that *already* have `replyObject` set; `ipcInvariantFull` admits `.blockedOnReply` with
-`replyObject = none`. The raw single-core `endpointCall`/`endpointReceiveDual` produce
-exactly that intermediate (the caller blocks before the server-supplied reply cap is
-linked by the **separate** dispatch step `linkServerFirstCaller`/`linkReceivedCaller`).
+**Problem.** `replyCallerLinkage` (`IPC/Invariant/Defs.lean:623`) currently has **two**
+conjuncts — a forward link (`tcb.replyObject = some rid ⇒ reply.caller = some tid`) and a
+backward link (`reply.caller = some tid ⇒ tcb.replyObject = some rid ∧ tcb` is
+`.blockedOnReply`). Both only constrain TCBs that *already* have `replyObject` set;
+`replyCallerLinkage` is the **16th conjunct** of `ipcInvariantFull` (`Defs.lean:1271`), and
+that invariant therefore admits a `.blockedOnReply ep rt` TCB with `replyObject = none`.
+The raw single-core `endpointCall` (`DualQueue/Transport.lean:1740`) and `endpointReceiveDual`
+(`Transport.lean:1634`) produce exactly that intermediate: the caller blocks before the
+server-supplied reply cap is linked by the **separate** dispatch step
+`linkServerFirstCaller` (`API.lean:386`) / `linkReceivedCaller` (`API.lean:349`).
 
 **Root cause.** Reply-linking is a *dispatch-layer* step composed **after** the blocking
 transition; the rid is server-supplied and unknown to the raw transition. So
 `blockedOnReply ⇒ replyObject` holds at **syscall boundaries**, not **transition
-boundaries** — and `ipcInvariantFull` is a transition-level invariant.
+boundaries** — and `ipcInvariantFull` is a transition-level invariant. The relevant TCB
+shape is `ThreadIpcState.blockedOnReply (endpoint : ObjId) (replyTarget : Option ThreadId)`
+(`Model/Object/Types.lean:611`), with the caller's reply in `TCB.replyObject`
+(`:795`) and the server-first stash in `TCB.pendingReceiveReply` (`:806`).
 
 **Optimal approach (faithful seL4-MCS fold).** Make reply-linking **atomic** with the
 blocking transition by threading the resolved `rid` into the receive/call transitions, so
 the dequeued `Call` caller is set `.blockedOnReply` **and** `replyObject := some rid` in
 one store. `blockedOnCall` (the enqueue path, no server yet) carries no reply and is
 *excluded* from the new clause; the later dequeue→`blockedOnReply` transition links the
-rid atomically.
+rid atomically. The target invariant is the **third `replyCallerLinkage` clause**
+```
+(∀ tid tcb ep rt, getTcb? tid = some tcb →
+   tcb.ipcState = .blockedOnReply ep rt → ∃ rid, tcb.replyObject = some rid)
+```
+which holds **only once every production path that produces `.blockedOnReply` links a
+reply** — hence the strengthening (#7.4) is the *last* slice, after all three transitions
+(single-core receive, per-core receive, call) fold.
 
-**Green sub-steps (parallel-change)**
-- **#7.a** — thread `replyId : Option ReplyId := none` through `endpointReceiveDual{,OnCore}`
-  + `endpointCall`'s server-waiting rendezvous; set `replyObject` in the same store that
-  sets `.blockedOnReply` (defaulted ⇒ existing call sites unchanged; the dispatch passes the
-  resolved rid). Re-prove the transition preservation suite additively.
-- **#7.b** — **remove** the now-redundant separate `linkReceivedCaller`/`linkServerFirstCaller`
-  dispatch composition (per the standing "remove redundant code" directive) once the
-  transition links atomically.
-- **#7.c** — strengthen `replyCallerLinkage` with the third clause
-  `(∀ tid tcb ep rt, getTcb? tid = some tcb → tcb.ipcState = .blockedOnReply ep rt →
-  ∃ rid, tcb.replyObject = some rid)`; update `default`/`boot`/frame + the 3 concrete
-  `linkCallerReply`/`consumeCallerReply` preservation proofs + the folded transitions.
-- **#7.d** — tests: the receive/call transitions establish `blockedOnReply ⇒ replyObject`
-  directly; no raw transition produces an unanswerable state.
+### Decomposition — why and how it is finer than the original #7.a–d
 
-**Risk.** Highest of the three (SM6.A/C transition + preservation surface). Parallel-change
-keeps each sub-step green: #7.a is additive (defaulted param), #7.b removes now-dead steps,
-#7.c strengthens the invariant only once the transitions establish it.
+The original `#7.a/#7.b/#7.c/#7.d` treated the fold as one transition change. The spike
+(below) proved that a *single* function's signature change is an atomic, no-green-intermediate
+re-base. But the three blocking transitions — `endpointReceiveDual` (single-core),
+`endpointReceiveDualOnCore` (per-core, `IPC/CrossCore/EndpointReply.lean:150`), and
+`endpointCall`'s server-waiting rendezvous — are **separate functions**. Changing one
+function's signature does **not** break the others' call sites. Therefore the work splits
+into **separately green slices, one per producer family**, bracketed by a frame-pre-land
+slice (#7.0) and an invariant slice (#7.4). The only ordering constraint among the three
+folds is semantic, not signature-driven: #7.3 (server-waiting `endpointCall`) consumes the
+server-first stash that #7.1 moves into `endpointReceiveDual`, so #7.3 must land after
+#7.1. #7.2 remains independent of both. Each numbered slice below compiles green on its
+own once its stated prerequisites have landed (`replyCallerLinkage` unchanged until #7.4);
+the invariant is strengthened only after all producers link. This converts "one ~300-error
+atomic slice" into "one additive green PR + three smaller atomic-but-mechanical folds +
+one invariant PR".
 
-### VALIDATED DESIGN & EXECUTION RECIPE (2026-06-18 spike — transition compiles; full re-base scoped)
+**Dependency graph (topological execution order):**
+```
+#7.0 (frames, additive)
+   ├─> #7.1 (single-core receive fold) ──┬─> #7.3 (call-path fold) ──┐
+   └─> #7.2 (per-core receive fold)    ──┴──────────────────────────┴─> #7.4 (strengthen replyCallerLinkage) ─> #7.5 (tests)
+```
+`#7.1` and `#7.2` may land in either order. `#7.3` is intentionally ordered after
+`#7.1` because it relies on the server-first `pendingReceiveReply` stash becoming
+transition-sourced there. **#7.4 is gated on all three** (the clause is false while
+any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
+
+**Green sub-steps (each commits only when its module set is fully green):**
+
+- **#7.0 — pre-land the reusable frame lemmas (additive, fully green).** Prove, against the
+  *current* (unchanged-signature) code, the bare frames the spike's recipe (b) names as the
+  "first step of execution":
+  - `linkCallerReply_preserves_ipcInvariant` and `linkCallerReply_preserves_objects_invExt`
+    — short consequences of the existing `linkCallerReply_objects_frame`
+    (`DualQueueMembership.lean:2708`) and `linkCallerReply_preserves_ipcInvariantFull`
+    (`:3011`).
+  - the `pendingReceiveReply`-store duals — short consequences of
+    `storeObject_tcb_preserves_ipcInvariant` (`CrossCore/NotificationBind.lean:202`) and
+    `storeObject_tcb_replyObject_preserves_ipcInvariantCore` (`DualQueueMembership.lean:2526`).
+
+  These reference only existing definitions, so they compile with **zero** call-site churn
+  and shrink every later slice's realized error set to *re-pointing* rather than novel proof.
+  **Verify:** per-module `lake build` of the two invariant files; smoke; trace byte-identical
+  (no transition changed).
+
+- **#7.1 — single-core receive fold (`endpointReceiveDual` + `WithCaps`, one atomic slice).**
+  Thread a **required** `replyId : Option ReplyId` into `endpointReceiveDual`
+  (`Transport.lean:1634`) per recipe (a); `endpointReceiveDualWithCaps`
+  (`DualQueue/WithCaps.lean:139`) gains and forwards it; `endpointReplyRecv`'s legacy
+  single-core receive leg passes `none`. Rewire the `.receive`/`.replyRecv` dispatch in
+  `API.lean` to pass the resolved `rid` and **delete the now-dead `linkReceivedCaller`**
+  (`API.lean:349`) in the *same* slice (per the remove-redundant-code directive — the fold
+  makes it dead the instant the dispatch passes `some rid`). Re-point the preservation suite
+  to the #7.0 frames per recipe (b). **Execution order within the slice** (red until the
+  last file — see *no-green-intermediate* note): `Transport` → the Tier-3 invariant files
+  (`EndpointPreservation`, `DualQueueMembership`, `PerOperation`, `StoreObjectFrame`,
+  `CallReplyRecv`/`ReplyRecv`) → `WithCaps` → `API.lean` → info-flow (`Composition`,
+  `Operations`, `Wrappers`, `Soundness`) → single-core tests/harness (`MainTraceHarness`,
+  `NegativeStateSuite`, `OperationChainSuite`, `InformationFlowSuite`) passing `none` where
+  no reply is linked. Commit only when fully green. **Verify:** `test_full.sh` (Tier-3
+  invariant surface touched); trace byte-identical.
+
+- **#7.2 — per-core receive fold (`endpointReceiveDualOnCore`).** Repeat #7.1's pattern for
+  the SM6.C cross-core receive transition (`CrossCore/EndpointReply.lean:150`), threading the
+  resolved `rid` from `endpointReceiveDualCrossCoreDispatch{,Checked}`. Re-point
+  `CrossSubsystemPerCorePreservation` and the cross-core suites
+  (`SmpCrossCoreCallSuite`, `SmpCrossCoreNotificationSuite`, `SmpCrossCoreReplySuite`).
+  Independent of #7.1 and #7.3 (separate function and separate call-site family).
+  **Verify:** per-module build of the CrossCore +
+  per-core preservation files; the three SMP suites; trace byte-identical.
+
+- **#7.3 — call-path fold (`endpointCall` server-waiting rendezvous).** Fold
+  `linkServerFirstCaller` (`API.lean:386`) into `endpointCall`'s server-waiting rendezvous
+  (`Transport.lean:1740`): when the caller lands `.blockedOnReply ep (some server)`, read the
+  server's `pendingReceiveReply` *inside* the transition and set the caller's `replyObject`
+  in the same store, then **delete `linkServerFirstCaller`** in the same slice. (The
+  server-first stash itself is established by #7.1's no-sender path, which already writes
+  `pendingReceiveReply := replyId`, so by the time #7.3 lands the stash is transition-sourced.)
+  **Verify:** call + reply suites (`SmpCrossCoreCallSuite`, `SmpCrossCoreReplySuite`),
+  `NegativeStateSuite`; trace byte-identical.
+
+- **#7.4 — strengthen `replyCallerLinkage` (gated on #7.1–#7.3).** Add the third clause
+  (above) to `replyCallerLinkage` (`Defs.lean:623`). Update: `default`
+  (`Architecture/Invariant.lean` — vacuous on empty objects), `boot` (no blocked-on-reply
+  TCBs at boot), the `replyCallerLinkage` frame lemma, and the concrete
+  `linkCallerReply`/`consumeCallerReply` preservation proofs plus the three folded
+  transitions' `_preserves_ipcInvariantFull` obligations (each now discharges the third
+  clause directly from the atomic link). Because `replyCallerLinkage` is the 16th conjunct of
+  `ipcInvariantFull`, expect a tuple-destructure break-set across the IPC preservation surface
+  — budget per the #1.a lesson (estimate floor, not ceiling). **Verify:** `test_full.sh` +
+  `test_tier3_invariant_surface.sh`; trace byte-identical.
+
+- **#7.5 — tests (establish the boundary directly).** Assert that the receive/call
+  transitions establish `blockedOnReply ⇒ replyObject` at the *transition* boundary (not just
+  the syscall boundary): a Call rendezvous with `replyId = none` fails closed
+  (`.replyCapInvalid`), and **no raw transition** produces an unanswerable `.blockedOnReply`.
+  Land in `ModelIntegritySuite` (positive: linked) + `NegativeStateSuite` (negative: the
+  `none`-Call reject). **Verify:** smoke + the two suites.
+
+**Risk (highest of the three items — SM6.A/C transition + preservation surface).** The risk
+is concentrated in #7.1/#7.2/#7.3 (each a no-green-intermediate signature change) and #7.4
+(the 16th-conjunct break-set). Mitigations, in order: (1) #7.0 front-loads every frame so the
+folds are re-pointing, not proving; (2) the per-function split makes each fold independently
+green and reviewable, instead of one 300-error slice; (3) #7.4 is gated, so the invariant is
+strengthened only once every producer demonstrably links — never speculatively; (4) trace
+byte-identical is asserted at every slice (the fold is a *reordering* of an existing link, so
+observable behaviour must not move).
+
+### VALIDATED DESIGN & EXECUTION RECIPE (2026-06-18 spike, v0.31.148 — transition compiles; full re-base scoped)
 
 A throwaway spike threaded `endpointReceiveDual` end-to-end and confirmed three things:
 the **transition body compiles**, the **proof composition is sound** (every needed frame
@@ -215,10 +357,13 @@ Proofs (Tier-3, the bulk — 64 errors in `EndpointPreservation.lean` alone):
 `CallReplyRecv/ReplyRecv`.  Info-flow: `Composition`, `Operations`, `Wrappers`, `Soundness`.
 Cross-subsystem: `CrossSubsystemPerCorePreservation`.  Tests/harness (`replyId := none`):
 `MainTraceHarness`, `NegativeStateSuite`, `SmpCrossCoreCallSuite`, `SmpCrossCoreNotificationSuite`,
-`InformationFlowSuite`, `OperationChainSuite`.  Then #7.b removes `linkReceivedCaller`
-(`API.lean:349`); #7.a-call repeats for `endpointCall`'s server-waiting rendezvous (folding
-`linkServerFirstCaller`, `API.lean:386`); #7.a-percore repeats for `endpointReceiveDualOnCore`
-(the SM6.C cross-core suite); #7.c strengthens `replyCallerLinkage` once all paths link.
+`InformationFlowSuite`, `OperationChainSuite`.  This whole paragraph **is** slice #7.1
+(single-core receive), which also removes `linkReceivedCaller` (`API.lean:349`) in the same
+commit; slice #7.3 repeats for `endpointCall`'s server-waiting rendezvous (folding
+`linkServerFirstCaller`, `API.lean:386`); slice #7.2 repeats for `endpointReceiveDualOnCore`
+(the SM6.C cross-core suite); slice #7.4 strengthens `replyCallerLinkage` once all three
+paths link.  The 64-errors-in-`EndpointPreservation.lean` figure is the *measured* #7.1
+floor; apply the #1.a multiplier (estimate-to-realized ≈ 2.5×) when budgeting.
 
 **Note on approach:** a wrapper transition (a separate `endpointReceiveDualLinked` the dispatch
 composes) is **rejected** — it leaves the raw `endpointReceiveDual` producing an unanswerable
@@ -229,13 +374,35 @@ the public `endpointReceiveDual`.
 
 ## Verification (every sub-step)
 
-Per-module `lake build`; `/tmp/smoke_lean.sh` (Tier 0–2); `test_tier3_invariant_surface.sh`
-for invariant changes (#1.a, #7.c); assert trace byte-identical; `bump_version.sh` +
-`CHANGELOG.md`; regenerate `docs/codebase_map.json`. Rust ABI mirror (#2.c) verified via
+Per-module `lake build` of **each modified module** (the default target is insufficient —
+see CLAUDE.md "Module build verification"); `./scripts/test_smoke.sh` (Tier 0–2) minimum;
+`./scripts/test_full.sh` + `test_tier3_invariant_surface.sh` for invariant/theorem changes
+(every #7 fold touches preservation — #7.1, #7.2, #7.3 — and #7.4 changes the invariant
+itself). Assert the `Main.lean` trace is **byte-identical** to
+`tests/fixtures/main_trace_smoke.expected` at every #7 slice (each fold is a reordering of an
+existing link, so observable behaviour must not move). After each landed slice:
+`./scripts/bump_version.sh <version>` (syncs all version sites; verified by
+`check_version_sync.sh`) + a `## v<x.y.z>` `CHANGELOG.md` entry; regenerate
+`docs/codebase_map.json` when Lean sources change; run
+`scripts/check_production_staging_partition.sh` if a module moves between production and
+staged. Rust ABI mirrors (already landed for #2.c) are verified via
 `cargo check --profile test` (cargo test hangs in-container; CI runs the full suite).
+The pre-commit hook (module build + `sorry`/`axiom` scan) must remain installed and **not**
+be bypassed with `--no-verify`.
 
-## Out-of-scope / tracked debt
-- Reply-cap **rights/badge** model (seL4 reply caps are rights-less) — confirm after #2.
-- Full HW-tier reply-lock contention stress — CI/QEMU.
+## Follow-up / tracked debt
+1. **Rights-less reply cap (#2 residual, actionable).** `mintReplyCap` mints `.replyCap`
+   with `[.read, .write]` rights; seL4-MCS reply caps are rights-less. Reconcile the mint to
+   the rights-less design by removing reply-cap rights at the mint site and updating any
+   affected preservation/test expectations. Per the implement-the-improvement rule, weakening
+   the design note to match the code is **not** an acceptable outcome. Closure target: the
+   first reply-cap mint follow-up after #7, unless #7.3 expands to touch the mint surface.
+2. **Stale `capabilityInvariantBundle` conjunct-count comment (#1 residual).**
+   `Capability/Invariant/Defs.lean:228`/:237 still say the bundle has "6 conjuncts"; the live
+   tuple has 7 (the #1.a `replyCapPointsToValidReply` addition). One-line doc fix; close in
+   the next `Capability/Invariant/Defs.lean` touch, and no later than #7.4's invariant work.
+3. **Reply-cap badge model** (seL4 reply caps are badge-less) — confirm alongside item 1.
+4. **Full HW-tier reply-lock contention stress** — CI/QEMU, post-v1.0.0.
 
 Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (SM6.C/SM6.D Reply objects)
+Refs: CHANGELOG.md v0.31.140–v0.31.149 (#2/#1 landing record; #7 design validation)
