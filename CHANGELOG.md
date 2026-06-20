@@ -1,3 +1,31 @@
+## v0.31.157 — IPC invariant de-threading workstream: plan + `blockedOnReplyHasReplyObject` predicate + answerable-caller consumer (D0 + D2-consumer)
+
+Opens the **IPC `ipcInvariantFull` de-threading** workstream
+(`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md`): make every IPC transition's
+`*_preserves_ipcInvariantFull` theorem *concretely prove* the ~14 structural conjuncts
+instead of **threading** them as post-state hypotheses.  The plan inventories the surface
+(≈11 bundle theorems × 14 conjuncts; ~half wiring, ~half from-scratch — `donationChainAcyclic`
+is the research-grade item) and sequences it into coherent slices D0–D8.
+
+This first increment lands the foundation + the highest-value self-contained piece:
+
+- **D0 — named predicate.** Factor the #7.4 third clause of `replyCallerLinkage` into a
+  first-class `blockedOnReplyHasReplyObject` predicate (`blockedOnReply ⇒ replyObject`), so
+  the per-transition preservation can establish it via a reusable frame family, and consumers
+  get a named projection.  `replyCallerLinkage := replyCallerLinkageReciprocal ∧ blockedOnReplyHasReplyObject`
+  (definitionally identical to before — all #7.4 proofs, `default`, and boot unchanged).
+- **D2 consumer — `blockedOnReply_caller_is_answerable`.** The safety property the strengthened
+  invariant *delivers*: every `.blockedOnReply` caller has a concrete backing Reply object that
+  names it (third clause ⇒ `replyObject`, then forward reciprocity ⇒ the Reply exists and
+  reciprocates).  This is the formal "no thread blocks forever on an unanswerable reply", turning
+  the previously write-only invariant into a usable lemma.
+
+No `sorry`/`axiom`; full build green; trace byte-identical (definitions/proofs only).  Remaining
+de-threading slices (D1 wiring, D2 establish, D3–D8) are sequenced in the plan as future PRs.
+Version bumped 0.31.156 → 0.31.157.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md
+
 ## v0.31.156 — Reply objects (seL4-MCS): completion-plan closeout (documentation)
 
 Documentation reconciliation marking the reply-objects completion plan

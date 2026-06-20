@@ -632,25 +632,35 @@ def replyCallerLinkageReciprocal (st : SystemState) : Prop :=
         ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
           tcb.ipcState = .blockedOnReply ep rt)
 
-/-- WS-SM SM6.D (#7.4): `replyCallerLinkage` = the bidirectional reciprocity
-(`replyCallerLinkageReciprocal`) **plus** the forward guarantee that every
-`.blockedOnReply` caller already carries a `replyObject`.  The #7 D6 fold links the
-caller's reply object **atomically** with the blocking store (inside `endpointCall` /
-`endpointCallOnCore` / `endpointReceiveDual{,OnCore}`), so `blockedOnReply ⇒ replyObject`
-now holds at the **transition boundary**, not merely at syscall boundaries — closing the
-false-assurance gap where `ipcInvariantFull` (whose 16th conjunct this is) admitted a
-`.blockedOnReply` caller with no Reply object to answer it (a thread blocked forever,
-since the public `.reply` path resolves authority through `reply.caller`).  The reciprocal
-clauses are factored out because they are the strongest invariant that survives the fold's
-intermediate state (post-blocking-store, pre-link): there the caller is `.blockedOnReply`
-yet not-yet-linked, so the third clause is momentarily false while reciprocity holds. -/
-def replyCallerLinkage (st : SystemState) : Prop :=
-  replyCallerLinkageReciprocal st ∧
-  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+/-- WS-SM SM6.D (#7.4 / IPC de-threading D2): the **third clause** of
+`replyCallerLinkage`, as a first-class predicate — every `.blockedOnReply` caller
+already carries a `replyObject`.  Named separately so the bundle's per-transition
+preservation can *concretely establish* it (rather than threading it), via a reusable
+frame family (`blockedOnReplyHasReplyObject_*`), and so consumers get a named
+projection.  The #7 D6 fold links the caller's reply atomically with the blocking
+store, so this holds at the transition boundary. -/
+def blockedOnReplyHasReplyObject (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
       (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.ipcState = .blockedOnReply ep rt →
-      ∃ rid, tcb.replyObject = some rid)
+      ∃ rid, tcb.replyObject = some rid
+
+/-- WS-SM SM6.D (#7.4): `replyCallerLinkage` = the bidirectional reciprocity
+(`replyCallerLinkageReciprocal`) **plus** the forward guarantee that every
+`.blockedOnReply` caller already carries a `replyObject` (`blockedOnReplyHasReplyObject`).
+The #7 D6 fold links the caller's reply object **atomically** with the blocking store
+(inside `endpointCall` / `endpointCallOnCore` / `endpointReceiveDual{,OnCore}`), so
+`blockedOnReply ⇒ replyObject` now holds at the **transition boundary**, not merely at
+syscall boundaries — closing the false-assurance gap where `ipcInvariantFull` (whose
+16th conjunct this is) admitted a `.blockedOnReply` caller with no Reply object to answer
+it (a thread blocked forever, since the public `.reply` path resolves authority through
+`reply.caller`).  The reciprocal clauses are factored out because they are the strongest
+invariant that survives the fold's intermediate state (post-blocking-store, pre-link):
+there the caller is `.blockedOnReply` yet not-yet-linked, so the third clause is
+momentarily false while reciprocity holds. -/
+def replyCallerLinkage (st : SystemState) : Prop :=
+  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st
 
 /-- WS-SM SM6.D (PR #822 review): `replyCallerLinkage` reads only `st.objects`, so
 any transition that leaves the object store unchanged frames it.  Used by the
@@ -658,7 +668,30 @@ non-IPC transitions (timer tick, register/context writes) and the default state.
 theorem replyCallerLinkage_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) (h : replyCallerLinkage st) :
     replyCallerLinkage st' := by
-  unfold replyCallerLinkage replyCallerLinkageReciprocal at h ⊢; rw [hObjs]; exact h
+  unfold replyCallerLinkage replyCallerLinkageReciprocal blockedOnReplyHasReplyObject at h ⊢
+  rw [hObjs]; exact h
+
+/-- WS-SM SM6.D (#7.4 / IPC de-threading D2, **consumer**): the safety property the
+strengthened `replyCallerLinkage` *delivers* — **every `.blockedOnReply` caller is
+answerable**.  Combining the third clause (`blockedOnReply ⇒ replyObject`) with the
+forward reciprocal clause (`replyObject ⇒ the Reply exists and names this TCB back`)
+shows that a blocked caller always has a concrete backing Reply object that names it,
+so the public `.reply` path (which resolves authority through `reply.caller`) can always
+answer it.  This is the formal statement of "no thread blocks forever on an unanswerable
+reply" — the false-assurance gap #7.4 closed, now cashed in as a usable lemma rather than
+a write-only invariant. -/
+theorem blockedOnReply_caller_is_answerable (st : SystemState)
+    (h : replyCallerLinkage st)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hBlk : tcb.ipcState = .blockedOnReply ep rt) :
+    ∃ (rid : SeLe4n.ReplyId) (r : Reply),
+      tcb.replyObject = some rid ∧
+      st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = some tid := by
+  obtain ⟨rid, hRep⟩ := h.2 tid tcb ep rt hTcb hBlk
+  obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb rid hTcb hRep
+  exact ⟨rid, r, hRep, hr, hrc⟩
 
 /-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
 (`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still
