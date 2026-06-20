@@ -1,3 +1,15 @@
+## v0.31.156 — Reply objects (seL4-MCS): completion-plan closeout (documentation)
+
+Documentation reconciliation marking the reply-objects completion plan
+(`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`) **complete**.  Every actionable item is now
+landed — #1 (`replyCapPointsToValidReply`), #2 (retype→reply-cap authority), #7.0–#7.5 (the D6
+`blockedOnReply ⇒ replyObject` transition fold), and residual-debt #1 (rights-less reply caps)
+/ #2 (conjunct-count comment) / #3 (badge-less reply caps).  Updates the plan's status header,
+status table, §#7 heading, and per-residual notes to their landed state (matching the code; no
+behavioural change).  Version bumped 0.31.155 → 0.31.156.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md
+
 ## v0.31.155 — Reply objects (seL4-MCS): rights-less reply capabilities (residual-debt #1)
 
 Closes the last actionable residual debt of the reply-objects completion plan

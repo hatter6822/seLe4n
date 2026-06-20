@@ -3,11 +3,11 @@
 > Companion to the SM6.C/SM6.D reply-object slices in
 > [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the
 > PR #822 hardening pass. This plan tracked the three remaining **completeness**
-> items — the ABI / Prop-invariant / transition-fold tail. **As of v0.31.152,
-> items #2 and #1 are LANDED, and item #7 (the D6 transition fold) is in flight:
-> #7.0/#7.1/#7.2/#7.3a are LANDED; #7.3b/#7.4/#7.5 remain.** Sections #2 and #1
-> below are retained as completion records (with cites and residual-debt notes);
-> the live work is **§#7**, expanded into green-incremental sub-steps.
+> items — the ABI / Prop-invariant / transition-fold tail. **✅ COMPLETE as of
+> v0.31.155: all three items (#2, #1, #7) plus every residual-debt item are LANDED.**
+> Item #7 (the D6 transition fold) closed across v0.31.152–154 (#7.0–#7.5); the
+> rights-less reply-cap residual closed at v0.31.155. The sections below are retained
+> as completion records (with cites and per-slice landing notes).
 
 ## Context & status
 
@@ -23,7 +23,7 @@ safety holes**.
 |---|------|-------|--------|--------|
 | **#2** | retype → reply-cap authority (`mintReplyCap`) | ABI (Phase H) | ✅ **LANDED** | v0.31.140–143, 147 |
 | **#1** | `replyCapPointsToValidReply` (7th bundle conjunct) | Capability invariant (Phase C-inv) | ✅ **LANDED** | v0.31.144–146, 149 |
-| **#7** | `blockedOnReply ⇒ replyObject` (transition fold) | IPC invariant + transitions (Phase D6) | 🔄 **IN FLIGHT** | #7.0/#7.1/#7.2/#7.3a landed v0.31.152; #7.3b/#7.4/#7.5 remain |
+| **#7** | `blockedOnReply ⇒ replyObject` (transition fold) | IPC invariant + transitions (Phase D6) | ✅ **LANDED** | #7.0–#7.3a v0.31.152; #7.3b v0.31.153; #7.4/#7.5 v0.31.154 |
 
 **Original sequencing rationale (#2 → #1 → #7), preserved for the record.** #2 went
 first (most self-contained ABI feature, establishing the `.replyCap`-from-retype
@@ -96,9 +96,9 @@ rejected as diluting the deliberate `.replyCap` authority distinction.
   retype Untyped→Reply, `mintReplyCap`, use the resulting `.replyCap` in the
   receive-with-reply path.
 
-**Residual debt (carried forward).** The minted cap carries `[.read, .write]` rights;
-seL4-MCS reply caps are **rights-less**. Reconcile by making the mint rights-less —
-see *Follow-up / tracked debt* item 1.
+**Residual debt — ✅ RESOLVED (v0.31.155).** The minted cap was `[.read, .write]`;
+seL4-MCS reply caps are **rights-less**, so `mintReplyCap` now mints
+`rights := AccessRightSet.empty` — see *Follow-up / tracked debt* item 1.
 
 ---
 
@@ -158,9 +158,9 @@ named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
   **implied** by the step-preserved #1 conjunct, closing the review residual without a
   parallel lifecycle predicate.
 
-**Residual debt (carried forward).** The `capabilityInvariantBundle` doc-comment
-(`Defs.lean:228`/:237) still says the bundle "now has **6** conjuncts"; the live tuple has
-**7**. One-line doc fix — see *Follow-up / tracked debt* item 2.
+**Residual debt — ✅ RESOLVED.** The `capabilityInvariantBundle` doc-comment
+(`Capability/Invariant/Defs.lean`) now correctly reads "the bundle now has **7** conjuncts"
+(with the 7 → 6 → 7 history) — see *Follow-up / tracked debt* item 2.
 
 **Lesson learned for #7.** #1.a's tuple-expansion break-set was estimated at ~60 and
 realized at ~155 (extraction lemmas + multi-layer preservation chains widen the surface).
@@ -170,9 +170,15 @@ every reusable frame lemma (#7.0) so the realized errors are *re-pointing*, not 
 
 ---
 
-## #7 — `blockedOnReply ⇒ replyObject` (D6 contract) ⏳ REMAINING
+## #7 — `blockedOnReply ⇒ replyObject` (D6 contract) ✅ LANDED (v0.31.152–154)
 
-**Problem.** `replyCallerLinkage` (`IPC/Invariant/Defs.lean:623`) currently has **two**
+> All slices landed: #7.1/#7.2/#7.3a (v0.31.152), #7.3b (v0.31.153), #7.4/#7.5 (v0.31.154).
+> The fold makes the reply-link atomic with the blocking store across every producer
+> (`endpointCall{,OnCore}` / `endpointReceiveDual{,OnCore}`), and `replyCallerLinkage`'s
+> third clause now states the transition-level guarantee.  The problem statement below is
+> retained as the completion record.
+
+**Problem.** `replyCallerLinkage` (`IPC/Invariant/Defs.lean`) originally had **two**
 conjuncts — a forward link (`tcb.replyObject = some rid ⇒ reply.caller = some tid`) and a
 backward link (`reply.caller = some tid ⇒ tcb.replyObject = some rid ∧ tcb` is
 `.blockedOnReply`). Both only constrain TCBs that *already* have `replyObject` set;
@@ -450,18 +456,21 @@ The pre-commit hook (module build + `sorry`/`axiom` scan) must remain installed 
 be bypassed with `--no-verify`.
 
 ## Follow-up / tracked debt
-1. **Rights-less reply cap (#2 residual, actionable).** `mintReplyCap` mints `.replyCap`
-   with `[.read, .write]` rights; seL4-MCS reply caps are rights-less. Reconcile the mint to
-   the rights-less design by removing reply-cap rights at the mint site and updating any
-   affected preservation/test expectations. Per the implement-the-improvement rule, weakening
-   the design note to match the code is **not** an acceptable outcome. Closure target: the
-   first reply-cap mint follow-up after #7, unless #7.3 expands to touch the mint surface.
-2. **Stale `capabilityInvariantBundle` conjunct-count comment (#1 residual).**
-   `Capability/Invariant/Defs.lean:228`/:237 still say the bundle has "6 conjuncts"; the live
-   tuple has 7 (the #1.a `replyCapPointsToValidReply` addition). One-line doc fix; close in
-   the next `Capability/Invariant/Defs.lean` touch, and no later than #7.4's invariant work.
-3. **Reply-cap badge model** (seL4 reply caps are badge-less) — confirm alongside item 1.
-4. **Full HW-tier reply-lock contention stress** — CI/QEMU, post-v1.0.0.
+1. **Rights-less reply cap (#2 residual).** ✅ **RESOLVED (v0.31.155).** `mintReplyCap` now
+   mints `.replyCap` with `rights := AccessRightSet.empty` (the only production reply-cap mint);
+   the `mintReplyCap_preserves_capabilityInvariantBundle` proof updated to the rights-less shape.
+2. **Stale `capabilityInvariantBundle` conjunct-count comment (#1 residual).** ✅ **RESOLVED.**
+   `Capability/Invariant/Defs.lean` reads "the bundle now has **7** conjuncts" (with the
+   7 → 6 → 7 history), matching the live tuple.
+3. **Reply-cap badge model** (seL4 reply caps are badge-less). ✅ **CONFIRMED.** `mintReplyCap`
+   mints `badge := none`; being the only production reply-cap mint, the kernel's reply caps are
+   badge-less by construction.
+4. **Full HW-tier reply-lock contention stress** — CI/QEMU, post-v1.0.0 (legitimately deferred;
+   not a model-level item).
+
+**Plan status: all actionable items landed.** #1–#6, #7.1–#7.5, and residual-debt #1/#2/#3
+are complete (v0.31.140–v0.31.155).  Item 4 is a post-v1.0.0 hardware-tier stress task, tracked
+in `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`.
 
 Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (SM6.C/SM6.D Reply objects)
 Refs: CHANGELOG.md v0.31.140–v0.31.149 (#2/#1 landing record; #7 design validation)
