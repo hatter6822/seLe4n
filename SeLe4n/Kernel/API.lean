@@ -336,45 +336,6 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
                   else .error .replyCapInvalid
               | none => .error .replyCapInvalid
 
-/-- WS-SM SM6.D (faithful seL4-MCS receive linkage): after `endpointReceiveDual`
-rendezvouses, link the woken caller to the server's reply object when (and only
-when) the caller is a `Call` — i.e. the receive moved it to `.blockedOnReply`.
-`linkCallerReply` establishes the bidirectional `reply.caller` / `tcb.replyObject`
-link (fail-closed on an in-use reply).  A `Call` rendezvous that carries **no**
-reply object is rejected `.replyCapInvalid` (the post-state is discarded, so the
-caller is *not* stranded `.blockedOnReply` with no reply object — seL4-MCS
-requires the server to provide a reply object to answer a Call).  A plain `Send`
-rendezvous (`.ready`) or the no-sender block path (`.blockedOnReceive`) links
-nothing. -/
-def linkReceivedCaller (sender : SeLe4n.ThreadId)
-    (replyIdOpt : Option SeLe4n.ReplyId) : Kernel Unit :=
-  fun st =>
-    match st.getTcb? sender with
-    | some sTcb =>
-        match sTcb.ipcState with
-        | .blockedOnReply _ _ =>
-            -- caller-first: a queued `Call` was just dequeued (now `.blockedOnReply`)
-            -- — link it to the server's reply object, or reject a Call carrying none.
-            match replyIdOpt with
-            | some rid => SystemState.linkCallerReply sender rid st
-            | none => .error .replyCapInvalid
-        | .blockedOnReceive _ =>
-            -- server-first: the *server* itself blocked on receive (no caller was
-            -- queued).  Stash the supplied reply object on the server so a later
-            -- `Call` rendezvous can be linked to it (`linkServerFirstCaller`).
-            match replyIdOpt with
-            | some rid =>
-                storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := some rid }) st
-            | none =>
-                -- PR #822 review: a plain receive (no reply object) must CLEAR any
-                -- stale `pendingReceiveReply` left by a prior server-first receive
-                -- that woke via `Send` / was cancelled — else a later `Call` could be
-                -- linked to a stale reply id (`linkServerFirstCaller`).  Fail-closed:
-                -- the current receive supplies no reply ⇒ no stash.
-                storeObject sender.toObjId (.tcb { sTcb with pendingReceiveReply := none }) st
-        | _ => .ok ((), st)
-    | none => .ok ((), st)
-
 /-- WS-SM SM6.D (faithful seL4-MCS, server-first receive linkage): after a `Call`
 rendezvouses with a *waiting* server — the caller lands `.blockedOnReply ep (some
 server)` and the server is woken — link the caller to the Reply object the server
@@ -382,7 +343,8 @@ stashed on its earlier `Recv` (`server.pendingReceiveReply`), then clear the sta
 (one-shot).  A no-op when the call did not rendezvous with a waiting server (caller
 `.blockedOnCall`, i.e. it was enqueued) or the server supplied no reply object.
 Composed by the `.call` dispatch after `endpointCallCrossCoreDispatch`; mirrors the
-caller-first `linkReceivedCaller` for the symmetric ordering. -/
+caller-first receive linkage now folded into `endpointReceiveDual` /
+`endpointReceiveDualOnCore` (#7.2) for the symmetric ordering. -/
 def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match st.getTcb? caller with
@@ -405,8 +367,8 @@ def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
                 -- a Call without a reply object, so reject fail-closed — the
                 -- post-state is discarded, so the caller is *not* stranded
                 -- `.blockedOnReply` with no linked Reply, and the server is not
-                -- spuriously woken.  Symmetric to the caller-first reject in
-                -- `linkReceivedCaller`.
+                -- spuriously woken.  Symmetric to the caller-first reject folded
+                -- into `endpointReceiveDual` (#7.2).
                 .error .replyCapInvalid
         | _ => .ok ((), st)
     | none => .ok ((), st)
@@ -423,7 +385,8 @@ holds its cap and may re-supply it on the next `Recv`); only the stash pointer i
 cleared.  `receiver?` is the pre-send receive-queue head — the thread the send wakes
 — captured before the rendezvous dequeues it.  A no-op (returns the state unchanged,
 no store) when there is no woken receiver or it carries no stash, so the trace is
-byte-identical on every stash-free send.  Symmetric to `linkReceivedCaller`. -/
+byte-identical on every stash-free send.  Symmetric to the no-reply stash-clear
+folded into `endpointReceiveDual`'s no-sender path (#7.2). -/
 def clearWokenReceiverStash (receiver? : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     match receiver? with
@@ -556,11 +519,12 @@ exactly this).  Steps reusing the verified cross-core transitions:
    leg would leave a server that immediately rendezvouses with a queued `Call`
    stuck `.ready` but absent from the run queues (PR #822 review, 6J90-w);
 2. **consume** — `consumeCallerReply` tears down the answered reply link
-   (single-use barrier);
-3. **receive leg** — `endpointReceiveDualOnCore` receives the next message;
-4. **re-link** — on a `Call` rendezvous, `linkReceivedCaller` re-links the *same*
-   reply object to the next caller (faithful one-object reuse);
-5. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
+   (single-use barrier), freeing the reply object;
+3. **receive + re-link leg** — `endpointReceiveDualOnCore … (some rid)` receives the
+   next message and, on a `Call` rendezvous, links the *same* freed reply object to
+   the next caller atomically (#7.2 fold — faithful one-object reuse, formerly the
+   separate `linkReceivedCaller` step);
+4. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
    new `Call` rendezvoused, donates the new client's SC so the passive server keeps
    running on the new request's budget (seL4-MCS SC-follows-message). -/
 def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -579,13 +543,14 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
         match SystemState.consumeCallerReply prevCaller rid st1 with
         | .error e => .error e
         | .ok ((), st2) =>
-            match endpointReceiveDualOnCore epId tid executingCore st2 with
+            -- WS-SM SM6.D (#7.2 fold): the receive leg links the *same* reply object
+            -- `rid` (freed by the `consumeCallerReply` above) to the next `Call`
+            -- caller atomically — faithful one-object reuse, formerly the separate
+            -- `linkReceivedCaller nextThread (some rid)` dispatch step.
+            match endpointReceiveDualOnCore epId tid (some rid) executingCore st2 with
             | (_, .error e) => .error e
             | (st3, .ok (nextThread, _)) =>
-                match linkReceivedCaller nextThread (some rid) st3 with
-                | .error e => .error e
-                | .ok ((), st4) =>
-                    replyRecvReturnDonation tid recordedServer nextThread serverCore st4
+                replyRecvReturnDonation tid recordedServer nextThread serverCore st3
 
 -- ============================================================================
 -- Syscall soundness theorems
@@ -1256,8 +1221,11 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- removes it from *its own* core and routes a woken `blockedOnSend` sender to
           -- *its* home core.  On the boot core this is definitionally `endpointReceiveDual`.
           let executingCore := determineExecutingCore st tid
-          match endpointReceiveDualOnCore epId tid executingCore st with
-          | (st', .ok (sender, _sgi)) => linkReceivedCaller sender replyIdOpt st'
+          -- WS-SM SM6.D (#7.2 fold): the resolved reply object is threaded into the
+          -- per-core receive transition, which links a dequeued `Call` caller to it
+          -- atomically (the former post-receive `linkReceivedCaller` step).
+          match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
+          | (st', .ok (_, _sgi)) => .ok ((), st')
           | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E/M-D01: IPC call — message body + extra caps from decoded message registers.
@@ -1531,8 +1499,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
             -- placement mirrors the unchecked arm; boot-core-equivalent to the prior
             -- `endpointReceiveDualChecked` when the flow is permitted.
             let executingCore := determineExecutingCore st tid
-            match endpointReceiveDualOnCore epId tid executingCore st with
-            | (st', .ok (sender, _sgi)) => linkReceivedCaller sender replyIdOpt st'
+            -- WS-SM SM6.D (#7.2 fold): reply object threaded into the per-core receive
+            -- transition (the endpoint→receiver flow is gated above); the dequeued
+            -- `Call` caller is linked atomically (former `linkReceivedCaller` step).
+            match endpointReceiveDualOnCore epId tid replyIdOpt executingCore st with
+            | (st', .ok (_, _sgi)) => .ok ((), st')
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-B/U-M01: IPC call — routed through enforcement wrapper (previously inline check).
