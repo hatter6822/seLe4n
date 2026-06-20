@@ -207,6 +207,7 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
 Composes endpointReceiveDual base preservation with ipcUnwrapCaps preservation. -/
 theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (endpointRights : AccessRightSet)
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
@@ -227,22 +228,22 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
         (epId' = endpointId →
           ep'.sendQ.tail ≠ some tailTid))
     (hCnodeRoot : ∀ (stMid : SystemState),
-      endpointReceiveDual endpointId receiver st = .ok (senderId, stMid) →
+      endpointReceiveDual endpointId receiver replyId st = .ok (senderId, stMid) →
       ∃ cn, stMid.objects[receiverCspaceRoot]? = some (.cnode cn))
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
               receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     dualQueueSystemInvariant st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
-  cases hRecv : endpointReceiveDual endpointId receiver st with
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
   | error e => simp [hRecv] at hStep
   | ok pair =>
     rcases pair with ⟨sid, stMid⟩
     simp only [hRecv] at hStep
     have hInvMid := endpointReceiveDual_preserves_dualQueueSystemInvariant endpointId receiver
-      st stMid sid hObjInv hRecv hInv hFreshReceiver hRecvTailFresh
+      replyId st stMid sid hObjInv hRecv hInv hFreshReceiver hRecvTailFresh
     have hObjInvMid : stMid.objects.invExt :=
-      endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid hObjInv hRecv
+      endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
     -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
     -- `getTcb?`; case-split on the typed helper.
     cases hTcb : stMid.getTcb? receiver with
@@ -1492,6 +1493,61 @@ theorem endpointSendDual_preserves_waitingThreadsPendingMessageNone
               st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hMsg hInv1 trivial
             exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
 
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves
+`waitingThreadsPendingMessageNone`.  The `.reply` store inside `linkReply`
+touches no TCB; the caller `.tcb` store leaves `ipcState` and `pendingMessage`
+unchanged (`{ tcb with replyObject := … }.ipcState = tcb.ipcState` and likewise
+for `.pendingMessage`, both by `rfl`).  Mirrors the per-conjunct frame pattern in
+`Structural.StoreObjectFrame` (`linkCallerReply_preserves_allPendingMessagesBounded`). -/
+private theorem linkCallerReply_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st'))
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone st' := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    -- The `.reply` store: a TCB present post-store sits at an OTHER slot.
+    have hInv1 : waitingThreadsPendingMessageNone st1 := by
+      unfold SystemState.linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => simp [hGetR] at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · intro t tcb hObj
+          by_cases hEq : t.toObjId = rid.toObjId
+          · rw [hEq, storeObject_objects_eq st st1 rid.toObjId _ hObjInv hLink] at hObj; cases hObj
+          · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb) := by
+              rwa [storeObject_objects_ne st st1 rid.toObjId t.toObjId _ hEq hObjInv hLink] at hObj
+            exact hInv t tcb hObjPre
+        · simp at hLink
+    have hObjInv1 := SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · -- Caller `.tcb` store: ipcState and pendingMessage unchanged.
+        intro t tcb' hObj
+        by_cases hEq : t.toObjId = caller.toObjId
+        · rw [hEq, storeObject_objects_eq st1 st' caller.toObjId _ hObjInv1 hStep] at hObj
+          cases hObj
+          have hTcbPre : st1.objects[caller.toObjId]? = some (.tcb tcb) :=
+            (SystemState.getTcb?_eq_some_iff st1 caller tcb).mp hT
+          -- `{ tcb with replyObject := some rid }.ipcState = tcb.ipcState` and
+          -- `.pendingMessage = tcb.pendingMessage`, both by `rfl`.
+          have := hInv1 t tcb (by rw [hEq]; exact hTcbPre)
+          simpa using this
+        · have hObjPre : st1.objects[t.toObjId]? = some (.tcb tcb') := by
+            rwa [storeObject_objects_ne st1 st' caller.toObjId t.toObjId _ hEq hObjInv1 hStep] at hObj
+          exact hInv1 t tcb' hObjPre
+      · simp at hStep
+
 /-- `endpointReceiveDual` preserves `waitingThreadsPendingMessageNone`.
     Call path: sender→blockedOnReply(none) + receiver atomically set to .ready + senderMsg.
     Send path: sender→ready(none) + ensureRunnable + receiver atomically set to .ready + senderMsg.
@@ -1507,10 +1563,11 @@ theorem endpointSendDual_preserves_waitingThreadsPendingMessageNone
 theorem endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hInv : waitingThreadsPendingMessageNone st)
     (hReceiverMsg : ∀ tcb, lookupTcb st receiver = some tcb → tcb.pendingMessage = none)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     waitingThreadsPendingMessageNone st' := by
   unfold endpointReceiveDual at hStep
   cases hObj : st.objects[endpointId]? with
@@ -1540,14 +1597,28 @@ theorem endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
               have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
               have hInvMsg := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
                 pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInvPop hMsg hInvPop trivial
-              revert hStep
-              -- AK1-D: atomic (.ready, senderMsg) receiver update; .ready falls through hTarget default
-              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
-              | ok st3 =>
-                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
-                  storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
-                    st2 _ receiver .ready _ hObjInvMsg hPend hInvMsg trivial
-              | error _ => simp
+              -- WS-SM SM6.D (#7.1 fold): atomic reply-link of the dequeued caller.
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hInvLink := linkCallerReply_preserves_waitingThreadsPendingMessageNone
+                    st2 stLinked pair.1 rid hObjInvMsg hLink hInvMsg
+                  revert hStep
+                  -- AK1-D: atomic (.ready, senderMsg) receiver update; .ready falls through hTarget default
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st3 =>
+                    exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                      storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+                        stLinked _ receiver .ready _ hObjInvLink hPend hInvLink trivial
+                  | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             simp only [hSenderIpc] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
@@ -1618,8 +1689,9 @@ theorem endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
             cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
+              have hObjInv2 : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
               have hInv2 := storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
                 st1 st2 receiver (.blockedOnReceive endpointId) hObjInvEnq hIpc hInvEnq (by
                   intro tcb₂ hLk₂
@@ -1642,7 +1714,36 @@ theorem endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
                     next t hObj => rw [hPreTcb₂] at hObj; cases hObj; rfl
                     next hNone => rw [hPreTcb₂] at hNone; simp at hNone
                   rw [← hMsgEq]; exact hReceiverMsgClean preTcb₂ hPreLk₂)
-              exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
+              -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  -- Stash store: only `pendingReceiveReply` changes; `ipcState` and
+                  -- `pendingMessage` are unchanged (`rfl`), so the conjunct frames.
+                  have hInv3 : waitingThreadsPendingMessageNone stStashed := by
+                    intro t tcb' hObj
+                    by_cases hEq : t.toObjId = receiver.toObjId
+                    · rw [hEq, storeObject_objects_eq st2 stStashed receiver.toObjId _ hObjInv2 hStash] at hObj
+                      cases hObj
+                      have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                        (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                      have := hInv2 t rTcb (by rw [hEq]; exact hTcbPre)
+                      simpa using this
+                    · have hObjPre : st2.objects[t.toObjId]? = some (.tcb tcb') := by
+                        rwa [storeObject_objects_ne st2 stStashed receiver.toObjId t.toObjId _ hEq hObjInv2 hStash] at hObj
+                      exact hInv2 t tcb' hObjPre
+                  exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv3
 
 -- ============================================================================
 -- V3-G4: endpointCall preservation
@@ -1796,6 +1897,7 @@ theorem endpointReply_preserves_waitingThreadsPendingMessageNone
 theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hInv : waitingThreadsPendingMessageNone st)
     (hNeq : receiver.toObjId ≠ replyTarget.toObjId)
@@ -1805,7 +1907,7 @@ theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
       | .blockedOnReceive _ => False
       | .blockedOnNotification _ => False
       | _ => True)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     waitingThreadsPendingMessageNone st' := by
   unfold endpointReplyRecv at hStep
   -- Eliminate message bounds checks
@@ -1825,7 +1927,7 @@ theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
           simp only [hIpc] at hStep
           -- Use suffices to factor out authorization check handling
           suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-              (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
+              (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
                 waitingThreadsPendingMessageNone stR.2) by
             -- AK1-B (I-H02): Fail-closed on expectedReplier = none
             cases expectedReplier with
@@ -1838,7 +1940,7 @@ theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
                 | error e => simp
                 | ok st1 =>
                   simp only []
-                  cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
+                  cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
                   | error e => simp
                   | ok result =>
                     simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -1877,7 +1979,7 @@ theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
             next hNone => rw [hObjLk1] at hNone; simp at hNone
           -- AK1-D: hReceiverNotBlocked dropped from endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
           exact endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
-            _ stR.2 endpointId receiver stR.1 hObjInvEns hInvEns
+            _ stR.2 endpointId receiver stR.1 replyId hObjInvEns hInvEns
             (fun tcb' hLk' => hReceiverMsg tcb' (hReceiverFrame tcb' hLk'))
             (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 

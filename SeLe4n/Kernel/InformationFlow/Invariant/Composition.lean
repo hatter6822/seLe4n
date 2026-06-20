@@ -166,13 +166,14 @@ inductive NonInterferenceStep
     : NonInterferenceStep ctx observer st st'
   | endpointReceiveDualHigh
       (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
+      (replyId : Option SeLe4n.ReplyId)
       (hEndpointHigh : objectObservable ctx observer endpointId = false)
       (hReceiverHigh : threadObservable ctx observer receiver = false)
       (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
       (hCoherent : ∀ tid : SeLe4n.ThreadId,
           threadObservable ctx observer tid = false →
           objectObservable ctx observer tid.toObjId = false)
-      (hStep : endpointReceiveDual endpointId receiver st = .ok (sender, st'))
+      (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (sender, st'))
       (hSendQueueHeadHigh : ∀ ep sender, st.objects[endpointId]? = some (.endpoint ep) →
           ep.sendQ.head = some sender → threadObservable ctx observer sender = false)
       (hSendQueueNextHigh : ∀ ep sender senderTcb nextTid,
@@ -207,6 +208,7 @@ inductive NonInterferenceStep
   | endpointReplyRecvHigh
       (endpointId : SeLe4n.ObjId) (replierReceiver replyTarget : SeLe4n.ThreadId)
       (replyMsg : IpcMessage)
+      (replyId : Option SeLe4n.ReplyId)
       (hEndpointHigh : objectObservable ctx observer endpointId = false)
       (hReceiverHigh : threadObservable ctx observer replierReceiver = false)
       (hReceiverObjHigh : objectObservable ctx observer replierReceiver.toObjId = false)
@@ -215,7 +217,7 @@ inductive NonInterferenceStep
       (hCoherent : ∀ tid : SeLe4n.ThreadId,
           threadObservable ctx observer tid = false →
           objectObservable ctx observer tid.toObjId = false)
-      (hStep : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg st = .ok ((), st'))
+      (hStep : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg replyId st = .ok ((), st'))
       (hSendQueueHeadHigh : ∀ ep sender, st.objects[endpointId]? = some (.endpoint ep) →
           ep.sendQ.head = some sender → threadObservable ctx observer sender = false)
       (hSendQueueNextHigh : ∀ ep sender senderTcb nextTid,
@@ -462,15 +464,15 @@ theorem step_preserves_projection
     exact cspaceDeleteSlot_preserves_projection ctx observer addr st st' hAH hObjInv hOp
   | endpointReply replier target msg hTH hTOH hOp =>
     exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv hOp
-  | endpointReceiveDualHigh eid recv send hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH =>
-    exact endpointReceiveDual_preserves_projection ctx observer eid recv st st' send
+  | endpointReceiveDualHigh eid recv send replyId hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH =>
+    exact endpointReceiveDual_preserves_projection ctx observer eid recv replyId st st' send
       hEH hRH hROH hCo hSQHH hSQNH hRQTH hObjInv
       hIdxComplete hObjSetInv hOp
   | endpointCallHigh eid caller msg hEH hCH hCOH hCo hOp hRQHH hRQNH hSQTH =>
     exact endpointCall_preserves_projection ctx observer eid caller msg st st'
       hEH hCH hCOH hCo hRQHH hRQNH hSQTH hObjInv hOp
-  | endpointReplyRecvHigh eid recv target rmsg hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH =>
-    exact endpointReplyRecv_preserves_projection ctx observer eid recv target rmsg st st'
+  | endpointReplyRecvHigh eid recv target rmsg replyId hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH =>
+    exact endpointReplyRecv_preserves_projection ctx observer eid recv target rmsg replyId st st'
       hEH hRH hROH hRTH hRTOH hCo hSQHH hSQNH hRQTH hObjInv
       hIdxComplete hObjSetInv hOp
   | storeObjectHigh oid obj hOH hOp =>

@@ -513,6 +513,99 @@ theorem storeObject_preserves_projection
   · -- V6-E: serviceRegistry
     exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid obj hStore
 
+/-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
+fold's atomic `linkCallerReply` reply-write) preserves `projectState`
+**unconditionally** — even when the Reply object is low-visible — because
+`projectKernelObject` strips `caller` to `none` (see
+`projectKernelObject_reply_caller_invariant`).  No `objectObservable`-HIGH
+hypothesis on `rid` is required (unlike the general `storeObject_preserves_projection`):
+the projected Reply is invariant under `caller`, and `objectIndex` is unchanged
+because `rid` already exists in the index (`hIdxContains`), so the store is invisible
+to any observer.  This is the non-interference building block for the fold's
+in-transition reply-link. -/
+theorem storeObject_reply_caller_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (rid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (c : Option SeLe4n.ThreadId)
+    (hPrev : st.objects[rid]? = some (.reply r))
+    (hIdxContains : st.objectIndexSet.contains rid = true)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject rid (.reply { r with caller := c }) st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  simp only [projectState]; congr 1
+  · funext o
+    by_cases hObs : objectObservable ctx observer o
+    · simp [projectObjects, hObs]
+      by_cases hEq : o = rid
+      · subst hEq
+        rw [storeObject_objects_eq st st' o _ hObjInv hStore, hPrev]
+        simp only [Option.map_some]
+        exact congrArg some (projectKernelObject_reply_caller_invariant ctx observer r c)
+      · exact congrArg (Option.map (projectKernelObject ctx observer))
+          (storeObject_objects_ne st st' rid o _ hEq hObjInv hStore)
+    · simp [projectObjects, hObs]
+  · simp [projectRunnable, storeObject_scheduler_eq st st' rid _ hStore]
+  · simp [projectCurrent, storeObject_scheduler_eq st st' rid _ hStore]
+  · unfold storeObject at hStore; cases hStore; funext sid; rfl
+  · simp [projectActiveDomain, storeObject_scheduler_eq st st' rid _ hStore]
+  · funext irq; simp only [projectIrqHandlers, storeObject_irqHandlers_eq st st' rid _ hStore]
+  · -- objectIndex: `rid` already exists, so the index list is unchanged.
+    unfold storeObject at hStore; cases hStore
+    simp only [projectObjectIndex, hIdxContains, if_true]
+  · simp [projectDomainTimeRemaining, storeObject_scheduler_eq st st' rid _ hStore]
+  · simp [projectDomainSchedule, storeObject_scheduler_eq st st' rid _ hStore]
+  · simp [projectDomainScheduleIndex, storeObject_scheduler_eq st st' rid _ hStore]
+  · simp [projectMachineRegs, storeObject_scheduler_eq st st' rid _ hStore,
+          storeObject_machine_eq st st' rid _ hStore]
+  · exact storeObject_preserves_projectMemory ctx observer st st' rid _ hStore
+  · exact storeObject_preserves_projectServiceRegistry ctx observer st st' rid _ hStore
+
+/-- WS-SM SM6.D (#7.1 fold): the fold's atomic `linkCallerReply` (the reply-link
+the receive transition now performs in-line) preserves `projectState` whenever the
+linked **caller** is high (`hCallerObjHigh`) — its two writes are both invisible to
+any observer: the `.reply` `caller := some caller` write is projection-stripped
+(`storeObject_reply_caller_preserves_projection`), and the caller-TCB
+`replyObject := some rid` write is on a high TCB (`storeObject_preserves_projection`).
+`hIdxComplete` supplies the `objectIndex` membership of the (already-present) Reply.
+Used by the receive-transition non-interference proof at the Call rendezvous, where
+the dequeued caller is high. -/
+theorem linkCallerReply_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hProj1 : projectState ctx observer st1 = projectState ctx observer st := by
+      unfold SystemState.linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · have hRidPrev : st.objects[rid.toObjId]? = some (.reply r) :=
+            (SystemState.getReply?_eq_some_iff st rid r).mp hGetR
+          exact storeObject_reply_caller_preserves_projection ctx observer st st1
+            rid.toObjId r (some caller) hRidPrev
+            (hIdxComplete rid.toObjId (by rw [hRidPrev]; exact Option.some_ne_none _)) hObjInv hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · rw [storeObject_preserves_projection ctx observer st1 st' caller.toObjId _
+              hCallerObjHigh hObjInv1 hStep, hProj1]
+      · simp at hStep
+
 -- ============================================================================
 -- Non-interference theorem #1: chooseThread (WS-D2, F-05, TPI-D01)
 -- ============================================================================

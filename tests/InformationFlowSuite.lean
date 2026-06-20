@@ -1063,15 +1063,15 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun oid => if oid = ⟨50⟩ then secretLabel else publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx ⟨50⟩ ⟨1⟩ recvEpState
+  let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx ⟨50⟩ ⟨1⟩ none recvEpState
   expect "cross-domain endpointReceiveDualChecked returns flowDenied"
     (match deniedRecv with
       | .error .flowDenied => true
       | _ => false)
 
   -- Same-domain receive should delegate to unchecked
-  let sameDomainRecv := SeLe4n.Kernel.endpointReceiveDualChecked sameDomainNtfnCtx ⟨50⟩ ⟨1⟩ recvEpState
-  let uncheckedRecv := SeLe4n.Kernel.endpointReceiveDual ⟨50⟩ ⟨1⟩ recvEpState
+  let sameDomainRecv := SeLe4n.Kernel.endpointReceiveDualChecked sameDomainNtfnCtx ⟨50⟩ ⟨1⟩ none recvEpState
+  let uncheckedRecv := SeLe4n.Kernel.endpointReceiveDual ⟨50⟩ ⟨1⟩ none recvEpState
   expect "same-domain endpointReceiveDualChecked matches unchecked"
     (match sameDomainRecv, uncheckedRecv with
       | .ok (r₁, _), .ok (r₂, _) => r₁ = r₂
@@ -1369,7 +1369,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.withRunnable [senderTid, receiverTid]
         |>.buildChecked)
     -- Enqueue receiver via API.
-    match SeLe4n.Kernel.endpointReceiveDual epId receiverTid baseSt with
+    match SeLe4n.Kernel.endpointReceiveDual epId receiverTid none baseSt with
     | .error _ => expect "receive-enqueue setup should succeed" false
     | .ok (_, stQueued) =>
       -- Splice out the receiver TCB (simulates missing-TCB structural fault).
@@ -1432,7 +1432,7 @@ def runInformationFlowChecks : IO Unit := do
           |>.withRunnable [callerTid, receiverTid]
           |>.buildChecked)
       -- Enqueue the receiver via API.
-      match SeLe4n.Kernel.endpointReceiveDual epId receiverTid baseSt with
+      match SeLe4n.Kernel.endpointReceiveDual epId receiverTid none baseSt with
       | .error _ => expect "call-path receive-enqueue setup should succeed" false
       | .ok (_, stQueued) =>
         -- Splice out the receiver TCB to create the structural fault.

@@ -152,9 +152,12 @@ def endpointReplyRecvWithDonation
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
     (replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
+    (msg : IpcMessage)
+    -- WS-SM SM6.D (#7.1 fold): the reply object the server supplies for the next
+    -- caller on the receive leg, threaded into the folded `endpointReplyRecv`.
+    (replyId : Option SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
-    match endpointReplyRecv endpointId receiver replyTarget msg st with
+    match endpointReplyRecv endpointId receiver replyTarget msg replyId st with
     | .error e => .error e
     | .ok ((), st') =>
       -- Z7-D1: Return old donation AFTER reply+receive completes
@@ -201,9 +204,9 @@ theorem endpointReplyWithDonation_unfold
 gated by a `receiver.toValid?` shim. -/
 theorem endpointReplyRecvWithDonation_unfold
     (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (st : SystemState) :
-    endpointReplyRecvWithDonation endpointId receiver replyTarget msg st =
-    (match endpointReplyRecv endpointId receiver replyTarget msg st with
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (st : SystemState) :
+    endpointReplyRecvWithDonation endpointId receiver replyTarget msg replyId st =
+    (match endpointReplyRecv endpointId receiver replyTarget msg replyId st with
      | .error e => .error e
      | .ok ((), st') =>
        match SeLe4n.ThreadId.toValid? receiver with

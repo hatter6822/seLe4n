@@ -679,6 +679,127 @@ theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
   unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
 
+-- ============================================================================
+-- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
+--
+-- The #7 receive fold folds reply-linking into `endpointReceiveDual`: the Call
+-- branch threads `SystemState.linkCallerReply` (a `.reply` write then a `.tcb`
+-- `replyObject` write) and the no-sender branch writes the server-first stash
+-- (a `.tcb` `pendingReceiveReply` write).  None of those fields is read by any
+-- *structural* conjunct, so each new store frames every structural conjunct.
+-- These bare frames live here (upstream of every per-conjunct preservation file)
+-- so each consumer re-points its `endpointReceiveDual` proof to a named frame
+-- rather than re-deriving the store semantics inline.
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): storing any object that is **not** a `.notification`
+preserves `ipcInvariant` (notification well-formedness reads only `.notification`
+objects, and the stored slot post-store holds a non-notification).  The fold's
+`linkCallerReply` (`.reply` then `.tcb`) and server-first stash (`.tcb`) are all
+non-notification stores. -/
+theorem storeObject_preserves_ipcInvariant_of_ne_notification
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNotNtfn : ∀ n, obj ≠ .notification n)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    ipcInvariant st' := by
+  intro oid ntfn hObj
+  by_cases hNe : oid = id
+  · rw [hNe, storeObject_objects_eq st st' id obj hObjInv hStore] at hObj
+    exact absurd (Option.some.inj hObj) (hNotNtfn ntfn)
+  · exact hInv oid ntfn (by rwa [storeObject_objects_ne st st' id oid obj hNe hObjInv hStore] at hObj)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `objects.invExt` — its two
+stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
+preserve the object-store extensional invariant. -/
+theorem linkCallerReply_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves the notification
+well-formedness conjunct `ipcInvariant` — both its `.reply` and `.tcb` stores are
+non-notification (cf. `storeObject_preserves_ipcInvariant_of_ne_notification`). -/
+theorem linkCallerReply_preserves_ipcInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    ipcInvariant st' := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hInv1 : ipcInvariant st1 := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_preserves_ipcInvariant_of_ne_notification st st1 rid.toObjId
+            (.reply { r with caller := some caller }) (fun _ => by exact KernelObject.noConfusion)
+            hInv hObjInv hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_ipcInvariant_of_ne_notification st1 st' caller.toObjId
+          (.tcb { tcb with replyObject := some rid }) (fun _ => by exact KernelObject.noConfusion)
+          hInv1 hObjInv1 hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` leaves the scheduler unchanged (both
+its stores are `storeObject`, which does not touch the scheduler). -/
+theorem linkCallerReply_scheduler_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hSched1 : st1.scheduler = st.scheduler := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_scheduler_eq st st1 rid.toObjId _ hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact (storeObject_scheduler_eq st1 st' caller.toObjId _ hStep).trans hSched1
+      · simp at hStep
+
 /-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
 Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
 explicit target. This theorem is the formal discharge of the claim that the

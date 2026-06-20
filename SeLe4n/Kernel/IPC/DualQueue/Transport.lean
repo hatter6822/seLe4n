@@ -1630,8 +1630,24 @@ server can reply. Plain `blockedOnSend` senders transition to `.ready` as before
 
 Returns the sender's ThreadId. The transferred message is available in the
 receiver's TCB.pendingMessage after the operation (matching seL4's model
-where the message lands in the receiver's IPC buffer). -/
+where the message lands in the receiver's IPC buffer).
+
+WS-SM SM6.D (#7.1 fold): reply-linking is now **atomic** with the blocking
+transition (faithful seL4-MCS), so `blockedOnReply ⇒ replyObject` holds at the
+*transition* boundary rather than only after a separate dispatch step.  The
+required `replyId : Option ReplyId` is the server-supplied reply object for the
+receive:
+* **Call rendezvous** (a `blockedOnCall` sender is dequeued → `.blockedOnReply`):
+  the dequeued caller is linked to `replyId` (`linkCallerReply`) in the same
+  transition; a Call rendezvous carrying **no** reply object fails closed
+  (`.replyCapInvalid`, post-state discarded) — seL4-MCS cannot answer a Call
+  without a reply object.
+* **Send rendezvous** (a one-way `Send` sender): links nothing (unchanged).
+* **No-sender block** (receiver → `.blockedOnReceive`): `replyId` is stashed on
+  the now-blocked receiver (`pendingReceiveReply`) as the server-first reply
+  object a later `Call` rendezvous links to; `none` clears any stale stash. -/
 def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     : Kernel SeLe4n.ThreadId :=
   fun st =>
     match st.objects[endpointId]? with
@@ -1671,10 +1687,21 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                       (.blockedOnReply endpointId (some receiver)) none with
                   | .error e => .error e
                   | .ok st'' =>
-                      -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
-                      match storeTcbIpcStateAndMessage st'' receiver .ready senderMsg with
-                      | .ok st''' => .ok (sender, st''')
-                      | .error e => .error e
+                      -- WS-SM SM6.D (#7.1 fold): link the dequeued caller (now
+                      -- `.blockedOnReply`) to the server-supplied reply object in the
+                      -- same transition.  A Call rendezvous carrying no reply object
+                      -- fails closed (`.replyCapInvalid`); the post-state is discarded,
+                      -- so the caller is never stranded `.blockedOnReply` with no reply.
+                      match replyId with
+                      | none => .error .replyCapInvalid
+                      | some rid =>
+                          match SystemState.linkCallerReply sender rid st'' with
+                          | .error e => .error e
+                          | .ok ((), stLinked) =>
+                              -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
+                              match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
+                              | .ok st''' => .ok (sender, st''')
+                              | .error e => .error e
                 else
                   -- Send path: sender transitions to ready as before
                   match storeTcbIpcStateAndMessage st' sender .ready none with
@@ -1703,7 +1730,20 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
               | .ok st' =>
                   match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
                   | .error e => .error e
-                  | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
+                  | .ok st'' =>
+                      -- WS-SM SM6.D (#7.1 fold): server-first stash — record the
+                      -- server-supplied reply object on the now-`.blockedOnReceive`
+                      -- receiver so a later `Call` rendezvous links to it.  `none`
+                      -- (a plain receive) clears any stale stash from a prior
+                      -- server-first receive that woke via `Send`/was cancelled.
+                      match st''.getTcb? receiver with
+                      | none => .ok (receiver, removeRunnable st'' receiver)
+                      | some rTcb =>
+                          match storeObject receiver.toObjId
+                              (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
+                          | .error e => .error e
+                          | .ok ((), stStashed) =>
+                              .ok (receiver, removeRunnable stStashed receiver)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -1832,7 +1872,12 @@ def endpointReplyRecv
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
     (replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
+    (msg : IpcMessage)
+    -- WS-SM SM6.D (#7.1 fold): the reply object the server supplies for the
+    -- *next* caller on the receive leg (seL4-MCS `ReplyRecv` provides a fresh
+    -- reply object); threaded into the folded `endpointReceiveDual` so a Call
+    -- rendezvous on the receive leg links atomically.  `none` = no reply object.
+    (replyId : Option SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
     -- WS-H12d/A-09: Enforce message payload bounds at send boundary
     if msg.registers.size > maxMessageRegisters then .error .ipcMessageTooLarge
@@ -1858,7 +1903,9 @@ def endpointReplyRecv
                 | .ok st' =>
                     let st'' := ensureRunnable st' replyTarget
                     -- WS-H12a: Full dual-queue receive path after reply
-                    match endpointReceiveDual endpointId receiver st'' with
+                    -- WS-SM SM6.D (#7.1 fold): the receive leg threads the
+                    -- server-supplied reply object for the next caller.
+                    match endpointReceiveDual endpointId receiver replyId st'' with
                     | .error e => .error e
                     | .ok (_, st''') => .ok ((), st''')
               else .error .replyCapInvalid

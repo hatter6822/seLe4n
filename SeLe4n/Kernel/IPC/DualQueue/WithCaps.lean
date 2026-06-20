@@ -138,11 +138,14 @@ the receiver will get caps when a sender later arrives via
 `endpointSendDualWithCaps`. -/
 def endpointReceiveDualWithCaps
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (endpointRights : AccessRightSet)
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel (SeLe4n.ThreadId × CapTransferSummary) :=
   fun st =>
-    match endpointReceiveDual endpointId receiver st with
+    -- WS-SM SM6.D (#7.1 fold): forward the server-supplied reply object into the
+    -- folded receive transition (atomic reply-linking on a Call rendezvous).
+    match endpointReceiveDual endpointId receiver replyId st with
     | .error e => .error e
     | .ok (senderId, st') =>
         -- Check if the receiver got a message (sender was dequeued)

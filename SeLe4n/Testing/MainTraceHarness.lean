@@ -470,10 +470,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.testLabelingContext ⟨31⟩ ⟨12⟩ .empty default default default stEp1 with
       | .error err => IO.println s!"[SST-034] multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
-          match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ stEp2 with
+          match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stEp2 with
           | .error err => IO.println s!"[SST-035] multi-endpoint receive A error: {reprStr err}"
           | .ok (senderA, stEp3) =>
-              match SeLe4n.Kernel.endpointReceiveDual ⟨31⟩ ⟨1⟩ stEp3 with
+              match SeLe4n.Kernel.endpointReceiveDual ⟨31⟩ ⟨1⟩ none stEp3 with
               | .error err => IO.println s!"[SST-036] multi-endpoint receive B error: {reprStr err}"
               | .ok (senderB, _) =>
                   IO.println s!"[SST-037] multi-endpoint receive senders: {senderA}, {senderB}"
@@ -602,7 +602,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
                   IO.println s!"[LEP-021] unexpected cap after delete: {reprStr cap}"
               -- WS-G7: handshake + send-queue test using dual-queue operations
               -- Use st3 (pre-retype) where both TCBs (1, 12) still exist
-              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ st3 with
+              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st3 with
                   | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
                       match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.testLabelingContext demoEndpoint ⟨1⟩ .empty default default default st6 with
@@ -614,7 +614,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
                           | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
                               IO.println "[LEP-026] queued sender on endpoint"
-                              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ st8 with
+                              match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st8 with
                               | .error err => IO.println s!"[LEP-027] endpoint receive #1 error: {reprStr err}"
                               | .ok (sender1, st9) =>
                                   IO.println s!"[LEP-028] endpoint receive #1 sender: {sender1}"
@@ -637,7 +637,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
       | .ok (cap, _) =>
           IO.println s!"[LEP-036] minted cap rights: {reprStr cap.rights}"
   -- T7-B: Post-mutation invariant check after IPC handshake chain
-  match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ st1 with
+  match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none st1 with
   | .ok (_, stIpcMut1) =>
     match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.testLabelingContext demoEndpoint ⟨1⟩ .empty default default default stIpcMut1 with
     | .ok (_, stIpcMut2) => checkInvariants counter "post-ipc-handshake-chain-mutated" stIpcMut2
@@ -806,7 +806,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
         | none => false
       IO.println s!"[IMT-002] message sender has pending: {senderHasMsg}"
       -- Receiver dequeues sender → message transferred to receiver
-      match SeLe4n.Kernel.endpointReceiveDual epId receiverId stSent with
+      match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stSent with
       | .error err => IO.println s!"[IMT-003] F1-01 receive error: {reprStr err}"
       | .ok (_, stRecv) =>
           let recvMsg := match SeLe4n.Kernel.lookupTcb stRecv receiverId with
@@ -830,7 +830,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
     sendQ := {}, receiveQ := {} }
   let stR : SystemState := { st1 with objects := st1.objects.insert epId ep1 }
   -- Receiver blocks first (no sender waiting → receiver enqueued)
-  match SeLe4n.Kernel.endpointReceiveDual epId receiverId stR with
+  match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stR with
   | .error err => IO.println s!"[IMT-007] F1-02 receive-first error: {reprStr err}"
   | .ok (_, stWait) =>
       -- Sender sends with message (receiver queued → rendezvous)
@@ -848,7 +848,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   -- T7-B: Post-mutation invariant check after IPC rendezvous
   let epRend : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let stRMut : SystemState := { st1 with objects := st1.objects.insert demoEndpoint epRend }
-  match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ stRMut with
+  match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ none stRMut with
   | .ok (_, stWaitMut) =>
     let rendMsg : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := none }
     match SeLe4n.Kernel.endpointSendDual demoEndpoint ⟨1⟩ rendMsg stWaitMut with
@@ -861,7 +861,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
     sendQ := {}, receiveQ := {} }
   let stC : SystemState := { st1 with objects := st1.objects.insert epId ep2 }
   -- Receiver waits first
-  match SeLe4n.Kernel.endpointReceiveDual epId receiverId stC with
+  match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stC with
   | .error err => IO.println s!"[IMT-010] F1-03 receive error: {reprStr err}"
   | .ok (_, stWait2) =>
       -- Caller calls with message
@@ -895,7 +895,13 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
     sendQ := {}, receiveQ := {} }
   let callerId : SeLe4n.ThreadId := senderId    -- reuse thread 1
   let serverId : SeLe4n.ThreadId := receiverId  -- reuse thread 12
-  let stH1 : SystemState := { st1 with objects := st1.objects.insert epId ep3 }
+  -- WS-SM SM6.D (#7.1 fold): the server supplies a Reply object on its receive
+  -- (seL4-MCS `Recv(ep, reply)`); a Call rendezvous links the dequeued caller to
+  -- it atomically inside `endpointReceiveDual`.  Free reply (`caller := none`).
+  let h1ReplyId : SeLe4n.ReplyId := ⟨9001⟩
+  let h1Reply : KernelObject := .reply { replyId := h1ReplyId }
+  let stH1 : SystemState :=
+    { st1 with objects := (st1.objects.insert epId ep3).insert h1ReplyId.toObjId h1Reply }
   -- No receiver queued → caller enqueues on sendQ with blockedOnCall
   let h1CallMsg : IpcMessage := { registers := #[⟨77⟩], caps := #[], badge := none }
   match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
@@ -908,8 +914,9 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
           | _ => false
         | none => false
       IO.println s!"[IMT-016] H1 caller blockedOnCall: {isBlockedOnCall}"
-      -- Receiver dequeues the Call sender
-      match SeLe4n.Kernel.endpointReceiveDual epId serverId stBlocked with
+      -- Receiver dequeues the Call sender (server supplies its reply object;
+      -- the fold links the caller to it atomically)
+      match SeLe4n.Kernel.endpointReceiveDual epId serverId (some h1ReplyId) stBlocked with
       | .error err => IO.println s!"[IMT-017] H1-02 receive error: {reprStr err}"
       | .ok (_, stDequeued) =>
           -- Verify caller transitioned to blockedOnReply (not .ready)
@@ -942,7 +949,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
               match SeLe4n.Kernel.endpointCall epId callerId h1CallMsg stH1 with
               | .error _ => IO.println "[IMT-022] H1 unauthorized setup skipped"
               | .ok (_, stBlocked2) =>
-                  match SeLe4n.Kernel.endpointReceiveDual epId serverId stBlocked2 with
+                  match SeLe4n.Kernel.endpointReceiveDual epId serverId (some h1ReplyId) stBlocked2 with
                   | .error _ => IO.println "[IMT-023] H1 unauthorized setup skipped"
                   | .ok (_, stForAuth) =>
                       match SeLe4n.Kernel.endpointReply unauthorizedId callerId h1ReplyMsg stForAuth with
@@ -1932,15 +1939,23 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288),
     ipcState := .ready
   }
+  -- WS-SM SM6.D (#7.1 fold): the server supplies a distinct Reply object on each
+  -- receive (seL4-MCS): `replyA` for caller A's `Recv`, `replyB` for the
+  -- `ReplyRecv` that answers A and links B.  Both start free (`caller := none`).
+  let replyAId : SeLe4n.ReplyId := ⟨9002⟩
+  let replyBId : SeLe4n.ReplyId := ⟨9003⟩
   let stFresh : SystemState := { st1 with
-    objects := (st1.objects.insert epId ep).insert ⟨13⟩ callerB }
+    objects := (((st1.objects.insert epId ep).insert ⟨13⟩ callerB)
+      |>.insert replyAId.toObjId (.reply { replyId := replyAId }))
+      |>.insert replyBId.toObjId (.reply { replyId := replyBId }) }
   -- Step 1: Caller A calls endpoint (no receiver yet → enqueues on sendQ)
   let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some (Badge.ofNatMasked 789) }
   match SeLe4n.Kernel.endpointCall epId callerAId callMsgA stFresh with
   | .error err => IO.println s!"[RRC-001] replyRecv call1 error: {reprStr err}"
   | .ok (_, stCalledA) =>
-      -- Step 2: Server receives (dequeues caller A, A → blockedOnReply)
-      match SeLe4n.Kernel.endpointReceiveDual epId serverId stCalledA with
+      -- Step 2: Server receives (dequeues caller A, A → blockedOnReply), supplying
+      -- replyA — the fold links A to replyA atomically
+      match SeLe4n.Kernel.endpointReceiveDual epId serverId (some replyAId) stCalledA with
       | .error err => IO.println s!"[RRC-002] replyRecv recv error: {reprStr err}"
       | .ok (_, stRecvd) =>
           -- Verify caller A is blockedOnReply
@@ -1960,7 +1975,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
               -- This exercises the rendezvous-after-reply path: reply delivers to A,
               -- then receive immediately dequeues B from sendQ
               let replyMsg : IpcMessage := { registers := #[⟨100⟩, ⟨200⟩, ⟨300⟩], caps := #[], badge := none }
-              match SeLe4n.Kernel.endpointReplyRecv epId serverId callerAId replyMsg stCalledB with
+              match SeLe4n.Kernel.endpointReplyRecv epId serverId callerAId replyMsg (some replyBId) stCalledB with
               | .error err =>
                   IO.println s!"[RRC-003] replyRecv operation error: {reprStr err}"
               | .ok (_, stReplyRecvd) =>
@@ -2120,7 +2135,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
   | .error err => IO.println s!"[MEI-001] multi-ep send1 error: {reprStr err}"
   | .ok (_, stSent1) =>
       -- Receive from endpoint 1 — should get msg1
-      match SeLe4n.Kernel.endpointReceiveDual epId1 receiverId stSent1 with
+      match SeLe4n.Kernel.endpointReceiveDual epId1 receiverId none stSent1 with
       | .error err => IO.println s!"[MEI-002] multi-ep recv1 error: {reprStr err}"
       | .ok (_, stRecv1) =>
           let recvRegs1 := match SeLe4n.Kernel.lookupTcb stRecv1 receiverId with
@@ -2133,7 +2148,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
           | .error err => IO.println s!"[MEI-003] multi-ep send2 error: {reprStr err}"
           | .ok (_, stSent2) =>
               -- Receive from endpoint 2 — should get msg2 (independent from ep1)
-              match SeLe4n.Kernel.endpointReceiveDual epId2 receiverId stSent2 with
+              match SeLe4n.Kernel.endpointReceiveDual epId2 receiverId none stSent2 with
               | .error err => IO.println s!"[MEI-004] multi-ep recv2 error: {reprStr err}"
               | .ok (_, stRecv2) =>
                   let recvRegs2 := match SeLe4n.Kernel.lookupTcb stRecv2 receiverId with
@@ -2152,7 +2167,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                   | .error err => IO.println s!"[MEI-004] multi-ep send3 error: {reprStr err}"
                   | .ok (_, stSent3) =>
                       -- Receive from EP3 first (out-of-order w.r.t. creation order)
-                      match SeLe4n.Kernel.endpointReceiveDual epId3 receiverId stSent3 with
+                      match SeLe4n.Kernel.endpointReceiveDual epId3 receiverId none stSent3 with
                       | .error err => IO.println s!"[MEI-004] multi-ep recv-ep3 error: {reprStr err}"
                       | .ok (_, stRecv3) =>
                           let recvRegs3 := match SeLe4n.Kernel.lookupTcb stRecv3 receiverId with
@@ -2166,7 +2181,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                           | .error err => IO.println s!"[MEI-005] multi-ep send4-ep1 error: {reprStr err}"
                           | .ok (_, stSent4) =>
                               -- Receive from EP1 (FIFO: should get msg4)
-                              match SeLe4n.Kernel.endpointReceiveDual epId1 receiverId stSent4 with
+                              match SeLe4n.Kernel.endpointReceiveDual epId1 receiverId none stSent4 with
                               | .error err => IO.println s!"[MEI-005] multi-ep recv4-ep1 error: {reprStr err}"
                               | .ok (_, stRecv4) =>
                                   let recvRegs4 := match SeLe4n.Kernel.lookupTcb stRecv4 receiverId with

@@ -276,15 +276,15 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
 
 theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver senderId : SeLe4n.ThreadId)
+    (receiver senderId : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (hPre : ipcSchedulerContractPredicates_smp st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st'))
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st'))
     (hNonBootIdle : ∀ c, c ≠ bootCoreId → (st'.scheduler.runQueueOnCore c).toList = []) :
     ipcSchedulerContractPredicates_smp st' :=
   ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
     (endpointReceiveDual_preserves_ipcSchedulerContractPredicates st st' endpointId receiver
-      senderId (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
+      senderId replyId (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
     hNonBootIdle
 
 theorem endpointCall_preserves_ipcSchedulerContractPredicates_smp
@@ -315,14 +315,15 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates_smp
 theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
     (hPre : ipcSchedulerContractPredicates_smp st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st'))
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st'))
     (hNonBootIdle : ∀ c, c ≠ bootCoreId → (st'.scheduler.runQueueOnCore c).toList = []) :
     ipcSchedulerContractPredicates_smp st' :=
   ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
     (endpointReplyRecv_preserves_ipcSchedulerContractPredicates st st' endpointId receiver
-      replyTarget msg (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
+      replyTarget msg (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv replyId hStep)
     hNonBootIdle
 
 theorem notificationSignal_preserves_ipcSchedulerContractPredicates_smp

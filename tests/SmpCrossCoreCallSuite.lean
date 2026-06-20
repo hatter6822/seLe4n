@@ -230,7 +230,7 @@ private def stBase : SystemState :=
 
 /-- Drive the receiver onto the endpoint's receive queue (it blocks, no sender). -/
 private def stWithReceiver (recv : SeLe4n.ThreadId) : Option SystemState :=
-  match endpointReceiveDual epId recv stBase with
+  match endpointReceiveDual epId recv none stBase with
   | .ok (_, st) => some st
   | .error _ => none
 
