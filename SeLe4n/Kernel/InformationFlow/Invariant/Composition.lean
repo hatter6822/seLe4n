@@ -470,7 +470,7 @@ theorem step_preserves_projection
       hIdxComplete hObjSetInv hOp
   | endpointCallHigh eid caller msg hEH hCH hCOH hCo hOp hRQHH hRQNH hSQTH =>
     exact endpointCall_preserves_projection ctx observer eid caller msg st st'
-      hEH hCH hCOH hCo hRQHH hRQNH hSQTH hObjInv hOp
+      hEH hCH hCOH hCo hRQHH hRQNH hSQTH hObjInv hIdxComplete hObjSetInv hOp
   | endpointReplyRecvHigh eid recv target rmsg replyId hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH =>
     exact endpointReplyRecv_preserves_projection ctx observer eid recv target rmsg replyId st st'
       hEH hRH hROH hRTH hRTOH hCo hSQHH hSQNH hRQTH hObjInv

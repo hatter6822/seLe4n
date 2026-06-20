@@ -1263,9 +1263,15 @@ private def runAuditCoverageChecks : IO Unit := do
     .replyCapInvalid
 
   -- POS-REPLYRECV: Set up a valid blockedOnReply scenario via endpointCall, then replyRecv
-  -- First, enqueue receiver in the dual-queue receiveQ (not legacy waitingReceiver)
+  -- First, enqueue receiver in the dual-queue receiveQ (not legacy waitingReceiver).
+  -- WS-SM SM6.D (#7.3 fold): the server (TID 8) supplies a Reply object on its
+  -- server-first Recv; the later Call rendezvous links the caller (TID 7) to it.
+  let rrReplyId : SeLe4n.ReplyId := ⟨9101⟩
+  let rrSetupState : SystemState :=
+    { baseState with objects :=
+        baseState.objects.insert rrReplyId.toObjId (.reply { replyId := rrReplyId }) }
   let (_, stCallSetup1) ← expectOkSt "replyRecv setup: receiver blocks on receive"
-    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) none baseState)
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) (some rrReplyId) rrSetupState)
   -- Caller calls endpoint (handshakes with queued receiver, caller blocks for reply)
   let (_, stCallSetup2) ← expectOkSt "replyRecv setup: caller calls endpoint"
     (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) .empty stCallSetup1)
@@ -3815,6 +3821,9 @@ private def r1ReceiverTid : SeLe4n.ThreadId := ⟨6711⟩
 private def r1CallerCNode : SeLe4n.ObjId    := ⟨6720⟩
 private def r1ReceiverCNode : SeLe4n.ObjId  := ⟨6721⟩
 private def r1TargetObj   : SeLe4n.ObjId    := ⟨6730⟩
+-- WS-SM SM6.D (#7.3 fold): the server's server-first Recv supplies this Reply
+-- object; the later Call rendezvous links the caller to it atomically.
+private def r1ReplyId     : SeLe4n.ReplyId  := ⟨6731⟩
 
 private def r1Cap : Capability :=
   { target := .object r1TargetObj,
@@ -3845,11 +3854,12 @@ private def r1BaseState : SystemState :=
         { tid := r1ReceiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := r1ReceiverCNode, vspaceRoot := ⟨0⟩,
           ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready })
+    |>.withObject r1ReplyId.toObjId (.reply { replyId := r1ReplyId })
     |>.withRunnable [r1CallerTid, r1ReceiverTid]
     |>.buildChecked)
 
 private def r1QueuedState : Except KernelError SystemState :=
-  match SeLe4n.Kernel.endpointReceiveDual r1EpId r1ReceiverTid none r1BaseState with
+  match SeLe4n.Kernel.endpointReceiveDual r1EpId r1ReceiverTid (some r1ReplyId) r1BaseState with
   | .error e => .error e
   | .ok (_, st) => .ok st
 

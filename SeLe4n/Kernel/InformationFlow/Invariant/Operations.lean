@@ -2192,6 +2192,11 @@ theorem endpointCall_preserves_projection
     (hSendQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
         ep.sendQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
     (hObjInv : st.objects.invExt)
+    -- WS-SM SM6.D (#7.3 fold): objectIndexSet completeness/invExt for the server-first
+    -- reply-link's `.reply` re-store (mirrors the `endpointReplyRecv` projection theorem).
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointCall at hStep
@@ -2242,17 +2247,42 @@ theorem endpointCall_preserves_projection
             have hProjEns := ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh
             have hObjInvEns : (ensureRunnable st2 receiver).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv2
+            -- WS-SM SM6.D (#7.3 fold): thread objectIndexSet-completeness/invExt to st3.
+            -- PopHead / storeTcbIpcStateAndMessage / ensureRunnable only mutate existing keys.
+            obtain ⟨hIdxPop, hObjSetPop⟩ :=
+              endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
+                endpointId true st st1 receiver _recvTcb hObjInv hObjSetInv hIdxComplete hPop
+            have hIdxSt2 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
+                st1 st2 receiver _ _ hObjInv1 hObjSetPop hIdxPop hTcbStore
+            have hObjSetSt2 := storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
+                st1 st2 receiver _ _ hObjSetPop hTcbStore
+            have hIdxEns := ensureRunnable_preserves_objectIndexSetComplete st2 receiver hIdxSt2
+            have hObjSetEns := ensureRunnable_preserves_objectIndexSet_invExt st2 receiver hObjSetSt2
             -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller
                 (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-              rw [removeRunnable_preserves_projection ctx observer st3 caller hCallerHigh,
-                  storeTcbIpcStateAndMessage_preserves_projection ctx observer (ensureRunnable st2 receiver)
-                  st3 caller _ _ hCallerObjHigh hObjInvEns hIpc,
-                  hProjEns, hProjTcb, hProjPop]
+              simp only [hIpc] at hStep
+              have hObjInvSt3 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                  (ensureRunnable st2 receiver) st3 caller _ _ hObjInvEns hIpc
+              have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                  (ensureRunnable st2 receiver) st3 caller _ _ hCallerObjHigh hObjInvEns hIpc
+              have hIdxSt3 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
+                  (ensureRunnable st2 receiver) st3 caller _ _ hObjInvEns hObjSetEns hIdxEns hIpc
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.  Both writes are
+              -- projection-invisible: the caller is high (`hCallerObjHigh`) and the server is
+              -- the dequeued receiver, also high (`hRecvObjHigh`).
+              cases hLink : SystemState.linkServerStashedReply caller receiver st3 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+                have hProjLink := linkServerStashedReply_preserves_projection ctx observer
+                    st3 st5 caller receiver hCallerObjHigh hRecvObjHigh hIdxSt3 hObjInvSt3 hLink
+                rw [removeRunnable_preserves_projection ctx observer st5 caller hCallerHigh,
+                    hProjLink, hProjIpc, hProjEns, hProjTcb, hProjPop]
       | none =>
         -- Path 2: No receiver — Enqueue caller + storeTcbIpcStateAndMessage + removeRunnable
         simp only [hRecvHead] at hStep

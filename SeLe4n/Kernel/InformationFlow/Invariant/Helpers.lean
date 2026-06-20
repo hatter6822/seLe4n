@@ -606,6 +606,42 @@ theorem linkCallerReply_preserves_projection
               hCallerObjHigh hObjInv1 hStep, hProj1]
       · simp at hStep
 
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer
+projection when both the caller and server objects are non-observable (high).  It
+composes `linkCallerReply` (caller-side, projection-preserving at a high caller) with
+one server `.tcb` re-store clearing `pendingReceiveReply` (projection-preserving at a
+high server). -/
+theorem linkServerStashedReply_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hServerObjHigh : objectObservable ctx observer server.toObjId = false)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      have hProj1 : projectState ctx observer st1 = projectState ctx observer st :=
+        linkCallerReply_preserves_projection ctx observer st st1 caller rid hCallerObjHigh hIdxComplete hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hProj1
+      | some sTcb =>
+        simp only [hT] at hStep
+        rw [storeObject_preserves_projection ctx observer st1 st' server.toObjId _
+              hServerObjHigh hObjInv1 hStep, hProj1]
+
 -- ============================================================================
 -- Non-interference theorem #1: chooseThread (WS-D2, F-05, TPI-D01)
 -- ============================================================================

@@ -1548,6 +1548,47 @@ private theorem linkCallerReply_preserves_waitingThreadsPendingMessageNone
           exact hInv1 t tcb' hObjPre
       · simp at hStep
 
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
+`waitingThreadsPendingMessageNone`.  Composes `linkCallerReply` with one server
+`.tcb` re-store that clears `pendingReceiveReply` (`ipcState` + `pendingMessage`
+unchanged, both `rfl`). -/
+private theorem linkServerStashedReply_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone st' := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hInv1 := linkCallerReply_preserves_waitingThreadsPendingMessageNone st st1 caller rid hObjInv hLink hInv
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        intro t tcb' hObj
+        by_cases hEq : t.toObjId = server.toObjId
+        · rw [hEq, storeObject_objects_eq st1 st' server.toObjId _ hObjInv1 hStep] at hObj
+          cases hObj
+          have hTcbPre : st1.objects[server.toObjId]? = some (.tcb sTcb) :=
+            (getTcb?_eq_some_iff st1 server sTcb).mp hT
+          have := hInv1 t sTcb (by rw [hEq]; exact hTcbPre)
+          simpa using this
+        · have hObjPre : st1.objects[t.toObjId]? = some (.tcb tcb') := by
+            rwa [storeObject_objects_ne st1 st' server.toObjId t.toObjId _ hEq hObjInv1 hStep] at hObj
+          exact hInv1 t tcb' hObjPre
+
 /-- `endpointReceiveDual` preserves `waitingThreadsPendingMessageNone`.
     Call path: sender→blockedOnReply(none) + receiver atomically set to .ready + senderMsg.
     Send path: sender→ready(none) + ensureRunnable + receiver atomically set to .ready + senderMsg.
@@ -1801,12 +1842,22 @@ theorem endpointCall_preserves_waitingThreadsPendingMessageNone
                     (.blockedOnReply endpointId (some pair.1)) none with
                 | error e => simp [hIpc] at hStep
                 | ok st2 =>
-                  simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  simp only [hIpc] at hStep
                   have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
                     _ st2 caller (.blockedOnReply endpointId (some pair.1)) none
                     hObjInvEns hIpc hInvEns trivial
-                  exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
+                  have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                    _ st2 caller _ none hObjInvEns hIpc
+                  -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+                  cases hLink : SystemState.linkServerStashedReply caller pair.1 st2 with
+                  | error e => simp [hLink] at hStep
+                  | ok pL =>
+                    obtain ⟨_, st5⟩ := pL
+                    simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                    obtain ⟨_, hEq⟩ := hStep; subst hEq
+                    have hInv5 := linkServerStashedReply_preserves_waitingThreadsPendingMessageNone
+                      st2 st5 caller pair.1 hObjInv2 hLink hInv2
+                    exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv5
           | none =>
             -- Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable
             cases hEnq : endpointQueueEnqueue endpointId false caller st with

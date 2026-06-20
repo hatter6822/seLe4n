@@ -480,10 +480,17 @@ theorem endpointCall_preserves_objects_invExt
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st4 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
               have hObjInvIpc := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 caller _ none hObjInvEns hIpc
-              rwa [removeRunnable_preserves_objects]
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hObjInv5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 hObjInvIpc hLink
+                rwa [removeRunnable_preserves_objects]
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep

@@ -1810,7 +1810,15 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                     match storeTcbIpcStateAndMessage st''' caller
                         (.blockedOnReply endpointId (some receiver)) none with
                     | .error e => .error e
-                    | .ok st4 => .ok ((), removeRunnable st4 caller)
+                    | .ok st4 =>
+                        -- WS-SM SM6.D (#7.3 fold): link the caller to the Reply object
+                        -- the woken server stashed on its server-first `Recv` and clear
+                        -- the stash, atomically (formerly the separate
+                        -- `linkServerFirstCaller` dispatch step).  Fails closed when the
+                        -- server provided no reply object.
+                        match SystemState.linkServerStashedReply caller receiver st4 with
+                        | .error e => .error e
+                        | .ok ((), st5) => .ok ((), removeRunnable st5 caller)
         | none =>
             match endpointQueueEnqueue endpointId false caller st with
             | .error e => .error e

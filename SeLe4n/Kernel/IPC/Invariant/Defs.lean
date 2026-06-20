@@ -800,6 +800,90 @@ theorem linkCallerReply_scheduler_eq (st st' : SystemState)
       · exact (storeObject_scheduler_eq st1 st' caller.toObjId _ hStep).trans hSched1
       · simp at hStep
 
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
+it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
+TCB store (which preserves it). -/
+theorem linkServerStashedReply_preserves_objects_invExt (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hObjInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact storeObject_preserves_objects_invExt st1 st' server.toObjId _ hObjInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `ipcInvariant` — both
+its sub-stores are non-notification (the `linkCallerReply` reply/TCB stores and the
+`pendingReceiveReply` TCB store). -/
+theorem linkServerStashedReply_preserves_ipcInvariant
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    ipcInvariant st' := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hInv1 := linkCallerReply_preserves_ipcInvariant st st1 caller rid hInv hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact storeObject_preserves_ipcInvariant_of_ne_notification st1 st' server.toObjId
+          (.tcb { sTcb with pendingReceiveReply := none }) (fun _ => by exact KernelObject.noConfusion)
+          hInv1 hObjInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` leaves the scheduler unchanged
+(every sub-store is `storeObject`, which does not touch the scheduler). -/
+theorem linkServerStashedReply_scheduler_eq (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hSched1 := linkCallerReply_scheduler_eq st st1 caller rid hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hSched1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact (storeObject_scheduler_eq st1 st' server.toObjId _ hStep).trans hSched1
+
 /-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
 Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
 explicit target. This theorem is the formal discharge of the claim that the

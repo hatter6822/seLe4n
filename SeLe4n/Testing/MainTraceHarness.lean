@@ -859,9 +859,14 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   -- F1-03: Call + Reply roundtrip with message payload
   let ep2 : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
-  let stC : SystemState := { st1 with objects := st1.objects.insert epId ep2 }
-  -- Receiver waits first
-  match SeLe4n.Kernel.endpointReceiveDual epId receiverId none stC with
+  -- WS-SM SM6.D (#7.3 fold): the server supplies a Reply object on its server-first
+  -- `Recv`; the later `Call` rendezvous links the caller to it atomically.
+  let f103ReplyId : SeLe4n.ReplyId := ⟨9004⟩
+  let f103Objects :=
+    (st1.objects.insert epId ep2).insert f103ReplyId.toObjId (.reply { replyId := f103ReplyId })
+  let stC : SystemState := { st1 with objects := f103Objects }
+  -- Receiver waits first (server-first, stashing its reply object)
+  match SeLe4n.Kernel.endpointReceiveDual epId receiverId (some f103ReplyId) stC with
   | .error err => IO.println s!"[IMT-010] F1-03 receive error: {reprStr err}"
   | .ok (_, stWait2) =>
       -- Caller calls with message

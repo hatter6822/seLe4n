@@ -350,6 +350,105 @@ private theorem linkCallerReply_preserves_ipcStateQueueConsistent
           hInv1 hObjInv1 hTcbPre hStep
       · simp at hStep
 
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `endpointQueueNoDup`.
+Composes `linkCallerReply` with one server `.tcb` re-store that clears
+`pendingReceiveReply` (`queueNext` unchanged). -/
+private theorem linkServerStashedReply_preserves_endpointQueueNoDup
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : endpointQueueNoDup st) (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    endpointQueueNoDup st' := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hInv1 := linkCallerReply_preserves_endpointQueueNoDup st st1 caller rid hInv hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        have hTcbPre : st1.objects[server.toObjId]? = some (.tcb sTcb) :=
+          (getTcb?_eq_some_iff st1 server sTcb).mp hT
+        exact storeObject_tcb_readAgree_preserves_endpointQueueNoDup
+          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReply := none } rfl
+          hInv1 hObjInv1 hTcbPre hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
+`ipcStateQueueMembershipConsistent`.  The server `.tcb` re-store clears
+`pendingReceiveReply` (`ipcState` + `queueNext` unchanged). -/
+private theorem linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : ipcStateQueueMembershipConsistent st) (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    ipcStateQueueMembershipConsistent st' := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hInv1 := linkCallerReply_preserves_ipcStateQueueMembershipConsistent st st1 caller rid hInv hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        have hTcbPre : st1.objects[server.toObjId]? = some (.tcb sTcb) :=
+          (getTcb?_eq_some_iff st1 server sTcb).mp hT
+        exact storeObject_tcb_readAgree_preserves_ipcStateQueueMembershipConsistent
+          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReply := none } rfl rfl
+          hInv1 hObjInv1 hTcbPre hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves
+`ipcStateQueueConsistent`.  The server `.tcb` re-store clears `pendingReceiveReply`
+(`ipcState` unchanged). -/
+private theorem linkServerStashedReply_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : ipcStateQueueConsistent st) (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    ipcStateQueueConsistent st' := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hInv1 := linkCallerReply_preserves_ipcStateQueueConsistent st st1 caller rid hInv hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        have hTcbPre : st1.objects[server.toObjId]? = some (.tcb sTcb) :=
+          (getTcb?_eq_some_iff st1 server sTcb).mp hT
+        exact storeObject_tcb_readAgree_preserves_ipcStateQueueConsistent
+          st1 st' server.toObjId sTcb { sTcb with pendingReceiveReply := none } rfl
+          hInv1 hObjInv1 hTcbPre hStep
+
 
 -- ============================================================================
 -- WS-H12e/R3-B: Composed ipcInvariantFull preservation theorems
@@ -735,10 +834,18 @@ theorem endpointCall_preserves_endpointQueueNoDup
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, rfl⟩ := hStep
-              exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
-                storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ st3 caller _ none hNoDupE hObjInvE hIpc
+              simp only [hIpc] at hStep
+              have hNoDup3 := storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ st3 caller _ none hNoDupE hObjInvE hIpc
+              have hObjInv3 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st3 caller _ none hObjInvE hIpc
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st3 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                have hNoDup5 := linkServerStashedReply_preserves_endpointQueueNoDup st3 st5 caller pair.1 hNoDup3 hObjInv3 hLink
+                exact removeRunnable_preserves_endpointQueueNoDup _ _ hNoDup5
       | none =>
         -- Block path: Enqueue + storeTcbIpcStateAndMessage + removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -1301,14 +1408,22 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, rfl⟩ := hStep
-              exact removeRunnable_preserves_ipcStateQueueMembershipConsistent _ caller <|
-                storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
-                  _ _ caller _ none hV3JE hObjInvE
+              simp only [hIpc] at hStep
+              have hV3J3 := storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
+                  _ st3 caller _ none hV3JE hObjInvE
                   (fun _ h => absurd h (by simp))
                   (fun _ h => absurd h (by simp))
                   (fun _ h => absurd h (by simp)) hIpc
+              have hObjInv3 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st3 caller _ none hObjInvE hIpc
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st3 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                have hV3J5 := linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent st3 st5 caller pair.1 hV3J3 hObjInv3 hLink
+                exact removeRunnable_preserves_ipcStateQueueMembershipConsistent _ caller hV3J5
       | none =>
         -- BLOCK PATH: Enqueue(sendQ) + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -2427,14 +2542,23 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, rfl⟩ := hStep
-              exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
+              simp only [hIpc] at hStep
+              have hISQC3 : ipcStateQueueConsistent st3 :=
                 storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ none hObjInvEns hIpc
                   (ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
                     storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvPop hMsg
                       (endpointQueuePopHead_preserves_ipcStateQueueConsistent endpointId true st stPop receiver _tcb
                         hObjInv hPop hInv) trivial) trivial
+              have hObjInv3 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st3 caller _ none hObjInvEns hIpc
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+              cases hLink : SystemState.linkServerStashedReply caller receiver st3 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                have hISQC5 := linkServerStashedReply_preserves_ipcStateQueueConsistent st3 st5 caller receiver hISQC3 hObjInv3 hLink
+                exact removeRunnable_preserves_ipcStateQueueConsistent _ _ hISQC5
       | none =>
         -- Blocking path: Enqueue → storeTcbIpcStateAndMessage(caller, .blockedOnCall) → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with

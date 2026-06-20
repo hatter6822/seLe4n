@@ -1011,6 +1011,152 @@ private theorem linkCallerReply_tcb_ipcState_backward
             rw [← hLinkFrame y.toObjId hyR]; exact hSt1Y
       · simp at hStep
 
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` forwards TCB existence — it
+composes `linkCallerReply` (whose only TCB write re-stores the caller's TCB) with a
+single `pendingReceiveReply`-clearing re-store of the `server` TCB.  Neither write
+removes a TCB, so a TCB present at any slot `y` in the pre-state is still a TCB in the
+post-state.  Feeds the scheduler-bundle `currentThreadValid` obligation across the
+atomic call-path fold. -/
+theorem linkServerStashedReply_tcb_forward
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (y : SeLe4n.ObjId) (tcbY : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
+    (hTcb : st.objects[y]? = some (.tcb tcbY)) :
+    ∃ tcbY', st'.objects[y]? = some (.tcb tcbY') := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      -- Forward the TCB across the `linkCallerReply` leg.
+      obtain ⟨tcb1, hTcb1⟩ := linkCallerReply_tcb_forward st st1 caller rid y tcbY hObjInv hLink hTcb
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact ⟨tcb1, hTcb1⟩
+      | some sTcb =>
+        simp only [hT] at hStep
+        by_cases hyS : y = server.toObjId
+        · -- server slot: the final store writes a `.tcb` there.
+          subst hyS
+          have hLk := storeObject_inserted_object_lookup st1 server.toObjId
+            (.tcb { sTcb with pendingReceiveReply := none }) hObjInv1 st' hStep
+          exact ⟨{ sTcb with pendingReceiveReply := none }, by
+            simp only [RHTable_getElem?_eq_get?]; exact hLk⟩
+        · -- non-server slot: the final store frames `y`.
+          have hFrame := storeObject_objects_ne st1 st' server.toObjId y _ hyS hObjInv1 hStep
+          exact ⟨tcb1, by rw [hFrame]; exact hTcb1⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` backward-preserves TCB ipcState —
+its `linkCallerReply` leg rewrites only the caller's `replyObject` (never `ipcState`),
+and the final server re-store clears `pendingReceiveReply` (also leaving `ipcState`
+untouched).  A TCB present at slot `y` in the post-state therefore maps back to a TCB at
+`y` in the pre-state with identical `ipcState`.  Feeds
+`contracts_of_same_scheduler_ipcState` so the contract predicates transport across the
+atomic call-path fold. -/
+theorem linkServerStashedReply_tcb_ipcState_backward
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (y : SeLe4n.ThreadId) (tcbY' : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
+    (hTcb : st'.objects[y.toObjId]? = some (.tcb tcbY')) :
+    ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcbY'.ipcState := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      -- First peel the final server-store backward to a TCB (same ipcState) in `st1`,
+      -- then apply the `linkCallerReply` backward lemma to reach `st`.
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq
+        exact linkCallerReply_tcb_ipcState_backward st st1 caller rid y tcbY' hObjInv hLink hTcb
+      | some sTcb =>
+        simp only [hT] at hStep
+        -- Establish a TCB at `y` in `st1` with `ipcState = tcbY'.ipcState`.
+        have hSt1Y : ∃ t1, st1.objects[y.toObjId]? = some (.tcb t1) ∧ t1.ipcState = tcbY'.ipcState := by
+          by_cases hyS : y.toObjId = server.toObjId
+          · -- post-state TCB at server is `{ sTcb with pendingReceiveReply := none }`.
+            have hStoreLk := storeObject_inserted_object_lookup st1 server.toObjId
+              (.tcb { sTcb with pendingReceiveReply := none }) hObjInv1 st' hStep
+            rw [hyS] at hTcb
+            simp only [RHTable_getElem?_eq_get?] at hTcb
+            rw [hStoreLk] at hTcb
+            have htcbY' : tcbY' = { sTcb with pendingReceiveReply := none } :=
+              KernelObject.tcb.inj (Option.some.inj hTcb.symm)
+            refine ⟨sTcb, ?_, ?_⟩
+            · rw [hyS]; exact (getTcb?_eq_some_iff st1 server sTcb).mp hT
+            · rw [htcbY']
+          · -- non-server slot: the final store frames `y`; pull the TCB back to `st1`.
+            have hFrame := storeObject_objects_ne st1 st' server.toObjId y.toObjId _ hyS hObjInv1 hStep
+            exact ⟨tcbY', by rw [← hFrame]; exact hTcb, rfl⟩
+        obtain ⟨t1, hT1, hIpcEq1⟩ := hSt1Y
+        obtain ⟨tcb, hTcb0, hIpcEq0⟩ :=
+          linkCallerReply_tcb_ipcState_backward st st1 caller rid y t1 hObjInv hLink hT1
+        exact ⟨tcb, hTcb0, by rw [hIpcEq0, hIpcEq1]⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the scheduler-invariant
+bundle.  The scheduler is unchanged (`linkServerStashedReply_scheduler_eq`), discharging
+the `queueCurrentConsistent` / `runQueueUnique` conjuncts; `currentThreadValid` carries
+across via `linkServerStashedReply_tcb_forward`. -/
+theorem linkServerStashedReply_preserves_schedulerInvariantBundle
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQCC, hRQU, hCTV⟩
+  have hSched := linkServerStashedReply_scheduler_eq st st' caller server hStep
+  refine ⟨?_, ?_, ?_⟩
+  · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSched]
+  · show st'.scheduler.runnable.Nodup
+    rw [show st'.scheduler.runnable = st.scheduler.runnable from congrArg SchedulerState.runnable hSched]
+    exact hRQU
+  · unfold currentThreadValid; rw [hSched]
+    cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+    | none => simp
+    | some x =>
+      simp only []
+      have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
+        simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+      rcases hCTV' with ⟨tcbX, hTcbX⟩
+      exact linkServerStashedReply_tcb_forward st st' caller server x.toObjId tcbX hObjInv hStep hTcbX
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the IPC↔scheduler
+contract predicates.  It leaves the scheduler unchanged and every TCB's `ipcState`
+untouched (it writes only `replyObject` / `pendingReceiveReply` fields), so
+`contracts_of_same_scheduler_ipcState` transports the predicates verbatim. -/
+theorem linkServerStashedReply_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' :=
+  contracts_of_same_scheduler_ipcState st st'
+    (linkServerStashedReply_scheduler_eq st st' caller server hStep)
+    (fun tid tcb' h =>
+      linkServerStashedReply_tcb_ipcState_backward st st' caller server tid tcb' hObjInv hStep h)
+    hContract
+
 /-- WS-F1/TPI-D08: endpointReceiveDual preserves schedulerInvariantBundle. -/
 theorem endpointReceiveDual_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)

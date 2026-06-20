@@ -2421,6 +2421,29 @@ def consumeCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kerne
         | some tcb =>
             storeObject caller.toObjId (.tcb { tcb with replyObject := none }) st1
 
+/-- WS-SM SM6.D (#7.3 fold, server-first Call linkage): link a freshly-dequeued
+`Call` caller (now `.blockedOnReply`) to the Reply object the rendezvous `server`
+stashed on its earlier server-first `Recv` (`server.pendingReceiveReply`), and clear
+that stash (one-shot).  Composed **inside** `endpointCall` / `endpointCallOnCore`'s
+server-waiting rendezvous (atomic with the blocking transition), replacing the former
+separate `linkServerFirstCaller` dispatch step.  Fails closed `.replyCapInvalid` when
+the server provided no reply object (a plain `Recv` cannot answer a `Call`); the
+caller-side single-use barrier in `linkCallerReply` rejects an already-linked caller.
+Reads the server explicitly (the dequeued thread) rather than re-deriving it from the
+caller's `blockedOnReply` payload. -/
+def linkServerStashedReply (caller server : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match (st.getTcb? server).bind (·.pendingReceiveReply) with
+    | none => .error .replyCapInvalid
+    | some rid =>
+        match linkCallerReply caller rid st with
+        | .error e => .error e
+        | .ok ((), st1) =>
+            match st1.getTcb? server with
+            | none => .ok ((), st1)
+            | some sTcb =>
+                storeObject server.toObjId (.tcb { sTcb with pendingReceiveReply := none }) st1
+
 /-- WS-SM SM6.D: `linkCallerReply` fails closed (`.replyCapInvalid`) on an
 already-linked (in-use) reply — it never touches the caller TCB.  Inherits
 `linkReply`'s single-use barrier: a second `Call` cannot re-bind a reply that
