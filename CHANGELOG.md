@@ -1,3 +1,37 @@
+## v0.31.152 — Reply objects (seL4-MCS): D6 transition fold — receive folds + single-core call fold land (#7.1/#7.2/#7.3a)
+
+Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
+§#7): fold the reply-object linkage **into** the blocking IPC transitions so
+`blockedOnReply ⇒ replyObject` will hold at the transition boundary (not just the syscall
+boundary). Three green-incremental slices land here; each is a behaviour-preserving reordering
+of an existing dispatch-layer link, so the boot trace stays byte-identical.
+
+- **#7.1 — single-core receive fold.** `endpointReceiveDual` takes a required
+  `replyId : Option ReplyId`: a `Call` rendezvous links the dequeued caller to the
+  server-supplied reply object via `linkCallerReply` (fail-closed `.replyCapInvalid` on a Call
+  carrying none); the no-sender path stashes `pendingReceiveReply`; the Send path is unchanged.
+  Threaded through `endpointReplyRecv`, `endpointReceiveDualWithCaps`,
+  `endpointReceiveDualChecked`, `endpointReplyRecvWithDonation`, and re-based the full IPC +
+  information-flow preservation surface (projection erases the reply-link fields, so the
+  non-interference results stay hypothesis-free).
+- **#7.2 — per-core receive fold + production dispatch.** Repeats the fold for the SM6.C
+  cross-core `endpointReceiveDualOnCore`, rewires the live `.receive`/`.replyRecv` dispatch
+  through it, and **deletes the now-dead `linkReceivedCaller`** (its SD-051/SD-053 unit tests
+  migrated to drive the real transition — a strictly stronger test).
+- **#7.3a — single-core call fold.** `endpointCall`'s server-waiting rendezvous reads the woken
+  server's stashed reply (`pendingReceiveReply`) and links the caller atomically via the new
+  `SystemState.linkServerStashedReply`, failing closed when the server provided no reply object
+  (matching the production dispatch's existing behaviour). Server-first receive sites in the
+  trace harness and negative-state suite now supply a backing `.reply` object.
+
+No `sorry`/`axiom`; `test_full.sh` green; trace byte-identical to
+`tests/fixtures/main_trace_smoke.expected`. Remaining D6 work (tracked in the plan): **#7.3b**
+(per-core call fold + delete `linkServerFirstCaller`), **#7.4** (strengthen `replyCallerLinkage`
+with the third clause, gated on #7.3b), **#7.5** (transition-boundary tests), and residual
+debt #1 (rights-less reply caps). Version bumped 0.31.151 → 0.31.152.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7 (#7.1/#7.2/#7.3a)
+
 ## v0.31.151 — Reply objects plan review follow-up: clarify #7 ordering and tracked residuals
 
 Documentation-only follow-up to the reply-objects completion plan review. The plan now makes

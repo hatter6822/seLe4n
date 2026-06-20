@@ -3,11 +3,11 @@
 > Companion to the SM6.C/SM6.D reply-object slices in
 > [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md) and the
 > PR #822 hardening pass. This plan tracked the three remaining **completeness**
-> items — the ABI / Prop-invariant / transition-fold tail. **As of v0.31.151,
-> items #2 and #1 are LANDED; item #7 (the D6 transition fold) is the sole
-> remaining slice.** Sections #2 and #1 below are retained as completion records
-> (with cites and residual-debt notes); the live work is **§#7**, expanded into
-> green-incremental sub-steps.
+> items — the ABI / Prop-invariant / transition-fold tail. **As of v0.31.152,
+> items #2 and #1 are LANDED, and item #7 (the D6 transition fold) is in flight:
+> #7.0/#7.1/#7.2/#7.3a are LANDED; #7.3b/#7.4/#7.5 remain.** Sections #2 and #1
+> below are retained as completion records (with cites and residual-debt notes);
+> the live work is **§#7**, expanded into green-incremental sub-steps.
 
 ## Context & status
 
@@ -23,7 +23,7 @@ safety holes**.
 |---|------|-------|--------|--------|
 | **#2** | retype → reply-cap authority (`mintReplyCap`) | ABI (Phase H) | ✅ **LANDED** | v0.31.140–143, 147 |
 | **#1** | `replyCapPointsToValidReply` (7th bundle conjunct) | Capability invariant (Phase C-inv) | ✅ **LANDED** | v0.31.144–146, 149 |
-| **#7** | `blockedOnReply ⇒ replyObject` (transition fold) | IPC invariant + transitions (Phase D6) | ⏳ **REMAINING** | design validated v0.31.148 |
+| **#7** | `blockedOnReply ⇒ replyObject` (transition fold) | IPC invariant + transitions (Phase D6) | 🔄 **IN FLIGHT** | #7.0/#7.1/#7.2/#7.3a landed v0.31.152; #7.3b/#7.4/#7.5 remain |
 
 **Original sequencing rationale (#2 → #1 → #7), preserved for the record.** #2 went
 first (most self-contained ABI feature, establishing the `.replyCap`-from-retype
@@ -250,6 +250,12 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   (no transition changed).
 
 - **#7.1 — single-core receive fold (`endpointReceiveDual` + `WithCaps`, one atomic slice).**
+  ✅ **LANDED (v0.31.152).** *Correction discovered in execution:* the live `.receive`/`.replyRecv`
+  dispatch routes through the **per-core** `endpointReceiveDualOnCore` (post-SM6.C), not the
+  single-core `endpointReceiveDual`, so `linkReceivedCaller` could not be deleted here — its
+  deletion moved to **#7.2** (where the per-core transition folds). #7.1 folds the single-core
+  transition + `WithCaps`/`Checked`/`endpointReplyRecv`/`ReplyRecvWithDonation` and re-bases the
+  full IPC + info-flow preservation surface.
   Thread a **required** `replyId : Option ReplyId` into `endpointReceiveDual`
   (`Transport.lean:1634`) per recipe (a); `endpointReceiveDualWithCaps`
   (`DualQueue/WithCaps.lean:139`) gains and forwards it; `endpointReplyRecv`'s legacy
@@ -266,7 +272,10 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   no reply is linked. Commit only when fully green. **Verify:** `test_full.sh` (Tier-3
   invariant surface touched); trace byte-identical.
 
-- **#7.2 — per-core receive fold (`endpointReceiveDualOnCore`).** Repeat #7.1's pattern for
+- **#7.2 — per-core receive fold (`endpointReceiveDualOnCore`).** ✅ **LANDED (v0.31.152).**
+  Folded the SM6.C cross-core receive transition, rewired the live `.receive`/`.replyRecv`
+  dispatch (`replyRecvBody` + both arms) through it, and **deleted `linkReceivedCaller`** (its
+  SD-051/SD-053(a,c) unit tests migrated to drive the real transition). Repeat #7.1's pattern for
   the SM6.C cross-core receive transition (`CrossCore/EndpointReply.lean:150`), threading the
   resolved `rid` from `endpointReceiveDualCrossCoreDispatch{,Checked}`. Re-point
   `CrossSubsystemPerCorePreservation` and the cross-core suites
@@ -275,17 +284,47 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   **Verify:** per-module build of the CrossCore +
   per-core preservation files; the three SMP suites; trace byte-identical.
 
-- **#7.3 — call-path fold (`endpointCall` server-waiting rendezvous).** Fold
-  `linkServerFirstCaller` (`API.lean:386`) into `endpointCall`'s server-waiting rendezvous
-  (`Transport.lean:1740`): when the caller lands `.blockedOnReply ep (some server)`, read the
-  server's `pendingReceiveReply` *inside* the transition and set the caller's `replyObject`
-  in the same store, then **delete `linkServerFirstCaller`** in the same slice. (The
-  server-first stash itself is established by #7.1's no-sender path, which already writes
-  `pendingReceiveReply := replyId`, so by the time #7.3 lands the stash is transition-sourced.)
-  **Verify:** call + reply suites (`SmpCrossCoreCallSuite`, `SmpCrossCoreReplySuite`),
-  `NegativeStateSuite`; trace byte-identical.
+- **#7.3 — call-path fold (`endpointCall` server-waiting rendezvous).** *Split in execution into
+  a single-core slice (#7.3a, landed) and a per-core slice (#7.3b, remaining)* — mirroring the
+  #7.1/#7.2 single-then-per-core split, because the production `.call` dispatch routes through the
+  per-core `endpointCallOnCore` (via `endpointCallCrossCoreDispatch`), not the single-core
+  `endpointCall`. The fold reads the server's stashed reply *inside* the transition (no new
+  parameter — unlike the receive fold, the reply object is the server's existing
+  `pendingReceiveReply`) and links the caller via the new named, framed
+  `SystemState.linkServerStashedReply caller server`, failing closed (`.replyCapInvalid`) when the
+  server provided none. (The server-first stash is established by #7.1's no-sender path, so the
+  stash is transition-sourced.)
 
-- **#7.4 — strengthen `replyCallerLinkage` (gated on #7.1–#7.3).** Add the third clause
+  - **#7.3a — single-core (`endpointCall`).** ✅ **LANDED (v0.31.152).** Folded `endpointCall`'s
+    server-waiting rendezvous; added `linkServerStashedReply` + its complete frame set
+    (`_preserves_{objects_invExt,ipcInvariant}`/`_scheduler_eq` in `Defs`; the per-conjunct
+    structural frames in `StoreObjectFrame`/`DualQueueMembership`/`PerOperation`; the
+    comprehensive scheduler/contract frames + `_tcb_forward`/`_tcb_ipcState_backward` in
+    `EndpointPreservation`; `_preserves_projection` in `Helpers`); re-based `Call.lean`'s four
+    `endpointCall_preserves_*` proofs and `Operations.lean`'s `endpointCall_preserves_projection`
+    (gained the `hIdxComplete`/`hObjSetInv` structural hypotheses, conclusion unchanged). Trace
+    sites supplying a server-first reply: `MainTraceHarness` F1-03, `NegativeStateSuite`
+    replyRecv-setup + R1-NEG.
+  - **#7.3b — per-core (`endpointCallOnCore`) + delete `linkServerFirstCaller`.** ⏳ **REMAINING.**
+    Fold `endpointCallOnCore` (compose `linkServerStashedReply`; the helper + frames already
+    exist), re-base its characterization theorems (`endpointCallOnCore_rendezvous_eq` and the SGI
+    theorems gain an `hLink` success precondition; `_perCore_blocking`/`_reply_linkage_under_lockSet`
+    transfer via `linkServerStashedReply_scheduler_eq`/`_tcb_forward`/`_tcb_ipcState_backward`) and
+    `EndpointCallInvariant`'s five conjunct proofs (thread the structural frames — make the
+    `StoreObjectFrame` ones public). **Then** rewire the three `.call` dispatch arms (`API.lean`
+    1250/1533/2477 — the post-fold `linkServerFirstCaller` would *double-link* and fail, so it must
+    be removed, and the dispatch characterization theorem at :2477 updated), **delete
+    `linkServerFirstCaller`**, and migrate SD-053(b,d). *Identified blocker:* the per-core NI
+    (`EndpointCallNI`/`EndpointCallNiPerCore`, staged) projection peel needs
+    `linkServerStashedReply_preserves_projection`'s `hIdxComplete` at the rendezvous intermediate
+    `st4`, which requires **new `objectIndexSet`-completeness propagation frames** for
+    `endpointQueuePopHead` (an upstream public version of the `private` Operations one) and
+    `wakeThread`/`enqueueRunnableOnCore` (compose `storeObject_preserves_objectIndexSetComplete`,
+    State.lean:2068) — build these first, then thread the NI conclusions hypothesis-free
+    (error case: `.1 = st` trivial; success case: the link peel). **Verify:** `SmpCrossCoreCallSuite`
+    + reply suites, `NegativeStateSuite`, staged-partition gate; trace byte-identical.
+
+- **#7.4 — strengthen `replyCallerLinkage` (gated on #7.3b — #7.1/#7.2/#7.3a landed).** Add the third clause
   (above) to `replyCallerLinkage` (`Defs.lean:623`). Update: `default`
   (`Architecture/Invariant.lean` — vacuous on empty objects), `boot` (no blocked-on-reply
   TCBs at boot), the `replyCallerLinkage` frame lemma, and the concrete
