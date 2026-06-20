@@ -2518,25 +2518,34 @@ private theorem tcb_replyObject_store_tcbQueueLinkIntegrity_forward
     exact ⟨txA, hStA, hQNA.trans hANext⟩
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: storing a `.tcb` that differs from the stored slot's previous
-TCB only in `replyObject` preserves the full IPC invariant.  No `ipcInvariantFull`
-conjunct reads `replyObject`, so every field any conjunct does read (ipcState,
-pendingMessage, queueNext/Prev/PPrev, schedContextBinding, timeoutBudget) is
-unchanged. -/
-theorem storeObject_tcb_replyObject_preserves_ipcInvariantCore
-    (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
-    (hInv : ipcInvariantCore st) (hObjInv : st.objects.invExt)
-    (hPrev : st.objects[id]? = some (.tcb tcb))
-    (hStore : storeObject id (.tcb { tcb with replyObject := v }) st = .ok ((), st')) :
+/-- WS-SM SM6.D (#7.0): the reusable `ipcInvariantCore` driver behind every TCB
+field-store whose changed field is read by *no* structural core conjunct.  Given
+the non-`.tcb` kind agreement (`hNT`), the forward/backward read-field agreement
+(`hFwd`/`hBwd` over ipcState, pendingMessage, queueNext/Prev/PPrev,
+schedContextBinding, timeoutBudget) and the scheduler frame (`hSched`), the store
+preserves all 15 structural conjuncts.  Both the `replyObject` store and the
+`pendingReceiveReply` store (the server-first stash the #7 fold writes inside
+`endpointReceiveDual`) instantiate it via the field-specific agreement helpers,
+so the 15-conjunct discharge is proven exactly once. -/
+theorem storeObject_tcb_ipcInvariantCore_of_agreements
+    (st st' : SystemState)
+    (hInv : ipcInvariantCore st)
+    (hNT : ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ tt, k ≠ .tcb tt) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k))
+    (hFwd : ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget)
+    (hBwd : ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget)
+    (hSched : st'.scheduler = st.scheduler) :
     ipcInvariantCore st' := by
-  -- (a) non-`.tcb` lookups agree pre/post-store.
-  have hNT := tcb_replyObject_store_nonTcb_agree st st' id tcb v hObjInv hPrev hStore
-  -- (b) `.tcb` lookups agree on every read field, in both directions.
-  have hFwd := tcb_replyObject_store_tcb_forward st st' id tcb v hObjInv hPrev hStore
-  have hBwd := tcb_replyObject_store_tcb_backward st st' id tcb v hObjInv hPrev hStore
-  -- The scheduler is untouched by `storeObject`.
-  have hSched : st'.scheduler = st.scheduler :=
-    storeObject_scheduler_eq st st' id (.tcb { tcb with replyObject := v }) hStore
   refine ⟨?c1, ?c2, ?c3, ?c4, ?c5, ?c6, ?c7, ?c8, ?c9, ?c10, ?c11, ?c12, ?c13,
     ?c14, ?c15⟩
   -- 1. ipcInvariant: reads `.notification` only → (a).
@@ -2685,6 +2694,112 @@ theorem storeObject_tcb_replyObject_preserves_ipcInvariantCore
     obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
     exact hInv.blockedOnReplyHasTarget tid ty endpointId replyTarget hStObj (hIS ▸ hIpc)
 
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D: storing a `.tcb` that differs from the stored slot's previous TCB
+only in `replyObject` preserves `ipcInvariantCore`.  No structural conjunct reads
+`replyObject`; every read field (ipcState, pendingMessage, queueNext/Prev/PPrev,
+schedContextBinding, timeoutBudget) is unchanged.  Thin instance of
+`storeObject_tcb_ipcInvariantCore_of_agreements`. -/
+theorem storeObject_tcb_replyObject_preserves_ipcInvariantCore
+    (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
+    (hInv : ipcInvariantCore st) (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.tcb tcb))
+    (hStore : storeObject id (.tcb { tcb with replyObject := v }) st = .ok ((), st')) :
+    ipcInvariantCore st' :=
+  storeObject_tcb_ipcInvariantCore_of_agreements st st' hInv
+    (tcb_replyObject_store_nonTcb_agree st st' id tcb v hObjInv hPrev hStore)
+    (tcb_replyObject_store_tcb_forward st st' id tcb v hObjInv hPrev hStore)
+    (tcb_replyObject_store_tcb_backward st st' id tcb v hObjInv hPrev hStore)
+    (storeObject_scheduler_eq st st' id (.tcb { tcb with replyObject := v }) hStore)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): non-`.tcb` kind agreement across a `pendingReceiveReply`
+store — verbatim dual of `tcb_replyObject_store_nonTcb_agree`. -/
+private theorem tcb_pendingReceiveReply_store_nonTcb_agree
+    (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.tcb tcb))
+    (hStore : storeObject id (.tcb { tcb with pendingReceiveReply := v }) st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (k : KernelObject), (∀ tt, k ≠ .tcb tt) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k) := by
+  intro s k hk
+  by_cases hs : s = id
+  · subst hs
+    rw [storeObject_objects_eq st st' s (.tcb { tcb with pendingReceiveReply := v }) hObjInv hStore,
+        hPrev]
+    constructor
+    · intro h; cases h; exact absurd rfl (hk _)
+    · intro h; cases h; exact absurd rfl (hk _)
+  · rw [storeObject_objects_ne st st' id s (.tcb { tcb with pendingReceiveReply := v }) hs hObjInv hStore]
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): forward read-field agreement across a `pendingReceiveReply`
+store — verbatim dual of `tcb_replyObject_store_tcb_forward`. -/
+private theorem tcb_pendingReceiveReply_store_tcb_forward
+    (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.tcb tcb))
+    (hStore : storeObject id (.tcb { tcb with pendingReceiveReply := v }) st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s tx hObj
+  by_cases hs : s = id
+  · subst hs
+    rw [storeObject_objects_eq st st' s (.tcb { tcb with pendingReceiveReply := v }) hObjInv hStore] at hObj
+    cases hObj
+    exact ⟨tcb, hPrev, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · rw [storeObject_objects_ne st st' id s (.tcb { tcb with pendingReceiveReply := v }) hs hObjInv hStore]
+      at hObj
+    exact ⟨tx, hObj, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): backward read-field agreement across a `pendingReceiveReply`
+store — verbatim dual of `tcb_replyObject_store_tcb_backward`. -/
+private theorem tcb_pendingReceiveReply_store_tcb_backward
+    (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.tcb tcb))
+    (hStore : storeObject id (.tcb { tcb with pendingReceiveReply := v }) st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s ty hObj
+  by_cases hs : s = id
+  · subst hs
+    rw [hPrev] at hObj
+    cases hObj
+    exact ⟨{ tcb with pendingReceiveReply := v },
+      storeObject_objects_eq st st' s (.tcb { tcb with pendingReceiveReply := v }) hObjInv hStore,
+      rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · refine ⟨ty, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    rw [storeObject_objects_ne st st' id s (.tcb { tcb with pendingReceiveReply := v }) hs hObjInv hStore]
+    exact hObj
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): storing a `.tcb` that differs only in `pendingReceiveReply`
+preserves `ipcInvariantCore` — the server-first stash field the #7 receive fold
+writes.  No structural conjunct reads it (only the full-invariant
+`pendingReceiveReplyWellFormed` does, established separately), so this is the same
+read-field-agreement instance as the `replyObject` store. -/
+theorem storeObject_tcb_pendingReceiveReply_preserves_ipcInvariantCore
+    (st st' : SystemState) (id : SeLe4n.ObjId) (tcb : TCB) (v : Option SeLe4n.ReplyId)
+    (hInv : ipcInvariantCore st) (hObjInv : st.objects.invExt)
+    (hPrev : st.objects[id]? = some (.tcb tcb))
+    (hStore : storeObject id (.tcb { tcb with pendingReceiveReply := v }) st = .ok ((), st')) :
+    ipcInvariantCore st' :=
+  storeObject_tcb_ipcInvariantCore_of_agreements st st' hInv
+    (tcb_pendingReceiveReply_store_nonTcb_agree st st' id tcb v hObjInv hPrev hStore)
+    (tcb_pendingReceiveReply_store_tcb_forward st st' id tcb v hObjInv hPrev hStore)
+    (tcb_pendingReceiveReply_store_tcb_backward st st' id tcb v hObjInv hPrev hStore)
+    (storeObject_scheduler_eq st st' id (.tcb { tcb with pendingReceiveReply := v }) hStore)
+
 -- ============================================================================
 -- WS-SM SM6.D: the two reply-linkage operations preserve `ipcInvariantFull`.
 --
@@ -2733,6 +2848,83 @@ theorem linkCallerReply_objects_frame (st st' : SystemState) (caller : SeLe4n.Th
       · have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
         rw [storeObject_objects_ne st1 st' caller.toObjId x _ hxC hInv1 hStep, hFrame1]
       · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): `linkCallerReply` preserves `objects.invExt` — its two
+stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
+preserve the object-store extensional invariant.  The `#7` receive fold threads
+this between the dequeue store and the receiver store. -/
+theorem linkCallerReply_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): `linkCallerReply` preserves the 15 structural conjuncts
+(`ipcInvariantCore`).  The reply store changes only `reply.caller` (read by no
+core conjunct) and the TCB store changes only `replyObject` (likewise) — so the
+generic reply/TCB-field core-preservation lemmas chain directly, with no
+caller-blocked precondition (unlike the full-invariant version, which must also
+re-establish the 16th `replyCallerLinkage` conjunct).  The `#7` receive fold uses
+the structural projections of this on the dequeued-caller link. -/
+theorem linkCallerReply_preserves_ipcInvariantCore
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : ipcInvariantCore st) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    ipcInvariantCore st' := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hCore1 : ipcInvariantCore st1 := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_reply_preserves_ipcInvariantCore st st1 rid.toObjId r
+            { r with caller := some caller } hInv hObjInv
+            ((getReply?_eq_some_iff st rid r).mp hGetR) hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_tcb_replyObject_preserves_ipcInvariantCore st1 st'
+          caller.toObjId tcb (some rid) hCore1 hObjInv1
+          ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.0): `linkCallerReply` preserves the notification
+well-formedness conjunct `ipcInvariant` (the bare frame the spike recipe names
+as the first step of the `#7` per-conjunct re-base). -/
+theorem linkCallerReply_preserves_ipcInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : ipcInvariantCore st) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    ipcInvariant st' :=
+  (linkCallerReply_preserves_ipcInvariantCore st st' caller rid hInv hObjInv hStep).ipcInvariant
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `linkCallerReply` frames every object slot other than the consumed
