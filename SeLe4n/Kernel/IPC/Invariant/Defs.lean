@@ -620,7 +620,7 @@ Established by `linkCallerReply` (sets both fields reciprocally on a `blockedOnR
 caller, fail-closed on an in-use reply) and preserved by `consumeCallerReply`
 (clears both reciprocally); all other IPC transitions frame it (they touch neither
 field nor a linked caller's IPC state). -/
-def replyCallerLinkage (st : SystemState) : Prop :=
+def replyCallerLinkageReciprocal (st : SystemState) : Prop :=
   (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.replyObject = some rid →
@@ -632,13 +632,33 @@ def replyCallerLinkage (st : SystemState) : Prop :=
         ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
           tcb.ipcState = .blockedOnReply ep rt)
 
+/-- WS-SM SM6.D (#7.4): `replyCallerLinkage` = the bidirectional reciprocity
+(`replyCallerLinkageReciprocal`) **plus** the forward guarantee that every
+`.blockedOnReply` caller already carries a `replyObject`.  The #7 D6 fold links the
+caller's reply object **atomically** with the blocking store (inside `endpointCall` /
+`endpointCallOnCore` / `endpointReceiveDual{,OnCore}`), so `blockedOnReply ⇒ replyObject`
+now holds at the **transition boundary**, not merely at syscall boundaries — closing the
+false-assurance gap where `ipcInvariantFull` (whose 16th conjunct this is) admitted a
+`.blockedOnReply` caller with no Reply object to answer it (a thread blocked forever,
+since the public `.reply` path resolves authority through `reply.caller`).  The reciprocal
+clauses are factored out because they are the strongest invariant that survives the fold's
+intermediate state (post-blocking-store, pre-link): there the caller is `.blockedOnReply`
+yet not-yet-linked, so the third clause is momentarily false while reciprocity holds. -/
+def replyCallerLinkage (st : SystemState) : Prop :=
+  replyCallerLinkageReciprocal st ∧
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.ipcState = .blockedOnReply ep rt →
+      ∃ rid, tcb.replyObject = some rid)
+
 /-- WS-SM SM6.D (PR #822 review): `replyCallerLinkage` reads only `st.objects`, so
 any transition that leaves the object store unchanged frames it.  Used by the
 non-IPC transitions (timer tick, register/context writes) and the default state. -/
 theorem replyCallerLinkage_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) (h : replyCallerLinkage st) :
     replyCallerLinkage st' := by
-  unfold replyCallerLinkage at h ⊢; rw [hObjs]; exact h
+  unfold replyCallerLinkage replyCallerLinkageReciprocal at h ⊢; rw [hObjs]; exact h
 
 /-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
 (`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still

@@ -1296,6 +1296,15 @@ private def runAuditCoverageChecks : IO Unit := do
       else
         throw <| IO.userError s!"replyRecv: expected caller ready, got {toString unblocked.ipcState}"
   | _ => throw <| IO.userError "replyRecv: expected caller TCB after reply"
+  -- WS-SM SM6.D (#7.4/#7.5): a Call rendezvous with a server holding NO reply object
+  -- fails closed — the #7 fold makes `endpointCall` atomic, so no raw transition can
+  -- strand a caller `.blockedOnReply` with no Reply to answer it (the transition-level
+  -- `blockedOnReply ⇒ replyObject` guarantee, negative direction).
+  let (_, stNoStashRecv) ← expectOkSt "no-reply receive setup (server blocks, no stash)"
+    (SeLe4n.Kernel.endpointReceiveDual endpointId (SeLe4n.ThreadId.ofNat 8) none baseState)
+  expectErr "Call with no server reply object fails closed (no unanswerable blockedOnReply)"
+    (SeLe4n.Kernel.endpointCall endpointId (SeLe4n.ThreadId.ofNat 7) .empty stNoStashRecv)
+    .replyCapInvalid
   IO.println "endpointReplyRecv coverage checks passed"
 
   -- ── Audit: cspaceMutate coverage ─────────────────────────────────────

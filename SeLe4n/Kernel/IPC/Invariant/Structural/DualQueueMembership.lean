@@ -3526,9 +3526,19 @@ was free, the caller held no reply) rule out a pre-existing link to `rid` or fro
 `caller`, so the bidirectional invariant re-establishes from `replyCallerLinkage st`. -/
 theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hRCL : replyCallerLinkage st) (hObjInv : st.objects.invExt)
+    (hRecip : replyCallerLinkageReciprocal st) (hObjInv : st.objects.invExt)
     (hCallerBlk : ∀ tc, st.getTcb? caller = some tc →
       ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tc.ipcState = .blockedOnReply ep rt)
+    -- WS-SM SM6.D (#7.4): every OTHER `.blockedOnReply` TCB already carries a reply.
+    -- `caller` is excluded: at the link site it is `.blockedOnReply` but not-yet-linked
+    -- (`replyObject = none`), so the full third clause is momentarily false there — the
+    -- link this step performs is exactly what restores it for `caller`.
+    (hThirdExc : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+        (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        tid ≠ caller →
+        st.objects[tid.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .blockedOnReply ep rt →
+        ∃ ridv, tcb.replyObject = some ridv)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     replyCallerLinkage st' := by
   obtain ⟨⟨r0, hGetR, hFree⟩, tcbC, hGetC, hCFree⟩ :=
@@ -3548,7 +3558,7 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
   have hFrame : ∀ x, x ≠ rid.toObjId → x ≠ caller.toObjId →
       st'.objects[x]? = st.objects[x]? :=
     fun x hxR hxC => linkCallerReply_objects_frame st st' caller rid hObjInv hStep x hxR hxC
-  refine ⟨?fwd, ?bwd⟩
+  refine ⟨⟨?fwd, ?bwd⟩, ?third⟩
   · -- forward: a TCB pointing at a reply finds it reciprocating.
     intro tid tcb ridv hTcb hRep
     by_cases hTC : tid = caller
@@ -3565,7 +3575,7 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
       have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj'] at hTcb; cases hTcb
       rw [hFrame tid.toObjId htid_ne_rid htid_ne_caller] at hTcb
-      obtain ⟨r, hr, hrc⟩ := hRCL.1 tid tcb ridv hTcb hRep
+      obtain ⟨r, hr, hrc⟩ := hRecip.1 tid tcb ridv hTcb hRep
       have hridv_ne_rid : ridv.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj] at hr
         simp only [Option.some.injEq, KernelObject.reply.injEq] at hr
@@ -3594,7 +3604,7 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
       have hridv_ne_caller : ridv.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj'] at hRep; cases hRep
       rw [hFrame ridv.toObjId hridv_ne_rid hridv_ne_caller] at hRep
-      obtain ⟨tcb, ht, htr, hBlk⟩ := hRCL.2 ridv r tid hRep hCaller
+      obtain ⟨tcb, ht, htr, hBlk⟩ := hRecip.2 ridv r tid hRep hCaller
       have htid_ne_caller : tid.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj] at ht
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at ht
@@ -3603,25 +3613,49 @@ theorem linkCallerReply_establishes_replyCallerLinkage (st st' : SystemState)
         intro h; rw [h, hReplyObj] at ht; cases ht
       rw [← hFrame tid.toObjId htid_ne_rid htid_ne_caller] at ht
       exact ⟨tcb, ht, htr, hBlk⟩
+  · -- third (#7.4): every `.blockedOnReply` TCB at `st'` carries a `replyObject`.
+    intro tid tcb ep rt hTcb hBlk
+    by_cases hTC : tid = caller
+    · -- the just-linked caller now carries `replyObject = some rid`.
+      subst hTC
+      have htcb : tcbC' = tcb := by
+        have := hCallerObj'.symm.trans hTcb; simpa using this
+      subst htcb
+      exact ⟨rid, hRepC'⟩
+    · -- a different TCB is framed past unchanged ⇒ already `.blockedOnReply` at `st`.
+      have htid_ne_caller : tid.toObjId ≠ caller.toObjId :=
+        fun h => hTC (ThreadId.toObjId_injective tid caller h)
+      have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
+        intro h; rw [h, hReplyObj'] at hTcb; cases hTcb
+      rw [hFrame tid.toObjId htid_ne_rid htid_ne_caller] at hTcb
+      exact hThirdExc tid tcb ep rt hTC hTcb hBlk
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (PR #822 review): `consumeCallerReply` **preserves**
-`replyCallerLinkage` when invoked on a *mutually linked* pair (`r0.caller = some
-caller`).  It clears both halves (`rid.caller := none`, `caller.replyObject :=
-none`); by `replyCallerLinkage st` the back-link is reciprocal (`caller.replyObject
-= some rid`), so clearing the pair removes exactly one consistent edge and frames
-the rest — the live `.reply` path resolves `rid`'s caller before consuming, so the
-mutual-link precondition always holds there. -/
-theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
+/-- WS-SM SM6.D (PR #822 review / #7.4): `consumeCallerReply` **preserves**
+`replyCallerLinkageReciprocal` when invoked on a *mutually linked* pair
+(`r0.caller = some caller`).  It clears both halves (`rid.caller := none`,
+`caller.replyObject := none`); by reciprocity the back-link is reciprocal
+(`caller.replyObject = some rid`), so clearing the pair removes exactly one consistent
+edge and frames the rest.
+
+This is deliberately the **reciprocal** half of `replyCallerLinkage`, not the full
+invariant: standalone `consumeCallerReply` clears the caller's `replyObject` **without**
+unblocking it, so on a still-`.blockedOnReply` caller it would *strand* the third clause
+(`blockedOnReply ⇒ replyObject`).  The live `.reply` path unblocks the caller (it leaves
+`.blockedOnReply` for `.ready`) **before** the link is torn down, so the fused
+reply transition — not this primitive — re-establishes the third clause (the unblocked
+caller no longer constrains it).  `consumeCallerReply` is reply-path prep awaiting that
+fusion; this lemma carries the part it genuinely preserves on its own. -/
+theorem consumeCallerReply_preserves_replyCallerLinkageReciprocal (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (r0 : SeLe4n.Kernel.Reply)
-    (hRCL : replyCallerLinkage st) (hObjInv : st.objects.invExt)
+    (hRecip : replyCallerLinkageReciprocal st) (hObjInv : st.objects.invExt)
     (hGetR : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
-    replyCallerLinkage st' := by
+    replyCallerLinkageReciprocal st' := by
   have hReplyObj : st.objects[rid.toObjId]? = some (.reply r0) :=
     (getReply?_eq_some_iff st rid r0).mp hGetR
-  -- mutual link: the caller points back at `rid` (reciprocity from `hRCL`).
-  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRCL.2 rid r0 caller hReplyObj hLinked
+  -- mutual link: the caller points back at `rid` (reciprocity from `hRecip`).
+  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRecip.2 rid r0 caller hReplyObj hLinked
   have hC_ne : caller.toObjId ≠ rid.toObjId :=
     getTcb?_getReply?_slot_ne st caller rid tcbC r0
       ((getTcb?_eq_some_iff st caller tcbC).mpr hCallerObj) hGetR
@@ -3673,7 +3707,7 @@ theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
       have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj'] at hTcb; cases hTcb
       rw [hFrame tid.toObjId htid_ne_rid htid_ne_caller] at hTcb
-      obtain ⟨r, hr, hrc⟩ := hRCL.1 tid tcb ridv hTcb hRep
+      obtain ⟨r, hr, hrc⟩ := hRecip.1 tid tcb ridv hTcb hRep
       have hridv_ne_rid : ridv.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj] at hr
         simp only [Option.some.injEq, KernelObject.reply.injEq] at hr
@@ -3693,7 +3727,7 @@ theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
       have hridv_ne_caller : ridv.toObjId ≠ caller.toObjId := by
         intro h; obtain ⟨t, ht⟩ := hCallerTcb'; rw [h, ht] at hRep; cases hRep
       rw [hFrame ridv.toObjId hridv_ne_rid hridv_ne_caller] at hRep
-      obtain ⟨tcb, ht, htr, hBlk⟩ := hRCL.2 ridv r tid hRep hCaller
+      obtain ⟨tcb, ht, htr, hBlk⟩ := hRecip.2 ridv r tid hRep hCaller
       have htid_ne_caller : tid.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj] at ht
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at ht
@@ -3705,22 +3739,36 @@ theorem consumeCallerReply_preserves_replyCallerLinkage (st st' : SystemState)
       exact ⟨tcb, ht, htr, hBlk⟩
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
+/-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
 reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
 `.reply { r with caller := some caller }`) followed by the caller-TCB
-`replyObject := some rid` store; store A frames the first, store B the second. -/
+`replyObject := some rid` store; store A frames the first, store B the second.
+
+The preconditions are the **intermediate-state** invariants the fold actually has at the
+link site (post-blocking-store, pre-link): `ipcInvariantCore`, reply-link reciprocity
+(`replyCallerLinkageReciprocal`), and the third clause for every blockedOnReply caller
+**other** than `caller` (`hThirdExc`).  Taking the full `ipcInvariantFull st` would be
+*vacuous* here — its third clause would force `caller.replyObject` to already be set, which
+contradicts `linkCallerReply`'s fail-closed precondition that the caller holds no reply. -/
 theorem linkCallerReply_preserves_ipcInvariantFull
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
+    (hCore : ipcInvariantCore st)
+    (hRecip : replyCallerLinkageReciprocal st) (hObjInv : st.objects.invExt)
     (hCallerBlk : ∀ tc, st.getTcb? caller = some tc →
       ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tc.ipcState = .blockedOnReply ep rt)
+    (hThirdExc : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+        (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        tid ≠ caller →
+        st.objects[tid.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .blockedOnReply ep rt →
+        ∃ ridv, tcb.replyObject = some ridv)
     (hPRR' : pendingReceiveReplyWellFormed st')
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link hPRR'
   case link =>
     exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
-      hInv.replyCallerLinkage hObjInv hCallerBlk hStep
+      hRecip hObjInv hCallerBlk hThirdExc hStep
   case core =>
     unfold linkCallerReply at hStep
     cases hLink : linkReply rid caller st with
@@ -3738,7 +3786,7 @@ theorem linkCallerReply_preserves_ipcInvariantFull
           simp only [hGetR] at hLink
           split at hLink
           · exact storeObject_reply_preserves_ipcInvariantCore st st1 rid.toObjId r
-              { r with caller := some caller } hInv.toCore hObjInv
+              { r with caller := some caller } hCore hObjInv
               ((getReply?_eq_some_iff st rid r).mp hGetR) hLink
           · simp at hLink
       cases hT : st1.getTcb? caller with
@@ -3752,25 +3800,25 @@ theorem linkCallerReply_preserves_ipcInvariantFull
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D: `consumeCallerReply` preserves `ipcInvariantFull` on a *mutually
+/-- WS-SM SM6.D / #7.4: `consumeCallerReply` preserves `ipcInvariantFull` on a *mutually
 linked* pair (`r0.caller = some caller`).  Structural core: the reply store
 (`consumeReply`) then the caller-TCB `replyObject := none` store, both via
-`ipcInvariantCore`.  Reply linkage: re-established by
-`consumeCallerReply_preserves_replyCallerLinkage` (clearing one reciprocal edge).
-The live `.reply` path resolves `rid`'s caller before consuming, so the precondition
-always holds there. -/
+`ipcInvariantCore`.  Reply linkage (`hRCL'`) is threaded as a post-state hypothesis,
+exactly as for the live IPC transitions: standalone consume clears `caller.replyObject`
+without unblocking it, so the strengthened `replyCallerLinkage` (third clause:
+`blockedOnReply ⇒ replyObject`) is re-established by the *fused* reply transition that
+unblocks the caller, not by the link-teardown primitive in isolation.  Its reciprocal
+half is `consumeCallerReply_preserves_replyCallerLinkageReciprocal`. -/
 theorem consumeCallerReply_preserves_ipcInvariantFull
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (r0 : SeLe4n.Kernel.Reply)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
+    (hRCL' : replyCallerLinkage st')
     (hPRR' : pendingReceiveReplyWellFormed st')
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link hPRR'
-  case link =>
-    exact consumeCallerReply_preserves_replyCallerLinkage st st' caller rid r0
-      hInv.replyCallerLinkage hObjInv hGetR0 hLinked hStep
+  refine ipcInvariantFull_of_core_replyCallerLinkage ?core hRCL' hPRR'
   case core =>
     unfold consumeCallerReply at hStep
     cases hCons : consumeReply rid st with

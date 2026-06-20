@@ -451,7 +451,8 @@ private theorem default_blockedOnReplyHasTarget :
 
 private theorem default_replyCallerLinkage :
     replyCallerLinkage (default : SystemState) :=
-  ⟨fun _ _ _ h _ => default_objects_absurd h, fun _ _ _ h _ => default_objects_absurd h⟩
+  ⟨⟨fun _ _ _ h _ => default_objects_absurd h, fun _ _ _ h _ => default_objects_absurd h⟩,
+   fun _ _ _ _ h _ => default_objects_absurd h⟩
 
 private theorem default_pendingReceiveReplyWellFormed :
     pendingReceiveReplyWellFormed (default : SystemState) := by

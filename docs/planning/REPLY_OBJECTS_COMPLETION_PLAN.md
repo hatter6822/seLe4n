@@ -332,23 +332,32 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
     trace byte-identical; AK7 re-anchored (one proof-level `getTcb?`→objects-side conversion,
     `GETTCB_ADOPTION` +12).
 
-- **#7.4 — strengthen `replyCallerLinkage` (gated on #7.3b — #7.1/#7.2/#7.3a landed).** Add the third clause
-  (above) to `replyCallerLinkage` (`Defs.lean:623`). Update: `default`
-  (`Architecture/Invariant.lean` — vacuous on empty objects), `boot` (no blocked-on-reply
-  TCBs at boot), the `replyCallerLinkage` frame lemma, and the concrete
-  `linkCallerReply`/`consumeCallerReply` preservation proofs plus the three folded
-  transitions' `_preserves_ipcInvariantFull` obligations (each now discharges the third
-  clause directly from the atomic link). Because `replyCallerLinkage` is the 16th conjunct of
-  `ipcInvariantFull`, expect a tuple-destructure break-set across the IPC preservation surface
-  — budget per the #1.a lesson (estimate floor, not ceiling). **Verify:** `test_full.sh` +
-  `test_tier3_invariant_surface.sh`; trace byte-identical.
+- **#7.4 — strengthen `replyCallerLinkage`.** ✅ **LANDED (v0.31.154).** Factored the
+  bidirectional reciprocity into a reusable `replyCallerLinkageReciprocal` (the strongest
+  invariant that survives the fold's post-blocking-store / pre-link intermediate) and defined
+  `replyCallerLinkage := reciprocal ∧ (blockedOnReply ⇒ replyObject)`.  Updated: `default` /
+  boot (vacuous — no `.blockedOnReply` TCBs); `replyCallerLinkage_of_objects_eq` (unfold both
+  defs); `linkCallerReply_establishes_replyCallerLinkage` (precondition is now `reciprocal` +
+  `hThirdExc`, the third clause for every blocked caller *other* than the one being linked —
+  it discharges the third clause directly from the atomic link); `consumeCallerReply` (the
+  link-teardown prep) downgraded to `…_preserves_replyCallerLinkageReciprocal` (standalone it
+  clears `replyObject` without unblocking, so it cannot preserve the third clause — the fused
+  reply transition, which unblocks first, does); `linkCallerReply_preserves_ipcInvariantFull`
+  re-based on the honest intermediate-state preconditions (`ipcInvariantCore` + `reciprocal` +
+  `hThirdExc` — full `ipcInvariantFull st` would be *vacuous* at a link site); and
+  `consumeCallerReply_preserves_ipcInvariantFull` threads `replyCallerLinkage st'` like every
+  live transition.  The 16-conjunct threading architecture is otherwise unchanged — the live
+  `_preserves_ipcInvariantFull` theorems carry the strengthened conjunct as a hypothesis (no
+  signature change).  **Verified:** `test_full.sh` (Tier 0–3, invariant surface anchors);
+  trace byte-identical; AK7 re-anchored (third-clause `objects[tid.toObjId]?` +3).
 
-- **#7.5 — tests (establish the boundary directly).** Assert that the receive/call
-  transitions establish `blockedOnReply ⇒ replyObject` at the *transition* boundary (not just
-  the syscall boundary): a Call rendezvous with `replyId = none` fails closed
-  (`.replyCapInvalid`), and **no raw transition** produces an unanswerable `.blockedOnReply`.
-  Land in `ModelIntegritySuite` (positive: linked) + `NegativeStateSuite` (negative: the
-  `none`-Call reject). **Verify:** smoke + the two suites.
+- **#7.5 — tests (establish the boundary directly).** ✅ **LANDED (v0.31.154).**
+  `ModelIntegritySuite` drives the real single-core fold end-to-end
+  (`replyCallerLinkage_holds_at_call_rendezvous_boundary`: the blocked caller carries a
+  `replyObject`, reciprocated by the Reply) + the negative dual
+  (`call_without_reply_object_fails_closed_no_unanswerable_block`).  `NegativeStateSuite` adds
+  the "no unanswerable `blockedOnReply`" fail-closed check to its reply coverage.  **Verified:**
+  both suites + smoke.
 
 **Risk (highest of the three items — SM6.A/C transition + preservation surface).** The risk
 is concentrated in #7.1/#7.2/#7.3 (each a no-green-intermediate signature change) and #7.4

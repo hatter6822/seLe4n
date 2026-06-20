@@ -830,6 +830,81 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == .invalidCapability)
   | .ok _ => throw <| IO.userError "mintReplyCap from a non-Reply object must be rejected"
 
+/-- WS-SM SM6.D (#7.4 / #7.5): the strengthened `replyCallerLinkage` third clause
+(`blockedOnReply ⇒ replyObject`) holds at the **transition boundary** of a Call
+rendezvous.  The #7 D6 fold links the caller's reply object **atomically** with the
+blocking store, so the post-state of `endpointCall` has the blocked caller carrying a
+`replyObject` — never the "unanswerable" intermediate (a `.blockedOnReply` caller with
+no Reply to answer it) that the pre-fold dispatch-layer linkage transiently admitted.
+This drives the real single-core fold end-to-end: server stashes (#7.2), caller links
+(#7.3a). -/
+def replyCallerLinkage_holds_at_call_rendezvous_boundary : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  let mkReadyTcb (n : Nat) : TCB :=
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb (mkReadyTcb 1))
+      |>.withObject caller.toObjId (.tcb (mkReadyTcb 2))
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server, caller]
+      |>.build)
+  match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) st0 with
+  | .error _ => throw <| IO.userError "server-first receive (stash) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error _ => throw <| IO.userError "call rendezvous should succeed and link the caller"
+    | .ok ((), st') =>
+      -- third clause at the boundary: the blocked caller carries a replyObject.
+      match st'.getTcb? caller with
+      | some tcb =>
+          expect "blockedOnReply caller carries a replyObject at the transition boundary"
+            (match tcb.ipcState with
+             | .blockedOnReply _ _ => tcb.replyObject == some rid
+             | _ => false)
+      | none => throw <| IO.userError "caller TCB should be present after the rendezvous"
+      -- reciprocity: the reply names the caller back (replyCallerLinkage reciprocal).
+      expect "the reply object names the caller back (reciprocity)"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)))
+
+/-- WS-SM SM6.D (#7.4 / #7.5): a Call that rendezvouses with a server holding **no**
+reply object fails closed (`.replyCapInvalid`) and leaves **no** unanswerable
+`.blockedOnReply` caller — the fold makes the whole `endpointCall` atomic, so the
+fail-closed path returns the pre-state unchanged (the caller stays `.ready`). This is
+the negative dual of the transition-boundary invariant: no raw transition can reach a
+`.blockedOnReply` caller without a linked Reply. -/
+def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let mkReadyTcb (n : Nat) : TCB :=
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb (mkReadyTcb 1))
+      |>.withObject caller.toObjId (.tcb (mkReadyTcb 2))
+      |>.withRunnable [server, caller]
+      |>.build)
+  -- plain receive (no reply object): server blocks with no stash.
+  match SeLe4n.Kernel.endpointReceiveDual epId server none st0 with
+  | .error _ => throw <| IO.userError "plain (no-reply) receive setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error e =>
+        expect "Call with no server reply object fails closed (replyCapInvalid)"
+          (e == .replyCapInvalid)
+        -- the fail-closed path strands no caller: it is still `.ready` in the pre-state.
+        expect "fail-closed Call leaves no unanswerable blockedOnReply caller"
+          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
+    | .ok _ => throw <| IO.userError "Call with no server reply object must be rejected"
+
 /-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for the new
 `replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle`.  The invariant states that
 a reply cap held in a CNode is *backed* — its `ReplyId` resolves through `getReply?` to a live
@@ -2245,6 +2320,9 @@ def main : IO Unit := do
   reply_inUse_retype_rejected
   pendingReceiveReply_stash_injective
   mintReplyCap_derives_backed_reply_cap
+  -- WS-SM SM6.D (#7.4/#7.5): transition-boundary `blockedOnReply ⇒ replyObject`
+  replyCallerLinkage_holds_at_call_rendezvous_boundary
+  call_without_reply_object_fails_closed_no_unanswerable_block
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
   reply_cap_end_to_end_retype_mint_link
   lifecycle_reply_cap_metadata_backed

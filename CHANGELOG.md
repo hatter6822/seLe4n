@@ -1,3 +1,39 @@
+## v0.31.154 — Reply objects (seL4-MCS): D6 transition fold — strengthen `replyCallerLinkage` (blockedOnReply ⇒ replyObject) + transition-boundary tests (#7.4/#7.5)
+
+Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
+§#7.4/#7.5): land the **invariant** the whole #7 fold was building toward.  Now that the
+reply-link is atomic with the blocking store (#7.1–#7.3b), `replyCallerLinkage` gains a third
+clause — **`blockedOnReply ⇒ replyObject`** — so `ipcInvariantFull` (whose 16th conjunct this
+is) no longer admits a `.blockedOnReply` caller with no Reply object to answer it (a thread
+blocked forever).  The guarantee now holds at the **transition boundary**, not merely at
+syscall boundaries.
+
+- **#7.4 — strengthen `replyCallerLinkage`.** Factor the bidirectional reciprocity into a
+  reusable `replyCallerLinkageReciprocal` (the strongest invariant that survives the fold's
+  post-blocking-store / pre-link intermediate), and define
+  `replyCallerLinkage := reciprocal ∧ (blockedOnReply ⇒ replyObject)`.  The atomic-link prover
+  `linkCallerReply_establishes_replyCallerLinkage` now discharges the third clause directly
+  (the linked caller carries `replyObject`; every other blocked caller is framed via the new
+  `hThirdExc` intermediate-state hypothesis).  `default` / boot establish it vacuously (no
+  `.blockedOnReply` TCBs).  `consumeCallerReply` — reply-link teardown prep — preserves only
+  the *reciprocal* half on its own (`…_preserves_replyCallerLinkageReciprocal`): standalone it
+  clears `replyObject` **without** unblocking, so the *fused* reply transition (which unblocks
+  first) re-establishes the third clause; `consumeCallerReply_preserves_ipcInvariantFull` and
+  the live IPC transitions thread `replyCallerLinkage st'` exactly as before (the 16-conjunct
+  threading architecture is unchanged — only the definition strengthened).
+- **#7.5 — transition-boundary tests.**  `ModelIntegritySuite` drives the real single-core
+  fold end-to-end and asserts the third clause holds at the `endpointCall` boundary (the
+  blocked caller carries a `replyObject`, reciprocated by the Reply) and its negative dual (a
+  Call with no server reply fails closed, stranding no caller).  `NegativeStateSuite` adds the
+  "no unanswerable `blockedOnReply`" fail-closed check to its reply coverage.
+
+No `sorry`/`axiom`; `test_full.sh` green (Tier 0–3, invariant surface anchors included); trace
+byte-identical.  AK7 cascade re-anchored (third-clause `objects[tid.toObjId]?` +3; test
+`getTcb?` adoption +2).  Remaining D6 work: residual debt #1 (rights-less reply caps).  Version
+bumped 0.31.153 → 0.31.154.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7.4/#7.5
+
 ## v0.31.153 — Reply objects (seL4-MCS): D6 transition fold — per-core call fold lands, `linkServerFirstCaller` deleted (#7.3b)
 
 Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
