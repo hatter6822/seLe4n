@@ -834,9 +834,10 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
 /-- SD-053: faithful seL4-MCS server-first receive linkage. (a) A server that blocks
     on `Recv` with a reply object STASHES it on `pendingReceiveReply` (it cannot link
     yet — no caller is queued). (b) When a later `Call` rendezvouses with that waiting
-    server (caller `.blockedOnReply ep (some server)`), `linkServerFirstCaller` links
-    the caller to the stashed reply object and clears the stash. Together with sd051
-    (caller-first) this closes both receive/Call orderings. -/
+    server, the rendezvous (`endpointCall`, #7.3a fold) links the caller to the stashed
+    reply object and clears the stash *atomically* — no intermediate `.blockedOnReply`
+    state without a linked Reply. Together with sd051 (caller-first) this closes both
+    receive/Call orderings. -/
 private def sd053_serverFirstLink : IO Unit := do
   let server : SeLe4n.ThreadId := ⟨1⟩
   let caller : SeLe4n.ThreadId := ⟨2⟩
@@ -860,26 +861,35 @@ private def sd053_serverFirstLink : IO Unit := do
         ((st'.getReply? rid).all (fun r => decide (r.caller = none)))
         "the stash must not prematurely set reply.caller"
   | .error _ => failLine "sd053a" "server-first receive (stash) should succeed"
-  -- (b) a later Call rendezvous links the caller to the server's stashed reply object
-  let stB : SystemState :=
+  -- (b) #7.3a fold: a later Call rendezvous links the caller to the server's stashed
+  -- reply object ATOMICALLY inside `endpointCall` (formerly the separate
+  -- `linkServerFirstCaller` dispatch step), so there is no intermediate state where the
+  -- caller is `.blockedOnReply` but unlinked.  Driven end-to-end: stash via (a)'s
+  -- receive, then rendezvous via a real `endpointCall`.
+  let stBBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
-      |>.withObject caller.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
       |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server, caller]
       |>.build)
-  match SeLe4n.Kernel.linkServerFirstCaller caller stB with
-  | .ok ((), st') =>
-      expect "sd053b_caller_linked"
-        ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
-         (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid)))
-        "the Call caller should be linked to the server's stashed reply object"
-      expect "sd053b_stash_cleared"
-        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
-        "the server's stash should be cleared after linking"
-  | .error _ => failLine "sd053b" "linkServerFirstCaller should succeed"
+  match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stBBase with
+  | .error _ => failLine "sd053b" "server-first receive (stash) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .ok ((), st') =>
+        expect "sd053b_caller_linked"
+          ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+           (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid)))
+          "the Call caller should be linked to the server's stashed reply object"
+        expect "sd053b_stash_cleared"
+          ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+          "the server's stash should be cleared after linking"
+        expect "sd053b_caller_blocked_on_reply"
+          ((st'.getTcb? caller).any (fun t => decide (t.ipcState = .blockedOnReply epId (some server))))
+          "the linked Call caller should land blockedOnReply awaiting the server"
+    | .error _ => failLine "sd053b" "server-first Call rendezvous should succeed and link"
   -- (c) PR #822 review: a plain receive (no reply object) CLEARS a stale stash so a
   -- later Call cannot reuse it (server woke via Send / was cancelled, then re-Recv's).
   let stStale : SystemState :=
@@ -895,21 +905,29 @@ private def sd053_serverFirstLink : IO Unit := do
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
         "a plain (no-reply) receive must clear any stale pendingReceiveReply"
   | .error _ => failLine "sd053c" "plain receive (clear stash) should succeed"
-  -- (d) PR #822 review: a Call that rendezvouses with a waiting server holding NO
-  -- reply object (plain Recv) is rejected fail-closed (cannot answer a Call).
-  let stNoStash : SystemState :=
+  -- (d) PR #822 review / #7.3a fold: a Call that rendezvouses with a waiting server
+  -- holding NO reply object (plain Recv) is rejected fail-closed (cannot answer a
+  -- Call).  The fold makes `endpointCall` *itself* fail closed — no intermediate state
+  -- strands the caller `.blockedOnReply` with no linked Reply.
+  let stDBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
-      |>.withObject caller.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
+      |>.withRunnable [server, caller]
       |>.build)
-  match SeLe4n.Kernel.linkServerFirstCaller caller stNoStash with
-  | .error e =>
-      expect "sd053d_server_first_call_without_reply_rejected"
-        (e == .replyCapInvalid)
-        "a server-first Call with no stashed reply object must be rejected"
-  | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
+  match SeLe4n.Kernel.endpointReceiveDual epId server none stDBase with
+  | .error _ => failLine "sd053d" "plain receive (no-reply) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error e =>
+        expect "sd053d_server_first_call_without_reply_rejected"
+          (e == .replyCapInvalid)
+          "a server-first Call with no stashed reply object must be rejected"
+        expect "sd053d_caller_not_stranded"
+          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
+          "the rejected call must not strand the caller in blockedOnReply (fail-closed, no state change)"
+    | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
   -- (e) PR #822 review: a plain `Send` that wakes a server-first receiver clears the
   -- server's reply stash — the server left `.blockedOnReceive` for `.ready`, so the
   -- stash (which lives only on a blocked receiver) must not survive, and a future

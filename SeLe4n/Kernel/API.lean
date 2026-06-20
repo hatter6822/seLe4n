@@ -336,47 +336,11 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
                   else .error .replyCapInvalid
               | none => .error .replyCapInvalid
 
-/-- WS-SM SM6.D (faithful seL4-MCS, server-first receive linkage): after a `Call`
-rendezvouses with a *waiting* server — the caller lands `.blockedOnReply ep (some
-server)` and the server is woken — link the caller to the Reply object the server
-stashed on its earlier `Recv` (`server.pendingReceiveReply`), then clear the stash
-(one-shot).  A no-op when the call did not rendezvous with a waiting server (caller
-`.blockedOnCall`, i.e. it was enqueued) or the server supplied no reply object.
-Composed by the `.call` dispatch after `endpointCallCrossCoreDispatch`; mirrors the
-caller-first receive linkage now folded into `endpointReceiveDual` /
-`endpointReceiveDualOnCore` (#7.2) for the symmetric ordering. -/
-def linkServerFirstCaller (caller : SeLe4n.ThreadId) : Kernel Unit :=
-  fun st =>
-    match st.getTcb? caller with
-    | some cTcb =>
-        match cTcb.ipcState with
-        | .blockedOnReply _ (some server) =>
-            match (st.getTcb? server).bind (·.pendingReceiveReply) with
-            | some rid =>
-                match SystemState.linkCallerReply caller rid st with
-                | .error e => .error e
-                | .ok ((), st1) =>
-                    match st1.getTcb? server with
-                    | some sTcb =>
-                        storeObject server.toObjId
-                          (.tcb { sTcb with pendingReceiveReply := none }) st1
-                    | none => .ok ((), st1)
-            | none =>
-                -- PR #822 review: the Call rendezvoused with a waiting server that
-                -- provided NO reply object (a plain `Recv`).  seL4-MCS cannot answer
-                -- a Call without a reply object, so reject fail-closed — the
-                -- post-state is discarded, so the caller is *not* stranded
-                -- `.blockedOnReply` with no linked Reply, and the server is not
-                -- spuriously woken.  Symmetric to the caller-first reject folded
-                -- into `endpointReceiveDual` (#7.2).
-                .error .replyCapInvalid
-        | _ => .ok ((), st)
-    | none => .ok ((), st)
-
 /-- WS-SM SM6.D (PR #822 review): clear a server-first reply **stash**
 (`TCB.pendingReceiveReply`) on a receiver woken by a plain `Send`.  A server that
 blocked on `Recv` having supplied a reply object carries the stash so a later `Call`
-can be linked to it (`linkServerFirstCaller`); but if a *one-way* `Send` rendezvouses
+can be linked to it (folded into the Call rendezvous via `linkServerStashedReply`);
+but if a *one-way* `Send` rendezvouses
 first, the server leaves `.blockedOnReceive` for `.ready` while the stash survives —
 violating `pendingReceiveReplyWellFormed` (a stash lives only on a `.blockedOnReceive`
 TCB) and leaving a stale `rid` a *future* `Call` rendezvous could mis-link.  The
@@ -1243,11 +1207,13 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- cross-core analogue of `endpointCallWithCaps` + inline donation; the
         -- caller is descheduled from its own core (derived from the live state).
         let executingCore := determineExecutingCore st tid
+        -- WS-SM SM6.D (#7.3b fold): the server-first reply linkage is now atomic
+        -- with the rendezvous — `endpointCallOnCore` itself links the caller to the
+        -- server's stashed reply object (`linkServerStashedReply`) at the moment the
+        -- caller lands `.blockedOnReply`, so there is no separate post-dispatch step.
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        -- WS-SM SM6.D (server-first linkage): if the call rendezvoused with a
-        -- waiting server, link the caller to the server's stashed reply object.
-        | (st', .ok _) => linkServerFirstCaller tid st'
+        | (st', .ok _) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -1527,10 +1493,12 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- syscall, `currentOnCore executingCore`); the cross-core syscall seam
         -- recovers the SGI from the `(pre, post)` diff.
         let executingCore := determineExecutingCore st tid
+        -- WS-SM SM6.D (#7.3b fold): the server-first reply linkage is now atomic
+        -- with the rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`);
+        -- mirror the unchecked arm — no separate post-dispatch link step.
         match endpointCallCrossCoreDispatchChecked ctx epId tid msg cap.rights
             gate.cspaceRoot decoded.capRecvSlot executingCore st with
-        -- WS-SM SM6.D (server-first linkage): mirror the unchecked arm.
-        | (st', .ok _) => linkServerFirstCaller tid st'
+        | (st', .ok _) => .ok ((), st')
         | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -2471,10 +2439,12 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         let executingCore := determineExecutingCore st tid
+        -- WS-SM SM6.D (#7.3b fold): server-first reply linkage is atomic with the
+        -- rendezvous inside `endpointCallOnCore` (`linkServerStashedReply`); no
+        -- separate post-dispatch link step.
         match endpointCallCrossCoreDispatch epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot executingCore st with
-        -- WS-SM SM6.D: server-first reply linkage composed after the dispatch.
-        | (st', .ok _) => linkServerFirstCaller tid st'
+        | (st', .ok _) => .ok ((), st')
         | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 

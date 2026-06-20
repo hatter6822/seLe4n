@@ -175,10 +175,13 @@ backward link (`reply.caller = some tid ⇒ tcb.replyObject = some rid ∧ tcb` 
 `.blockedOnReply`). Both only constrain TCBs that *already* have `replyObject` set;
 `replyCallerLinkage` is the **16th conjunct** of `ipcInvariantFull` (`Defs.lean:1271`), and
 that invariant therefore admits a `.blockedOnReply ep rt` TCB with `replyObject = none`.
-The raw single-core `endpointCall` (`DualQueue/Transport.lean:1740`) and `endpointReceiveDual`
-(`Transport.lean:1634`) produce exactly that intermediate: the caller blocks before the
-server-supplied reply cap is linked by the **separate** dispatch step
-`linkServerFirstCaller` (`API.lean:386`) / `linkReceivedCaller` (`API.lean:349`).
+The raw single-core `endpointCall` (`DualQueue/Transport.lean`) and `endpointReceiveDual`
+(`Transport.lean`) *used to* produce exactly that intermediate: the caller blocked before the
+server-supplied reply cap was linked by a **separate** dispatch step
+(`linkServerFirstCaller` / `linkReceivedCaller`). Slices #7.1–#7.3b have since **folded** that
+link into the blocking transitions (`linkReceivedCaller`/`linkServerStashedReply` now run
+atomically inside `endpointReceiveDual{,OnCore}` / `endpointCall{,OnCore}`), and both former
+dispatch steps are deleted — so the only remaining gap is the *invariant* statement (#7.4).
 
 **Root cause.** Reply-linking is a *dispatch-layer* step composed **after** the blocking
 transition; the rid is server-supplied and unknown to the raw transition. So
@@ -305,24 +308,29 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
     (gained the `hIdxComplete`/`hObjSetInv` structural hypotheses, conclusion unchanged). Trace
     sites supplying a server-first reply: `MainTraceHarness` F1-03, `NegativeStateSuite`
     replyRecv-setup + R1-NEG.
-  - **#7.3b — per-core (`endpointCallOnCore`) + delete `linkServerFirstCaller`.** ⏳ **REMAINING.**
-    Fold `endpointCallOnCore` (compose `linkServerStashedReply`; the helper + frames already
-    exist), re-base its characterization theorems (`endpointCallOnCore_rendezvous_eq` and the SGI
-    theorems gain an `hLink` success precondition; `_perCore_blocking`/`_reply_linkage_under_lockSet`
-    transfer via `linkServerStashedReply_scheduler_eq`/`_tcb_forward`/`_tcb_ipcState_backward`) and
-    `EndpointCallInvariant`'s five conjunct proofs (thread the structural frames — make the
-    `StoreObjectFrame` ones public). **Then** rewire the three `.call` dispatch arms (`API.lean`
-    1250/1533/2477 — the post-fold `linkServerFirstCaller` would *double-link* and fail, so it must
-    be removed, and the dispatch characterization theorem at :2477 updated), **delete
-    `linkServerFirstCaller`**, and migrate SD-053(b,d). *Identified blocker:* the per-core NI
-    (`EndpointCallNI`/`EndpointCallNiPerCore`, staged) projection peel needs
-    `linkServerStashedReply_preserves_projection`'s `hIdxComplete` at the rendezvous intermediate
-    `st4`, which requires **new `objectIndexSet`-completeness propagation frames** for
-    `endpointQueuePopHead` (an upstream public version of the `private` Operations one) and
-    `wakeThread`/`enqueueRunnableOnCore` (compose `storeObject_preserves_objectIndexSetComplete`,
-    State.lean:2068) — build these first, then thread the NI conclusions hypothesis-free
-    (error case: `.1 = st` trivial; success case: the link peel). **Verify:** `SmpCrossCoreCallSuite`
-    + reply suites, `NegativeStateSuite`, staged-partition gate; trace byte-identical.
+  - **#7.3b — per-core (`endpointCallOnCore`) + delete `linkServerFirstCaller`.** ✅ **LANDED (v0.31.153).**
+    Folded `endpointCallOnCore`'s server-waiting rendezvous (compose `linkServerStashedReply` at the
+    `st4 → st5` seam, before `removeRunnableOnCore`); re-based `endpointCallOnCore_rendezvous_eq`
+    and the four callers (`_emits_sgi_if_remote_receiver`/`_no_sgi_if_local_receiver`/`_perCore_blocking`/
+    `_reply_linkage_under_lockSet` — gained `st5`/`hLink`, SGI/blocking conclusions unchanged, reply
+    linkage transferred via `linkServerStashedReply_tcb_forward`/`_tcb_ipcState_backward`) and
+    `EndpointCallInvariant`'s five conjunct proofs (made the three `StoreObjectFrame` frames public).
+    Per-core NI: built the missing **`objectIndexSet`-completeness propagation frames** —
+    `endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt` (+ the `storeTcbQueueLinks`
+    pair) made public in `Operations`, and four new `wakeThread`/`enqueueRunnableOnCore` frames in
+    `PerCoreWake` (raw insert at an existing key leaves `objectIndexSet` untouched; the receiver is
+    `.ready` before the wake) — then re-based the boot-core `endpointCallOnCore_call_path_NI` and the
+    ∀-core `_smp` (added `st5`/`hLink`/`hObjSetInv`/`hIdxComplete`; propagate completeness `st → st4`;
+    peel the link via the new `linkServerStashedReply_preserves_projection{,OnCore}` — the per-core
+    frame built from `linkServerStashedReply_{scheduler,machine}_eq` + `projectStateOnCore_congr`;
+    conclusions unchanged). Rewired the three `.call` dispatch arms (`API.lean` — dropped the
+    post-fold `linkServerFirstCaller`, which would now *double-link* and fail; updated the dispatch
+    characterization theorem), **deleted `linkServerFirstCaller`**, and migrated SD-053(b,d) to drive
+    the real `endpointCall` fold end-to-end. `SmpCrossCoreCallSuite` now exercises the atomic link +
+    the fail-closed no-stash rendezvous ("no green intermediate"). **Verified:** default + staged
+    builds, `SmpCrossCoreCallSuite`/`SyscallDispatchSuite`, `test_smoke`, staged-partition gate;
+    trace byte-identical; AK7 re-anchored (one proof-level `getTcb?`→objects-side conversion,
+    `GETTCB_ADOPTION` +12).
 
 - **#7.4 — strengthen `replyCallerLinkage` (gated on #7.3b — #7.1/#7.2/#7.3a landed).** Add the third clause
   (above) to `replyCallerLinkage` (`Defs.lean:623`). Update: `default`

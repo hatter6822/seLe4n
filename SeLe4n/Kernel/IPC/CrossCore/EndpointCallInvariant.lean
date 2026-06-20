@@ -103,8 +103,15 @@ theorem endpointCallOnCore_preserves_objects_invExt
             simp only
             have h4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
               (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hW hCS
-            show (removeRunnableOnCore st4 caller executingCore).objects.invExt
-            rw [removeRunnableOnCore_preserves_objects]; exact h4
+            -- WS-SM SM6.D (#7.3b fold): thread the server-first reply link
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hObjInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have h5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 h4 hLink
+              show (removeRunnableOnCore st5 caller executingCore).objects.invExt
+              rw [removeRunnableOnCore_preserves_objects]; exact h5
 
 -- ============================================================================
 -- §2  Keystone: the cross-core receiver wake is object-invisible
@@ -185,8 +192,16 @@ theorem endpointCallOnCore_preserves_ipcInvariant
             simp only
             have hInv4 := storeTcbIpcStateAndMessage_preserves_ipcInvariant
               (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hInvW hObjW hCS
-            show ipcInvariant (removeRunnableOnCore st4 caller executingCore)
-            exact fun oid ntfn h => hInv4 oid ntfn (by rwa [removeRunnableOnCore_preserves_objects] at h)
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hInv5 := linkServerStashedReply_preserves_ipcInvariant st4 st5 caller pair.1 hInv4 hObjInv4 hLink
+              show ipcInvariant (removeRunnableOnCore st5 caller executingCore)
+              exact fun oid ntfn h => hInv5 oid ntfn (by rwa [removeRunnableOnCore_preserves_objects] at h)
 
 -- ============================================================================
 -- §4  SM6.A.9 — invariant preservation *through* the 2PL lock bracket
@@ -407,8 +422,16 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
             simp only
             have hInv4 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
               (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS hInvW
-            show dualQueueSystemInvariant (removeRunnableOnCore st4 caller executingCore)
-            exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st4 caller executingCore hInv4
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hInv5 := linkServerStashedReply_preserves_dualQueueSystemInvariant st4 st5 caller pair.1 hObjInv4 hLink hInv4
+              show dualQueueSystemInvariant (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st5 caller executingCore hInv5
 
 -- ============================================================================
 -- §7  SM6.A.1 — the remaining derivable conjuncts + full `ipcInvariantFull`
@@ -539,8 +562,16 @@ theorem endpointCallOnCore_preserves_badgeWellFormed
             simp only
             have hInv4 := storeTcbIpcStateAndMessage_preserves_badgeWellFormed
               (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hInvW hObjW hCS
-            show badgeWellFormed (removeRunnableOnCore st4 caller executingCore)
-            exact removeRunnableOnCore_preserves_badgeWellFormed st4 caller executingCore hInv4
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hInv5 := linkServerStashedReply_preserves_badgeWellFormed st4 st5 caller pair.1 hInv4 hObjInv4 hLink
+              show badgeWellFormed (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_badgeWellFormed st5 caller executingCore hInv5
 
 /-- WS-SM SM6.A.1: the cross-core endpoint call preserves pending-message
 boundedness.  The payload `msg` is bounded by the two entry guards (`hSz1`/`hSz2`
@@ -612,8 +643,16 @@ theorem endpointCallOnCore_preserves_allPendingMessagesBounded
             have hInv4 := storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
               (wakeThread st2 pair.1 executingCore).1 st4 caller _ none
               (fun _ h => by cases h) hObjW hCS hInvW
-            show allPendingMessagesBounded (removeRunnableOnCore st4 caller executingCore)
-            exact removeRunnableOnCore_preserves_allPendingMessagesBounded st4 caller executingCore hInv4
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hInv5 := linkServerStashedReply_preserves_allPendingMessagesBounded st4 st5 caller pair.1 hObjInv4 hLink hInv4
+              show allPendingMessagesBounded (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_allPendingMessagesBounded st5 caller executingCore hInv5
 
 /-- WS-SM SM6.A.1: the cross-core endpoint call preserves the **full** IPC
 invariant bundle.  Mirrors the single-core `endpointCall_preserves_ipcInvariantFull`

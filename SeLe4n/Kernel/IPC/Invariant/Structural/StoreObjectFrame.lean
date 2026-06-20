@@ -193,7 +193,7 @@ private theorem linkCallerReply_preserves_allPendingMessagesBounded
 `dualQueueSystemInvariant`.  Composes `linkCallerReply` (whose `.reply` + caller
 `.tcb` stores leave every queue link `rfl`) with one server `.tcb` re-store that
 clears `pendingReceiveReply` — also a non-queue field, so queue links agree (`rfl`). -/
-private theorem linkServerStashedReply_preserves_dualQueueSystemInvariant
+theorem linkServerStashedReply_preserves_dualQueueSystemInvariant
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
@@ -227,7 +227,7 @@ private theorem linkServerStashedReply_preserves_dualQueueSystemInvariant
 None of its stores (the `linkCallerReply` `.reply`/`.tcb` writes, or the server
 `.tcb` `pendingReceiveReply`-clear) writes a notification badge or a CNode
 capability badge. -/
-private theorem linkServerStashedReply_preserves_badgeWellFormed
+theorem linkServerStashedReply_preserves_badgeWellFormed
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hInv : badgeWellFormed st)
     (hObjInv : st.objects.invExt)
@@ -262,7 +262,7 @@ private theorem linkServerStashedReply_preserves_badgeWellFormed
 `pendingMessage` unchanged; the server `.tcb` store clears `pendingReceiveReply`,
 which leaves `pendingMessage` unchanged
 (`{ sTcb with pendingReceiveReply := none }.pendingMessage = sTcb.pendingMessage`). -/
-private theorem linkServerStashedReply_preserves_allPendingMessagesBounded
+theorem linkServerStashedReply_preserves_allPendingMessagesBounded
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))

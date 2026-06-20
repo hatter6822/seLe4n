@@ -601,6 +601,43 @@ theorem wakeThread_independent_of_other_core (st : SystemState)
   exact ⟨enqueueRunnableOnCore_runQueueOnCore_ne st (determineTargetCore st tid) c' tid h,
     enqueueRunnableOnCore_currentOnCore st (determineTargetCore st tid) tid c'⟩
 
+/-- WS-SM SM6.D (#7.3b): `enqueueRunnableOnCore` leaves `objectIndexSet` untouched — it
+does a raw `objects.insert` at the already-present `tid` plus a scheduler write, but no
+index/lifecycle update (the `{ st with objects, scheduler }` record-update keeps
+`objectIndexSet`). -/
+theorem enqueueRunnableOnCore_objectIndexSet_eq (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (enqueueRunnableOnCore st c tid).objectIndexSet = st.objectIndexSet := by
+  unfold enqueueRunnableOnCore
+  cases st.getTcb? tid with
+  | none => rfl
+  | some tcb => by_cases h : runnableOnSomeCore st tid <;> simp [h]
+
+/-- WS-SM SM6.D (#7.3b): `wakeThread` leaves `objectIndexSet` untouched. -/
+theorem wakeThread_objectIndexSet_eq (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) :
+    (wakeThread st tid ec).1.objectIndexSet = st.objectIndexSet := by
+  rw [wakeThread_state_eq_enqueue]; exact enqueueRunnableOnCore_objectIndexSet_eq st _ tid
+
+/-- WS-SM SM6.D (#7.3b): a wake of an already-`.ready` thread preserves
+`objectIndexSetComplete` — its objects are pointwise unchanged
+(`wakeThread_objects_getElem_eq_of_ready`) and the index is untouched. -/
+theorem wakeThread_preserves_objectIndexSetComplete_of_ready (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
+    (hInv : st.objects.invExt) (hComplete : objectIndexSetComplete st) :
+    objectIndexSetComplete (wakeThread st tid ec).1 := by
+  intro oid hoid
+  rw [wakeThread_objectIndexSet_eq]
+  exact hComplete oid
+    (by rwa [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hInv oid] at hoid)
+
+/-- WS-SM SM6.D (#7.3b): a wake preserves `objectIndexSet.table.invExt` (the index is
+untouched). -/
+theorem wakeThread_preserves_objectIndexSet_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (hInv : st.objectIndexSet.table.invExt) :
+    (wakeThread st tid ec).1.objectIndexSet.table.invExt := by
+  rw [wakeThread_objectIndexSet_eq]; exact hInv
+
 
 -- ============================================================================
 -- §5  SM5.C.6 — `wakeThread_lossless` (plan §3.3, Theorem 3.3.2)

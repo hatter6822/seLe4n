@@ -645,8 +645,8 @@ theorem replyCallerLinkage_of_objects_eq {st st' : SystemState}
 `.blockedOnReceive` (the only state in which the server is awaiting its next `Call`
 to link the Reply), and it names an **existing free** Reply object (`reply.caller =
 none`).  Without this conjunct `ipcInvariantFull` admits a blocked receiver stashing
-an absent or already-linked Reply, which a later server-first `Call` (`linkServerFirstCaller`)
-then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
+an absent or already-linked Reply, which a later server-first `Call` (the folded
+`linkServerStashedReply`) then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
 already maintained: `resolveRecvReplyId` only stashes a free, present `rid`, and
 exit from `.blockedOnReceive` clears the stash (v0.31.111 / `replyIsStashed`); this
 conjunct *states* it.  The second clause states the stash is **injective** (no two
@@ -660,7 +660,7 @@ def pendingReceiveReplyWellFormed (st : SystemState) : Prop :=
   -- WS-SM SM6.D (PR #822 review): the stash is **injective** — at most one blocked
   -- receiver stashes any given Reply id.  Without this a model state could have two
   -- blocked servers stashing the same `rid`; a server-first `Call` linking one
-  -- (`linkServerFirstCaller` → `linkCallerReply`, which consumes `reply.caller`) would
+  -- (the folded `linkServerStashedReply` → `linkCallerReply`, which consumes `reply.caller`) would
   -- silently invalidate the other's stash, so its later `Call` fails closed
   -- `.replyCapInvalid` while its receive completes.  Operationally maintained by
   -- `resolveRecvReplyId` (it stashes only an un-stashed `rid`, `!replyIsStashed`).
@@ -801,6 +801,36 @@ theorem linkCallerReply_scheduler_eq (st st' : SystemState)
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` leaves the machine unchanged (both
+its stores are `storeObject`, which does not touch the machine registers). -/
+theorem linkCallerReply_machine_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hMach1 : st1.machine = st.machine := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_machine_eq st st1 rid.toObjId _ hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact (storeObject_machine_eq st1 st' caller.toObjId _ hStep).trans hMach1
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
 it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
 TCB store (which preserves it). -/
@@ -883,6 +913,32 @@ theorem linkServerStashedReply_scheduler_eq (st st' : SystemState)
       | some sTcb =>
         simp only [hT] at hStep
         exact (storeObject_scheduler_eq st1 st' server.toObjId _ hStep).trans hSched1
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` leaves the machine unchanged
+(every sub-store is `storeObject`, which does not touch the machine registers). -/
+theorem linkServerStashedReply_machine_eq (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hMach1 := linkCallerReply_machine_eq st st1 caller rid hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hMach1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact (storeObject_machine_eq st1 st' server.toObjId _ hStep).trans hMach1
 
 /-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
 Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an

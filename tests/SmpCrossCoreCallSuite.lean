@@ -52,7 +52,7 @@ open SeLe4n.Testing
 #check @endpointCallReceiver?
 #check @endpointCallDonatedSc?
 -- PR #822 review: the server-first stashed reply the rendezvous links, resolved into
--- the Call footprint so the `linkServerFirstCaller` reply write is 2PL-covered:
+-- the Call footprint so the folded `linkServerStashedReply` reply write is 2PL-covered:
 #check @endpointCallServerFirstReply?
 #check @lockSet_endpointCallOnCore
 #check @lockSet_endpointCallOnCore_correct
@@ -138,7 +138,7 @@ open SeLe4n.Testing
 /-- SM6.A.3: a rendezvous unblocking a remote receiver emits the reschedule SGI. -/
 example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 recvTcb'' : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 recvTcb'' : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -147,13 +147,14 @@ example (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
     (endpointCallOnCore endpointId caller msg executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) :=
   endpointCallOnCore_emits_sgi_if_remote_receiver endpointId caller msg executingCore st ep
-    receiver recvTcb0 recvTcb'' st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore
-    hTcb'' hRemote
+    receiver recvTcb0 recvTcb'' st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore
+    hLink hTcb'' hRemote
 
 /-- SM6.A.9: the call is a single 2PL-atomic step under its lock-set. -/
 example (endpointId cnRoot : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -170,7 +171,7 @@ example (endpointId cnRoot : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : Ipc
 example (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -179,7 +180,10 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : objectIndexSetComplete st)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hReceiverHigh : threadObservable ctx observer receiver = false)
     (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
@@ -190,7 +194,8 @@ example (ctx : LabelingContext) (observer : IfObserver)
     projectState ctx observer (endpointCallOnCore endpointId caller msg executingCore st).1
       = projectState ctx observer st :=
   endpointCallOnCore_call_path_NI ctx observer endpointId caller msg executingCore st ep receiver
-    recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hObjInv hEndpointHigh
+    recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink hObjInv
+    hObjSetInv hIdxComplete hEndpointHigh
     hReceiverHigh hReceiverObjHigh hCallerHigh hCallerObjHigh hNextHigh
 
 -- ============================================================================
@@ -212,24 +217,36 @@ private def scId : SeLe4n.SchedContextId := ⟨410⟩
 private def callerTid : SeLe4n.ThreadId := ⟨401⟩
 private def recvLocalTid : SeLe4n.ThreadId := ⟨402⟩
 private def recvRemoteTid : SeLe4n.ThreadId := ⟨403⟩
+private def replyId : SeLe4n.ReplyId := ⟨420⟩
 
 private def mkTcb (tid : Nat) (prio : Nat) (aff : Option CoreId) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩, cspaceRoot := cnRoot,
     vspaceRoot := ⟨310⟩, ipcBuffer := SeLe4n.VAddr.ofNat 4096, ipcState := .ready,
     cpuAffinity := aff }
 
-/-- Endpoint + unbound caller + unbound (local) receiver + core1-bound (remote) receiver. -/
+/-- Endpoint + unbound caller + unbound (local) receiver + core1-bound (remote)
+receiver + a free Reply object the server supplies on its `Recv`. -/
 private def stBase : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject epId (.endpoint {})
     |>.withObject callerTid.toObjId (.tcb (mkTcb 401 40 none))
     |>.withObject recvLocalTid.toObjId (.tcb (mkTcb 402 30 none))
     |>.withObject recvRemoteTid.toObjId (.tcb (mkTcb 403 30 (some core1)))
+    |>.withObject replyId.toObjId (.reply { replyId := replyId })
     |>.withRunnable [callerTid]
     |>.build)
 
-/-- Drive the receiver onto the endpoint's receive queue (it blocks, no sender). -/
+/-- Drive the receiver onto the endpoint's receive queue (it blocks, no sender),
+supplying a Reply object so a later `Call` rendezvous can link to its stash (the
+#7.3b fold makes the rendezvous itself perform that link, atomically). -/
 private def stWithReceiver (recv : SeLe4n.ThreadId) : Option SystemState :=
+  match endpointReceiveDual epId recv (some replyId) stBase with
+  | .ok (_, st) => some st
+  | .error _ => none
+
+/-- Like `stWithReceiver` but the server supplies NO Reply object (a plain `Recv`):
+a later `Call` rendezvous has no stash to link and must fail closed. -/
+private def stWithReceiverNoReply (recv : SeLe4n.ThreadId) : Option SystemState :=
   match endpointReceiveDual epId recv none stBase with
   | .ok (_, st) => some st
   | .error _ => none
@@ -263,7 +280,7 @@ private def runLockSetChecks : IO Unit := do
       (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)).pairs))
   -- PR #822 review (finding 6J… server-first reply lock): once the server-first
   -- stashed reply is resolved, its per-object **write** lock is a declared member of
-  -- the Call footprint, so the `linkServerFirstCaller` reply write is 2PL-covered.
+  -- the Call footprint, so the folded `linkServerStashedReply` reply write is 2PL-covered.
   assertBool "server-first reply write lock is in the endpointCall footprint"
     (decide ((replyLock (⟨700⟩ : SeLe4n.ReplyId), AccessMode.write) ∈
       (lockSet_endpointCall callerTid cnRoot epId (some recvRemoteTid) (some scId)
@@ -347,7 +364,28 @@ private def runRendezvousChecks : IO Unit := do
         (match st'.getTcb? callerTid with
          | some t => decide (t.ipcState = .blockedOnReply epId (some recvRemoteTid))
          | none => false)
+      -- #7.3b fold: the rendezvous ATOMICALLY links the caller to the server's
+      -- stashed Reply object and clears the stash — no separate dispatch step.
+      assertBool "rendezvous links the caller to the server's stashed reply object"
+        (match st'.getReply? replyId, st'.getTcb? callerTid with
+         | some r, some t => decide (r.caller = some callerTid ∧ t.replyObject = some replyId)
+         | _, _ => false)
+      assertBool "rendezvous clears the server's reply stash (one-shot)"
+        ((st'.getTcb? recvRemoteTid).all (fun t => decide (t.pendingReceiveReply = none)))
   | none => assertBool "rendezvous setup (remote receiver) succeeded" false
+  -- #7.3b fold (fail-closed): a Call rendezvous with a server that supplied NO Reply
+  -- object (plain Recv) cannot be answered — the fold makes `endpointCallOnCore`
+  -- itself fail closed, with no intermediate `.blockedOnReply` caller and no SGI.
+  match stWithReceiverNoReply recvRemoteTid with
+  | some st =>
+      let (st', res) := endpointCallOnCore epId callerTid IpcMessage.empty bootCoreId st
+      assertBool "no-stash rendezvous fails closed with replyCapInvalid"
+        (match res with | .error .replyCapInvalid => true | _ => false)
+      assertBool "no-stash rendezvous leaves the caller unblocked (no green intermediate)"
+        ((st'.getTcb? callerTid).any (fun t => decide (t.ipcState = .ready)))
+      assertBool "no-stash rendezvous surfaces no SGI"
+        (match res with | .error _ => true | _ => false)
+  | none => assertBool "rendezvous setup (no-reply receiver) succeeded" false
 
 def runSmpCrossCoreCallChecks : IO Unit := do
   IO.println "WS-SM SM6.A — Cross-core endpoint call suite"

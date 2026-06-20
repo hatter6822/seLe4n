@@ -112,9 +112,9 @@ def endpointCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
 links, if any.  On a **server-first** `Call` rendezvous the popped receiver is a
 server already `.blockedOnReceive` having pre-supplied a reply object via
 `endpoint_receive_with_reply` (`TCB.pendingReceiveReply = some rid`); the rendezvous
-links the woken caller to it (`linkServerFirstCaller` writes `reply.caller := caller`
-and clears the server's stash), so the per-object **reply write-lock** must be in the
-Call footprint.  `none` for a receiver that did a plain receive (no stash) or when
+links the woken caller to it (the folded `linkServerStashedReply` writes
+`reply.caller := caller` and clears the server's stash), so the per-object **reply
+write-lock** must be in the Call footprint.  `none` for a receiver that did a plain receive (no stash) or when
 there is no receiver (the caller blocks). -/
 def endpointCallServerFirstReply? (st : SystemState) (endpointId : SeLe4n.ObjId) :
     Option SeLe4n.ReplyId :=
@@ -127,8 +127,8 @@ SchedContext, and (SM6.D, PR #822 review) the server-first stashed reply object
 **pre-resolved from `st`** via `endpointCallReceiver?` / `endpointCallDonatedSc?` /
 `endpointCallServerFirstReply?` (the receiver is the endpoint's receive-queue head;
 the donated SC is the caller's own bound SC; the reply object is the server's
-pre-supplied `pendingReceiveReply`, which `linkServerFirstCaller` writes on a
-server-first rendezvous).  This is the footprint the runtime `withLockSet` bracket
+pre-supplied `pendingReceiveReply`, which the folded `linkServerStashedReply` writes
+on a server-first rendezvous).  This is the footprint the runtime `withLockSet` bracket
 (the SM5.I FFI seam) acquires before invoking
 `endpointCallOnCore endpointId caller … executingCore st`. -/
 def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
@@ -197,8 +197,16 @@ def endpointCallOnCore (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                   match storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
                       caller (.blockedOnReply endpointId (some receiver)) none with
                   | .error e => (st, .error e)
-                  | .ok st4 => (removeRunnableOnCore st4 caller executingCore,
-                                .ok (wakeThread st'' receiver executingCore).2)
+                  | .ok st4 =>
+                      -- WS-SM SM6.D (#7.3b fold): link the caller to the Reply object the
+                      -- woken server stashed on its server-first `Recv` and clear the
+                      -- stash, atomically (formerly the separate `linkServerFirstCaller`
+                      -- dispatch step).  Fails closed when the server provided none.
+                      match SystemState.linkServerStashedReply caller receiver st4 with
+                      | .error e => (st, .error e)
+                      | .ok ((), st5) =>
+                          (removeRunnableOnCore st5 caller executingCore,
+                           .ok (wakeThread st'' receiver executingCore).2)
       | none =>
           match endpointQueueEnqueue endpointId false caller st with
           | .error e => (st, .error e)
@@ -226,7 +234,7 @@ surfaced SGI is exactly the receiver wake's. -/
 theorem endpointCallOnCore_rendezvous_eq
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -234,15 +242,19 @@ theorem endpointCallOnCore_rendezvous_eq
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
-        caller (.blockedOnReply endpointId (some receiver)) none = .ok st4) :
+        caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    -- WS-SM SM6.D (#7.3b fold): the server-first reply link is folded into the
+    -- transition; the rendezvous reduces only when the link succeeds (a server
+    -- with a stashed reply object — the production dispatch always provides one).
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
     endpointCallOnCore endpointId caller msg executingCore st
-      = (removeRunnableOnCore st4 caller executingCore,
+      = (removeRunnableOnCore st5 caller executingCore,
          .ok (wakeThread st'' receiver executingCore).2) := by
   unfold endpointCallOnCore
   rw [if_neg hSz1, if_neg hSz2]
   have hObjE : st.getEndpoint? endpointId = some ep :=
     (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj
-  simp only [hObjE, hHead, hPop, hStore, hCallerStore]
+  simp only [hObjE, hHead, hPop, hStore, hCallerStore, hLink]
 
 /-- WS-SM SM6.A.1: full reduction of the **no-receiver** path (the caller
 enqueues on the endpoint's send queue as `blockedOnCall`).  No wake occurs, so
@@ -282,7 +294,7 @@ s receiver` names. -/
 theorem endpointCallOnCore_emits_sgi_if_remote_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 recvTcb'' : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 recvTcb'' : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -291,12 +303,13 @@ theorem endpointCallOnCore_emits_sgi_if_remote_receiver
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hTcb'' : st''.getTcb? receiver = some recvTcb'')
     (hRemote : determineTargetCore st'' receiver ≠ executingCore) :
     (endpointCallOnCore endpointId caller msg executingCore st).2
       = .ok (some (determineTargetCore st'' receiver, SgiKind.reschedule)) := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
+        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
   show Except.ok (wakeThread st'' receiver executingCore).2
       = Except.ok (some (determineTargetCore st'' receiver, SgiKind.reschedule))
   rw [wakeThread_emits_sgi_if_remote st'' receiver executingCore recvTcb'' hTcb'' hRemote]
@@ -307,7 +320,7 @@ newly-runnable receiver up on its next decision. -/
 theorem endpointCallOnCore_no_sgi_if_local_receiver
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -316,10 +329,11 @@ theorem endpointCallOnCore_no_sgi_if_local_receiver
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hLocal : determineTargetCore st'' receiver = executingCore) :
     (endpointCallOnCore endpointId caller msg executingCore st).2 = .ok none := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
+        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
   show Except.ok (wakeThread st'' receiver executingCore).2 = Except.ok none
   rw [wakeThread_no_sgi_if_local st'' receiver executingCore hLocal]
 
@@ -524,7 +538,7 @@ locality `chooseThreadOnCore executingCore` then picks the next thread). -/
 theorem endpointCallOnCore_perCore_blocking
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -532,14 +546,15 @@ theorem endpointCallOnCore_perCore_blocking
     (hPop : endpointQueuePopHead endpointId true st = .ok (receiver, recvTcb0, st'))
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
-        caller (.blockedOnReply endpointId (some receiver)) none = .ok st4) :
+        caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5)) :
     caller ∉ (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler.runQueueOnCore executingCore ∧
     (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler.currentOnCore executingCore
       ≠ some caller := by
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
-  exact ⟨removeRunnableOnCore_not_mem_self st4 caller executingCore,
-         removeRunnableOnCore_currentOnCore_ne_self st4 caller executingCore⟩
+        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  exact ⟨removeRunnableOnCore_not_mem_self st5 caller executingCore,
+         removeRunnableOnCore_currentOnCore_ne_self st5 caller executingCore⟩
 
 -- ============================================================================
 -- §13  SM6.A.6 — Reply-state allocation under the caller-TCB write lock
@@ -577,7 +592,7 @@ reply-state allocation is serialised against every other core. -/
 theorem endpointCallOnCore_reply_linkage_under_lockSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -586,6 +601,7 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hObjInv : st.objects.invExt) :
     ∃ t, (endpointCallOnCore endpointId caller msg executingCore st).1.getTcb? caller = some t
       ∧ t.ipcState = .blockedOnReply endpointId (some receiver) := by
@@ -598,9 +614,22 @@ theorem endpointCallOnCore_reply_linkage_under_lockSet
   obtain ⟨t, hGet, hIpc⟩ :=
     storeTcbIpcStateAndMessage_getTcb?_ipcState (wakeThread st'' receiver executingCore).1 st4
       caller (.blockedOnReply endpointId (some receiver)) none hInvW hCallerStore
+  have hObjInv4 : st4.objects.invExt :=
+    storeTcbIpcStateAndMessage_preserves_objects_invExt (wakeThread st'' receiver executingCore).1 st4
+      caller (.blockedOnReply endpointId (some receiver)) none hInvW hCallerStore
+  have hT4 : st4.objects[caller.toObjId]? = some (.tcb t) := (SystemState.getTcb?_eq_some_iff st4 caller t).mp hGet
+  -- WS-SM SM6.D (#7.3b fold): the server-first reply link sets the caller's
+  -- `replyObject` but leaves its `ipcState` (`.blockedOnReply`) intact.
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
-  exact ⟨t, hGet, hIpc⟩
+        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink,
+      removeRunnableOnCore_getTcb?]
+  obtain ⟨t', hT5⟩ :=
+    linkServerStashedReply_tcb_forward st4 st5 caller receiver caller.toObjId t hObjInv4 hLink hT4
+  obtain ⟨tb, hTb, hIpcEq⟩ :=
+    linkServerStashedReply_tcb_ipcState_backward st4 st5 caller receiver caller t' hObjInv4 hLink hT5
+  refine ⟨t', (SystemState.getTcb?_eq_some_iff st5 caller t').mpr hT5, ?_⟩
+  have hbt : t = tb := by simpa using hT4.symm.trans hTb
+  rw [← hIpcEq, ← hbt]; exact hIpc
 
 -- ============================================================================
 -- §14  SM6.A.6 — the caller-TCB write lock IS in the footprint (membership)

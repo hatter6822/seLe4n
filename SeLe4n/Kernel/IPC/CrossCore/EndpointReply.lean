@@ -705,8 +705,9 @@ theorem lockSet_endpointReceive_reply_write_mem
 /-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
 declared member of the `.call` lock-set footprint once the linked reply object is
 resolved (`replyId := some rid`).  A server-first `Call` rendezvous links the caller
-to the waiting server's stashed Reply object (`linkServerFirstCaller` → `linkCallerReply`
-writes `reply.caller`); that write is now serialised under the per-object reply lock. -/
+to the waiting server's stashed Reply object (the folded `linkServerStashedReply` →
+`linkCallerReply` writes `reply.caller`); that write is now serialised under the
+per-object reply lock. -/
 theorem lockSet_endpointCall_reply_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)

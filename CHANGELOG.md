@@ -1,3 +1,40 @@
+## v0.31.153 — Reply objects (seL4-MCS): D6 transition fold — per-core call fold lands, `linkServerFirstCaller` deleted (#7.3b)
+
+Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
+§#7.3b): fold the server-first reply linkage into the **cross-core** `endpointCallOnCore`
+rendezvous, completing the call-side fold begun in #7.3a (single-core). The link now runs
+atomically inside the blocking transition (`linkServerStashedReply` at the `st4 → st5` seam,
+before the caller deschedule), so a `Call` either lands `.blockedOnReply` **with** a linked
+reply or fails closed `.replyCapInvalid` — there is no "green intermediate" where the caller
+is blocked-on-reply but unlinked. Behaviour-preserving reordering of the existing
+dispatch-layer link; the boot trace stays byte-identical.
+
+- **Transition + characterization.** `endpointCallOnCore` composes `linkServerStashedReply`;
+  `endpointCallOnCore_rendezvous_eq` and its four callers (`_emits_sgi_if_remote_receiver`,
+  `_no_sgi_if_local_receiver`, `_perCore_blocking`, `_reply_linkage_under_lockSet`) gain the
+  `st5`/`hLink` success precondition (SGI / blocking / lock-set conclusions unchanged).
+- **Invariant + non-interference.** `EndpointCallInvariant`'s five conjunct proofs thread the
+  (now-public) `StoreObjectFrame` link frames. The staged boot-core `endpointCallOnCore_call_path_NI`
+  and ∀-core `_smp` re-base on new `objectIndexSet`-completeness propagation frames
+  (`endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt` made public; four
+  `wakeThread`/`enqueueRunnableOnCore` frames added — a raw insert at an existing key leaves
+  `objectIndexSet` untouched) and the new `linkServerStashedReply_preserves_projection{,OnCore}`
+  (the per-core frame from `linkServerStashedReply_{scheduler,machine}_eq` + `projectStateOnCore_congr`).
+  Projection erases the reply-link fields, so the NI conclusions are unchanged.
+- **Live dispatch + cleanup.** The three `.call` dispatch arms drop the post-dispatch
+  `linkServerFirstCaller` step (it would now double-link and fail); **`linkServerFirstCaller` is
+  deleted**. SD-053(b,d) migrate to drive the real `endpointCall` fold end-to-end, and
+  `SmpCrossCoreCallSuite` gains atomic-link + fail-closed ("no green intermediate") assertions.
+
+No `sorry`/`axiom`; default + staged builds green; `SmpCrossCoreCallSuite` / `SyscallDispatchSuite`
+pass; trace byte-identical to `tests/fixtures/main_trace_smoke.expected`. AK7 cascade re-anchored
+for one proof-level `getTcb?`→objects-side conversion (`GETTCB_ADOPTION` +12, a net adoption gain).
+Remaining D6 work (tracked in the plan): **#7.4** (strengthen `replyCallerLinkage` with the third
+clause, now unblocked), **#7.5** (transition-boundary tests), and residual debt #1 (rights-less
+reply caps). Version bumped 0.31.152 → 0.31.153.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7.3b
+
 ## v0.31.152 — Reply objects (seL4-MCS): D6 transition fold — receive folds + single-core call fold land (#7.1/#7.2/#7.3a)
 
 Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`

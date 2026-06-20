@@ -258,8 +258,9 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- reply (`r.caller.isSome` — caller-first link); (2) a server-first receiver
     -- has stashed this Reply in its `pendingReceiveReply` awaiting its next Call
     -- (`replyIsStashed`, `r.caller` still `none`).  Either way, freeing it strands
-    -- the caller / blocks the server (the later `.reply` / `linkServerFirstCaller`
-    -- fails `.replyCapInvalid`).  Mirrors seL4's revoke/clear-before-destroy: the
+    -- the caller / blocks the server (the later `.reply` / the folded server-first
+    -- Call link `linkServerStashedReply` fails `.replyCapInvalid`).  Mirrors seL4's
+    -- revoke/clear-before-destroy: the
     -- holder must first reply to (or cancel) the outstanding caller, or the server
     -- must re-`Recv`, clearing the link before the object is freed.
     -- PR #822 review: check stashes by the *target* ObjId's canonical ReplyId, not

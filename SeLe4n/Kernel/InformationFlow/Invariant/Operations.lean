@@ -1743,7 +1743,7 @@ private theorem returnDonatedSchedContext_preserves_projection
 
 /-- WS-SM SM6.D (#7.1 fold): `storeTcbQueueLinks` preserves
 `objectIndexSetComplete` — it is a single `storeObject` at an existing key. -/
-private theorem storeTcbQueueLinks_preserves_objectIndexSetComplete
+theorem storeTcbQueueLinks_preserves_objectIndexSetComplete
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)
@@ -1769,7 +1769,7 @@ private theorem storeTcbQueueLinks_preserves_objectIndexSetComplete
 
 /-- WS-SM SM6.D (#7.1 fold): `storeTcbQueueLinks` preserves
 `objectIndexSet.table.invExt` — a single `objectIndexSet.insert`. -/
-private theorem storeTcbQueueLinks_preserves_objectIndexSet_invExt
+theorem storeTcbQueueLinks_preserves_objectIndexSet_invExt
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
     (hObjSetInv : st.objectIndexSet.table.invExt)
@@ -1796,7 +1796,7 @@ private theorem storeTcbQueueLinks_preserves_objectIndexSet_invExt
 as a conjunction so each interior `storeObject`/`storeTcbQueueLinks` has the
 `invExt` its completeness step needs.  Structure mirrors
 `endpointQueuePopHead_preserves_objects_invExt`. -/
-private theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
+theorem endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
     (hObjInv : st.objects.invExt)
