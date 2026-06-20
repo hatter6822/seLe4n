@@ -1161,9 +1161,15 @@ def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
             let rid := SeLe4n.ReplyId.ofObjId target
             match st'.getReply? rid with
             | some _ =>
+                -- WS-SM SM6.D (#1 residual): seL4-MCS reply capabilities are
+                -- **rights-less** — the cap conveys single-use reply authority by
+                -- *possession* (resolved by `extractReplyId` on `cap.target` alone),
+                -- never read/write rights.  Minting it rights-less prevents a reply
+                -- cap from being used as a spurious read/write authority on the
+                -- Reply object.
                 let child : Capability :=
                   { target := .replyCap rid
-                    rights := AccessRightSet.ofList [.read, .write]
+                    rights := AccessRightSet.empty
                     badge := none }
                 cspaceInsertSlot dst child st'
             | none => .error .invalidCapability

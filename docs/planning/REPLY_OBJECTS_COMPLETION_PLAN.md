@@ -36,13 +36,16 @@ single open slice and the entire focus of **§#7** below.
 
 ### Residual-debt carried by the landed items (actionable)
 
-1. **Rights-less reply cap (from #2).** `mintReplyCap` (`Operations.lean:1154`)
-   mints `.replyCap rid` with `rights := AccessRightSet.ofList [.read, .write]`,
-   but **seL4-MCS reply caps are rights-less**. Per the implement-the-improvement
-   rule the design intent (rights-less) is the better artefact; the follow-up is
-   to make the mint rights-less. Do **not** close this by documenting the current
-   `[.read, .write]` behaviour as acceptable. Originally filed as "confirm after
-   #2"; now a concrete implementation task tracked below.
+1. **Rights-less reply cap (from #2).** ✅ **RESOLVED (v0.31.155).** `mintReplyCap`
+   (`Capability/Operations.lean`) now mints `.replyCap rid` with
+   `rights := AccessRightSet.empty` — **seL4-MCS reply caps are rights-less**: the
+   cap conveys single-use reply authority by *possession* (`extractReplyId` resolves
+   it on `cap.target` alone — the `.reply`/`.replyRecv` path never gates on rights),
+   so a reply cap can no longer double as spurious read/write authority on the Reply
+   object.  `mintReplyCap` was the only production reply-cap mint; the one invariant
+   proof (`mintReplyCap_preserves_capabilityInvariantBundle`) updated to the rights-less
+   shape (rights-agnostic — only the slot write and reply-target check matter).  Verified:
+   `test_full` green; the retype→mint→link→use round-trip suite passes; trace byte-identical.
 2. **Stale conjunct-count comment (from #1).** `capabilityInvariantBundle`'s
    doc-comment (`Capability/Invariant/Defs.lean:228` / :237) still reads "the
    bundle now has **6** conjuncts", but #1.a added the 7th

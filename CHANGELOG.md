@@ -1,3 +1,26 @@
+## v0.31.155 — Reply objects (seL4-MCS): rights-less reply capabilities (residual-debt #1)
+
+Closes the last actionable residual debt of the reply-objects completion plan
+(`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` §residual-debt #1): `mintReplyCap` now mints
+`.replyCap rid` with `rights := AccessRightSet.empty` instead of `[.read, .write]`.
+
+**seL4-MCS reply capabilities are rights-less** — a reply cap conveys single-use reply
+authority by *possession*, not by read/write rights: the `.reply` / `.replyRecv` path resolves
+it through `extractReplyId` on `cap.target` alone and never gates on `cap.rights`.  Minting it
+rights-less prevents a reply cap from doubling as a spurious read/write authority on the Reply
+object (a small capability-confinement hardening).  `mintReplyCap` was the only production
+reply-cap mint, so this makes the whole kernel's reply-cap derivation faithful; the one
+invariant proof (`mintReplyCap_preserves_capabilityInvariantBundle`) is updated to the
+rights-less shape (it is rights-agnostic — only the slot write and the reply-target resolution
+matter).
+
+No `sorry`/`axiom`; `test_full.sh` green; the retype→mint→link→use round-trip
+(`ModelIntegritySuite`) passes; trace byte-identical.  With this, **every actionable item in the
+reply-objects completion plan is landed** (#1, #2, #3, #4, #5, #6, #7.1–#7.5, residual-debt #1/#2).
+Version bumped 0.31.154 → 0.31.155.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §residual-debt #1
+
 ## v0.31.154 — Reply objects (seL4-MCS): D6 transition fold — strengthen `replyCallerLinkage` (blockedOnReply ⇒ replyObject) + transition-boundary tests (#7.4/#7.5)
 
 Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
