@@ -111,7 +111,7 @@ slice is behaviour-preserving (proofs only) ⇒ trace byte-identical is invarian
 |---|---|---|
 | D0 named predicate (`blockedOnReplyHasReplyObject`) | ✅ LANDED | v0.31.157 |
 | D1 wiring (4 conjuncts × 7 tx) | ⏳ (needs `hFreshCaller` discharge) | — |
-| D2 replyCallerLinkage + consumer | 🔄 consumer LANDED v0.31.157; establish-chain in progress | — |
+| D2 replyCallerLinkage + consumer | 🔄 consumer LANDED v0.31.157; frame family (keystone + objects-eq + nonBlocked-store + queue-links) LANDED v0.31.158; remaining: pop frame (`revert`/`split` pattern), caller-store+link assembly, bundle wiring | — |
 | D3 blockedOnReplyHasTarget + pendingReceiveReplyWellFormed | ⏳ | — |
 | D4 queueNext/HeadBlocked | ⏳ | — |
 | D5 blockedThreadTimeoutConsistent | ⏳ | — |

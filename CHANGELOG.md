@@ -1,3 +1,28 @@
+## v0.31.158 — IPC invariant de-threading: `blockedOnReplyHasReplyObject` frame family (D2 foundation)
+
+Building blocks for the D2 slice (concretely *establishing* the third clause of
+`replyCallerLinkage` through the folded IPC transitions, rather than threading it).  The
+third clause reads only each TCB's `(ipcState, replyObject)` pair, so it frames cleanly
+through a single `storeObject`:
+
+- **Keystone** — `storeObject_preserves_blockedOnReplyHasReplyObject`: a `storeObject`
+  preserves the third clause provided it does not introduce a `.blockedOnReply` TCB lacking
+  a `replyObject` (`hNew`); every other slot is framed.
+- `blockedOnReplyHasReplyObject_of_objects_eq` (object-store-preserving steps, e.g.
+  `ensureRunnable` / `removeRunnable`).
+- `storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject` (a store
+  whose new `ipcState` is not `.blockedOnReply` — the receiver-`.ready` rendezvous store).
+- `storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject` (queue-link writes preserve
+  `ipcState`/`replyObject`; `hNew` discharged from the input invariant).
+
+These are the reusable per-step frames the upcoming `<transition>_establishes_replyCallerLinkage`
+proofs compose (with the existing atomic-link establish lemma).  No `sorry`/`axiom`; full build
+green; trace byte-identical (proofs only).  Remaining D2 work (the `endpointQueuePopHead` frame
+via the `revert`/`split` pattern, the caller-store + link assembly, then wiring into the bundle
+theorems) and D1/D3–D8 are sequenced in the plan.  Version bumped 0.31.157 → 0.31.158.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md §D2
+
 ## v0.31.157 — IPC invariant de-threading workstream: plan + `blockedOnReplyHasReplyObject` predicate + answerable-caller consumer (D0 + D2-consumer)
 
 Opens the **IPC `ipcInvariantFull` de-threading** workstream

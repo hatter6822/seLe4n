@@ -3516,6 +3516,110 @@ theorem linkCallerReply_pre (st st' : SystemState) (caller : SeLe4n.ThreadId)
         exact ⟨⟨r0, hGetR, hFree⟩, ⟨tcb, hT0, by simpa using hRepNone⟩⟩
       · simp at hStep
 
+-- ============================================================================
+-- IPC de-threading D2 — `blockedOnReplyHasReplyObject` frame family
+--
+-- The third clause of `replyCallerLinkage` reads only each TCB's `(ipcState,
+-- replyObject)` pair.  The keystone below frames it through a single `storeObject`;
+-- every IPC step (queue-link writes, ready stores, the endpoint store) is a
+-- `storeObject` and reuses it, so the folded transitions can *establish* the third
+-- clause concretely instead of threading it.
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2 (keystone): a single `storeObject` preserves
+`blockedOnReplyHasReplyObject` provided the stored object does not introduce a
+`.blockedOnReply` TCB lacking a `replyObject` (`hNew`).  Every TCB other than the
+stored slot is framed (`storeObject_objects_ne`); the stored slot is discharged by
+`hNew`.  All the per-step frames (`storeTcbQueueLinks`, ready stores, the endpoint
+store) instantiate this with an `hNew` discharged from the input invariant. -/
+theorem storeObject_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (o : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hNew : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        o = .tcb t → t.ipcState = .blockedOnReply ep rt → ∃ rid, t.replyObject = some rid)
+    (hStep : storeObject oid o st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  intro tid tcb ep rt hTcb hBlk
+  by_cases h : tid.toObjId = oid
+  · have hLook : st'.objects[oid]? = some o := by
+      rw [RHTable_getElem?_eq_get?]
+      exact storeObject_inserted_object_lookup st oid o hObjInv st' hStep
+    rw [h, hLook] at hTcb
+    exact hNew tcb ep rt (Option.some.inj hTcb) hBlk
+  · rw [storeObject_objects_ne st st' oid tid.toObjId o h hObjInv hStep] at hTcb
+    exact hInv tid tcb ep rt hTcb hBlk
+
+/-- IPC de-threading D2: any object-store-preserving step frames the third clause. -/
+theorem blockedOnReplyHasReplyObject_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : blockedOnReplyHasReplyObject st) :
+    blockedOnReplyHasReplyObject st' := by
+  intro tid tcb ep rt hTcb hBlk
+  rw [hObjs] at hTcb
+  exact h tid tcb ep rt hTcb hBlk
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: a `storeTcbIpcStateAndMessage` whose new `ipcState` is **not**
+`.blockedOnReply` preserves the third clause — the stored TCB leaves the
+`.blockedOnReply` domain (so `hNew` is vacuous) and every other TCB is framed.  Covers
+the receiver-`.ready` store of the Call/Receive rendezvous. -/
+theorem storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hNotBlocked : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc ≠ .blockedOnReply ep rt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    blockedOnReplyHasReplyObject st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      refine storeObject_preserves_blockedOnReplyHasReplyObject st st'' tid.toObjId _ hObjInv hInv
+        (fun t ep rt ho hb => ?_) hSO
+      simp only [KernelObject.tcb.injEq] at ho
+      subst ho
+      exact absurd hb (hNotBlocked ep rt)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `storeTcbQueueLinks` writes only queue-link fields
+(`tcbWithQueueLinks` preserves `ipcState` / `replyObject`), so it frames the third
+clause — `hNew` is discharged from the input invariant at the stored TCB.  Covers the
+queue-relink stores inside `endpointQueuePopHead` / `endpointQueueEnqueue`. -/
+theorem storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    blockedOnReplyHasReplyObject st' := by
+  unfold storeTcbQueueLinks at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      refine storeObject_preserves_blockedOnReplyHasReplyObject st st'' tid.toObjId _ hObjInv hInv
+        (fun t ep rt ho hb => ?_) hSO
+      simp only [KernelObject.tcb.injEq] at ho
+      subst ho
+      have htcbObj : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+        lookupTcb_some_objects st tid tcb hL
+      exact hInv tid tcb ep rt htcbObj hb
+
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): `linkCallerReply` **establishes**
 `replyCallerLinkage`.  On success the only changed slots are the linked reply
