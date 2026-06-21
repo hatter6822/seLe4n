@@ -1,3 +1,38 @@
+## v0.31.174 — IPC invariant de-threading D3 COMPLETE: `pendingReceiveReplyWellFormed` fully de-threaded (15/15)
+
+Closes the D3 conjunct de-threading (12/15 → **15/15**) — `grep "hPRR' :
+pendingReceiveReplyWellFormed st'"` is now empty across the whole tree. The conjunct is
+*proven* preserved/established by every IPC transition rather than threaded as a post-state
+assumption. Final slice — the `endpointCall` family:
+
+- **`linkServerStashedReply_preserves_pendingReceiveReplyWellFormed`** — the net-effect crux.
+  `endpointCall`'s server-waiting branch delivers to the blocked server via
+  `storeTcbIpcStateAndMessage … .ready` (which *keeps* the stash `rid`) then
+  `linkServerStashedReply` links `rid` to the caller and *clears* the server stash. The
+  intermediate state violates C1 (server `.ready` while stashing), so the proof reasons about
+  the composite from the pre-deliver state via **C2-uniqueness**: the server is the sole staser
+  of `rid` (C2), so after the clear no thread stashes `rid`, making the link C1-safe and
+  preserving C2 injectivity.
+- **`endpointCall_preserves_ipcInvariantFull`** — de-threaded; replaces `hPRR'` with the
+  dischargeable `hCallerNotRecv` (the Call-issuing caller is the running thread, not a stashing
+  `.blockedOnReceive`). `endpointCall` *consumes* a stash, never establishes one, so it needs
+  pre-state PRR, not `hReplyIdValid`.
+- **`endpointCallOnCore`** (cross-core), **`endpointSendDualWithCaps`**, **`endpointCallWithCaps`**
+  de-threaded, composing the existing `ipcUnwrapCaps` / `endpointSendDual` / `endpointCall` PRR
+  frames.
+
+This conjunct's de-threading also surfaced and fixed a genuine kernel-correctness gap
+(**Finding F-1**, v0.31.170): the Send/notification receive-completion wakes left a stale
+server-first reply stash on a `.ready` thread. All preconditions threaded across the 15 bundles
+(`hSenderNotRecv`, `hWaiterNotRecv`, `hReceiverNotRecv`, `hCallerNotRecv`, `hReplyIdValid`,
+`notificationWaiterConsistent`, `hNotStashed`, the lifecycle `newObj` side-conditions) are
+dischargeable pre-state facts (the D2 precedent).
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`. AK7 all
+green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3 COMPLETE, 15/15)
+
 ## v0.31.173 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from the `endpointReceiveDual` establish family (12/15)
 
 De-threads the conjunct's canonical ESTABLISH and its dependents (8/15 → **12/15**):
