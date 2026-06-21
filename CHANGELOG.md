@@ -1,3 +1,31 @@
+## v0.31.175 — IPC invariant de-threading D4 (partial): `queueNext`/`queueHeadBlocked` de-threaded from 9 bundle-slots + Finding F-2
+
+De-threads `queueNextBlockingConsistent` from 5 bundles and `queueHeadBlockedConsistent` from 4
+(`endpointReply`, `notificationSignal`, `notificationWait` [queueNext only], the
+`lifecycleRetypeObject` core+composition pair — the retype pair via dischargeable
+`hNewObjNoNext`/`hTargetNotQueueLinked`/`hNewObjNotEndpoint`/`hTargetNotHead` side-conditions,
+analogues of the existing `newObj` constraints). ~46 reusable store/transition frames added
+across `QueueNextBlocking.lean`, `DualQueueMembership.lean`, `EndpointReplyAndLifecycle.lean`
+(`storeTcbReceiveComplete_*`, `storeTcbPendingMessage_*`, `endpointQueue{Enqueue,PopHead}_*`,
+`storeTcbIpcState_*` + `.ready`/`.blockedOnNotification` specializations, the reply-path frames,
+and the generic `queueNextBlockingConsistent_of_tcb_links_backward`).
+
+**Finding F-2 (recorded, not a defect — a missing-strengthening gap):** the remaining 8
+enqueue-style transitions (`endpointSendDual`, `endpointCall`, `endpointReceiveDual`,
+`endpointReplyRecv`, 3 WithCaps, `endpointCallOnCore`; + `notificationWait` headBlocked)
+cannot be de-threaded store-by-store because they enqueue a `.ready` thread then block it,
+transiently violating `queueHeadBlockedConsistent` and lacking a `reachable→blocked` fact for
+`queueNextBlockingConsistent`'s predecessor obligation. The codebase has only the converse
+(`ipcStateQueueMembershipConsistent`, blocked→reachable). Remediation is to **add** the
+`endpointQueueMemberBlocked` invariant (queue members are blocked on their endpoint) as a new
+`ipcInvariantFull` conjunct — sized as its own prerequisite slice, which also unblocks D1. See
+`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` §"Finding F-2".
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`. AK7
+`RAW_LOOKUP_TID` re-anchored 989→1012.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D4 partial, Finding F-2)
+
 ## v0.31.174 — IPC invariant de-threading D3 COMPLETE: `pendingReceiveReplyWellFormed` fully de-threaded (15/15)
 
 Closes the D3 conjunct de-threading (12/15 → **15/15**) — `grep "hPRR' :

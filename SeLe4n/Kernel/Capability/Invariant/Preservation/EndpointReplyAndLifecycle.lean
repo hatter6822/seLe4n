@@ -566,6 +566,81 @@ theorem lifecycleRetypeObject_preserves_pendingReceiveReplyWellFormed
         newObj hNe₂ hObjInv hStep] at hTcb₂
     exact hInv.2 tid₁ tid₂ tcb₁ tcb₂ rid hFrame₁ hFrame₂ hStash₁ hStash₂
 
+/-- IPC de-threading D4: `lifecycleRetypeObject` frames `queueNextBlockingConsistent`.
+The retype writes `newObj` at `target`; every other slot frames from the pre-state.
+A retyped TCB carries no queue links (`hNewObjNoNext`), and nothing in the pre-state
+links to `target` (`hTargetNotQueueLinked`) — so neither the forward nor backward
+queueNext obligation at `target` can fire. -/
+theorem lifecycleRetypeObject_preserves_queueNextBlockingConsistent
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : queueNextBlockingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjNoNext : ∀ (t : TCB), newObj = .tcb t → t.queueNext = none)
+    (hTargetNotQueueLinked : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB) (b : SeLe4n.ThreadId),
+        st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some b → b.toObjId ≠ target)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    queueNextBlockingConsistent st' := by
+  have hStoreAtTarget : st'.objects[target]? = some newObj := by
+    rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+      ⟨_, _, _, _, _, _, hStore⟩
+    exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+  intro a b tcbA tcbB hA hB hN
+  by_cases hEqA : a.toObjId = target
+  · -- a is the retyped object: `newObj = .tcb tcbA`, whose queueNext is none — vacuous.
+    have hObjEq : st'.objects[a.toObjId]? = some newObj := by rw [hEqA]; exact hStoreAtTarget
+    have hNewEq : newObj = .tcb tcbA := by rw [hObjEq] at hA; exact Option.some.inj hA
+    rw [hNewObjNoNext tcbA hNewEq] at hN; cases hN
+  · -- a is framed; recover its pre-state TCB.
+    have hAPre : st.objects[a.toObjId]? = some (.tcb tcbA) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target a.toObjId newObj hEqA hObjInv hStep] at hA
+    -- b ≠ target (nobody links to target in the pre-state, and `a.queueNext = some b`).
+    have hEqB : b.toObjId ≠ target := hTargetNotQueueLinked a tcbA b hAPre hN
+    have hBPre : st.objects[b.toObjId]? = some (.tcb tcbB) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target b.toObjId newObj hEqB hObjInv hStep] at hB
+    exact hInv a b tcbA tcbB hAPre hBPre hN
+
+/-- IPC de-threading D4: `lifecycleRetypeObject` frames `queueHeadBlockedConsistent`.
+The retype writes `newObj` at `target`; endpoints and TCBs elsewhere frame from the
+pre-state.  If a *new* endpoint is created at `target`, its queue heads must be
+correctly blocked (`hNewObjHeadsBlocked`); a retyped TCB keeps the head-block
+discipline since heads point at framed threads. -/
+theorem lifecycleRetypeObject_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjNotEndpoint : ∀ ep, newObj ≠ .endpoint ep)
+    (hTargetNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (hd : SeLe4n.ThreadId),
+        st.objects[epId]? = some (.endpoint ep) →
+        (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    queueHeadBlockedConsistent st' := by
+  have hStoreAtTarget : st'.objects[target]? = some newObj := by
+    rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+      ⟨_, _, _, _, _, _, hStore⟩
+    exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+  intro epId ep hd tcbHd hEp hTcb
+  -- The endpoint must be a framed (pre-state) endpoint: `newObj` is not an endpoint.
+  have hEpNe : epId ≠ target := by
+    intro hEq; rw [hEq, hStoreAtTarget] at hEp; exact (hNewObjNotEndpoint ep (Option.some.inj hEp))
+  have hEpPre : st.objects[epId]? = some (.endpoint ep) := by
+    rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target epId newObj hEpNe hObjInv hStep] at hEp
+  refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+  · -- receiveQ.head = some hd.  The head is not at `target`, so it frames.
+    have hHdNe : hd.toObjId ≠ target := hTargetNotHead epId ep hd hEpPre (Or.inl hHd)
+    have hHdPre : st.objects[hd.toObjId]? = some (.tcb tcbHd) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target hd.toObjId newObj hHdNe hObjInv hStep] at hTcb
+    exact (hInv epId ep hd tcbHd hEpPre hHdPre).1 hHd
+  · have hHdNe : hd.toObjId ≠ target := hTargetNotHead epId ep hd hEpPre (Or.inr hHd)
+    have hHdPre : st.objects[hd.toObjId]? = some (.tcb tcbHd) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target hd.toObjId newObj hHdNe hObjInv hStep] at hTcb
+    exact (hInv epId ep hd tcbHd hEpPre hHdPre).2 hHd
+
 theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)
@@ -584,8 +659,16 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
+    -- IPC de-threading D4: queueNext/headBlocked established from the pre-state via
+    -- retype-link preconditions (a retyped TCB carries no `queueNext`; `target` is
+    -- neither a queue link target nor a queue head; a retype never creates an endpoint).
+    (hNewObjNoNext : ∀ (t : TCB), newObj = .tcb t → t.queueNext = none)
+    (hTargetNotQueueLinked : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB) (b : SeLe4n.ThreadId),
+        st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some b → b.toObjId ≠ target)
+    (hNewObjNotEndpoint : ∀ ep, newObj ≠ .endpoint ep)
+    (hTargetNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (hd : SeLe4n.ThreadId),
+        st.objects[epId]? = some (.endpoint ep) →
+        (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
@@ -603,13 +686,19 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpcFull⟩
+  have hObjInvSt : st.objects.invExt := objects_invExt_of_capabilityInvariantBundle st hCap
   refine ⟨?_, ?_, ?_⟩
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
   · exact lifecycleRetypeObject_preserves_capabilityInvariantBundle st st' authority target newObj hCap
       hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
-           hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
+           hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC',
+           lifecycleRetypeObject_preserves_queueNextBlockingConsistent st st' authority target newObj
+             hIpcFull.queueNextBlockingConsistent hObjInvSt hNewObjNoNext hTargetNotQueueLinked hStep,
+           lifecycleRetypeObject_preserves_queueHeadBlockedConsistent st st' authority target newObj
+             hIpcFull.queueHeadBlockedConsistent hObjInvSt hNewObjNotEndpoint hTargetNotHead hStep,
+           hBlockedTimeout',
            hDCA', hDOV', hPSI', hDBT',
            lifecycleRetypeObject_preserves_blockedOnReplyHasTarget st st' authority target newObj hIpcFull.blockedOnReplyHasTarget (objects_invExt_of_capabilityInvariantBundle st hCap) hNewObjTarget hStep,
            ⟨hRCLRecip', lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject st st' authority
@@ -640,8 +729,15 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
+    -- IPC de-threading D4: retype-link preconditions replace the threaded
+    -- `queueNextBlockingConsistent` / `queueHeadBlockedConsistent` post-states.
+    (hNewObjNoNext : ∀ (t : TCB), newObj = .tcb t → t.queueNext = none)
+    (hTargetNotQueueLinked : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB) (b : SeLe4n.ThreadId),
+        st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some b → b.toObjId ≠ target)
+    (hNewObjNotEndpoint : ∀ ep, newObj ≠ .endpoint ep)
+    (hTargetNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (hd : SeLe4n.ThreadId),
+        st.objects[epId]? = some (.endpoint ep) →
+        (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
@@ -663,7 +759,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep

@@ -396,4 +396,505 @@ theorem storeTcbPendingMessage_preserves_queueHeadBlockedConsistent
       · rw [hFrame hd.toObjId hHdEq] at hTcb
         exact hInv epId ep hd hdTcb hEp hTcb
 
+-- ============================================================================
+-- Section 8: storeTcbReceiveComplete / storeTcbPendingMessage frames
+-- ============================================================================
+
+/-- `storeTcbReceiveComplete` stores the receiver with `.ready` ipcState (plus
+the delivered message and a cleared `pendingReceiveReply` stash, neither of which
+this invariant reads), so the queueNext-blocking link from/to the stored thread
+becomes vacuously compatible (`.ready` matches anything). Identical in shape to
+`storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent`. -/
+theorem storeTcbReceiveComplete_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : queueNextBlockingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    queueNextBlockingConsistent st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · -- a is the target: stored ipcState = .ready, so match holds left.
+        rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = .ready := by cases Option.some.inj hA; rfl
+        rw [hIpcA]; exact queueNextBlockingMatch_ready_left _
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · -- b is the target: stored ipcState = .ready, so match holds right.
+          rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = .ready := by cases Option.some.inj hB; rfl
+          rw [hIpcB]; exact queueNextBlockingMatch_ready_right _
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
+/-- `storeTcbReceiveComplete` stores the receiver `.ready`. A `.ready` thread is
+neither a sendQ nor receiveQ head (heads are blocked), so this preserves
+`queueHeadBlockedConsistent` for any thread that *was* a head (its ipcState is
+unchanged), and the stored thread itself, if it were a head, is now `.ready` —
+but the property only constrains heads, and a head must be blocked, which the
+pre-state invariant already records. Proven directly by unfolding. -/
+theorem storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
+    queueHeadBlockedConsistent st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep hd hdTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hHdEq : hd.toObjId = tid.toObjId
+      · -- hd = tid: but hNotHead says tid is not a queue head — contradiction.
+        have hTidEq := ThreadId.toObjId_injective hd tid hHdEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotHead epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame hd.toObjId hHdEq] at hTcb
+        exact hInv epId ep hd hdTcb hEp hTcb
+
+/-- `storeTcbPendingMessage` only writes `pendingMessage`; `ipcState` and
+`queueNext` are unchanged, so `queueNextBlockingConsistent` is preserved
+unconditionally. -/
+theorem storeTcbPendingMessage_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : queueNextBlockingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    queueNextBlockingConsistent st' := by
+  unfold storeTcbPendingMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { origTcb with pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      -- The stored TCB keeps `ipcState` and `queueNext`; rewrite the post-state
+      -- reads back to pre-state reads (preserving those fields) and apply hInv.
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · have hATid := SeLe4n.ThreadId.toObjId_injective a tid hEqA; subst hATid
+        rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = origTcb.ipcState := by cases Option.some.inj hA; rfl
+        have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
+        by_cases hEqB : b.toObjId = a.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = origTcb.ipcState := by cases Option.some.inj hB; rfl
+          have hBeqA : b = a := SeLe4n.ThreadId.toObjId_injective b a hEqB
+          rw [hIpcA, hIpcB]; rw [hQNA] at hN; rw [hBeqA] at hN
+          exact hInv a a origTcb origTcb hOrigTcb hOrigTcb hN
+        · rw [hFrame b.toObjId hEqB] at hB
+          rw [hIpcA]; rw [hQNA] at hN
+          exact hInv a b origTcb tcbB hOrigTcb hB hN
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = origTcb.ipcState := by cases Option.some.inj hB; rfl
+          have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          rw [hIpcB]
+          exact hInv a b tcbA origTcb hA hOrigTcb hN
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
+-- ============================================================================
+-- Section 9: endpointQueuePopHead / endpointQueueEnqueue frames
+-- ============================================================================
+
+/-- `endpointQueuePopHead` frames `queueNextBlockingConsistent`. The endpoint
+store frames it directly; the head-removal store (`tid → next=none`) is a `none`
+link (always safe); the optional relink of the new head re-stores its *own*
+`queueNext`, so its new link is exactly the pre-state link, discharged by the
+pre-state invariant (transported back through the endpoint store). -/
+theorem endpointQueuePopHead_preserves_queueNextBlockingConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hInv : queueNextBlockingConsistent st)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    queueNextBlockingConsistent st' := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hP1 := storeObject_endpoint_preserves_queueNextBlockingConsistent
+              st pair.2 endpointId _ hInv hObjInv (by
+                rw [show pair = ((), pair.2) from by cases pair; rfl] at hStore; exact hStore)
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact storeTcbQueueLinks_none_preserves_queueNextBlockingConsistent
+                  pair.2 st3 headTid none none hP1 hInv1 hFinal
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  -- The relink re-stores nextTid's own queueNext; the new link is
+                  -- the pre-existing one, framed by `hInv` through the endpoint store.
+                  have hP2 := storeTcbQueueLinks_preserves_queueNextBlockingConsistent
+                    pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext
+                    hP1 hInv1 hLink (by
+                      -- The relink re-stores nextTid's own queueNext (= nextTcb.queueNext),
+                      -- so the "new" link is one that already exists in pair.2; discharge
+                      -- it directly from `hP1` (the post-endpoint-store invariant).
+                      -- `hNextEq : nextTcb.queueNext = some b`, `hTcbN : pair.2[nextTid] = tcbN`.
+                      intro b tcbN tcbB hNextEq hTcbN hB2
+                      -- nextTid's stored TCB tcbN equals nextTcb (lookup agrees).
+                      have hEq : tcbN = nextTcb := by
+                        have hNTObj := lookupTcb_some_objects pair.2 nextTid nextTcb hLookupNext
+                        rw [hNTObj] at hTcbN; cases hTcbN; rfl
+                      subst hEq
+                      exact hP1 nextTid b tcbN tcbB hTcbN hB2 hNextEq)
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact storeTcbQueueLinks_none_preserves_queueNextBlockingConsistent
+                      st2 st3 headTid none none hP2 hInv2 hFinal
+
+/-- `endpointQueueEnqueue` frames `queueNextBlockingConsistent`. The enqueued
+thread `tid` is `.ready` (enforced by the operation's guard), so the only new
+link created — `tail.queueNext := some tid` — has a `.ready` target and is
+vacuously compatible (`queueNextBlockingMatch _ .ready`). The endpoint store
+frames directly; `tid`'s own final link is `none`. -/
+theorem endpointQueueEnqueue_preserves_queueNextBlockingConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hInv : queueNextBlockingConsistent st)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    queueNextBlockingConsistent st' := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        -- Extract the guard facts: tid is `.ready` with no existing links.
+        split at hStep
+        · simp at hStep
+        · rename_i hReady
+          rw [show ¬(tcb.ipcState ≠ .ready) ↔ tcb.ipcState = .ready from by
+            constructor <;> intro h <;> simpa using h] at hReady
+          split at hStep
+          · simp at hStep
+          · revert hStep
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []; intro hStep
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                have hP1 := storeObject_endpoint_preserves_queueNextBlockingConsistent
+                  st pair.2 endpointId _ hInv hObjInv (by
+                    rw [show pair = ((), pair.2) from by cases pair; rfl] at hStore; exact hStore)
+                -- tid is the only enqueued thread; its final link is `none`.
+                exact storeTcbQueueLinks_none_preserves_queueNextBlockingConsistent
+                  pair.2 st' tid none (some QueuePPrev.endpointHead) hP1 hInv1 hStep
+            | some tailTid =>
+              cases hLookupTail : lookupTcb st tailTid with
+              | none => simp [hLookupTail]
+              | some tailTcb =>
+                simp only [hLookupTail]
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only []
+                  have hStore2 := hStore
+                  rw [show pair = ((), pair.2) from by cases pair; rfl] at hStore2
+                  have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                  have hP1 := storeObject_endpoint_preserves_queueNextBlockingConsistent
+                    st pair.2 endpointId _ hInv hObjInv hStore2
+                  -- tid's ipcState in pair.2 is still `.ready` (endpoint store kept it).
+                  have hTidReadyPair : ∀ (t : TCB), pair.2.objects[tid.toObjId]? = some (.tcb t) →
+                      t.ipcState = .ready := by
+                    intro t hT
+                    have hTidObj := lookupTcb_some_objects st tid tcb hLookup
+                    have hNe : tid.toObjId ≠ endpointId := by
+                      intro hEq; rw [hEq, hObj] at hTidObj; cases hTidObj
+                    rw [storeObject_objects_ne' st endpointId tid.toObjId _ ((), pair.2) hNe hObjInv hStore2] at hT
+                    rw [hTidObj] at hT; cases hT; exact hReady
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some tid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []; intro hStep
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                    -- The tail→tid link: discharge via `tid` being `.ready` in pair.2.
+                    have hP2 := storeTcbQueueLinks_preserves_queueNextBlockingConsistent
+                      pair.2 st2 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some tid)
+                      hP1 hInv1 hLink1 (by
+                        intro b tcbTail tcbB hNextEq hTail2 hB2
+                        -- next = some tid, so b = tid.
+                        have hBeq : b = tid := by cases hNextEq; rfl
+                        subst hBeq
+                        rw [hTidReadyPair tcbB hB2]
+                        exact queueNextBlockingMatch_ready_right _)
+                    -- tid's final link is `none`.
+                    exact storeTcbQueueLinks_none_preserves_queueNextBlockingConsistent
+                      st2 st' tid (some tailTid) (some (.tcbNext tailTid)) hP2 hInv2 hStep
+
+-- ============================================================================
+-- Section 9b: storeTcbIpcState queueNextBlockingConsistent frames
+-- ============================================================================
+
+/-- `storeTcbIpcState` (ipcState-only TCB write) preserves
+`queueNextBlockingConsistent` given the new ipcState is compatible with every
+neighbour link (`hFwd`/`hBwd`).  Mirrors the `storeTcbIpcStateAndMessage`
+variant; the pending-message field is irrelevant to this invariant. -/
+theorem storeTcbIpcState_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : queueNextBlockingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st')
+    (hFwd : ∀ (b : SeLe4n.ThreadId) (tcbTid tcbB : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      tcbTid.queueNext = some b →
+      st.objects[b.toObjId]? = some (.tcb tcbB) →
+      queueNextBlockingMatch ipcState tcbB.ipcState)
+    (hBwd : ∀ (a : SeLe4n.ThreadId) (tcbA tcbTid : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) →
+      tcbA.queueNext = some tid →
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      queueNextBlockingMatch tcbA.ipcState ipcState) :
+    queueNextBlockingConsistent st' := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          rw [hIpcA, hIpcB]; exact queueNextBlockingMatch_self _
+        · rw [hFrame b.toObjId hEqB] at hB
+          rw [hIpcA]; rw [hQNA] at hN
+          exact hFwd b origTcb tcbB hOrigTcb hN hB
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          rw [hIpcB]
+          exact hBwd a tcbA origTcb hA hN hOrigTcb
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
+/-- `storeTcbIpcState … .ready` preserves `queueNextBlockingConsistent`
+unconditionally (`.ready` is vacuously link-compatible). -/
+theorem storeTcbIpcState_preserves_queueNextBlockingConsistent_ready
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
+    (hStep : storeTcbIpcState st tid .ready = .ok st') :
+    queueNextBlockingConsistent st' :=
+  storeTcbIpcState_preserves_queueNextBlockingConsistent st st' tid .ready hInv hObjInv hStep
+    (fun _ _ _ _ _ _ => queueNextBlockingMatch_ready_left _)
+    (fun _ _ _ _ _ _ => queueNextBlockingMatch_ready_right _)
+
+/-- `storeTcbIpcState … (.blockedOnNotification _)` preserves
+`queueNextBlockingConsistent` unconditionally — a `.blockedOnNotification` thread
+is link-compatible with anything (notification queues use a separate list, not the
+`queueNext` chain). -/
+theorem storeTcbIpcState_blockedOnNotification_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (nid : SeLe4n.ObjId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextBlockingConsistent st)
+    (hStep : storeTcbIpcState st tid (.blockedOnNotification nid) = .ok st') :
+    queueNextBlockingConsistent st' :=
+  storeTcbIpcState_preserves_queueNextBlockingConsistent st st' tid (.blockedOnNotification nid)
+    hInv hObjInv hStep
+    (fun _ _ tcbB _ _ _ => by unfold queueNextBlockingMatch; cases tcbB.ipcState <;> exact True.intro)
+    (fun _ tcbA _ _ _ _ => by unfold queueNextBlockingMatch; cases tcbA.ipcState <;> exact True.intro)
+
+-- ============================================================================
+-- Section 10: queueHeadBlockedConsistent backward transfer + store frames
+-- ============================================================================
+
+/-- Generic backward transfer for `queueHeadBlockedConsistent`: preserved when
+(a) every post-state endpoint exists identically in the pre-state, and (b) every
+post-state TCB has a pre-state TCB at the same slot with the same `ipcState`. The
+workhorse for object stores that touch neither endpoints' queue heads nor any
+thread's `ipcState`. -/
+theorem queueHeadBlockedConsistent_of_endpoint_tcb_backward
+    (st st' : SystemState)
+    (hEpBack : ∀ (eid : SeLe4n.ObjId) (ep : Endpoint),
+      st'.objects[eid]? = some (.endpoint ep) → st.objects[eid]? = some (.endpoint ep))
+    (hTcbBack : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
+    (hInv : queueHeadBlockedConsistent st) :
+    queueHeadBlockedConsistent st' := by
+  intro epId ep hd tcbHd hEp hTcb
+  have hEpPre := hEpBack epId ep hEp
+  obtain ⟨tcbHdPre, hTcbPre, hIpc⟩ := hTcbBack hd tcbHd hTcb
+  have hPre := hInv epId ep hd tcbHdPre hEpPre hTcbPre
+  rw [← hIpc]
+  exact ⟨fun h => hPre.1 h, fun h => hPre.2 h⟩
+
+/-- `storeObject` of a non-endpoint object that is also not a TCB (e.g. a
+notification, reply, schedContext) preserves `queueHeadBlockedConsistent`:
+endpoints and all TCBs are unchanged. -/
+theorem storeObject_nonEndpointNonTcb_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hNotEp : ∀ ep, obj ≠ .endpoint ep)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hInv : queueHeadBlockedConsistent st)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    queueHeadBlockedConsistent st' := by
+  have hEqAt := storeObject_objects_eq st st' oid obj hObjInv hStore
+  refine queueHeadBlockedConsistent_of_endpoint_tcb_backward st st' ?_ ?_ hInv
+  · intro eid ep hEp
+    by_cases hEq : eid = oid
+    · rw [hEq, hEqAt] at hEp; exact (hNotEp ep (Option.some.inj hEp)).elim
+    · rwa [storeObject_objects_ne st st' oid eid obj hEq hObjInv hStore] at hEp
+  · intro y tcb' hY
+    by_cases hEq : y.toObjId = oid
+    · rw [hEq, hEqAt] at hY; exact (hNotTcb tcb' (Option.some.inj hY)).elim
+    · rw [storeObject_objects_ne st st' oid y.toObjId obj hEq hObjInv hStore] at hY
+      exact ⟨tcb', hY, rfl⟩
+
+/-- `storeObject` of a TCB preserving `ipcState` preserves
+`queueHeadBlockedConsistent` (endpoints unchanged; the stored TCB keeps its
+blocking state). -/
+theorem storeObject_tcb_preserveIpc_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[tid₀.toObjId]? = some (.tcb oldTcb))
+    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hInv : queueHeadBlockedConsistent st)
+    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    queueHeadBlockedConsistent st' := by
+  have hEqAt := storeObject_objects_eq st st' tid₀.toObjId (.tcb newTcb) hObjInv hStore
+  refine queueHeadBlockedConsistent_of_endpoint_tcb_backward st st' ?_ ?_ hInv
+  · intro eid ep hEp
+    by_cases hEq : eid = tid₀.toObjId
+    · rw [hEq, hEqAt] at hEp; cases hEp
+    · rwa [storeObject_objects_ne st st' tid₀.toObjId eid (.tcb newTcb) hEq hObjInv hStore] at hEp
+  · intro y tcb' hY
+    by_cases hEq : y.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt] at hY
+      obtain rfl : newTcb = tcb' := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hY
+      exact ⟨oldTcb, by rw [hEq]; exact hOld, hSameIpc.symm⟩
+    · rw [storeObject_objects_ne st st' tid₀.toObjId y.toObjId (.tcb newTcb) hEq hObjInv hStore] at hY
+      exact ⟨tcb', hY, rfl⟩
+
+/-- `storeTcbIpcState` changes a thread's `ipcState`. It preserves
+`queueHeadBlockedConsistent` provided the target is not a queue head
+(`hNotHead`). Identical in shape to the `storeTcbIpcStateAndMessage` variant. -/
+theorem storeTcbIpcState_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st')
+    (hNotHead : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.head ≠ some tid ∧ ep.sendQ.head ≠ some tid) :
+    queueHeadBlockedConsistent st' := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep hd hdTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hHdEq : hd.toObjId = tid.toObjId
+      · have hTidEq := ThreadId.toObjId_injective hd tid hHdEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotHead epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame hd.toObjId hHdEq] at hTcb
+        exact hInv epId ep hd hdTcb hEp hTcb
+
 end SeLe4n.Kernel
