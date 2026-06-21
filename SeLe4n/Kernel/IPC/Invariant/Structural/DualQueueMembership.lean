@@ -4167,71 +4167,12 @@ theorem consumeCallerReply_preserves_replyCallerLinkageReciprocal (st st' : Syst
       rw [← hFrame tid.toObjId htid_ne_rid htid_ne_caller] at ht
       exact ⟨tcb, ht, htr, hBlk⟩
 
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
-reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
-`.reply { r with caller := some caller }`) followed by the caller-TCB
-`replyObject := some rid` store; store A frames the first, store B the second.
-
-The preconditions are the **intermediate-state** invariants the fold actually has at the
-link site (post-blocking-store, pre-link): `ipcInvariantCore`, reply-link reciprocity
-(`replyCallerLinkageReciprocal`), and the third clause for every blockedOnReply caller
-**other** than `caller` (`hThirdExc`).  Taking the full `ipcInvariantFull st` would be
-*vacuous* here — its third clause would force `caller.replyObject` to already be set, which
-contradicts `linkCallerReply`'s fail-closed precondition that the caller holds no reply. -/
-theorem linkCallerReply_preserves_ipcInvariantFull
-    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
-    (hCore : ipcInvariantCore st)
-    (hRecip : replyCallerLinkageReciprocal st) (hObjInv : st.objects.invExt)
-    (hCallerBlk : ∀ tc, st.getTcb? caller = some tc →
-      ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tc.ipcState = .blockedOnReply ep rt)
-    (hThirdExc : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
-        (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
-        tid ≠ caller →
-        st.objects[tid.toObjId]? = some (.tcb tcb) →
-        tcb.ipcState = .blockedOnReply ep rt →
-        ∃ ridv, tcb.replyObject = some ridv)
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
-    ipcInvariantFull st' := by
-  refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link hPRR'
-  case link =>
-    exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
-      hRecip hObjInv hCallerBlk hThirdExc hStep
-  case core =>
-    unfold linkCallerReply at hStep
-    cases hLink : linkReply rid caller st with
-    | error e => simp [hLink] at hStep
-    | ok p1 =>
-      obtain ⟨_, st1⟩ := p1
-      simp only [hLink] at hStep
-      have hObjInv1 : st1.objects.invExt :=
-        linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
-      have hCore1 : ipcInvariantCore st1 := by
-        unfold linkReply at hLink
-        cases hGetR : st.getReply? rid with
-        | none => rw [hGetR] at hLink; simp at hLink
-        | some r =>
-          simp only [hGetR] at hLink
-          split at hLink
-          · exact storeObject_reply_preserves_ipcInvariantCore st st1 rid.toObjId r
-              { r with caller := some caller } hCore hObjInv
-              ((getReply?_eq_some_iff st rid r).mp hGetR) hLink
-          · simp at hLink
-      cases hT : st1.getTcb? caller with
-      | none => simp [hT] at hStep
-      | some tcb =>
-        simp only [hT] at hStep
-        split at hStep
-        · exact storeObject_tcb_replyObject_preserves_ipcInvariantCore st1 st'
-            caller.toObjId tcb (some rid) hCore1 hObjInv1
-            ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
-        · simp at hStep
-
--- NOTE: `consumeCallerReply_preserves_ipcInvariantFull` is defined further down,
--- after the D3 `pendingReceiveReplyWellFormed` frame family, so its de-threaded
--- form can derive the 17th conjunct via
--- `consumeCallerReply_preserves_pendingReceiveReplyWellFormed`.
+-- NOTE: `linkCallerReply_preserves_ipcInvariantFull` and
+-- `consumeCallerReply_preserves_ipcInvariantFull` are defined further down,
+-- after the D3 `pendingReceiveReplyWellFormed` frame family, so their de-threaded
+-- forms can derive the 17th conjunct via
+-- `linkCallerReply_preserves_pendingReceiveReplyWellFormed` and
+-- `consumeCallerReply_preserves_pendingReceiveReplyWellFormed` respectively.
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D2: `endpointSendDual` **preserves** the third clause — it never sets
@@ -5987,6 +5928,43 @@ theorem linkReply_preserves_pendingReceiveReplyWellFormed
       exact absurd hStash (hNotStashed tid tcb hTcb)
 
 open SeLe4n.Model.SystemState in
+/-- D3: `linkCallerReply` (sets `reply.caller := some caller` via `linkReply`, then the
+inverse forward link `caller.replyObject := some rid` on the caller TCB) preserves the clause
+provided **no** blocked receiver stashes `rid` (`hNotStashed`).  The `.reply` write is
+`linkReply` (delegates to `linkReply_preserves_pendingReceiveReplyWellFormed`); the trailing
+caller-TCB store touches only `replyObject`, leaving `ipcState`/`pendingReceiveReply`
+unchanged, so it frames the clause via `storeObject_tcb_preserveFields_…`. -/
+theorem linkCallerReply_preserves_pendingReceiveReplyWellFormed
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hInv : pendingReceiveReplyWellFormed st)
+    (hNotStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+        st.getTcb? tid = some tcb → tcb.pendingReceiveReply ≠ some rid)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    pendingReceiveReplyWellFormed st' := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    -- C1/C2 preserved through the `.reply` link.
+    have hInv1 : pendingReceiveReplyWellFormed st1 :=
+      linkReply_preserves_pendingReceiveReplyWellFormed st st1 rid caller hObjInv hInv
+        hNotStashed hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · -- caller-TCB `replyObject := some rid` write: preserves ipcState + stash.
+        exact storeObject_tcb_preserveFields_pendingReceiveReplyWellFormed st1 st'
+          caller tcb { tcb with replyObject := some rid } hObjInv1 hT rfl rfl hInv1 hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
 /-- D3: **establishing** a stash — storing a TCB whose only stash is `some rid` establishes
 the clause, given the TCB is `.blockedOnReceive` (`hNewBlk`), the Reply `rid` is present and
 free (`hFree`), and `rid` is not already stashed by any thread (`hFresh`).  This is the
@@ -6500,6 +6478,78 @@ theorem notificationSignal_preserves_pendingReceiveReplyWellFormed
           (fun r => by rw [hObj]; simp) hObjInv hInv hStep
   · contradiction
   · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
+reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
+`.reply { r with caller := some caller }`) followed by the caller-TCB
+`replyObject := some rid` store; store A frames the first, store B the second.
+
+The preconditions are the **intermediate-state** invariants the fold actually has at the
+link site (post-blocking-store, pre-link): `ipcInvariantCore`, reply-link reciprocity
+(`replyCallerLinkageReciprocal`), and the third clause for every blockedOnReply caller
+**other** than `caller` (`hThirdExc`).  Taking the full `ipcInvariantFull st` would be
+*vacuous* here — its third clause would force `caller.replyObject` to already be set, which
+contradicts `linkCallerReply`'s fail-closed precondition that the caller holds no reply.
+
+IPC de-threading D3 (de-threaded): the 17th conjunct is **derived** via
+`linkCallerReply_preserves_pendingReceiveReplyWellFormed` from the *pre-state* PRR
+(`hPRR`) rather than threaded on the post-state.  Linking a reply that some blocked
+receiver still stashes would break C1's "free Reply" half, so the de-thread carries the
+`hNotStashed` side-condition (no blocked receiver stashes `rid`) — which the fold's caller
+discharges from `replyIsStashed` at the link site. -/
+theorem linkCallerReply_preserves_ipcInvariantFull
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hCore : ipcInvariantCore st)
+    (hRecip : replyCallerLinkageReciprocal st) (hObjInv : st.objects.invExt)
+    (hCallerBlk : ∀ tc, st.getTcb? caller = some tc →
+      ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), tc.ipcState = .blockedOnReply ep rt)
+    (hThirdExc : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+        (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        tid ≠ caller →
+        st.objects[tid.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .blockedOnReply ep rt →
+        ∃ ridv, tcb.replyObject = some ridv)
+    (hPRR : pendingReceiveReplyWellFormed st)
+    (hNotStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+        st.getTcb? tid = some tcb → tcb.pendingReceiveReply ≠ some rid)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link
+    (linkCallerReply_preserves_pendingReceiveReplyWellFormed st st' caller rid hObjInv
+      hPRR hNotStashed hStep)
+  case link =>
+    exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
+      hRecip hObjInv hCallerBlk hThirdExc hStep
+  case core =>
+    unfold linkCallerReply at hStep
+    cases hLink : linkReply rid caller st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 : st1.objects.invExt :=
+        linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+      have hCore1 : ipcInvariantCore st1 := by
+        unfold linkReply at hLink
+        cases hGetR : st.getReply? rid with
+        | none => rw [hGetR] at hLink; simp at hLink
+        | some r =>
+          simp only [hGetR] at hLink
+          split at hLink
+          · exact storeObject_reply_preserves_ipcInvariantCore st st1 rid.toObjId r
+              { r with caller := some caller } hCore hObjInv
+              ((getReply?_eq_some_iff st rid r).mp hGetR) hLink
+          · simp at hLink
+      cases hT : st1.getTcb? caller with
+      | none => simp [hT] at hStep
+      | some tcb =>
+        simp only [hT] at hStep
+        split at hStep
+        · exact storeObject_tcb_replyObject_preserves_ipcInvariantCore st1 st'
+            caller.toObjId tcb (some rid) hCore1 hObjInv1
+            ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
+        · simp at hStep
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D / #7.4: `consumeCallerReply` preserves `ipcInvariantFull` on a *mutually

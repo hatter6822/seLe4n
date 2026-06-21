@@ -1,3 +1,29 @@
+## v0.31.172 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from `linkCallerReply` + `lifecycleRetypeObject` (8/15)
+
+Continues the D3 conjunct de-threading (5/15 → **8/15** bundles).
+
+- **`linkCallerReply_preserves_ipcInvariantFull`** — new frame
+  `linkCallerReply_preserves_pendingReceiveReplyWellFormed` (composes `linkReply`'s
+  `.reply` write via `linkReply_preserves_…` with an all-`tid tcb` `hNotStashed`
+  precondition, then the trailing caller-TCB `replyObject := some rid` write via
+  `storeObject_tcb_preserveFields_…`). Bundle de-threaded (drops `hPRR'`, adds
+  `hNotStashed` + pre-state `hPRR`; relocated after the frame family). This frame is also a
+  dependency for the upcoming `endpointReceiveDual`-establish and `endpointCall` slices.
+- **`lifecycleRetypeObject_preserves_{coreIpcInvariantBundle,lifecycleCompositionInvariantBundle}`**
+  — new frame `lifecycleRetypeObject_preserves_pendingReceiveReplyWellFormed` (reduces to a
+  single `storeObject target newObj` via `lifecycleRetypeObject_ok_as_storeObject`, proved
+  directly off the post-state since the retype target slot can hold any prior object kind;
+  two `newObj`-keyed side-conditions `hNewObjNoStash` — a retyped TCB stashes nothing — and
+  `hTargetNotStashedReply` — no blocked receiver stashes a reply at the retype slot). Both
+  bundles de-threaded.
+
+7 bundles remain (the `endpointReceiveDual` establish, `endpointCall`/`OnCore`, the WithCaps
+trio, `endpointReplyRecv`) — see `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` §"D3
+remaining". Proof-only; trace byte-identical; full build green (376 jobs); zero
+`sorry`/`axiom`. AK7 `RAW_LOOKUP_TID` re-anchored 941→943, `GETTCB_ADOPTION` 1421→1437.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3, 8/15 bundles)
+
 ## v0.31.171 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from 5/15 bundles
 
 With Finding F-1 remediated (v0.31.170), `pendingReceiveReplyWellFormed` is a true invariant
