@@ -16,16 +16,16 @@ raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
 raw_match_total          = 133
-raw_lookup_tid           = 918
+raw_lookup_tid           = 919
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 1361
+gettcb_adoption          = 1364
 getschedctx_adoption     = 266
-getendpoint_adoption     = 61
+getendpoint_adoption     = 64
 getnotification_adoption = 55
 getuntyped_adoption      = 14
-getcnode_adoption        = 68
+getcnode_adoption        = 71
 getvspaceroot_adoption   = 22
 
 ## Writer-side wrapper adoption (should-grow)
@@ -56,13 +56,13 @@ RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
 RAW_MATCH_TOTAL=133
-RAW_LOOKUP_TID=918
-GETTCB_ADOPTION=1361
+RAW_LOOKUP_TID=919
+GETTCB_ADOPTION=1364
 GETSCHEDCTX_ADOPTION=266
-GETENDPOINT_ADOPTION=61
+GETENDPOINT_ADOPTION=64
 GETNOTIFICATION_ADOPTION=55
 GETUNTYPED_ADOPTION=14
-GETCNODE_ADOPTION=68
+GETCNODE_ADOPTION=71
 GETVSPACEROOT_ADOPTION=22
 STOREOBJECTCHECKED_ADOPTION=62
 SENTINEL_CHECK_DISPATCH=18

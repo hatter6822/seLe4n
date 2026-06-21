@@ -1,3 +1,27 @@
+## v0.31.165 — IPC invariant de-threading D2: lifecycle/retype bundles establish `blockedOnReplyHasReplyObject` (every soundly-de-threadable bundle done)
+
+De-threads the third clause from the two `lifecycleRetypeObject` bundles
+(`_preserves_coreIpcInvariantBundle` / `_preserves_lifecycleCompositionInvariantBundle`,
+Capability subsystem).  With this, **every `ipcInvariantFull` bundle whose third clause is
+sound to establish or preserve is de-threaded** — the lone remaining `consumeCallerReply`
+deliberately stays threaded (it clears `replyObject` without unblocking, so it cannot
+establish the clause standalone; the fused reply transition re-establishes it).
+
+`lifecycleRetypeObject` writes the caller-supplied `newObj` verbatim at `target`, so it
+*establishes* the third clause from a clean `newObj` well-formedness side-condition
+(`hNewObjThird`: a `.blockedOnReply` retyped TCB must carry a reply — analogous to the
+CNode/notification `newObj` constraints the bundle already takes).  Every non-`target` slot
+is framed (`lifecycleRetypeObject_ok_lookup_preserved_ne`); the `target` obligation is
+exactly `hNewObjThird`.  Both bundles are de-threaded in place (thread
+`replyCallerLinkageReciprocal st'` + `hNewObjThird`, removing the post-state
+`replyCallerLinkage st'` assumption).
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `RAW_LOOKUP_TID`
+re-anchored 918→919 for the one additive `.toObjId]?` object-store lookup in the retype
+frame.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2′)
+
 ## v0.31.164 — IPC invariant de-threading D2: the 3 WithCaps bundles establish/preserve `blockedOnReplyHasReplyObject` (ALL IPC bundles de-threaded)
 
 De-threads the third clause from the three capability-transfer IPC bundles
