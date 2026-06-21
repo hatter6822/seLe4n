@@ -113,11 +113,66 @@ slice is behaviour-preserving (proofs only) ⇒ trace byte-identical is invarian
 | D1 wiring (4 conjuncts × 7 tx) | ⏳ **blocked**: the 4 "wiring" conjuncts (`dualQueueSystemInvariant`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `waitingThreadsPendingMessageNone`) all carry `hFreshCaller`/`hSendTailFresh` side-conditions on the enqueue-style transitions (`endpointCall`/`SendDual`/`ReceiveDual`); de-threading them needs a clean dispatcher-dischargeable freshness precondition (`caller .ready`) → freshness lemma via `ipcStateQueueMembershipConsistent`. Sequenced after D2. | — |
 | D2 replyCallerLinkage (third clause) + consumer | ✅ **LANDED (all 3 establish cases)**: consumer (v0.31.157), full frame family incl. `endpointQueuePopHead`/`endpointQueueEnqueue` frames + `linkCallerReply`/`linkServerStashedReply`/`cleanupPreReceiveDonation` establishes + `wakeThread_…_of_ready` (per-core); single-core `endpointCall`/`endpointReceiveDual_establishes_…` (v0.31.159) **and** per-core `endpointCallOnCore_establishes_…` (v0.31.160); **all 3 bundle theorems that can introduce `.blockedOnReply` de-threaded** (thread `replyCallerLinkageReciprocal st'`, establish the third clause). Preserve-only bundles de-threaded: `endpointSendDual` (v0.31.161); `notificationSignal`/`notificationWait` (v0.31.162); `endpointReply` + `endpointReplyRecv` (v0.31.163); the **3 WithCaps** (v0.31.164) via a new cap-transfer frame chain (`ipcTransferSingleCap_ok_implies_cnode_at_root` → `ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode` → `ipcUnwrapCaps_objects_at_root_orig_or_cnode` → `ipcUnwrapCaps_tcb_backward` → `ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject`; the WithCaps reuse the base establishes/preserve + this frame). **ALL IPC bundles de-threaded.** Only `consumeCallerReply` deliberately stays threaded — it clears a caller's `replyObject` **without** unblocking, so it cannot establish the third clause standalone (re-established by the fused reply transition). Reciprocal-half de-thread (optional). | v0.31.164 |
 | D2′ lifecycle/retype third clause | ✅ **LANDED v0.31.165**: `lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject` (retype writes only `target`; every other slot framed, the `target` obligation discharged by a clean `newObj` well-formedness side-condition `hNewObjThird`, analogous to the bundle's existing CNode/notification `newObj` constraints). Both `lifecycleRetypeObject_preserves_{coreIpcInvariantBundle,lifecycleCompositionInvariantBundle}` de-threaded in place. **Every bundle whose third clause is sound to establish/preserve is now de-threaded; only `consumeCallerReply` stays threaded (cannot establish standalone).** | v0.31.165 |
-| D3 blockedOnReplyHasTarget + pendingReceiveReplyWellFormed | 🔄 **`blockedOnReplyHasTarget` FULLY DE-THREADED** (v0.31.167): frame family + establishes/preserves for every transition built (v0.31.166), and **all** `ipcInvariantFull` bundles now wired — `hBRT'` removed, the clause established/preserved concretely from `hInv.blockedOnReplyHasTarget`: `endpointCall`/`endpointReceiveDual` (v0.31.166); `endpointSendDual`/`notificationSignal`/`notificationWait`/`endpointReply`/`endpointReplyRecv`/3×WithCaps/`endpointCallOnCore`/2×`lifecycleRetypeObject` (v0.31.167, the retype pair via a `hNewObjTarget` `newObj` side-condition). `consumeCallerReply_preserves_ipcInvariantFull` needs no edit — it derives the clause as the 15th `ipcInvariantCore` conjunct through the `ipcInvariantFull_of_core_replyCallerLinkage` seam. **`pendingReceiveReplyWellFormed` frame family LANDED (v0.31.168)**: 3 store-kind keystones (tcb/reply/non-tcb-reply; coincident-slot kind-disjointness `.reply`≠`.tcb` frames cross-kind lookups without a kind-stability invariant) + `establishStash` + `preserveFields` + `storeTcbIpcState{,AndMessage}`/`storeTcbQueueLinks`/`consumeReply`/`linkReply` store frames. Per-transition establishes/preserves + bundle wiring ⏳ (next) | v0.31.168 |
+| D3 blockedOnReplyHasTarget + pendingReceiveReplyWellFormed | 🔄 **`blockedOnReplyHasTarget` FULLY DE-THREADED** (v0.31.167): frame family + establishes/preserves for every transition built (v0.31.166), and **all** `ipcInvariantFull` bundles now wired — `hBRT'` removed, the clause established/preserved concretely from `hInv.blockedOnReplyHasTarget`: `endpointCall`/`endpointReceiveDual` (v0.31.166); `endpointSendDual`/`notificationSignal`/`notificationWait`/`endpointReply`/`endpointReplyRecv`/3×WithCaps/`endpointCallOnCore`/2×`lifecycleRetypeObject` (v0.31.167, the retype pair via a `hNewObjTarget` `newObj` side-condition). `consumeCallerReply_preserves_ipcInvariantFull` needs no edit — it derives the clause as the 15th `ipcInvariantCore` conjunct through the `ipcInvariantFull_of_core_replyCallerLinkage` seam. **`pendingReceiveReplyWellFormed` frame family LANDED (v0.31.168)**: 3 store-kind keystones (tcb/reply/non-tcb-reply; coincident-slot kind-disjointness `.reply`≠`.tcb` frames cross-kind lookups without a kind-stability invariant) + `establishStash` + `preserveFields` + `storeTcbIpcState{,AndMessage}`/`storeTcbQueueLinks`/`consumeReply`/`linkReply` store frames. **Per-transition establishes/preserves + wiring ⛔ BLOCKED on a kernel-semantics fix — see the "Finding F-1" section below: `pendingReceiveReplyWellFormed` is genuinely *not* preserved by `endpointSendDual`/`notificationSignalBound` (stale server-first stash on a Send/notification wake), so it cannot be de-threaded until the eager-stash-clear remediation lands.** | v0.31.168 |
 | D4 queueNext/HeadBlocked | ⏳ | — |
 | D5 blockedThreadTimeoutConsistent | ⏳ | — |
 | D6 donationOwnerValid + donationBudgetTransfer + passiveServerIdle | ⏳ | — |
 | D7 donationChainAcyclic | ⏳ | — |
 | D8 close-out + payoff theorem | ⏳ | — |
+
+## Finding F-1 — `pendingReceiveReplyWellFormed` is not preserved by the Send/notification receive-completion wakes (tracked debt)
+
+**Surfaced by:** the D3 de-threading of `pendingReceiveReplyWellFormed` (v0.31.168
+frame family).  Trying to *prove* (rather than thread) that the IPC transitions
+establish/preserve the conjunct revealed that **two transitions genuinely violate it**.
+
+**Statement.** `pendingReceiveReplyWellFormed` clause C1 requires every TCB with
+`pendingReceiveReply = some rid` to be `.blockedOnReceive`.  A server-first `Recv`
+with no waiting sender stashes `replyId` on the now-`.blockedOnReceive` receiver and
+enqueues it in the endpoint `receiveQ` (`endpointReceiveDual` no-sender branch,
+`Transport.lean:1728‑1746`).  Two transitions then wake such a receiver to `.ready`
+via `storeTcbIpcStateAndMessage` **without clearing the stash**, leaving a `.ready`
+thread carrying `pendingReceiveReply = some rid` — a C1 violation:
+
+1. **`endpointSendDual`** rendezvous delivery (`Transport.lean:1604`): a plain `Send`
+   to a stashing receiver.  (The `endpointReceiveDual` source comment at
+   `Transport.lean:1736‑1738` explicitly acknowledges this "woke via `Send`" stale
+   stash and relies on a *lazy* clear on the receiver's next `Recv`.)
+2. **`notificationSignalBound`** delivery (`NotificationBind.lean:275`): a `Signal` to
+   a bound TCB blocked on receive.
+
+This is why the `*_preserves_ipcInvariantFull` bundles **thread** `hPRR'` rather than
+prove it: the conjunct is not a true invariant of the kernel as written.
+
+**Severity: Low (model-completeness, *not* an exploitable info-flow channel).**  The
+information-flow projection already *erases* `pendingReceiveReply`
+(`InformationFlow/Projection.lean:283`, `projectKernelObject_erases_pendingReceiveReply`
+at `:402`), so a stale stash is invisible to a low observer — there is no covert
+channel.  The impact is purely that `ipcInvariantFull`'s 17th conjunct is not
+machine-checked-preserved end-to-end (it is assumed where threaded).
+
+**Remediation (per the implement-the-improvement rule — weakening C1 is forbidden):**
+eagerly clear `pendingReceiveReply := none` when a **non-Call** path completes a
+receive out of `.blockedOnReceive`:
+
+- `endpointSendDual` rendezvous delivery store, and
+- `notificationSignalBound` delivery store.
+
+**Do NOT** clear it globally in `storeTcbIpcStateAndMessage`: the `endpointCall`
+rendezvous (`Transport.lean:1797`) delivers to the server with the *same* helper but
+then consumes the stash via `linkServerStashedReply` (`State.lean:2434‑2445`,
+read at `Transport.lean:1819`) — a global clear makes that link fail closed
+`.replyCapInvalid` (verified: it breaks the F1-03 Call/reply trace
+`[IMT-011/012/014]`).  The Call path already clears the stash correctly (inside
+`linkServerStashedReply`); only the Send and notification paths leak it.
+
+**Closure sequence (the de-threading then proceeds with the v0.31.168 frame family):**
+1. Land the eager-stash-clear in `endpointSendDual` + `notificationSignalBound`
+   (a dedicated receive-completion store helper), re-proving those two transitions'
+   structural / NI / lock-set theorems; verify trace byte-identical.
+2. Prove `<tx>_{establishes,preserves}_pendingReceiveReplyWellFormed` for every IPC
+   transition using the v0.31.168 keystones (`storeObject_{tcb,reply,nonTcbReply}_…`,
+   `establishStash`, `preserveFields`, the store-helper frames).
+3. Wire `hPRR'` out of all `*_preserves_ipcInvariantFull` bundles.
 
 Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7.4 (origin)

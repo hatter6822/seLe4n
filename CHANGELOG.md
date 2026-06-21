@@ -1,3 +1,45 @@
+## v0.31.169 — IPC invariant de-threading D3: Finding F-1 — `pendingReceiveReplyWellFormed` is not preserved by Send/notification wakes (tracked debt)
+
+De-threading `pendingReceiveReplyWellFormed` (the 17th `ipcInvariantFull` conjunct) by
+*proving* — not threading — its per-transition preservation surfaced a genuine
+kernel-correctness gap, now recorded as **Finding F-1** in
+`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md`.
+
+**The gap.** Clause C1 requires every TCB with `pendingReceiveReply = some rid` to be
+`.blockedOnReceive`.  A server-first `Recv` stashes `replyId` on the now-blocked receiver
+(in the endpoint `receiveQ`).  Two transitions then wake such a receiver to `.ready` via
+`storeTcbIpcStateAndMessage` **without clearing the stash**, leaving a `.ready` thread that
+still carries the stash — a C1 violation:
+- `endpointSendDual` rendezvous (a plain `Send` to a stashing receiver); the
+  `endpointReceiveDual` source comment (`Transport.lean:1736‑1738`) even acknowledges this
+  "woke via `Send`" stale stash and relies on a lazy clear on the next `Recv`;
+- `notificationSignalBound` (a `Signal` to a bound TCB blocked on receive).
+
+This is exactly why the `*_preserves_ipcInvariantFull` bundles **thread** `hPRR'` rather
+than prove it — the threading masked that the conjunct is not a true kernel invariant.
+
+**Severity: Low** (model-completeness, not an exploitable channel).  The information-flow
+projection already *erases* `pendingReceiveReply`
+(`projectKernelObject_erases_pendingReceiveReply`), so a stale stash is invisible to a low
+observer — no covert channel.  Impact is confined to `ipcInvariantFull`'s 17th conjunct not
+being machine-checked end-to-end where threaded.
+
+**Remediation (recorded; weakening C1 is forbidden):** eagerly clear `pendingReceiveReply`
+on the **non-Call** receive-completion wakes (`endpointSendDual` rendezvous +
+`notificationSignalBound`).  **Not** globally in `storeTcbIpcStateAndMessage`: the
+`endpointCall` rendezvous delivers with the same helper but then consumes the stash via
+`linkServerStashedReply`, so a global clear fails the Call link closed `.replyCapInvalid`
+(verified — it breaks the F1-03 `[IMT-011/012/014]` trace; the Call path already clears the
+stash correctly).  Closure then proceeds with the v0.31.168 frame family: per-transition
+establishes/preserves + bundle `hPRR'` removal.
+
+Investigated a global `storeTcbIpcStateAndMessage` clear (it builds — ~14 mechanical frame
+literal fixes — but regresses the F1-03 Call trace as above), so it was reverted; the tree
+is unchanged from v0.31.168 apart from this finding record.  Docs-only; build/trace
+unchanged (376 jobs).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-1)
+
 ## v0.31.168 — IPC invariant de-threading D3: `pendingReceiveReplyWellFormed` frame family (keystones + store frames)
 
 Lands the reusable frame family for the third D3 conjunct, `pendingReceiveReplyWellFormed` —
