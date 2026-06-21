@@ -459,6 +459,34 @@ theorem lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject
     rw [hPreserved] at hTcb
     exact hInv tid tcb ep rt hTcb hBlk
 
+open SeLe4n.Model.SystemState in
+/-- D3: `lifecycleRetypeObject` **establishes** `blockedOnReplyHasTarget` from a `newObj`
+side-condition (`hNewObjTarget`: a `.blockedOnReply` retyped TCB has a `some` target). -/
+theorem lifecycleRetypeObject_preserves_blockedOnReplyHasTarget
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : blockedOnReplyHasTarget st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb ep rt hTcb hBlk
+  by_cases hEq : tid.toObjId = target
+  · have hObjAtTarget : st'.objects[tid.toObjId]? = some newObj := by
+      rw [hEq]
+      rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+        ⟨_, _, _, _, _, _, hStore⟩
+      exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+    have hNewEq : newObj = .tcb tcb := by simpa using (hObjAtTarget.symm.trans hTcb)
+    exact hNewObjTarget tcb ep rt hNewEq hBlk
+  · have hPreserved := lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target
+      tid.toObjId newObj hEq hObjInv hStep
+    rw [hPreserved] at hTcb
+    exact hInv tid tcb ep rt hTcb hBlk
+
 theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (st st' : SystemState)
     (authority : CSpaceAddr)

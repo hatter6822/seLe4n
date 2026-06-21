@@ -5399,6 +5399,137 @@ theorem endpointReplyRecv_preserves_blockedOnReplyHasTarget
                 (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hPE hObjInvE hRecv
         · simp at hStep
 
+open SeLe4n.Model.SystemState in
+/-- D3: `ipcUnwrapCaps` frames the clause (it never creates a TCB — `ipcUnwrapCaps_tcb_backward`). -/
+theorem ipcUnwrapCaps_preserves_blockedOnReplyHasTarget
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb ep rt hTcb hBlk
+  exact hInv tid tcb ep rt
+    (ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st' summary
+      tid.toObjId tcb hObjInv hStep hTcb) hBlk
+
+open SeLe4n.Model.SystemState in
+/-- D3: `endpointCallWithCaps` establishes the clause. -/
+theorem endpointCallWithCaps_establishes_blockedOnReplyHasTarget
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    blockedOnReplyHasTarget st' := by
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller msg st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hPMid := endpointCall_establishes_blockedOnReplyHasTarget st stMid endpointId caller msg hInv hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    simp [hCall] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg callerCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
+
+open SeLe4n.Model.SystemState in
+/-- D3: `endpointReceiveDualWithCaps` establishes the clause. -/
+theorem endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    blockedOnReplyHasTarget st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hPMid := endpointReceiveDual_establishes_blockedOnReplyHasTarget st stMid endpointId receiver sid replyId hInv hObjInv hRecv
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.getTcb? receiver with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
+      | some msg =>
+        simp [hMsg] at hStep
+        split at hStep
+        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hPMid
+        · cases hLookup : lookupCspaceRoot stMid sid with
+          | none => simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg senderRoot receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hPMid hUnwrap
+
+open SeLe4n.Model.SystemState in
+/-- D3: `endpointSendDualWithCaps` frames the clause. -/
+theorem endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    blockedOnReplyHasTarget st' := by
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender msg st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hPMid := endpointSendDual_preserves_blockedOnReplyHasTarget st stMid endpointId sender msg hInv hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    simp [hSend] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hPMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact ipcUnwrapCaps_preserves_blockedOnReplyHasTarget msg senderCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hPMid hStep
+
 -- ============================================================================
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --

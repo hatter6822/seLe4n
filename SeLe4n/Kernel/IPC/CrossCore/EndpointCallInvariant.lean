@@ -296,6 +296,89 @@ theorem endpointCallOnCore_establishes_blockedOnReplyHasReplyObject
               show blockedOnReplyHasReplyObject (removeRunnableOnCore st5 caller executingCore)
               exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnableOnCore_preserves_objects st5 caller executingCore) hP5
 
+open SeLe4n.Model.SystemState in
+/-- D3 (per-core): the cross-core `wakeThread` of an already-`.ready` thread frames
+`blockedOnReplyHasTarget`. -/
+theorem wakeThread_preserves_blockedOnReplyHasTarget_of_ready
+    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
+    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget (wakeThread st wtid ec).1 := by
+  intro tid tcb ep rt hTcb hBlk
+  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId] at hTcb
+  exact hInv tid tcb ep rt hTcb hBlk
+
+open SeLe4n.Model.SystemState in
+/-- D3 (per-core): `endpointCallOnCore` **establishes** `blockedOnReplyHasTarget`. -/
+theorem endpointCallOnCore_establishes_blockedOnReplyHasTarget
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hInv : blockedOnReplyHasTarget st) (hObjInv : st.objects.invExt) :
+    blockedOnReplyHasTarget (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact hInv
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact hInv
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hInv
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact hInv
+      | ok st' =>
+        simp only
+        have hP1 := endpointQueueEnqueue_preserves_blockedOnReplyHasTarget endpointId false caller st st' hObjInv hInv hEnq
+        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact hInv
+        | ok st'' =>
+          simp only
+          have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
+            st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hP1 (by intro ep rt h; cases h) hMsg
+          show blockedOnReplyHasTarget (removeRunnableOnCore st'' caller executingCore)
+          exact blockedOnReplyHasTarget_of_objects_eq (removeRunnableOnCore_preserves_objects st'' caller executingCore) hP2
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact hInv
+      | ok pair =>
+        simp only
+        have hP1 := endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact hInv
+        | ok st2 =>
+          simp only
+          have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
+            pair.2.2 st2 pair.1 .ready (some msg) hObj1 hP1 (by intro ep rt h; cases h) hMsg
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObj1 hMsg
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+          have hPW := wakeThread_preserves_blockedOnReplyHasTarget_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2 hP2
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact hInv
+          | ok st4 =>
+            simp only
+            have hP4 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
+              (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1)) none hObjW hPW (by rintro ep rt h; cases h; rfl) hCS
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hP5 := linkServerStashedReply_preserves_blockedOnReplyHasTarget st4 st5 caller pair.1 hObjInv4 hP4 hLink
+              show blockedOnReplyHasTarget (removeRunnableOnCore st5 caller executingCore)
+              exact blockedOnReplyHasTarget_of_objects_eq (removeRunnableOnCore_preserves_objects st5 caller executingCore) hP5
+
 -- ============================================================================
 -- §4  SM6.A.9 — invariant preservation *through* the 2PL lock bracket
 -- ============================================================================
