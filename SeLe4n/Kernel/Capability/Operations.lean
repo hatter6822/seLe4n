@@ -1862,6 +1862,30 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hTcb
 
+/-- IPC de-threading D3: ipcTransferSingleCap preserves all `.reply` objects.
+Same reasoning as the endpoint/TCB family: a `.reply` at `receiverRoot` makes
+`getCNode?` return `none`, so the function fails closed (`.objectNotFound`),
+contradicting `.ok`; at every other slot use `_preserves_objects_ne`. -/
+theorem ipcTransferSingleCap_preserves_reply_objects
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.objects[oid]? = some (.reply r) := by
+  by_cases hNe : oid = receiverRoot
+  · subst hNe
+    simp only [ipcTransferSingleCap] at hStep
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hReply]
+    simp [hCnNone] at hStep
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep]
+    exact hReply
+
 /-- IPC de-threading D2: a successful `ipcTransferSingleCap` proves its `receiverRoot`
 was a CNode — the transfer reads `getCNode? receiverRoot` and fails closed
 (`.objectNotFound`) when it is `none`, so `.ok` rules out a non-CNode root. -/

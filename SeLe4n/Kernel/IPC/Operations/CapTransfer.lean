@@ -382,6 +382,65 @@ theorem ipcUnwrapCaps_preserves_ntfn_objects
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNtfn
   · exact ipcUnwrapCapsLoop_preserves_ntfn_objects _ _ _ _ _ _ _ _ _ _ _ _ hNtfn hObjInv hStep
 
+/-- IPC de-threading D3: `ipcUnwrapCapsLoop` preserves all `.reply` objects (it only
+ever writes a CNode at `receiverRoot`).  Mirror of
+`ipcUnwrapCapsLoop_preserves_ntfn_objects`. -/
+theorem ipcUnwrapCapsLoop_preserves_reply_objects
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.reply r) := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hReply
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hReply
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hObjInv hTransfer
+        have hReplyNext := ipcTransferSingleCap_preserves_reply_objects cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result oid r hReply hObjInv hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+        | noSlot => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+
+/-- IPC de-threading D3: `ipcUnwrapCaps` preserves all `.reply` objects.  Any reply
+in `st` survives unchanged in `st'` because cap transfer only writes CNodes (via
+`cspaceInsertSlot` at `receiverRoot`) and CDT fields. -/
+theorem ipcUnwrapCaps_preserves_reply_objects
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.reply r) := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
+  · exact ipcUnwrapCapsLoop_preserves_reply_objects _ _ _ _ _ _ _ _ _ _ _ _ hReply hObjInv hStep
+
 theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)

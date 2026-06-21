@@ -1,3 +1,40 @@
+## v0.31.173 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from the `endpointReceiveDual` establish family (12/15)
+
+De-threads the conjunct's canonical ESTABLISH and its dependents (8/15 → **12/15**):
+
+- **`endpointReceiveDual_preserves_ipcInvariantFull`** — the no-sender branch establishes a
+  fresh stash (`pendingReceiveReply := replyId`). New
+  `endpointReceiveDual_preserves_pendingReceiveReplyWellFormed` threads `hReplyIdValid`
+  (replyId, when present, names a present-free-unstashed reply — the receive syscall's
+  reply-cap validation) + `hReceiverNotRecv` (the completing receiver is the running thread,
+  not mid-receive-stash) and reuses the existing `queueHeadBlockedConsistent` conjunct (the
+  popped sendQ head is `.blockedOnSend`/`.blockedOnCall`, never stashing). The freshness facts
+  transport through the `cleanup → enqueue → storeTcbIpcState` chain to the stash-write,
+  discharged by `storeObject_establishStash_…`.
+- **`endpointReceiveDualWithCaps`, `endpointReplyRecv`** de-threaded (depend on the establish +
+  `ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed`).
+
+Reusable reply-store infrastructure added (the foundation the remaining `endpointCall` family
+also needs): a `replyIdEstablishFresh` predicate + per-step preservation frames; the
+`*_tcb_pendingReceiveReply_backward` / `*_preserves_reply` backward/forward frames for
+`storeTcbQueueLinks` / `endpointQueue{Enqueue,PopHead}` / `returnDonatedSchedContext` /
+`cleanupPreReceiveDonation` / `ipcTransferSingleCap` / `ipcUnwrapCaps{,Loop}`, across
+`Core.lean`, `Transport.lean`, `Defs.lean`, `Capability/Operations.lean`, `CapTransfer.lean`,
+`DualQueueMembership.lean`.
+
+All three new preconditions are dischargeable pre-state facts (the D2 precedent). **Optional
+non-defect note**: `endpointReceiveDual`'s rendezvous keeps the stash field via
+`storeTcbIpcStateAndMessage` (correct — the woken running-receiver/`blockedOnSend`-sender carry
+no stash, so it is behaviourally identical to `storeTcbReceiveComplete`); a defensive-symmetry
+refactor that would drop `hReceiverNotRecv`/`hQHBC` is recorded as a low-priority closure target
+in the plan, not shipped here (it is an F-1-sized re-prove for a behaviour-identical result).
+
+3 bundles remain (`endpointCall`, `endpointCallOnCore`, `endpointCallWithCaps` /
+`endpointSendDualWithCaps`). Proof-only; trace byte-identical; full build green (376 jobs); zero
+`sorry`/`axiom`. AK7 `RAW_LOOKUP_TID` re-anchored 943→965, `GETTCB_ADOPTION` 1437→1478.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3, 12/15 bundles)
+
 ## v0.31.172 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from `linkCallerReply` + `lifecycleRetypeObject` (8/15)
 
 Continues the D3 conjunct de-threading (5/15 → **8/15** bundles).
