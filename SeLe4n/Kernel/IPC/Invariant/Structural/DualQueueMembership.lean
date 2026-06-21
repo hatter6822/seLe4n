@@ -3621,6 +3621,99 @@ theorem storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
       exact hInv tid tcb ep rt htcbObj hb
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: storing an **endpoint** object frames the third clause — no TCB
+is written, so the keystone `hNew` is vacuous (`.endpoint ≠ .tcb`).  Covers the endpoint
+store inside `endpointQueuePopHead` / `endpointQueueEnqueue`. -/
+theorem storeObject_endpoint_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : storeObject oid (.endpoint ep) st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' :=
+  storeObject_preserves_blockedOnReplyHasReplyObject st st' oid (.endpoint ep) hObjInv hInv
+    (fun _ _ _ ho _ => by cases ho) hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `pair`-shaped endpoint-store frame, mirroring
+`storeObject_preserves_objects_invExt'` so it threads the success branch of
+`endpointQueuePopHead` (which keeps the `pair : Unit × SystemState` intact). -/
+theorem storeObject_endpoint_preserves_blockedOnReplyHasReplyObject'
+    (st : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStore : storeObject oid (.endpoint ep) st = .ok pair) :
+    blockedOnReplyHasReplyObject pair.2 := by
+  obtain ⟨⟨⟩, st'⟩ := pair
+  exact storeObject_endpoint_preserves_blockedOnReplyHasReplyObject st st' oid ep hObjInv hInv hStore
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `endpointQueuePopHead` frames the third clause.  The dequeue is
+one endpoint store (no TCB written — `.endpoint` helper) followed by one or two
+`storeTcbQueueLinks` (queue-link frame: `ipcState`/`replyObject` untouched).  Navigation
+mirrors `endpointQueuePopHead_preserves_objects_invExt` line-for-line, threading the
+predicate alongside `invExt`. -/
+theorem endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    blockedOnReplyHasReplyObject st' := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hP1 := storeObject_endpoint_preserves_blockedOnReplyHasReplyObject'
+              st endpointId _ pair hObjInv hInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
+                  pair.2 st3 headTid none none none hInv1 hP1 hFinal
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  have hP2 := storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
+                    pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hInv1 hP1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject
+                      st2 st3 headTid none none none hInv2 hP2 hFinal
+
+open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (PR #822 review): `linkCallerReply` **establishes**
 `replyCallerLinkage`.  On success the only changed slots are the linked reply
 (`rid`, now `caller := some caller`) and the linking caller (`caller`, now
