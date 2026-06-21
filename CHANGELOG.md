@@ -1,3 +1,29 @@
+## v0.31.166 — IPC invariant de-threading D3: `blockedOnReplyHasTarget` frame family + establishes/preserves (endpointCall/endpointReceiveDual bundles wired)
+
+Begins the second conjunct's de-threading.  `blockedOnReplyHasTarget` reads only each TCB's
+`ipcState` (a `.blockedOnReply` TCB carries a `some` reply target), and every IPC
+`.blockedOnReply` store uses `(some receiver)` — so the clause is *established directly by
+the store* (a unified `hTargetOk` discharge), with no atomic reply link needed (simpler
+than the third clause).
+
+Built (mirroring the `blockedOnReplyHasReplyObject` family): the keystone, objects-eq,
+non-TCB store, `storeTcbIpcStateAndMessage`/`storeTcbIpcState`/`_fromTcb`, queue-links,
+`endpointQueuePopHead`/`Enqueue` frames; the link/cleanup/wake/`ipcUnwrapCaps`/retype
+preserves; and the establishes/preserves for **every** transition —
+`endpoint{Call,ReceiveDual,CallOnCore}` + the three WithCaps (establishes), plus
+`endpointSendDual`/`notification{Signal,Wait}`/`endpointReply`/`endpointReplyRecv`/retype
+(preserves).  `linkCallerReply_tcb_ipcState_backward` de-privatized for the preserve.
+
+The `endpointCall` / `endpointReceiveDual` `ipcInvariantFull` bundles are **wired** —
+`hBRT'` removed, the clause established concretely from `hInv.blockedOnReplyHasTarget` —
+demonstrating the de-threading end-to-end.  The remaining ~11 bundles' wiring is mechanical
+(swap the threaded `hBRT'` for the already-built establish/preserve).
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `RAW_LOOKUP_TID`
+re-anchored 919→922 (additive `.toObjId]?` lookups in the D3 frames).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3)
+
 ## v0.31.165 — IPC invariant de-threading D2: lifecycle/retype bundles establish `blockedOnReplyHasReplyObject` (every soundly-de-threadable bundle done)
 
 De-threads the third clause from the two `lifecycleRetypeObject` bundles

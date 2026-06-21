@@ -5562,7 +5562,6 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hPRR' : pendingReceiveReplyWellFormed st')
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
@@ -5571,7 +5570,8 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   endpointReceiveDual_establishes_blockedOnReplyHasTarget st st' endpointId receiver senderId replyId hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st st' endpointId
       receiver senderId replyId hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    hPRR'⟩
@@ -5595,7 +5595,6 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hPRR' : pendingReceiveReplyWellFormed st')
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
@@ -5604,7 +5603,8 @@ theorem endpointCall_preserves_ipcInvariantFull
    hDualQueue',
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   endpointCall_establishes_blockedOnReplyHasTarget st st' endpointId caller msg hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointCall_establishes_blockedOnReplyHasReplyObject st st' endpointId caller msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    hPRR'⟩
