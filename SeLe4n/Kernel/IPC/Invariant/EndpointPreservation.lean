@@ -946,7 +946,7 @@ reply write touches no TCB.  A TCB present at slot `y` in the post-state therefo
 maps back to a TCB at `y` in the pre-state with identical `ipcState`.  Feeds
 `contracts_of_same_scheduler_ipcState` so the contract predicates transport across
 the atomic reply-link. -/
-private theorem linkCallerReply_tcb_ipcState_backward
+theorem linkCallerReply_tcb_ipcState_backward
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (y : SeLe4n.ThreadId) (tcbY' : TCB)
     (hObjInv : st.objects.invExt)

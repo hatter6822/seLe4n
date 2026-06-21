@@ -4942,6 +4942,108 @@ theorem endpointQueueEnqueue_preserves_blockedOnReplyHasTarget
                     intro hStep
                     exact storeTcbQueueLinks_preserves_blockedOnReplyHasTarget _ _ tid _ _ _ hInv2 hP2 hStep
 
+open SeLe4n.Model.SystemState in
+/-- D3: `linkCallerReply` frames the clause (it never writes any TCB's `ipcState`). -/
+theorem linkCallerReply_preserves_blockedOnReplyHasTarget
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb ep rt hTcb hBlk
+  obtain ⟨tcb0, hTcb0, hIpc⟩ := linkCallerReply_tcb_ipcState_backward st st' caller rid tid tcb hObjInv hStep hTcb
+  exact hInv tid tcb0 ep rt hTcb0 (hIpc.trans hBlk)
+
+open SeLe4n.Model.SystemState in
+/-- D3: `linkServerStashedReply` frames the clause (no `ipcState` write). -/
+theorem linkServerStashedReply_preserves_blockedOnReplyHasTarget
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    blockedOnReplyHasTarget st' := by
+  intro tid tcb ep rt hTcb hBlk
+  obtain ⟨tcb0, hTcb0, hIpc⟩ := linkServerStashedReply_tcb_ipcState_backward st st' caller server tid tcb hObjInv hStep hTcb
+  exact hInv tid tcb0 ep rt hTcb0 (hIpc.trans hBlk)
+
+open SeLe4n.Model.SystemState in
+/-- D3: `cleanupPreReceiveDonation` frames the clause (preserves every `ipcState`). -/
+theorem cleanupPreReceiveDonation_preserves_blockedOnReplyHasTarget
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget (cleanupPreReceiveDonation st receiver) := by
+  intro tid tcb ep rt hTcb hBlk
+  obtain ⟨tcb0, hTcb0, hIpc⟩ := cleanupPreReceiveDonation_tcb_ipcState_backward st receiver hObjInv tid tcb hTcb
+  exact hInv tid tcb0 ep rt hTcb0 (hIpc.trans hBlk)
+
+open SeLe4n.Model.SystemState in
+/-- D3: `endpointCall` **establishes** the clause — every `.blockedOnReply` store uses
+`(some receiver)`; the link/queue/scheduler steps frame it. -/
+theorem endpointCall_establishes_blockedOnReplyHasTarget
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : blockedOnReplyHasTarget st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    blockedOnReplyHasTarget st' := by
+  unfold endpointCall at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hP1 := endpointQueuePopHead_preserves_blockedOnReplyHasTarget endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg] at hStep
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
+            have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
+              pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hP1 (by intro ep rt h; cases h) hMsg
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hP3 := blockedOnReplyHasTarget_of_objects_eq (ensureRunnable_preserves_objects st2 pair.1) hP2
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st4 =>
+              simp only [hIpc] at hStep
+              have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) st4 caller _ _ hObjInvEns hIpc
+              have hP4 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
+                (ensureRunnable st2 pair.1) st4 caller (.blockedOnReply endpointId (some pair.1)) none hObjInvEns hP3 (by rintro ep rt h; cases h; rfl) hIpc
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hP5 := linkServerStashedReply_preserves_blockedOnReplyHasTarget st4 st5 caller pair.1 hObjInv4 hP4 hLink
+                exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st5 caller) hP5
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
+          have hP1 := endpointQueueEnqueue_preserves_blockedOnReplyHasTarget endpointId false caller st st1 hObjInv hInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            have hP2 := storeTcbIpcStateAndMessage_preserves_blockedOnReplyHasTarget
+              st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hP1 (by intro ep rt h; cases h) hMsg
+            exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects st2 caller) hP2
+
 -- ============================================================================
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --
