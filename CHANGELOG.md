@@ -1,3 +1,31 @@
+## v0.31.160 — IPC invariant de-threading D2 (per-core): `endpointCallOnCore` establishes `blockedOnReplyHasReplyObject`
+
+Extends the D2 third-clause de-threading to the per-core cross-core call.  The per-core
+`endpointCallOnCore` has an **identical object-store backbone** to single-core
+`endpointCall` — the per-core scheduler ops (`wakeThread` of the `.ready` receiver,
+`removeRunnableOnCore`) are object-framing — so the same frame family composes:
+
+- `wakeThread_preserves_blockedOnReplyHasReplyObject_of_ready` — the cross-core wake of an
+  already-`.ready` thread is object-invisible (`wakeThread_objects_getElem_eq_of_ready`),
+  so it frames the third clause.  The receiver is `.ready` from the preceding message
+  store (`storeTcbIpcStateAndMessage_getTcb?_ipcState`).
+- `endpointCallOnCore_establishes_blockedOnReplyHasReplyObject` — navigates the rendezvous
+  (pop → receiver `.ready` store → wake → caller `.blockedOnReply` store → atomic
+  `linkServerStashedReply` → `removeRunnableOnCore`) and blocking branches, mirroring
+  `endpointCallOnCore_preserves_ipcInvariant`.
+
+`endpointCallOnCore_preserves_ipcInvariantFull` is de-threaded in place (it threads only
+`replyCallerLinkageReciprocal st'` and establishes the third clause).  This completes all
+**three** IPC transitions that can introduce a `.blockedOnReply` thread (the single-core
+`endpointCall`/`endpointReceiveDual` plus this per-core call).  The remaining bundles
+(`endpointSendDual`/`endpointReply`/`endpointReplyRecv`/`notification{Signal,Wait}`/the
+three WithCaps/`consumeCallerReply`) are preserve-only — the third clause is framed or
+shrinks (a `.blockedOnReply` thread is never freshly introduced), de-threaded next.
+
+Proof-only; trace byte-identical.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
 ## v0.31.159 — IPC invariant de-threading D2: `endpointCall`/`endpointReceiveDual` establish `blockedOnReplyHasReplyObject` (bundles de-threaded)
 
 Completes the D2 slice for both single-core IPC transitions that can introduce a
