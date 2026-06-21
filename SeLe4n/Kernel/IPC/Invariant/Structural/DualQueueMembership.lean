@@ -8403,7 +8403,6 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8417,7 +8416,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointReceiveDual_establishes_blockedOnReplyHasTarget st st' endpointId receiver senderId replyId hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st st' endpointId
       receiver senderId replyId hInv.replyCallerLinkage.2 hObjInv hStep⟩,
@@ -8441,7 +8440,6 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8454,7 +8452,7 @@ theorem endpointCall_preserves_ipcInvariantFull
    hDualQueue',
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointCall_establishes_blockedOnReplyHasTarget st st' endpointId caller msg hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointCall_establishes_blockedOnReplyHasReplyObject st st' endpointId caller msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
@@ -8478,7 +8476,6 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8491,7 +8488,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointSendDual_preserves_blockedOnReplyHasTarget st st' endpointId sender msg hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointSendDual_preserves_blockedOnReplyHasReplyObject st st' endpointId sender msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
@@ -8510,7 +8507,6 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8526,7 +8522,7 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    notificationSignal_preserves_queueNextBlockingConsistent st st' notificationId badge hObjInv hInv.queueNextBlockingConsistent hStep,
    notificationSignal_preserves_queueHeadBlockedConsistent st st' notificationId badge hObjInv hInv.queueHeadBlockedConsistent hNWC hStep,
-   hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    notificationSignal_preserves_blockedOnReplyHasTarget st st' notificationId badge hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', notificationSignal_preserves_blockedOnReplyHasReplyObject st st' notificationId badge
       hObjInv hInv.replyCallerLinkage.2 hStep⟩,
@@ -8550,7 +8546,6 @@ theorem notificationWait_preserves_ipcInvariantFull
     -- not exclude from being an endpoint queue head (see file note).
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8566,7 +8561,7 @@ theorem notificationWait_preserves_ipcInvariantFull
    hWtpmn', hNoDup', hQMC',
    -- IPC de-threading D4: queueNext **established** from the pre-state.
    notificationWait_preserves_queueNextBlockingConsistent st st' notificationId waiter result hObjInv hInv.queueNextBlockingConsistent hStep,
-   hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    notificationWait_preserves_blockedOnReplyHasTarget st st' notificationId waiter result hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', notificationWait_preserves_blockedOnReplyHasReplyObject st st' notificationId waiter
       result hObjInv hInv.replyCallerLinkage.2 hStep⟩,
@@ -8585,7 +8580,6 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8600,7 +8594,9 @@ theorem endpointReply_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    endpointReply_preserves_queueNextBlockingConsistent st st' replier target msg hObjInv hInv.queueNextBlockingConsistent hStep,
    endpointReply_preserves_queueHeadBlockedConsistent st st' replier target msg hObjInv hInv.queueHeadBlockedConsistent hStep,
-   hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   -- IPC de-threading D7: `donationChainAcyclic` is **derived** from the (still-threaded)
+   -- post-state `donationOwnerValid` via the subsumption lemma — no separate `hDCA'`.
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointReply_preserves_blockedOnReplyHasTarget st st' replier target msg hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', endpointReply_preserves_blockedOnReplyHasReplyObject st st' replier target msg
       hObjInv hInv.replyCallerLinkage.2 hStep⟩,
@@ -8623,7 +8619,6 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8637,7 +8632,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    hDualQueue',
    endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
    endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointReplyRecv_preserves_blockedOnReplyHasTarget st st' endpointId receiver replyTarget msg replyId hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', endpointReplyRecv_preserves_blockedOnReplyHasReplyObject st st' endpointId receiver
       replyTarget msg replyId hObjInv hInv.replyCallerLinkage.2 hStep⟩,
@@ -8665,7 +8660,6 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8677,7 +8671,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointSendDualWithCaps_preserves_blockedOnReplyHasTarget endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointSendDualWithCaps_preserves_blockedOnReplyHasReplyObject endpointId sender msg
       endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
@@ -8706,7 +8700,6 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8719,7 +8712,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId endpointRights
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject endpointId receiver
       replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,
@@ -8748,7 +8741,6 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -8760,7 +8752,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     ipcInvariantFull st' :=
   ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
    endpointCallWithCaps_establishes_blockedOnReplyHasTarget endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointCallWithCaps_establishes_blockedOnReplyHasReplyObject endpointId caller msg
       endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.replyCallerLinkage.2 hObjInv hStep⟩,

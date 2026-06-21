@@ -1030,7 +1030,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
@@ -1046,7 +1045,10 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hInv.2.2.1 hObjInv,
     endpointCallOnCore_preserves_badgeWellFormed endpointId caller msg executingCore st
       hInv.2.2.2.1 hObjInv,
-    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
+    -- IPC de-threading D7: derive `donationChainAcyclic` from the threaded post-state
+    -- `donationOwnerValid` via the subsumption lemma.
+    donationOwnerValid_implies_donationChainAcyclic _ hDOV', hDOV', hPSI', hDBT',
     endpointCallOnCore_establishes_blockedOnReplyHasTarget endpointId caller msg executingCore st hInv.blockedOnReplyHasTarget hObjInv,
     ⟨hRCLRecip', endpointCallOnCore_establishes_blockedOnReplyHasReplyObject endpointId caller msg
       executingCore st hInv.replyCallerLinkage.2 hObjInv⟩,

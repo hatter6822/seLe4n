@@ -118,8 +118,22 @@ slice is behaviour-preserving (proofs only) ⇒ trace byte-identical is invarian
 | **F-2 prereq: `endpointQueueMemberBlocked` (reachable→blocked) invariant** | ⏳ unblocks D4-residual + D1 | — |
 | D5 blockedThreadTimeoutConsistent | ⏳ | — |
 | D6 donationOwnerValid + donationBudgetTransfer + passiveServerIdle | ⏳ | — |
-| D7 donationChainAcyclic | ⏳ **mostly free** — `donationOwnerValid_implies_donationChainAcyclic` (Defs.lean:1468) already proves it; folds into D6 as a one-liner per bundle | — |
+| D7 donationChainAcyclic | ✅ **DE-THREADED (v0.31.176): all 13 bundles** via `donationOwnerValid_implies_donationChainAcyclic st' hDOV'` (derives from the still-threaded `hDOV'`); `grep hDCA'` empty | v0.31.176 |
+| D5 blockedThreadTimeoutConsistent | ⏳ **needs from-scratch infra** — no IPC transition ever writes `timeoutBudget := some`, but wakes set `.ready` while a thread *may* carry a budget; clean de-thread needs per-transition dischargeable `⟨woken⟩.timeoutBudget = none` preconditions | — |
+| D6 donationOwnerValid + donationBudgetTransfer + passiveServerIdle | ⛔ **BLOCKED on Finding F-3** (`donationOwnerValid`/`donationBudgetTransfer` jointly unsatisfiable for donated states) + donation-return composition (`donationOwnerValid` needs bare `endpointReply` not to wake a donation owner; `passiveServerIdle` needs per-transition block treatment) | — |
 | D8 close-out + payoff theorem | ⏳ | — |
+
+### Finding F-3 — `donationOwnerValid` ∧ `donationBudgetTransfer` are jointly unsatisfiable for any donated state (spec inconsistency / false-assurance gap)
+
+**Severity: Medium** (specification gap; not directly exploitable). Verified in Lean (probe compiled clean, since removed) and against the live code.
+
+- `donationOwnerValid` (`Defs.lean:1394`, AUD-7 clause) requires: a server with `schedContextBinding = .donated scId owner` ⇒ the `owner` has `schedContextBinding = .bound scId`. So both server (`.donated scId …`) and owner (`.bound scId`) have `schedContextBinding.scId? = some scId`.
+- `donationBudgetTransfer` (`Defs.lean:1433`) forbids **any** two distinct TCBs from both having `scId? = some scId`.
+- `donationOwnerValid` also forces `owner ≠ server` (self-donation excluded). ⟹ **contradiction whenever any donation is live.**
+- **Live, not theoretical:** `donateSchedContext` (`Endpoint.lean:329`, via `applyCallDonation` on the production `.call` path) sets the server `.donated clientScId clientTid` and `sc.boundThread := serverTid` but **never clears the client's `.bound clientScId`**. Every donating call produces the inconsistent pair. `donationBudgetTransfer` is only ever established **vacuously** (boot, all `.unbound`).
+- **Implication:** `ipcInvariantFull` cannot hold for any donated state, so a `dispatchWithCap_preserves_ipcInvariantFull` over a donating `.call` is unprovable/vacuous — the IPC safety proofs effectively cover only donation-free states.
+
+**Remediation (implement-the-improvement — fix the spec to match the documented intent, do NOT weaken coverage):** the documented model (donationOwnerValid AUD-7 + `scThreadIndex` + CHANGELOG) intends owner `.bound` + server `.donated` co-reference; `donationBudgetTransfer` is the outlier. **Weaken `donationBudgetTransfer`** so it forbids only the genuine double-*run* (two distinct `.donated` borrowers of one scId, and/or two `.bound` owners), permitting the one-`.bound`-owner + one-`.donated`-server pair. The real guarantee (no two threads *running* one budget) is preserved because `donationOwnerValid` already forces the `.bound` owner to be `.blockedOnReply` (not running). This is a standalone invariant-definition PR (re-validate consumers: `DualQueueMembership.lean:2643/3011`, the boot default-state proof, `scThreadIndexConsistent`), sequenced before D6. **Awaiting maintainer direction (see session report).**
 
 ### Finding F-2 — D4 needs a new `reachable→blocked` queue invariant (8 enqueue transitions)
 

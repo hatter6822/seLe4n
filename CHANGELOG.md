@@ -1,3 +1,29 @@
+## v0.31.176 — IPC invariant de-threading D7 COMPLETE: `donationChainAcyclic` de-threaded (13/13) + Finding F-3
+
+De-threads `donationChainAcyclic` from all 13 `ipcInvariantFull` bundles via the existing
+subsumption lemma `donationOwnerValid_implies_donationChainAcyclic st' hDOV'` (derived from the
+still-threaded `donationOwnerValid` hypothesis) — no per-transition lemmas needed.
+`grep "hDCA' : donationChainAcyclic st'"` is now empty. 3 files, proof-only.
+
+**Finding F-3 (Medium — specification false-assurance gap; recorded, not yet fixed):** the
+de-threading of the D6 donation conjuncts surfaced that `donationOwnerValid` (`Defs.lean:1394`)
+and `donationBudgetTransfer` (`Defs.lean:1433`) are **jointly unsatisfiable for any state with a
+live SchedContext donation** — `donationOwnerValid`'s AUD-7 clause requires the donation owner to
+keep `.bound scId` while the server holds `.donated scId`, but `donationBudgetTransfer` forbids any
+two distinct TCBs referencing the same scId. The production `.call` path (`donateSchedContext`,
+`Endpoint.lean:329`) leaves the client `.bound` while making the server `.donated`, so every
+donating call produces the inconsistent pair; `donationBudgetTransfer` is only ever established
+vacuously (boot). Consequence: `ipcInvariantFull` cannot hold across a donating call, so the IPC
+preservation proofs vacuously skip donated states. Remediation (weaken `donationBudgetTransfer` to
+forbid only genuine double-*run*, matching the documented intent) is a standalone invariant-def PR
+sequenced before D6 — see `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` §"Finding F-3". D5 and
+the remaining D6 conjuncts stay threaded (D5 needs from-scratch timeout-budget preconditions; D6 is
+F-3-blocked).
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`; no AK7 drift.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D7 complete, Finding F-3)
+
 ## v0.31.175 — IPC invariant de-threading D4 (partial): `queueNext`/`queueHeadBlocked` de-threaded from 9 bundle-slots + Finding F-2
 
 De-threads `queueNextBlockingConsistent` from 5 bundles and `queueHeadBlockedConsistent` from 4
