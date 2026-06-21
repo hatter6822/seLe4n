@@ -454,62 +454,12 @@ private theorem linkServerStashedReply_preserves_ipcStateQueueConsistent
 -- WS-H12e/R3-B: Composed ipcInvariantFull preservation theorems
 -- ============================================================================
 
-/-- R3-B/M-18: notificationSignal preserves the full IPC invariant (self-contained).
-All four components derived from pre-state invariants — no externalized hypotheses. -/
-theorem notificationSignal_preserves_ipcInvariantFull
-    (st st' : SystemState)
-    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
-   notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
-   notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
-   notificationSignal_preserves_badgeWellFormed st st' notificationId badge hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
-
-/-- R3-B/M-18: notificationWait preserves the full IPC invariant (self-contained).
-All four components derived from pre-state invariants — no externalized hypotheses. -/
-theorem notificationWait_preserves_ipcInvariantFull
-    (st st' : SystemState)
-    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
-    (result : Option SeLe4n.Badge)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
-    ipcInvariantFull st' :=
-  ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
-   notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
-   notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
-   notificationWait_preserves_badgeWellFormed st st' notificationId waiter result hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
+-- R3-B/M-18: `notificationSignal_preserves_ipcInvariantFull` and
+-- `notificationWait_preserves_ipcInvariantFull` (all four core components derived from
+-- pre-state invariants) are defined at the **end** of this file in IPC de-threading D2
+-- form — they thread only `replyCallerLinkageReciprocal st'` and *preserve* the third
+-- clause via `notification{Signal,Wait}_preserves_blockedOnReplyHasReplyObject`, placed
+-- after those frame theorems to satisfy definition ordering.
 
 /-- R3-B/M-18: endpointReply preserves the full IPC invariant (self-contained).
 All four components derived from pre-state invariants. -/
@@ -4455,6 +4405,140 @@ theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
               st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hP1 (by simp) hMsg
             exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 sender) hP2
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: storing any **non-TCB** object frames the third clause — the
+keystone `hNew` is vacuous since the stored object is never a `.tcb`.  Generalises the
+`.endpoint` helper; used by the notification transitions (`.notification` stores). -/
+theorem storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNonTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (hInv : blockedOnReplyHasReplyObject st) :
+    blockedOnReplyHasReplyObject st' :=
+  storeObject_preserves_blockedOnReplyHasReplyObject st st' id obj hObjInv hInv
+    (fun t _ _ ho _ => absurd ho (hNonTcb t)) hStore
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: a `storeTcbIpcState_fromTcb` whose new `ipcState` is not
+`.blockedOnReply` frames the third clause (single `{tcb with ipcState := ipc}` store).
+Covers the `.blockedOnNotification` block-path store on `notificationWait`. -/
+theorem storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hNotBlocked : ∀ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId), ipc ≠ .blockedOnReply ep rt)
+    (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
+    blockedOnReplyHasReplyObject st' := by
+  unfold storeTcbIpcState_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    refine storeObject_preserves_blockedOnReplyHasReplyObject st st'' tid.toObjId _ hObjInv hInv
+      (fun t ep rt ho hb => ?_) hSO
+    simp only [KernelObject.tcb.injEq] at ho
+    subst ho
+    exact absurd hb (hNotBlocked ep rt)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `notificationSignal` **preserves** the third clause — it never
+sets any TCB to `.blockedOnReply` (the woken waiter goes `.ready`) and the notification
+stores are non-TCB, so the clause is framed.  Mirrors
+`notificationSignal_preserves_waitingThreadsPendingMessageNone`. -/
+theorem notificationSignal_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hInv1 := storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hInv2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+            st1 st2 waiter .ready _ hObjInv1 hInv1 (by simp) hSM
+          exact blockedOnReplyHasReplyObject_of_objects_eq (ensureRunnable_preserves_objects st2 waiter) hInv2
+    | none =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      all_goals
+        exact storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
+          st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep hInv
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `notificationWait` **preserves** the third clause — deliver path
+sets the waiter `.ready`, block path sets it `.blockedOnNotification` (neither
+`.blockedOnReply`), and the notification stores are non-TCB.  Mirrors
+`notificationWait_preserves_waitingThreadsPendingMessageNone`'s split structure. -/
+theorem notificationWait_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    blockedOnReplyHasReplyObject st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · -- deliver: pendingBadge = some
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hInv1 := storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact storeTcbIpcState_nonBlocked_preserves_blockedOnReplyHasReplyObject
+            st1 st2 waiter .ready hObjInv1 hInv1 (by simp) hSI
+    · -- block: pendingBadge = none
+      split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          · contradiction
+          · split at hStep
+            next => contradiction
+            next st1 hSO =>
+              have hInv1 := storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject
+                st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
+              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+              split at hStep
+              next => contradiction
+              next st2 hSI =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 waiter)
+                  (storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hObjInv1 hInv1 (by simp) hSI)
+  · contradiction
+  · contradiction
+
 -- ============================================================================
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --
@@ -4566,6 +4650,71 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
    ⟨hRCLRecip', endpointSendDual_preserves_blockedOnReplyHasReplyObject st st' endpointId sender msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+   hPRR'⟩
+
+/-- IPC de-threading D2 (de-threaded): `notificationSignal` preserves `ipcInvariantFull`,
+*preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
+All four core components derived internally. -/
+theorem notificationSignal_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
+   notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
+   notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
+   notificationSignal_preserves_badgeWellFormed st st' notificationId badge hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', notificationSignal_preserves_blockedOnReplyHasReplyObject st st' notificationId badge
+      hObjInv hInv.replyCallerLinkage.2 hStep⟩,
+   hPRR'⟩
+
+/-- IPC de-threading D2 (de-threaded): `notificationWait` preserves `ipcInvariantFull`,
+*preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
+All four core components derived internally. -/
+theorem notificationWait_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (result : Option SeLe4n.Badge)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
+    ipcInvariantFull st' :=
+  ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
+   notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
+   notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
+   notificationWait_preserves_badgeWellFormed st st' notificationId waiter result hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', notificationWait_preserves_blockedOnReplyHasReplyObject st st' notificationId waiter
+      result hObjInv hInv.replyCallerLinkage.2 hStep⟩,
    hPRR'⟩
 
 end SeLe4n.Kernel

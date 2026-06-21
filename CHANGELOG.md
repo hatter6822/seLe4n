@@ -1,3 +1,29 @@
+## v0.31.162 — IPC invariant de-threading D2: `notificationSignal`/`notificationWait` preserve `blockedOnReplyHasReplyObject` (bundles de-threaded)
+
+De-threads the third clause from the two notification bundles — **6 of 11**
+`replyCallerLinkage`-threading IPC bundles now de-threaded.  Neither notification
+transition ever sets a TCB to `.blockedOnReply` (signal wakes the head waiter `.ready`;
+wait sets the waiter `.ready` on the deliver path or `.blockedOnNotification` on the block
+path), and the notification-object stores are non-TCB, so the third clause is framed by
+two new reusable frames plus the existing store/scheduler frames:
+
+- `storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject` — the keystone with a vacuous
+  `hNew` for any non-`.tcb` stored object (generalises the `.endpoint` helper).
+- `storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject` — the
+  pre-looked-up `storeTcbIpcState_fromTcb` analogue of the non-blocked store frame (covers
+  the `.blockedOnNotification` block-path store).
+- `notificationSignal_preserves_blockedOnReplyHasReplyObject` /
+  `notificationWait_preserves_blockedOnReplyHasReplyObject` — mirror the corresponding
+  `_preserves_waitingThreadsPendingMessageNone` navigations.
+
+The two bundle theorems are relocated to the end of `DualQueueMembership.lean` in
+de-threaded form (thread only `replyCallerLinkageReciprocal st'`).  Proof-only; trace
+byte-identical.  Remaining: the reply-consuming bundles
+(`endpointReply`/`endpointReplyRecv`/`consumeCallerReply`), the three WithCaps
+(`ipcUnwrapCaps` cap-transfer frame), and two lifecycle/retype bundles.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
 ## v0.31.161 — IPC invariant de-threading D2: `endpointSendDual` preserves `blockedOnReplyHasReplyObject` (bundle de-threaded)
 
 First **preserve-only** bundle de-threaded (vs the three establish cases in v0.31.159–160).
