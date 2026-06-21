@@ -1606,36 +1606,12 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
         hV3JE hDQSIE hQNBCE hQHBCE hObjInvE hFreshReceiver' hRecvTailFresh'
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
-/-- U4-K/R3-B: endpointSendDual preserves the full IPC invariant.
-`allPendingMessagesBounded` and `badgeWellFormed` are now derived internally
-from the pre-state invariant. Only `dualQueueSystemInvariant` requires freshness
-preconditions from the caller. -/
-theorem endpointSendDual_preserves_ipcInvariantFull
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hInv : ipcInvariantFull st)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hObjInv hStep,
-   hDualQueue',
-   endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
-   endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
+-- U4-K/R3-B: `endpointSendDual_preserves_ipcInvariantFull` (`allPendingMessagesBounded` /
+-- `badgeWellFormed` derived internally; only `dualQueueSystemInvariant` needs freshness
+-- preconditions) is defined at the **end** of this file in IPC de-threading D2 form:
+-- it threads only `replyCallerLinkageReciprocal st'` and *preserves* the third clause via
+-- `endpointSendDual_preserves_blockedOnReplyHasReplyObject`, placed after that frame
+-- theorem to satisfy definition ordering.
 
 -- IPC de-threading D2: `endpointReceiveDual_preserves_ipcInvariantFull` and
 -- `endpointCall_preserves_ipcInvariantFull` are defined at the **end** of this file in
@@ -4423,6 +4399,62 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
           caller.toObjId tcb none hCore1 hObjInv1
           ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `endpointSendDual` **preserves** the third clause — it never sets
+any TCB to `.blockedOnReply` (rendezvous: receiver `.ready`; blocking: sender
+`.blockedOnSend`) and never touches `replyObject`, so the clause is framed throughout.
+A preserve case (the `.blockedOnReply` set is never grown), not an establish. -/
+theorem endpointSendDual_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hP1 := endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject endpointId true st pair.2.2 pair.1 _ hObjInv hInv hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            have hP2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+              pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hP1 (by simp) hMsg
+            exact blockedOnReplyHasReplyObject_of_objects_eq (ensureRunnable_preserves_objects st2 pair.1) hP2
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
+          have hP1 := endpointQueueEnqueue_preserves_blockedOnReplyHasReplyObject endpointId false sender st st1 hObjInv hInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            have hP2 := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+              st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hP1 (by simp) hMsg
+            exact blockedOnReplyHasReplyObject_of_objects_eq (removeRunnable_preserves_objects st2 sender) hP2
+
 -- ============================================================================
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --
@@ -4499,6 +4531,40 @@ theorem endpointCall_preserves_ipcInvariantFull
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
    ⟨hRCLRecip', endpointCall_establishes_blockedOnReplyHasReplyObject st st' endpointId caller msg
+      hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+   hPRR'⟩
+
+/-- IPC de-threading D2 (de-threaded): `endpointSendDual` preserves `ipcInvariantFull`,
+*preserving* the `replyCallerLinkage` third clause (framed — `endpointSendDual` never
+introduces a `.blockedOnReply` thread) rather than threading it.
+`allPendingMessagesBounded` / `badgeWellFormed` derived internally. -/
+theorem endpointSendDual_preserves_ipcInvariantFull
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hObjInv hStep,
+   hDualQueue',
+   endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
+   endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', endpointSendDual_preserves_blockedOnReplyHasReplyObject st st' endpointId sender msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    hPRR'⟩
 

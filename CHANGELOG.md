@@ -1,3 +1,21 @@
+## v0.31.161 — IPC invariant de-threading D2: `endpointSendDual` preserves `blockedOnReplyHasReplyObject` (bundle de-threaded)
+
+First **preserve-only** bundle de-threaded (vs the three establish cases in v0.31.159–160).
+`endpointSendDual` never sets a TCB to `.blockedOnReply` (rendezvous → receiver `.ready`;
+blocking → sender `.blockedOnSend`) and never touches `replyObject`, so the third clause is
+framed throughout: `endpointSendDual_preserves_blockedOnReplyHasReplyObject` composes the
+existing pop/enqueue/non-blocked-store/objects-eq frames.
+`endpointSendDual_preserves_ipcInvariantFull` is relocated to the end of
+`DualQueueMembership.lean` (after that frame theorem) in de-threaded form — it threads only
+`replyCallerLinkageReciprocal st'` and *preserves* the third clause.
+
+Proof-only; trace byte-identical.  Remaining `replyCallerLinkage`-threading IPC bundles
+(`endpointReply`/`endpointReplyRecv`/`consumeCallerReply`, `notificationSignal`/`Wait`, the
+three WithCaps) each require new frame machinery in their subsystem (reply-consumption,
+notification-op navigation, `ipcUnwrapCaps` cap-transfer) and are tracked for follow-up.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
 ## v0.31.160 — IPC invariant de-threading D2 (per-core): `endpointCallOnCore` establishes `blockedOnReplyHasReplyObject`
 
 Extends the D2 third-clause de-threading to the per-core cross-core call.  The per-core
