@@ -1,3 +1,36 @@
+## v0.31.168 — IPC invariant de-threading D3: `pendingReceiveReplyWellFormed` frame family (keystones + store frames)
+
+Lands the reusable frame family for the third D3 conjunct, `pendingReceiveReplyWellFormed` —
+the **2-clause coupling** invariant (C1: every `pendingReceiveReply = some rid` TCB is
+`.blockedOnReceive` *and* the Reply `rid` is present with `caller = none`; C2: the stash is
+injective).  C1 reads *both* the TCB store and the Reply store, and C2 couples two TCBs, so
+this is the subtlest structural conjunct so far.
+
+Three store-kind keystones, each tractable without a separate kind-stability invariant
+because a coincident Reply/TCB slot holds disjoint kinds (`.reply` ≠ `.tcb`), so the two
+accessor facts contradict — a TCB store frames every Reply lookup, and vice versa:
+- `storeObject_tcb_preserves_pendingReceiveReplyWellFormed` (TCB store; `hNewC1` stash
+  well-formedness + `hNewC2` freshness discharges; Reply lookups frame automatically);
+- `storeObject_reply_preserves_pendingReceiveReplyWellFormed` (Reply store; `hNewFree` —
+  the stored Reply is free iff a blocked receiver stashes it);
+- `storeObject_nonTcbReply_preserves_pendingReceiveReplyWellFormed` (neither kind; a store
+  may *remove* a TCB but adds none, Replies untouched).
+
+Built atop the keystones: `storeObject_establishStash_…` (introduce a fresh valid stash —
+the server-first receive path), `storeObject_tcb_preserveFields_…` (ipcState + stash
+unchanged), `storeTcbIpcStateAndMessage_…` / `storeTcbIpcState_…` (the new ipcState keeps a
+stashing thread `.blockedOnReceive`, `hStashOk`; freshness is pre-state injectivity),
+`storeTcbQueueLinks_…` (unconditional), `consumeReply_…` (clears `caller`, free outright),
+`linkReply_…` (sets `caller`; requires `rid` unstashed).  These mirror the
+`blockedOnReplyHasTarget` family shape; per-transition establishes/preserves + bundle wiring
+follow next (the keystones are the reusable foundation, as with the D2 frame family).
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `RAW_LOOKUP_TID`
+re-anchored 922→929 (additive slot-level `.toObjId]?` lookups in the keystones'
+kind-disjointness reasoning); `GETTCB_ADOPTION` 1371→1398.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3)
+
 ## v0.31.167 — IPC invariant de-threading D3: `blockedOnReplyHasTarget` fully de-threaded (all remaining bundles wired)
 
 Completes the second conjunct's de-threading.  v0.31.166 built the
