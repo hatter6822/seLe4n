@@ -1862,6 +1862,21 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hTcb
 
+/-- IPC de-threading D2: a successful `ipcTransferSingleCap` proves its `receiverRoot`
+was a CNode — the transfer reads `getCNode? receiverRoot` and fails closed
+(`.objectNotFound`) when it is `none`, so `.ok` rules out a non-CNode root. -/
+theorem ipcTransferSingleCap_ok_implies_cnode_at_root
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState) (result : CapTransferResult)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    ∃ cn, st.objects[receiverRoot]? = some (.cnode cn) := by
+  unfold ipcTransferSingleCap at hStep
+  cases hGet : st.getCNode? receiverRoot with
+  | none => simp [hGet] at hStep
+  | some cn => exact ⟨cn, (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hGet⟩
+
 /-- M3-E4 helper: ipcTransferSingleCap keeps receiverRoot as a CNode.
 The function only succeeds when receiverRoot is a CNode. On noSlot the state is
 unchanged. On installed, cspaceInsertSlot stores an updated CNode back via

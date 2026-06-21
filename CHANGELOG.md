@@ -1,3 +1,33 @@
+## v0.31.164 — IPC invariant de-threading D2: the 3 WithCaps bundles establish/preserve `blockedOnReplyHasReplyObject` (ALL IPC bundles de-threaded)
+
+De-threads the third clause from the three capability-transfer IPC bundles
+(`endpointCallWithCaps`/`endpointReceiveDualWithCaps`/`endpointSendDualWithCaps`).  With
+this, **every IPC bundle that can soundly establish or preserve the third clause is
+de-threaded** (the lone exception, `consumeCallerReply`, deliberately stays threaded: it
+clears a caller's `replyObject` without unblocking, so it cannot establish the clause
+standalone).
+
+The WithCaps route through their base transition (reusing the base establish/preserve) plus
+an optional `ipcUnwrapCaps` cap transfer.  New self-contained cap-transfer frame chain:
+
+- `ipcTransferSingleCap_ok_implies_cnode_at_root` — a successful single-cap transfer proves
+  `receiverRoot` was a CNode (it reads `getCNode? receiverRoot` and fails closed otherwise).
+- `ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode` / `ipcUnwrapCaps_objects_at_root_orig_or_cnode`
+  — `ipcUnwrapCaps` leaves `receiverRoot` either **unchanged or a CNode** (a mutating step
+  goes through a successful transfer, which requires/preserves a CNode there; otherwise it
+  short-circuits with the state unchanged).
+- `ipcUnwrapCaps_tcb_backward` — cap transfer never creates a TCB (it writes only
+  `receiverRoot`, only as a CNode), so a post-state `.tcb` maps back to the same pre-state
+  `.tcb`; every other slot is framed by `ipcUnwrapCaps_preserves_objects_ne`.
+- `ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject` and the three
+  `endpoint*WithCaps_{establishes,preserves}_blockedOnReplyHasReplyObject` compositions.
+
+The three bundle theorems are relocated to the end of `DualQueueMembership.lean` in
+de-threaded form (thread only `replyCallerLinkageReciprocal st'`).  Proof-only; trace
+byte-identical; full build green (376 jobs).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
 ## v0.31.163 — IPC invariant de-threading D2: `endpointReply`/`endpointReplyRecv` preserve `blockedOnReplyHasReplyObject` (bundles de-threaded)
 
 De-threads the third clause from the two reply-path bundles — **8 of 11**
