@@ -512,7 +512,8 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
+    (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNewObjThird : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → ∃ rid, t.replyObject = some rid)
@@ -528,7 +529,8 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
       hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hReplyBacked' hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
            hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
-           hDCA', hDOV', hPSI', hDBT', hBRT',
+           hDCA', hDOV', hPSI', hDBT',
+           lifecycleRetypeObject_preserves_blockedOnReplyHasTarget st st' authority target newObj hIpcFull.blockedOnReplyHasTarget (objects_invExt_of_capabilityInvariantBundle st hCap) hNewObjTarget hStep,
            ⟨hRCLRecip', lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject st st' authority
              target newObj hIpcFull.replyCallerLinkage.2 (objects_invExt_of_capabilityInvariantBundle st hCap)
              hNewObjThird hStep⟩,
@@ -562,7 +564,8 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
+    (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+        newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNewObjThird : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → ∃ rid, t.replyObject = some rid)
@@ -575,7 +578,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hBRT' hRCLRecip' hNewObjThird hPRR' hReplyBacked' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hNewObjTarget hRCLRecip' hNewObjThird hPRR' hReplyBacked' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep

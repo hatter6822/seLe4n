@@ -1,3 +1,39 @@
+## v0.31.167 — IPC invariant de-threading D3: `blockedOnReplyHasTarget` fully de-threaded (all remaining bundles wired)
+
+Completes the second conjunct's de-threading.  v0.31.166 built the
+`blockedOnReplyHasTarget` frame family + establishes/preserves for every transition and
+wired the `endpointCall` / `endpointReceiveDual` bundles; this cut wires the **remaining
+bundles**, so `blockedOnReplyHasTarget` is now established/preserved *concretely* (no
+threaded `hBRT'` post-state hypothesis) across the **entire** `ipcInvariantFull` surface.
+
+Bundles de-threaded here — `hBRT'` removed, the clause established/preserved from
+`hInv.blockedOnReplyHasTarget`:
+`endpointSendDual`, `notificationSignal`, `notificationWait`, `endpointReply`,
+`endpointReplyRecv` (preserves); the three WithCaps (`endpointSendDualWithCaps` preserves;
+`endpointReceiveDualWithCaps` / `endpointCallWithCaps` establish); the cross-core
+`endpointCallOnCore` (establishes, the no-`hStep` post-`subst` variant on
+`(endpointCallOnCore …).1`); and the two `lifecycleRetypeObject` bundles
+(`_preserves_coreIpcInvariantBundle` / `_preserves_lifecycleCompositionInvariantBundle`),
+which swap `hBRT'` for a clean `newObj` well-formedness side-condition `hNewObjTarget`
+(a `.blockedOnReply` retyped TCB must carry a `some` reply target — analogous to the
+existing `hNewObjThird`).
+
+Two frames added to close the `consumeCallerReply` path:
+`consumeReply_preserves_blockedOnReplyHasTarget` (a non-TCB reply store / no-op) and
+`consumeCallerReply_preserves_blockedOnReplyHasTarget` — note that *unlike* the third
+clause, `consumeCallerReply` **is** preservable here: it clears `reply.caller` and the
+caller's `replyObject` but never touches `ipcState`, which is all this clause reads.
+`consumeCallerReply_preserves_ipcInvariantFull` itself needed no edit — it already derives
+`blockedOnReplyHasTarget st'` concretely as the 15th conjunct of its `ipcInvariantCore st'`
+goal through the `ipcInvariantFull_of_core_replyCallerLinkage` assembly seam, so there was
+never an `hBRT'` token to remove.
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `GETTCB_ADOPTION`
+re-anchored 1369→1371 (the two new frames adopt the typed `getTcb?` accessor);
+`RAW_LOOKUP_TID` unchanged at 922.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3)
+
 ## v0.31.166 — IPC invariant de-threading D3: `blockedOnReplyHasTarget` frame family + establishes/preserves (endpointCall/endpointReceiveDual bundles wired)
 
 Begins the second conjunct's de-threading.  `blockedOnReplyHasTarget` reads only each TCB's

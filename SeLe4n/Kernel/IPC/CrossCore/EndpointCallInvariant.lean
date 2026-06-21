@@ -871,7 +871,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hPRR' : pendingReceiveReplyWellFormed st') :
     ipcInvariantFull st' := by
@@ -883,7 +882,8 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hInv.2.2.1 hObjInv,
     endpointCallOnCore_preserves_badgeWellFormed endpointId caller msg executingCore st
       hInv.2.2.2.1 hObjInv,
-    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT',
+    endpointCallOnCore_establishes_blockedOnReplyHasTarget endpointId caller msg executingCore st hInv.blockedOnReplyHasTarget hObjInv,
     ⟨hRCLRecip', endpointCallOnCore_establishes_blockedOnReplyHasReplyObject endpointId caller msg
       executingCore st hInv.replyCallerLinkage.2 hObjInv⟩,
     hPRR'⟩
