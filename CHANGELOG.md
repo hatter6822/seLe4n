@@ -1,3 +1,41 @@
+## v0.31.171 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from 5/15 bundles
+
+With Finding F-1 remediated (v0.31.170), `pendingReceiveReplyWellFormed` is a true invariant
+and can be *proven* (not threaded) per transition.  This cut de-threads `hPRR'` from **5 of
+the 15** `*_preserves_ipcInvariantFull` bundles, deriving the 17th conjunct concretely from
+the pre-state:
+
+- `endpointReply` and `consumeCallerReply` — no new precondition (the woken target is
+  `.blockedOnReply`, resp. the op only frees a reply + clears `replyObject`, so C1/C2 hold).
+- `notificationSignal` — threads the pre-state invariant `notificationWaiterConsistent st`
+  (the woken queue-head waiter is `.blockedOnNotification`, hence not stashing).
+- `notificationWait` and `endpointSendDual` — thread a dischargeable `hWaiterNotRecv` /
+  `hSenderNotRecv` (the calling/sending thread is not a stashing `.blockedOnReceive` thread —
+  the scheduler dispatches only `.ready` threads).  `endpointSendDual`'s rendezvous branch
+  clears the stash via the F-1 `storeTcbReceiveComplete`.
+
+These three new preconditions are genuine pre-state facts (mirroring how D2 threaded
+`replyCallerLinkageReciprocal st'` / `newObj` side-conditions), replacing the post-state
+`pendingReceiveReplyWellFormed st'` assumption.  10 reusable lemmas added:
+`endpointQueue{PopHead,Enqueue}_preserves_…`, `storeObject_endpoint_preserves_…'`,
+`storeTcb{IpcState,IpcStateAndMessage}_notReceiving_preserves_…`, and the 5 per-transition
+preserves.
+
+The **10 remaining bundles** are precisely characterized in
+`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` (§"D3 remaining"): they need reply-store
+infrastructure beyond the `blockedOnReplyHasTarget` template — the `endpointReceiveDual`
+ESTABLISH (`hReplyIdValid` present-free-unstashed + cleanup/link reply-half frames),
+`endpointCall`'s mid-transition stash window (end-to-end object-diff proof), the WithCaps
+(`ipcUnwrapCaps` reply-slot disjointness), `linkCallerReply`, and the tractable
+`lifecycleRetypeObject` pair.  These were deliberately left threaded rather than risk an
+unsound freshness lemma.
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`.  AK7
+`GETTCB_ADOPTION` re-anchored 1404→1421 (new frames adopt the typed accessors);
+`RAW_LOOKUP_TID` unchanged at 941.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3, 5/15 bundles)
+
 ## v0.31.170 — IPC invariant de-threading D3: Finding F-1 REMEDIATED — eager stash-clear makes `pendingReceiveReplyWellFormed` a true invariant
 
 Closes the kernel-correctness gap recorded in v0.31.169.  The three **non-Call**
