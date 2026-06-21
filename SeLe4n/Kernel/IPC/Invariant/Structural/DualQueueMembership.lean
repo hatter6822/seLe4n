@@ -461,33 +461,11 @@ private theorem linkServerStashedReply_preserves_ipcStateQueueConsistent
 -- clause via `notification{Signal,Wait}_preserves_blockedOnReplyHasReplyObject`, placed
 -- after those frame theorems to satisfy definition ordering.
 
-/-- R3-B/M-18: endpointReply preserves the full IPC invariant (self-contained).
-All four components derived from pre-state invariants. -/
-theorem endpointReply_preserves_ipcInvariantFull
-    (st st' : SystemState)
-    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : endpointReply replier target msg st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
-   endpointReply_preserves_dualQueueSystemInvariant replier target msg st st' hObjInv hStep hInv.2.1,
-   endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hObjInv hStep,
-   endpointReply_preserves_badgeWellFormed st st' replier target msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
+-- R3-B/M-18: `endpointReply_preserves_ipcInvariantFull` (all four core components derived
+-- from pre-state invariants) is defined at the **end** of this file in IPC de-threading D2
+-- form — it threads only `replyCallerLinkageReciprocal st'` and *preserves* the third
+-- clause via `endpointReply_preserves_blockedOnReplyHasReplyObject`, placed after that
+-- frame theorem to satisfy definition ordering.
 
 -- ============================================================================
 -- V3-K IPC operation proofs: endpointQueueNoDup preservation
@@ -1573,35 +1551,12 @@ theorem endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent
 -- half was threaded pre-#7.4; de-threading the new third clause is the #7.4 origin-gap
 -- closure at the transition boundary.)
 
-/-- U4-K: endpointReplyRecv preserves the full IPC invariant.
-`allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
-theorem endpointReplyRecv_preserves_ipcInvariantFull
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
-    (replyId : Option SeLe4n.ReplyId)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
-   hDualQueue',
-   endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
-   endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
+-- U4-K: `endpointReplyRecv_preserves_ipcInvariantFull` (`allPendingMessagesBounded` /
+-- `badgeWellFormed` derived internally) is defined at the **end** of this file in IPC
+-- de-threading D2 form — it threads only `replyCallerLinkageReciprocal st'` and *preserves*
+-- the third clause via `endpointReplyRecv_preserves_blockedOnReplyHasReplyObject` (which
+-- composes the unblock frame with the `endpointReceiveDual` receive-leg establish), placed
+-- after that frame theorem to satisfy definition ordering.
 
 /-- T4-K (L-P10): Convenience theorem for composing `ipcInvariantFull` from its
 individual components. Reduces boilerplate for callers that must manually
@@ -4539,6 +4494,109 @@ theorem notificationWait_preserves_blockedOnReplyHasReplyObject
   · contradiction
   · contradiction
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `endpointReply` **preserves** the third clause — it only *unblocks*
+the replied-to target (`.blockedOnReply → .ready`) and never sets any TCB to
+`.blockedOnReply`, so the `.blockedOnReply` set shrinks and the clause is framed.  (It does
+not consume the reply object — that is `consumeCallerReply`.) -/
+theorem endpointReply_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      cases replyTarget with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp
+          | ok st'' =>
+            intro hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, rfl⟩ := hStep
+            have hP := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+              st st'' target .ready (some msg) hObjInv hInv (by simp) hMsg
+            exact blockedOnReplyHasReplyObject_of_objects_eq (ensureRunnable_preserves_objects st'' target) hP
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D2: `endpointReplyRecv` **preserves** the third clause — it unblocks
+the reply target (`.ready`, framed) then runs `endpointReceiveDual`, which *establishes*
+the clause (`endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`).  Composes the
+unblock frame with the receive-leg establish. -/
+theorem endpointReplyRecv_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId expectedReplier =>
+      simp only [hIpc] at hStep
+      cases expectedReplier with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok stReplied =>
+            simp only []
+            have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
+            have hPR := storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject
+              st stReplied replyTarget .ready (some msg) hObjInv hInv (by simp) hMsg
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hPE : blockedOnReplyHasReplyObject (ensureRunnable stReplied replyTarget) :=
+              blockedOnReplyHasReplyObject_of_objects_eq (ensureRunnable_preserves_objects stReplied replyTarget) hPR
+            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            | error e => simp
+            | ok pair =>
+              intro hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              exact endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
+                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hPE hObjInvE hRecv
+        · simp at hStep
+
 -- ============================================================================
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --
@@ -4715,6 +4773,73 @@ theorem notificationWait_preserves_ipcInvariantFull
    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
    ⟨hRCLRecip', notificationWait_preserves_blockedOnReplyHasReplyObject st st' notificationId waiter
       result hObjInv hInv.replyCallerLinkage.2 hStep⟩,
+   hPRR'⟩
+
+/-- IPC de-threading D2 (de-threaded): `endpointReply` preserves `ipcInvariantFull`,
+*preserving* the `replyCallerLinkage` third clause (framed — the reply only unblocks the
+target) rather than threading it.  All four core components derived internally. -/
+theorem endpointReply_preserves_ipcInvariantFull
+    (st st' : SystemState)
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
+   endpointReply_preserves_dualQueueSystemInvariant replier target msg st st' hObjInv hStep hInv.2.1,
+   endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hObjInv hStep,
+   endpointReply_preserves_badgeWellFormed st st' replier target msg hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', endpointReply_preserves_blockedOnReplyHasReplyObject st st' replier target msg
+      hObjInv hInv.replyCallerLinkage.2 hStep⟩,
+   hPRR'⟩
+
+/-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
+*preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
+establishes it) rather than threading it.  `allPendingMessagesBounded` / `badgeWellFormed`
+derived internally. -/
+theorem endpointReplyRecv_preserves_ipcInvariantFull
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
+   hDualQueue',
+   endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
+   endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', endpointReplyRecv_preserves_blockedOnReplyHasReplyObject st st' endpointId receiver
+      replyTarget msg replyId hObjInv hInv.replyCallerLinkage.2 hStep⟩,
    hPRR'⟩
 
 end SeLe4n.Kernel

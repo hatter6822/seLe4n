@@ -1,3 +1,28 @@
+## v0.31.163 — IPC invariant de-threading D2: `endpointReply`/`endpointReplyRecv` preserve `blockedOnReplyHasReplyObject` (bundles de-threaded)
+
+De-threads the third clause from the two reply-path bundles — **8 of 11**
+`replyCallerLinkage`-threading IPC bundles now de-threaded; every IPC transition whose
+third clause it is *sound* to establish or preserve is done.
+
+- `endpointReply_preserves_blockedOnReplyHasReplyObject` — `endpointReply` only *unblocks*
+  the replied-to target (`.blockedOnReply → .ready`), shrinking the `.blockedOnReply` set,
+  so the clause is framed (the `fromTcb` store is converted to the plain store via
+  `storeTcbIpcStateAndMessage_fromTcb_eq` and reuses the non-blocked frame).
+- `endpointReplyRecv_preserves_blockedOnReplyHasReplyObject` — composes the unblock frame
+  with the receive leg, which *establishes* the clause by **reusing**
+  `endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`.
+
+Both bundle theorems relocated to the end of `DualQueueMembership.lean` in de-threaded form
+(thread only `replyCallerLinkageReciprocal st'`).  Proof-only; trace byte-identical.
+
+Remaining `replyCallerLinkage`-threading bundles: the three WithCaps variants (route
+through the base transition + an `ipcUnwrapCaps` cap-transfer frame) and two lifecycle
+retype bundles.  `consumeCallerReply` deliberately stays threaded: it clears a caller's
+`replyObject` without unblocking, so it cannot establish the third clause standalone (its
+pre-fusion status — the fused reply transition re-establishes it).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
 ## v0.31.162 — IPC invariant de-threading D2: `notificationSignal`/`notificationWait` preserve `blockedOnReplyHasReplyObject` (bundles de-threaded)
 
 De-threads the third clause from the two notification bundles — **6 of 11**
