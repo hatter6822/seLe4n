@@ -256,6 +256,24 @@ theorem storeTcbIpcStateAndMessage_fromTcb_eq
   unfold storeTcbIpcStateAndMessage_fromTcb storeTcbIpcStateAndMessage
   simp [hLookup]
 
+/-- IPC de-threading D3 (Finding F-1): complete a receive — set the receiver `.ready`
+with the delivered message **and** clear its server-first `pendingReceiveReply` stash.
+Used by the **non-Call** receive-completion wakes (`endpointSendDual` rendezvous,
+`notificationSignalBound{,OnCore}`): the receive completed without a `Call`, so the
+stashed reply object is moot and the `pendingReceiveReplyWellFormed` discipline ("a
+thread that is not `.blockedOnReceive` holds no server-first reply stash") requires it
+cleared.  Distinct from `storeTcbIpcStateAndMessage`, which **preserves** the stash for
+the `Call` rendezvous, where `linkServerStashedReply` consumes it. -/
+def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match storeObject tid.toObjId
+          (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
 /-- WS-L1: `lookupTcb` is preserved when `storeObject` targets a notification
 (different ObjId from any TCB). Used to justify `_fromTcb` usage after an
 intervening notification store. Accepts both `((), st')` and `pair` forms. -/

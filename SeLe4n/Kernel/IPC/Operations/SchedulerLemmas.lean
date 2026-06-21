@@ -297,6 +297,30 @@ theorem storeTcbIpcStateAndMessage_preserves_objects_ne
       have hEq : stMid = st' := Except.ok.inj hStep; subst hEq
       exact storeObject_objects_ne st stMid tid.toObjId oid _ hNe hObjInv hStore
 
+/-- Finding F-1: `storeTcbReceiveComplete` preserves objects at IDs other than
+`tid.toObjId`.  Mirror of `storeTcbIpcStateAndMessage_preserves_objects_ne`; the
+extra `pendingReceiveReply := none` in the stored TCB is invisible to a
+different-ObjId read. -/
+theorem storeTcbReceiveComplete_preserves_objects_ne
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (hNe : oid ≠ tid.toObjId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.objects[oid]? = st.objects[oid]? := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨⟨⟩, stMid⟩ := pair
+      simp only [hStore] at hStep
+      have hEq : stMid = st' := Except.ok.inj hStep; subst hEq
+      exact storeObject_objects_ne st stMid tid.toObjId oid _ hNe hObjInv hStore
+
 /-- WS-F1: `storeTcbIpcStateAndMessage` does not modify the scheduler. -/
 theorem storeTcbIpcStateAndMessage_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -309,6 +333,25 @@ theorem storeTcbIpcStateAndMessage_scheduler_eq
   | some tcb =>
     simp only [hTcb] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_scheduler_eq st pair.2 tid.toObjId _ hStore
+
+/-- Finding F-1: `storeTcbReceiveComplete` does not modify the scheduler.
+Mirror of `storeTcbIpcStateAndMessage_scheduler_eq`. -/
+theorem storeTcbReceiveComplete_scheduler_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.scheduler = st.scheduler := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -330,6 +373,23 @@ theorem storeTcbIpcStateAndMessage_preserves_endpoint
     have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
     simp [hLookup] at hStep
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg epId hEq hObjInv hStep]; exact hEp
+
+/-- Finding F-1: `storeTcbReceiveComplete` preserves endpoint objects.
+Mirror of `storeTcbIpcStateAndMessage_preserves_endpoint`. -/
+theorem storeTcbReceiveComplete_preserves_endpoint
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (epId : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.objects[epId]? = some (.endpoint ep) := by
+  by_cases hEq : epId = tid.toObjId
+  · subst hEq
+    unfold storeTcbReceiveComplete at hStep
+    have hLookup : lookupTcb st tid = none := by unfold lookupTcb; simp [hEp]
+    simp [hLookup] at hStep
+  · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg epId hEq hObjInv hStep]; exact hEp
 
 /-- WS-F1: `storeTcbIpcStateAndMessage` preserves notification objects. -/
 theorem storeTcbIpcStateAndMessage_preserves_notification
@@ -395,6 +455,31 @@ theorem storeTcbIpcStateAndMessage_notification_backward
         rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
   · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg oid hEq hObjInv hStep] at hNtfn; exact hNtfn
 
+/-- Finding F-1: Backward notification preservation for `storeTcbReceiveComplete`.
+Mirror of `storeTcbIpcStateAndMessage_notification_backward`. -/
+theorem storeTcbReceiveComplete_notification_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    unfold storeTcbReceiveComplete at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
+  · rw [storeTcbReceiveComplete_preserves_objects_ne st st' tid msg oid hEq hObjInv hStep] at hNtfn; exact hNtfn
+
 /-- WS-F1: IPC state read-back for `storeTcbIpcStateAndMessage`. -/
 theorem storeTcbIpcStateAndMessage_ipcState_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -416,6 +501,29 @@ theorem storeTcbIpcStateAndMessage_ipcState_eq
       have hAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
       rw [hAt] at hTcb; cases hTcb; rfl
 
+/-- Finding F-1: IPC state read-back for `storeTcbReceiveComplete` — the stored
+TCB is `.ready`.  Mirror of `storeTcbIpcStateAndMessage_ipcState_eq` with the
+`ipc` parameter specialised to the hardcoded `.ready`. -/
+theorem storeTcbReceiveComplete_ipcState_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (tcb : TCB) (hTcb : st'.objects[tid.toObjId]? = some (.tcb tcb)) :
+    tcb.ipcState = .ready := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb' =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb' with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
+      rw [hAt] at hTcb; cases hTcb; rfl
+
 /-- WS-F1: TCB existence at target after `storeTcbIpcStateAndMessage`. -/
 theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -430,6 +538,27 @@ theorem storeTcbIpcStateAndMessage_tcb_exists_at_target
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have := Except.ok.inj hStep; subst this
+      exact ⟨_, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore⟩
+
+/-- Finding F-1: TCB existence at target after `storeTcbReceiveComplete`.
+Mirror of `storeTcbIpcStateAndMessage_tcb_exists_at_target`. -/
+theorem storeTcbReceiveComplete_tcb_exists_at_target
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (_hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep
@@ -615,6 +744,26 @@ theorem storeTcbIpcStateAndMessage_preserves_objects_invExt
   | some tcb =>
     simp only [hLookup] at hStep
     cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have := Except.ok.inj hStep; subst this
+      exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
+
+/-- Finding F-1: `storeTcbReceiveComplete` preserves `objects.invExt`.
+Mirror of `storeTcbIpcStateAndMessage_preserves_objects_invExt`. -/
+theorem storeTcbReceiveComplete_preserves_objects_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    st'.objects.invExt := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
     | error e => simp [hStore] at hStep
     | ok pair =>
       simp only [hStore] at hStep

@@ -1600,8 +1600,11 @@ def endpointSendDual (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
             match endpointQueuePopHead endpointId true st with
             | .error e => .error e
             | .ok (receiver, _tcb, st') =>
-                -- WS-F1: Transfer message to receiver and unblock
-                match storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
+                -- WS-F1: Transfer message to receiver and unblock.
+                -- IPC de-threading D3 (Finding F-1): a plain `Send` completing a
+                -- server-first `Recv` clears the receiver's `pendingReceiveReply` stash
+                -- (no `Call` arrived, so the stashed reply object is moot).
+                match storeTcbReceiveComplete st' receiver (some msg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' receiver)
         | none =>

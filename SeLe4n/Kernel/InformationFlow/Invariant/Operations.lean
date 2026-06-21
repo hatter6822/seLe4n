@@ -1566,14 +1566,14 @@ theorem endpointSendDual_preserves_projection
           have hProjPop := endpointQueuePopHead_preserves_projection ctx observer
               endpointId true st st1 receiver recvTcb hEndpointHigh hRecvObjHigh
               hNextHighForPop hObjInv hPop
-          cases hTcbStore : storeTcbIpcStateAndMessage st1 receiver .ready (some msg) with
+          cases hTcbStore : storeTcbReceiveComplete st1 receiver (some msg) with
           | error e => simp [hTcbStore] at hStep
           | ok st2 =>
             simp only [hTcbStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
             rw [ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh,
-                storeTcbIpcStateAndMessage_preserves_projection ctx observer st1 st2
-                receiver _ _ hRecvObjHigh hObjInv1 hTcbStore,
+                storeTcbReceiveComplete_preserves_projection ctx observer st1 st2
+                receiver _ hRecvObjHigh hObjInv1 hTcbStore,
                 hProjPop]
       | none =>
         -- Path 2: No receiver — Enqueue sender + storeTcbIpcState + removeRunnable

@@ -342,7 +342,7 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
         | error e => simp [hPop] at hStep
         | ok pair =>
           simp only [hPop] at hStep
-          cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hStore : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -353,8 +353,8 @@ theorem endpointSendDual_preserves_dualQueueSystemInvariant
             have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
               endpointId true st stPop rcvr headTcb1 hObjInv hPop
             exact ensureRunnable_preserves_dualQueueSystemInvariant _ _
-              (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
-                stPop st2 rcvr .ready (some msg) hObjInv1 hStore hInv1)
+              (storeTcbReceiveComplete_preserves_dualQueueSystemInvariant
+                stPop st2 rcvr (some msg) hObjInv1 hStore hInv1)
       | none =>
         -- Path B: enqueue sender, store message, block
         simp only [hHead] at hStep
@@ -973,6 +973,36 @@ theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
       simp only [hLookup] at hStep
       cases hStore : storeObject tid.toObjId
         (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+          simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
+          intro t tcb' m hObj hPend
+          by_cases hEq : t.toObjId = tid.toObjId
+          · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore] at hObj
+            cases hObj; simp at hPend
+            exact hMsgBounded m hPend
+          · have hObjPre : st.objects[t.toObjId]? = some (.tcb tcb') := by
+              rwa [storeObject_objects_ne st pair.2 tid.toObjId t.toObjId _ hEq hObjInv hStore] at hObj
+            exact hInv t tcb' m hObjPre hPend
+
+/-- Finding F-1: `storeTcbReceiveComplete` preserves allPendingMessagesBounded
+when the delivered message satisfies `bounded`.  Mirror of
+`storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded`. -/
+theorem storeTcbReceiveComplete_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hMsgBounded : ∀ m, msg = some m → m.bounded)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
           simp only [hStore] at hStep; have := Except.ok.inj hStep; subst this
@@ -1756,14 +1786,14 @@ theorem endpointSendDual_preserves_allPendingMessagesBounded
             endpointId true st stPop receiver headTcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st stPop receiver headTcb hObjInv hPop
-          cases hStore : storeTcbIpcStateAndMessage stPop receiver .ready (some msg) with
+          cases hStore : storeTcbReceiveComplete stPop receiver (some msg) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact ensureRunnable_preserves_allPendingMessagesBounded st2 receiver
-              (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
-                stPop st2 receiver _ _ (by intro m hm; cases hm; exact hMsgBounded)
+              (storeTcbReceiveComplete_preserves_allPendingMessagesBounded
+                stPop st2 receiver _ (by intro m hm; cases hm; exact hMsgBounded)
                 hObjInv1 hStore hInv1)
       | none =>
         simp only [hHead] at hStep
@@ -1818,14 +1848,14 @@ theorem endpointSendDual_preserves_badgeWellFormed
             endpointId true st stPop receiver headTcb hObjInv hPop hInv
           have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
             endpointId true st stPop receiver headTcb hObjInv hPop
-          cases hStore : storeTcbIpcStateAndMessage stPop receiver .ready (some msg) with
+          cases hStore : storeTcbReceiveComplete stPop receiver (some msg) with
           | error e => simp [hStore] at hStep
           | ok st2 =>
             simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             exact ensureRunnable_preserves_badgeWellFormed st2 receiver
-              (storeTcbIpcStateAndMessage_preserves_badgeWellFormed
-                stPop st2 receiver _ _ hInv1 hObjInv1 hStore)
+              (storeTcbReceiveComplete_preserves_badgeWellFormed
+                stPop st2 receiver _ hInv1 hObjInv1 hStore)
       | none =>
         simp only [hHead] at hStep
         cases hEnq : endpointQueueEnqueue endpointId false sender st with

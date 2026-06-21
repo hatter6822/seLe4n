@@ -1,3 +1,37 @@
+## v0.31.170 — IPC invariant de-threading D3: Finding F-1 REMEDIATED — eager stash-clear makes `pendingReceiveReplyWellFormed` a true invariant
+
+Closes the kernel-correctness gap recorded in v0.31.169.  The three **non-Call**
+receive-completion wakes that previously left a stale server-first reply stash on a
+`.ready` thread now clear it, so `pendingReceiveReplyWellFormed` clause C1
+(`pendingReceiveReply = some rid ⇒ .blockedOnReceive`) is genuinely preserved.
+
+A dedicated store helper **`storeTcbReceiveComplete`** (`= storeTcbIpcStateAndMessage` with
+`ipcState := .ready` hardcoded **and** `pendingReceiveReply := none`) backs the delivery in:
+- `endpointSendDual` rendezvous (a plain `Send` completing a server-first `Recv`),
+- `notificationSignalBound` and `notificationSignalBoundOnCore` (a `Signal` to a bound TCB
+  blocked on receive).
+
+`storeTcbIpcStateAndMessage` itself is **unchanged** — the `endpointCall` rendezvous delivers
+to the server with it and then consumes the stash via `linkServerStashedReply`, so a *global*
+clear would fail the Call link closed `.replyCapInvalid` (this was verified to regress the
+F1-03 `[IMT-011/012/014]` trace; the surgical per-wake clear avoids it).
+
+20 mirror frames `storeTcbReceiveComplete_*` (each a near-verbatim copy of its
+`storeTcbIpcStateAndMessage_*` sibling, placed adjacently; the `.ready`-specialisation drops
+the now-vacuous `ipc`/`hTargetOk`/`hStashOk`/`hNotBlocked` side-conditions —
+`_preserves_pendingReceiveReplyWellFormed` in particular has *vacuous* keystone discharges
+since the stored TCB carries no stash) carry the three transitions' structural / info-flow /
+lock-set proofs across the helper swap.  The de-threading of `pendingReceiveReplyWellFormed`
+(per-transition establishes/preserves + bundle `hPRR'` removal) is now unblocked.
+
+Semantic change confined to the three Send/notification wake paths; all Call/Receive/Reply
+paths untouched.  Trace **byte-identical** (the smoke trace exercises a `Call`, not a
+stashing-receiver-then-`Send`); full build green (376 jobs); `test_full` (Tier 0-3) green;
+zero `sorry`/`axiom`.  AK7 `RAW_LOOKUP_TID` re-anchored 929→941 (the mirror frames reproduce
+the siblings' raw `…toObjId]?` invariant predicates); `GETTCB_ADOPTION` 1398→1404.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-1, remediated)
+
 ## v0.31.169 — IPC invariant de-threading D3: Finding F-1 — `pendingReceiveReplyWellFormed` is not preserved by Send/notification wakes (tracked debt)
 
 De-threading `pendingReceiveReplyWellFormed` (the 17th `ipcInvariantFull` conjunct) by

@@ -174,6 +174,42 @@ theorem storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
         rw [hFrame] at hObj'
         exact hInv tid' tcb' hObj'
 
+/-- Finding F-1: `storeTcbReceiveComplete` preserves
+`waitingThreadsPendingMessageNone`.  The stored ipcState is `.ready` (non-waiting),
+so no `hTarget` obligation on `msg` is needed.  Mirror of
+`storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone`. -/
+theorem storeTcbReceiveComplete_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbReceiveComplete st tid msg = .ok st')
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone st' := by
+  unfold storeTcbReceiveComplete at hStore
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStore
+  | some tcb =>
+    simp only [hLk] at hStore
+    cases hSO : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hSO] at hStore
+    | ok pair =>
+      simp only [hSO, Except.ok.injEq] at hStore; subst hStore
+      intro tid' tcb' hObj'
+      by_cases hEq : tid'.toObjId = tid.toObjId
+      · -- Same thread: new ipcState `.ready` is non-waiting → trivial
+        have hSelf := storeObject_objects_eq st pair.2 tid.toObjId
+          (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) hObjInv hSO
+        rw [hEq] at hObj'; rw [hSelf] at hObj'
+        cases hObj'
+        trivial
+      · have hNe' : tid'.toObjId ≠ tid.toObjId := hEq
+        have hFrame := storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId
+          (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none })
+          hNe' hObjInv hSO
+        rw [hFrame] at hObj'
+        exact hInv tid' tcb' hObj'
+
 /-- `storeTcbQueueLinks` only modifies queue link fields (queuePrev, queuePPrev,
     queueNext) via `tcbWithQueueLinks`. ipcState and pendingMessage are unchanged,
     so `waitingThreadsPendingMessageNone` is preserved. -/

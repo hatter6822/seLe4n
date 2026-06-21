@@ -513,6 +513,32 @@ theorem storeObject_preserves_projection
   · -- V6-E: serviceRegistry
     exact storeObject_preserves_projectServiceRegistry ctx observer st st' oid obj hStore
 
+/-- Finding F-1: `storeTcbReceiveComplete` at a non-observable object preserves
+projection.  The store touches only the (non-observable) target TCB; the extra
+`pendingReceiveReply := none` is erased by `projectKernelObject` regardless.  Mirror of
+`storeTcbIpcStateAndMessage_preserves_projection`, delegating to the field-agnostic
+`storeObject_preserves_projection`. -/
+theorem storeTcbReceiveComplete_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨⟨⟩, st''⟩ := pair
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      exact storeObject_preserves_projection ctx observer st st'' tid.toObjId _ hTidObjHigh hObjInv hStore
+
 /-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
 fold's atomic `linkCallerReply` reply-write) preserves `projectState`
 **unconditionally** — even when the Reply object is low-visible — because

@@ -180,6 +180,43 @@ theorem storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
           exact hK1 tid' tcb' hTcb'
       · exact hK2
 
+/-- Finding F-1: `storeTcbReceiveComplete` preserves endpointQueueNoDup.
+Endpoint objects are unchanged by the TCB store, and the additional
+`pendingReceiveReply := none` leaves `queueNext` untouched.  Mirror of
+`storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup`. -/
+theorem storeTcbReceiveComplete_preserves_endpointQueueNoDup
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : endpointQueueNoDup st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbReceiveComplete st tid msg = .ok st') :
+    endpointQueueNoDup st' := by
+  unfold storeTcbReceiveComplete at hStore
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStore
+  | some tcb =>
+    simp only [hLookup] at hStore
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hSt] at hStore
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro oid ep hEp
+      have hNe : oid ≠ tid.toObjId := by
+        intro h; subst h
+        rw [storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hEp; cases hEp
+      rw [storeObject_objects_ne st pair.2 tid.toObjId oid _ hNe hObjInv hSt] at hEp
+      have ⟨hK1, hK2⟩ := hInv oid ep hEp
+      constructor
+      · intro tid' tcb' hTcb'
+        by_cases hEq : tid'.toObjId = tid.toObjId
+        · rw [hEq, storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt] at hTcb'
+          cases hTcb'
+          exact hK1 tid' tcb (hEq ▸ hTcbObj)
+        · rw [storeObject_objects_ne st pair.2 tid.toObjId tid'.toObjId _ hEq hObjInv hSt] at hTcb'
+          exact hK1 tid' tcb' hTcb'
+      · exact hK2
+
 /-- storeTcbIpcStateAndMessage_fromTcb preserves endpointQueueNoDup. -/
 theorem storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)

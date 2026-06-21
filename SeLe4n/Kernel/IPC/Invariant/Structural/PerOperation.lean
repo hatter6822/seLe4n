@@ -1466,13 +1466,13 @@ theorem endpointSendDual_preserves_waitingThreadsPendingMessageNone
             endpointId true st triple.2.2 triple.1 triple.2.1 hObjInv hPop
           have hInv1 := endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone
             endpointId true st triple.2.2 triple.1 triple.2.1 hObjInv hInv hPop
-          cases hMsg : storeTcbIpcStateAndMessage triple.2.2 triple.1 .ready (some msg) with
+          cases hMsg : storeTcbReceiveComplete triple.2.2 triple.1 (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
-              triple.2.2 st2 triple.1 .ready (some msg) hObjInv1 hMsg hInv1 trivial
+            have hInv2 := storeTcbReceiveComplete_preserves_waitingThreadsPendingMessageNone
+              triple.2.2 st2 triple.1 (some msg) hObjInv1 hMsg hInv1
             exact ensureRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
       | none =>
         -- Block path: enqueue → storeTcbIpcStateAndMessage .blockedOnSend → removeRunnable

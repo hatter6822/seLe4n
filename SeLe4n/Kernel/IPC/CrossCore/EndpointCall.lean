@@ -580,6 +580,23 @@ theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
          storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hObjInv hStep tcb' hTcb'⟩
 
+/-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
+and sets its `ipcState` to `.ready`.  Mirror of
+`storeTcbIpcStateAndMessage_getTcb?_ipcState`. -/
+theorem storeTcbReceiveComplete_getTcb?_ipcState
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    ∃ t, st'.getTcb? tid = some t ∧ t.ipcState = .ready := by
+  obtain ⟨tcb', hTcb'⟩ :=
+    storeTcbReceiveComplete_tcb_exists_at_target st st' tid msg hObjInv hStep
+      (by cases hL : lookupTcb st tid with
+          | none => simp [storeTcbReceiveComplete, hL] at hStep
+          | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩)
+  exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
+         storeTcbReceiveComplete_ipcState_eq st st' tid msg hObjInv hStep tcb' hTcb'⟩
+
 /-- WS-SM SM6.A.6 (`reply allocation under lock-set`): on a rendezvous call the
 caller's **reply linkage** is established — its TCB transitions to
 `blockedOnReply endpointId (some receiver)`, recording the authorised replier

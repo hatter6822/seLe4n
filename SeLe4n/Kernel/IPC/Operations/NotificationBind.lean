@@ -272,7 +272,10 @@ def notificationSignalBound (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badg
         match endpointQueueRemoveDual epId true t st with
         | .error e => .error e
         | .ok ((), st1) =>
-            match storeTcbIpcStateAndMessage st1 t .ready (some badgeMsg) with
+            -- IPC de-threading D3 (Finding F-1): the bound TCB was
+            -- `.blockedOnReceive`; a non-`Call` badge delivery clears its
+            -- server-first `pendingReceiveReply` stash (no `Call` arrived).
+            match storeTcbReceiveComplete st1 t (some badgeMsg) with
             | .error e => .error e
             | .ok st2 => .ok ((), ensureRunnable st2 t)
     | none => notificationSignal notificationId badge st
