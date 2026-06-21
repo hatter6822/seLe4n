@@ -1,3 +1,38 @@
+## v0.31.159 — IPC invariant de-threading D2: `endpointCall`/`endpointReceiveDual` establish `blockedOnReplyHasReplyObject` (bundles de-threaded)
+
+Completes the D2 slice for both single-core IPC transitions that can introduce a
+`.blockedOnReply` thread.  Their `*_preserves_ipcInvariantFull` bundle theorems no longer
+*thread* the full `replyCallerLinkage st'`: they thread only the reciprocal half
+(`replyCallerLinkageReciprocal st'`, threaded pre-#7.4) and **concretely establish** the
+third clause (`blockedOnReplyHasReplyObject st'`) from the pre-state plus the step.  This
+closes the #7.4 false-assurance gap — a `.blockedOnReply` caller with no backing Reply to
+answer it — at the *transition* boundary, not merely at syscall boundaries.
+
+New establish theorems + the reusable frame family that composes them:
+
+- `endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject` (the gateway frame;
+  mirrors `endpointQueuePopHead_preserves_objects_invExt`'s navigation) and
+  `endpointQueueEnqueue_preserves_blockedOnReplyHasReplyObject`.
+- Store frames: `storeObject_endpoint_preserves_…{,'}`,
+  `storeTcbIpcState_nonBlocked_preserves_…`, `storeTcbIpcStateAndMessage_off_preserves_…`.
+- Reply-link establishes: `linkCallerReply_establishes_blockedOnReplyHasReplyObject` (the
+  third-clause-only companion of the reciprocal establish — no reciprocal hypothesis) and
+  `linkServerStashedReply_establishes_blockedOnReplyHasReplyObject`.
+- Donation-cleanup frames: `returnDonatedSchedContext_tcb_ipcState_replyObject_backward`,
+  `cleanupPreReceiveDonation_tcb_ipcState_replyObject_backward`, and
+  `cleanupPreReceiveDonation_preserves_blockedOnReplyHasReplyObject`.
+- Compositions: `endpointCall_establishes_blockedOnReplyHasReplyObject` (rendezvous +
+  blocking branches) and `endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`
+  (Call + Send + Block branches).
+
+The two single-core bundle theorems are relocated to the end of
+`IPC/Invariant/Structural/DualQueueMembership.lean` (after the establish theorems they now
+depend on) in de-threaded form.  Proof-only — no transition semantics change, trace
+byte-identical.  AK7 `RAW_LOOKUP_TID` baseline re-anchored 903→918 for the additive
+navigation mirror proofs (`GETTCB_ADOPTION` 1355→1361).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
 ## v0.31.158 — IPC invariant de-threading: `blockedOnReplyHasReplyObject` frame family (D2 foundation)
 
 Building blocks for the D2 slice (concretely *establishing* the third clause of

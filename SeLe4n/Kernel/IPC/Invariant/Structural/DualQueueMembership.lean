@@ -1637,64 +1637,15 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
 
-/-- U4-K/R3-B: endpointReceiveDual preserves the full IPC invariant.
-`allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
-theorem endpointReceiveDual_preserves_ipcInvariantFull
-    (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId)
-    (st st' : SystemState)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId replyId hInv.1 hObjInv hStep,
-   hDualQueue',
-   endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
-   endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
-
-/-- U4-K/R3-B: endpointCall preserves the full IPC invariant.
-`allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
-theorem endpointCall_preserves_ipcInvariantFull
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (hInv : ipcInvariantFull st)
-    (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
-    (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
-    (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDCA' : donationChainAcyclic st')
-    (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
-    (hBRT' : blockedOnReplyHasTarget st')
-    (hRCL' : replyCallerLinkage st')
-    (hPRR' : pendingReceiveReplyWellFormed st')
-    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
-   hDualQueue',
-   endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
-   endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT', hRCL', hPRR'⟩
+-- IPC de-threading D2: `endpointReceiveDual_preserves_ipcInvariantFull` and
+-- `endpointCall_preserves_ipcInvariantFull` are defined at the **end** of this file in
+-- *de-threaded* form: they no longer assume the full `replyCallerLinkage st'`, instead
+-- threading only its reciprocal half (`replyCallerLinkageReciprocal st'`) and concretely
+-- *establishing* the third clause (`blockedOnReplyHasReplyObject st'`) from the pre-state
+-- via `endpoint{ReceiveDual,Call}_establishes_blockedOnReplyHasReplyObject`.  They are
+-- placed after those establish theorems to satisfy definition ordering.  (The reciprocal
+-- half was threaded pre-#7.4; de-threading the new third clause is the #7.4 origin-gap
+-- closure at the transition boundary.)
 
 /-- U4-K: endpointReplyRecv preserves the full IPC invariant.
 `allPendingMessagesBounded` and `badgeWellFormed` derived internally. -/
@@ -4471,5 +4422,84 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
         exact storeObject_tcb_replyObject_preserves_ipcInvariantCore st1 st'
           caller.toObjId tcb none hCore1 hObjInv1
           ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
+
+-- ============================================================================
+-- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
+--
+-- `endpointReceiveDual` / `endpointCall` no longer thread the full
+-- `replyCallerLinkage st'`.  They thread only the reciprocal half
+-- (`replyCallerLinkageReciprocal st'`, threaded pre-#7.4) and **establish** the third
+-- clause (`blockedOnReplyHasReplyObject st'`) concretely from the pre-state via the
+-- `*_establishes_blockedOnReplyHasReplyObject` theorems above — closing the #7.4 origin
+-- gap at the transition boundary.  Placed here (rather than next to the other bundle
+-- theorems) to follow the establish theorems they depend on.
+-- ============================================================================
+
+/-- IPC de-threading D2 (de-threaded): `endpointReceiveDual` preserves `ipcInvariantFull`,
+**establishing** the `replyCallerLinkage` third clause rather than threading it.
+`allPendingMessagesBounded` / `badgeWellFormed` derived internally. -/
+theorem endpointReceiveDual_preserves_ipcInvariantFull
+    (endpointId : SeLe4n.ObjId) (receiver senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st st' : SystemState)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId replyId hInv.1 hObjInv hStep,
+   hDualQueue',
+   endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
+   endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st st' endpointId
+      receiver senderId replyId hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+   hPRR'⟩
+
+/-- IPC de-threading D2 (de-threaded): `endpointCall` preserves `ipcInvariantFull`,
+**establishing** the `replyCallerLinkage` third clause rather than threading it.
+`allPendingMessagesBounded` / `badgeWellFormed` derived internally. -/
+theorem endpointCall_preserves_ipcInvariantFull
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hDualQueue' : dualQueueSystemInvariant st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hNoDup' : endpointQueueNoDup st')
+    (hQMC' : ipcStateQueueMembershipConsistent st')
+    (hQNBC' : queueNextBlockingConsistent st')
+    (hQHBC' : queueHeadBlockedConsistent st')
+    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hDCA' : donationChainAcyclic st')
+    (hDOV' : donationOwnerValid st')
+    (hPSI' : passiveServerIdle st')
+    (hDBT' : donationBudgetTransfer st')
+    (hBRT' : blockedOnReplyHasTarget st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hPRR' : pendingReceiveReplyWellFormed st')
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
+   hDualQueue',
+   endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
+   endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', hDCA', hDOV', hPSI', hDBT', hBRT',
+   ⟨hRCLRecip', endpointCall_establishes_blockedOnReplyHasReplyObject st st' endpointId caller msg
+      hInv.replyCallerLinkage.2 hObjInv hStep⟩,
+   hPRR'⟩
 
 end SeLe4n.Kernel

@@ -110,8 +110,8 @@ slice is behaviour-preserving (proofs only) ⇒ trace byte-identical is invarian
 | Slice | Status | Version |
 |---|---|---|
 | D0 named predicate (`blockedOnReplyHasReplyObject`) | ✅ LANDED | v0.31.157 |
-| D1 wiring (4 conjuncts × 7 tx) | ⏳ (needs `hFreshCaller` discharge) | — |
-| D2 replyCallerLinkage + consumer | 🔄 consumer LANDED v0.31.157; frame family (keystone + objects-eq + nonBlocked-store + queue-links) LANDED v0.31.158; remaining: pop frame (`revert`/`split` pattern), caller-store+link assembly, bundle wiring | — |
+| D1 wiring (4 conjuncts × 7 tx) | ⏳ **blocked**: the 4 "wiring" conjuncts (`dualQueueSystemInvariant`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `waitingThreadsPendingMessageNone`) all carry `hFreshCaller`/`hSendTailFresh` side-conditions on the enqueue-style transitions (`endpointCall`/`SendDual`/`ReceiveDual`); de-threading them needs a clean dispatcher-dischargeable freshness precondition (`caller .ready`) → freshness lemma via `ipcStateQueueMembershipConsistent`. Sequenced after D2. | — |
+| D2 replyCallerLinkage (third clause) + consumer | ✅ **LANDED (single-core)**: consumer (v0.31.157), full frame family incl. `endpointQueuePopHead`/`endpointQueueEnqueue` frames + `linkCallerReply`/`linkServerStashedReply`/`cleanupPreReceiveDonation` establishes; `endpointCall_establishes_blockedOnReplyHasReplyObject` + `endpointReceiveDual_establishes_…`; **both bundle theorems de-threaded** (thread `replyCallerLinkageReciprocal st'`, establish the third clause). Remaining: per-core `…OnCore` variants; `endpointReply`/`endpointReplyRecv` (preserve via unblock); reciprocal-half de-thread (optional). | v0.31.159 |
 | D3 blockedOnReplyHasTarget + pendingReceiveReplyWellFormed | ⏳ | — |
 | D4 queueNext/HeadBlocked | ⏳ | — |
 | D5 blockedThreadTimeoutConsistent | ⏳ | — |
