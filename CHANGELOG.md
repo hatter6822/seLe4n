@@ -1,3 +1,37 @@
+## v0.31.189 — IPC de-threading D6: add `donationOwnerUnique` (18th `ipcInvariantFull` conjunct)
+
+Adds donation-owner uniqueness as a first-class `ipcInvariantFull` conjunct — the consistency
+property the donation **return** needs and that the receive-family `donationOwnerValid` de-thread
+was blocked on.
+
+**The gap.** `cleanupPreReceiveDonation` (the donation return on `endpointReceiveDual`'s blocking
+path) rebinds the owner `.unbound` → `.bound scId`.  `donationOwnerValid` requires the owner of
+*every* live donation to be `.unbound`, so the return is safe only if the just-rebound owner is not
+also the owner of some *other* donation.  The prior invariant set permitted that (two servers each
+`.donated _ owner`), so the bare transition could not be shown to preserve `donationOwnerValid`.
+
+**The fix (implement-the-improvement).** `donationOwnerUnique st` — no two distinct threads name the
+same `owner` in a `.donated _ owner` binding — is a true property of the model (a thread becomes an
+owner only by donating its single SchedContext on a `Call`, and while `.blockedOnReply` cannot call
+again).  It is preserved by every transition: binding-frame transitions inject post-state donations
+backward into the pre-state (`donationOwnerUnique_of_sameSchedContextBindings`, via
+`sameSchedContextBindings`); the donation return only *removes* a donation
+(`returnDonatedSchedContext_preserves_donationOwnerUnique`); retype creates a fresh `.unbound` TCB
+(`lifecycleRetypeObject_preserves_donationOwnerUnique`); object-preserving steps frame it
+(`donationOwnerUnique_of_objects_eq`).
+
+Integrated as the 18th conjunct of `ipcInvariantFull` (+ the `IpcInvariantFull` structure field, the
+bridge, the projection, `ipcInvariantFull_of_core_replyCallerLinkage` / `ipcInvariantFull_compositional`)
+and **established across all 13 IPC bundles** + retype + cross-core + default + boot + the
+architecture-layer object-frame transitions.  With it in hand,
+`cleanupPreReceiveDonation_preserves_donationOwnerValid` is provable (the owner-uniqueness use is the
+single non-trivial step), unblocking the receive-family `donationOwnerValid` de-thread.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); test_full passes; AK7
+`RAW_LOOKUP_TID` re-anchored 1060→1071; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerUnique)
+
 ## v0.31.188 — IPC de-threading D6: `donationOwnerValid` de-threaded from the clean WithCaps (9/13)
 
 Extends `donationOwnerValid` de-threading to the two cap-transfer transitions whose base is already

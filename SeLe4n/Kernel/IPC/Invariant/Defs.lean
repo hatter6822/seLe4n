@@ -1411,6 +1411,46 @@ def donationOwnerValid (st : SystemState) : Prop :=
       ownerTcb.schedContextBinding = .unbound ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
 
+/-- Z7-H': Donation-owner uniqueness.  No two **distinct** threads name the same `owner` in a
+`.donated _ owner` binding.  Semantically: a thread becomes a donation `owner` only by donating
+its (single) SchedContext on a `Call`, and while it is `.blockedOnReply` it cannot make another
+call — so at most one server holds a `.donated _ owner` binding for it at a time.
+
+This is the consistency property the donation **return** needs: when `returnDonatedSchedContext`
+hands the SchedContext back (the owner goes `.unbound` → `.bound scId`), `donationOwnerValid`
+requires the *owner of every remaining donation* to still be `.unbound`; uniqueness guarantees the
+just-rebound owner is not the owner of any *other* live donation, so no remaining obligation
+breaks.  It is preserved by every IPC transition: the binding-frame transitions inject post-state
+donations into the pre-state (`sameSchedContextBindings`, backward), and the donation **return**
+only *removes* a donation. -/
+def donationOwnerUnique (st : SystemState) : Prop :=
+  ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
+    (scId1 scId2 : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
+    st.objects[tid1.toObjId]? = some (.tcb tcb1) →
+    st.objects[tid2.toObjId]? = some (.tcb tcb2) →
+    tcb1.schedContextBinding = .donated scId1 owner →
+    tcb2.schedContextBinding = .donated scId2 owner →
+    tid1 = tid2
+
+/-- Z7-H': the empty/donation-free state satisfies `donationOwnerUnique` vacuously. -/
+theorem donationOwnerUnique_of_no_donations
+    (st : SystemState)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+      (owner : SeLe4n.ThreadId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId owner) :
+    donationOwnerUnique st := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 _ hB1 _
+  exact absurd hB1 (hNone tid1 tcb1 scId1 owner h1)
+
+/-- IPC de-threading D6: an object-store-preserving step frames `donationOwnerUnique`. -/
+theorem donationOwnerUnique_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : donationOwnerUnique st) :
+    donationOwnerUnique st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  rw [hObjs] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+
 -- ============================================================================
 -- Z7-H: Passive server idle invariant
 -- ============================================================================
@@ -1617,6 +1657,21 @@ theorem donationBudgetTransfer_of_sameSchedContextBindings
   exact hDBT tid1 tid2 tc1 tc2 scId hP1 hP2 hNe
     (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
 
+/-- IPC de-threading D6 (`donationOwnerUnique`): every binding-frame transition preserves
+donation-owner uniqueness.  `sameSchedContextBindings` pulls each post-state `.donated _ owner`
+back to a pre-state `.donated _ owner` (same owner), so two post-state donations sharing an owner
+pull back to two pre-state donations sharing it — equal by `donationOwnerUnique st`. -/
+theorem donationOwnerUnique_of_sameSchedContextBindings
+    {st st' : SystemState}
+    (hSame : sameSchedContextBindings st st')
+    (hInv : donationOwnerUnique st) :
+    donationOwnerUnique st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 owner hP1 hP2
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
 /-- IPC de-threading D6 (`donationOwnerValid`): the **forward** half of the preservation
 frame, packaged so it composes through a transition's store-op decomposition with
 `.trans` exactly the way `sameSchedContextBindings` does for the backward binding half.
@@ -1748,7 +1803,7 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
-  pendingReceiveReplyWellFormed st
+  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -1767,14 +1822,14 @@ re-established by `linkCallerReply` / `consumeCallerReply`, and
 `pendingReceiveReplyWellFormed` framed/established on the final state). -/
 theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
-    (hPRR : pendingReceiveReplyWellFormed st) :
+    (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st) :
     ipcInvariantFull st :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -1827,6 +1882,7 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
   replyCallerLinkage : replyCallerLinkage st
   pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
+  donationOwnerUnique : donationOwnerUnique st
 
 namespace ipcInvariantFull
 
@@ -1921,7 +1977,12 @@ elaborator. -/
 @[simp] theorem pendingReceiveReplyWellFormed {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem donationOwnerUnique {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.donationOwnerUnique st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -1980,7 +2041,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
-           h.pendingReceiveReplyWellFormed⟩
+           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -1991,7 +2052,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
-           h.pendingReceiveReplyWellFormed⟩
+           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/
@@ -2930,6 +2991,52 @@ theorem returnDonatedSchedContext_preserves_donationBudgetTransfer
       obtain ⟨ptcb2, hPre2, hPbind2⟩ := hPre tid2 tcb2 h2 hNS2 hO2 hB2
       exact hInv tid1 tid2 ptcb1 ptcb2 scId'' hPre1 hPre2 hNe hPbind1 hPbind2
 
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves the object map at every key other
+than the three it writes (`scId` SchedContext, `originalOwner` TCB, `serverTid` TCB). -/
+theorem returnDonatedSchedContext_objects_ne
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (oid : SeLe4n.ObjId)
+    (hNeSc : oid ≠ scId.toObjId) (hNeO : oid ≠ originalOwner.toObjId)
+    (hNeS : oid ≠ serverTid.toObjId) :
+    st'.objects[oid]? = st.objects[oid]? := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                rw [storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hNeS hInv2 hS3]
+                rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hNeO hInv1 hS2]
+                rw [storeObject_objects_ne st p1.2 scId.toObjId oid _ hNeSc hObjInv hS1]
+    | _ => simp only []; intro h; cases h
+
 /-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationBudgetTransfer` — it is
 either a no-op (no donated binding) or a single `returnDonatedSchedContext` of the receiver's own
 donation (`scId? = some scId`), which preserves the conjunct. -/
@@ -2955,6 +3062,148 @@ theorem cleanupPreReceiveDonation_preserves_donationBudgetTransfer
         exact returnDonatedSchedContext_preserves_donationBudgetTransfer st st' receiver scId
           originalOwner hObjInv recvTcb (lookupTcb_some_objects st receiver recvTcb hL)
           (by rw [hBind]; rfl) hInv hRet
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerValid`.  The return
+hands `scId` back to `originalOwner` (server `.donated scId originalOwner` → server `.unbound`,
+owner `.unbound` → `.bound scId`, `sc.boundThread := originalOwner`).  For every *remaining*
+donation `tid ↦ .donated scId' owner'` (`tid` is neither the server — now `.unbound` — nor the
+owner — now `.bound`): its SchedContext clause survives because `scId' ≠ scId` (else `tid` and the
+server would both bind `scId`, forcing `tid = serverTid`); and its owner clause survives because
+`owner' ≠ originalOwner` — **the one place donation-owner uniqueness is needed**: were `owner'`
+the just-rebound `originalOwner`, both `tid` and the server would name it, forcing `tid = serverTid`
+again. -/
+theorem returnDonatedSchedContext_preserves_donationOwnerValid
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValid st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerValid st' := by
+  intro tid tcb scId' owner' hTcb hBinding
+  have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
+    originalOwner hObjInv h tid.toObjId tcb hTcb
+  have hTidNS : tid.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hBack.1 hEq] at hBinding; cases hBinding
+  have hTidNO : tid.toObjId ≠ originalOwner.toObjId := by
+    intro hEq; rw [hBack.2.1 hTidNS hEq] at hBinding; cases hBinding
+  obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hTidNS hTidNO
+  have hBind0' : tcb0.schedContextBinding = .donated scId' owner' := hBind0.trans hBinding
+  -- Pre-state witnesses for `tid`'s donation and for the server's donation.
+  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, ep, rt, hReply0⟩⟩ :=
+    hInv tid tcb0 scId' owner' hTcb0 hBind0'
+  obtain ⟨⟨scS, hScS, hBoundS⟩, ⟨oOwnerTcb, hOOwner, _⟩⟩ :=
+    hInv serverTid stcb scId originalOwner hServerObj hServerBind
+  -- `scId' ≠ scId`: else `sc' = scS` ⇒ `boundThread` is both `tid` and `serverTid`.
+  have hScIdNe : scId'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hSc'
+    obtain rfl := KernelObject.schedContext.inj (Option.some.inj hSc')
+    rw [hBoundS] at hBound'
+    exact hTidNS (by rw [(Option.some.inj hBound').symm])
+  -- `tid`'s SchedContext slot is not a TCB slot the return rewrote.
+  have hScNeO : scId'.toObjId ≠ originalOwner.toObjId := by
+    intro hEq; rw [hEq, hOOwner] at hSc'; cases hSc'
+  have hScNeS : scId'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hSc'; cases hSc'
+  -- `owner' ≠ serverTid` (server is `.donated`, owner is `.unbound`) and `owner' ≠ originalOwner`
+  -- (uniqueness).
+  have hOwnerNS : owner'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hOwner0
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hOwner0)
+    rw [hServerBind] at hUnbound0; cases hUnbound0
+  have hOwnerNO : owner'.toObjId ≠ originalOwner.toObjId := by
+    intro hEq
+    have hOwnerEq : owner' = originalOwner := ThreadId.toObjId_injective owner' originalOwner hEq
+    have := hUnique tid serverTid tcb0 stcb scId' scId originalOwner hTcb0 hServerObj
+      (hOwnerEq ▸ hBind0') hServerBind
+    exact hTidNS (by rw [this])
+  have hOwnerNSc : owner'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hOwner0; cases hOwner0
+  refine ⟨⟨sc', ?_, hBound'⟩, ⟨ownerTcb, ?_, hUnbound0, ep, rt, hReply0⟩⟩
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv h
+      scId'.toObjId hScIdNe hScNeO hScNeS]; exact hSc'
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv h
+      owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS]; exact hOwner0
+
+/-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationOwnerValid` — a no-op
+unless the receiver holds a donated SchedContext, in which case the single
+`returnDonatedSchedContext` preserves the invariant (donation-owner uniqueness in hand). -/
+theorem cleanupPreReceiveDonation_preserves_donationOwnerValid
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValid st) :
+    donationOwnerValid (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact hInv
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact hInv
+    | bound scId => exact hInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hInv
+      | ok st' =>
+        simp only []
+        exact returnDonatedSchedContext_preserves_donationOwnerValid st st' receiver scId
+          originalOwner hObjInv recvTcb (lookupTcb_some_objects st receiver recvTcb hL) hBind
+          hUnique hInv hRet
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerUnique`.  The return
+only *removes* a donation (the server's `.donated`), so every post-state donation injects backward
+to a pre-state donation at the same `tid` with the same `owner` — uniqueness is inherited. -/
+theorem returnDonatedSchedContext_preserves_donationOwnerUnique
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationOwnerUnique st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerUnique st' := by
+  have hPull : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scIdx : SeLe4n.SchedContextId)
+      (owner : SeLe4n.ThreadId),
+      st'.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding = .donated scIdx owner →
+      ∃ tcb0, st.objects[tid.toObjId]? = some (.tcb tcb0) ∧
+        tcb0.schedContextBinding = .donated scIdx owner := by
+    intro tid tcb scIdx owner hTcb hB
+    have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
+      originalOwner hObjInv h tid.toObjId tcb hTcb
+    have hNS : tid.toObjId ≠ serverTid.toObjId := by intro hEq; rw [hBack.1 hEq] at hB; cases hB
+    have hNO : tid.toObjId ≠ originalOwner.toObjId := by intro hEq; rw [hBack.2.1 hNS hEq] at hB; cases hB
+    obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hNS hNO
+    exact ⟨tcb0, hTcb0, hBind0.trans hB⟩
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hPB1⟩ := hPull tid1 tcb1 scId1 owner h1 hB1
+  obtain ⟨tc2, hP2, hPB2⟩ := hPull tid2 tcb2 scId2 owner h2 hB2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 owner hP1 hP2 hPB1 hPB2
+
+/-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationOwnerUnique`. -/
+theorem cleanupPreReceiveDonation_preserves_donationOwnerUnique
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationOwnerUnique st) :
+    donationOwnerUnique (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact hInv
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact hInv
+    | bound scId => exact hInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hInv
+      | ok st' =>
+        simp only []
+        exact returnDonatedSchedContext_preserves_donationOwnerUnique st st' receiver scId
+          originalOwner hObjInv hInv hRet
 
 /-- IPC de-threading D2: `cleanupPreReceiveDonation` preserves each TCB's
 `(ipcState, replyObject)` pair backward — it is either a no-op (no donated binding) or a

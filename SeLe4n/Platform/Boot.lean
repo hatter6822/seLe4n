@@ -3021,7 +3021,8 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       refine ⟨⟨⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩,
          fun tid tcb ep rt hObj hIpc => ?_⟩,
         ⟨fun tid tcb rid hObj hRep => ?_,
-         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩⟩
+         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩,
+        fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
       · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
@@ -3037,6 +3038,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
         have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
         rw [hTcb.2.2.2.2.2.2.2] at hRep₁; cases hRep₁
+      · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
+        have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
+        rw [hTcb.2.2.2.2.2.1] at hBA; cases hBA
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

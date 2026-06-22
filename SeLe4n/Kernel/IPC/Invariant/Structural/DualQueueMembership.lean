@@ -1576,9 +1576,10 @@ theorem ipcInvariantFull_compositional
     (hDBT : donationBudgetTransfer st)
     (hBRT : blockedOnReplyHasTarget st)
     (hRCL : replyCallerLinkage st)
-    (hPRR : pendingReceiveReplyWellFormed st) :
+    (hPRR : pendingReceiveReplyWellFormed st)
+    (hUnique : donationOwnerUnique st) :
     ipcInvariantFull st :=
-  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hPSI, hDBT, hBRT, hRCL, hPRR⟩
+  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hPSI, hDBT, hBRT, hRCL, hPRR, hUnique⟩
 
 -- ============================================================================
 -- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
@@ -5735,6 +5736,48 @@ theorem linkServerStashedReply_donationOwnerFrame
         exact hF1.trans (storeObject_modifiedTcbPreservingOwner_donationOwnerFrame st1 st' server.toObjId sTcb
           { sTcb with pendingReceiveReply := none } ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl rfl hObjInv1 hStep)
 
+open SeLe4n.Model.SystemState in
+/-- D6: `consumeReply` preserves every TCB's binding (it stores only the `.reply` object — clearing
+its `caller` — or no-ops). -/
+theorem consumeReply_sameSchedContextBindings
+    (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeReply rid st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  unfold consumeReply at hStep
+  cases hR : st.getReply? rid with
+  | none =>
+    simp only [hR, Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact sameSchedContextBindings.refl st
+  | some r =>
+    simp only [hR] at hStep
+    exact storeObject_nonTcb_sameSchedContextBindings st st' rid.toObjId _ (fun _ => by simp) hObjInv hStep
+
+open SeLe4n.Model.SystemState in
+/-- D6: `consumeCallerReply` preserves every TCB's binding (`consumeReply` + the caller
+`replyObject := none` write — never a `schedContextBinding`). -/
+theorem consumeCallerReply_sameSchedContextBindings
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hS1 := consumeReply_sameSchedContextBindings st st1 rid hObjInv hCons
+    have hObjInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep; exact hS1
+    | some tcb =>
+      simp only [hT] at hStep
+      exact hS1.trans (storeObject_modifiedTcb_sameSchedContextBindings st1 st' caller.toObjId tcb
+        { tcb with replyObject := none } ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl hObjInv1 hStep)
+
 /-- D6: `ipcUnwrapCaps` preserves every TCB's binding — it only writes CNode caps, leaving
 every TCB slot byte-identical (`ipcUnwrapCaps_tcb_backward` pulls each post-state TCB back to
 the *same* pre-state TCB). -/
@@ -6099,6 +6142,136 @@ theorem endpointReceiveDual_preserves_donationBudgetTransfer
                     (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
 
 open SeLe4n.Model.SystemState in
+/-- D6: `endpointReceiveDual` preserves `donationOwnerUnique` — the rendezvous path is
+`sameSchedContextBindings`-clean, the blocking path runs `cleanupPreReceiveDonation` (which only
+*removes* a donation), so post-state donations inject backward into pre-state donations.  Mirror of
+`endpointReceiveDual_preserves_donationBudgetTransfer`. -/
+theorem endpointReceiveDual_preserves_donationOwnerUnique
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (hInv : donationOwnerUnique st)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    donationOwnerUnique st' := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.sendQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInvPop : pair.2.2.objects.invExt :=
+            endpointQueuePopHead_preserves_objects_invExt endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          have hD1 := donationOwnerUnique_of_sameSchedContextBindings
+            (endpointQueuePopHead_sameSchedContextBindings endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop) hInv
+          cases hSenderIpc : pair.2.1.ipcState with
+          | blockedOnCall _ =>
+            simp only [hSenderIpc, ite_true] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hD2 := donationOwnerUnique_of_sameSchedContextBindings
+                (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInvPop hMsg) hD1
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hD3 := donationOwnerUnique_of_sameSchedContextBindings
+                    (linkCallerReply_sameSchedContextBindings st2 stLinked pair.1 rid hObjInvMsg hLink) hD2
+                  revert hStep
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                      donationOwnerUnique_of_sameSchedContextBindings
+                        (storeTcbIpcStateAndMessage_sameSchedContextBindings stLinked st4 receiver .ready _ hObjInvLink hPend) hD3
+                  | error _ => simp
+          | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+            simp only [hSenderIpc] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hD2 := donationOwnerUnique_of_sameSchedContextBindings
+                (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready none hObjInvPop hMsg) hD1
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hD3 := donationOwnerUnique_of_sameSchedContextBindings
+                (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1)) hD2
+              revert hStep
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
+              | ok st4 =>
+                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸
+                  donationOwnerUnique_of_sameSchedContextBindings
+                    (storeTcbIpcStateAndMessage_sameSchedContextBindings (ensureRunnable st2 pair.1) st4 receiver .ready _ hObjInvEns hPend) hD3
+              | error _ => simp
+      | none =>
+        cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+        | error _ => simp [hHead, hChecked] at hStep
+        | ok stClean =>
+          have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+            (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+          simp only [hHead, hChecked] at hStep
+          rw [hBridge] at hStep
+          have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+          have hDClean := cleanupPreReceiveDonation_preserves_donationOwnerUnique st receiver hObjInv hInv
+          cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+          | error e => simp [hEnq] at hStep
+          | ok st1 =>
+            simp only [hEnq] at hStep
+            have hObjInvEnq : st1.objects.invExt :=
+              endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            have hD1 := donationOwnerUnique_of_sameSchedContextBindings
+              (endpointQueueEnqueue_sameSchedContextBindings endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq) hDClean
+            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
+              have hD2 := donationOwnerUnique_of_sameSchedContextBindings
+                (storeTcbIpcState_sameSchedContextBindings st1 st2 receiver _ hObjInvEnq hIpc) hD1
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact donationOwnerUnique_of_sameSchedContextBindings
+                  (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 receiver)) hD2
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  have hRecvObj : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hDStash := donationOwnerUnique_of_sameSchedContextBindings
+                    (storeObject_modifiedTcb_sameSchedContextBindings st2 stStashed receiver.toObjId rTcb
+                      { rTcb with pendingReceiveReply := replyId } hRecvObj rfl hObjInv2 hStash) hD2
+                  exact donationOwnerUnique_of_sameSchedContextBindings
+                    (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDualWithCaps` preserves `donationBudgetTransfer` (`endpointReceiveDual`
 preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
 theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
@@ -6195,6 +6368,105 @@ theorem endpointReplyRecv_preserves_donationBudgetTransfer
               simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact endpointReceiveDual_preserves_donationBudgetTransfer
+                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hDE hObjInvE hRecv
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointReceiveDualWithCaps` preserves `donationOwnerUnique` (`endpointReceiveDual`
+preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
+theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hInv : donationOwnerUnique st) (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    donationOwnerUnique st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hDMid := endpointReceiveDual_preserves_donationOwnerUnique st stMid endpointId receiver sid replyId hInv hObjInv hRecv
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.getTcb? receiver with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+      | some msg =>
+        simp [hMsg] at hStep
+        split at hStep
+        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+        · cases hLookup : lookupCspaceRoot stMid sid with
+          | none => simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact donationOwnerUnique_of_sameSchedContextBindings
+                (ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverCspaceRoot
+                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointReplyRecv` preserves `donationOwnerUnique` (reply leg unblocks `.ready`
+[`sameSchedContextBindings`]; receive leg is `endpointReceiveDual`). -/
+theorem endpointReplyRecv_preserves_donationOwnerUnique
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : donationOwnerUnique st)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    donationOwnerUnique st' := by
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId expectedReplier =>
+      simp only [hIpc] at hStep
+      cases expectedReplier with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok stReplied =>
+            simp only []
+            have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
+            have hDR := donationOwnerUnique_of_sameSchedContextBindings
+              (storeTcbIpcStateAndMessage_sameSchedContextBindings st stReplied replyTarget .ready (some msg) hObjInv hMsg) hInv
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hDE := donationOwnerUnique_of_sameSchedContextBindings
+              (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects stReplied replyTarget)) hDR
+            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            | error e => simp
+            | ok pair =>
+              intro hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              exact endpointReceiveDual_preserves_donationOwnerUnique
                 (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId hDE hObjInvE hRecv
         · simp at hStep
 
@@ -9051,6 +9323,7 @@ theorem linkCallerReply_preserves_ipcInvariantFull
         tcb.ipcState = .blockedOnReply ep rt →
         ∃ ridv, tcb.replyObject = some ridv)
     (hPRR : pendingReceiveReplyWellFormed st)
+    (hUnique : donationOwnerUnique st)
     (hNotStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
         st.getTcb? tid = some tcb → tcb.pendingReceiveReply ≠ some rid)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
@@ -9058,6 +9331,8 @@ theorem linkCallerReply_preserves_ipcInvariantFull
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link
     (linkCallerReply_preserves_pendingReceiveReplyWellFormed st st' caller rid hObjInv
       hPRR hNotStashed hStep)
+    (donationOwnerUnique_of_sameSchedContextBindings
+      (linkCallerReply_sameSchedContextBindings st st' caller rid hObjInv hStep) hUnique)
   case link =>
     exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
       hRecip hObjInv hCallerBlk hThirdExc hStep
@@ -9114,6 +9389,9 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core hRCL'
     (consumeCallerReply_preserves_pendingReceiveReplyWellFormed st st' caller rid hObjInv
       hInv.pendingReceiveReplyWellFormed hStep)
+    (donationOwnerUnique_of_sameSchedContextBindings
+      (consumeCallerReply_sameSchedContextBindings st st' caller rid hObjInv hStep)
+      hInv.donationOwnerUnique)
   case core =>
     unfold consumeCallerReply at hStep
     cases hCons : consumeReply rid st with
@@ -10296,7 +10574,9 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
    endpointReceiveDual_preserves_pendingReceiveReplyWellFormed st st' endpointId receiver senderId
      replyId hObjInv hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
-     hInv.queueHeadBlockedConsistent hStep⟩
+     hInv.queueHeadBlockedConsistent hStep,
+   endpointReceiveDual_preserves_donationOwnerUnique st st' endpointId receiver senderId replyId
+     hInv.donationOwnerUnique hObjInv hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCall` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause rather than threading it.
@@ -10341,7 +10621,10 @@ theorem endpointCall_preserves_ipcInvariantFull
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
    endpointCall_preserves_pendingReceiveReplyWellFormed st st' endpointId caller msg hObjInv
-     hInv.pendingReceiveReplyWellFormed hCallerNotRecv hStep⟩
+     hInv.pendingReceiveReplyWellFormed hCallerNotRecv hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDual` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — `endpointSendDual` never
@@ -10386,7 +10669,10 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    ⟨hRCLRecip', endpointSendDual_preserves_blockedOnReplyHasReplyObject st st' endpointId sender msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,
    endpointSendDual_preserves_pendingReceiveReplyWellFormed st st' endpointId sender msg hObjInv
-     hInv.pendingReceiveReplyWellFormed hSenderNotRecv hStep⟩
+     hInv.pendingReceiveReplyWellFormed hSenderNotRecv hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationSignal` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -10426,7 +10712,10 @@ theorem notificationSignal_preserves_ipcInvariantFull
    ⟨hRCLRecip', notificationSignal_preserves_blockedOnReplyHasReplyObject st st' notificationId badge
       hObjInv hInv.replyCallerLinkage.2 hStep⟩,
    notificationSignal_preserves_pendingReceiveReplyWellFormed st st' notificationId badge hObjInv
-     hInv.pendingReceiveReplyWellFormed hNWC hStep⟩
+     hInv.pendingReceiveReplyWellFormed hNWC hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationWait` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -10474,7 +10763,10 @@ theorem notificationWait_preserves_ipcInvariantFull
    ⟨hRCLRecip', notificationWait_preserves_blockedOnReplyHasReplyObject st st' notificationId waiter
       result hObjInv hInv.replyCallerLinkage.2 hStep⟩,
    notificationWait_preserves_pendingReceiveReplyWellFormed st st' notificationId waiter result hObjInv
-     hInv.pendingReceiveReplyWellFormed hWaiterNotRecv hStep⟩
+     hInv.pendingReceiveReplyWellFormed hWaiterNotRecv hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (notificationWait_sameSchedContextBindings st st' notificationId waiter result hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReply` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — the reply only unblocks the
@@ -10510,7 +10802,10 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_blockedOnReplyHasTarget st st' replier target msg hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', endpointReply_preserves_blockedOnReplyHasReplyObject st st' replier target msg
       hObjInv hInv.replyCallerLinkage.2 hStep⟩,
-   endpointReply_preserves_pendingReceiveReplyWellFormed st st' replier target msg hObjInv hInv.pendingReceiveReplyWellFormed hStep⟩
+   endpointReply_preserves_pendingReceiveReplyWellFormed st st' replier target msg hObjInv hInv.pendingReceiveReplyWellFormed hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
@@ -10549,7 +10844,9 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
    endpointReplyRecv_preserves_pendingReceiveReplyWellFormed st st' endpointId receiver replyTarget
      msg replyId hObjInv hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
-     hInv.queueHeadBlockedConsistent hStep⟩
+     hInv.queueHeadBlockedConsistent hStep,
+   endpointReplyRecv_preserves_donationOwnerUnique st st' endpointId receiver replyTarget msg replyId
+     hObjInv hInv.donationOwnerUnique hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDualWithCaps` preserves
 `ipcInvariantFull`, *preserving* the `replyCallerLinkage` third clause rather than
@@ -10597,7 +10894,11 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
    -- IPC de-threading D3: **preserve** PRR from the pre-state (was threaded `hPRR'`).
    endpointSendDualWithCaps_preserves_pendingReceiveReplyWellFormed endpointId sender msg endpointRights
      senderCspaceRoot receiverSlotBase st st' summary hObjInv hInv.pendingReceiveReplyWellFormed
-     hSenderNotRecv hStep⟩
+     hSenderNotRecv hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights
+       senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDualWithCaps` preserves
 `ipcInvariantFull`, **establishing** the `replyCallerLinkage` third clause (via the base
@@ -10639,7 +10940,9 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
    endpointReceiveDualWithCaps_preserves_pendingReceiveReplyWellFormed endpointId receiver replyId
      endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv
      hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
-     hInv.queueHeadBlockedConsistent hStep⟩
+     hInv.queueHeadBlockedConsistent hStep,
+   endpointReceiveDualWithCaps_preserves_donationOwnerUnique endpointId receiver replyId endpointRights
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerUnique hObjInv hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCallWithCaps` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause (via the base call establish + the
@@ -10687,6 +10990,10 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
    -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
    endpointCallWithCaps_preserves_pendingReceiveReplyWellFormed endpointId caller msg endpointRights
      callerCspaceRoot receiverSlotBase st st' summary hObjInv hInv.pendingReceiveReplyWellFormed
-     hCallerNotRecv hStep⟩
+     hCallerNotRecv hStep,
+   donationOwnerUnique_of_sameSchedContextBindings
+     (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights
+       callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+     hInv.donationOwnerUnique⟩
 
 end SeLe4n.Kernel

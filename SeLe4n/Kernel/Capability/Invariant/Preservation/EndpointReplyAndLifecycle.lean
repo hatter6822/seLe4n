@@ -274,7 +274,12 @@ theorem coreIpcInvariantBundle_to_replyCallerLinkage {st : SystemState}
 (17th `ipcInvariantFull` conjunct) from the core bundle. -/
 theorem coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed {st : SystemState}
     (h : coreIpcInvariantBundle st) : pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- IPC de-threading D6: extract donation-owner uniqueness (18th `ipcInvariantFull` conjunct). -/
+theorem coreIpcInvariantBundle_to_donationOwnerUnique {st : SystemState}
+    (h : coreIpcInvariantBundle st) : donationOwnerUnique st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -566,6 +571,39 @@ theorem lifecycleRetypeObject_preserves_donationOwnerValid
     exact ⟨⟨sc, hScSt', hBound⟩, ⟨ownerTcb, hOwnerSt', hUnbound, ep, rt, hReply⟩⟩
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `lifecycleRetypeObject` preserves `donationOwnerUnique` — the retype
+writes a fresh `.unbound` TCB (`hNewObjUnbound`), so it creates no new `.donated` binding; every
+post-state donation injects backward into the pre-state. -/
+theorem lifecycleRetypeObject_preserves_donationOwnerUnique
+    (st st' : SystemState) (authority : CSpaceAddr) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (hInv : donationOwnerUnique st) (hObjInv : st.objects.invExt)
+    (hNewObjUnbound : ∀ (t : TCB), newObj = .tcb t → t.schedContextBinding = .unbound)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    donationOwnerUnique st' := by
+  have hPull : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scIdx : SeLe4n.SchedContextId)
+      (owner : SeLe4n.ThreadId),
+      st'.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding = .donated scIdx owner →
+      ∃ tcb0, st.objects[tid.toObjId]? = some (.tcb tcb0) ∧
+        tcb0.schedContextBinding = .donated scIdx owner := by
+    intro tid tcb scIdx owner hTcb hB
+    by_cases hTidTarget : tid.toObjId = target
+    · exfalso
+      have hObjAtTarget : st'.objects[tid.toObjId]? = some newObj := by
+        rw [hTidTarget]
+        rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+          ⟨_, _, _, _, _, _, hStore⟩
+        exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+      have hNewEq : newObj = .tcb tcb := by simpa using (hObjAtTarget.symm.trans hTcb)
+      rw [hNewObjUnbound tcb hNewEq] at hB; cases hB
+    · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target tid.toObjId newObj
+        hTidTarget hObjInv hStep] at hTcb
+      exact ⟨tcb, hTcb, hB⟩
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hPB1⟩ := hPull tid1 tcb1 scId1 owner h1 hB1
+  obtain ⟨tc2, hP2, hPB2⟩ := hPull tid2 tcb2 scId2 owner h2 hB2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 owner hP1 hP2 hPB1 hPB2
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D3: `lifecycleRetypeObject` preserves `pendingReceiveReplyWellFormed`
 from the pre-state, given two `newObj`/`target`-keyed side-conditions of the same flavour as
 `hNewObjTarget`/`hNewObjThird`.  The retype reduces to a single `storeObject target newObj`
@@ -793,7 +831,10 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
              hNewObjThird hStep⟩,
            lifecycleRetypeObject_preserves_pendingReceiveReplyWellFormed st st' authority target newObj
              hIpcFull.pendingReceiveReplyWellFormed (objects_invExt_of_capabilityInvariantBundle st hCap)
-             hNewObjNoStash hTargetNotStashedReply hStep⟩
+             hNewObjNoStash hTargetNotStashedReply hStep,
+           lifecycleRetypeObject_preserves_donationOwnerUnique st st' authority target newObj
+             hIpcFull.donationOwnerUnique (objects_invExt_of_capabilityInvariantBundle st hCap)
+             hNewObjUnbound hStep⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)

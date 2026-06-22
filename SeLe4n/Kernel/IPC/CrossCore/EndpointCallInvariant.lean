@@ -1267,6 +1267,9 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       executingCore st hInv.replyCallerLinkage.2 hObjInv⟩,
     -- IPC de-threading D3: **establish** PRR from the pre-state (was threaded `hPRR'`).
     endpointCallOnCore_preserves_pendingReceiveReplyWellFormed endpointId caller msg executingCore st
-      hObjInv hInv.pendingReceiveReplyWellFormed hCallerNotRecv⟩
+      hObjInv hInv.pendingReceiveReplyWellFormed hCallerNotRecv,
+    donationOwnerUnique_of_sameSchedContextBindings
+      (endpointCallOnCore_sameSchedContextBindings endpointId caller msg executingCore st hObjInv)
+      hInv.donationOwnerUnique⟩
 
 end SeLe4n.Kernel

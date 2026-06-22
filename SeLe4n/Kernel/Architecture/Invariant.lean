@@ -434,6 +434,10 @@ private theorem default_donationOwnerValid :
     donationOwnerValid (default : SystemState) := by
   intro _ _ _ _ h; exact default_objects_absurd h
 
+private theorem default_donationOwnerUnique :
+    donationOwnerUnique (default : SystemState) := by
+  intro _ _ _ _ _ _ _ h _ _ _; exact default_objects_absurd h
+
 private theorem default_passiveServerIdle :
     passiveServerIdle (default : SystemState) := by
   intro _ _ h; exact default_objects_absurd h
@@ -476,7 +480,7 @@ private theorem default_ipcInvariantFull :
    default_donationChainAcyclic, default_donationOwnerValid,
    default_passiveServerIdle, default_donationBudgetTransfer,
    default_blockedOnReplyHasTarget, default_replyCallerLinkage,
-   default_pendingReceiveReplyWellFormed⟩
+   default_pendingReceiveReplyWellFormed, default_donationOwnerUnique⟩
 
 private theorem default_contextMatchesCurrent :
     contextMatchesCurrent (default : SystemState) := by
@@ -731,12 +735,12 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
     (hIpc : ipcInvariantFull st) :
     ipcInvariantFull (advanceTimerState ticks st) := by
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18⟩ := hIpc
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19⟩ := hIpc
   have hObjs : (advanceTimerState ticks st).objects = st.objects := by
     unfold advanceTimerState; rfl
   have hLk : ∀ (x : SeLe4n.ObjId), (advanceTimerState ticks st).objects[x]? = st.objects[x]? := by
     intro x; exact congrArg (·.get? x) hObjs
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- dualQueueSystemInvariant
   · obtain ⟨hEp, hLink, hAcyc⟩ := h2
     refine ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
@@ -775,6 +779,7 @@ private theorem advanceTimerState_preserves_ipcInvariantFull
   · intro tid tcb epId rt hObj hIpc; exact h16 tid tcb epId rt (hObjs ▸ hObj) hIpc
   · exact replyCallerLinkage_of_objects_eq hObjs h17
   · exact pendingReceiveReplyWellFormed_of_objects_eq hObjs h18
+  · exact donationOwnerUnique_of_objects_eq hObjs h19
   where
     transportPath {a b : SeLe4n.ThreadId}
         (hObjs : (advanceTimerState ticks st).objects = st.objects)
@@ -884,8 +889,8 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
   have hLk : ∀ (x : SeLe4n.ObjId),
       (writeRegisterState reg value st).objects[x]? = st.objects[x]? := fun x => congrArg (·.get? x) hObjs
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · obtain ⟨hEp, hLink, hAcyc⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
@@ -911,6 +916,7 @@ private theorem writeRegisterState_preserves_ipcInvariantFull
   · intro tid tcb epId rt hObj hIpc; exact h16 tid tcb epId rt (hObjs ▸ hObj) hIpc
   · exact replyCallerLinkage_of_objects_eq hObjs h17
   · exact pendingReceiveReplyWellFormed_of_objects_eq hObjs h18
+  · exact donationOwnerUnique_of_objects_eq hObjs h19
   where
     writeRegState_transportPath {a b : SeLe4n.ThreadId}
         (hObjs : (writeRegisterState reg value st).objects = st.objects)
@@ -1018,8 +1024,8 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
       (contextSwitchState newTid newRegs st).objects[x]? = st.objects[x]? :=
     fun x => congrArg (·.get? x) hObjs
   -- WS-RC R4.C.7: ipcInvariantFull bundle dropped uniqueWaiters (15 conjuncts now).
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18⟩ := hIpc
-  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h16, h17, h18, h19⟩ := hIpc
+  refine ⟨by exact h1, ?_, by exact h3, by exact h4, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · obtain ⟨hEp, hLink, hAcyc⟩ := h2
     exact ⟨fun epId ep hObj => hEp epId ep (hObjs ▸ hObj),
            ⟨fun a tcbA hA b hN => (hLink.1 a tcbA (hObjs ▸ hA) b hN).imp
@@ -1056,6 +1062,7 @@ private theorem contextSwitchState_preserves_ipcInvariantFull
   · intro tid tcb epId rt hObj hIpc'; exact h16 tid tcb epId rt (hObjs ▸ hObj) hIpc'
   · exact replyCallerLinkage_of_objects_eq hObjs h17
   · exact pendingReceiveReplyWellFormed_of_objects_eq hObjs h18
+  · exact donationOwnerUnique_of_objects_eq hObjs h19
   where
     ctxSwitch_transportPath {a b : SeLe4n.ThreadId}
         (hObjs : (contextSwitchState newTid newRegs st).objects = st.objects)
