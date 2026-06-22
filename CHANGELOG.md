@@ -1,3 +1,27 @@
+## v0.31.185 — IPC de-threading D6: `donationOwnerValid` de-threaded from the retype pair (5/13)
+
+Extends `donationOwnerValid` de-threading to the two `lifecycleRetypeObject` bundles
+(`coreIpcInvariantBundle` + `lifecycleCompositionInvariantBundle`).
+
+Unlike the frame-able transitions, the retype reduces to a single `storeObject target newObj`
+that can *create* a fresh TCB binding where there was none, so the backward
+`sameSchedContextBindings` (and hence `donationOwnerValid_of_frames`) does not apply. The new
+`lifecycleRetypeObject_preserves_donationOwnerValid` is a direct proof:
+- at the retype slot (`tid = target`) a `.donated` binding is impossible — a fresh retyped TCB is
+  `.unbound` (the already-threaded `hNewObjUnbound`);
+- at every framed slot the donated SchedContext and the donation owner must not be the retype
+  target, discharged by two new dischargeable side-conditions `hTargetNotSc` / `hTargetNotOwner`
+  (the retyped slot is untyped/freed memory — not a live SchedContext nor a `.blockedOnReply`
+  owner), replacing the threaded `hDOV'`.
+
+Both bundles drop `hDOV'`; the composition bundle threads the two side-conditions through to the
+core bundle.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1045→1048; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 5/13)
+
 ## v0.31.184 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointSendDual` (3/13)
 
 Extends `donationOwnerValid` de-threading to `endpointSendDual` (the first queue-touching

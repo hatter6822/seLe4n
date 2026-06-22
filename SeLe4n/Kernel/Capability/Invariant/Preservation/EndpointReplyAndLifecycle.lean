@@ -522,6 +522,50 @@ theorem lifecycleRetypeObject_preserves_donationBudgetTransfer
   exact hInv tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hB1 hB2
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `lifecycleRetypeObject` preserves `donationOwnerValid`.  The retype
+reduces to a single `storeObject target newObj`.  At the retype slot a `.donated` binding is
+impossible (a fresh retyped TCB is `.unbound`, `hNewObjUnbound`), and at every framed slot the
+donated SchedContext and the donation owner must not be the retype target — discharged by two
+target-slot side-conditions (the retyped slot is untyped/freed memory, not a live SchedContext or
+a `.blockedOnReply` owner). -/
+theorem lifecycleRetypeObject_preserves_donationOwnerValid
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : donationOwnerValid st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjUnbound : ∀ (t : TCB), newObj = .tcb t → t.schedContextBinding = .unbound)
+    (hTargetNotSc : ∀ (sc : SchedContext), st.objects[target]? ≠ some (.schedContext sc))
+    (hTargetNotOwner : ∀ (t : TCB), st.objects[target]? = some (.tcb t) →
+        ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    donationOwnerValid st' := by
+  intro tid tcb scId owner hTcb hBinding
+  by_cases hTidTarget : tid.toObjId = target
+  · exfalso
+    have hObjAtTarget : st'.objects[tid.toObjId]? = some newObj := by
+      rw [hTidTarget]
+      rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+        ⟨_, _, _, _, _, _, hStore⟩
+      exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+    have hNewEq : newObj = .tcb tcb := by simpa using (hObjAtTarget.symm.trans hTcb)
+    rw [hNewObjUnbound tcb hNewEq] at hBinding
+    simp at hBinding
+  · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target tid.toObjId newObj hTidTarget hObjInv hStep] at hTcb
+    obtain ⟨⟨sc, hScSt, hBound⟩, ⟨ownerTcb, hOwnerSt, hUnbound, ep, rt, hReply⟩⟩ :=
+      hInv tid tcb scId owner hTcb hBinding
+    have hScTarget : scId.toObjId ≠ target := fun hEq => hTargetNotSc sc (hEq ▸ hScSt)
+    have hScSt' : st'.objects[scId.toObjId]? = some (.schedContext sc) := by
+      rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target scId.toObjId newObj hScTarget hObjInv hStep]
+      exact hScSt
+    have hOwnerTarget : owner.toObjId ≠ target := fun hEq => hTargetNotOwner ownerTcb (hEq ▸ hOwnerSt) ep rt hReply
+    have hOwnerSt' : st'.objects[owner.toObjId]? = some (.tcb ownerTcb) := by
+      rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target owner.toObjId newObj hOwnerTarget hObjInv hStep]
+      exact hOwnerSt
+    exact ⟨⟨sc, hScSt', hBound⟩, ⟨ownerTcb, hOwnerSt', hUnbound, ep, rt, hReply⟩⟩
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D3: `lifecycleRetypeObject` preserves `pendingReceiveReplyWellFormed`
 from the pre-state, given two `newObj`/`target`-keyed side-conditions of the same flavour as
 `hNewObjTarget`/`hNewObjThird`.  The retype reduces to a single `storeObject target newObj`
@@ -704,9 +748,13 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
         st.objects[epId]? = some (.endpoint ep) →
         (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hNewObjUnbound : ∀ (t : TCB), newObj = .tcb t → t.schedContextBinding = .unbound)
+    -- IPC de-threading D6: the retype slot is untyped/freed memory — not a live SchedContext
+    -- nor a `.blockedOnReply` donation owner.
+    (hTargetNotSc : ∀ (sc : SchedContext), st.objects[target]? ≠ some (.schedContext sc))
+    (hTargetNotOwner : ∀ (t : TCB), st.objects[target]? = some (.tcb t) →
+        ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt)
     (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -720,6 +768,9 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     coreIpcInvariantBundle st' := by
   rcases hInv with ⟨hSched, hCap, hIpcFull⟩
   have hObjInvSt : st.objects.invExt := objects_invExt_of_capabilityInvariantBundle st hCap
+  -- IPC de-threading D6: `donationOwnerValid` established from the pre-state.
+  have hDOVest := lifecycleRetypeObject_preserves_donationOwnerValid st st' authority target newObj
+    hIpcFull.donationOwnerValid hObjInvSt hNewObjUnbound hTargetNotSc hTargetNotOwner hStep
   refine ⟨?_, ?_, ?_⟩
   · exact lifecycleRetypeObject_preserves_schedulerInvariantBundle st st' authority target newObj hSched
       hCurrentValid hStep
@@ -732,9 +783,9 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
            lifecycleRetypeObject_preserves_queueHeadBlockedConsistent st st' authority target newObj
              hIpcFull.queueHeadBlockedConsistent hObjInvSt hNewObjNotEndpoint hTargetNotHead hStep,
            hBlockedTimeout',
-           -- IPC de-threading D7: derive `donationChainAcyclic` from the threaded
+           -- IPC de-threading D7: derive `donationChainAcyclic` from the established
            -- post-state `donationOwnerValid` via the subsumption lemma.
-           donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+           donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
            lifecycleRetypeObject_preserves_donationBudgetTransfer st st' authority target newObj hIpcFull.donationBudgetTransfer hObjInvSt hNewObjUnbound hStep,
            lifecycleRetypeObject_preserves_blockedOnReplyHasTarget st st' authority target newObj hIpcFull.blockedOnReplyHasTarget (objects_invExt_of_capabilityInvariantBundle st hCap) hNewObjTarget hStep,
            ⟨hRCLRecip', lifecycleRetypeObject_preserves_blockedOnReplyHasReplyObject st st' authority
@@ -775,9 +826,13 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
         st.objects[epId]? = some (.endpoint ep) →
         (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hNewObjUnbound : ∀ (t : TCB), newObj = .tcb t → t.schedContextBinding = .unbound)
+    -- IPC de-threading D6: the retype slot is untyped/freed memory — not a live SchedContext
+    -- nor a `.blockedOnReply` donation owner.
+    (hTargetNotSc : ∀ (sc : SchedContext), st.objects[target]? ≠ some (.schedContext sc))
+    (hTargetNotOwner : ∀ (t : TCB), st.objects[target]? = some (.tcb t) →
+        ∀ ep rt, t.ipcState ≠ .blockedOnReply ep rt)
     (hNewObjTarget : ∀ (t : TCB) (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
         newObj = .tcb t → t.ipcState = .blockedOnReply ep rt → rt.isSome)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -794,7 +849,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hBlockedTimeout' hDOV' hPSI' hNewObjUnbound hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hBlockedTimeout' hPSI' hNewObjUnbound hTargetNotSc hTargetNotOwner hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep
