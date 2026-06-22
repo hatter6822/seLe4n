@@ -1,3 +1,33 @@
+## v0.32.1 — IPC de-threading D6: `donationOwnerValid` from the receive family (11/13)
+
+Continues the D6 `donationOwnerValid` de-thread: each receive-family `*_preserves_ipcInvariantFull`
+bundle now **establishes** `donationOwnerValid` from the pre-state instead of threading the post-state
+hypothesis `hDOV'`.
+
+- **`endpointReceiveDual_preserves_donationOwnerValid`** — the rendezvous (sendQ-head-present) path
+  pops the sender + sets it `.blockedOnReply` (Call leg) or `.ready` (Send leg) + completes the
+  receiver `.ready`; both rewritten threads are framed by `donationOwnerFrame`.  The sender is the
+  sendQ **head**, hence `.blockedOnSend`/`.blockedOnCall` by `queueHeadBlockedConsistent` (never a
+  `.blockedOnReply` owner), and the running receiver is `.ready` (dischargeable `hReceiverReady`).
+  `hReceiverReady` does double duty: it supplies the receiver-store's `hPreNotReply` *and* rules out
+  the Call-leg corner where the receiver is the dequeued sender (which would make the receiver-store
+  overwrite a just-set `.blockedOnReply`, breaking the per-step frame).  The blocking (no-sender) path
+  returns the receiver's *own* donation via `cleanupPreReceiveDonation_preserves_donationOwnerValid`,
+  sound by the `donationOwnerUnique` 18th conjunct (v0.32.0).
+- **`endpointReceiveDualWithCaps_preserves_donationOwnerValid`** — composes the base establish with
+  `ipcUnwrapCaps_donationOwnerFrame` (the trailing cap transfer writes only CNode caps).
+- Both receive `*_preserves_ipcInvariantFull` bundles drop `hDOV'`, adding the dischargeable pre-state
+  precondition `hReceiverReady` (the running receiver is `.ready`).
+
+`donationOwnerValid` is now de-threaded from **11/13 bundles**.  The 2 remaining are the
+`endpointReply`/`endpointReplyRecv` reply pair — architecturally composite-only (the bare transitions
+wake the `.blockedOnReply` owner without returning the donation; the return lives in the
+`*WithDonation` wrappers via `applyReplyDonation`), so their de-thread belongs to the composite/D8
+layer.  `RAW_LOOKUP_TID` re-anchored 1071→1083 (invariant-frame raw lookups in the new establishers).
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.0 — IPC `ipcInvariantFull` de-threading: donation-invariant milestone
 
 Minor-version milestone for the IPC `ipcInvariantFull` de-threading workstream's donation-invariant

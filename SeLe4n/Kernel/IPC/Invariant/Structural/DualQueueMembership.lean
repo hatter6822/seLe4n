@@ -6272,6 +6272,225 @@ theorem endpointReceiveDual_preserves_donationOwnerUnique
                     (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointReceiveDual` preserves `donationOwnerValid`.
+
+Rendezvous (sendQ head present): pop the sender + set it `.blockedOnReply` (Call leg) or
+`.ready` (Send leg) + complete the receiver `.ready`.  Both rewritten threads are framed by
+`donationOwnerFrame`: the sender is the sendQ **head**, hence `.blockedOnSend`/`.blockedOnCall`
+by `hQHBC` (never a `.blockedOnReply` owner), and the running `receiver` is `.ready`
+(`hReceiverReady`) — so it is neither the dequeued sender (ruling out the Call-leg corner where
+the receiver-store would overwrite a just-set `.blockedOnReply`) nor a pre-existing owner.
+
+Blocking (no sender): `cleanupPreReceiveDonation` returns the receiver's *own* donation — handled
+by `cleanupPreReceiveDonation_preserves_donationOwnerValid` (needs `donationOwnerUnique`) — then
+enqueue + block `.blockedOnReceive` + optional stash, all `donationOwnerFrame` steps. -/
+theorem endpointReceiveDual_preserves_donationOwnerValid
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (hInv : donationOwnerValid st)
+    (hUnique : donationOwnerUnique st)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    donationOwnerValid st' := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.sendQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInvPop : pair.2.2.objects.invExt :=
+            endpointQueuePopHead_preserves_objects_invExt endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          have hHeadObj : st.objects[pair.1.toObjId]? = some (.tcb pair.2.1) :=
+            endpointQueuePopHead_returns_pre_tcb endpointId false st ep pair.1 pair.2.1 pair.2.2 hObj hPop
+          have hHeadEq : ep.sendQ.head = some pair.1 := by
+            simpa using endpointQueuePopHead_returns_head endpointId false st ep pair.1 pair.2.2 hObj hPop
+          have hHeadBlk := (hQHBC endpointId ep pair.1 pair.2.1 hObj hHeadObj).2 hHeadEq
+          -- The sender (`pair.1`) is the sendQ head, hence `.blockedOnSend`/`.blockedOnCall`,
+          -- never `.blockedOnReply` — so the sender-store frames the owner side.
+          have hSenderNotReplyPop : ∀ (tcb : TCB), pair.2.2.objects[pair.1.toObjId]? = some (.tcb tcb) →
+              ∀ ep' rt, tcb.ipcState ≠ .blockedOnReply ep' rt := by
+            intro tcb hTcb ep' rt
+            obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId false st
+              pair.2.2 pair.1 pair.1 tcb hObjInv hPop hTcb
+            rw [hHeadObj] at hTcb0; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb0)
+            intro hc
+            rcases hHeadBlk with hb | hb <;> · rw [hIpc0, hc] at hb; cases hb
+          have hD1 := donationOwnerValid_of_frames
+            (endpointQueuePopHead_sameSchedContextBindings endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop)
+            (endpointQueuePopHead_donationOwnerFrame endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop) hInv
+          cases hSenderIpc : pair.2.1.ipcState with
+          | blockedOnCall _ =>
+            simp only [hSenderIpc, ite_true] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hD2 := donationOwnerValid_of_frames
+                (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInvPop hMsg)
+                (storeTcbIpcStateAndMessage_donationOwnerFrame pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hSenderNotReplyPop hObjInvPop hMsg) hD1
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hD3 := donationOwnerValid_of_frames
+                    (linkCallerReply_sameSchedContextBindings st2 stLinked pair.1 rid hObjInvMsg hLink)
+                    (linkCallerReply_donationOwnerFrame st2 stLinked pair.1 rid hObjInvMsg hLink) hD2
+                  revert hStep
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    intro h
+                    obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                    refine donationOwnerValid_of_frames
+                      (storeTcbIpcStateAndMessage_sameSchedContextBindings stLinked st4 receiver .ready _ hObjInvLink hPend)
+                      (storeTcbIpcStateAndMessage_donationOwnerFrame stLinked st4 receiver .ready _ ?_ hObjInvLink hPend) hD3
+                    intro tcb hTcb ep' rt
+                    by_cases hRS : receiver = pair.1
+                    · -- receiver = dequeued sender is impossible: a running receiver is `.ready`,
+                      -- the sendQ-head sender is `.blockedOnCall`.
+                      exfalso
+                      have hReady := hReceiverReady pair.2.1 (hRS ▸ hHeadObj)
+                      rw [hSenderIpc] at hReady; cases hReady
+                    · intro hc
+                      obtain ⟨tcbL, hTcbL, hIpcL⟩ := linkCallerReply_tcb_ipcState_backward st2 stLinked pair.1 rid receiver tcb hObjInvMsg hLink hTcb
+                      have hNeObj : receiver.toObjId ≠ pair.1.toObjId :=
+                        fun h => hRS (ThreadId.toObjId_injective receiver pair.1 h)
+                      have hTcbPop : pair.2.2.objects[receiver.toObjId]? = some (.tcb tcbL) := by
+                        rwa [storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ none receiver.toObjId hNeObj hObjInvPop hMsg] at hTcbL
+                      obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId false st pair.2.2 pair.1 receiver tcbL hObjInv hPop hTcbPop
+                      have hReady := hReceiverReady tcb0 hTcb0
+                      rw [hReady, hIpcL, hc] at hIpc0; cases hIpc0
+                  | error _ => simp
+          | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+            simp only [hSenderIpc] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hD2 := donationOwnerValid_of_frames
+                (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready none hObjInvPop hMsg)
+                (storeTcbIpcStateAndMessage_donationOwnerFrame pair.2.2 st2 pair.1 .ready none hSenderNotReplyPop hObjInvPop hMsg) hD1
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hD3 := donationOwnerValid_of_frames
+                (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1))
+                (donationOwnerFrame.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1)) hD2
+              revert hStep
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
+              | ok st4 =>
+                intro h
+                obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                refine donationOwnerValid_of_frames
+                  (storeTcbIpcStateAndMessage_sameSchedContextBindings (ensureRunnable st2 pair.1) st4 receiver .ready _ hObjInvEns hPend)
+                  (storeTcbIpcStateAndMessage_donationOwnerFrame (ensureRunnable st2 pair.1) st4 receiver .ready _ ?_ hObjInvEns hPend) hD3
+                intro tcb hTcb ep' rt
+                have hTcbEns : st2.objects[receiver.toObjId]? = some (.tcb tcb) := by
+                  rwa [ensureRunnable_preserves_objects] at hTcb
+                by_cases hRS : receiver = pair.1
+                · -- receiver = dequeued sender: the sender-store left it `.ready`.
+                  have hReadyVal : tcb.ipcState = .ready :=
+                    storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready none hObjInvPop hMsg tcb (hRS ▸ hTcbEns)
+                  intro hc; rw [hReadyVal] at hc; cases hc
+                · intro hc
+                  have hNeObj : receiver.toObjId ≠ pair.1.toObjId :=
+                    fun h => hRS (ThreadId.toObjId_injective receiver pair.1 h)
+                  have hTcbPop : pair.2.2.objects[receiver.toObjId]? = some (.tcb tcb) := by
+                    rwa [storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ none receiver.toObjId hNeObj hObjInvPop hMsg] at hTcbEns
+                  obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId false st pair.2.2 pair.1 receiver tcb hObjInv hPop hTcbPop
+                  have hReady := hReceiverReady tcb0 hTcb0
+                  rw [hReady, hc] at hIpc0; cases hIpc0
+              | error _ => simp
+      | none =>
+        cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+        | error _ => simp [hHead, hChecked] at hStep
+        | ok stClean =>
+          have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+            (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+          simp only [hHead, hChecked] at hStep
+          rw [hBridge] at hStep
+          have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+          have hDClean := cleanupPreReceiveDonation_preserves_donationOwnerValid st receiver hObjInv hUnique hInv
+          -- The receiver stays `.ready` across the donation-return (`cleanup` preserves ipcState).
+          have hReceiverReadyClean : ∀ (tcb : TCB),
+              (cleanupPreReceiveDonation st receiver).objects[receiver.toObjId]? = some (.tcb tcb) →
+              tcb.ipcState = .ready := by
+            intro tcb hTcb
+            obtain ⟨tcb0, hTcb0, hIpc0⟩ := cleanupPreReceiveDonation_tcb_ipcState_backward st receiver hObjInv receiver tcb hTcb
+            rw [← hIpc0]; exact hReceiverReady tcb0 hTcb0
+          cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+          | error e => simp [hEnq] at hStep
+          | ok st1 =>
+            simp only [hEnq] at hStep
+            have hObjInvEnq : st1.objects.invExt :=
+              endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            have hD1 := donationOwnerValid_of_frames
+              (endpointQueueEnqueue_sameSchedContextBindings endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq)
+              (endpointQueueEnqueue_donationOwnerFrame endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq) hDClean
+            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
+              -- The receiver is `.ready` in `st1` (enqueue then cleanup preserve its ipcState).
+              have hReceiverNotReplyEnq : ∀ (tcb : TCB), st1.objects[receiver.toObjId]? = some (.tcb tcb) →
+                  ∀ ep' rt, tcb.ipcState ≠ .blockedOnReply ep' rt := by
+                intro tcb hTcb ep' rt
+                obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId true receiver
+                  (cleanupPreReceiveDonation st receiver) st1 receiver tcb hObjInvClean hEnq hTcb
+                have hReady := hReceiverReadyClean tcb0 hTcb0
+                intro hc; rw [hReady, hc] at hIpc0; cases hIpc0
+              have hD2 := donationOwnerValid_of_frames
+                (storeTcbIpcState_sameSchedContextBindings st1 st2 receiver _ hObjInvEnq hIpc)
+                (storeTcbIpcState_donationOwnerFrame st1 st2 receiver _ hReceiverNotReplyEnq hObjInvEnq hIpc) hD1
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact donationOwnerValid_of_frames
+                  (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 receiver))
+                  (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 receiver)) hD2
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  have hRecvObj : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hDStash := donationOwnerValid_of_frames
+                    (storeObject_modifiedTcb_sameSchedContextBindings st2 stStashed receiver.toObjId rTcb
+                      { rTcb with pendingReceiveReply := replyId } hRecvObj rfl hObjInv2 hStash)
+                    (storeObject_modifiedTcbPreservingOwner_donationOwnerFrame st2 stStashed receiver.toObjId rTcb
+                      { rTcb with pendingReceiveReply := replyId } hRecvObj rfl rfl hObjInv2 hStash) hD2
+                  exact donationOwnerValid_of_frames
+                    (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects stStashed receiver))
+                    (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDualWithCaps` preserves `donationBudgetTransfer` (`endpointReceiveDual`
 preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
 theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
@@ -6414,6 +6633,60 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerUnique
               obtain ⟨⟨_, _⟩, rfl⟩ := hStep
               exact donationOwnerUnique_of_sameSchedContextBindings
                 (ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverCspaceRoot
+                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointReceiveDualWithCaps` preserves `donationOwnerValid`
+(`endpointReceiveDual` establishes it from the pre-state preconditions; the trailing
+`ipcUnwrapCaps` writes only CNode caps, framing both the SchedContext and the owner side). -/
+theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hInv : donationOwnerValid st)
+    (hUnique : donationOwnerUnique st)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    donationOwnerValid st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hDMid := endpointReceiveDual_preserves_donationOwnerValid st stMid endpointId receiver sid replyId
+      hInv hUnique hQHBC hReceiverReady hObjInv hRecv
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.getTcb? receiver with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+      | some msg =>
+        simp [hMsg] at hStep
+        split at hStep
+        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hDMid
+        · cases hLookup : lookupCspaceRoot stMid sid with
+          | none => simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact donationOwnerValid_of_frames
+                (ipcUnwrapCaps_sameSchedContextBindings msg senderRoot receiverCspaceRoot
+                  receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+                (ipcUnwrapCaps_donationOwnerFrame msg senderRoot receiverCspaceRoot
                   receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
 
 open SeLe4n.Model.SystemState in
@@ -10554,19 +10827,28 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the running receiver is `.ready` (establishes `donationOwnerValid`).
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId replyId hInv.1 hObjInv hStep,
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
+  -- sender is the sendQ head (`.blockedOnSend`/`.blockedOnCall` via `hQHBC`) and the running
+  -- receiver is `.ready` (`hReceiverReady`); the blocking branch returns the receiver's *own*
+  -- donation (`cleanupPreReceiveDonation`, sound by `donationOwnerUnique`).
+  have hDOVest := endpointReceiveDual_preserves_donationOwnerValid st st' endpointId receiver senderId
+    replyId hInv.donationOwnerValid hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent
+    hReceiverReady hObjInv hStep
+  exact ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId replyId hInv.1 hObjInv hStep,
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    endpointReceiveDual_preserves_donationBudgetTransfer st st' endpointId receiver senderId replyId hInv.donationBudgetTransfer hObjInv hStep,
    endpointReceiveDual_establishes_blockedOnReplyHasTarget st st' endpointId receiver senderId replyId hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st st' endpointId
@@ -10920,18 +11202,25 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the running receiver is `.ready` (establishes `donationOwnerValid`).
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId endpointRights
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state (base receive
+  -- establish + the cap-transfer frame — `ipcUnwrapCaps` writes only CNode caps).
+  have hDOVest := endpointReceiveDualWithCaps_preserves_donationOwnerValid endpointId receiver replyId
+    endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerValid
+    hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent hReceiverReady hObjInv hStep
+  exact ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId endpointRights
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    endpointReceiveDualWithCaps_preserves_donationBudgetTransfer endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationBudgetTransfer hObjInv hStep,
    endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject endpointId receiver
