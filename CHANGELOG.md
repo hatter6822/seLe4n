@@ -1,3 +1,20 @@
+## v0.32.6 — IPC de-threading D6: `passiveServerIdle` from the send/call WithCaps (7/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the cap-carrying send/call variants.
+
+- **`ipcUnwrapCaps_passiveServerIdleFrame`** — `ipcUnwrapCaps` writes only CNode caps at the receiver
+  root, so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`) and the scheduler
+  is untouched (`ipcUnwrapCaps_preserves_scheduler`); a clean frame via `passiveServerIdleFrame_of_backward`.
+- **`endpointSendDualWithCaps`** / **`endpointCallWithCaps`** — compose the base
+  `endpointSendDual`/`endpointCall` frame with the cap-transfer frame, threading the same dischargeable
+  `hSenderNotUnbound` / `hCallerNotUnbound` precondition.  Both `*WithCaps_preserves_ipcInvariantFull`
+  bundles drop `hPSI'`.
+
+`passiveServerIdle` is now de-threaded from **7/13 bundles**.  `RAW_LOOKUP_TID` re-anchored 1099→1105.
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.5 — IPC de-threading D6: `passiveServerIdle` from `endpointCall` (5/13)
 
 Continues the D6 `passiveServerIdle` de-thread with the call path and the reply-link frames.
