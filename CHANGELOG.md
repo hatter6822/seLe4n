@@ -1,3 +1,33 @@
+## v0.32.2 — IPC de-threading D6: `passiveServerIdle` foundation + notification pair (2/13)
+
+Opens the D6 `passiveServerIdle` de-thread — the first *scheduler-aware* conjunct (it constrains
+unbound threads by their boot-core run-queue / current-thread membership, not just the object map).
+
+- **Foundation**: `passiveServerIdleAllowed` (the permitted passive states — `.ready`,
+  `.blockedOnReceive`, `.blockedOnNotification`, `.blockedOnReply`), the reusable
+  `passiveServerIdleFrame` predicate, and `passiveServerIdle_of_frame`.  The frame's pullback
+  obligation is filtered to fire **only** for threads that are unbound, descheduled, **and not
+  already in an allowed state** in the post-state.  That is the crux: the sole threads a transition
+  newly drives into a `.blockedOnSend`/`.blockedOnCall` (non-allowed) state are the running
+  sender/caller, which hold a SchedContext (excluded by the `unbound` hypothesis); every thread
+  *blocked into* an allowed state or *woken* `.ready` is excluded by the filter.  So the obligation
+  only ever lands on threads the transition leaves untouched, which pull back trivially.
+- **Micro-frame family**: `storeObject_oldNonTcb` / `storeObject_modifiedTcb` /
+  `storeTcbIpcState{,_fromTcb,AndMessage}` `_passiveServerIdleFrame` (each with a bound-or-allowed
+  side-condition on the rewritten thread), `ensureRunnable_passiveServerIdleFrame` (only *adds* to
+  the run queue → clean), and `removeRunnable_passiveServerIdleFrame` (the removed thread must be
+  bound or already allowed), built on the existing `removeRunnable_mem` / `ensureRunnable_mem_old` /
+  `*_scheduler_current` scheduler lemmas.
+- **Notification pair de-threaded**: `notificationWait` (waiter woken `.ready` or blocked
+  `.blockedOnNotification` + descheduled — both allowed) and `notificationSignal` (head waiter woken
+  `.ready` + rescheduled) drop `hPSI'`, establishing `passiveServerIdle` with **no** new precondition
+  (the only touched thread always lands in an allowed passive state).
+
+`passiveServerIdle` is now de-threaded from **2/13 bundles**.  `RAW_LOOKUP_TID` re-anchored
+1083→1091 (invariant-frame raw lookups).  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.1 — IPC de-threading D6: `donationOwnerValid` from the receive family (11/13)
 
 Continues the D6 `donationOwnerValid` de-thread: each receive-family `*_preserves_ipcInvariantFull`

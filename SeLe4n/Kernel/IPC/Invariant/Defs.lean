@@ -1480,6 +1480,83 @@ def passiveServerIdle (st : SystemState) : Prop :=
               tcb.ipcState = .blockedOnNotification epId) ∨
      ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
 
+/-- The set of `ipcState`s permitted for an unbound, descheduled (passive) thread by
+`passiveServerIdle` — `.ready`, `.blockedOnReceive`, `.blockedOnNotification`, or
+`.blockedOnReply` (definitionally the disjunction in `passiveServerIdle`'s conclusion).
+The excluded states are `.blockedOnSend`/`.blockedOnCall`, which require a SchedContext for
+their timeout. -/
+def passiveServerIdleAllowed (s : ThreadIpcState) : Prop :=
+  s = .ready ∨
+  (∃ epId, s = .blockedOnReceive epId ∨ s = .blockedOnNotification epId) ∨
+  ∃ epId replyTarget, s = .blockedOnReply epId replyTarget
+
+/-- IPC de-threading D6 (`passiveServerIdle`): the reusable preservation frame.
+
+A transition preserves `passiveServerIdle` whenever every thread that is **unbound + descheduled**
+(not in the boot run queue, not the boot current thread) **and not already in an allowed state** in
+the post-state pulls **back** to an unbound + descheduled thread in the pre-state with the *same*
+`ipcState`.
+
+The `¬ passiveServerIdleAllowed` filter is the crux: the only threads a transition newly drives into
+a `.blockedOnSend`/`.blockedOnCall` (non-allowed) state are the running sender/caller — which hold a
+SchedContext (not `.unbound`, so excluded by the `unbound` hypothesis) — while every thread the
+transition *blocks* into an allowed state (`.blockedOnReceive`/`.blockedOnNotification`/
+`.blockedOnReply`) or *wakes* `.ready` is filtered out by `passiveServerIdleAllowed`.  Hence the
+pullback obligation only ever fires on threads the transition leaves untouched. -/
+structure passiveServerIdleFrame (st st' : SystemState) : Prop where
+  pullback : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    tcb'.schedContextBinding = .unbound →
+    tid ∉ (st'.scheduler.runQueueOnCore bootCoreId) →
+    (st'.scheduler.currentOnCore bootCoreId) ≠ some tid →
+    ¬ passiveServerIdleAllowed tcb'.ipcState →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.schedContextBinding = .unbound ∧
+      tid ∉ (st.scheduler.runQueueOnCore bootCoreId) ∧
+      (st.scheduler.currentOnCore bootCoreId) ≠ some tid ∧
+      tcb.ipcState = tcb'.ipcState
+
+namespace passiveServerIdleFrame
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) : passiveServerIdleFrame st st :=
+  ⟨fun _ tcb' h hU hQ hC _ => ⟨tcb', h, hU, hQ, hC, rfl⟩⟩
+
+/-- Transitivity: chain two passive-server frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : passiveServerIdleFrame st st') (h2 : passiveServerIdleFrame st' st'') :
+    passiveServerIdleFrame st st'' :=
+  ⟨fun tid tcb'' h hU hQ hC hNA => by
+    obtain ⟨tcb', h', hU', hQ', hC', hIpc'⟩ := h2.pullback tid tcb'' h hU hQ hC hNA
+    obtain ⟨tcb, hh, hUU, hQQ, hCC, hIpc⟩ := h1.pullback tid tcb' h' hU' hQ' hC' (hIpc' ▸ hNA)
+    exact ⟨tcb, hh, hUU, hQQ, hCC, hIpc.trans hIpc'⟩⟩
+
+/-- A step that leaves the object map **and** the boot-core scheduler state untouched frames
+trivially. -/
+theorem of_objects_scheduler_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects)
+    (hRq : st'.scheduler.runQueueOnCore bootCoreId = st.scheduler.runQueueOnCore bootCoreId)
+    (hCur : st'.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId) :
+    passiveServerIdleFrame st st' :=
+  ⟨fun _ tcb' h hU hQ hC _ =>
+    ⟨tcb', by rw [hObjs] at h; exact h, hU, by rw [hRq] at hQ; exact hQ,
+      by rw [hCur] at hC; exact hC, rfl⟩⟩
+
+end passiveServerIdleFrame
+
+/-- IPC de-threading D6 (`passiveServerIdle`): preservation from the reusable frame. -/
+theorem passiveServerIdle_of_frame {st st' : SystemState}
+    (hFrame : passiveServerIdleFrame st st')
+    (hInv : passiveServerIdle st) :
+    passiveServerIdle st' := by
+  intro tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent'
+  by_cases hAllowed : passiveServerIdleAllowed tcb'.ipcState
+  · exact hAllowed
+  · obtain ⟨tcb, hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩ :=
+      hFrame.pullback tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hAllowed
+    rw [← hIpc]
+    exact hInv tid tcb hTcb hUnbound hNotInQ hNotCurrent
+
 -- ============================================================================
 -- Z7-I: Donation budget transfer consistency
 -- ============================================================================

@@ -5039,6 +5039,164 @@ theorem blockedOnReplyHasTarget_of_objects_eq {st st' : SystemState}
     blockedOnReplyHasTarget st' := by
   intro tid tcb ep rt hTcb hBlk; rw [hObjs] at hTcb; exact h tid tcb ep rt hTcb hBlk
 
+-- ============================================================================
+-- D6 `passiveServerIdle` store-op + scheduler micro-frame family
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- D6: a `storeObject` of a **non-TCB** object frames `passiveServerIdle` — the boot scheduler is
+untouched (`storeObject` never writes it) and every TCB slot is preserved (the rewritten slot holds
+a non-TCB, kind-disjoint from the queried `.tcb`). -/
+theorem storeObject_oldNonTcb_passiveServerIdleFrame
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNewNonTcb : ∀ t, obj ≠ .tcb t)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  have hSched := storeObject_scheduler_eq st st' id obj hStore
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
+  by_cases hEq : tid.toObjId = id
+  · rw [hEq, storeObject_objects_eq st st' id obj hObjInv hStore] at hTcb'
+    exact absurd (Option.some.inj hTcb') (hNewNonTcb tcb')
+  · rw [storeObject_objects_ne st st' id tid.toObjId obj hEq hObjInv hStore] at hTcb'
+    exact ⟨tcb', hTcb', hUnbound', by rw [hSched] at hNotInQ'; exact hNotInQ',
+      by rw [hSched] at hNotCurrent'; exact hNotCurrent', rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: a `storeObject` rewriting a TCB **whose new `ipcState` is allowed for a passive thread, or
+whose pre-state binding is not `.unbound`** frames `passiveServerIdle`.  The boot scheduler is
+untouched; the rewritten thread is excluded from the pullback obligation because either its new
+`ipcState` is allowed (so the `¬ passiveServerIdleAllowed` filter rules it out) or it is bound (so
+the `unbound` hypothesis rules it out); every other slot is preserved. -/
+theorem storeObject_modifiedTcb_passiveServerIdleFrame
+    (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
+    (hOrig : st.objects[id]? = some (.tcb origTcb))
+    (hBindEq : newTcb.schedContextBinding = origTcb.schedContextBinding)
+    (hAllowedOrBound : passiveServerIdleAllowed newTcb.ipcState ∨ origTcb.schedContextBinding ≠ .unbound)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id (.tcb newTcb) st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  have hSched := storeObject_scheduler_eq st st' id (.tcb newTcb) hStore
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
+  by_cases hEq : tid.toObjId = id
+  · rw [hEq, storeObject_objects_eq st st' id (.tcb newTcb) hObjInv hStore] at hTcb'
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb')
+    rcases hAllowedOrBound with hA | hB
+    · exact absurd hA hNA
+    · exact absurd (hBindEq ▸ hUnbound') hB
+  · rw [storeObject_objects_ne st st' id tid.toObjId (.tcb newTcb) hEq hObjInv hStore] at hTcb'
+    exact ⟨tcb', hTcb', hUnbound', by rw [hSched] at hNotInQ'; exact hNotInQ',
+      by rw [hSched] at hNotCurrent'; exact hNotCurrent', rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcState` frames `passiveServerIdle` (the new `ipcState` is allowed, or the
+rewritten thread is bound). -/
+theorem storeTcbIpcState_passiveServerIdleFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hAllowedOrBound : passiveServerIdleAllowed ipc ∨
+      ∀ tcb, st.objects[tid0.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .unbound)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid0 ipc = .ok st') :
+    passiveServerIdleFrame st st' := by
+  unfold storeTcbIpcState at hStep
+  cases hL : lookupTcb st tid0 with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid0 tcb hL
+      refine storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
+        { tcb with ipcState := ipc } hOrig rfl ?_ hObjInv hSO
+      rcases hAllowedOrBound with hA | hB
+      · exact Or.inl hA
+      · exact Or.inr (hB tcb hOrig)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcState_fromTcb` frames `passiveServerIdle`. -/
+theorem storeTcbIpcState_fromTcb_passiveServerIdleFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (hOrig : st.objects[tid0.toObjId]? = some (.tcb tcb))
+    (hAllowedOrBound : passiveServerIdleAllowed ipc ∨ tcb.schedContextBinding ≠ .unbound)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState_fromTcb st tid0 tcb ipc = .ok st') :
+    passiveServerIdleFrame st st' := by
+  unfold storeTcbIpcState_fromTcb at hStep
+  cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
+      { tcb with ipcState := ipc } hOrig rfl hAllowedOrBound hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcStateAndMessage` frames `passiveServerIdle`. -/
+theorem storeTcbIpcStateAndMessage_passiveServerIdleFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hAllowedOrBound : passiveServerIdleAllowed ipc ∨
+      ∀ tcb, st.objects[tid0.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding ≠ .unbound)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid0 ipc msg = .ok st') :
+    passiveServerIdleFrame st st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hL : lookupTcb st tid0 with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid0 tcb hL
+      refine storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
+        { tcb with ipcState := ipc, pendingMessage := msg } hOrig rfl ?_ hObjInv hSO
+      rcases hAllowedOrBound with hA | hB
+      · exact Or.inl hA
+      · exact Or.inr (hB tcb hOrig)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `ensureRunnable` frames `passiveServerIdle` — it only *adds* a thread to the boot run queue
+(preserving every other thread's membership) and leaves the boot current thread and the object map
+untouched, so every descheduled thread in the post-state was descheduled in the pre-state. -/
+theorem ensureRunnable_passiveServerIdleFrame (st : SystemState) (tid0 : SeLe4n.ThreadId) :
+    passiveServerIdleFrame st (ensureRunnable st tid0) := by
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
+  rw [ensureRunnable_preserves_objects st tid0] at hTcb'
+  refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+  · exact fun hIn => hNotInQ' (ensureRunnable_mem_old st tid0 tid hIn)
+  · rwa [ensureRunnable_scheduler_current st tid0] at hNotCurrent'
+
+open SeLe4n.Model.SystemState in
+/-- D6: `removeRunnable` frames `passiveServerIdle` given the removed thread is **bound or already
+in an allowed state** (`hRemoved`) — the object map is untouched, and the only thread whose
+descheduled-status changes is the removed one, which the pullback filter (`unbound`,
+`¬ passiveServerIdleAllowed`) excludes. -/
+theorem removeRunnable_passiveServerIdleFrame
+    (st : SystemState) (removed : SeLe4n.ThreadId)
+    (hRemoved : ∀ tcb, st.objects[removed.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
+    passiveServerIdleFrame st (removeRunnable st removed) := by
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
+  rw [removeRunnable_preserves_objects st removed] at hTcb'
+  by_cases hEq : tid = removed
+  · subst hEq
+    rcases hRemoved tcb' hTcb' with hB | hA
+    · exact absurd hUnbound' hB
+    · exact absurd hA hNA
+  · refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+    · exact fun hIn => hNotInQ' ((removeRunnable_mem st removed tid).mpr ⟨hIn, hEq⟩)
+    · intro hCur
+      apply hNotCurrent'
+      rw [removeRunnable_scheduler_current, hCur, if_neg (fun h => hEq (Option.some.inj h))]
+
 open SeLe4n.Model.SystemState in
 /-- D3: a `storeObject` of a **non-TCB** object frames the clause (vacuous `hNew`). -/
 theorem storeObject_nonTcb_preserves_blockedOnReplyHasTarget
@@ -7662,6 +7820,136 @@ theorem notificationSignal_preserves_donationOwnerValid
     (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
     (notificationSignal_donationOwnerFrame st st' notificationId badge hObjInv hNWC hStep)
     hInv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `notificationWait` frames `passiveServerIdle`.  The deliver branch wakes the waiter
+`.ready`; the block branch sets it `.blockedOnNotification` and deschedules it — both are allowed
+passive states, so the waiter is never a `.blockedOnSend`/`.blockedOnCall` descheduled thread, and
+the `removeRunnable` in the block branch removes a thread whose state is allowed. -/
+theorem notificationWait_passiveServerIdleFrame
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    passiveServerIdleFrame st st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hF1 := storeObject_oldNonTcb_passiveServerIdleFrame
+          st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact hF1.trans (storeTcbIpcState_passiveServerIdleFrame st1 st2 waiter .ready
+            (Or.inl (Or.inl rfl)) hObjInv1 hSI)
+    · split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          · contradiction
+          · split at hStep
+            next => contradiction
+            next st1 hSO =>
+              have hF1 := storeObject_oldNonTcb_passiveServerIdleFrame
+                st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
+              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+              have hWaiterObj : st.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
+                lookupTcb_some_objects st waiter waiterTcb hLookup
+              have hNeWN : waiter.toObjId ≠ notificationId := by
+                intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+              have hOrig1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) := by
+                rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNeWN hObjInv hSO]
+                exact hWaiterObj
+              -- bridge `_fromTcb` → `storeTcbIpcState` so the clean field lemmas apply.
+              have hLk1 : lookupTcb st1 waiter = some waiterTcb := by
+                rw [lookupTcb]; rw [lookupTcb] at hLookup
+                by_cases hRes : waiter.isReserved
+                · rw [if_pos hRes] at hLookup; simp at hLookup
+                · rw [if_neg hRes, hOrig1]
+              split at hStep
+              next => contradiction
+              next st2 hSI =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                rw [storeTcbIpcState_fromTcb_eq hLk1] at hSI
+                refine (hF1.trans (storeTcbIpcState_passiveServerIdleFrame st1 st2 waiter
+                    (.blockedOnNotification notificationId)
+                    (Or.inl (Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩))) hObjInv1 hSI)).trans
+                  (removeRunnable_passiveServerIdleFrame st2 waiter (fun tcb hTcb => Or.inr ?_))
+                rw [storeTcbIpcState_ipcState_eq st1 st2 waiter _ hObjInv1 hSI tcb hTcb]
+                exact Or.inr (Or.inl ⟨notificationId, Or.inr rfl⟩)
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `notificationWait` preserves `passiveServerIdle`. -/
+theorem notificationWait_preserves_passiveServerIdle
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : passiveServerIdle st)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (notificationWait_passiveServerIdleFrame st st' notificationId waiter badge hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `notificationSignal` frames `passiveServerIdle`.  It wakes the head waiter `.ready` and
+reschedules it (allowed state); the no-waiter branch only rewrites the notification object. -/
+theorem notificationSignal_passiveServerIdleFrame
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hF1 := storeObject_oldNonTcb_passiveServerIdleFrame
+          st st1 notificationId (.notification _) (fun _ => by simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame st1 st2 waiter .ready _
+            (Or.inl (Or.inl rfl)) hObjInv1 hSM)).trans
+            (ensureRunnable_passiveServerIdleFrame st2 waiter)
+    | none =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      all_goals
+        exact storeObject_oldNonTcb_passiveServerIdleFrame
+          st st' notificationId (.notification _) (fun _ => by simp) hObjInv hStep
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `notificationSignal` preserves `passiveServerIdle`. -/
+theorem notificationSignal_preserves_passiveServerIdle
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hInv : passiveServerIdle st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (notificationSignal_passiveServerIdleFrame st st' notificationId badge hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReply` preserves every TCB's `schedContextBinding` (it unblocks the
@@ -10968,7 +11256,6 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
@@ -10978,6 +11265,10 @@ theorem notificationSignal_preserves_ipcInvariantFull
   -- donation owner, so every owner witness survives.
   have hDOVest := notificationSignal_preserves_donationOwnerValid st st' notificationId badge
     hObjInv hNWC hInv.donationOwnerValid hStep
+  -- IPC de-threading D6: `passiveServerIdle` **established** — the woken waiter is `.ready`
+  -- (allowed); every other thread frames through the store + reschedule.
+  have hPSIest := notificationSignal_preserves_passiveServerIdle st st' notificationId badge
+    hObjInv hInv.passiveServerIdle hStep
   exact ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
    notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
    notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
@@ -10986,7 +11277,7 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    notificationSignal_preserves_queueNextBlockingConsistent st st' notificationId badge hObjInv hInv.queueNextBlockingConsistent hStep,
    notificationSignal_preserves_queueHeadBlockedConsistent st st' notificationId badge hObjInv hInv.queueHeadBlockedConsistent hNWC hStep,
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -11016,7 +11307,6 @@ theorem notificationWait_preserves_ipcInvariantFull
     -- not exclude from being an endpoint queue head (see file note).
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -11030,6 +11320,10 @@ theorem notificationWait_preserves_ipcInvariantFull
   -- `.blockedOnReply` donation owner (`hWaiterNotReply`), so every owner witness survives.
   have hDOVest := notificationWait_preserves_donationOwnerValid st st' notificationId waiter result
     hObjInv hWaiterNotReply hInv.donationOwnerValid hStep
+  -- IPC de-threading D6: `passiveServerIdle` **established** — the waiter is woken `.ready` or
+  -- blocked `.blockedOnNotification` (both allowed passive states).
+  have hPSIest := notificationWait_preserves_passiveServerIdle st st' notificationId waiter result
+    hObjInv hInv.passiveServerIdle hStep
   exact ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
    notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
    notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
@@ -11037,7 +11331,7 @@ theorem notificationWait_preserves_ipcInvariantFull
    hWtpmn', hNoDup', hQMC',
    -- IPC de-threading D4: queueNext **established** from the pre-state.
    notificationWait_preserves_queueNextBlockingConsistent st st' notificationId waiter result hObjInv hInv.queueNextBlockingConsistent hStep,
-   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
+   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (notificationWait_sameSchedContextBindings st st' notificationId waiter result hObjInv hStep)
      hInv.donationBudgetTransfer,
