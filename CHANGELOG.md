@@ -1,3 +1,24 @@
+## v0.32.3 — IPC de-threading D6: `passiveServerIdle` from `endpointSendDual` (3/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the send path and the reusable queue frames.
+
+- **`endpointSendDual_passiveServerIdleFrame`** — the rendezvous path completes the receiver `.ready`
+  and reschedules it (clean); the block path sets the sender `.blockedOnSend` (a *non-allowed* state)
+  and deschedules it.  The descheduled `.blockedOnSend` sender is the one thread that would otherwise
+  violate the invariant, so the bundle carries the dischargeable precondition `hSenderNotUnbound`
+  (a running sender holds a SchedContext — its own or a donated one — so it is never `.unbound`),
+  which excludes it from the frame's pullback obligation.  `endpointSendDual_preserves_ipcInvariantFull`
+  drops `hPSI'`.
+- **Reusable queue micro-frames**: `passiveServerIdleFrame_of_backward` (any transition preserving
+  every TCB's `ipcState`+binding backward and leaving the boot scheduler untouched frames the
+  invariant), `endpointQueuePopHead_passiveServerIdleFrame`, `endpointQueueEnqueue_passiveServerIdleFrame`
+  (queue-link rewrites — clean), and `storeTcbReceiveComplete_passiveServerIdleFrame` (sets `.ready`).
+
+`passiveServerIdle` is now de-threaded from **3/13 bundles**.  `RAW_LOOKUP_TID` re-anchored 1091→1096.
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.2 — IPC de-threading D6: `passiveServerIdle` foundation + notification pair (2/13)
 
 Opens the D6 `passiveServerIdle` de-thread — the first *scheduler-aware* conjunct (it constrains

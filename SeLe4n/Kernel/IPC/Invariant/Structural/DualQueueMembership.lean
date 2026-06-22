@@ -5197,6 +5197,44 @@ theorem removeRunnable_passiveServerIdleFrame
       apply hNotCurrent'
       rw [removeRunnable_scheduler_current, hCur, if_neg (fun h => hEq (Option.some.inj h))]
 
+/-- D6: a transition that preserves every TCB's `ipcState` and `schedContextBinding` **backward**
+and leaves the boot scheduler untouched frames `passiveServerIdle` — every post-state thread pulls
+back to a same-`ipcState`, same-binding pre-state thread (queue-link rewrites: `endpointQueue*`,
+`storeTcbQueueLinks`). -/
+theorem passiveServerIdleFrame_of_backward {st st' : SystemState}
+    (hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding)
+    (hSched : st'.scheduler = st.scheduler) :
+    passiveServerIdleFrame st st' :=
+  ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => by
+    obtain ⟨tcb, hTcb, hIpcEq, hBindEq⟩ := hBack tid tcb' hTcb'
+    exact ⟨tcb, hTcb, hBindEq.trans hUnbound', by rw [hSched] at hNotInQ'; exact hNotInQ',
+      by rw [hSched] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbReceiveComplete` frames `passiveServerIdle` (sets the rewritten thread `.ready`,
+an allowed passive state). -/
+theorem storeTcbReceiveComplete_passiveServerIdleFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid0 msg = .ok st') :
+    passiveServerIdleFrame st st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hL : lookupTcb st tid0 with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_passiveServerIdleFrame st st'' tid0.toObjId tcb
+        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (lookupTcb_some_objects st tid0 tcb hL) rfl (Or.inl (Or.inl rfl)) hObjInv hSO
+
 open SeLe4n.Model.SystemState in
 /-- D3: a `storeObject` of a **non-TCB** object frames the clause (vacuous `hNew`). -/
 theorem storeObject_nonTcb_preserves_blockedOnReplyHasTarget
@@ -5656,6 +5694,43 @@ theorem endpointQueuePopHead_donationOwnerFrame
                     intro ⟨_, _, rfl⟩
                     exact (hF1.trans hF2).trans (storeTcbQueueLinks_donationOwnerFrame
                       st2 st3 headTid none none none hInv2 hFinal)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointQueuePopHead` frames `passiveServerIdle` (queue-link rewrites + endpoint store
+preserve every `ipcState`/binding and the scheduler). -/
+theorem endpointQueuePopHead_passiveServerIdleFrame
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    passiveServerIdleFrame st st' :=
+  passiveServerIdleFrame_of_backward
+    (fun tid tcb' hTcb' => by
+      obtain ⟨tcb, hTcb, hIpcEq⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId isReceiveQ
+        st st' rTid tid tcb' hObjInv hStep hTcb'
+      obtain ⟨tcb2, hTcb2, hBindEq⟩ := endpointQueuePopHead_sameSchedContextBindings endpointId
+        isReceiveQ st st' rTid rTcb hObjInv hStep tid tcb' hTcb'
+      rw [hTcb] at hTcb2; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb2)
+      exact ⟨tcb, hTcb, hIpcEq, hBindEq⟩)
+    (endpointQueuePopHead_scheduler_eq endpointId isReceiveQ st st' rTid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointQueueEnqueue` frames `passiveServerIdle`. -/
+theorem endpointQueueEnqueue_passiveServerIdleFrame
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid0 : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid0 st = .ok st') :
+    passiveServerIdleFrame st st' :=
+  passiveServerIdleFrame_of_backward
+    (fun tid tcb' hTcb' => by
+      obtain ⟨tcb, hTcb, hIpcEq⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ
+        tid0 st st' tid tcb' hObjInv hStep hTcb'
+      obtain ⟨tcb2, hTcb2, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId
+        isReceiveQ tid0 st st' hObjInv hStep tid tcb' hTcb'
+      rw [hTcb] at hTcb2; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb2)
+      exact ⟨tcb, hTcb, hIpcEq, hBindEq⟩)
+    (endpointQueueEnqueue_scheduler_eq endpointId isReceiveQ tid0 st st' hStep)
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointQueueEnqueue` frames the SchedContext/owner side forward — endpoint store +
@@ -7224,6 +7299,82 @@ theorem endpointSendDual_preserves_donationOwnerValid
     (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
     (endpointSendDual_donationOwnerFrame st st' endpointId sender msg hObjInv hQHBC hSenderNotReply hStep)
     hInv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointSendDual` frames `passiveServerIdle`.  Rendezvous (receiveQ head): pop the receiver
+(queue-link rewrite) + complete it `.ready` + reschedule — all allowed/clean.  Block: enqueue the
+sender + set it `.blockedOnSend` + deschedule — the descheduled sender is `.blockedOnSend` (a
+*non-allowed* state), so it must hold a SchedContext (`hSenderNotUnbound`, dischargeable: a running
+sender runs on its own or a donated SchedContext) to be excluded from the pullback obligation. -/
+theorem endpointSendDual_passiveServerIdleFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+        tcb.schedContextBinding ≠ .unbound)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hF1 := endpointQueuePopHead_passiveServerIdleFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hF1.trans (storeTcbReceiveComplete_passiveServerIdleFrame pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg)).trans
+              (ensureRunnable_passiveServerIdleFrame st2 pair.1)
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
+          have hF1 := endpointQueueEnqueue_passiveServerIdleFrame endpointId false sender st st1 hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame st1 st2 sender (.blockedOnSend endpointId) (some msg)
+              (Or.inr (fun tcb hTcb => ?_)) hObjInv1 hMsg)).trans
+              (removeRunnable_passiveServerIdleFrame st2 sender (fun tcb hTcb => Or.inl ?_))
+            · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false sender st st1 hObjInv hEnq sender tcb hTcb
+              exact hBindEq ▸ hSenderNotUnbound tcb0 hTcb0
+            · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hMsg sender tcb hTcb
+              obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false sender st st1 hObjInv hEnq sender tcb1 hTcb1
+              exact hBindEq1 ▸ hBindEq0 ▸ hSenderNotUnbound tcb0 hTcb0
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointSendDual` preserves `passiveServerIdle`. -/
+theorem endpointSendDual_preserves_passiveServerIdle
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+        tcb.schedContextBinding ≠ .unbound)
+    (hInv : passiveServerIdle st)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (endpointSendDual_passiveServerIdleFrame st st' endpointId sender msg hObjInv hSenderNotUnbound hStep) hInv
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDualWithCaps` preserves every TCB's binding (`endpointSendDual` +
@@ -11212,13 +11363,15 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
     (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    -- IPC de-threading D6: the running sender holds a SchedContext (own or donated).
+    (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+        tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -11227,11 +11380,15 @@ theorem endpointSendDual_preserves_ipcInvariantFull
   -- `.blockedOnReply` donation owner.
   have hDOVest := endpointSendDual_preserves_donationOwnerValid st st' endpointId sender msg
     hObjInv hInv.queueHeadBlockedConsistent hSenderNotReply hInv.donationOwnerValid hStep
+  -- IPC de-threading D6: `passiveServerIdle` **established** — the only thread descheduled into a
+  -- non-allowed state is the `.blockedOnSend` sender, excluded because it holds a SchedContext.
+  have hPSIest := endpointSendDual_preserves_passiveServerIdle st st' endpointId sender msg
+    hObjInv hSenderNotUnbound hInv.passiveServerIdle hStep
   exact ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hObjInv hStep,
    hDualQueue',
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
      hInv.donationBudgetTransfer,
