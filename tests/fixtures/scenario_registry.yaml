@@ -1271,3 +1271,43 @@ scenarios:
     function: runPerCoreIdleDispatchTrace
     subsystem: Scheduler
     description: "WS-SM SM5.E: dispatched idle absent from run queue (dequeue-on-dispatch)"
+  SCO-005a:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "AK6-A: validateSchedContextParams zero-budget rejected (invalidArgument)"
+  SCO-019a:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runSchedContextOpsTrace
+    subsystem: SchedContext
+    description: "AK6-D: schedContextYieldTo self-guard retains remaining budget, context stays active"
+  Z8J-001:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBudgetLifecycleTrace
+    subsystem: SchedContext
+    description: "Z8-J: SchedContext create+configure (budget/period/remaining established)"
+  Z8J-002:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBudgetLifecycleTrace
+    subsystem: SchedContext
+    description: "Z8-J: SchedContext bind to thread"
+  Z8J-003:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBudgetLifecycleTrace
+    subsystem: SchedContext
+    description: "Z8-J: budget decremented after 1 timer tick (not preempted)"
+  Z8J-004:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBudgetLifecycleTrace
+    subsystem: SchedContext
+    description: "Z8-J: budget after 4 timer ticks (not preempted)"
+  Z8J-005:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBudgetLifecycleTrace
+    subsystem: SchedContext
+    description: "Z8-J: budget exhausted, thread preempted"
+  Z8J-006:
+    source: SeLe4n/Testing/MainTraceHarness.lean
+    function: runBudgetLifecycleTrace
+    subsystem: SchedContext
+    description: "Z8-J: budget restored after replenishment"

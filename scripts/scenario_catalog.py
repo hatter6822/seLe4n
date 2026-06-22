@@ -108,7 +108,12 @@ def validate_registry(fixture_path: Path, registry_path: Path,
     #   Pipe-delimited: ID | SUBSYSTEM | description
     #   Bracket:        [ID] description
     fixture_ids: set[str] = set()
-    bracket_re = re.compile(r"^\[([A-Z]+-\d+)\]")
+    # Tightened (vs. the original ``[A-Z]+-\d+``) so scenario IDs with a
+    # digit-bearing prefix (e.g. ``Z8J-001``) or a lowercase variant suffix
+    # (e.g. ``SCO-005a``) are recognised — the previous pattern silently
+    # dropped them on both the fixture and registry side, hiding genuine
+    # catalog gaps from this gate.
+    bracket_re = re.compile(r"^\[([A-Z][A-Z0-9]*-\d+[a-z]?)\]")
     all_fixture_paths = [fixture_path] + (extra_fixture_paths or [])
     for fp in all_fixture_paths:
         if not fp.exists():
@@ -130,7 +135,7 @@ def validate_registry(fixture_path: Path, registry_path: Path,
     registry_ids: set[str] = set()
     registry_text = registry_path.read_text(encoding="utf-8")
     for line in registry_text.splitlines():
-        m = re.match(r"^  ([A-Z]+-\d+):", line)
+        m = re.match(r"^  ([A-Z][A-Z0-9]*-\d+[a-z]?):", line)
         if m:
             registry_ids.add(m.group(1))
 
@@ -233,7 +238,7 @@ def main() -> int:
         registry_path = Path(args.registry)
         extra_fixtures = [Path(p) for p in args.extra_fixtures]
         # Re-use validate_registry's diff machinery via a manual scan.
-        bracket_re = re.compile(r"^\[([A-Z]+-\d+)\]")
+        bracket_re = re.compile(r"^\[([A-Z][A-Z0-9]*-\d+[a-z]?)\]")
         fixture_ids: set[str] = set()
         for fp in [fixture_path] + extra_fixtures:
             if not fp.exists():
@@ -252,7 +257,7 @@ def main() -> int:
         registry_ids: set[str] = set()
         if registry_path.exists():
             for line in registry_path.read_text(encoding="utf-8").splitlines():
-                m = re.match(r"^  ([A-Z]+-\d+):", line)
+                m = re.match(r"^  ([A-Z][A-Z0-9]*-\d+[a-z]?):", line)
                 if m:
                     registry_ids.add(m.group(1))
         missing = sorted(fixture_ids - registry_ids)
