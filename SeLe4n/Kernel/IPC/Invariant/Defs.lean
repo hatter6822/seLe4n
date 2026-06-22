@@ -1617,6 +1617,87 @@ theorem donationBudgetTransfer_of_sameSchedContextBindings
   exact hDBT tid1 tid2 tc1 tc2 scId hP1 hP2 hNe
     (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
 
+/-- IPC de-threading D6 (`donationOwnerValid`): the **forward** half of the preservation
+frame, packaged so it composes through a transition's store-op decomposition with
+`.trans` exactly the way `sameSchedContextBindings` does for the backward binding half.
+
+`donationOwnerValid` reads, about a donation `tid ↦ .donated scId owner`: the donated
+SchedContext `scId` (clause 1's existence + `boundThread`) and the `owner`'s TCB
+(clause 2's `.unbound` binding + `.blockedOnReply` state).  Both are read on the
+**owner/SchedContext** side, so they must be carried **forward** (`st → st'`):
+
+* `scForward` — every donated SchedContext object survives the step; and
+* `ownerForward` — every thread that is `.unbound` and `.blockedOnReply` in the
+  pre-state stays `.unbound` and `.blockedOnReply` in the post-state (so it is still a
+  valid donation owner).
+
+A transition's `tid`-side binding is pulled **backward** by `sameSchedContextBindings`;
+the two together feed `donationOwnerValid_of_frames`. -/
+structure donationOwnerFrame (st st' : SystemState) : Prop where
+  scForward : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    st'.objects[scId.toObjId]? = some (.schedContext sc)
+  ownerForward : ∀ (owner : SeLe4n.ThreadId) (ownerTcb : TCB),
+    st.objects[owner.toObjId]? = some (.tcb ownerTcb) →
+    ownerTcb.schedContextBinding = .unbound →
+    (∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget) →
+    ∃ ownerTcb', st'.objects[owner.toObjId]? = some (.tcb ownerTcb') ∧
+      ownerTcb'.schedContextBinding = .unbound ∧
+      ∃ epId replyTarget, ownerTcb'.ipcState = .blockedOnReply epId replyTarget
+
+namespace donationOwnerFrame
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) : donationOwnerFrame st st :=
+  ⟨fun _ _ h => h, fun _ ownerTcb h hU hR => ⟨ownerTcb, h, hU, hR⟩⟩
+
+/-- Transitivity: chain two donation-owner frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : donationOwnerFrame st st') (h2 : donationOwnerFrame st' st'') :
+    donationOwnerFrame st st'' :=
+  ⟨fun scId sc h => h2.scForward scId sc (h1.scForward scId sc h),
+   fun owner ownerTcb h hU hR => by
+     obtain ⟨t', h', hU', hR'⟩ := h1.ownerForward owner ownerTcb h hU hR
+     exact h2.ownerForward owner t' h' hU' hR'⟩
+
+/-- A step that leaves the object map untouched frames trivially (scheduler-only
+ops: `removeRunnable`, `ensureRunnable`, `removeRunnableOnCore`, …). -/
+theorem of_objects_eq {st st' : SystemState}
+    (hEq : st'.objects = st.objects) : donationOwnerFrame st st' :=
+  ⟨fun scId sc h => by rw [hEq]; exact h,
+   fun owner ownerTcb h hU hR => ⟨ownerTcb, by rw [hEq]; exact h, hU, hR⟩⟩
+
+end donationOwnerFrame
+
+/-- IPC de-threading D6 (`donationOwnerValid`): the reusable preservation frame.
+
+A transition preserves `donationOwnerValid` whenever it preserves every TCB's
+`schedContextBinding` **backward** (`hBind`, to pull a post-state `.donated` binding
+back to the pre-state) and frames the SchedContext/owner side **forward**
+(`hFrame : donationOwnerFrame`).
+
+Binding-free, SchedContext-free, owner-non-waking transitions (the notification pair,
+`endpointSendDual`) discharge `hBind` from the existing `sameSchedContextBindings`
+frame and `hFrame` because the only TCBs they rewrite are the running caller / a
+freshly-woken `.blockedOnReceive`|`.blockedOnNotification` thread — never a
+`.blockedOnReply` donation owner — and they store no SchedContext object.  The
+reply/call transitions that *do* wake the owner restore the witness through
+`applyReplyDonation` / `applyCallDonation` at the donation-wrapper level, not the
+bare transition. -/
+theorem donationOwnerValid_of_frames
+    {st st' : SystemState}
+    (hBind : sameSchedContextBindings st st')
+    (hFrame : donationOwnerFrame st st')
+    (hInv : donationOwnerValid st) :
+    donationOwnerValid st' := by
+  intro tid tcb scId owner hTcb hBinding
+  obtain ⟨tcbSt, hTcbSt, hBindEq⟩ := hBind tid tcb hTcb
+  rw [hBinding] at hBindEq
+  obtain ⟨⟨sc, hScSt, hBound⟩, ⟨ownerTcb, hOwnerSt, hUnbound, ep, rt, hReply⟩⟩ :=
+    hInv tid tcbSt scId owner hTcbSt hBindEq
+  exact ⟨⟨sc, hFrame.scForward scId sc hScSt, hBound⟩,
+    hFrame.ownerForward owner ownerTcb hOwnerSt hUnbound ⟨ep, rt, hReply⟩⟩
+
 -- ============================================================================
 -- Full IPC invariant bundle (16 conjuncts)
 -- ============================================================================

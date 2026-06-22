@@ -4808,6 +4808,132 @@ theorem storeObject_endpoint_sameSchedContextBindings'
   exact storeObject_nonTcb_sameSchedContextBindings st st' oid (.endpoint ep)
     (fun _ => by simp) hObjInv hStore
 
+-- ============================================================================
+-- D6: `donationOwnerFrame` store-op family (the forward SchedContext/owner half)
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- D6: a `storeObject` whose **old** slot is neither a SchedContext nor a TCB frames the
+SchedContext/owner side forward.  `storeObject` overwrites the key unconditionally, so the
+only way the store could disturb a SchedContext witness (or an owner TCB witness) is by
+landing on that very key — ruled out here because the old object at `id` is a notification /
+endpoint / reply, disjoint in kind from both a SchedContext and a TCB. -/
+theorem storeObject_oldNonScNonTcb_donationOwnerFrame
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hOldNonSc : ∀ sc, st.objects[id]? ≠ some (.schedContext sc))
+    (hOldNonTcb : ∀ t, st.objects[id]? ≠ some (.tcb t))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  constructor
+  · intro scId sc hSc
+    by_cases h : scId.toObjId = id
+    · exact absurd (h ▸ hSc) (hOldNonSc sc)
+    · rw [storeObject_objects_ne st st' id scId.toObjId obj h hObjInv hStore]; exact hSc
+  · intro owner ownerTcb hOwner hU hR
+    by_cases h : owner.toObjId = id
+    · exact absurd (h ▸ hOwner) (hOldNonTcb ownerTcb)
+    · exact ⟨ownerTcb,
+        by rw [storeObject_objects_ne st st' id owner.toObjId obj h hObjInv hStore]; exact hOwner,
+        hU, hR⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: a `storeObject` that rewrites a TCB **whose pre-state `ipcState` is not
+`.blockedOnReply`** frames the SchedContext/owner side forward.  The store cannot disturb a
+SchedContext witness (the old slot is a TCB, kind-disjoint from a SchedContext), and it
+cannot disturb an owner witness: an owner is `.blockedOnReply` in the pre-state, whereas the
+rewritten thread is not, so the two keys differ. -/
+theorem storeObject_modifiedTcb_donationOwnerFrame
+    (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
+    (hOrig : st.objects[id]? = some (.tcb origTcb))
+    (hPreNotReply : ∀ ep rt, origTcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id (.tcb newTcb) st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  constructor
+  · intro scId sc hSc
+    by_cases h : scId.toObjId = id
+    · rw [h, hOrig] at hSc; simp at hSc
+    · rw [storeObject_objects_ne st st' id scId.toObjId _ h hObjInv hStore]; exact hSc
+  · intro owner ownerTcb hOwner hU hR
+    obtain ⟨ep, rt, hRR⟩ := hR
+    by_cases h : owner.toObjId = id
+    · rw [h, hOrig] at hOwner
+      obtain rfl := KernelObject.tcb.inj (Option.some.inj hOwner)
+      exact absurd hRR (hPreNotReply ep rt)
+    · exact ⟨ownerTcb,
+        by rw [storeObject_objects_ne st st' id owner.toObjId _ h hObjInv hStore]; exact hOwner,
+        hU, ⟨ep, rt, hRR⟩⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcState_fromTcb` frames the owner side forward, given the rewritten
+thread's pre-state is not `.blockedOnReply` (`hPreNotReply`). -/
+theorem storeTcbIpcState_fromTcb_donationOwnerFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (hOrig : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPreNotReply : ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
+    donationOwnerFrame st st' := by
+  unfold storeTcbIpcState_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
+      { tcb with ipcState := ipc } hOrig hPreNotReply hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcState` frames the owner side forward (pre-state not `.blockedOnReply`). -/
+theorem storeTcbIpcState_donationOwnerFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hPreNotReply : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    donationOwnerFrame st st' := by
+  unfold storeTcbIpcState at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid tcb hL
+      exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
+        { tcb with ipcState := ipc } hOrig (hPreNotReply tcb hOrig) hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcStateAndMessage` frames the owner side forward (pre-state not
+`.blockedOnReply`). -/
+theorem storeTcbIpcStateAndMessage_donationOwnerFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hPreNotReply : ∀ (tcb : TCB), st.objects[tid.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    donationOwnerFrame st st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      have hOrig := lookupTcb_some_objects st tid tcb hL
+      exact storeObject_modifiedTcb_donationOwnerFrame st st'' tid.toObjId tcb
+        { tcb with ipcState := ipc, pendingMessage := msg } hOrig (hPreNotReply tcb hOrig) hObjInv hSO
+
 /-- D3: object-store-preserving step frames the clause. -/
 theorem blockedOnReplyHasTarget_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) (h : blockedOnReplyHasTarget st) :
@@ -6158,6 +6284,95 @@ theorem notificationWait_sameSchedContextBindings
   · contradiction
 
 open SeLe4n.Model.SystemState in
+/-- D6: `notificationWait` frames the SchedContext/owner side forward.  It stores the
+notification object (non-Sc/non-TCB) and rewrites only the `waiter` TCB (to `.ready` on the
+deliver path or `.blockedOnNotification` on the block path); given the waiter is not itself a
+`.blockedOnReply` donation owner (`hWaiterNotReply` — the syscall caller is running, not
+blocked awaiting a reply), every donation owner witness survives. -/
+theorem notificationWait_donationOwnerFrame
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hWaiterNotReply : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    donationOwnerFrame st st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hF1 := storeObject_oldNonScNonTcb_donationOwnerFrame
+          st st1 notificationId (.notification _)
+          (fun sc => by rw [hObj]; simp) (fun t => by rw [hObj]; simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          refine hF1.trans (storeTcbIpcState_donationOwnerFrame st1 st2 waiter .ready
+            (fun tcb hTcb1 ep rt => ?_) hObjInv1 hSI)
+          have hNe : waiter.toObjId ≠ notificationId := by
+            intro heq
+            have hc := hTcb1
+            rw [heq, storeObject_objects_eq st st1 notificationId _ hObjInv hSO] at hc
+            simp at hc
+          rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNe hObjInv hSO] at hTcb1
+          exact hWaiterNotReply tcb hTcb1 ep rt
+    · split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          · contradiction
+          · split at hStep
+            next => contradiction
+            next st1 hSO =>
+              have hF1 := storeObject_oldNonScNonTcb_donationOwnerFrame
+                st st1 notificationId (.notification _)
+                (fun sc => by rw [hObj]; simp) (fun t => by rw [hObj]; simp) hObjInv hSO
+              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+              have hWaiterObj : st.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
+                lookupTcb_some_objects st waiter waiterTcb hLookup
+              have hNeWN : waiter.toObjId ≠ notificationId := by
+                intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+              have hOrig1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) := by
+                rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNeWN hObjInv hSO]
+                exact hWaiterObj
+              split at hStep
+              next => contradiction
+              next st2 hSI =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact (hF1.trans (storeTcbIpcState_fromTcb_donationOwnerFrame
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hOrig1
+                    (hWaiterNotReply waiterTcb hWaiterObj) hObjInv1 hSI)).trans
+                  (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `notificationWait` preserves `donationOwnerValid` (binding-free,
+SchedContext-free; owner witnesses survive via `notificationWait_donationOwnerFrame`). -/
+theorem notificationWait_preserves_donationOwnerValid
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hWaiterNotReply : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hInv : donationOwnerValid st)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    donationOwnerValid st' :=
+  donationOwnerValid_of_frames
+    (notificationWait_sameSchedContextBindings st st' notificationId waiter badge hObjInv hStep)
+    (notificationWait_donationOwnerFrame st st' notificationId waiter badge hObjInv hWaiterNotReply hStep)
+    hInv
+
+open SeLe4n.Model.SystemState in
 /-- D6: `notificationSignal` preserves every TCB's `schedContextBinding` (it stores the
 notification waitlist and wakes the head waiter `.ready` — neither writes a binding). -/
 theorem notificationSignal_sameSchedContextBindings
@@ -6193,6 +6408,79 @@ theorem notificationSignal_sameSchedContextBindings
           st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep
   · contradiction
   · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- D6: `notificationSignal` frames the SchedContext/owner side forward.  It stores the
+notification object (non-Sc/non-TCB) and, when a waiter is present, wakes the **head** waiter
+`.ready`.  The head waiter is a notification-queue member, hence `.blockedOnNotification`
+(`notificationWaiterConsistent`) — never a `.blockedOnReply` donation owner — so every donation
+owner witness survives. -/
+theorem notificationSignal_donationOwnerFrame
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hF1 := storeObject_oldNonScNonTcb_donationOwnerFrame
+          st st1 notificationId (.notification _)
+          (fun sc => by rw [hObj]; simp) (fun t => by rw [hObj]; simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        -- The waiter is the head of `ntfn.waitingThreads`, hence `.blockedOnNotification`.
+        have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
+          (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
+        have hWaiterMem : waiter ∈ ntfn.waitingThreads := by
+          show waiter ∈ ntfn.waitingThreads.val
+          rw [hValEq]; exact List.mem_cons_self
+        obtain ⟨wTcb, hWTcb, hWIpc⟩ := hNWC notificationId ntfn waiter hObj hWaiterMem
+        have hNe : waiter.toObjId ≠ notificationId := by
+          intro hEq; rw [hEq] at hWTcb; rw [hObj] at hWTcb; simp at hWTcb
+        have hWTcb1 : st1.objects[waiter.toObjId]? = some (.tcb wTcb) := by
+          rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNe hObjInv hSO]; exact hWTcb
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 waiter .ready _
+            (fun tcb hTcb1 ep rt => ?_) hObjInv1 hSM)).trans
+            (donationOwnerFrame.of_objects_eq (ensureRunnable_preserves_objects st2 waiter))
+          rw [hWTcb1] at hTcb1
+          obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb1)
+          intro hcontra; rw [hWIpc] at hcontra; cases hcontra
+    | none =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      all_goals
+        exact storeObject_oldNonScNonTcb_donationOwnerFrame
+          st st' notificationId (.notification _)
+          (fun sc => by rw [hObj]; simp) (fun t => by rw [hObj]; simp) hObjInv hStep
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `notificationSignal` preserves `donationOwnerValid` (binding-free,
+SchedContext-free; owner witnesses survive via `notificationSignal_donationOwnerFrame`). -/
+theorem notificationSignal_preserves_donationOwnerValid
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hNWC : notificationWaiterConsistent st)
+    (hInv : donationOwnerValid st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    donationOwnerValid st' :=
+  donationOwnerValid_of_frames
+    (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
+    (notificationSignal_donationOwnerFrame st st' notificationId badge hObjInv hNWC hStep)
+    hInv
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReply` preserves every TCB's `schedContextBinding` (it unblocks the
@@ -9460,13 +9748,17 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the head
+  -- waiter woken `.ready` is a notification-queue member (`hNWC`), never a `.blockedOnReply`
+  -- donation owner, so every owner witness survives.
+  have hDOVest := notificationSignal_preserves_donationOwnerValid st st' notificationId badge
+    hObjInv hNWC hInv.donationOwnerValid hStep
+  exact ⟨notificationSignal_preserves_ipcInvariant st st' notificationId badge hInv.1 hObjInv hStep,
    notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
    notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
    notificationSignal_preserves_badgeWellFormed st st' notificationId badge hInv.2.2.2.1 hObjInv hStep,
@@ -9474,7 +9766,7 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    notificationSignal_preserves_queueNextBlockingConsistent st st' notificationId badge hObjInv hInv.queueNextBlockingConsistent hStep,
    notificationSignal_preserves_queueHeadBlockedConsistent st st' notificationId badge hObjInv hInv.queueHeadBlockedConsistent hNWC hStep,
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    donationBudgetTransfer_of_sameSchedContextBindings
      (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -9501,21 +9793,28 @@ theorem notificationWait_preserves_ipcInvariantFull
     -- not exclude from being an endpoint queue head (see file note).
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
+    (hWaiterNotReply : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
-    ipcInvariantFull st' :=
-  ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
+  -- TCB rewritten is the `waiter` (to `.ready`/`.blockedOnNotification`), which is not a
+  -- `.blockedOnReply` donation owner (`hWaiterNotReply`), so every owner witness survives.
+  have hDOVest := notificationWait_preserves_donationOwnerValid st st' notificationId waiter result
+    hObjInv hWaiterNotReply hInv.donationOwnerValid hStep
+  exact ⟨notificationWait_preserves_ipcInvariant st st' notificationId waiter result hInv.1 hObjInv hStep,
    notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
    notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
    notificationWait_preserves_badgeWellFormed st st' notificationId waiter result hInv.2.2.2.1 hObjInv hStep,
    hWtpmn', hNoDup', hQMC',
    -- IPC de-threading D4: queueNext **established** from the pre-state.
    notificationWait_preserves_queueNextBlockingConsistent st st' notificationId waiter result hObjInv hInv.queueNextBlockingConsistent hStep,
-   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    donationBudgetTransfer_of_sameSchedContextBindings
      (notificationWait_sameSchedContextBindings st st' notificationId waiter result hObjInv hStep)
      hInv.donationBudgetTransfer,

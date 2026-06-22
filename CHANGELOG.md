@@ -1,3 +1,44 @@
+## v0.31.183 — IPC de-threading D6: `donationOwnerValid` de-threaded from the notification pair (2/13)
+
+Opens the `donationOwnerValid` de-threading with the reusable forward-frame infrastructure and
+the two binding-free, owner-non-waking notification transitions.
+
+`donationOwnerValid` reads, about a donation `tid ↦ .donated scId owner`, the donated
+SchedContext (clause 1) and the `owner` TCB's `.unbound` + `.blockedOnReply` witness (clause 2).
+Both are on the owner/SchedContext side, so they are carried **forward** by a new packaged
+predicate `donationOwnerFrame` (`scForward` + `ownerForward`, with `refl`/`trans`/`of_objects_eq`),
+mirroring the way `sameSchedContextBindings` carries the `tid`-side binding **backward**. The
+frame lemma `donationOwnerValid_of_frames` consumes both halves.
+
+Store-op family producing `donationOwnerFrame`:
+- `storeObject_oldNonScNonTcb_donationOwnerFrame` — a store whose old slot is neither a
+  SchedContext nor a TCB (notification / endpoint) cannot disturb either witness;
+- `storeObject_modifiedTcb_donationOwnerFrame` + the `storeTcbIpcState{,_fromTcb,AndMessage}`
+  wrappers — a TCB rewrite frames the owner side **iff the rewritten thread's pre-state
+  `ipcState` is not `.blockedOnReply`** (an owner is `.blockedOnReply`, so a non-`.blockedOnReply`
+  rewrite cannot land on an owner).
+
+Transitions de-threaded (`hDOV'` removed, `donationOwnerValid` established from
+`hInv.donationOwnerValid`):
+- `notificationWait` — adds the dischargeable `hWaiterNotReply` (the syscall caller is running,
+  not awaiting a reply), discharging the waiter's `.ready`/`.blockedOnNotification` rewrite;
+- `notificationSignal` — the woken **head** waiter is a notification-queue member, hence
+  `.blockedOnNotification` via the already-threaded `hNWC : notificationWaiterConsistent`.
+
+Architectural finding recorded in the plan (binds the remaining 11): the bare
+`endpointReply`/`endpointReplyRecv`/`endpointCall` transitions wake the `.blockedOnReply`
+donation owner **without** returning the donation (the donation-return lives in the
+`*WithDonation` wrappers), so they do not preserve `donationOwnerValid` at the bare level — those
+must be de-threaded one level up, composed with `applyReplyDonation`/`applyCallDonation`. The
+queue-touching transitions additionally need forward `donationOwnerFrame` lemmas for the
+`endpointQueuePopHead`/`Enqueue` link rewrites.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored (the forward-frame store-op pull-back reads, invariant-frame style); zero
+`sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 2/13)
+
 ## v0.31.182 — IPC de-threading D6: `donationBudgetTransfer` FULLY de-threaded (13/13 bundles)
 
 Closes `donationBudgetTransfer` across **all 13** `*_preserves_ipcInvariantFull` bundles —
