@@ -1390,7 +1390,16 @@ For every TCB with `.donated(scId, originalOwner)`:
 1. The SchedContext object exists in the store and points to the server
 2. The original owner thread exists as a TCB
 3. The original owner is blocked on reply (waiting for the server to reply)
-4. (AUD-7) The original owner's binding is `.bound scId` — bidirectional consistency -/
+4. (AUD-7 / Finding F-3) The original owner's binding is `.unbound` — the donor
+   gave up its SchedContext when it donated (`donateSchedContext` clears it),
+   so the SchedContext is referenced by **exactly one** binding (the server's
+   `.donated`).  This is what makes `donationBudgetTransfer` satisfiable for
+   donated states.  The donor is recoverable through the reply object (clause 3),
+   not through a residual `.bound` binding: `returnDonatedSchedContext` rebinds
+   it on reply.  `.unbound` is distinct from `.donated`, so this clause still
+   forbids donation chains of length ≥ 2 (see
+   `donationOwnerValid_implies_donationChainAcyclic` and
+   `donationChain_no_extension`). -/
 def donationOwnerValid (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
@@ -1399,18 +1408,27 @@ def donationOwnerValid (st : SystemState) : Prop :=
     (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some tid) ∧
     (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
-      ownerTcb.schedContextBinding = .bound scId ∧
+      ownerTcb.schedContextBinding = .unbound ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
 
 -- ============================================================================
 -- Z7-H: Passive server idle invariant
 -- ============================================================================
 
-/-- Z7-H: Unbound threads not in the RunQueue are passive servers.
+/-- Z7-H: Unbound threads not in the RunQueue are passive servers or donors.
 
-An unbound thread that is not runnable and not the current thread must be
-either blocked on receive (waiting for a client call) or inactive. It must
-not be blocked on send/call (which requires a SchedContext for timeout). -/
+An unbound thread that is not runnable and not the current thread must be in a
+benign idle/blocked state:
+- `.ready` (inactive, not yet enqueued), or
+- blocked on receive (a passive server waiting for a client call), or
+- blocked on notification, or
+- blocked on reply (Finding F-3): a **donor** that donated its SchedContext to a
+  passive server during a Call and is now `.unbound`, awaiting the reply that
+  `returnDonatedSchedContext` will rebind it through.
+
+It must **not** be blocked on send/call — those require a SchedContext for the
+timeout, which an unbound thread does not hold.  (A donor is `.blockedOnReply`,
+*not* `.blockedOnSend`/`.blockedOnCall`: it has already completed its Call.) -/
 def passiveServerIdle (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -1418,8 +1436,9 @@ def passiveServerIdle (st : SystemState) : Prop :=
     tid ∉ (st.scheduler.runQueueOnCore bootCoreId) →
     (st.scheduler.currentOnCore bootCoreId) ≠ some tid →
     (tcb.ipcState = .ready ∨
-     ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-             tcb.ipcState = .blockedOnNotification epId)
+     (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+              tcb.ipcState = .blockedOnNotification epId) ∨
+     ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
 
 -- ============================================================================
 -- Z7-I: Donation budget transfer consistency
@@ -1461,8 +1480,9 @@ theorem donationChainAcyclic_of_no_donated
 /-- AG8-F: `donationOwnerValid` subsumes `donationChainAcyclic`.
 
 Proves that 2-cycles are structurally impossible when donation owners
-have `.bound` bindings. If thread `tid1` has `.donated scId1 tid2`, then
-by `donationOwnerValid`, `tid2` has `.bound scId1`. Since `.bound` and
+have `.unbound` bindings (Finding F-3: the donor relinquishes its
+SchedContext on donation). If thread `tid1` has `.donated scId1 tid2`, then
+by `donationOwnerValid`, `tid2` has `.unbound`. Since `.unbound` and
 `.donated` are distinct constructors of `SchedContextBinding`, `tid2` cannot
 simultaneously have `.donated scId2 tid1`. Contradiction. -/
 theorem donationOwnerValid_implies_donationChainAcyclic
@@ -1471,21 +1491,22 @@ theorem donationOwnerValid_implies_donationChainAcyclic
     donationChainAcyclic st := by
   intro tid1 tid2 tcb1 tcb2 scId1 scId2 hTcb1 hTcb2 hDon1 hDon2
   -- tid1 has .donated scId1 tid2, so by donationOwnerValid:
-  -- tid2 (the owner) has .bound scId1
+  -- tid2 (the owner) has .unbound
   have ⟨_, hOwner⟩ := hDOV tid1 tcb1 scId1 tid2 hTcb1 hDon1
   obtain ⟨ownerTcb, hOwnerTcb, hBound, _⟩ := hOwner
   -- Equate ownerTcb with tcb2: both come from st.objects[tid2.toObjId]?
   rw [hTcb2] at hOwnerTcb
   cases hOwnerTcb -- ownerTcb = tcb2
-  -- Now: hBound : tcb2.schedContextBinding = .bound scId1
+  -- Now: hBound : tcb2.schedContextBinding = .unbound
   --      hDon2  : tcb2.schedContextBinding = .donated scId2 tid1
-  -- .bound ≠ .donated — constructor disjointness
+  -- .unbound ≠ .donated — constructor disjointness
   rw [hDon2] at hBound; cases hBound
 
 /-- AG8-F: Donation chains cannot extend beyond length 1.
 
 If thread `tid` has `.donated scId owner`, then by `donationOwnerValid`,
-the `owner` has `schedContextBinding = .bound scId`. Since `.bound` and
+the `owner` has `schedContextBinding = .unbound` (Finding F-3: the donor
+relinquishes its SchedContext on donation). Since `.unbound` and
 `.donated` are distinct constructors of `SchedContextBinding`, the owner
 cannot also have a `.donated` binding. This prevents donation chains of
 length ≥ 2 entirely — not just cycles, but all extensions. -/
@@ -1504,7 +1525,7 @@ theorem donationChain_no_extension
   obtain ⟨ownerTcb', hOwnerTcb', hBound, _⟩ := hOwner
   rw [hOwnerTcb] at hOwnerTcb'
   cases hOwnerTcb' -- ownerTcb' = ownerTcb
-  -- hBound : ownerTcb.schedContextBinding = .bound scId
+  -- hBound : ownerTcb.schedContextBinding = .unbound
   -- hContra : ownerTcb.schedContextBinding = .donated scId2 owner2
   rw [hContra] at hBound; cases hBound
 

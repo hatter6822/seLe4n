@@ -120,20 +120,74 @@ slice is behaviour-preserving (proofs only) ⇒ trace byte-identical is invarian
 | D6 donationOwnerValid + donationBudgetTransfer + passiveServerIdle | ⏳ | — |
 | D7 donationChainAcyclic | ✅ **DE-THREADED (v0.31.176): all 13 bundles** via `donationOwnerValid_implies_donationChainAcyclic st' hDOV'` (derives from the still-threaded `hDOV'`); `grep hDCA'` empty | v0.31.176 |
 | D5 blockedThreadTimeoutConsistent | ⏳ **needs from-scratch infra** — no IPC transition ever writes `timeoutBudget := some`, but wakes set `.ready` while a thread *may* carry a budget; clean de-thread needs per-transition dischargeable `⟨woken⟩.timeoutBudget = none` preconditions | — |
-| D6 donationOwnerValid + donationBudgetTransfer + passiveServerIdle | ⛔ **BLOCKED on Finding F-3** (`donationOwnerValid`/`donationBudgetTransfer` jointly unsatisfiable for donated states) + donation-return composition (`donationOwnerValid` needs bare `endpointReply` not to wake a donation owner; `passiveServerIdle` needs per-transition block treatment) | — |
+| D6 donationOwnerValid + donationBudgetTransfer + passiveServerIdle | 🔓 **UNBLOCKED (Finding F-3 REMEDIATED)** — the joint-unsatisfiability blocker is closed: `donateSchedContext` now clears the donor (`.unbound`), `donationOwnerValid` clause 4 = owner `.unbound`, `passiveServerIdle` permits `.blockedOnReply`, `donationBudgetTransfer` unchanged + now satisfiable for donated states. Remaining D6 work is the per-transition establish/preserve machinery (donation-step frames + `applyCallDonation`/`applyReplyDonation` establishment) + the donation-return composition (`donationOwnerValid` needs bare `endpointReply` not to wake a donation owner; `passiveServerIdle` per-transition block treatment). | — |
 | D8 close-out + payoff theorem | ⏳ | — |
 
-### Finding F-3 — `donationOwnerValid` ∧ `donationBudgetTransfer` are jointly unsatisfiable for any donated state (spec inconsistency / false-assurance gap)
+### Finding F-3 — `donationOwnerValid` ∧ `donationBudgetTransfer` were jointly unsatisfiable for any donated state — ✅ REMEDIATED (deep code/model fix)
 
-**Severity: Medium** (specification gap; not directly exploitable). Verified in Lean (probe compiled clean, since removed) and against the live code.
+**Severity: Medium** (specification gap; not directly exploitable). **Status: closed** —
+remediated by completing the SchedContext ownership transfer in the donation primitive
+(the **deep code/model fix**, not the spec-weakening originally sketched below).
 
-- `donationOwnerValid` (`Defs.lean:1394`, AUD-7 clause) requires: a server with `schedContextBinding = .donated scId owner` ⇒ the `owner` has `schedContextBinding = .bound scId`. So both server (`.donated scId …`) and owner (`.bound scId`) have `schedContextBinding.scId? = some scId`.
-- `donationBudgetTransfer` (`Defs.lean:1433`) forbids **any** two distinct TCBs from both having `scId? = some scId`.
-- `donationOwnerValid` also forces `owner ≠ server` (self-donation excluded). ⟹ **contradiction whenever any donation is live.**
-- **Live, not theoretical:** `donateSchedContext` (`Endpoint.lean:329`, via `applyCallDonation` on the production `.call` path) sets the server `.donated clientScId clientTid` and `sc.boundThread := serverTid` but **never clears the client's `.bound clientScId`**. Every donating call produces the inconsistent pair. `donationBudgetTransfer` is only ever established **vacuously** (boot, all `.unbound`).
-- **Implication:** `ipcInvariantFull` cannot hold for any donated state, so a `dispatchWithCap_preserves_ipcInvariantFull` over a donating `.call` is unprovable/vacuous — the IPC safety proofs effectively cover only donation-free states.
+**The defect (as found).**
 
-**Remediation (implement-the-improvement — fix the spec to match the documented intent, do NOT weaken coverage):** the documented model (donationOwnerValid AUD-7 + `scThreadIndex` + CHANGELOG) intends owner `.bound` + server `.donated` co-reference; `donationBudgetTransfer` is the outlier. **Weaken `donationBudgetTransfer`** so it forbids only the genuine double-*run* (two distinct `.donated` borrowers of one scId, and/or two `.bound` owners), permitting the one-`.bound`-owner + one-`.donated`-server pair. The real guarantee (no two threads *running* one budget) is preserved because `donationOwnerValid` already forces the `.bound` owner to be `.blockedOnReply` (not running). This is a standalone invariant-definition PR (re-validate consumers: `DualQueueMembership.lean:2643/3011`, the boot default-state proof, `scThreadIndexConsistent`), sequenced before D6. **Awaiting maintainer direction (see session report).**
+- `donationOwnerValid` (`Defs.lean`, AUD-7 clause) required: a server with
+  `schedContextBinding = .donated scId owner` ⇒ the `owner` has
+  `schedContextBinding = .bound scId`. So both server (`.donated scId …`) and owner
+  (`.bound scId`) had `schedContextBinding.scId? = some scId`.
+- `donationBudgetTransfer` forbids **any** two distinct TCBs from both having
+  `scId? = some scId`.
+- `donationOwnerValid` also forces `owner ≠ server` (self-donation excluded). ⟹
+  **contradiction whenever any donation was live.**
+- **Live, not theoretical:** `donateSchedContext` (`Endpoint.lean`, via
+  `applyCallDonation` on the production `.call` path) set the server
+  `.donated clientScId clientTid` and `sc.boundThread := serverTid` but **never cleared
+  the client's `.bound clientScId`**. Every donating call produced the inconsistent pair;
+  `donationBudgetTransfer` was only ever established **vacuously** (boot, all `.unbound`).
+- **Implication:** `ipcInvariantFull` could not hold for any donated state, so a
+  `dispatchWithCap_preserves_ipcInvariantFull` over a donating `.call` was
+  unprovable/vacuous — the IPC safety proofs effectively covered only donation-free states.
+
+**Remediation that LANDED (implement-the-improvement — the deep fix, do NOT weaken
+coverage).** The donation primitive now **completes the ownership transfer**: the donor
+relinquishes its SchedContext, matching seL4 MCS `sched_context_donate` (which clears the
+previous holder's `tcb_sched_context`). Concretely:
+
+1. **`donateSchedContext` (`Endpoint.lean`)** — adds a donor-clear store
+   (client `.bound clientScId` → `.unbound`), ordered before the server `.donated` store
+   so the server-binding postcondition stays free of a `clientTid ≠ serverTid`
+   side-condition. After donation the SchedContext is referenced by **exactly one**
+   binding (the server's `.donated`).
+2. **`donationOwnerValid` clause 4 (`Defs.lean`)** — owner `.bound scId` → owner
+   **`.unbound`** (the donor gave up its SchedContext; it is recoverable through the reply
+   object in clause 3, not a residual `.bound`). The acyclicity subsumption
+   (`donationOwnerValid_implies_donationChainAcyclic`, `donationChain_no_extension`)
+   survives verbatim — `.unbound ≠ .donated` is the same constructor disjointness as
+   `.bound ≠ .donated`.
+3. **`passiveServerIdle` (`Defs.lean`, + `_perCore`, `_scheduledNowhere`,
+   `_smp_not_scheduled_anywhere`)** — also permits `.blockedOnReply` for unbound
+   non-runqueue threads (a donor awaiting reply is a benign unbound state).
+4. **`donationBudgetTransfer` — UNCHANGED**; now literally true for donated states (the
+   donor is `.unbound`, only the server references the scId). The strongest guarantee is
+   retained, *not* weakened.
+
+**Why the deep fix over weakening `donationBudgetTransfer`** (the originally-sketched
+shallow remediation): it keeps `donationBudgetTransfer` untouched, is seL4-faithful, is
+**trace byte-identical** (the donation trace checks the *server's* binding post-donation
+and the *donor's* only post-*return*, where it is rebound), is **information-flow-invisible**
+(`Projection.lean` erases `schedContextBinding`), and adds **no** new
+`SchedContextBinding` constructor (so no `BEq`/`scId?`/projection/NI-case-split cascade).
+Consumers re-validated: the `DualQueueMembership` frame proofs (pass-through destructure,
+robust to the clause-4 content change), the boot/per-core default-state proofs (`.ready`
+stays the leftmost disjunct), `donateSchedContext_{server_binding,scheduler_eq,machine_eq}`,
+`donateSchedContext_ok_server_donated`, and `applyCallDonation_preserves_projection` (the
+previously-unused `hCallerObjHigh` hypothesis now discharges the donor-clear store).
+
+**Unblocks D6** — `donationOwnerValid` / `donationBudgetTransfer` are now jointly
+satisfiable for donated states, so the D6 establishes/preserves proofs become provable
+rather than vacuous. The remaining D6 work is the per-transition establish/preserve
+machinery (donation-step frames + the `donationOwnerValid`-`donationBudgetTransfer`
+establishment on `applyCallDonation` / `applyReplyDonation`), not a spec inconsistency.
 
 ### Finding F-2 — D4 needs a new `reachable→blocked` queue invariant (8 enqueue transitions)
 

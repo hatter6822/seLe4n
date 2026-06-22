@@ -234,13 +234,15 @@ example (st : SystemState) (target : SeLe4n.ObjId) (h : cleanupHookDischarged_sm
     cleanupHookDischarged st target :=
   cleanupHookDischarged_smp_to_singleCore st target h
 -- IPC: passiveServerIdle natural-SMP "not scheduled anywhere ⟹ passive".
+-- (Finding F-3: the passive states now include `.blockedOnReply` — a donor.)
 example (st : SystemState) (h : passiveServerIdle_smp st) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (hTcb : st.getTcb? tid = some tcb) (hUnbound : tcb.schedContextBinding = .unbound)
     (hNoQueue : ∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c))
     (hNoCurrent : ∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) :
     tcb.ipcState = .ready ∨
-      ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-              tcb.ipcState = .blockedOnNotification epId :=
+      (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+               tcb.ipcState = .blockedOnNotification epId) ∨
+      ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget :=
   passiveServerIdle_smp_not_scheduled_anywhere h tid tcb hTcb hUnbound hNoQueue hNoCurrent
 
 -- CrossSubsystem capstone: per-core master invariant + contract bundle.

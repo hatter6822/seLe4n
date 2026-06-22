@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.176` (`lakefile.toml`) |
+| **Package version** | `0.31.177` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 193,687 across 251 Lean files |
-| **Test LoC** | 39,822 across 61 Lean test suites |
+| **Production LoC** | 193,814 across 251 Lean files |
+| **Test LoC** | 39,824 across 61 Lean test suites |
 | **Proved declarations** | 6,323 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
@@ -3202,11 +3202,17 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 retired the `uniqueWaiters` state-level slot to a structural witness on
 `Notification.waitingThreads : SeLe4n.NoDupList ThreadId`):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)
-- `donationOwnerValid`: donated bindings reference valid objects with
-  bidirectional consistency (`sc.boundThread = some server`,
-  `owner.schedContextBinding = .bound scId`, `owner.ipcState = .blockedOnReply`)
-- `passiveServerIdle`: unbound non-runnable threads are ready/receiving
-- `donationBudgetTransfer`: at most one thread per SchedContext
+- `donationOwnerValid`: donated bindings reference valid objects; the donor
+  relinquished its SchedContext on donation (Finding F-3:
+  `sc.boundThread = some server`, `owner.schedContextBinding = .unbound`,
+  `owner.ipcState = .blockedOnReply` — the donor is recoverable through the
+  reply object, not a residual `.bound` binding)
+- `passiveServerIdle`: unbound non-runnable threads are
+  ready/receiving/blocked-on-reply (a donor awaiting the reply that returns
+  its SchedContext)
+- `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
+  for donated states (the donor is `.unbound`; only the server's `.donated`
+  references the SchedContext)
 - `uniqueWaiters` (RETIRED at WS-RC R4.C.7): no notification has duplicate
   thread IDs in `waitingThreads` (AG1-C, F-T02) — content now carried
   structurally by `NoDupList.hNodup` on every `Notification.waitingThreads`.

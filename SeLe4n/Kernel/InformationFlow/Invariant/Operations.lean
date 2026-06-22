@@ -3041,7 +3041,7 @@ theorem applyCallDonation_preserves_projection
     (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
     (hOk : applyCallDonation st callerVtid receiverVtid = .ok st')
-    (_hCallerObjHigh : objectObservable ctx observer callerVtid.val.toObjId = false)
+    (hCallerObjHigh : objectObservable ctx observer callerVtid.val.toObjId = false)
     (hReceiverObjHigh : objectObservable ctx observer receiverVtid.val.toObjId = false)
     (hScHigh : ∀ tcb : TCB, lookupTcb st callerVtid.val = some tcb →
       ∀ scId : SeLe4n.SchedContextId, tcb.schedContextBinding = .bound scId →
@@ -3051,9 +3051,9 @@ theorem applyCallDonation_preserves_projection
     projectState ctx observer st := by
   -- AH2-D: applyCallDonation now returns Except. On success, either returns
   -- st unchanged (no-op paths) or calls donateSchedContext (donation path).
-  -- In the donation case, donateSchedContext does two storeObject calls at
-  -- non-observable ObjIds (clientScId.toObjId and serverTid.toObjId).
-  -- Chain storeObject_preserves_projection for each store.
+  -- F-3: donateSchedContext does three storeObject calls at non-observable
+  -- ObjIds (clientScId.toObjId, the donor callerVtid.toObjId, and the server
+  -- receiverVtid.toObjId).  Chain storeObject_preserves_projection for each.
   -- AN10-residual-1 deep-audit: signature now takes ValidThreadId; body
   -- calls donateSchedContextValid directly (no toValid? case-split).
   unfold applyCallDonation at hOk
@@ -3081,8 +3081,9 @@ theorem applyCallDonation_preserves_projection
           | error _ => simp [hDon] at hOk
           | ok stDon =>
             simp [hDon] at hOk; cases hOk
-            -- donateSchedContext = storeObject(scId) → storeObject(serverId)
-            -- Both ObjIds are non-observable, chain storeObject_preserves_projection
+            -- F-3: donateSchedContext = storeObject(scId) → storeObject(donor)
+            -- → storeObject(serverId).  All three ObjIds are non-observable,
+            -- chain storeObject_preserves_projection.
             unfold donateSchedContext at hDon
             revert hDon
             cases hObj : st.objects[clientScId.toObjId]? with
@@ -3097,24 +3098,37 @@ theorem applyCallDonation_preserves_projection
                   | error _ => intro h; cases h
                   | ok p1 =>
                     simp only []
-                    cases hL : lookupTcb p1.2 receiverVtid.val with
+                    -- F-3: donor-clear store (caller/clientTid) before server store
+                    cases hLC : lookupTcb p1.2 callerVtid.val with
                     | none => intro h; cases h
-                    | some serverTcb =>
+                    | some _ =>
                       simp only []
-                      cases hS2 : storeObject receiverVtid.val.toObjId _ p1.2 with
+                      cases hS2 : storeObject callerVtid.val.toObjId _ p1.2 with
                       | error _ => intro h; cases h
                       | ok p2 =>
-                        simp only [Except.ok.injEq]
-                        intro hEq; subst hEq
-                        -- SchedContext is non-observable by hypothesis
-                        have hScObjHigh := hScHigh callerTcb hC clientScId hCBinding
-                        have hInv1 := storeObject_preserves_objects_invExt
-                          st p1.2 clientScId.toObjId _ hObjInv hS1
-                        have hProj1 := storeObject_preserves_projection
-                          ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
-                        have hProj2 := storeObject_preserves_projection
-                          ctx observer p1.2 p2.2 receiverVtid.val.toObjId _ hReceiverObjHigh hInv1 hS2
-                        rw [projectState_scThreadIndex_eq, hProj2, hProj1]
+                        simp only []
+                        cases hL : lookupTcb p2.2 receiverVtid.val with
+                        | none => intro h; cases h
+                        | some serverTcb =>
+                          simp only []
+                          cases hS3 : storeObject receiverVtid.val.toObjId _ p2.2 with
+                          | error _ => intro h; cases h
+                          | ok p3 =>
+                            simp only [Except.ok.injEq]
+                            intro hEq; subst hEq
+                            -- SchedContext is non-observable by hypothesis
+                            have hScObjHigh := hScHigh callerTcb hC clientScId hCBinding
+                            have hInv1 := storeObject_preserves_objects_invExt
+                              st p1.2 clientScId.toObjId _ hObjInv hS1
+                            have hInv2 := storeObject_preserves_objects_invExt
+                              p1.2 p2.2 callerVtid.val.toObjId _ hInv1 hS2
+                            have hProj1 := storeObject_preserves_projection
+                              ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
+                            have hProj2 := storeObject_preserves_projection
+                              ctx observer p1.2 p2.2 callerVtid.val.toObjId _ hCallerObjHigh hInv1 hS2
+                            have hProj3 := storeObject_preserves_projection
+                              ctx observer p2.2 p3.2 receiverVtid.val.toObjId _ hReceiverObjHigh hInv2 hS3
+                            rw [projectState_scThreadIndex_eq, hProj3, hProj2, hProj1]
               | _ => simp only []; intro h; cases h
 
 /-- AE1-F3: `propagatePriorityInheritance` preserves NI projection when

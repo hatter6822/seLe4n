@@ -914,19 +914,29 @@ theorem donateSchedContext_ok_server_donated
       | error _ => simp [hS1] at hOk
       | ok p1 =>
         simp [hS1] at hOk
-        cases hL1 : lookupTcb p1.2 serverTid with
-        | none => simp [hL1] at hOk
-        | some serverTcb =>
-          simp [hL1] at hOk
-          cases hS2 : storeObject serverTid.toObjId (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p1.2 with
+        -- F-3: donor-clear store between the SC store and the server store
+        cases hLC : lookupTcb p1.2 clientTid with
+        | none => simp [hLC] at hOk
+        | some clientTcb =>
+          simp [hLC] at hOk
+          cases hS2 : storeObject clientTid.toObjId (.tcb { clientTcb with schedContextBinding := .unbound }) p1.2 with
           | error _ => simp [hS2] at hOk
           | ok p2 =>
             simp [hS2] at hOk
-            subst hOk
-            -- p2.2 = st', and the last storeObject wrote the server TCB
-            have hInvP1 := storeObject_preserves_objects_invExt' st _ _ _ hObjInv hS1
-            exact ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid },
-                   storeObject_objects_eq' p1.2 _ _ _ hInvP1 hS2, rfl⟩
+            cases hL1 : lookupTcb p2.2 serverTid with
+            | none => simp [hL1] at hOk
+            | some serverTcb =>
+              simp [hL1] at hOk
+              cases hS3 : storeObject serverTid.toObjId (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) p2.2 with
+              | error _ => simp [hS3] at hOk
+              | ok p3 =>
+                simp [hS3] at hOk
+                subst hOk
+                -- p3.2 = st', and the last storeObject wrote the server TCB
+                have hInvP1 := storeObject_preserves_objects_invExt' st _ _ _ hObjInv hS1
+                have hInvP2 := storeObject_preserves_objects_invExt' p1.2 _ _ _ hInvP1 hS2
+                exact ⟨{ serverTcb with schedContextBinding := .donated clientScId clientTid },
+                       storeObject_objects_eq' p2.2 _ _ _ hInvP2 hS3, rfl⟩
     · simp [hBne] at hOk
   | some (.tcb _), _ => cases hOk
   | some (.endpoint _), _ => cases hOk

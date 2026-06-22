@@ -1,3 +1,49 @@
+## v0.31.177 — Finding F-3 REMEDIATED (deep code/model fix): donation completes the SchedContext ownership transfer
+
+Closes **Finding F-3** (the `donationOwnerValid` ∧ `donationBudgetTransfer` joint-unsatisfiability
+for donated states, recorded at v0.31.176) with the **deep code/model fix** — completing the
+SchedContext ownership transfer in the donation primitive — rather than the originally-sketched
+spec-weakening. The donor now relinquishes its SchedContext on donation, matching seL4 MCS
+`sched_context_donate` (which clears the previous holder's `tcb_sched_context`).
+
+**Root cause.** `donateSchedContext` (`Endpoint.lean`) transferred the SchedContext to the server
+(`sc.boundThread := server`, server `.donated scId client`) but **left the donor client
+`.bound scId`**. Both then referenced `scId`, which `donationBudgetTransfer` forbids — so
+`ipcInvariantFull` was unsatisfiable for every donated state and the IPC preservation proofs
+vacuously skipped all donating `.call`s.
+
+**The fix (implement-the-improvement; `donationBudgetTransfer` is NOT weakened):**
+- **`donateSchedContext`** — adds a donor-clear store (client `.bound scId` → `.unbound`), ordered
+  before the server `.donated` store so the server-binding postcondition stays free of a
+  `clientTid ≠ serverTid` side-condition. After donation the SchedContext is referenced by exactly
+  one binding (the server's `.donated`).
+- **`donationOwnerValid`** clause 4 — owner `.bound scId` → owner **`.unbound`** (the donor is
+  recoverable through the reply object, not a residual `.bound`). The acyclicity subsumption
+  (`donationOwnerValid_implies_donationChainAcyclic`, `donationChain_no_extension`) survives
+  verbatim — `.unbound ≠ .donated` is the same constructor disjointness as `.bound ≠ .donated`.
+- **`passiveServerIdle`** (+ the per-core / scheduled-nowhere / smp mirrors) — also permits
+  `.blockedOnReply` for unbound non-runqueue threads (a donor awaiting reply is a benign unbound
+  state); `.ready` stays the leftmost disjunct so the boot/default proofs are unchanged.
+- **`donationBudgetTransfer`** — **unchanged**; now literally true for donated states.
+
+**Cascade re-proved (proof-only):** `donateSchedContext_{scheduler_eq,server_binding,machine_eq}`
+and `donateSchedContext_ok_server_donated` (thread the extra store; server `.donated` remains the
+final object write), and `applyCallDonation_preserves_projection` — whose previously-unused
+`hCallerObjHigh` hypothesis now discharges the donor-clear store (the projection erases
+`schedContextBinding`, so the donor-clear is information-flow-invisible).
+
+**Why the deep fix:** keeps `donationBudgetTransfer` untouched (strongest guarantee retained),
+seL4-faithful, **trace byte-identical** (the donation trace checks the *server's* binding
+post-donation and the *donor's* only post-*return*, where it is rebound), **information-flow-invisible**,
+and adds **no** new `SchedContextBinding` constructor. **Unblocks D6** (the donation conjuncts are
+now jointly satisfiable for donated states, so the establish/preserve proofs become provable rather
+than vacuous).
+
+Build green (376 production jobs + 234 staged); `test_full` green; trace byte-identical;
+zero `sorry`/`axiom`; no AK7 drift.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md §"Finding F-3" (REMEDIATED)
+
 ## v0.31.176 — IPC invariant de-threading D7 COMPLETE: `donationChainAcyclic` de-threaded (13/13) + Finding F-3
 
 De-threads `donationChainAcyclic` from all 13 `ipcInvariantFull` bundles via the existing

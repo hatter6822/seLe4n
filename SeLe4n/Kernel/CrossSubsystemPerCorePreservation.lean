@@ -208,7 +208,9 @@ theorem cleanupNoStaleSchedRef_smp_of_singleCore_and_idle {st : SystemState}
 
 /-- SM4.D: the natural SMP generalisation of `passiveServerIdle` — an
 unbound thread that is in no core's run queue and is no core's current
-thread is in a passive state. -/
+thread is in a passive state (ready / blocked-on-receive / -notification /
+-reply).  (Finding F-3: the passive states include `.blockedOnReply` — a
+donor descheduled while awaiting the reply that returns its SchedContext.) -/
 def passiveServerIdle_scheduledNowhere (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.getTcb? tid = some tcb →
@@ -216,8 +218,9 @@ def passiveServerIdle_scheduledNowhere (st : SystemState) : Prop :=
     (∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c)) →
     (∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) →
     (tcb.ipcState = .ready ∨
-     ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-             tcb.ipcState = .blockedOnNotification epId)
+     (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+              tcb.ipcState = .blockedOnNotification epId) ∨
+     ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
 
 /-- SM4.D: the natural-SMP form follows directly from the single-core
 `passiveServerIdle` (the natural form's "scheduled nowhere" hypotheses
