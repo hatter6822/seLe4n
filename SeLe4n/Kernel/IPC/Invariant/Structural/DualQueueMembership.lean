@@ -4773,6 +4773,41 @@ theorem storeTcbReceiveComplete_sameSchedContextBindings
         { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
         (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
 
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbQueueLinks` preserves every TCB's binding (it rewrites only the queue
+link fields via `tcbWithQueueLinks`, never `schedContextBinding`). -/
+theorem storeTcbQueueLinks_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbQueueLinks at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+        (tcbWithQueueLinks tcb prev pprev next) (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `pair`-shaped endpoint-store frame for `sameSchedContextBindings` (the endpoint is a
+non-TCB object, so every TCB binding is framed). -/
+theorem storeObject_endpoint_sameSchedContextBindings'
+    (st : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.endpoint ep) st = .ok pair) :
+    sameSchedContextBindings st pair.2 := by
+  obtain ⟨⟨⟩, st'⟩ := pair
+  exact storeObject_nonTcb_sameSchedContextBindings st st' oid (.endpoint ep)
+    (fun _ => by simp) hObjInv hStore
+
 /-- D3: object-store-preserving step frames the clause. -/
 theorem blockedOnReplyHasTarget_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) (h : blockedOnReplyHasTarget st) :
@@ -5059,6 +5094,124 @@ theorem endpointQueueEnqueue_preserves_blockedOnReplyHasTarget
                     exact storeTcbQueueLinks_preserves_blockedOnReplyHasTarget _ _ tid _ _ _ hInv2 hP2 hStep
 
 open SeLe4n.Model.SystemState in
+/-- D6: `endpointQueuePopHead` preserves every TCB's binding (it rewrites the endpoint
+metadata and the popped/neighbour queue links — never a `schedContextBinding`). -/
+theorem endpointQueuePopHead_sameSchedContextBindings
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    sameSchedContextBindings st st' := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hS1 := storeObject_endpoint_sameSchedContextBindings' st endpointId _ pair hObjInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact hS1.trans (storeTcbQueueLinks_sameSchedContextBindings
+                  pair.2 st3 headTid none none none hInv1 hFinal)
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  have hS2 := storeTcbQueueLinks_sameSchedContextBindings
+                    pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hInv1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact (hS1.trans hS2).trans (storeTcbQueueLinks_sameSchedContextBindings
+                      st2 st3 headTid none none none hInv2 hFinal)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointQueueEnqueue` preserves every TCB's binding (endpoint metadata + tail-link
+rewrite only — never a `schedContextBinding`). -/
+theorem endpointQueueEnqueue_sameSchedContextBindings
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                have hS1 := storeObject_endpoint_sameSchedContextBindings' st endpointId _ pair hObjInv hStore
+                intro hStep
+                exact hS1.trans (storeTcbQueueLinks_sameSchedContextBindings _ _ tid _ _ _ hInv1 hStep)
+            | some tailTid =>
+              cases hLookupT : lookupTcb st tailTid
+              · simp [hLookupT]
+              · rename_i tailTcb
+                simp only [hLookupT]
+                cases hStore : storeObject endpointId _ st
+                · simp
+                · rename_i pair
+                  simp only []
+                  have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                  have hS1 := storeObject_endpoint_sameSchedContextBindings' st endpointId _ pair hObjInv hStore
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid _ _ (some tid)
+                  · simp
+                  · rename_i st2
+                    simp only []
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                    have hS2 := storeTcbQueueLinks_sameSchedContextBindings _ _ tailTid _ _ _ hInv1 hLink1
+                    intro hStep
+                    exact (hS1.trans hS2).trans (storeTcbQueueLinks_sameSchedContextBindings _ _ tid _ _ _ hInv2 hStep)
+
+open SeLe4n.Model.SystemState in
 /-- D3: `linkCallerReply` frames the clause (it never writes any TCB's `ipcState`). -/
 theorem linkCallerReply_preserves_blockedOnReplyHasTarget
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -5282,6 +5435,58 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasTarget
                     subst ho
                     exact hP2 receiver rTcb ep' rt hRecvObj (by simpa using hb)
                   exact blockedOnReplyHasTarget_of_objects_eq (removeRunnable_preserves_objects stStashed receiver) hPStash
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointSendDual` preserves every TCB's `schedContextBinding` (rendezvous: pop +
+receive-complete + reschedule; block: enqueue + `.blockedOnSend` + deschedule — no binding
+write). -/
+theorem endpointSendDual_sameSchedContextBindings
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hS1.trans (storeTcbReceiveComplete_sameSchedContextBindings pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg)).trans
+              (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
+          have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false sender st st1 hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 sender (.blockedOnSend endpointId) (some msg) hObjInv1 hMsg)).trans
+              (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 sender))
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointSendDual` frames the clause (never sets `.blockedOnReply`). -/
@@ -8748,7 +8953,6 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -8758,7 +8962,10 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   donationBudgetTransfer_of_sameSchedContextBindings
+     (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
+     hInv.donationBudgetTransfer,
    endpointSendDual_preserves_blockedOnReplyHasTarget st st' endpointId sender msg hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointSendDual_preserves_blockedOnReplyHasReplyObject st st' endpointId sender msg
       hInv.replyCallerLinkage.2 hObjInv hStep⟩,

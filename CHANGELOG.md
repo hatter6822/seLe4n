@@ -1,3 +1,28 @@
+## v0.31.179 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from `endpointSendDual` (queue-op `sameSchedContextBindings`)
+
+Extends D6 to the `endpointSendDual` `ipcInvariantFull` bundle (4/13 `donationBudgetTransfer`
+de-threads now) by building the **queue-op** `sameSchedContextBindings` infrastructure:
+- `storeTcbQueueLinks_sameSchedContextBindings` (the queue-link rewrite preserves bindings —
+  `tcbWithQueueLinks` touches only `queueNext/Prev/PPrev`),
+- `storeObject_endpoint_sameSchedContextBindings'` (the `pair`-shaped endpoint-store frame),
+- `endpointQueuePopHead_sameSchedContextBindings` / `endpointQueueEnqueue_sameSchedContextBindings`
+  (the dequeue/enqueue neighbour-relink compositions), and
+- `endpointSendDual_sameSchedContextBindings` (rendezvous: pop + receive-complete + reschedule;
+  block: enqueue + `.blockedOnSend` + deschedule).
+
+`hDBT'` removed from `endpointSendDual_preserves_ipcInvariantFull`; the conjunct is established
+from the pre-state via `donationBudgetTransfer_of_sameSchedContextBindings`. The new queue lemmas
+read the endpoint slot by `objects[endpointId]?` (an `ObjId`, not `tid.toObjId`), so AK7
+`RAW_LOOKUP_TID` is unchanged. Proof-only; trace byte-identical; build green (376 production +
+234 staged); zero `sorry`/`axiom`.
+
+Remaining D6 `donationBudgetTransfer`: `endpointCall`/`endpointCallOnCore` (+`linkServerStashedReply`),
+the 3 `WithCaps` (`ipcUnwrapCaps`), the binding-touching `endpointReceiveDual`/`endpointReplyRecv`
+(donation-return composition) and the 2 retype bundles (`newObj`-`.unbound`); then
+`donationOwnerValid` + `passiveServerIdle`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
 ## v0.31.178 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from 3 bundles via the `sameSchedContextBindings` frame
 
 Begins D6 (the donation conjuncts, unblocked by the v0.31.177 Finding F-3 remediation) by
