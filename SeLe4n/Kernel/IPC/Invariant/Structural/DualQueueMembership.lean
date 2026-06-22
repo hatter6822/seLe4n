@@ -5662,6 +5662,79 @@ theorem linkServerStashedReply_sameSchedContextBindings
         exact hS1.trans (storeObject_modifiedTcb_sameSchedContextBindings st1 st' server.toObjId sTcb
           { sTcb with pendingReceiveReply := none } ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hObjInv1 hStep)
 
+open SeLe4n.Model.SystemState in
+/-- D6: `linkReply` frames the SchedContext/owner side forward — it stores only the `.reply`
+object at `rid` (non-Sc/non-TCB), disturbing neither witness. -/
+theorem linkReply_donationOwnerFrame
+    (st st' : SystemState) (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkReply rid caller st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  unfold SystemState.linkReply at hStep
+  cases hR : st.getReply? rid with
+  | none => simp [hR] at hStep
+  | some r =>
+    simp only [hR] at hStep
+    have hOld : st.objects[rid.toObjId]? = some (.reply r) := (getReply?_eq_some_iff st rid r).mp hR
+    split at hStep
+    · exact storeObject_oldNonScNonTcb_donationOwnerFrame st st' rid.toObjId _
+        (fun sc => by rw [hOld]; simp) (fun t => by rw [hOld]; simp) hObjInv hStep
+    · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- D6: `linkCallerReply` frames the owner side forward — `linkReply` (reply store) + the caller
+`replyObject` write, which preserves `ipcState`/binding (so even a `.blockedOnReply` owner survives). -/
+theorem linkCallerReply_donationOwnerFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hF1 := linkReply_donationOwnerFrame st st1 rid caller hObjInv hLink
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact hF1.trans (storeObject_modifiedTcbPreservingOwner_donationOwnerFrame st1 st' caller.toObjId tcb
+          { tcb with replyObject := some rid } ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hObjInv1 hStep)
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- D6: `linkServerStashedReply` frames the owner side forward — `linkCallerReply` + the server
+stash-clear write, which preserves `ipcState`/binding. -/
+theorem linkServerStashedReply_donationOwnerFrame
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hF1 := linkCallerReply_donationOwnerFrame st st1 caller rid hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hF1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact hF1.trans (storeObject_modifiedTcbPreservingOwner_donationOwnerFrame st1 st' server.toObjId sTcb
+          { sTcb with pendingReceiveReply := none } ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl rfl hObjInv1 hStep)
+
 /-- D6: `ipcUnwrapCaps` preserves every TCB's binding — it only writes CNode caps, leaving
 every TCB slot byte-identical (`ipcUnwrapCaps_tcb_backward` pulls each post-state TCB back to
 the *same* pre-state TCB). -/
@@ -6176,6 +6249,122 @@ theorem endpointCall_sameSchedContextBindings
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hS2 := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hMsg
             exact (hS1.trans hS2).trans (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 caller))
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointCall` frames the SchedContext/owner side forward.  Rendezvous: pop the receiver
+(queue-link) + wake it `.ready` + reschedule + block the caller `.blockedOnReply` + link the
+server-stashed reply + deschedule; block: enqueue the caller + `.blockedOnCall` + deschedule.
+The TCBs whose `ipcState` changes are the rendezvous receiver (receiveQ **head**, hence
+`.blockedOnReceive` via `hQHBC`) and the running `caller` (`hCallerNotReply`) — neither a
+`.blockedOnReply` donation owner.  The caller is *set* `.blockedOnReply` but was not one before,
+so no existing owner witness is lost; `linkServerStashedReply` preserves `ipcState`/binding. -/
+theorem endpointCall_donationOwnerFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    donationOwnerFrame st st' := by
+  unfold endpointCall at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hF1 := endpointQueuePopHead_donationOwnerFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hHeadEq := endpointQueuePopHead_returns_head endpointId true st ep pair.1 pair.2.2 hObj hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg] at hStep
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
+            have hF2 := storeTcbIpcStateAndMessage_donationOwnerFrame pair.2.2 st2 pair.1 .ready (some msg)
+              (fun tcb hTcb_p ep' rt => by
+                obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId true st
+                  pair.2.2 pair.1 pair.1 tcb hObjInv hPop hTcb_p
+                have hBlk := (hQHBC endpointId ep pair.1 tcb0 hObj hTcb0).1 (by simpa using hHeadEq)
+                intro hc
+                have hRecv : tcb.ipcState = .blockedOnReceive endpointId := hIpc0 ▸ hBlk
+                rw [hc] at hRecv; cases hRecv) hObjInv1 hMsg
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hF3 := donationOwnerFrame.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1)
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st4 =>
+              simp only [hIpc] at hStep
+              have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) st4 caller _ _ hObjInvEns hIpc
+              have hF4 := storeTcbIpcStateAndMessage_donationOwnerFrame (ensureRunnable st2 pair.1) st4 caller
+                (.blockedOnReply endpointId (some pair.1)) none
+                (fun tcb hTcb_e ep' rt => by
+                  rw [ensureRunnable_preserves_objects] at hTcb_e
+                  by_cases hCR : caller.toObjId = pair.1.toObjId
+                  · have hReady := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg)
+                      hObjInv1 hMsg tcb (hCR ▸ hTcb_e)
+                    intro hc; rw [hReady] at hc; cases hc
+                  · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready
+                      (some msg) caller.toObjId hCR hObjInv1 hMsg).symm.trans hTcb_e
+                    obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueuePopHead_tcb_ipcState_backward endpointId true st
+                      pair.2.2 pair.1 caller tcb hObjInv hPop hTcbPre
+                    exact fun hc => hCallerNotReply tcb0 hTcb0 ep' rt (hIpc0.trans hc)) hObjInvEns hIpc
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hF5 := linkServerStashedReply_donationOwnerFrame st4 st5 caller pair.1 hObjInv4 hLink
+                exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
+                  (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st5 caller))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
+          have hF1 := endpointQueueEnqueue_donationOwnerFrame endpointId false caller st st1 hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            refine (hF1.trans (storeTcbIpcStateAndMessage_donationOwnerFrame st1 st2 caller (.blockedOnCall endpointId) (some msg)
+              (fun tcb hTcb_s1 ep' rt => ?_) hObjInv1 hMsg)).trans
+              (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects st2 caller))
+            obtain ⟨tcb0, hTcb0, hIpc0⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId false caller st st1
+              caller tcb hObjInv hEnq hTcb_s1
+            exact fun hc => hCallerNotReply tcb0 hTcb0 ep' rt (hIpc0.trans hc)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointCall` preserves `donationOwnerValid`. -/
+theorem endpointCall_preserves_donationOwnerValid
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hInv : donationOwnerValid st)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    donationOwnerValid st' :=
+  donationOwnerValid_of_frames
+    (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
+    (endpointCall_donationOwnerFrame st st' endpointId caller msg hObjInv hQHBC hCallerNotReply hStep)
+    hInv
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDual` preserves every TCB's `schedContextBinding` (rendezvous: pop +
@@ -9981,18 +10170,26 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
+    (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
+  -- receiver is the receiveQ head (`.blockedOnReceive` via `hInv.queueHeadBlockedConsistent`) and
+  -- the caller is running (`hCallerNotReply`); the caller is *set* `.blockedOnReply` but was not
+  -- one before, so no existing owner witness is lost.
+  have hDOVest := endpointCall_preserves_donationOwnerValid st st' endpointId caller msg
+    hObjInv hInv.queueHeadBlockedConsistent hCallerNotReply hInv.donationOwnerValid hStep
+  exact ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
    hDualQueue',
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
      hInv.donationBudgetTransfer,

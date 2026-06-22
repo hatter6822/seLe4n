@@ -1,3 +1,32 @@
+## v0.31.186 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointCall` (6/13)
+
+Extends `donationOwnerValid` de-threading to `endpointCall` — the central client→server rendezvous,
+and the first transition whose own action introduces a `.blockedOnReply` thread (the blocked caller).
+
+`endpointCall_donationOwnerFrame` composes the rendezvous (pop receiver + wake `.ready` + reschedule
++ block caller `.blockedOnReply` + link the server-stashed reply + deschedule) and the block path
+(enqueue caller + `.blockedOnCall` + deschedule). The two TCBs whose `ipcState` changes are:
+- the rendezvous receiver — the receiveQ **head**, hence `.blockedOnReceive` by
+  `hInv.queueHeadBlockedConsistent`; and
+- the running `caller` — discharged by the dischargeable `hCallerNotReply`. The caller is *set*
+  `.blockedOnReply`, but it was not a `.blockedOnReply` owner *before*, so no existing owner witness
+  is lost (the caller-store pre-state is recovered via `storeTcbIpcStateAndMessage_ipcState_eq` for
+  the caller=receiver self-rendezvous case, and `_preserves_objects_ne` +
+  `endpointQueuePopHead_tcb_ipcState_backward` otherwise).
+
+New reusable forward link-helper frames carry the reply-link leg (each preserves `ipcState`/binding,
+so even a `.blockedOnReply` owner survives):
+- `linkReply_donationOwnerFrame` (a `.reply` object store, non-Sc/non-TCB);
+- `linkCallerReply_donationOwnerFrame` (+ the caller `replyObject` write);
+- `linkServerStashedReply_donationOwnerFrame` (+ the server stash-clear write).
+
+The bundle drops `hDOV'` and adds the dischargeable `hCallerNotReply`.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1048→1052; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 6/13)
+
 ## v0.31.185 — IPC de-threading D6: `donationOwnerValid` de-threaded from the retype pair (5/13)
 
 Extends `donationOwnerValid` de-threading to the two `lifecycleRetypeObject` bundles
