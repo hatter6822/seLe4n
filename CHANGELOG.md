@@ -1,3 +1,27 @@
+## v0.32.7 — IPC de-threading D6: `passiveServerIdle` from the receive family (10/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the receive family — the clean half of the
+remaining bundles (every rewritten thread lands in an allowed passive state, so no new "blocker
+holds a SchedContext" precondition is needed).
+
+- **`cleanupPreReceiveDonation_passiveServerIdleFrame`** (the keystone) — the pre-receive
+  donation-return rebinds the owner `.unbound → .bound` (keeping its `.blockedOnReply`) and the
+  receiver `.donated → .unbound`, preserving `ipcState` and the scheduler.  The pullback obligation
+  excludes the owner (now **bound**, contradicting `unbound`) and the receiver (now **allowed** —
+  `.ready` by `hReceiverReady`); every other thread's binding is framed by the 3-way
+  `returnDonatedSchedContext_tcb_schedContextBinding_backward` lemma.
+- **`endpointReceiveDual` / `endpointReceiveDualWithCaps` / `endpointReplyRecv`** de-threaded:
+  rendezvous sets the sender `.ready`/`.blockedOnReply` + completes the receiver `.ready`; blocking
+  returns the receiver's own donation + sets it `.blockedOnReceive` + deschedules — all allowed
+  states.  The 3 bundles drop `hPSI'`, reusing the dischargeable `hReceiverReady` (the running
+  receiver is `.ready`; added to the `endpointReplyRecv` bundle, already present on the other two).
+
+`passiveServerIdle` is now de-threaded from **10/13 bundles** — only the 2 retype bundles and the
+cross-core `endpointCallOnCore` remain.  `RAW_LOOKUP_TID` re-anchored 1105→1116.  Proof-only, trace
+byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.6 — IPC de-threading D6: `passiveServerIdle` from the send/call WithCaps (7/13)
 
 Continues the D6 `passiveServerIdle` de-thread with the cap-carrying send/call variants.

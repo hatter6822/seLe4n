@@ -5929,6 +5929,53 @@ theorem linkServerStashedReply_passiveServerIdleFrame
     (linkServerStashedReply_scheduler_eq st st' caller server hStep)
 
 open SeLe4n.Model.SystemState in
+/-- D6: `cleanupPreReceiveDonation` frames `passiveServerIdle`.  When the receiver holds a donated
+SchedContext, the return rebinds the owner `.unbound → .bound` (keeping its `.blockedOnReply`
+ipcState) and the receiver `.donated → .unbound` (the running receiver is `.ready`); `ipcState` and
+the scheduler are preserved throughout.  The pullback obligation excludes the owner (it becomes
+**bound**, contradicting `unbound`) and the receiver (it is **allowed** — `.ready` by
+`hReceiverReady`, contradicting `¬ passiveServerIdleAllowed`); every other thread's binding is
+framed by the donation-return's 3-way binding lemma. -/
+theorem cleanupPreReceiveDonation_passiveServerIdleFrame
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+      passiveServerIdleAllowed tcb.ipcState) :
+    passiveServerIdleFrame st (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact passiveServerIdleFrame.refl st
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact passiveServerIdleFrame.refl st
+    | bound scId => exact passiveServerIdleFrame.refl st
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact passiveServerIdleFrame.refl st
+      | ok st' =>
+        simp only []
+        refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
+        obtain ⟨tcbI, hTcbI, _, _, hIpcEq, _⟩ := returnDonatedSchedContext_tcb_queue_backward
+          st st' receiver scId originalOwner hObjInv hRet tid.toObjId tcb' hTcb'
+        have hSched := returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner hRet
+        have h3 := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' receiver scId
+          originalOwner hObjInv hRet tid.toObjId tcb' hTcb'
+        by_cases hRecv : tid.toObjId = receiver.toObjId
+        · -- receiver: running ⇒ `.ready` (allowed), contradicting `¬ allowed`.
+          exfalso; apply hNA; rw [← hIpcEq]; exact hReceiverReady tcbI (hRecv ▸ hTcbI)
+        · by_cases hOwner : tid.toObjId = originalOwner.toObjId
+          · -- owner: rebound `.bound scId`, contradicting `unbound`.
+            rw [h3.2.1 hRecv hOwner] at hUnbound'; cases hUnbound'
+          · -- other: binding framed from the pre-state.
+            obtain ⟨tcbB, hTcbB, hBindEq⟩ := h3.2.2 hRecv hOwner
+            have hIdEq : tcbI = tcbB := KernelObject.tcb.inj (Option.some.inj (hTcbI.symm.trans hTcbB))
+            exact ⟨tcbI, hTcbI, by rw [hIdEq]; exact hBindEq.trans hUnbound',
+              by rw [hSched] at hNotInQ'; exact hNotInQ',
+              by rw [hSched] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩
+
+open SeLe4n.Model.SystemState in
 /-- D6: `linkReply` frames the SchedContext/owner side forward — it stores only the `.reply`
 object at `rid` (non-Sc/non-TCB), disturbing neither witness. -/
 theorem linkReply_donationOwnerFrame
@@ -6072,6 +6119,23 @@ theorem ipcUnwrapCaps_donationOwnerFrame
    fun owner ownerTcb hOwner hU hR =>
      ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase grantRight
        st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep, hU, hR⟩⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: `ipcUnwrapCaps` frames `passiveServerIdle` — it writes only CNode caps at `receiverRoot`,
+so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`) and the scheduler is
+untouched (`ipcUnwrapCaps_preserves_scheduler`). -/
+theorem ipcUnwrapCaps_passiveServerIdleFrame
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    passiveServerIdleFrame st st' :=
+  passiveServerIdleFrame_of_backward
+    (fun tid tcb' hTcb' =>
+      ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st'
+        summary tid.toObjId tcb' hObjInv hStep hTcb', rfl, rfl⟩)
+    (ipcUnwrapCaps_preserves_scheduler msg senderRoot receiverRoot slotBase grantRight st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
 /-- D3: `cleanupPreReceiveDonation` frames the clause (preserves every `ipcState`). -/
@@ -6756,6 +6820,165 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
                     (donationOwnerFrame.of_objects_eq (removeRunnable_preserves_objects stStashed receiver)) hDStash
 
 open SeLe4n.Model.SystemState in
+/-- D6: `endpointReceiveDual` frames `passiveServerIdle`.  Rendezvous: pop the sender + set it
+`.blockedOnReply` (Call) or `.ready` (Send) + complete the receiver `.ready` — every rewritten thread
+lands in an allowed passive state, so the frame is *clean* (no precondition).  Blocking: return the
+receiver's own donation (`cleanupPreReceiveDonation`, needs the running receiver `.ready` via
+`hReceiverReady`) + enqueue + block `.blockedOnReceive` (allowed) + optional stash + deschedule. -/
+theorem endpointReceiveDual_passiveServerIdleFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    passiveServerIdleFrame st st' := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.sendQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInvPop : pair.2.2.objects.invExt :=
+            endpointQueuePopHead_preserves_objects_invExt endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          have hF1 := endpointQueuePopHead_passiveServerIdleFrame endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          cases hSenderIpc : pair.2.1.ipcState with
+          | blockedOnCall _ =>
+            simp only [hSenderIpc, ite_true] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame pair.2.2 st2 pair.1
+                (.blockedOnReply endpointId (some receiver)) none
+                (Or.inl (Or.inr (Or.inr ⟨endpointId, some receiver, rfl⟩))) hObjInvPop hMsg)
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hF3 := hF2.trans (linkCallerReply_passiveServerIdleFrame st2 stLinked pair.1 rid hObjInvMsg hLink)
+                  revert hStep
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    intro h
+                    obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                    exact hF3.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame stLinked st4 receiver
+                      .ready _ (Or.inl (Or.inl rfl)) hObjInvLink hPend)
+                  | error _ => simp
+          | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+            simp only [hSenderIpc] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame pair.2.2 st2 pair.1
+                .ready none (Or.inl (Or.inl rfl)) hObjInvPop hMsg)
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hF3 := hF2.trans (ensureRunnable_passiveServerIdleFrame st2 pair.1)
+              revert hStep
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
+              | ok st4 =>
+                intro h
+                obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                exact hF3.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame (ensureRunnable st2 pair.1) st4
+                  receiver .ready _ (Or.inl (Or.inl rfl)) hObjInvEns hPend)
+              | error _ => simp
+      | none =>
+        cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+        | error _ => simp [hHead, hChecked] at hStep
+        | ok stClean =>
+          have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+            (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+          simp only [hHead, hChecked] at hStep
+          rw [hBridge] at hStep
+          have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+          have hFClean := cleanupPreReceiveDonation_passiveServerIdleFrame st receiver hObjInv
+            (fun tcb h => Or.inl (hReceiverReady tcb h))
+          cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+          | error e => simp [hEnq] at hStep
+          | ok st1 =>
+            simp only [hEnq] at hStep
+            have hObjInvEnq : st1.objects.invExt :=
+              endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            have hF1 := hFClean.trans (endpointQueueEnqueue_passiveServerIdleFrame endpointId true receiver
+              (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq)
+            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
+              have hF2 := hF1.trans (storeTcbIpcState_passiveServerIdleFrame st1 st2 receiver
+                (.blockedOnReceive endpointId) (Or.inl (Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))) hObjInvEnq hIpc)
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact hF2.trans (removeRunnable_passiveServerIdleFrame st2 receiver (fun tcb hTcb => Or.inr (by
+                  rw [storeTcbIpcState_ipcState_eq st1 st2 receiver _ hObjInvEnq hIpc tcb hTcb]
+                  exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))))
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  have hRecvObj : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hRTcbIpc : rTcb.ipcState = .blockedOnReceive endpointId :=
+                    storeTcbIpcState_ipcState_eq st1 st2 receiver _ hObjInvEnq hIpc rTcb hRecvObj
+                  have hF3 := hF2.trans (storeObject_modifiedTcb_passiveServerIdleFrame st2 stStashed receiver.toObjId rTcb
+                    { rTcb with pendingReceiveReply := replyId } hRecvObj rfl
+                    (Or.inl (by rw [show ({ rTcb with pendingReceiveReply := replyId } : TCB).ipcState
+                      = .blockedOnReceive endpointId from hRTcbIpc]; exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩)))
+                    hObjInv2 hStash)
+                  have hStashObj : stStashed.objects[receiver.toObjId]? = some (.tcb { rTcb with pendingReceiveReply := replyId }) :=
+                    storeObject_objects_eq st2 stStashed receiver.toObjId _ hObjInv2 hStash
+                  exact hF3.trans (removeRunnable_passiveServerIdleFrame stStashed receiver (fun tcb hTcb => Or.inr (by
+                    rw [hStashObj] at hTcb; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb)
+                    rw [show ({ rTcb with pendingReceiveReply := replyId } : TCB).ipcState
+                      = .blockedOnReceive endpointId from hRTcbIpc]
+                    exact Or.inr (Or.inl ⟨endpointId, Or.inl rfl⟩))))
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointReceiveDual` preserves `passiveServerIdle`. -/
+theorem endpointReceiveDual_preserves_passiveServerIdle
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hInv : passiveServerIdle st)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (endpointReceiveDual_passiveServerIdleFrame st st' endpointId receiver senderId replyId
+      hReceiverReady hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDualWithCaps` preserves `donationBudgetTransfer` (`endpointReceiveDual`
 preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
 theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
@@ -6953,6 +7176,158 @@ theorem endpointReceiveDualWithCaps_preserves_donationOwnerValid
                   receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
                 (ipcUnwrapCaps_donationOwnerFrame msg senderRoot receiverCspaceRoot
                   receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap) hDMid
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointReceiveDualWithCaps` frames `passiveServerIdle` (`endpointReceiveDual` + the
+TCB-preserving `ipcUnwrapCaps`). -/
+theorem endpointReceiveDualWithCaps_passiveServerIdleFrame
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    passiveServerIdleFrame st st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hFMid := endpointReceiveDual_passiveServerIdleFrame st stMid endpointId receiver sid replyId
+      hReceiverReady hObjInv hRecv
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.getTcb? receiver with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+      | some msg =>
+        simp [hMsg] at hStep
+        split at hStep
+        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+        · cases hLookup : lookupCspaceRoot stMid sid with
+          | none => simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact hFMid.trans (ipcUnwrapCaps_passiveServerIdleFrame msg senderRoot receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointReceiveDualWithCaps` preserves `passiveServerIdle`. -/
+theorem endpointReceiveDualWithCaps_preserves_passiveServerIdle
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hInv : passiveServerIdle st)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (endpointReceiveDualWithCaps_passiveServerIdleFrame endpointId receiver replyId endpointRights
+      receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointReplyRecv` frames `passiveServerIdle`.  The reply leg unblocks the reply target
+`.ready` + reschedules it (allowed); the receive leg is `endpointReceiveDual`.  The receive-leg
+receiver is `.ready` in the post-reply state — whether it *is* the just-replied target (set `.ready`)
+or a distinct running thread (`hReceiverReady`). -/
+theorem endpointReplyRecv_passiveServerIdleFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId expectedReplier =>
+      simp only [hIpc] at hStep
+      cases expectedReplier with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok stReplied =>
+            simp only []
+            have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
+            have hF1 := (storeTcbIpcStateAndMessage_passiveServerIdleFrame st stReplied replyTarget .ready (some msg)
+              (Or.inl (Or.inl rfl)) hObjInv hMsg).trans (ensureRunnable_passiveServerIdleFrame stReplied replyTarget)
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            -- The receive-leg receiver is `.ready` in the post-reply state.
+            have hReceiverReadyE : ∀ (t : TCB),
+                (ensureRunnable stReplied replyTarget).objects[receiver.toObjId]? = some (.tcb t) →
+                t.ipcState = .ready := by
+              intro t hT
+              rw [ensureRunnable_preserves_objects] at hT
+              by_cases hRT : receiver = replyTarget
+              · exact storeTcbIpcStateAndMessage_ipcState_eq st stReplied replyTarget .ready (some msg)
+                  hObjInv hMsg t (hRT ▸ hT)
+              · have hNe : receiver.toObjId ≠ replyTarget.toObjId :=
+                  fun h => hRT (ThreadId.toObjId_injective receiver replyTarget h)
+                rw [storeTcbIpcStateAndMessage_preserves_objects_ne st stReplied replyTarget _ (some msg)
+                  receiver.toObjId hNe hObjInv hMsg] at hT
+                exact hReceiverReady t hT
+            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            | error e => simp
+            | ok pair =>
+              intro hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              exact hF1.trans (endpointReceiveDual_passiveServerIdleFrame
+                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
+                hReceiverReadyE hObjInvE hRecv)
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointReplyRecv` preserves `passiveServerIdle`. -/
+theorem endpointReplyRecv_preserves_passiveServerIdle
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (hInv : passiveServerIdle st)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (endpointReplyRecv_passiveServerIdleFrame st st' endpointId receiver replyTarget msg replyId
+      hReceiverReady hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReplyRecv` preserves `donationOwnerUnique` (reply leg unblocks `.ready`
@@ -7707,23 +8082,6 @@ theorem endpointCallWithCaps_preserves_donationOwnerValid
     (endpointCallWithCaps_donationOwnerFrame endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase st st' summary hObjInv hQHBC hCallerNotReply hStep)
     hInv
-
-open SeLe4n.Model.SystemState in
-/-- D6: `ipcUnwrapCaps` frames `passiveServerIdle` — it writes only CNode caps at `receiverRoot`,
-so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`) and the scheduler is
-untouched (`ipcUnwrapCaps_preserves_scheduler`). -/
-theorem ipcUnwrapCaps_passiveServerIdleFrame
-    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool)
-    (st st' : SystemState) (summary : CapTransferSummary)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
-    passiveServerIdleFrame st st' :=
-  passiveServerIdleFrame_of_backward
-    (fun tid tcb' hTcb' =>
-      ⟨tcb', ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight st st'
-        summary tid.toObjId tcb' hObjInv hStep hTcb', rfl, rfl⟩)
-    (ipcUnwrapCaps_preserves_scheduler msg senderRoot receiverRoot slotBase grantRight st st' summary hStep)
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDualWithCaps` frames `passiveServerIdle` (`endpointSendDual` + the
@@ -11582,12 +11940,12 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    -- IPC de-threading D6: the running receiver is `.ready` (establishes `donationOwnerValid`).
+    -- IPC de-threading D6: the running receiver is `.ready` (establishes `donationOwnerValid`
+    -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
@@ -11599,11 +11957,15 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
   have hDOVest := endpointReceiveDual_preserves_donationOwnerValid st st' endpointId receiver senderId
     replyId hInv.donationOwnerValid hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent
     hReceiverReady hObjInv hStep
+  -- IPC de-threading D6: `passiveServerIdle` **established** — every rewritten thread lands in an
+  -- allowed passive state; the blocking branch returns the receiver's own donation.
+  have hPSIest := endpointReceiveDual_preserves_passiveServerIdle st st' endpointId receiver senderId
+    replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep
   exact ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId replyId hInv.1 hObjInv hStep,
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    endpointReceiveDual_preserves_donationBudgetTransfer st st' endpointId receiver senderId replyId hInv.donationBudgetTransfer hObjInv hStep,
    endpointReceiveDual_establishes_blockedOnReplyHasTarget st st' endpointId receiver senderId replyId hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st st' endpointId
@@ -11880,18 +12242,21 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the running receiver (the replyRecv server) is `.ready`.
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
    hDualQueue',
    endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
    endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
+   endpointReplyRecv_preserves_passiveServerIdle st st' endpointId receiver replyTarget msg replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep,
    endpointReplyRecv_preserves_donationBudgetTransfer st st' endpointId receiver replyTarget msg replyId hObjInv hInv.donationBudgetTransfer hStep,
    endpointReplyRecv_preserves_blockedOnReplyHasTarget st st' endpointId receiver replyTarget msg replyId hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', endpointReplyRecv_preserves_blockedOnReplyHasReplyObject st st' endpointId receiver
@@ -11982,12 +12347,12 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
-    -- IPC de-threading D6: the running receiver is `.ready` (establishes `donationOwnerValid`).
+    -- IPC de-threading D6: the running receiver is `.ready` (establishes `donationOwnerValid`
+    -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
@@ -11998,9 +12363,13 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
   have hDOVest := endpointReceiveDualWithCaps_preserves_donationOwnerValid endpointId receiver replyId
     endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerValid
     hInv.donationOwnerUnique hInv.queueHeadBlockedConsistent hReceiverReady hObjInv hStep
+  -- IPC de-threading D6: `passiveServerIdle` **established** (base receive frame + cap-transfer frame).
+  have hPSIest := endpointReceiveDualWithCaps_preserves_passiveServerIdle endpointId receiver replyId
+    endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady
+    hObjInv hInv.passiveServerIdle hStep
   exact ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId endpointRights
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    endpointReceiveDualWithCaps_preserves_donationBudgetTransfer endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationBudgetTransfer hObjInv hStep,
    endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject endpointId receiver
