@@ -1,3 +1,30 @@
+## v0.31.180 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from `endpointCall` + the 2 clean `WithCaps` (7/13)
+
+Extends D6 to `endpointCall`, `endpointSendDualWithCaps`, and `endpointCallWithCaps`
+(`donationBudgetTransfer` now de-threaded from **7/13** bundles — every binding-free single-core
+transition). New `sameSchedContextBindings` building blocks:
+- the reply-link family `linkReply` / `linkCallerReply` / `linkServerStashedReply`
+  `_sameSchedContextBindings` (each composes a `.reply`-object store + TCB `replyObject` /
+  `pendingReceiveReply` writes — never a binding) + the missing `linkReply_preserves_objects_invExt`,
+- `ipcUnwrapCaps_sameSchedContextBindings` — a one-liner off the existing
+  `ipcUnwrapCaps_tcb_backward` (cap transfer writes only CNode caps, leaving every TCB slot
+  byte-identical),
+- `endpointCall_sameSchedContextBindings` (rendezvous pop + wake + block-`.blockedOnReply` +
+  `linkServerStashedReply` + deschedule; block: enqueue + `.blockedOnCall`), and
+- `endpointSendDualWithCaps` / `endpointCallWithCaps` `_sameSchedContextBindings` (base transition
+  ≫ `ipcUnwrapCaps`).
+
+`hDBT'` removed from the three bundles; established via `donationBudgetTransfer_of_sameSchedContextBindings`.
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 unchanged; zero
+`sorry`/`axiom`.
+
+Remaining D6 `donationBudgetTransfer` (6 bundles): `endpointCallOnCore` (cross-core), the
+binding-touching `endpointReceiveDual` / `endpointReceiveDualWithCaps` / `endpointReplyRecv`
+(donation-return composition) and the 2 retype bundles; then `donationOwnerValid` +
+`passiveServerIdle`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
 ## v0.31.179 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from `endpointSendDual` (queue-op `sameSchedContextBindings`)
 
 Extends D6 to the `endpointSendDual` `ipcInvariantFull` bundle (4/13 `donationBudgetTransfer`
