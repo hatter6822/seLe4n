@@ -1,3 +1,36 @@
+## v0.31.184 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointSendDual` (3/13)
+
+Extends `donationOwnerValid` de-threading to `endpointSendDual` (the first queue-touching
+transition), building the forward `donationOwnerFrame` lemmas for the queue operations.
+
+New ipcState+binding-**preserving** store-op frames (these preserve owner witnesses
+*unconditionally*, even for a `.blockedOnReply` owner, because they touch no `ipcState`/binding
+field):
+- `storeObject_modifiedTcbPreservingOwner_donationOwnerFrame` — a TCB rewrite that preserves
+  `ipcState` and `schedContextBinding`;
+- `storeTcbQueueLinks_donationOwnerFrame` — queue-link rewrite (`tcbWithQueueLinks` touches only
+  `queuePrev`/`queuePPrev`/`queueNext`);
+- `endpointQueuePopHead_donationOwnerFrame` / `endpointQueueEnqueue_donationOwnerFrame` — endpoint
+  store + queue-link rewrites;
+- `storeTcbReceiveComplete_donationOwnerFrame` — the receive-complete `.ready` store (pre-state
+  `≠ .blockedOnReply`).
+
+`endpointSendDual_donationOwnerFrame` composes them across both paths: the rendezvous receiver is
+the receiveQ **head**, hence `.blockedOnReceive` by `hInv.queueHeadBlockedConsistent` (via
+`endpointQueuePopHead_returns_head` + `endpointQueuePopHead_tcb_ipcState_backward`); the block-path
+sender is the running caller (dischargeable `hSenderNotReply` threaded into the bundle). Neither is
+a `.blockedOnReply` donation owner, so the bundle de-threads `hDOV'`.
+
+Architectural note refined in the plan (binds the remaining 10): only `endpointReply`/
+`endpointReplyRecv` actually wake the donation owner (needing the `*WithDonation` composite); the
+receive family additionally returns a donation (binding change). `endpointCall` blocks its caller
+and wakes a receiver — owner-non-waking, so the queue-op frames apply there next.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1041→1045; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 3/13)
+
 ## v0.31.183 — IPC de-threading D6: `donationOwnerValid` de-threaded from the notification pair (2/13)
 
 Opens the `donationOwnerValid` de-threading with the reusable forward-frame infrastructure and
