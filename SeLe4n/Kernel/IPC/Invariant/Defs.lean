@@ -1563,6 +1563,61 @@ theorem donationBudgetTransfer_of_no_shared
   simp [this, SchedContextBinding.scId?] at hB1
 
 -- ============================================================================
+-- IPC de-threading D6: SchedContext-binding frame for `donationBudgetTransfer`
+-- ============================================================================
+
+/-- IPC de-threading D6: two states have **the same SchedContext bindings** when every
+post-state TCB slot pulls back to a pre-state TCB carrying an equal `schedContextBinding`.
+This is the exact frame `donationBudgetTransfer` (which reads only `schedContextBinding`)
+needs: it is preserved by every core IPC transition that never writes a binding (all but
+the donation primitives `donateSchedContext` / `returnDonatedSchedContext`).  Stated
+backward (post ⟹ pre) so it composes directly with the store-frame style used throughout
+the de-threading proofs. -/
+def sameSchedContextBindings (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.schedContextBinding = tcb'.schedContextBinding
+
+namespace sameSchedContextBindings
+
+/-- Reflexivity: a state has the same bindings as itself. -/
+theorem refl (st : SystemState) : sameSchedContextBindings st st :=
+  fun _ tcb' h => ⟨tcb', h, rfl⟩
+
+/-- Transitivity: chain two binding-preserving steps. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : sameSchedContextBindings st st') (h2 : sameSchedContextBindings st' st'') :
+    sameSchedContextBindings st st'' := by
+  intro tid tcb'' hObj''
+  obtain ⟨tc', hObj', hEq'⟩ := h2 tid tcb'' hObj''
+  obtain ⟨tc, hObj, hEq⟩ := h1 tid tc' hObj'
+  exact ⟨tc, hObj, hEq.trans hEq'⟩
+
+/-- A transition that leaves the object store untouched (a scheduler-only step such
+as `removeRunnable` / `ensureRunnable`) preserves all bindings. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    sameSchedContextBindings st st' :=
+  fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
+
+end sameSchedContextBindings
+
+/-- IPC de-threading D6: `donationBudgetTransfer` transfers across any transition that
+preserves every TCB's `schedContextBinding`.  The frame reads the two witness TCBs'
+bindings back into the pre-state, where `donationBudgetTransfer st` rules out the shared
+SchedContext. -/
+theorem donationBudgetTransfer_of_sameSchedContextBindings
+    {st st' : SystemState}
+    (hSame : sameSchedContextBindings st st')
+    (hDBT : donationBudgetTransfer st) :
+    donationBudgetTransfer st' := by
+  intro tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
+  exact hDBT tid1 tid2 tc1 tc2 scId hP1 hP2 hNe
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
+-- ============================================================================
 -- Full IPC invariant bundle (16 conjuncts)
 -- ============================================================================
 

@@ -1,3 +1,32 @@
+## v0.31.178 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from 3 bundles via the `sameSchedContextBindings` frame
+
+Begins D6 (the donation conjuncts, unblocked by the v0.31.177 Finding F-3 remediation) by
+de-threading `donationBudgetTransfer` — the binding-only donation invariant — from the
+`notificationWait`, `notificationSignal`, and `endpointReply` `ipcInvariantFull` bundles
+(`hDBT'` removed; the conjunct is now **established** from the pre-state rather than assumed).
+
+Reusable infrastructure (`Defs.lean`):
+- `sameSchedContextBindings st st'` — every post-state TCB pulls back to a pre-state TCB with
+  an equal `schedContextBinding` (backward frame, `refl` / `trans` / `of_objects_eq`).
+- `donationBudgetTransfer_of_sameSchedContextBindings` — `donationBudgetTransfer` transfers
+  across any binding-preserving step (it reads only `schedContextBinding`).
+
+Store-op family (`DualQueueMembership.lean`, mirroring the `blockedOnReplyHasTarget` op-lemmas):
+`storeObject_modifiedTcb_sameSchedContextBindings` (foundational) +
+`storeObject_nonTcb` / `storeTcbIpcState` / `storeTcbIpcState_fromTcb` /
+`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete` `_sameSchedContextBindings`, plus the
+three transition lemmas `{notificationWait,notificationSignal,endpointReply}_sameSchedContextBindings`.
+This rests on the fact (verified) that **only** the donation primitives
+(`donateSchedContext` / `returnDonatedSchedContext`) ever write a `schedContextBinding`, so the
+core IPC transitions preserve all bindings by construction.
+
+Remaining D6: the other 10 `donationBudgetTransfer` bundles (queue-op + `ipcUnwrapCaps` +
+retype `newObj` `sameSchedContextBindings`), and the per-transition `donationOwnerValid` /
+`passiveServerIdle` establish/preserve machinery. Proof-only; trace byte-identical; build green
+(376 production + 234 staged); `test_full` green; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
 ## v0.31.177 — Finding F-3 REMEDIATED (deep code/model fix): donation completes the SchedContext ownership transfer
 
 Closes **Finding F-3** (the `donationOwnerValid` ∧ `donationBudgetTransfer` joint-unsatisfiability

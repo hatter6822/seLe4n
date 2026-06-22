@@ -4639,6 +4639,140 @@ theorem storeObject_preserves_blockedOnReplyHasTarget
   · rw [storeObject_objects_ne st st' oid tid.toObjId o h hObjInv hStep] at hTcb
     exact hInv tid tcb ep rt hTcb hBlk
 
+-- ============================================================================
+-- IPC de-threading D6: `sameSchedContextBindings` store-op family
+--
+-- These mirror the `blockedOnReplyHasTarget` op-lemmas below but track the
+-- binding-preservation needed by `donationBudgetTransfer_of_sameSchedContextBindings`.
+-- Every core IPC store op writes a TCB only through `storeObject id (.tcb {orig with
+-- <non-binding fields>})`, so the binding is preserved at the written slot and framed
+-- everywhere else.
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- D6 (foundational): storing a TCB that differs from a pre-state TCB at the same slot
+only in non-binding fields preserves every TCB's `schedContextBinding`. -/
+theorem storeObject_modifiedTcb_sameSchedContextBindings
+    (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
+    (hOrig : st.objects[id]? = some (.tcb origTcb))
+    (hBindEq : newTcb.schedContextBinding = origTcb.schedContextBinding)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id (.tcb newTcb) st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  intro y tcY hY
+  by_cases hYid : y.toObjId = id
+  · have hStored : st'.objects[id]? = some (.tcb newTcb) :=
+      storeObject_objects_eq st st' id _ hObjInv hStore
+    rw [hYid, hStored] at hY
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hY)
+    exact ⟨origTcb, by rw [hYid]; exact hOrig, hBindEq.symm⟩
+  · have hFrame : st'.objects[y.toObjId]? = st.objects[y.toObjId]? :=
+      storeObject_objects_ne st st' id y.toObjId _ hYid hObjInv hStore
+    rw [hFrame] at hY
+    exact ⟨tcY, hY, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: a `storeObject` of a **non-TCB** object preserves every TCB's binding. -/
+theorem storeObject_nonTcb_sameSchedContextBindings
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNonTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  intro y tcY hY
+  by_cases hYid : y.toObjId = id
+  · have hStored : st'.objects[id]? = some obj :=
+      storeObject_objects_eq st st' id _ hObjInv hStore
+    rw [hYid, hStored] at hY
+    exact absurd (Option.some.inj hY) (hNonTcb tcY)
+  · have hFrame : st'.objects[y.toObjId]? = st.objects[y.toObjId]? :=
+      storeObject_objects_ne st st' id y.toObjId _ hYid hObjInv hStore
+    rw [hFrame] at hY
+    exact ⟨tcY, hY, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcState` preserves every TCB's binding. -/
+theorem storeTcbIpcState_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipc = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbIpcState at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+        { tcb with ipcState := ipc } (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcState_fromTcb` preserves every TCB's binding (the pre-state slot
+holds the supplied `tcb`, supplied via `hOrig`). -/
+theorem storeTcbIpcState_fromTcb_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (hOrig : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState_fromTcb st tid tcb ipc = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbIpcState_fromTcb at hStep
+  cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+      { tcb with ipcState := ipc } hOrig rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbIpcStateAndMessage` preserves every TCB's binding. -/
+theorem storeTcbIpcStateAndMessage_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+        { tcb with ipcState := ipc, pendingMessage := msg } (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D6: `storeTcbReceiveComplete` preserves every TCB's binding. -/
+theorem storeTcbReceiveComplete_sameSchedContextBindings
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    sameSchedContextBindings st st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_sameSchedContextBindings st st'' tid.toObjId tcb
+        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
 /-- D3: object-store-preserving step frames the clause. -/
 theorem blockedOnReplyHasTarget_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) (h : blockedOnReplyHasTarget st) :
@@ -5286,6 +5420,142 @@ theorem notificationWait_preserves_blockedOnReplyHasTarget
                     st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hObjInv1 hInv1 (by intro ep rt h; cases h) hSI)
   · contradiction
   · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- D6: `notificationWait` preserves every TCB's `schedContextBinding` (the deliver
+branch wakes the waiter `.ready`; the block branch stores it `.blockedOnNotification`
+and deschedules — neither writes a binding). -/
+theorem notificationWait_sameSchedContextBindings
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    sameSchedContextBindings st st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hS1 := storeObject_nonTcb_sameSchedContextBindings
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact hS1.trans (storeTcbIpcState_sameSchedContextBindings st1 st2 waiter .ready hObjInv1 hSI)
+    · split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          · contradiction
+          · split at hStep
+            next => contradiction
+            next st1 hSO =>
+              have hS1 := storeObject_nonTcb_sameSchedContextBindings
+                st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO
+              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+              have hWaiterObj : st.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
+                lookupTcb_some_objects st waiter waiterTcb hLookup
+              have hNeWN : waiter.toObjId ≠ notificationId := by
+                intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+              have hOrig1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) := by
+                rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNeWN hObjInv hSO]
+                exact hWaiterObj
+              split at hStep
+              next => contradiction
+              next st2 hSI =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact (hS1.trans (storeTcbIpcState_fromTcb_sameSchedContextBindings
+                    st1 st2 waiter waiterTcb (.blockedOnNotification notificationId) hOrig1 hObjInv1 hSI)).trans
+                  (sameSchedContextBindings.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- D6: `notificationSignal` preserves every TCB's `schedContextBinding` (it stores the
+notification waitlist and wakes the head waiter `.ready` — neither writes a binding). -/
+theorem notificationSignal_sameSchedContextBindings
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hS1 := storeObject_nonTcb_sameSchedContextBindings
+          st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact (hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 waiter .ready _ hObjInv1 hSM)).trans
+            (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects st2 waiter))
+    | none =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      all_goals
+        exact storeObject_nonTcb_sameSchedContextBindings
+          st st' notificationId (.notification _) (fun tcb => by simp) hObjInv hStep
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointReply` preserves every TCB's `schedContextBinding` (it unblocks the
+target `.ready` and reschedules — no binding write). -/
+theorem endpointReply_sameSchedContextBindings
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    sameSchedContextBindings st st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      cases replyTarget with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp
+          | ok st'' =>
+            intro hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, rfl⟩ := hStep
+            exact (storeTcbIpcStateAndMessage_sameSchedContextBindings st st'' target .ready (some msg) hObjInv hMsg).trans
+              (sameSchedContextBindings.of_objects_eq (ensureRunnable_preserves_objects st'' target))
+        · simp at hStep
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointReply` frames the clause (unblock to `.ready`). -/
@@ -8509,7 +8779,6 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
@@ -8522,7 +8791,10 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    notificationSignal_preserves_queueNextBlockingConsistent st st' notificationId badge hObjInv hInv.queueNextBlockingConsistent hStep,
    notificationSignal_preserves_queueHeadBlockedConsistent st st' notificationId badge hObjInv hInv.queueHeadBlockedConsistent hNWC hStep,
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   donationBudgetTransfer_of_sameSchedContextBindings
+     (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
+     hInv.donationBudgetTransfer,
    notificationSignal_preserves_blockedOnReplyHasTarget st st' notificationId badge hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', notificationSignal_preserves_blockedOnReplyHasReplyObject st st' notificationId badge
       hObjInv hInv.replyCallerLinkage.2 hStep⟩,
@@ -8548,7 +8820,6 @@ theorem notificationWait_preserves_ipcInvariantFull
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -8561,7 +8832,10 @@ theorem notificationWait_preserves_ipcInvariantFull
    hWtpmn', hNoDup', hQMC',
    -- IPC de-threading D4: queueNext **established** from the pre-state.
    notificationWait_preserves_queueNextBlockingConsistent st st' notificationId waiter result hObjInv hInv.queueNextBlockingConsistent hStep,
-   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
+   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   donationBudgetTransfer_of_sameSchedContextBindings
+     (notificationWait_sameSchedContextBindings st st' notificationId waiter result hObjInv hStep)
+     hInv.donationBudgetTransfer,
    notificationWait_preserves_blockedOnReplyHasTarget st st' notificationId waiter result hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', notificationWait_preserves_blockedOnReplyHasReplyObject st st' notificationId waiter
       result hObjInv hInv.replyCallerLinkage.2 hStep⟩,
@@ -8582,7 +8856,6 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
@@ -8596,7 +8869,10 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_queueHeadBlockedConsistent st st' replier target msg hObjInv hInv.queueHeadBlockedConsistent hStep,
    -- IPC de-threading D7: `donationChainAcyclic` is **derived** from the (still-threaded)
    -- post-state `donationOwnerValid` via the subsumption lemma — no separate `hDCA'`.
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI', hDBT',
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   donationBudgetTransfer_of_sameSchedContextBindings
+     (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
+     hInv.donationBudgetTransfer,
    endpointReply_preserves_blockedOnReplyHasTarget st st' replier target msg hObjInv hInv.blockedOnReplyHasTarget hStep,
    ⟨hRCLRecip', endpointReply_preserves_blockedOnReplyHasReplyObject st st' replier target msg
       hObjInv hInv.replyCallerLinkage.2 hStep⟩,
