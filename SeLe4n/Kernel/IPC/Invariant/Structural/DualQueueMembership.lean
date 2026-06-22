@@ -8145,6 +8145,60 @@ theorem endpointReply_sameSchedContextBindings
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
+/-- D6: `endpointReply` frames `passiveServerIdle` — it unblocks the target `.ready` (an allowed
+passive state) and reschedules it; no thread is descheduled into a non-allowed state. -/
+theorem endpointReply_passiveServerIdleFrame
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      cases replyTarget with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp
+          | ok st'' =>
+            intro hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, rfl⟩ := hStep
+            exact (storeTcbIpcStateAndMessage_passiveServerIdleFrame st st'' target .ready (some msg)
+              (Or.inl (Or.inl rfl)) hObjInv hMsg).trans
+              (ensureRunnable_passiveServerIdleFrame st'' target)
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointReply` preserves `passiveServerIdle`. -/
+theorem endpointReply_preserves_passiveServerIdle
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hInv : passiveServerIdle st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (endpointReply_passiveServerIdleFrame st st' replier target msg hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
 /-- D3: `endpointReply` frames the clause (unblock to `.ready`). -/
 theorem endpointReply_preserves_blockedOnReplyHasTarget
     (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -11514,7 +11568,6 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
@@ -11528,7 +11581,8 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_queueHeadBlockedConsistent st st' replier target msg hObjInv hInv.queueHeadBlockedConsistent hStep,
    -- IPC de-threading D7: `donationChainAcyclic` is **derived** from the (still-threaded)
    -- post-state `donationOwnerValid` via the subsumption lemma — no separate `hDCA'`.
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
+   endpointReply_preserves_passiveServerIdle st st' replier target msg hObjInv hInv.passiveServerIdle hStep,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
      hInv.donationBudgetTransfer,

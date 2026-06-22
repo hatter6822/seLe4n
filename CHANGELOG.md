@@ -1,3 +1,19 @@
+## v0.32.4 — IPC de-threading D6: `passiveServerIdle` from `endpointReply` (4/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the (clean) reply path.
+
+- **`endpointReply_passiveServerIdleFrame`** — `endpointReply` unblocks the reply target `.ready`
+  (an allowed passive state) and reschedules it, descheduling no thread, so it frames
+  `passiveServerIdle` with **no** new precondition (it reuses the `storeTcbIpcStateAndMessage` and
+  `ensureRunnable` micro-frames).  `endpointReply_preserves_ipcInvariantFull` drops `hPSI'`; it keeps
+  `hDOV'` threaded, since bare `endpointReply` is composite-only for `donationOwnerValid` (it wakes
+  the `.blockedOnReply` owner without returning the donation).
+
+`passiveServerIdle` is now de-threaded from **4/13 bundles**.  Proof-only, trace byte-identical,
+zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.3 — IPC de-threading D6: `passiveServerIdle` from `endpointSendDual` (3/13)
 
 Continues the D6 `passiveServerIdle` de-thread with the send path and the reusable queue frames.
