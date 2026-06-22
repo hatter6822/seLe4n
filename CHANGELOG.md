@@ -1,3 +1,23 @@
+## v0.32.8 — IPC de-threading D6: `passiveServerIdle` from the retype bundles (12/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the two `lifecycleRetypeObject` retype bundles.
+
+- **`lifecycleRetypeObject_preserves_passiveServerIdle`** — the retype reduces to a single
+  `storeObject target newObj`, which leaves the boot scheduler untouched.  At the retype slot the
+  post-state object is `newObj`; if it is a TCB it is freshly created in an allowed passive state
+  (`hNewObjAllowed`, dischargeable: a retyped TCB is `.ready`), satisfying the conclusion directly.
+  Every other slot frames from the pre-state.
+- `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` and
+  `lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle` drop `hPSI'`, adding the
+  dischargeable `hNewObjAllowed` caller obligation (alongside the existing `hNewObjUnbound`).
+
+`passiveServerIdle` is now de-threaded from **12/13 bundles** — only the cross-core
+`endpointCallOnCore` remains (its per-core `wakeThread`/`removeRunnableOnCore` touch a specific
+core's run queue, so the bootCore-pinned `passiveServerIdle` needs a per-core scheduler frame).
+`RAW_LOOKUP_TID` re-anchored 1116→1117.  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.7 — IPC de-threading D6: `passiveServerIdle` from the receive family (10/13)
 
 Continues the D6 `passiveServerIdle` de-thread with the receive family — the clean half of the
