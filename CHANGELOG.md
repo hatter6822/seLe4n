@@ -1,3 +1,41 @@
+## v0.32.0 — IPC `ipcInvariantFull` de-threading: donation-invariant milestone
+
+Minor-version milestone for the IPC `ipcInvariantFull` de-threading workstream's donation-invariant
+phase (D6/D7).  Each `*_preserves_ipcInvariantFull` bundle now *establishes* these conjuncts from the
+pre-state rather than *assuming* them on the post-state:
+
+- **`donationChainAcyclic`** — fully de-threaded (D7, v0.31.176): derived from `donationOwnerValid`
+  via `donationOwnerValid_implies_donationChainAcyclic`.
+- **`donationBudgetTransfer`** — **fully de-threaded, 13/13 bundles** (v0.31.182): the first conjunct
+  established entirely from the pre-state on its own per-transition proof (`sameSchedContextBindings`
+  frame + the donation-return preservation argument).  Unblocked by the **Finding F-3** deep fix
+  (the donation primitive now completes the SchedContext ownership transfer, seL4-MCS-faithful, so
+  `donationOwnerValid ∧ donationBudgetTransfer` are jointly satisfiable for donated states).
+- **`donationOwnerValid`** — de-threaded from **9/13 bundles** (the notification pair, `endpointSendDual`,
+  `endpointCall`, `endpointCallOnCore`, the retype pair, the two clean WithCaps) via the reusable
+  `donationOwnerFrame` predicate (backward `sameSchedContextBindings` + forward SchedContext/owner
+  witnesses).  The 4 remaining are the donation-return / owner-waking family.
+- **`donationOwnerUnique`** — **added as the 18th `ipcInvariantFull` conjunct** (v0.31.189) and
+  established across all 13 bundles + retype + cross-core + default + boot + the architecture-layer
+  object-frame transitions.  This is the consistency property the donation **return** preservation
+  needs; with it, `cleanupPreReceiveDonation_preserves_donationOwnerValid` is proven — **unblocking**
+  the receive-family (`endpointReceiveDual`, `endpointReceiveDualWithCaps`) `donationOwnerValid`
+  de-thread (the decomposition is the next slice).  The `endpointReply`/`endpointReplyRecv` pair is
+  architecturally composite-only: the bare transitions wake the `.blockedOnReply` donation owner
+  without returning the donation (the donation-return lives in the `*WithDonation` wrappers via
+  `applyReplyDonation`), so their `donationOwnerValid` de-thread belongs to the composite/D8 layer,
+  not the bare bundle.
+
+Across the phase: ~30 reusable frame/store-op/transition lemmas (the `donationOwnerFrame` family, the
+`sameSchedContextBindings` extensions, the SchedContext-preservation chain through `ipcUnwrapCaps`,
+the donation-return preservation lemmas).  Every slice proof-only, trace byte-identical, zero
+`sorry`/`axiom`.
+
+Remaining for D6: the receive-family `donationOwnerValid` de-thread (now unblocked), the
+`endpointReply`/`endpointReplyRecv` composite, and `passiveServerIdle` (13 bundles).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6/D7)
+
 ## v0.31.189 — IPC de-threading D6: add `donationOwnerUnique` (18th `ipcInvariantFull` conjunct)
 
 Adds donation-owner uniqueness as a first-class `ipcInvariantFull` conjunct — the consistency
