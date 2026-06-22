@@ -5897,6 +5897,38 @@ theorem linkServerStashedReply_sameSchedContextBindings
           { sTcb with pendingReceiveReply := none } ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hObjInv1 hStep)
 
 open SeLe4n.Model.SystemState in
+/-- D6: `linkCallerReply` frames `passiveServerIdle` (reply-object store + caller `replyObject`
+write — both preserve every `ipcState`/binding and the scheduler). -/
+theorem linkCallerReply_passiveServerIdleFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    passiveServerIdleFrame st st' :=
+  passiveServerIdleFrame_of_backward
+    (fun tid tcb' hTcb' => by
+      obtain ⟨tcb, hTcb, hIpcEq⟩ := linkCallerReply_tcb_ipcState_backward st st' caller rid tid tcb' hObjInv hStep hTcb'
+      obtain ⟨tcb2, hTcb2, hBindEq⟩ := linkCallerReply_sameSchedContextBindings st st' caller rid hObjInv hStep tid tcb' hTcb'
+      rw [hTcb] at hTcb2; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb2)
+      exact ⟨tcb, hTcb, hIpcEq, hBindEq⟩)
+    (linkCallerReply_scheduler_eq st st' caller rid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `linkServerStashedReply` frames `passiveServerIdle` (`linkCallerReply` + the server
+stash-clear store — both preserve every `ipcState`/binding and the scheduler). -/
+theorem linkServerStashedReply_passiveServerIdleFrame
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    passiveServerIdleFrame st st' :=
+  passiveServerIdleFrame_of_backward
+    (fun tid tcb' hTcb' => by
+      obtain ⟨tcb, hTcb, hIpcEq⟩ := linkServerStashedReply_tcb_ipcState_backward st st' caller server tid tcb' hObjInv hStep hTcb'
+      obtain ⟨tcb2, hTcb2, hBindEq⟩ := linkServerStashedReply_sameSchedContextBindings st st' caller server hObjInv hStep tid tcb' hTcb'
+      rw [hTcb] at hTcb2; obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb2)
+      exact ⟨tcb, hTcb, hIpcEq, hBindEq⟩)
+    (linkServerStashedReply_scheduler_eq st st' caller server hStep)
+
+open SeLe4n.Model.SystemState in
 /-- D6: `linkReply` frames the SchedContext/owner side forward — it stores only the `.reply`
 object at `rid` (non-Sc/non-TCB), disturbing neither witness. -/
 theorem linkReply_donationOwnerFrame
@@ -7160,6 +7192,104 @@ theorem endpointCall_preserves_donationOwnerValid
     (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
     (endpointCall_donationOwnerFrame st st' endpointId caller msg hObjInv hQHBC hCallerNotReply hStep)
     hInv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointCall` frames `passiveServerIdle`.  Rendezvous (receiveQ head): pop + complete the
+receiver `.ready` + reschedule + set the caller `.blockedOnReply` (an *allowed* passive state) +
+stash the reply + deschedule the caller — clean.  Block (no receiver): enqueue the caller + set it
+`.blockedOnCall` (a *non-allowed* state) + deschedule — the descheduled `.blockedOnCall` caller must
+hold a SchedContext (`hCallerNotUnbound`) to be excluded from the pullback obligation. -/
+theorem endpointCall_passiveServerIdleFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        tcb.schedContextBinding ≠ .unbound)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  unfold endpointCall at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hF1 := endpointQueuePopHead_passiveServerIdleFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg] at hStep
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
+            have hF2 := storeTcbIpcStateAndMessage_passiveServerIdleFrame pair.2.2 st2 pair.1 .ready (some msg)
+              (Or.inl (Or.inl rfl)) hObjInv1 hMsg
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hF3 := ensureRunnable_passiveServerIdleFrame st2 pair.1
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st4 =>
+              simp only [hIpc] at hStep
+              have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) st4 caller _ _ hObjInvEns hIpc
+              have hF4 := storeTcbIpcStateAndMessage_passiveServerIdleFrame (ensureRunnable st2 pair.1) st4 caller
+                (.blockedOnReply endpointId (some pair.1)) none
+                (Or.inl (Or.inr (Or.inr ⟨endpointId, some pair.1, rfl⟩))) hObjInvEns hIpc
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hF5 := linkServerStashedReply_passiveServerIdleFrame st4 st5 caller pair.1 hObjInv4 hLink
+                refine ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
+                  (removeRunnable_passiveServerIdleFrame st5 caller (fun tcb hTcb => Or.inr ?_))
+                obtain ⟨tcb4, hTcb4, hIpc4⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5 caller pair.1 caller tcb hObjInv4 hLink hTcb
+                have hRep := storeTcbIpcStateAndMessage_ipcState_eq (ensureRunnable st2 pair.1) st4 caller _ none hObjInvEns hIpc tcb4 hTcb4
+                rw [← hIpc4, hRep]; exact Or.inr (Or.inr ⟨endpointId, some pair.1, rfl⟩)
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
+          have hF1 := endpointQueueEnqueue_passiveServerIdleFrame endpointId false caller st st1 hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrame st1 st2 caller (.blockedOnCall endpointId) (some msg)
+              (Or.inr (fun tcb hTcb => ?_)) hObjInv1 hMsg)).trans
+              (removeRunnable_passiveServerIdleFrame st2 caller (fun tcb hTcb => Or.inl ?_))
+            · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st1 hObjInv hEnq caller tcb hTcb
+              exact hBindEq ▸ hCallerNotUnbound tcb0 hTcb0
+            · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st1 st2 caller (.blockedOnCall endpointId) (some msg) hObjInv1 hMsg caller tcb hTcb
+              obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st1 hObjInv hEnq caller tcb1 hTcb1
+              exact hBindEq1 ▸ hBindEq0 ▸ hCallerNotUnbound tcb0 hTcb0
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointCall` preserves `passiveServerIdle`. -/
+theorem endpointCall_preserves_passiveServerIdle
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        tcb.schedContextBinding ≠ .unbound)
+    (hInv : passiveServerIdle st)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    passiveServerIdle st' :=
+  passiveServerIdle_of_frame
+    (endpointCall_passiveServerIdleFrame st st' endpointId caller msg hObjInv hCallerNotUnbound hStep) hInv
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDual` preserves every TCB's `schedContextBinding` (rendezvous: pop +
@@ -11368,13 +11498,15 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
     (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    -- IPC de-threading D6: the running caller holds a SchedContext (own or donated).
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        tcb.schedContextBinding ≠ .unbound)
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
@@ -11383,11 +11515,15 @@ theorem endpointCall_preserves_ipcInvariantFull
   -- one before, so no existing owner witness is lost.
   have hDOVest := endpointCall_preserves_donationOwnerValid st st' endpointId caller msg
     hObjInv hInv.queueHeadBlockedConsistent hCallerNotReply hInv.donationOwnerValid hStep
+  -- IPC de-threading D6: `passiveServerIdle` **established** — the only thread descheduled into a
+  -- non-allowed state is the block-path `.blockedOnCall` caller, excluded as it holds a SchedContext.
+  have hPSIest := endpointCall_preserves_passiveServerIdle st st' endpointId caller msg
+    hObjInv hCallerNotUnbound hInv.passiveServerIdle hStep
   exact ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
    hDualQueue',
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
      hInv.donationBudgetTransfer,

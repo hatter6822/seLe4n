@@ -1,3 +1,23 @@
+## v0.32.5 — IPC de-threading D6: `passiveServerIdle` from `endpointCall` (5/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the call path and the reply-link frames.
+
+- **`endpointCall_passiveServerIdleFrame`** — the rendezvous path completes the receiver `.ready`,
+  reschedules it, sets the caller `.blockedOnReply` (an *allowed* passive state), stashes the reply,
+  and deschedules the caller (clean); the block path sets the caller `.blockedOnCall` (a *non-allowed*
+  state) and deschedules it.  The descheduled `.blockedOnCall` caller carries the dischargeable
+  precondition `hCallerNotUnbound` (a running caller holds a SchedContext), excluding it from the
+  pullback obligation.  `endpointCall_preserves_ipcInvariantFull` drops `hPSI'`.
+- **Reply-link micro-frames**: `linkCallerReply_passiveServerIdleFrame` and
+  `linkServerStashedReply_passiveServerIdleFrame` (both clean, via `passiveServerIdleFrame_of_backward`
+  — the reply-object store and the caller/server TCB rewrites preserve every `ipcState`/binding and
+  the scheduler).  Reused by the receive family next.
+
+`passiveServerIdle` is now de-threaded from **5/13 bundles**.  `RAW_LOOKUP_TID` re-anchored 1096→1099.
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.4 — IPC de-threading D6: `passiveServerIdle` from `endpointReply` (4/13)
 
 Continues the D6 `passiveServerIdle` de-thread with the (clean) reply path.
