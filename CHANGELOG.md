@@ -1,3 +1,25 @@
+## v0.31.187 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointCallOnCore` (7/13)
+
+Extends `donationOwnerValid` de-threading to the cross-core `endpointCallOnCore`, completing the
+**call path** (single-core `endpointCall` + cross-core `endpointCallOnCore`).
+
+`endpointCallOnCore_donationOwnerFrame` is the cross-core mirror of `endpointCall_donationOwnerFrame`:
+the per-core `wakeThread` (receiver wake) and `removeRunnableOnCore` (caller deschedule) replace the
+boot-core `ensureRunnable`/`removeRunnable`. The new `wakeThread_donationOwnerFrame_of_ready` frames
+the wake — the woken thread is already `.ready` (set by the preceding receiver store), so `wakeThread`
+leaves the object map element-wise unchanged. The rendezvous receiver (receiveQ head,
+`.blockedOnReceive` via `hQHBC`) and the running caller (`hCallerNotReply`, threaded through the wake
+via `wakeThread_objects_getElem_eq_of_ready`) are the only `ipcState`-changed TCBs; neither is a
+`.blockedOnReply` owner.
+
+The bundle (`subst hStep`-shaped, stated on `(endpointCallOnCore …).1`) de-threads `hDOV'` via
+`donationOwnerValid_of_frames`, adding the dischargeable `hCallerNotReply`.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1052→1054; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 7/13)
+
 ## v0.31.186 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointCall` (6/13)
 
 Extends `donationOwnerValid` de-threading to `endpointCall` — the central client→server rendezvous,
