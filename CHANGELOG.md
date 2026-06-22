@@ -1,3 +1,32 @@
+## v0.32.9 — IPC de-threading D6: `passiveServerIdle` FULLY de-threaded (13/13)
+
+Closes the D6 `passiveServerIdle` de-thread with the final, cross-core bundle.
+`grep "hPSI' : passiveServerIdle st'"` is now empty across the tree — the scheduler-sensitive
+conjunct is **established from the pre-state on every `*_preserves_ipcInvariantFull` bundle**.
+
+- **`endpointCallOnCore_passiveServerIdleFrame`** — the cross-core mirror of the single-core call
+  frame.  Two new per-core scheduler frames make it work:
+  - `wakeThread_passiveServerIdleFrame_of_ready` — `wakeThread` (= `enqueueRunnableOnCore` on the
+    woken thread's target core) only *adds* to a run queue (`enqueueRunnableOnCore_mem_old`) and
+    preserves every core's `current` (`enqueueRunnableOnCore_currentOnCore`), leaving the object map
+    unchanged for a `.ready` thread.  Clean — even the woken thread pulls back (the wake cannot have
+    removed it from the boot queue).
+  - `removeRunnableOnCore_passiveServerIdleFrame` — frames the bootCore run queue/current by per-core
+    locality, case-splitting on `executingCore = bootCoreId` (`removeRunnableOnCore_runQueueOnCore_self`
+    / `_ne`), given the removed thread is bound or allowed.
+  `endpointCallOnCore_preserves_ipcInvariantFull` drops `hPSI'`, carrying the dischargeable
+  `hCallerNotUnbound` (as the single-core `endpointCall` does).  The file-header architectural note —
+  which previously called `passiveServerIdle` a "genuinely scheduler-sensitive" carried hypothesis —
+  is corrected to reflect the de-thread.
+
+With this, **`passiveServerIdle` is de-threaded from all 13 bundles**.  The only IPC `ipcInvariantFull`
+conjunct still threaded anywhere is `donationOwnerValid` on the 2 bare reply bundles
+(`endpointReply`/`endpointReplyRecv`), which is architecturally composite-only (the bare transitions
+wake the `.blockedOnReply` owner without returning the donation).  `RAW_LOOKUP_TID` re-anchored
+1117→1122.  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
 ## v0.32.8 — IPC de-threading D6: `passiveServerIdle` from the retype bundles (12/13)
 
 Continues the D6 `passiveServerIdle` de-thread with the two `lifecycleRetypeObject` retype bundles.
