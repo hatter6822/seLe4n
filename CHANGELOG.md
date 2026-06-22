@@ -1,3 +1,38 @@
+## v0.31.182 — IPC de-threading D6: `donationBudgetTransfer` FULLY de-threaded (13/13 bundles)
+
+Closes `donationBudgetTransfer` across **all 13** `*_preserves_ipcInvariantFull` bundles —
+`grep "hDBT' : donationBudgetTransfer st'"` is now empty. This is the **first `ipcInvariantFull`
+conjunct established entirely from the pre-state**: D7's `donationChainAcyclic` is *derived* from the
+still-threaded `donationOwnerValid` (`donationOwnerValid_implies_donationChainAcyclic`), whereas
+`donationBudgetTransfer` now stands on its own per-transition proof with no threaded post-state
+hypothesis anywhere.
+
+The final slice closes the last 4 bundles:
+
+- **The 3 binding-touching receive-family bundles** (`endpointReceiveDual`,
+  `endpointReceiveDualWithCaps`, `endpointReplyRecv`) go through
+  `cleanupPreReceiveDonation_preserves_donationBudgetTransfer`. These transitions *do* rewrite a
+  `schedContextBinding` (the pre-receive donation-return hands the SchedContext back from the server
+  to its original owner), so the `sameSchedContextBindings` frame does **not** apply. Instead a
+  dedicated argument: `returnDonatedSchedContext_tcb_schedContextBinding_backward` pins the 3-way
+  post-state binding shape (the server becomes `.unbound`, the owner becomes `.bound scId`, every
+  other TCB pulls back unchanged), and `returnDonatedSchedContext_preserves_donationBudgetTransfer`
+  shows the move keeps the SchedContext singly-held, so no new scId-sharing pair can arise.
+- **`endpointCallOnCore`** (cross-core) goes through the new
+  `endpointCallOnCore_sameSchedContextBindings` — the mirror of the single-core frame in
+  `IPC/CrossCore/`. The cross-core call's only non-store effects are `wakeThread` /
+  `removeRunnableOnCore`, which are scheduler-only writes, so every TCB's `schedContextBinding` is
+  byte-identical across the step (new keystone `wakeThread_sameSchedContextBindings_of_ready`).
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1021→1028 (the donation-return preservation lemmas' object-store-boundary pull-back
+reads, matching the invariant-frame style); zero `sorry`/`axiom`.
+
+Remaining D6: `donationOwnerValid` (13 bundles) + `passiveServerIdle` (13 bundles) — the
+per-transition establish/preserve conjuncts with scheduler/ipcState coupling.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationBudgetTransfer complete)
+
 ## v0.31.181 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from the 2 retype bundles (9/13)
 
 Extends D6 to the two `lifecycleRetypeObject` `ipcInvariantFull`-carrying bundles

@@ -309,6 +309,89 @@ theorem wakeThread_preserves_blockedOnReplyHasTarget_of_ready
   exact hInv tid tcb ep rt hTcb hBlk
 
 open SeLe4n.Model.SystemState in
+/-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
+effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store
+pointwise-unchanged for a `.ready` target). -/
+theorem wakeThread_sameSchedContextBindings_of_ready
+    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
+    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st (wakeThread st wtid ec).1 := by
+  intro y tcY hY
+  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv y.toObjId] at hY
+  exact ⟨tcY, hY, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D6 (per-core): `endpointCallOnCore` preserves every TCB's `schedContextBinding` (the cross-core
+mirror of `endpointCall_sameSchedContextBindings`; `wakeThread`/`removeRunnableOnCore` are
+scheduler-only, the store/link ops never write a binding). -/
+theorem endpointCallOnCore_sameSchedContextBindings
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact sameSchedContextBindings.refl st
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact sameSchedContextBindings.refl st
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact sameSchedContextBindings.refl st
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact sameSchedContextBindings.refl st
+      | ok st' =>
+        simp only
+        have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq
+        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact sameSchedContextBindings.refl st
+        | ok st'' =>
+          simp only
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
+          show sameSchedContextBindings st (removeRunnableOnCore st'' caller executingCore)
+          exact hS2.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st'' caller executingCore))
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact sameSchedContextBindings.refl st
+      | ok pair =>
+        simp only
+        have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact sameSchedContextBindings.refl st
+        | ok st2 =>
+          simp only
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg)
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObj1 hMsg
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+          have hS3 := hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2)
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact sameSchedContextBindings.refl st
+          | ok st4 =>
+            simp only
+            have hS4 := hS3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1)) none hObjW hCS)
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact sameSchedContextBindings.refl st
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hS5 := hS4.trans (linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink)
+              show sameSchedContextBindings st (removeRunnableOnCore st5 caller executingCore)
+              exact hS5.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st5 caller executingCore))
+
+open SeLe4n.Model.SystemState in
 /-- D3 (per-core): `endpointCallOnCore` **establishes** `blockedOnReplyHasTarget`. -/
 theorem endpointCallOnCore_establishes_blockedOnReplyHasTarget
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -1032,7 +1115,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
-    (hDBT' : donationBudgetTransfer st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep) :
@@ -1048,7 +1130,14 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
     -- IPC de-threading D7: derive `donationChainAcyclic` from the threaded post-state
     -- `donationOwnerValid` via the subsumption lemma.
-    donationOwnerValid_implies_donationChainAcyclic _ hDOV', hDOV', hPSI', hDBT',
+    -- IPC de-threading D6 (donationBudgetTransfer): **establish** from the pre-state via the
+    -- `sameSchedContextBindings` frame — `endpointCallOnCore` never writes any TCB's
+    -- `schedContextBinding` (its store-ops are ipcState / queue-link / scheduler writes), so the
+    -- post-state budget-transfer invariant holds whenever the pre-state one does.
+    donationOwnerValid_implies_donationChainAcyclic _ hDOV', hDOV', hPSI',
+    donationBudgetTransfer_of_sameSchedContextBindings
+      (endpointCallOnCore_sameSchedContextBindings endpointId caller msg executingCore st hObjInv)
+      hInv.donationBudgetTransfer,
     endpointCallOnCore_establishes_blockedOnReplyHasTarget endpointId caller msg executingCore st hInv.blockedOnReplyHasTarget hObjInv,
     ⟨hRCLRecip', endpointCallOnCore_establishes_blockedOnReplyHasReplyObject endpointId caller msg
       executingCore st hInv.replyCallerLinkage.2 hObjInv⟩,
