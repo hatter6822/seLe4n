@@ -1,0 +1,9 @@
+# Generated Observatory data bundle (built from repo artifacts by
+# scripts/build_observatory_data.py; deterministic, so it is rebuilt on
+# demand / in CI rather than committed — see web/README.md).
+/public/data/
+
+# Frontend toolchain (production app; not yet scaffolded).
+/node_modules/
+/dist/
+*.local
