@@ -1,3 +1,25 @@
+## v0.31.181 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from the 2 retype bundles (9/13)
+
+Extends D6 to the two `lifecycleRetypeObject` `ipcInvariantFull`-carrying bundles
+(`coreIpcInvariantBundle` + `lifecycleCompositionInvariantBundle`), de-threading
+`donationBudgetTransfer` from **9/13** bundles. Unlike the binding-frame transitions, retype
+creates a *fresh* object at `target`, so `sameSchedContextBindings` does not apply; instead a new
+`lifecycleRetypeObject_preserves_donationBudgetTransfer` discharges the conjunct off the single
+`storeObject target newObj` reduction with a `newObj`-keyed side-condition `hNewObjUnbound` (a
+retyped TCB is `.unbound`, holding no SchedContext, so it cannot be one of two threads sharing an
+scId; every other slot frames from the pre-state). The two bundles thread `hNewObjUnbound` in place
+of `hDBT'` (the same caller-obligation flavour as the existing `hNewObjTarget`/`hNewObjThird`).
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1019→1021 (the retype frame's two object-store reads, matching the invariant-frame
+style); zero `sorry`/`axiom`.
+
+Remaining D6 `donationBudgetTransfer` (4 bundles): `endpointCallOnCore` (cross-core) and the
+binding-touching `endpointReceiveDual` / `endpointReceiveDualWithCaps` / `endpointReplyRecv`
+(donation-return composition); then `donationOwnerValid` + `passiveServerIdle`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
 ## v0.31.180 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from `endpointCall` + the 2 clean `WithCaps` (7/13)
 
 Extends D6 to `endpointCall`, `endpointSendDualWithCaps`, and `endpointCallWithCaps`
