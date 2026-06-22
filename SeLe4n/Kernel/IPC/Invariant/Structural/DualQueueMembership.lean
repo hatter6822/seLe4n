@@ -5749,6 +5749,23 @@ theorem ipcUnwrapCaps_sameSchedContextBindings
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
 open SeLe4n.Model.SystemState in
+/-- D6: `ipcUnwrapCaps` frames the SchedContext/owner side forward — it writes only CNode caps
+at `receiverRoot`, so every SchedContext object (`ipcUnwrapCaps_preserves_schedContext_objects`)
+and every TCB object (`ipcUnwrapCaps_preserves_tcb_objects`) survives byte-identical. -/
+theorem ipcUnwrapCaps_donationOwnerFrame
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    donationOwnerFrame st st' :=
+  ⟨fun scId sc hSc => ipcUnwrapCaps_preserves_schedContext_objects msg senderRoot receiverRoot
+     slotBase grantRight st st' summary scId.toObjId sc hSc hObjInv hStep,
+   fun owner ownerTcb hOwner hU hR =>
+     ⟨ownerTcb, ipcUnwrapCaps_preserves_tcb_objects msg senderRoot receiverRoot slotBase grantRight
+       st st' summary owner.toObjId ownerTcb hOwner hObjInv hStep, hU, hR⟩⟩
+
+open SeLe4n.Model.SystemState in
 /-- D3: `cleanupPreReceiveDonation` frames the clause (preserves every `ipcState`). -/
 theorem cleanupPreReceiveDonation_preserves_blockedOnReplyHasTarget
     (st : SystemState) (receiver : SeLe4n.ThreadId)
@@ -6580,6 +6597,132 @@ theorem endpointCallWithCaps_sameSchedContextBindings
             simp [hLookup] at hStep
             exact hSMid.trans (ipcUnwrapCaps_sameSchedContextBindings msg callerCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointSendDualWithCaps` frames the SchedContext/owner side forward (`endpointSendDual`
++ `ipcUnwrapCaps`, the latter writing only CNode caps). -/
+theorem endpointSendDualWithCaps_donationOwnerFrame
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    donationOwnerFrame st st' := by
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender msg st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hFMid := endpointSendDual_donationOwnerFrame st stMid endpointId sender msg hObjInv hQHBC hSenderNotReply hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    simp [hSend] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame msg senderCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointSendDualWithCaps` preserves `donationOwnerValid`. -/
+theorem endpointSendDualWithCaps_preserves_donationOwnerValid
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hInv : donationOwnerValid st)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    donationOwnerValid st' :=
+  donationOwnerValid_of_frames
+    (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights
+      senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+    (endpointSendDualWithCaps_donationOwnerFrame endpointId sender msg endpointRights
+      senderCspaceRoot receiverSlotBase st st' summary hObjInv hQHBC hSenderNotReply hStep)
+    hInv
+
+open SeLe4n.Model.SystemState in
+/-- D6: `endpointCallWithCaps` frames the SchedContext/owner side forward (`endpointCall` +
+`ipcUnwrapCaps`). -/
+theorem endpointCallWithCaps_donationOwnerFrame
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    donationOwnerFrame st st' := by
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller msg st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hFMid := endpointCall_donationOwnerFrame st stMid endpointId caller msg hObjInv hQHBC hCallerNotReply hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    simp [hCall] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact hFMid.trans (ipcUnwrapCaps_donationOwnerFrame msg callerCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D6: `endpointCallWithCaps` preserves `donationOwnerValid`. -/
+theorem endpointCallWithCaps_preserves_donationOwnerValid
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hInv : donationOwnerValid st)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    donationOwnerValid st' :=
+  donationOwnerValid_of_frames
+    (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
+    (endpointCallWithCaps_donationOwnerFrame endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase st st' summary hObjInv hQHBC hCallerNotReply hStep)
+    hInv
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointSendDual` frames the clause (never sets `.blockedOnReply`). -/
@@ -10427,17 +10570,24 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
+    (hSenderNotReply : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` established from the pre-state (base frame +
+  -- the cap-transfer frame — `ipcUnwrapCaps` writes only CNode caps).
+  have hDOVest := endpointSendDualWithCaps_preserves_donationOwnerValid endpointId sender msg
+    endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv
+    hInv.queueHeadBlockedConsistent hSenderNotReply hInv.donationOwnerValid hStep
+  exact ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -10510,17 +10660,24 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
-    (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
+    (hCallerNotReply : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
-    ipcInvariantFull st' :=
-  ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
+    ipcInvariantFull st' := by
+  -- IPC de-threading D6: `donationOwnerValid` established from the pre-state (base frame +
+  -- the cap-transfer frame).
+  have hDOVest := endpointCallWithCaps_preserves_donationOwnerValid endpointId caller msg
+    endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv
+    hInv.queueHeadBlockedConsistent hCallerNotReply hInv.donationOwnerValid hStep
+  exact ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV', hPSI',
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSI',
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationBudgetTransfer,

@@ -570,6 +570,62 @@ theorem ipcUnwrapCapsLoop_preserves_tcb_objects
         | noSlot => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
 
+/-- IPC de-threading D6 helper: each step of `ipcUnwrapCapsLoop` preserves a SchedContext at
+`oid` — mirror of `ipcUnwrapCapsLoop_preserves_tcb_objects`. -/
+theorem ipcUnwrapCapsLoop_preserves_schedContext_objects
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hSc : st.objects[oid]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.schedContext sc) := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hSc
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hSc
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hObjInv hTransfer
+        have hScNext := ipcTransferSingleCap_preserves_schedContext_objects cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result oid sc hSc hObjInv hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hScNext hObjInvNext hStep
+        | noSlot => exact ih _ _ _ _ hScNext hObjInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hScNext hObjInvNext hStep
+
+/-- IPC de-threading D6 helper: `ipcUnwrapCaps` preserves all SchedContext objects. -/
+theorem ipcUnwrapCaps_preserves_schedContext_objects
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hSc : st.objects[oid]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.schedContext sc) := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
+  · exact ipcUnwrapCapsLoop_preserves_schedContext_objects _ _ _ _ _ _ _ _ _ _ _ _ hSc hObjInv hStep
+
 /-- ipcUnwrapCaps preserves all TCB objects. -/
 theorem ipcUnwrapCaps_preserves_tcb_objects
     (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)

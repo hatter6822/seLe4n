@@ -1,3 +1,31 @@
+## v0.31.188 — IPC de-threading D6: `donationOwnerValid` de-threaded from the clean WithCaps (9/13)
+
+Extends `donationOwnerValid` de-threading to the two cap-transfer transitions whose base is already
+done — `endpointSendDualWithCaps` and `endpointCallWithCaps`.
+
+New SchedContext-preservation chain for the cap transfer (mirrors the existing
+`_preserves_tcb_objects` family — a SchedContext at `receiverRoot` makes `getCNode?` return `none`,
+contradicting the transfer's `.ok`, so it can never be overwritten):
+- `ipcTransferSingleCap_preserves_schedContext_objects` (Capability/Operations.lean);
+- `ipcUnwrapCapsLoop_preserves_schedContext_objects` + `ipcUnwrapCaps_preserves_schedContext_objects`
+  (CapTransfer.lean).
+
+`ipcUnwrapCaps_donationOwnerFrame` then frames both witnesses forward: SchedContexts via the new
+chain, TCBs via the existing `ipcUnwrapCaps_preserves_tcb_objects`. The WithCaps frames compose the
+base `endpointSendDual`/`endpointCall` `_donationOwnerFrame` with the cap-transfer frame, threading
+the base's `hQHBC` + `hSenderNotReply`/`hCallerNotReply` dischargeable preconditions. Both bundles
+drop `hDOV'`.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1054→1060; zero `sorry`/`axiom`.
+
+The 4 remaining `donationOwnerValid` bundles are the donation-return / owner-waking family
+(`endpointReceiveDual{,WithCaps}` via `cleanupPreReceiveDonation`; `endpointReply`/`endpointReplyRecv`
+which wake the `.blockedOnReply` owner), needing the composite `*WithDonation` donation-return
+treatment.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 9/13)
+
 ## v0.31.187 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointCallOnCore` (7/13)
 
 Extends `donationOwnerValid` de-threading to the cross-core `endpointCallOnCore`, completing the

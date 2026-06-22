@@ -1862,6 +1862,30 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hTcb
 
+/-- IPC de-threading D6 helper: ipcTransferSingleCap preserves all SchedContext objects.
+Same reasoning as TCB/endpoint preservation: a SchedContext at `receiverRoot` makes
+`getCNode?` return `none`, so the transfer falls into `.error .objectNotFound` — contradicting
+`hStep`'s `.ok`; every other slot is framed by `ipcTransferSingleCap_preserves_objects_ne`. -/
+theorem ipcTransferSingleCap_preserves_schedContext_objects
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hSc : st.objects[oid]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.objects[oid]? = some (.schedContext sc) := by
+  by_cases hNe : oid = receiverRoot
+  · subst hNe
+    simp only [ipcTransferSingleCap] at hStep
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hSc]
+    simp [hCnNone] at hStep
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep]
+    exact hSc
+
 /-- IPC de-threading D3: ipcTransferSingleCap preserves all `.reply` objects.
 Same reasoning as the endpoint/TCB family: a `.reply` at `receiverRoot` makes
 `getCNode?` return `none`, so the function fails closed (`.objectNotFound`),
