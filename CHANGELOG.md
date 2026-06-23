@@ -1,3 +1,28 @@
+## v0.32.15 — IPC de-threading D4 (Finding F-2) Slice 2b: `storeTcbReceiveComplete` tail-blocked frame + residual decomposition
+
+Adds the rendezvous-receiver tail-blocked frame and records the precise implementation
+decomposition for the remaining D4 (and D1/D6/D8) work.
+
+- `storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent` (`QueueNextBlocking.lean`)
+  — tail dual of the existing `_preserves_queueHeadBlockedConsistent`: the rendezvous receiver is
+  set `.ready`, so it must not be a queue tail; the `hNotTail` obligation is discharged by the
+  caller from the post-pop state (where the woken head has been removed from its queue). This is the
+  store-frame the enqueue transitions' rendezvous branch composes over for tail-blocked.
+
+- **Plan decomposition** (`IPC_INVARIANT_DETHREADING_PLAN.md` → "Slice 2b/2c implementation
+  decomposition"): the two reusable cores the 8 transition establishers reduce to — (a) *the popped
+  head is not a post-pop tail* (rendezvous tail-blocked `hNotTail`), (b) *the enqueued thread's
+  predecessor is the old tail, blocked on the same endpoint* (block-store qNBC `hBwd`, via
+  `tcbQueueLinkIntegrity` + pre-state tail-blocked) — plus the **Slice 2c design choice**: the
+  per-link `queueNextTargetBlocked` conjunct (strict `queueNextBlockingMatch`, no `.ready` target),
+  which with `queueHeadBlockedConsistent` gives "every member blocked" and de-threads `qHBC` — a
+  cleaner alternative to the closure-style `endpointQueueMemberBlocked`. D1/D6/D8 residuals noted.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; `QueueNextBlocking` + IPC
+invariant hub build green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b/2c)
+
 ## v0.32.14 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointQueuePopHead` tail-blocked frame
 
 Completes the pop-side of the Slice-2b tail-blocked foundation: the transition-level frame the

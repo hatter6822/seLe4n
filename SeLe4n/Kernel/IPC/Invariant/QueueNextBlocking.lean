@@ -480,6 +480,46 @@ theorem storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent
       · rw [hFrame hd.toObjId hHdEq] at hTcb
         exact hInv epId ep hd hdTcb hEp hTcb
 
+/-- `storeTcbReceiveComplete` preserves `endpointQueueTailBlockedConsistent` when the woken
+thread is not a queue tail (`hNotTail`).  Tail dual of
+`storeTcbReceiveComplete_preserves_queueHeadBlockedConsistent`: the receiver is set `.ready`, so
+if it were a tail the invariant would break — `hNotTail` rules that out (the rendezvous caller
+discharges it from the post-pop state, where the woken head has been removed from its queue). -/
+theorem storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (hNotTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none })
+        st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep tl tlTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hTlEq : tl.toObjId = tid.toObjId
+      · have hTidEq := ThreadId.toObjId_injective tl tid hTlEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotTail epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame tl.toObjId hTlEq] at hTcb
+        exact hInv epId ep tl tlTcb hEp hTcb
+
 /-- `storeTcbPendingMessage` only writes `pendingMessage`; `ipcState` and
 `queueNext` are unchanged, so `queueNextBlockingConsistent` is preserved
 unconditionally. -/

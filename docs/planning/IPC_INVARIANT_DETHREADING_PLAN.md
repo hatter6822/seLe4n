@@ -211,6 +211,61 @@ unblock), then complete the 8 D4 de-threads using it. This same invariant unbloc
 4 "wiring" conjuncts (same enqueue-freshness root). Sized as its own slice, sequenced before
 the D4-residual and D1.
 
+### Slice 2b/2c implementation decomposition (precise residual map)
+
+The tail-blocked foundation (v0.32.13–14) is in place: `storeTcbQueueLinks` / `storeObject_endpoint`
+boundary frames for both qHBC and tail-blocked, the `endpointQueuePopHead` tail-blocked frame, and
+(v0.32.15) the `storeTcbReceiveComplete` tail-blocked frame (rendezvous receiver, `hNotTail`-gated).
+What remains, per invariant:
+
+- **Slice 2b — qNBC + `hEQTB'` de-thread (8 transitions, achievable now).** Each transition
+  `T ∈ {endpointSendDual, endpointCall, endpointReceiveDual, endpointReplyRecv, 3×WithCaps,
+  endpointCallOnCore}` needs `T_preserves_{queueNextBlockingConsistent, endpointQueueTailBlockedConsistent}`,
+  then the bundle drops `hQNBC'`/`hEQTB'` (keeps `hQHBC'`). Branch structure:
+  - **Rendezvous (pop) branch** — qNBC is *clean* (`endpointQueuePopHead_preserves_qNBC` +
+    `storeTcbReceiveComplete_preserves_qNBC` [unconditional: the `.ready` woken thread matches any
+    neighbour] + `ensureRunnable` frame). Tail-blocked uses the pop frame +
+    `storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent`, whose `hNotTail` needs
+    **reusable core (a)**: *the popped head is not a tail in the post-pop state* — from post-pop
+    tail-blocked (pop frame) + the head's `.blockedOnReceive endpointId` state (pre-state qHBC,
+    preserved) + the pop characterisation `post popped-queue tail ≠ old head` (old head's
+    `queueNext = some next ⇒ old head ≠ old tail` by `intrusiveQueueWellFormed` P3
+    `tail.queueNext = none`; `none ⇒ post queue empty`).
+  - **Block (enqueue + block-store) branch** — tail-blocked: the new sendQ/receiveQ tail is the
+    freshly-blocked thread (transition-level, since the bare enqueue leaves it `.ready`). qNBC needs
+    **reusable core (b)**: the block-store `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`
+    `hBwd` — *the predecessor of the enqueued thread is the old tail, blocked on the same endpoint* —
+    from the enqueue's `oldTail.queueNext := tid` link + `tcbQueueLinkIntegrity` (reverse: pre-enqueue
+    `tid.queuePrev = none` ⇒ no predecessor; the enqueue adds exactly `oldTail → tid`) + pre-state
+    tail-blocked (old sendQ tail `.blockedOnSend`/`.blockedOnCall endpointId`) + the enqueue leaves
+    `oldTail.ipcState` unchanged. `hFwd` is vacuous (`tid.queueNext = none`). Empty-queue enqueue:
+    `hBwd` vacuous (no predecessor). The WithCaps variants compose the base establisher with
+    `ipcUnwrapCaps_preserves_{qNBC,tail-blocked}` (cap transfer writes only CNode caps).
+  Cores (a)+(b) are built once in `QueueNextBlocking.lean`; the 8 establishers are then thin.
+
+- **Slice 2c — qHBC de-thread (needs a new reachable→blocked conjunct).** The pop's new head is a
+  former *middle* element; its blockedness is not in the 19 conjuncts. **Design choice (cleaner than
+  the closure-style `endpointQueueMemberBlocked`):** add the *per-link* conjunct
+  **`queueNextTargetBlocked`** — `a.queueNext = some b ⇒ b is blocked on the same endpoint/queue as
+  `a` (no `.ready`)` — i.e. the *strict* form of `queueNextBlockingMatch` (which currently admits a
+  `.ready` target via its catch-all). Together with `queueHeadBlockedConsistent` (head blocked) it
+  yields "every queue member blocked", so the pop's new head (= old head's `queueNext` target) is
+  blocked **from the pre-state**. Preservation has the *same* transition-level shape as tail-blocked
+  (enqueue pairs with block-store; pop's relink removes the only target obligation), so the 2b cores
+  largely carry over. Then drop `hQHBC'` from the 8. (`endpointQueueTailBlockedConsistent` becomes
+  derivable from `queueNextTargetBlocked` + a tail-membership fact and can later be retired.)
+
+- **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
+  freshness precondition is threaded from the dispatcher (independent of 2c).
+
+- **D6 residual (`donationOwnerValid`, 2 reply bundles):** composite-only — the bare
+  `endpointReply`/`endpointReplyRecv` wake the `.blockedOnReply` owner without returning the
+  donation; de-thread must compose at the `*WithDonation` layer (`applyReplyDonation`).
+
+- **D8 (payoff):** once D1/D4/D6 close, the dischargeable preconditions
+  (`allTimeoutBudgetsNone`, caller-`.ready` freshness, `*NotReply`/`*NotUnbound`) are supplied by a
+  reachability bundle, yielding the unconditional `ipcInvariantFull`-preservation payoff theorem.
+
 ## Finding F-1 — `pendingReceiveReplyWellFormed` is not preserved by the Send/notification receive-completion wakes — ✅ REMEDIATED (v0.31.170)
 
 **Status: closed.**  The eager-stash-clear remediation landed at v0.31.170: a dedicated
