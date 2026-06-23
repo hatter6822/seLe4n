@@ -1,3 +1,28 @@
+## v0.32.14 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointQueuePopHead` tail-blocked frame
+
+Completes the pop-side of the Slice-2b tail-blocked foundation: the transition-level frame the
+enqueue transitions' rendezvous (pop) branch composes over.
+
+- `endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent` — popping the head either
+  leaves the popped queue's tail unchanged (≥2 elements: the stored endpoint keeps `tail := q.tail`)
+  or empties the queue (1 element: `q' = {}`, `tail = none`, vacuous); the other queue and every
+  thread's `ipcState` are untouched. Decomposes (mirroring the existing
+  `endpointQueuePopHead_preserves_queueNextBlockingConsistent`) into the endpoint store — whose new
+  tails are discharged from the pre-state `endpointQueueTailBlockedConsistent` via the v0.32.13
+  `storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent` helper (the popped queue's
+  new tail is the old tail or `none`, the other queue's is unchanged) — followed by the head /
+  successor relinks, which are link-only TCB writes carried by
+  `storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent`.
+
+This is the last *standalone* tail-blocked queue-operation frame: the enqueue case is intrinsically
+**transition-level** (the enqueue makes the new tail `.ready`; tail-blocked is restored only by the
+paired block-store), so it is established directly in the per-transition establishers (next).
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; `QueueNextBlocking` + IPC invariant
+hub build green. AK7 cascade unchanged (the pop frame's lookups are endpoint-id, not thread `.toObjId`).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.13 — IPC de-threading D4 (Finding F-2) Slice 2b foundation: queue-boundary store frames + qNBC/qHBC scope correction
 
 Lands the reusable queue-boundary store frames that the enqueue/pop transition establishers

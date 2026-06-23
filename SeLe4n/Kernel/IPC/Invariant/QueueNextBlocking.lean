@@ -1203,4 +1203,89 @@ theorem storeObject_endpoint_preserves_queueHeadBlockedConsistent
       rwa [storeObject_objects_ne st st' eid epId _ hEpEq hObjInv hStore] at hEp
     exact hInv epId ep hd tcbHd hEpPre hTcbPre
 
+/-- `endpointQueuePopHead` preserves `endpointQueueTailBlockedConsistent`: removing the head
+either leaves the popped queue's tail unchanged (≥2 elements: the stored endpoint keeps
+`tail := q.tail`) or empties the queue (1 element: `q' = {}`, `tail = none`, vacuous); the other
+queue and every thread's `ipcState` are untouched.  Decomposes into the endpoint store (new
+tails discharged from pre-state tail-blocked) followed by the head/successor relinks (link-only
+TCB writes). -/
+theorem endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 : endpointQueueTailBlockedConsistent pair.2 := by
+              refine storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent
+                st pair.2 endpointId _ hObjInv hInv
+                (by rw [show pair = ((), pair.2) from by cases pair; rfl] at hStore; exact hStore) ?_
+              intro tl tlTcb hTlPre
+              have hEpTail := hInv endpointId ep tl tlTcb hObj hTlPre
+              cases isReceiveQ with
+              | true =>
+                refine ⟨fun hRT => hEpTail.1 ?_, fun hST => hEpTail.2 hST⟩
+                cases hN : tcb.queueNext with
+                | none => simp [hN] at hRT
+                | some nextTid => simpa [hN] using hRT
+              | false =>
+                refine ⟨fun hRT => hEpTail.1 hRT, fun hST => hEpTail.2 ?_⟩
+                cases hN : tcb.queueNext with
+                | none => simp [hN] at hST
+                | some nextTid => simpa [hN] using hST
+            have hObjInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent
+                  pair.2 st3 headTid none none none hInv1 hObjInv1 hFinal
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead)
+                    nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent
+                    pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext
+                    hInv1 hObjInv1 hLink
+                  have hObjInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _
+                    hObjInv1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent
+                      st2 st3 headTid none none none hInv2 hObjInv2 hFinal
+
 end SeLe4n.Kernel
