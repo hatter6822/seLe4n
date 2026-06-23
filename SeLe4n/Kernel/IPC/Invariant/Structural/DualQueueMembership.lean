@@ -1795,6 +1795,95 @@ theorem endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedCons
       · exact (hTail epId' ep' tl tcbPre hPre hTcbPre).2 hTl
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b core (a): after `endpointQueuePopHead`, the popped head `tid` is
+**not a tail** of any queue in the post-pop state — the `hNotTail` obligation the rendezvous
+branches' `storeTcbReceiveComplete`/receiver-`.ready` tail-blocked frames need.  For the popped
+queue itself: the post-pop tail is `none` (sole element) or the unchanged pre-pop tail, which differs
+from the head `tid` by intrusive well-formedness (`tail.queueNext = none` while the multi-element
+head's `queueNext` is `some`).  For every other queue (other endpoint, or the same endpoint's other
+direction): `tid`'s blocked state is pinned by `queueHeadBlockedConsistent` to the popped queue's
+kind on `endpointId`, which `endpointQueueTailBlockedConsistent` would contradict for any *other*
+(kind, endpoint). -/
+theorem endpointQueuePopHead_popped_not_tail
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hDQ : dualQueueSystemInvariant st)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+      st'.objects[epId']? = some (.endpoint ep') →
+      ep'.receiveQ.tail ≠ some tid ∧ ep'.sendQ.tail ≠ some tid := by
+  have hPreTcb : st.objects[tid.toObjId]? = some (.tcb headTcb) :=
+    endpointQueuePopHead_returns_pre_tcb endpointId isReceiveQ st ep tid headTcb st' hObj hStep
+  have hWF := hDQ.1 endpointId ep hObj
+  simp only [dualQueueEndpointWellFormed, hObj] at hWF
+  obtain ⟨epP, hEpP, hPoppedTail, hOtherTail⟩ :=
+    endpointQueuePopHead_post_endpoint_tail endpointId isReceiveQ st st' tid headTcb ep hObjInv hObj hStep
+  have hRetHead := endpointQueuePopHead_returns_head endpointId isReceiveQ st ep tid st' hObj hStep
+  cases hRQ : isReceiveQ with
+  | true =>
+    subst hRQ
+    simp only [↓reduceIte] at hPoppedTail hOtherTail hRetHead
+    have hHead : headTcb.ipcState = .blockedOnReceive endpointId :=
+      (hQHBC endpointId ep tid headTcb hObj hPreTcb).1 hRetHead
+    have hReNeTid : epP.receiveQ.tail ≠ some tid := by
+      rw [hPoppedTail]
+      cases hN : headTcb.queueNext with
+      | none => simp
+      | some n =>
+        intro hpre
+        obtain ⟨t, ht, htn⟩ := hWF.2.2.2 tid hpre
+        rw [hPreTcb] at ht; rw [← (by simpa using ht : headTcb = t)] at htn
+        rw [hN] at htn; exact absurd htn (by simp)
+    intro epId' ep' hEp'
+    refine ⟨fun hTl => ?_, fun hTl => ?_⟩
+    · by_cases hEq : epId' = endpointId
+      · have hep' : ep' = epP := by rw [hEq] at hEp'; simpa using (hEpP.symm.trans hEp').symm
+        rw [hep'] at hTl; exact hReNeTid hTl
+      · have hPre := endpointQueuePopHead_endpoint_backward_ne endpointId true st st' tid epId' ep' hEq hObjInv hStep hEp'
+        have hb := (hTail epId' ep' tid headTcb hPre hPreTcb).1 hTl
+        rw [hHead] at hb; exact hEq (Eq.symm (by simpa using hb))
+    · by_cases hEq : epId' = endpointId
+      · have hep' : ep' = epP := by rw [hEq] at hEp'; simpa using (hEpP.symm.trans hEp').symm
+        rw [hep', hOtherTail] at hTl
+        rcases (hTail endpointId ep tid headTcb hObj hPreTcb).2 hTl with h | h <;> rw [hHead] at h <;> simp at h
+      · have hPre := endpointQueuePopHead_endpoint_backward_ne endpointId true st st' tid epId' ep' hEq hObjInv hStep hEp'
+        rcases (hTail epId' ep' tid headTcb hPre hPreTcb).2 hTl with h | h <;> rw [hHead] at h <;> simp at h
+  | false =>
+    subst hRQ
+    simp only [Bool.false_eq_true, ↓reduceIte] at hPoppedTail hOtherTail hRetHead
+    have hHead := (hQHBC endpointId ep tid headTcb hObj hPreTcb).2 hRetHead
+    have hSeNeTid : epP.sendQ.tail ≠ some tid := by
+      rw [hPoppedTail]
+      cases hN : headTcb.queueNext with
+      | none => simp
+      | some n =>
+        intro hpre
+        obtain ⟨t, ht, htn⟩ := hWF.1.2.2 tid hpre
+        rw [hPreTcb] at ht; rw [← (by simpa using ht : headTcb = t)] at htn
+        rw [hN] at htn; exact absurd htn (by simp)
+    intro epId' ep' hEp'
+    refine ⟨fun hTl => ?_, fun hTl => ?_⟩
+    · by_cases hEq : epId' = endpointId
+      · have hep' : ep' = epP := by rw [hEq] at hEp'; simpa using (hEpP.symm.trans hEp').symm
+        rw [hep', hOtherTail] at hTl
+        have hb := (hTail endpointId ep tid headTcb hObj hPreTcb).1 hTl
+        rcases hHead with h | h <;> rw [hb] at h <;> simp at h
+      · have hPre := endpointQueuePopHead_endpoint_backward_ne endpointId false st st' tid epId' ep' hEq hObjInv hStep hEp'
+        have hb := (hTail epId' ep' tid headTcb hPre hPreTcb).1 hTl
+        rcases hHead with h | h <;> rw [hb] at h <;> simp at h
+    · by_cases hEq : epId' = endpointId
+      · have hep' : ep' = epP := by rw [hEq] at hEp'; simpa using (hEpP.symm.trans hEp').symm
+        rw [hep'] at hTl; exact hSeNeTid hTl
+      · have hPre := endpointQueuePopHead_endpoint_backward_ne endpointId false st st' tid epId' ep' hEq hObjInv hStep hEp'
+        have hb := (hTail epId' ep' tid headTcb hPre hPreTcb).2 hTl
+        rcases hHead with hc | hc <;> rcases hb with h | h <;>
+          rw [hc] at h <;> first | (injection h with he; exact hEq he.symm) | simp at h
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b: `endpointSendDual` **establishes** `queueNextBlockingConsistent`
 from the pre-state (de-threads `hQNBC'`).  Rendezvous (pop) branch is clean — pop frame +
 *unconditional* `storeTcbReceiveComplete` (`.ready` matches any neighbour) + `ensureRunnable`
@@ -1885,6 +1974,75 @@ theorem endpointSendDual_preserves_queueNextBlockingConsistent
               rcases (endpointQueueEnqueue_predecessor_blocked endpointId false sender st st1 ep hObjInv
                 hObj hDQSI hTail hFreshSender hSendTailFresh hEnq a tcbA hA hANext).2 rfl with h | h <;>
                 rw [h] <;> rfl
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: `endpointSendDual` **establishes** `endpointQueueTailBlockedConsistent`
+from the pre-state (de-threads `hEQTB'`).  Rendezvous (pop) branch: pop frame + `storeTcbReceiveComplete`
+(the woken receiver is `.ready` but no tail, by core (a) `endpointQueuePopHead_popped_not_tail`) +
+`ensureRunnable`.  Block branch: core (c)
+`endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent` (the freshly-blocked
+sender is the new sendQ tail, `.blockedOnSend endpointId`) + `removeRunnable`. -/
+theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+            pair.1 pair.2.1 hObjInv hPop
+          have hTail1 := endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent endpointId true st
+            pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+          have hNotTail := endpointQueuePopHead_popped_not_tail endpointId true st pair.2.2 pair.1
+            pair.2.1 ep hObjInv hObj hDQSI hQHBC hInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact ensureRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
+              storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent pair.2.2 st2 pair.1
+                (some msg) hTail1 hObjInv1 hMsg hNotTail
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact removeRunnable_preserves_endpointQueueTailBlockedConsistent _ _ <|
+              endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent
+                endpointId false sender st st1 st2 ep (.blockedOnSend endpointId) (some msg)
+                hObjInv hObj hInv
+                (fun epId e hE => ⟨(hFreshSender epId e hE).2.1, (hFreshSender epId e hE).2.2.2⟩)
+                (by simp) hEnq hMsg
 
 -- ============================================================================
 -- WS-L3/L3-C2: ipcStateQueueConsistent preservation for queue operations
@@ -14264,8 +14422,6 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running sender holds a SchedContext (own or donated).
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
-    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
-    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -14300,7 +14456,11 @@ theorem endpointSendDual_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hSenderNotRecv hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
-     hInv.donationOwnerUnique, hEQTB'⟩
+     hInv.donationOwnerUnique,
+   -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state via cores (a)+(c).
+   endpointSendDual_preserves_endpointQueueTailBlockedConsistent st st' endpointId sender msg
+     hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
+     hFreshSender hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationSignal` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.

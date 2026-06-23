@@ -1,3 +1,35 @@
+## v0.32.24 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked pop-establish (core (a)) + `endpointSendDual` de-threaded
+
+Completes the tail-blocked (`hEQTB'`) foundation (core (a), the pop/rendezvous counterpart to
+v0.32.23's core (c)) and lands the first full vertical de-thread — `endpointSendDual`.
+
+- `endpointQueuePopHead_post_endpoint_tail` (`QueueMembership.lean`) — post-pop tail characterisation
+  (modelled on `_post_endpoint_queues`): the popped queue's tail is `none` (sole element) or the
+  unchanged pre-pop tail; the other queue's tail is unchanged.
+- `endpointQueuePopHead_popped_not_tail` (`DualQueueMembership.lean`, **core (a)**) — the popped head
+  `tid` is **not a tail** of any post-pop queue (the `hNotTail` obligation the rendezvous branches'
+  `storeTcbReceiveComplete` tail-blocked frame needs). Popped queue: post-pop tail is `none` or
+  differs from the head by intrusive well-formedness (`tail.queueNext = none` vs the multi-element
+  head's `some`, via `dualQueueEndpointWellFormed` P3). Every other queue: `tid`'s blocked state is
+  pinned by `queueHeadBlockedConsistent` to the popped kind on `endpointId`, which
+  `endpointQueueTailBlockedConsistent` would contradict for any *other* (kind, endpoint). Uses
+  `endpointQueuePopHead_returns_{head,pre_tcb}` for the head id/TCB.
+- `endpointSendDual_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) — the
+  first transition tail-blocked establisher. Rendezvous (pop) branch: pop frame +
+  `storeTcbReceiveComplete` (the woken receiver is `.ready` but no tail, by core (a)) +
+  `ensureRunnable`. Block branch: core (c) (the freshly-blocked sender is the new sendQ tail,
+  `.blockedOnSend endpointId`) + `removeRunnable`.
+- **`endpointSendDual_preserves_ipcInvariantFull` drops `hEQTB'`** (established via the new theorem;
+  the `hFreshSender` / `hQHBC`(=`hInv.queueHeadBlockedConsistent`) it already has suffice). With the
+  v0.32.17 qNBC de-thread, `endpointSendDual` is now the first bundle free of **both** `hQNBC'` and
+  `hEQTB'`. `hQHBC'` remains threaded (Slice 2c).
+
+Proof-only, additive + one bundle signature change (no Lean call sites), trace byte-identical, zero
+`sorry`/`axiom`; full build (376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1150→1151. The remaining
+7 enqueue-bearing bundles still thread `hEQTB'` pending their (mechanical) establishers.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.23 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked enqueue-establish foundation (core (c))
 
 The `endpointQueueTailBlockedConsistent` (`hEQTB'`) half of Slice 2b begins: the two reusable

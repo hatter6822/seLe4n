@@ -1754,6 +1754,85 @@ theorem endpointQueuePopHead_post_endpoint_queues
                 · simp only [hNext]; cases isReceiveQ <;> simp_all
                 · cases isReceiveQ <;> simp_all
 
+/-- IPC de-threading D4 Slice 2b core (a) helper: after `endpointQueuePopHead`, the **tail** of the
+popped queue (`isReceiveQ ? receiveQ : sendQ`) is `none` when the head was the sole element
+(`headTcb.queueNext = none`) and otherwise the unchanged pre-pop tail; the *other* queue's tail is
+unchanged.  (The pop sets `q' := {head := next, tail := q.tail}` for a non-empty remainder, or the
+empty queue `{}` when the head was the only element.) -/
+theorem endpointQueuePopHead_post_endpoint_tail
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (headTcb : TCB)
+    (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
+        (match headTcb.queueNext with
+         | none => none
+         | some _ => if isReceiveQ then ep.receiveQ.tail else ep.sendQ.tail) ∧
+      (if isReceiveQ then ep'.sendQ.tail else ep'.receiveQ.tail) =
+        (if isReceiveQ then ep.sendQ.tail else ep.receiveQ.tail) := by
+  unfold endpointQueuePopHead at hStep
+  rw [hObj] at hStep; simp only at hStep; revert hStep
+  cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+  | none => simp
+  | some headTid =>
+    simp only []
+    cases hLookup : lookupTcb st headTid with
+    | none => simp
+    | some tcb =>
+      simp only []
+      cases hStore : storeObject endpointId _ st with
+      | error e => simp
+      | ok pair =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+        have hEpStored := storeObject_objects_eq' st endpointId _ pair hObjInv hStore
+        have hNeHead : endpointId ≠ headTid.toObjId := by
+          intro h
+          have hTcbObj := lookupTcb_some_objects st headTid tcb hLookup
+          rw [← h] at hTcbObj; rw [hObj] at hTcbObj; cases hTcbObj
+        cases hNext : tcb.queueNext with
+        | none =>
+          simp only []
+          cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+          | error e => simp
+          | ok st3 =>
+            simp only [Except.ok.injEq, Prod.mk.injEq]
+            intro ⟨_, _, hEq⟩; subst hEq
+            rw [← storeTcbQueueLinks_preserves_objects_ne pair.2 st3 headTid _ _ _
+              endpointId hNeHead hInv1 hFinal] at hEpStored
+            refine ⟨_, hEpStored, ?_, ?_⟩
+            · simp only [hNext]; cases isReceiveQ <;> simp_all
+            · cases isReceiveQ <;> simp_all
+        | some nextTid =>
+          simp only []
+          cases hLookupNext : lookupTcb pair.2 nextTid with
+          | none => simp
+          | some nextTcb =>
+            simp only []
+            have hNeNext : endpointId ≠ nextTid.toObjId := by
+              intro h; have := lookupTcb_some_objects pair.2 nextTid nextTcb hLookupNext
+              rw [← h] at this; rw [hEpStored] at this; cases this
+            cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+            | error e => simp
+            | ok st2 =>
+              simp only []
+              have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+              cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, hEq⟩; subst hEq
+                rw [← storeTcbQueueLinks_preserves_objects_ne pair.2 st2 nextTid _ _ _
+                  endpointId hNeNext hInv1 hLink] at hEpStored
+                rw [← storeTcbQueueLinks_preserves_objects_ne st2 st3 headTid _ _ _
+                  endpointId hNeHead hInv2 hFinal] at hEpStored
+                refine ⟨_, hEpStored, ?_, ?_⟩
+                · simp only [hNext]; cases isReceiveQ <;> simp_all
+                · cases isReceiveQ <;> simp_all
+
 -- ============================================================================
 -- Section 10: PopHead except-head V3-J preservation
 -- ============================================================================
