@@ -1383,4 +1383,54 @@ theorem endpointQueueEnqueue_enqueued_queuePrev
                     (some (QueuePPrev.tcbNext tailTid)) none hInv2 hStep
                 exact ⟨tcb', hTcb', hPrev'⟩
 
+open SeLe4n.Model.SystemState in
+/-- After `endpointQueueEnqueue`, the enqueued thread's `queueNext` in the post-state is `none`
+(it becomes the new tail; the operation's final `storeTcbQueueLinks` writes `next := none`).
+Discharges the block-store `hFwd` (vacuously) in the enqueue transitions' qNBC establishers. -/
+theorem endpointQueueEnqueue_enqueued_queueNext_none
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queueNext = none := by
+  unfold endpointQueueEnqueue at hStep
+  simp only [hObj] at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    split at hStep
+    · simp at hStep
+    · split at hStep
+      · simp at hStep
+      · revert hStep
+        cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+        | none =>
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only []; intro hStep
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            exact storeTcbQueueLinks_stored_queueNext pair.2 st' tid none
+              (some QueuePPrev.endpointHead) none hInv1 hStep
+        | some tailTid =>
+          cases hLookupTail : lookupTcb st tailTid with
+          | none => simp [hLookupTail]
+          | some tailTcb =>
+            simp only [hLookupTail]
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []
+              cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev
+                  (some tid) with
+              | error e => simp
+              | ok st2 =>
+                simp only []; intro hStep
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                exact storeTcbQueueLinks_stored_queueNext st2 st' tid (some tailTid)
+                  (some (QueuePPrev.tcbNext tailTid)) none hInv2 hStep
+
 end SeLe4n.Kernel

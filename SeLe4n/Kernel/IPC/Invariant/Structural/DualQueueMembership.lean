@@ -1693,6 +1693,98 @@ theorem endpointQueueEnqueue_predecessor_blocked
   · rw [← hIpcEq]; exact hTB.1 (by rw [hR] at hTailEq; simpa using hTailEq)
   · rw [← hIpcEq]; exact hTB.2 (by rw [hS] at hTailEq; simpa using hTailEq)
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: `endpointSendDual` **establishes** `queueNextBlockingConsistent`
+from the pre-state (de-threads `hQNBC'`).  Rendezvous (pop) branch is clean — pop frame +
+*unconditional* `storeTcbReceiveComplete` (`.ready` matches any neighbour) + `ensureRunnable`
+frame.  Block branch — enqueue frame + the block-store, whose `hFwd` is vacuous
+(`endpointQueueEnqueue_enqueued_queueNext_none`) and whose `hBwd` is discharged by core (b)
+`endpointQueueEnqueue_predecessor_blocked` (the old sendQ tail is the unique predecessor, blocked
+`.blockedOnSend`/`.blockedOnCall endpointId` by pre-state tail-blocked) + `removeRunnable` frame.
+The `hFreshSender`/`hSendTailFresh` side-conditions are those of the existing
+`endpointSendDual_preserves_endpointQueueNoDup`, dischargeable since the sender is `.ready`. -/
+theorem endpointSendDual_preserves_queueNextBlockingConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hInv : queueNextBlockingConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    queueNextBlockingConsistent st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+            pair.1 pair.2.1 hObjInv hPop
+          have hQNBC1 := endpointQueuePopHead_preserves_queueNextBlockingConsistent endpointId true st
+            pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact ensureRunnable_preserves_queueNextBlockingConsistent _ _ <|
+              storeTcbReceiveComplete_preserves_queueNextBlockingConsistent pair.2.2 st2 pair.1
+                (some msg) hQNBC1 hObjInv1 hMsg
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1
+            hObjInv hEnq
+          have hQNBC1 := endpointQueueEnqueue_preserves_queueNextBlockingConsistent endpointId false
+            sender st st1 hObjInv hInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            refine removeRunnable_preserves_queueNextBlockingConsistent _ _ <|
+              storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent st1 st2 sender
+                (.blockedOnSend endpointId) (some msg) hQNBC1 hObjInv1 hMsg ?_ ?_
+            · -- hFwd: the enqueued sender has `queueNext = none`, so the forward link is vacuous.
+              intro b tcbTid tcbB hSenderObj hSenderNext _
+              obtain ⟨tcbS, hS, hSNext⟩ := endpointQueueEnqueue_enqueued_queueNext_none endpointId
+                false sender st st1 ep hObjInv hObj hEnq
+              rw [hSenderObj] at hS
+              obtain rfl : tcbTid = tcbS := by simpa using hS
+              rw [hSNext] at hSenderNext; exact absurd hSenderNext (by simp)
+            · -- hBwd: the predecessor of the enqueued sender is the old tail, `.blockedOnSend`/`.blockedOnCall`.
+              intro a tcbA _ hA hANext _
+              rcases (endpointQueueEnqueue_predecessor_blocked endpointId false sender st st1 ep hObjInv
+                hObj hDQSI hTail hFreshSender hSendTailFresh hEnq a tcbA hA hANext).2 rfl with h | h <;>
+                rw [h] <;> rfl
+
 -- ============================================================================
 -- WS-L3/L3-C2: ipcStateQueueConsistent preservation for queue operations
 -- ============================================================================
@@ -13395,10 +13487,25 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
+    -- IPC de-threading D4 Slice 2b: enqueue freshness (the running sender is `.ready`, hence not a
+    -- queue member, and the old sendQ tail is not a cross-queue tail) — dischargeable, replacing the
+    -- threaded `hQNBC'`, now **established** via `endpointSendDual_preserves_queueNextBlockingConsistent`.
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
@@ -13425,7 +13532,12 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   hWtpmn', hNoDup', hQMC',
+   -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state via core (b).
+   endpointSendDual_preserves_queueNextBlockingConsistent st st' endpointId sender msg
+     hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
+     hFreshSender hSendTailFresh hStep,
+   hQHBC',
    endpointSendDual_preserves_blockedThreadTimeoutConsistent st st' endpointId sender msg hObjInv hAllBudgetsNone hStep,
    donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings

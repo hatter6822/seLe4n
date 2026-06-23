@@ -1,3 +1,31 @@
+## v0.32.17 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointSendDual` queueNext de-threaded
+
+First complete enqueue-transition qNBC de-thread, consuming the v0.32.16 core (b).
+
+- `endpointQueueEnqueue_enqueued_queueNext_none` (`QueueNextBlocking.lean`) — the enqueued thread's
+  post-state `queueNext` is `none`; discharges the block-store `hFwd` vacuously.
+- `endpointSendDual_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) — establishes
+  `queueNextBlockingConsistent` from the pre-state. Rendezvous (pop) branch is clean — pop frame +
+  *unconditional* `storeTcbReceiveComplete` (a `.ready` thread matches any neighbour) + `ensureRunnable`
+  frame. Block branch — enqueue frame + the block-store, whose `hFwd` is vacuous (the new tail's
+  `queueNext = none`) and whose `hBwd` is discharged by core (b) `endpointQueueEnqueue_predecessor_blocked`
+  (the old sendQ tail is the unique predecessor, `.blockedOnSend`/`.blockedOnCall endpointId` by
+  pre-state tail-blocked) + `removeRunnable` frame.
+- **`endpointSendDual_preserves_ipcInvariantFull` drops `hQNBC'`**, establishing the conjunct via the
+  new theorem. The freshness side-conditions (`hFreshSender` / `hSendTailFresh`) replace it — the same
+  dischargeable pre-state conditions the existing `endpointSendDual_preserves_endpointQueueNoDup` and
+  D1 use (the running sender is `.ready`, hence not a queue member; the old tail is not a cross-queue
+  tail). `hEQTB'` / `hQHBC'` remain threaded (tail-establish + Slice 2c pending).
+
+This is the canonical pattern; the remaining 7 enqueue transitions follow it (the WithCaps variants
+compose with `ipcUnwrapCaps_preserves_queueNextBlockingConsistent`).
+
+Proof-only, additive + one bundle signature change (the `*_preserves_ipcInvariantFull` bundles have
+no Lean call sites), trace byte-identical, zero `sorry`/`axiom`; full build (234 jobs) + staged
+cross-core green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.16 — IPC de-threading D4 (Finding F-2) Slice 2b: enqueue-predecessor core (block-store qNBC `hBwd`)
 
 Builds the keystone reusable core that discharges the block branch's `queueNextBlockingConsistent`
