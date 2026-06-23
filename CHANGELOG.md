@@ -1,3 +1,43 @@
+## v0.32.13 — IPC de-threading D4 (Finding F-2) Slice 2b foundation: queue-boundary store frames + qNBC/qHBC scope correction
+
+Lands the reusable queue-boundary store frames that the enqueue/pop transition establishers
+(Slice 2b proper) compose over, and **corrects the Slice-2 scope** with an analysis-grounded
+distinction between what the tail specialisation can and cannot de-thread.
+
+**New frames** (`IPC/Invariant/QueueNextBlocking.lean`):
+
+- `storeTcbQueueLinks_preserves_queueHeadBlockedConsistent` /
+  `storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent` — a link-only TCB write
+  leaves every endpoint and every `ipcState` untouched, so both invariants fall straight out of
+  the `_of_endpoint_tcb_backward` combinator + the existing `storeTcbQueueLinks_endpoint_backward`
+  / `storeTcbQueueLinks_tcb_ipcState_backward` lemmas (clean term-mode proofs).
+- `storeObject_endpoint_preserves_queueHeadBlockedConsistent` /
+  `storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent` — an endpoint store changes
+  only the queue-boundary fields the two invariants read, so each takes a caller-supplied
+  `hNewHeads` / `hNewTails` obligation describing the new endpoint's head / tail blocking
+  (every TCB's `ipcState` is unchanged by an endpoint store, so the obligation is stated against
+  the pre-state TCBs).
+
+**Scope correction (Slice 2b vs 2c).** Closer analysis shows the `endpointQueueTailBlockedConsistent`
+conjunct (Slice 1) de-threads **`queueNextBlockingConsistent`** from the 8 enqueue transitions
+(the enqueue link `oldTail.queueNext := tid` is link-compatible because the old tail is
+`.blockedOnSend`/`.blockedOnCall` by pre-state tail-blocked; the pop leg already preserves qNBC)
+and **self-establishes the tail conjunct**, but it does **not** de-thread
+**`queueHeadBlockedConsistent`** for the pop (rendezvous) leg: after popping the head, the new
+head is the old *second* queue element, whose blockedness is not derivable from the 19 conjuncts
+(`queueNextBlockingMatch (.blockedOnReceive _) .ready` is `True` via the catch-all, so qNBC does
+not force it; `ipcStateQueueMembershipConsistent` is the blocked→reachable converse;
+`intrusiveQueueWellFormed` constrains only head/tail). That is precisely the **full**
+`endpointQueueMemberBlocked` (reachable→blocked for *every* member) that **Finding F-2** names as
+the eventual remediation — the tail specialisation is the partial step sufficient for qNBC. The
+plan's Slice-2 note is updated: **Slice 2b** de-threads qNBC + `hEQTB'` from the 8 (qHBC stays
+threaded); **Slice 2c** adds `endpointQueueMemberBlocked` and de-threads qHBC.
+
+Proof-only, additive (no existing signature changed), trace byte-identical, zero `sorry`/`axiom`;
+`QueueNextBlocking` + IPC invariant hub build green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.12 — IPC de-threading D4 (Finding F-2) Slice 2a: tail-blocked established for the non-enqueue transitions
 
 De-threads the Slice-1 `hEQTB'` scaffolding from the **5 IPC transition bundles that touch no

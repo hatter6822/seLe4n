@@ -1094,4 +1094,113 @@ theorem storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent
       · rw [hFrame tl.toObjId hTlEq] at hTcb
         exact hInv epId ep tl tlTcb hEp hTcb
 
+-- ============================================================================
+-- Section: queue-operation frames for queueHeadBlockedConsistent /
+-- endpointQueueTailBlockedConsistent (Finding F-2 Slice 2b foundation).
+-- `storeTcbQueueLinks` writes only a TCB's link fields, so it leaves every
+-- endpoint and every `ipcState` untouched — both invariants follow directly
+-- from the `_of_endpoint_tcb_backward` combinator + the existing endpoint /
+-- ipcState backward lemmas.  The `storeObject_endpoint` frame takes a
+-- caller-supplied `hNewHeads` / `hNewTails` obligation describing the new
+-- endpoint's head / tail blocking, since an endpoint store *does* change the
+-- queue-boundary fields the invariants read.
+-- ============================================================================
+
+/-- `storeTcbQueueLinks` preserves `queueHeadBlockedConsistent`: it stores a TCB
+(endpoints unchanged) and keeps that TCB's `ipcState` (`tcbWithQueueLinks` only
+touches link fields). -/
+theorem storeTcbQueueLinks_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    queueHeadBlockedConsistent st' :=
+  queueHeadBlockedConsistent_of_endpoint_tcb_backward st st'
+    (fun eid ep hEp =>
+      storeTcbQueueLinks_endpoint_backward st st' tid prev pprev next eid ep hObjInv hStep hEp)
+    (fun y tcb' hY =>
+      storeTcbQueueLinks_tcb_ipcState_backward st st' tid prev pprev next hObjInv hStep y tcb' hY)
+    hInv
+
+/-- `storeTcbQueueLinks` preserves `endpointQueueTailBlockedConsistent` (tail dual of the
+`queueHeadBlockedConsistent` frame above). -/
+theorem storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    endpointQueueTailBlockedConsistent st' :=
+  endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st'
+    (fun eid ep hEp =>
+      storeTcbQueueLinks_endpoint_backward st st' tid prev pprev next eid ep hObjInv hStep hEp)
+    (fun y tcb' hY =>
+      storeTcbQueueLinks_tcb_ipcState_backward st st' tid prev pprev next hObjInv hStep y tcb' hY)
+    hInv
+
+/-- `storeObject` of an endpoint preserves `endpointQueueTailBlockedConsistent` provided the
+*new* endpoint's `receiveQ`/`sendQ` tails are blocked on `eid` relative to the (unchanged)
+pre-state TCBs (`hNewTails`).  An endpoint store touches no TCB, so every thread's `ipcState`
+is identical pre/post — only the endpoint's own tail pointers can change, and `hNewTails`
+discharges those. -/
+theorem storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (eid : SeLe4n.ObjId) (ep' : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hStore : storeObject eid (.endpoint ep') st = .ok ((), st'))
+    (hNewTails : ∀ (tl : SeLe4n.ThreadId) (tcb : TCB),
+        st.objects[tl.toObjId]? = some (.tcb tcb) →
+        (ep'.receiveQ.tail = some tl → tcb.ipcState = .blockedOnReceive eid) ∧
+        (ep'.sendQ.tail = some tl →
+          tcb.ipcState = .blockedOnSend eid ∨ tcb.ipcState = .blockedOnCall eid)) :
+    endpointQueueTailBlockedConsistent st' := by
+  have hEqAt := storeObject_objects_eq st st' eid (.endpoint ep') hObjInv hStore
+  intro epId ep tl tcbTl hEp hTcb
+  have hTlNe : tl.toObjId ≠ eid := by
+    intro hEq; rw [hEq, hEqAt] at hTcb; cases hTcb
+  have hTcbPre : st.objects[tl.toObjId]? = some (.tcb tcbTl) := by
+    rwa [storeObject_objects_ne st st' eid tl.toObjId _ hTlNe hObjInv hStore] at hTcb
+  by_cases hEpEq : epId = eid
+  · subst hEpEq
+    rw [hEqAt] at hEp
+    obtain rfl : ep' = ep := by
+      simpa only [Option.some.injEq, KernelObject.endpoint.injEq] using hEp
+    exact hNewTails tl tcbTl hTcbPre
+  · have hEpPre : st.objects[epId]? = some (.endpoint ep) := by
+      rwa [storeObject_objects_ne st st' eid epId _ hEpEq hObjInv hStore] at hEp
+    exact hInv epId ep tl tcbTl hEpPre hTcbPre
+
+/-- `storeObject` of an endpoint preserves `queueHeadBlockedConsistent` provided the *new*
+endpoint's `receiveQ`/`sendQ` heads are blocked on `eid` relative to the (unchanged) pre-state
+TCBs (`hNewHeads`).  Head dual of `storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent`. -/
+theorem storeObject_endpoint_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (eid : SeLe4n.ObjId) (ep' : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hInv : queueHeadBlockedConsistent st)
+    (hStore : storeObject eid (.endpoint ep') st = .ok ((), st'))
+    (hNewHeads : ∀ (hd : SeLe4n.ThreadId) (tcb : TCB),
+        st.objects[hd.toObjId]? = some (.tcb tcb) →
+        (ep'.receiveQ.head = some hd → tcb.ipcState = .blockedOnReceive eid) ∧
+        (ep'.sendQ.head = some hd →
+          tcb.ipcState = .blockedOnSend eid ∨ tcb.ipcState = .blockedOnCall eid)) :
+    queueHeadBlockedConsistent st' := by
+  have hEqAt := storeObject_objects_eq st st' eid (.endpoint ep') hObjInv hStore
+  intro epId ep hd tcbHd hEp hTcb
+  have hHdNe : hd.toObjId ≠ eid := by
+    intro hEq; rw [hEq, hEqAt] at hTcb; cases hTcb
+  have hTcbPre : st.objects[hd.toObjId]? = some (.tcb tcbHd) := by
+    rwa [storeObject_objects_ne st st' eid hd.toObjId _ hHdNe hObjInv hStore] at hTcb
+  by_cases hEpEq : epId = eid
+  · subst hEpEq
+    rw [hEqAt] at hEp
+    obtain rfl : ep' = ep := by
+      simpa only [Option.some.injEq, KernelObject.endpoint.injEq] using hEp
+    exact hNewHeads hd tcbHd hTcbPre
+  · have hEpPre : st.objects[epId]? = some (.endpoint ep) := by
+      rwa [storeObject_objects_ne st st' eid epId _ hEpEq hObjInv hStore] at hEp
+    exact hInv epId ep hd tcbHd hEpPre hTcbPre
+
 end SeLe4n.Kernel
