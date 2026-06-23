@@ -13383,6 +13383,129 @@ theorem endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent
               exact ipcUnwrapCaps_preserves_queueNextBlockingConsistent msg senderRoot
                 receiverCspaceRoot receiverSlotBase _ stMid stFinal s hObjInvMid hQNBCMid hUnwrap
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: `endpointReplyRecv` **establishes** `queueNextBlockingConsistent`
+from the pre-state.  Composes the reply phase (`storeTcbIpcStateAndMessage replyTarget .ready` +
+`ensureRunnable` — both clean `queueNext`/`ipcState` frames; the unblocked `replyTarget` was
+`.blockedOnReply`, hence by pre-state tail-blocked no endpoint tail, so `endpointQueueTailBlockedConsistent`
+survives) with the `endpointReceiveDual` receive leg (`endpointReceiveDual_preserves_queueNextBlockingConsistent`,
+its enqueue-establish discharged by the receiver-freshness preconditions transported through the
+reply phase). -/
+theorem endpointReplyRecv_preserves_queueNextBlockingConsistent
+    (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (st st' : SystemState)
+    (hInvFull : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    queueNextBlockingConsistent st' := by
+  have hQNBC := hInvFull.queueNextBlockingConsistent
+  have hDQSI := hInvFull.2.1
+  have hTail := hInvFull.endpointQueueTailBlockedConsistent
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some replyTcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : replyTcb.ipcState with
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
+      simp [hIpc] at hStep
+    | blockedOnReply _ expectedReplier =>
+      simp only [hIpc] at hStep
+      suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
+            queueNextBlockingConsistent stR.2) by
+        cases expectedReplier with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
+          split at hStep
+          · revert hStep
+            cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+            | error e => simp
+            | ok st1 =>
+              simp only []
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp
+              | ok result =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                exact this st1 hMsg result hRecv
+          · simp_all
+      -- Main proof body
+      intro st1 hMsg stR hRecv
+      have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget _ (some msg) hObjInv hMsg
+      have hDQSI1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant _ _ _ _ _ hObjInv hMsg hDQSI
+      have hQNBC1 := storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent
+        st st1 replyTarget (some msg) hQNBC hObjInv hMsg
+      -- EQTB: `replyTarget` was `.blockedOnReply`, so by pre-state tail-blocked it is no endpoint tail.
+      have hNotTail : ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+          st.objects[epId']? = some (.endpoint ep') →
+          ep'.receiveQ.tail ≠ some replyTarget ∧ ep'.sendQ.tail ≠ some replyTarget := by
+        intro epId' ep' hEp'
+        refine ⟨fun hTl => ?_, fun hTl => ?_⟩
+        · have := (hTail epId' ep' replyTarget replyTcb hEp'
+            (lookupTcb_some_objects st replyTarget replyTcb hLookup)).1 hTl
+          rw [hIpc] at this; cases this
+        · rcases (hTail epId' ep' replyTarget replyTcb hEp'
+            (lookupTcb_some_objects st replyTarget replyTcb hLookup)).2 hTl with h | h <;>
+            rw [hIpc] at h <;> cases h
+      have hEQTB1 := storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
+        st st1 replyTarget .ready (some msg) hTail hObjInv hMsg hNotTail
+      have hObjInvE : (ensureRunnable st1 replyTarget).objects.invExt :=
+        ensureRunnable_preserves_objects st1 replyTarget ▸ hObjInv1
+      have hDQSIE := ensureRunnable_preserves_dualQueueSystemInvariant st1 replyTarget hDQSI1
+      have hQNBCE := ensureRunnable_preserves_queueNextBlockingConsistent st1 replyTarget hQNBC1
+      have hEQTBE := ensureRunnable_preserves_endpointQueueTailBlockedConsistent st1 replyTarget hEQTB1
+      -- Transport freshness conditions through the reply phase (endpoints unchanged by storeTcb + ensureRunnable).
+      have hFreshReceiver' : ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+          (ensureRunnable st1 replyTarget).objects[epId']? = some (.endpoint ep') →
+          ep'.sendQ.head ≠ some receiver ∧ ep'.sendQ.tail ≠ some receiver ∧
+          ep'.receiveQ.head ≠ some receiver ∧ ep'.receiveQ.tail ≠ some receiver := by
+        intro epId' ep' hEp'
+        rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
+          ensureRunnable_preserves_objects st1 replyTarget] at hEp'
+        exact hFreshReceiver epId' ep'
+          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId' ep' hObjInv hMsg hEp')
+      have hRecvTailFresh' : ∀ (ep' : Endpoint) (tailTid : SeLe4n.ThreadId),
+          (ensureRunnable st1 replyTarget).objects[endpointId]? = some (.endpoint ep') →
+          ep'.receiveQ.tail = some tailTid →
+          ∀ (epId' : SeLe4n.ObjId) (ep'' : Endpoint),
+            (ensureRunnable st1 replyTarget).objects[epId']? = some (.endpoint ep'') →
+            (epId' ≠ endpointId →
+              ep''.sendQ.tail ≠ some tailTid ∧ ep''.receiveQ.tail ≠ some tailTid) ∧
+            (epId' = endpointId →
+              ep''.sendQ.tail ≠ some tailTid) := by
+        intro ep' tailTid hEp' hTl epId' ep'' hEp''
+        rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
+          ensureRunnable_preserves_objects st1 replyTarget] at hEp' hEp''
+        exact hRecvTailFresh ep' tailTid
+          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) endpointId ep' hObjInv hMsg hEp')
+          hTl epId' ep''
+          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId' ep'' hObjInv hMsg hEp'')
+      -- Delegate to the receive-leg enqueue-establish.
+      exact endpointReceiveDual_preserves_queueNextBlockingConsistent
+        endpointId receiver replyId _ stR.2 stR.1
+        hQNBCE hDQSIE hEQTBE hObjInvE hFreshReceiver' hRecvTailFresh'
+        (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
+
 -- ============================================================================
 -- D4: transition-level frames for the cleanly-composing transitions
 -- (no enqueue-to-blocking-state; see file note on the deferred transitions).
@@ -14252,11 +14375,27 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
+    -- IPC de-threading D4 Slice 2b: receive-leg enqueue freshness (the running receiver is `.ready`,
+    -- hence not a queue member, and the old receiveQ tail is not a cross-queue tail) — dischargeable,
+    -- replacing the threaded `hQNBC'`, now **established** via
+    -- `endpointReplyRecv_preserves_queueNextBlockingConsistent`.
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -14271,7 +14410,11 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    hDualQueue',
    endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
    endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   hWtpmn', hNoDup', hQMC',
+   -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (reply phase + receive-leg enqueue-establish).
+   endpointReplyRecv_preserves_queueNextBlockingConsistent endpointId receiver replyTarget msg replyId
+     st st' hInv hObjInv hFreshReceiver hRecvTailFresh hStep,
+   hQHBC',
    endpointReplyRecv_preserves_blockedThreadTimeoutConsistent st st' endpointId receiver replyTarget msg replyId hObjInv hAllBudgetsNone hStep,
    donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
    endpointReplyRecv_preserves_passiveServerIdle st st' endpointId receiver replyTarget msg replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep,

@@ -1,3 +1,30 @@
+## v0.32.21 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointReplyRecv` queueNext de-threaded
+
+Fourth enqueue-bearing transition qNBC de-thread — the two-phase reply+receive folded transition.
+
+- `endpointReplyRecv_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) —
+  establishes `queueNextBlockingConsistent` from the pre-state by composing the reply phase
+  (`storeTcbIpcStateAndMessage replyTarget .ready` + `ensureRunnable` — clean `queueNext`/`ipcState`
+  frames) with the `endpointReceiveDual` receive leg (`endpointReceiveDual_preserves_queueNextBlockingConsistent`,
+  the v0.32.19 enqueue-establish). The receive-leg preconditions (qNBC, `dualQueueSystemInvariant`,
+  `endpointQueueTailBlockedConsistent`, `objects.invExt`, receiver-freshness) are carried across the
+  reply phase: the `.ready`-store frames preserve qNBC / DQSI / invExt; the unblocked `replyTarget`
+  was `.blockedOnReply`, hence (by pre-state tail-blocked) no endpoint tail, so
+  `storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent` applies (`hNotTail`
+  discharged exactly as the `endpointReply` tail-blocked establisher); and the two freshness
+  hypotheses transport via `storeTcbIpcStateAndMessage_endpoint_backward` + `ensureRunnable_preserves_objects`
+  (endpoints unchanged by the reply phase). Structurally mirrors the existing
+  `endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent` two-phase composition.
+- **`endpointReplyRecv_preserves_ipcInvariantFull` drops `hQNBC'`** (now established via the new
+  theorem; `hFreshReceiver` / `hRecvTailFresh` replace it). `hEQTB'` / `hQHBC'` remain threaded.
+
+Proof-only, additive + one bundle signature change (no Lean call sites — the bundle is a top-level
+payoff theorem), trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green, AK7 cascade
+metrics unchanged. The sole remaining single-core qNBC-threading site is the cross-core
+`endpointCallOnCore` (`EndpointCallInvariant.lean`).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.20 — IPC de-threading D4 (Finding F-2) Slice 2b: WithCaps wrappers queueNext de-threaded
 
 Completes qNBC de-threading across all six send/call/receive bundles — the three capability-transfer
