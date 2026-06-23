@@ -1,3 +1,37 @@
+## v0.32.22 — IPC de-threading D4 (Finding F-2) Slice 2b: cross-core `endpointCallOnCore` queueNext de-threaded
+
+Fifth and final qNBC de-thread of the slice — the cross-core (per-core scheduler) endpoint call.
+**`queueNextBlockingConsistent` is now de-threaded from every IPC enqueue-bearing transition** (the
+single-core send/call/receive base + WithCaps wrappers, `endpointReplyRecv`, and now the cross-core
+`endpointCallOnCore`); there are zero remaining `hQNBC'` threading sites in the codebase.
+
+- `removeRunnableOnCore_preserves_queueNextBlockingConsistent`,
+  `wakeThread_preserves_queueNextBlockingConsistent_of_ready` (`EndpointCallInvariant.lean`) — the two
+  per-core scheduler-op qNBC frames, via `queueNextBlockingConsistent_of_objects_eq`: `removeRunnableOnCore`
+  leaves `objects` literally unchanged; the cross-core wake of an already-`.ready` thread is
+  object-lookup-invisible (`wakeThread_objects_getElem_eq_of_ready`, the SM6.A §2 keystone). Mirror the
+  existing `*_preserves_dualQueueSystemInvariant` per-core frames.
+- `endpointCallOnCore_preserves_queueNextBlockingConsistent` (`EndpointCallInvariant.lean`) — establishes
+  `queueNextBlockingConsistent` from the pre-state. Mirrors the single-core
+  `endpointCall_preserves_queueNextBlockingConsistent` step-for-step (block branch: sendQ enqueue +
+  `.blockedOnCall` block-store with `hFwd` vacuous via `endpointQueueEnqueue_enqueued_queueNext_none` and
+  `hBwd` via core (b) `endpointQueueEnqueue_predecessor_blocked`; rendezvous branch: receiveQ pop +
+  receiver `.ready` store + caller `.blockedOnReply` store [`queueNextBlockingMatch` catch-all both ways] +
+  `linkServerStashedReply`), with the inserted receiver wake framed by the new
+  `wakeThread_preserves_queueNextBlockingConsistent_of_ready` and both deschedules by
+  `removeRunnableOnCore`'s object frame. Unfold structure cloned from
+  `endpointCallOnCore_preserves_dualQueueSystemInvariant`.
+- **`endpointCallOnCore_preserves_ipcInvariantFull` drops `hQNBC'`** (established via the new theorem;
+  the `hFreshCaller` / `hSendTailFresh` it already threads for the dual-queue establish are reused).
+  `hEQTB'` / `hQHBC'` remain threaded.
+
+Proof-only, additive + one bundle signature change (no Lean call sites — the bundle is a top-level
+payoff theorem), trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green, AK7 cascade
+metrics unchanged. Next: Slice 2c (`queueHeadBlockedConsistent` via a new `queueNextTargetBlocked`
+conjunct) and the `endpointQueueTailBlockedConsistent` (`hEQTB'`) enqueue-establish slice.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.21 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointReplyRecv` queueNext de-threaded
 
 Fourth enqueue-bearing transition qNBC de-thread — the two-phase reply+receive folded transition.

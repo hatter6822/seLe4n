@@ -1079,6 +1079,148 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
               show dualQueueSystemInvariant (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st5 caller executingCore hInv5
 
+/-- IPC de-threading D4 Slice 2b: `removeRunnableOnCore` preserves
+`queueNextBlockingConsistent` (object-store frame — `objects` unchanged). -/
+theorem removeRunnableOnCore_preserves_queueNextBlockingConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent (removeRunnableOnCore st tid c) :=
+  queueNextBlockingConsistent_of_objects_eq st (removeRunnableOnCore st tid c)
+    (fun _ => by rw [removeRunnableOnCore_preserves_objects]) h
+
+/-- IPC de-threading D4 Slice 2b: the cross-core wake of an already-`.ready` thread
+preserves `queueNextBlockingConsistent` (the wake's `ipcState := .ready` re-insert is
+object-lookup-invisible — the §2 keystone — and the invariant is lookup-only). -/
+theorem wakeThread_preserves_queueNextBlockingConsistent_of_ready
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (h : queueNextBlockingConsistent st) :
+    queueNextBlockingConsistent (wakeThread st tid ec).1 :=
+  queueNextBlockingConsistent_of_objects_eq st (wakeThread st tid ec).1
+    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: the cross-core endpoint call **establishes**
+`queueNextBlockingConsistent`.  Mirrors the single-core
+`endpointCall_preserves_queueNextBlockingConsistent` (block branch: sendQ enqueue +
+`.blockedOnCall` block-store discharged via core (b)
+`endpointQueueEnqueue_predecessor_blocked`; rendezvous branch: receiveQ pop + receiver
+`.ready` store + caller `.blockedOnReply` store [`queueNextBlockingMatch` catch-all] +
+`linkServerStashedReply`), with the receiver wake framed by
+`wakeThread_preserves_queueNextBlockingConsistent_of_ready` (the receiver is `.ready`
+after its message store, so the wake is object-invisible) and the caller deschedule by
+`removeRunnableOnCore`'s object-store frame.  `hFreshCaller` / `hSendTailFresh` are the
+no-receiver-enqueue side-conditions inherited from the dual-queue step. -/
+theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hInv : queueNextBlockingConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid)) :
+    queueNextBlockingConsistent (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact hInv
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact hInv
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hInv
+  | some ep =>
+    have hObjEp : st.objects[endpointId]? = some (.endpoint ep) :=
+      (getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact hInv
+      | ok st' =>
+        simp only
+        have hInv1 := endpointQueueEnqueue_preserves_queueNextBlockingConsistent
+          endpointId false caller st st' hObjInv hInv hEnq
+        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt
+          endpointId false caller st st' hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact hInv
+        | ok st'' =>
+          simp only
+          have hInv2 := storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
+            st' st'' caller (.blockedOnCall endpointId) (some msg) hInv1 hObj1 hMsg
+            (by
+              intro b tcbTid tcbB hSenderObj hSenderNext _
+              obtain ⟨tcbS, hS, hSNext⟩ := endpointQueueEnqueue_enqueued_queueNext_none
+                endpointId false caller st st' ep hObjInv hObjEp hEnq
+              rw [hSenderObj] at hS
+              obtain rfl : tcbTid = tcbS := by simpa using hS
+              rw [hSNext] at hSenderNext; exact absurd hSenderNext (by simp))
+            (by
+              intro a tcbA _ hA hANext _
+              rcases (endpointQueueEnqueue_predecessor_blocked endpointId false caller st st' ep
+                hObjInv hObjEp hDQSI hTail hFreshCaller hSendTailFresh hEnq a tcbA hA hANext).2 rfl
+                with h | h <;> rw [h] <;> rfl)
+          show queueNextBlockingConsistent (removeRunnableOnCore st'' caller executingCore)
+          exact removeRunnableOnCore_preserves_queueNextBlockingConsistent st'' caller executingCore hInv2
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact hInv
+      | ok pair =>
+        simp only
+        have hInv1 := endpointQueuePopHead_preserves_queueNextBlockingConsistent
+          endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt
+          endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact hInv
+        | ok st2 =>
+          simp only
+          have hInv2 := storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent
+            pair.2.2 st2 pair.1 (some msg) hInv1 hObj1 hMsg
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+            pair.2.2 st2 pair.1 _ _ hObj1 hMsg
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+          have hInvW := wakeThread_preserves_queueNextBlockingConsistent_of_ready
+            st2 pair.1 executingCore tr hTrGet hTrReady hObj2 hInv2
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact hInv
+          | ok st4 =>
+            simp only
+            have hInv4 := storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent
+              (wakeThread st2 pair.1 executingCore).1 st4 caller
+              (.blockedOnReply endpointId (some pair.1)) none hInvW hObjW hCS
+              (fun _ _ _ _ _ _ => trivial)
+              (fun _ tcbA _ _ _ _ => by cases tcbA.ipcState <;> trivial)
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hInv5 := linkServerStashedReply_preserves_queueNextBlockingConsistent
+                st4 st5 caller pair.1 hObjInv4 hInv4 hLink
+              show queueNextBlockingConsistent (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_queueNextBlockingConsistent st5 caller executingCore hInv5
+
 -- ============================================================================
 -- §7  SM6.A.1 — the remaining derivable conjuncts + full `ipcInvariantFull`
 -- ============================================================================
@@ -1497,7 +1639,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
@@ -1532,7 +1673,12 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hInv.2.2.1 hObjInv,
     endpointCallOnCore_preserves_badgeWellFormed endpointId caller msg executingCore st
       hInv.2.2.2.1 hObjInv,
-    hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+    hWtpmn', hNoDup', hQMC',
+    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (cross-core enqueue-establish).
+    endpointCallOnCore_preserves_queueNextBlockingConsistent endpointId caller msg executingCore st
+      hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
+      hFreshCaller hSendTailFresh,
+    hQHBC',
     -- IPC de-threading D5: `blockedThreadTimeoutConsistent` **established** from `allTimeoutBudgetsNone`.
     endpointCallOnCore_preserves_blockedThreadTimeoutConsistent endpointId caller msg executingCore st hObjInv hAllBudgetsNone,
     -- IPC de-threading D7: derive `donationChainAcyclic` from the threaded post-state
