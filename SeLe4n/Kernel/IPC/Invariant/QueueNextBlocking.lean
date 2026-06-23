@@ -1433,4 +1433,79 @@ theorem endpointQueueEnqueue_enqueued_queueNext_none
                 exact storeTcbQueueLinks_stored_queueNext st2 st' tid (some tailTid)
                   (some (QueuePPrev.tcbNext tailTid)) none hInv2 hStep
 
+open SeLe4n.Model.SystemState in
+/-- After `endpointQueueEnqueue`, the enqueued thread is the **tail** of the target queue
+(`isReceiveQ ? receiveQ : sendQ`), and the *other* queue's tail is unchanged.  The minimal
+endpoint-tail characterisation the enqueue transitions' `endpointQueueTailBlockedConsistent`
+establishers need (the freshly-enqueued thread, once block-stored, is the blocked new tail).
+The endpoint store sets the target queue's `tail := some tid`; the trailing `storeTcbQueueLinks`
+writes only TCB links, so the endpoint (≠ any TCB objId) survives unchanged. -/
+theorem endpointQueueEnqueue_enqueued_is_tail
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
+      (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) = some tid ∧
+      (if isReceiveQ then ep'.sendQ.tail else ep'.receiveQ.tail) =
+        (if isReceiveQ then ep.sendQ.tail else ep.receiveQ.tail) := by
+  unfold endpointQueueEnqueue at hStep
+  simp only [hObj] at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    have hNeTid : endpointId ≠ tid.toObjId := by
+      intro h
+      rw [h, lookupTcb_some_objects st tid tcb hLookup] at hObj
+      exact absurd hObj (by simp)
+    split at hStep
+    · simp at hStep
+    · split at hStep
+      · simp at hStep
+      · revert hStep
+        cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+        | none =>
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            simp only []; intro hStep
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hEpPair := storeObject_objects_eq' st endpointId _ pair hObjInv hStore
+            have hEpSt' : st'.objects[endpointId]? = pair.2.objects[endpointId]? :=
+              storeTcbQueueLinks_preserves_objects_ne pair.2 st' tid none
+                (some QueuePPrev.endpointHead) none endpointId hNeTid hInv1 hStep
+            rw [hEpSt', hEpPair]
+            refine ⟨_, rfl, ?_, ?_⟩ <;> (by_cases hR : isReceiveQ <;> simp [hR])
+        | some tailTid =>
+          cases hLookupTail : lookupTcb st tailTid with
+          | none => simp [hLookupTail]
+          | some tailTcb =>
+            simp only [hLookupTail]
+            cases hStore : storeObject endpointId _ st with
+            | error e => simp
+            | ok pair =>
+              simp only []
+              cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev
+                  (some tid) with
+              | error e => simp
+              | ok st2 =>
+                simp only []; intro hStep
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                have hNeTail : endpointId ≠ tailTid.toObjId := by
+                  intro h
+                  rw [h, lookupTcb_some_objects st tailTid tailTcb hLookupTail] at hObj
+                  exact absurd hObj (by simp)
+                have hEpPair := storeObject_objects_eq' st endpointId _ pair hObjInv hStore
+                have hEpSt2 : st2.objects[endpointId]? = pair.2.objects[endpointId]? :=
+                  storeTcbQueueLinks_preserves_objects_ne pair.2 st2 tailTid _ _ _ endpointId
+                    hNeTail hInv1 hLink1
+                have hEpSt' : st'.objects[endpointId]? = st2.objects[endpointId]? :=
+                  storeTcbQueueLinks_preserves_objects_ne st2 st' tid _ _ _ endpointId
+                    hNeTid hInv2 hStep
+                rw [hEpSt', hEpSt2, hEpPair]
+                refine ⟨_, rfl, ?_, ?_⟩ <;> (by_cases hR : isReceiveQ <;> simp [hR])
+
 end SeLe4n.Kernel

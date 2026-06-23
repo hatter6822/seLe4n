@@ -1,3 +1,32 @@
+## v0.32.23 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked enqueue-establish foundation (core (c))
+
+The `endpointQueueTailBlockedConsistent` (`hEQTB'`) half of Slice 2b begins: the two reusable
+foundation lemmas the enqueue transitions' tail-blocked establishers compose over. Additive,
+no de-thread yet (the `hEQTB'` bundle removals follow in subsequent cuts).
+
+- `endpointQueueEnqueue_enqueued_is_tail` (`QueueNextBlocking.lean`) — after `endpointQueueEnqueue`,
+  the enqueued thread is the **tail** of the target queue (`isReceiveQ ? receiveQ : sendQ`), and the
+  *other* queue's tail is unchanged. The endpoint store sets the target queue's `tail := some tid`;
+  the trailing `storeTcbQueueLinks` writes only TCB links, so the endpoint (≠ any TCB objId, by
+  `objects.invExt`) survives unchanged (`storeObject_objects_eq'` + `storeTcbQueueLinks_preserves_objects_ne`).
+- `endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`,
+  **core (c)**) — an `endpointQueueEnqueue` followed by the block-store of the enqueued thread (to
+  `.blockedOnSend`/`.blockedOnCall`/`.blockedOnReceive` on the *same* endpoint) **establishes**
+  `endpointQueueTailBlockedConsistent`. The freshly-enqueued thread becomes the new tail (via
+  `_enqueued_is_tail`) and the block-store makes it blocked-on-this-endpoint
+  (`storeTcbIpcStateAndMessage_ipcState_eq`); every other tail is framed — the enqueue touches only
+  the target queue's tail and the block-store only the enqueued thread, fresh by `hFreshTid` (so it
+  is no other queue's tail). The proof case-splits each tail obligation on `tl = tid` (the new tail,
+  matched by the block state per `hBlock`) vs. `tl ≠ tid` (framed back to the pre-state tail via
+  `storeTcbIpcStateAndMessage_preserves_objects_ne` + `endpointQueueEnqueue_tcb_ipcState_backward` +
+  `endpointQueueEnqueue_endpoint_backward_ne`, then `hTail`).
+
+Proof-only, additive (no bundle changes), trace byte-identical, zero `sorry`/`axiom`; full build
+(376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1148→1150 (the two new frame lemmas' typed-id object
+lookups — a documented should-drop re-baseline).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.22 — IPC de-threading D4 (Finding F-2) Slice 2b: cross-core `endpointCallOnCore` queueNext de-threaded
 
 Fifth and final qNBC de-thread of the slice — the cross-core (per-core scheduler) endpoint call.
