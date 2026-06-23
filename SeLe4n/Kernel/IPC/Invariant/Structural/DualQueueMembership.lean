@@ -12992,6 +12992,208 @@ theorem cleanupPreReceiveDonation_preserves_queueNextBlockingConsistent
     | bound _ => exact hInv
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: `cleanupPreReceiveDonation` preserves
+`endpointQueueTailBlockedConsistent` — it touches no endpoint and preserves every TCB's `ipcState`
+(`returnDonatedSchedContext` only rewrites `schedContextBinding`), so the combinator applies with the
+existing endpoint / ipcState backward lemmas.  Needed by `endpointReceiveDual`'s block path, which
+enqueues on the post-cleanup state. -/
+theorem cleanupPreReceiveDonation_preserves_endpointQueueTailBlockedConsistent
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent (cleanupPreReceiveDonation st receiver) :=
+  endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st (cleanupPreReceiveDonation st receiver)
+    (fun eid ep hEp => cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv eid ep hEp)
+    (fun y tcb' hY => cleanupPreReceiveDonation_tcb_ipcState_backward st receiver hObjInv y tcb' hY)
+    hInv
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: `endpointReceiveDual` **establishes** `queueNextBlockingConsistent`
+from the pre-state (de-threads `hQNBC'`).  Rendezvous (pop sendQ) — Call sub-path: caller
+`.blockedOnReply` store (catch-all match) + `linkCallerReply` + receiver `.ready` store; Send
+sub-path: sender `.ready` store + `ensureRunnable` + receiver `.ready` store.  Block path: cleanup
+(qNBC + tail-blocked preserved) + receiveQ enqueue + receiver `.blockedOnReceive` store (`hBwd` via
+core (b) with `isReceiveQ = true`: the old receiveQ tail is `.blockedOnReceive endpointId`) + optional
+reply-stash store (`queueNext`/`ipcState`-preserving) + `removeRunnable`. -/
+theorem endpointReceiveDual_preserves_queueNextBlockingConsistent
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId)
+    (hInv : queueNextBlockingConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    queueNextBlockingConsistent st' := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.sendQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false st pair.2.2
+            pair.1 pair.2.1 hObjInv hPop
+          have hQNBC1 := endpointQueuePopHead_preserves_queueNextBlockingConsistent endpointId false st
+            pair.2.2 pair.1 pair.2.1 hObjInv hInv hPop
+          split at hStep
+          · cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1
+                (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _
+                none hObjInv1 hMsg
+              have hQNBC2 := storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent pair.2.2
+                st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hQNBC1 hObjInv1 hMsg
+                (fun _ _ _ _ _ _ => trivial) (fun _ tcbA _ _ _ _ => by cases tcbA.ipcState <;> trivial)
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink := linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid
+                    hObjInv2 hLink
+                  have hQNBCLink := linkCallerReply_preserves_queueNextBlockingConsistent st2 stLinked
+                    pair.1 rid hObjInv2 hQNBC2 hLink
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready
+                      pair.2.1.pendingMessage with
+                  | error e => simp [hPend] at hStep
+                  | ok st3 =>
+                    simp only [hPend] at hStep
+                    obtain ⟨_, rfl⟩ := hStep
+                    exact storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent stLinked
+                      _ receiver pair.2.1.pendingMessage hQNBCLink hObjInvLink hPend
+          · cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _
+                none hObjInv1 hMsg
+              have hQNBC2 := storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent
+                pair.2.2 st2 pair.1 none hQNBC1 hObjInv1 hMsg
+              have hObjInvR : (ensureRunnable st2 pair.1).objects.invExt :=
+                ensureRunnable_preserves_objects st2 pair.1 ▸ hObjInv2
+              have hQNBCR := ensureRunnable_preserves_queueNextBlockingConsistent st2 pair.1 hQNBC2
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready
+                  pair.2.1.pendingMessage with
+              | error e => simp [hPend] at hStep
+              | ok st3 =>
+                simp only [hPend] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent _ _ receiver
+                  pair.2.1.pendingMessage hQNBCR hObjInvR hPend
+      | none =>
+        cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+        | error _ => simp [hHead, hChecked] at hStep
+        | ok stClean =>
+          have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+            (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+          simp only [hHead, hChecked] at hStep
+          rw [hBridge] at hStep
+          have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+          have hQNBCClean := cleanupPreReceiveDonation_preserves_queueNextBlockingConsistent st receiver
+            hObjInv hInv
+          have hTailClean := cleanupPreReceiveDonation_preserves_endpointQueueTailBlockedConsistent st
+            receiver hObjInv hTail
+          have hDQSIClean := cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver
+            hObjInv hDQSI
+          have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+              (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep) →
+              ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+              ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
+            fun epId ep hEp =>
+              hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv
+                epId ep hEp)
+          have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+              (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep) →
+              ep.receiveQ.tail = some tailTid →
+              ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+                (cleanupPreReceiveDonation st receiver).objects[epId']? = some (.endpoint ep') →
+                (epId' ≠ endpointId →
+                  ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+                (epId' = endpointId →
+                  ep'.sendQ.tail ≠ some tailTid) :=
+            fun ep tailTid hEp hTl epId' ep' hEp' =>
+              hRecvTailFresh ep tailTid
+                (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep hEp) hTl
+                epId' ep'
+                (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep' hEp')
+          have hObjClean := cleanupPreReceiveDonation_endpoint_forward st receiver hObjInv endpointId ep
+            hObj
+          cases hEnq : endpointQueueEnqueue endpointId true receiver
+              (cleanupPreReceiveDonation st receiver) with
+          | error e => simp [hEnq] at hStep
+          | ok st1 =>
+            simp only [hEnq] at hStep
+            have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
+              (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            have hQNBC1 := endpointQueueEnqueue_preserves_queueNextBlockingConsistent endpointId true
+              receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hQNBCClean hEnq
+            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hIpc
+              have hQNBC2 := storeTcbIpcState_preserves_queueNextBlockingConsistent st1 st2 receiver
+                (.blockedOnReceive endpointId) hQNBC1 hObjInv1 hIpc
+                (by
+                  intro b tcbTid tcbB hRObj hRNext _
+                  obtain ⟨tcbS, hS, hSNext⟩ := endpointQueueEnqueue_enqueued_queueNext_none endpointId
+                    true receiver (cleanupPreReceiveDonation st receiver) st1 ep hObjInvClean hObjClean hEnq
+                  rw [hRObj] at hS
+                  obtain rfl : tcbTid = tcbS := by simpa using hS
+                  rw [hSNext] at hRNext; exact absurd hRNext (by simp))
+                (by
+                  intro a tcbA _ hA hANext _
+                  have h := (endpointQueueEnqueue_predecessor_blocked endpointId true receiver
+                    (cleanupPreReceiveDonation st receiver) st1 ep hObjInvClean hObjClean hDQSIClean
+                    hTailClean hFreshReceiverClean hRecvTailFreshClean hEnq a tcbA hA hANext).1 rfl
+                  rw [h]; rfl)
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact removeRunnable_preserves_queueNextBlockingConsistent _ _ hQNBC2
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, rfl⟩ := hStep
+                  have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  exact removeRunnable_preserves_queueNextBlockingConsistent _ _
+                    (storeObject_tcb_preserveLinks_queueNextBlockingConsistent st2 stStashed receiver rTcb
+                      { rTcb with pendingReceiveReply := replyId } hObjInv2 hTcbPre rfl rfl hQNBC2 hStash)
+
+open SeLe4n.Model.SystemState in
 /-- D4: `ipcUnwrapCaps` frames `queueNextBlockingConsistent`.  Every post-state TCB
 equals its pre-state (the cap-transfer touches only a CNode), so `ipcState` and
 `queueNext` are unchanged (`ipcUnwrapCaps_tcb_backward`). -/
@@ -13483,10 +13685,25 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
+    -- IPC de-threading D4 Slice 2b: enqueue freshness (the running receiver is `.ready`, hence not a
+    -- queue member, and the old receiveQ tail is not a cross-queue tail) — dischargeable, replacing the
+    -- threaded `hQNBC'`, now **established** via `endpointReceiveDual_preserves_queueNextBlockingConsistent`.
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -13513,7 +13730,12 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   hWtpmn', hNoDup', hQMC',
+   -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state via core (b).
+   endpointReceiveDual_preserves_queueNextBlockingConsistent endpointId receiver replyId st st' senderId
+     hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
+     hFreshReceiver hRecvTailFresh hStep,
+   hQHBC',
    endpointReceiveDual_preserves_blockedThreadTimeoutConsistent st st' endpointId receiver senderId replyId hObjInv hAllBudgetsNone hStep,
    donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    endpointReceiveDual_preserves_donationBudgetTransfer st st' endpointId receiver senderId replyId hInv.donationBudgetTransfer hObjInv hStep,

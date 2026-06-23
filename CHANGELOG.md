@@ -1,3 +1,29 @@
+## v0.32.19 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointReceiveDual` queueNext de-threaded
+
+Third enqueue-transition qNBC de-thread — the receiveQ-enqueue (`isReceiveQ = true`) case, with
+Call/Send rendezvous sub-paths.
+
+- `cleanupPreReceiveDonation_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`)
+  — one-off frame (the cleanup donation-return rewrites only `schedContextBinding`, preserving every
+  endpoint + `ipcState`), needed because `endpointReceiveDual`'s block path enqueues on the
+  post-cleanup state; a clean combinator application over the existing endpoint / ipcState backward
+  lemmas.
+- `endpointReceiveDual_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) —
+  establishes `queueNextBlockingConsistent` from the pre-state. Rendezvous (pop sendQ): Call sub-path
+  (caller `.blockedOnReply` store [catch-all match] + `linkCallerReply` + receiver `.ready` store) and
+  Send sub-path (sender `.ready` + `ensureRunnable` + receiver `.ready`). Block path: cleanup (qNBC +
+  the new tail-blocked frame) + receiveQ enqueue + receiver `.blockedOnReceive` store (`hBwd` via
+  core (b) with `isReceiveQ = true`: the old receiveQ tail is `.blockedOnReceive endpointId`) +
+  optional reply-stash store (`queueNext`/`ipcState`-preserving) + `removeRunnable`.
+- **`endpointReceiveDual_preserves_ipcInvariantFull` drops `hQNBC'`** (established; `hFreshReceiver` /
+  `hRecvTailFresh` replace it). `hEQTB'` / `hQHBC'` remain threaded.
+
+This proves core (b) generalises to the receiveQ-enqueue direction. Proof-only, additive + one bundle
+signature change (no Lean call sites), trace byte-identical, zero `sorry`/`axiom`; full build (234
+jobs) green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.18 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointCall` queueNext de-threaded
 
 Second enqueue-transition qNBC de-thread, reusing core (b) + the existing reply-store qNBC frames.
