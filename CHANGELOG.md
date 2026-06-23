@@ -1,3 +1,30 @@
+## v0.32.20 — IPC de-threading D4 (Finding F-2) Slice 2b: WithCaps wrappers queueNext de-threaded
+
+Completes qNBC de-threading across all six send/call/receive bundles — the three capability-transfer
+wrappers now compose the base enqueue-establish with the cap-transfer frame.
+
+- `endpointSendDualWithCaps_preserves_queueNextBlockingConsistent`,
+  `endpointCallWithCaps_preserves_queueNextBlockingConsistent`,
+  `endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) —
+  each **establishes** `queueNextBlockingConsistent` from the pre-state by composing the base
+  transition's qNBC establish on the intermediate state with the optional `ipcUnwrapCaps` leg
+  (`ipcUnwrapCaps_preserves_queueNextBlockingConsistent` — cap transfer writes only CNode caps,
+  framing every `queueNext`/`ipcState`). The Send/Call wrappers gate the cap leg on the endpoint
+  receive-queue head; the Receive wrapper gates on the *receiver*'s delivered `pendingMessage` (the
+  receive op already dequeued the rendezvous sender), mirroring the existing
+  `endpointReceiveDualWithCaps` framing template.
+- **`endpoint{SendDual,Call,ReceiveDual}WithCaps_preserves_ipcInvariantFull` each drop `hQNBC'`**
+  (now established via the new theorem; `hFreshSender` / `hFreshCaller` / `hFreshReceiver` +
+  `hSendTailFresh` / `hRecvTailFresh` replace it, identical to the base-transition bundles in
+  v0.32.17–19). `hEQTB'` / `hQHBC'` remain threaded pending the tail-blocked establish slice.
+
+With this, `queueNextBlockingConsistent` is de-threaded from every single-core send/call/receive
+bundle (base + WithCaps). Proof-only, additive + three bundle signature changes (no Lean call
+sites — the WithCaps bundles are top-level payoff theorems), trace byte-identical, zero
+`sorry`/`axiom`; full build (376 jobs) green, AK7 cascade metrics unchanged.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.19 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointReceiveDual` queueNext de-threaded
 
 Third enqueue-transition qNBC de-thread — the receiveQ-enqueue (`isReceiveQ = true`) case, with
