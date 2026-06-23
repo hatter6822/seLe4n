@@ -1,3 +1,37 @@
+## v0.32.12 — IPC de-threading D4 (Finding F-2) Slice 2a: tail-blocked established for the non-enqueue transitions
+
+De-threads the Slice-1 `hEQTB'` scaffolding from the **5 IPC transition bundles that touch no
+endpoint queue** — each now *establishes* the 19th `ipcInvariantFull` conjunct
+(`endpointQueueTailBlockedConsistent`) from the pre-state rather than threading the post-state
+hypothesis.  An enqueue is the only way to change which thread sits at an endpoint tail, so a
+transition that writes no endpoint queue trivially preserves tail-blockedness.
+
+- **`notificationSignal`** — the only TCB it rewrites is the woken head waiter, which is
+  `.blockedOnNotification` (`notificationWaiterConsistent`), hence by pre-state tail-blockedness not
+  an endpoint tail; established via `notificationSignal_preserves_endpointQueueTailBlockedConsistent`.
+- **`endpointReply`** — the unblocked `target` was `.blockedOnReply`, hence (pre-state tail-blocked)
+  not an endpoint tail; `endpointReply_preserves_endpointQueueTailBlockedConsistent`.
+- **`consumeCallerReply`** / **`linkCallerReply`** — a reply-object store plus a caller-TCB
+  `replyObject` write, neither touching a queue or any `ipcState`.  `consumeCallerReply` reads the
+  conjunct off its full pre-state `hInv`; `linkCallerReply` (which carries only `ipcInvariantCore`)
+  takes a `hTailPre : endpointQueueTailBlockedConsistent st` pre-state precondition.
+- **`lifecycleRetypeObject`** (`coreIpcInvariantBundle` + `lifecycleCompositionInvariantBundle`) —
+  the threaded `hEQTB'` is replaced by `hTargetNotTail`, the **tail dual of the existing
+  `hTargetNotHead`** precondition (a retype never creates an endpoint nor writes an endpoint tail);
+  established via the new `lifecycleRetypeObject_preserves_endpointQueueTailBlockedConsistent`.
+
+New leaf establishers: the reply-mutator family (`storeObject_reply` / `consumeReply` / `linkReply`
+/ `linkCallerReply` / `consumeCallerReply` `_preserves_endpointQueueTailBlockedConsistent`, pure
+frames over the head→tail store lemmas; relocated ahead of the reply bundles to resolve the forward
+reference) and `lifecycleRetypeObject_preserves_endpointQueueTailBlockedConsistent` (the tail dual
+of the qHBC retype frame).  The 8 enqueue-style bundles (+`notificationWait`) keep `hEQTB'` threaded
+pending Slice 2b/2c.
+
+Proof-only, trace byte-identical, zero `sorry`/`axiom`; full build + `test_smoke` green;
+`RAW_LOOKUP_TID` re-anchored 1135→1139 (raw lookups in the retype tail establisher).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2a)
+
 ## v0.32.11 — IPC de-threading D4 (Finding F-2) Slice 1: `endpointQueueTailBlockedConsistent` conjunct
 
 Adds the missing **reachable→blocked** structural invariant (tail specialisation) that the
