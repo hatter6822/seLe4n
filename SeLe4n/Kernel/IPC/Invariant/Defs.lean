@@ -1344,6 +1344,65 @@ theorem blockedThreadTimeoutConsistent_of_all_none
   rw [this] at hBudget
   cases hBudget
 
+/-- IPC de-threading D5: the strong, transition-invariant form of the timeout-budget discipline —
+**no** thread carries a timeout budget.  The seL4-faithful `blockedThreadTimeoutConsistent`
+(budget ⇒ blocking IPC state) is strictly *weaker*; this form is what every IPC transition actually
+preserves, because no transition ever writes `timeoutBudget := some` (every TCB store either omits
+the `timeoutBudget` field or sets it `none`).  A state with all budgets `none` satisfies
+`blockedThreadTimeoutConsistent` vacuously (`blockedThreadTimeoutConsistent_of_all_none`), so a
+bundle can establish the conjunct on the post-state from this single, uniformly-dischargeable
+pre-state precondition — no per-thread "woken thread carries no budget" side-conditions. -/
+def allTimeoutBudgetsNone (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.timeoutBudget = none
+
+/-- IPC de-threading D5: the reusable timeout-budget preservation frame.  Every post-state thread's
+`timeoutBudget` matches a pre-state thread at the same key — true of every IPC transition, whose TCB
+stores all preserve the `timeoutBudget` field (none ever writes `timeoutBudget := some`).  A
+fresh-TCB retype is handled directly rather than through this frame, since the retyped slot has no
+pre-state TCB to transport back from. -/
+def timeoutBudgetFrame (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.timeoutBudget = tcb'.timeoutBudget
+
+namespace timeoutBudgetFrame
+
+/-- Reflexivity. -/
+theorem refl (st : SystemState) : timeoutBudgetFrame st st :=
+  fun _ tcb' h => ⟨tcb', h, rfl⟩
+
+/-- Transitivity: chain two frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : timeoutBudgetFrame st st') (h2 : timeoutBudgetFrame st' st'') :
+    timeoutBudgetFrame st st'' := by
+  intro tid tcb'' h
+  obtain ⟨tcb', h', hB'⟩ := h2 tid tcb'' h
+  obtain ⟨tcb, hh, hB⟩ := h1 tid tcb' h'
+  exact ⟨tcb, hh, hB.trans hB'⟩
+
+/-- A step that leaves the object map untouched frames trivially. -/
+theorem of_objects_eq {st st' : SystemState} (hEq : st'.objects = st.objects) :
+    timeoutBudgetFrame st st' :=
+  fun _ tcb' h => ⟨tcb', by rw [hEq] at h; exact h, rfl⟩
+
+end timeoutBudgetFrame
+
+/-- IPC de-threading D5: a timeout-budget frame carries `allTimeoutBudgetsNone` forward. -/
+theorem allTimeoutBudgetsNone_of_frame {st st' : SystemState}
+    (hFrame : timeoutBudgetFrame st st') (hAll : allTimeoutBudgetsNone st) :
+    allTimeoutBudgetsNone st' := by
+  intro tid tcb' hTcb'
+  obtain ⟨tcb, hTcb, hBudgetEq⟩ := hFrame tid tcb' hTcb'
+  rw [← hBudgetEq]; exact hAll tid tcb hTcb
+
+/-- IPC de-threading D5: establish `blockedThreadTimeoutConsistent` on the post-state of a
+budget-framing transition from the pre-state `allTimeoutBudgetsNone` precondition. -/
+theorem blockedThreadTimeoutConsistent_of_frame {st st' : SystemState}
+    (hFrame : timeoutBudgetFrame st st') (hAll : allTimeoutBudgetsNone st) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_all_none st' (allTimeoutBudgetsNone_of_frame hFrame hAll)
+
 -- ============================================================================
 -- Z7-F: Donation chain acyclicity
 -- ============================================================================
@@ -2928,6 +2987,82 @@ theorem returnDonatedSchedContext_tcb_ipcState_replyObject_backward
                 · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1
                   rw [hPres1] at hTcb1Obj
                   exact ⟨tcb1, hTcb1Obj, by rw [hIpc1, hIpc2], by rw [hRepl1, hRepl2]⟩
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D5: `returnDonatedSchedContext` preserves each TCB's `timeoutBudget` backward —
+its three stores rewrite only a `SchedContext`'s `boundThread` and two TCBs' `schedContextBinding`,
+never `timeoutBudget`, so each store frames the field (`rfl`).  Mirrors
+`returnDonatedSchedContext_tcb_ipcState_replyObject_backward`; feeds the donation-return leg of the
+receive family's `timeoutBudgetFrame`. -/
+theorem returnDonatedSchedContext_tcb_timeoutBudget_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st'.objects[tid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
+      tcb.timeoutBudget = tcb'.timeoutBudget := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq] at hTcb'
+                have hTcb2 : ∃ tcb2, p2.2.objects[tid]? = some (.tcb tcb2) ∧
+                    tcb2.timeoutBudget = tcb'.timeoutBudget := by
+                  by_cases hEq3 : tid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hTcb'
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                    simp at hTcb'; obtain ⟨rfl⟩ := hTcb'
+                    have hSO := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                    exact ⟨serverTcb, hSO, rfl⟩
+                  · exact ⟨tcb', (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hEq3 hInv2 hS3).symm ▸ hTcb', rfl⟩
+                obtain ⟨tcb2, hTcb2Obj, hBud2⟩ := hTcb2
+                have hTcb1 : ∃ tcb1, p1.2.objects[tid]? = some (.tcb tcb1) ∧
+                    tcb1.timeoutBudget = tcb2.timeoutBudget := by
+                  by_cases hEq2 : tid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hTcb2Obj
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb2Obj
+                    simp at hTcb2Obj; obtain ⟨rfl⟩ := hTcb2Obj
+                    have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                    exact ⟨clientTcb, hCO, rfl⟩
+                  · exact ⟨tcb2, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hEq2 hInv1 hS2).symm ▸ hTcb2Obj, rfl⟩
+                obtain ⟨tcb1, hTcb1Obj, hBud1⟩ := hTcb1
+                by_cases hEq1 : tid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hTcb1Obj
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb1Obj
+                  simp at hTcb1Obj
+                · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1
+                  rw [hPres1] at hTcb1Obj
+                  exact ⟨tcb1, hTcb1Obj, by rw [hBud1, hBud2]⟩
     | _ => simp only []; intro h; cases h
 
 /-- IPC de-threading D6: characterise each TCB's `schedContextBinding` after

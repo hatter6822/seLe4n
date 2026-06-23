@@ -1,3 +1,46 @@
+## v0.32.10 — IPC de-threading D5: `blockedThreadTimeoutConsistent` FULLY de-threaded (13/13)
+
+Closes the D5 de-thread: `grep "hBlockedTimeout' : blockedThreadTimeoutConsistent st'"` is now empty
+across the tree.  Every `*_preserves_ipcInvariantFull` bundle **establishes** the timeout/budget
+consistency conjunct on the post-state from a single, uniform, dischargeable pre-state precondition
+`hAllBudgetsNone : allTimeoutBudgetsNone st` (replacing the threaded post-state hypothesis).
+
+- **Key insight** — no IPC transition ever writes `timeoutBudget := some` (every TCB store omits or
+  zeroes the field), so the kernel in fact maintains the *stronger* discipline that **no thread
+  carries a timeout budget**.  A state with all budgets `none` satisfies the seL4-faithful
+  `blockedThreadTimeoutConsistent` (budget ⇒ blocking IPC state) **vacuously**
+  (`blockedThreadTimeoutConsistent_of_all_none`).  This avoids per-transition per-woken-thread
+  `⟨woken⟩.timeoutBudget = none` side-conditions — which a rendezvous-partner queue head would force
+  into an awkward phrasing, and which are only dischargeable from the global all-none fact anyway.
+
+- **Foundation** (`IPC/Invariant/Defs.lean`): `allTimeoutBudgetsNone` + `timeoutBudgetFrame`
+  (budget-preservation: every post-state TCB pulls back to a pre-state TCB with equal `timeoutBudget`,
+  parallel to `sameSchedContextBindings`) with `refl`/`trans`/`of_objects_eq`,
+  `allTimeoutBudgetsNone_of_frame`, and `blockedThreadTimeoutConsistent_of_frame` (frame + pre-state
+  all-none ⇒ post-state consistent).  Plus `returnDonatedSchedContext_tcb_timeoutBudget_backward`
+  (mirror of the existing `_ipcState_replyObject_backward`) for the donation-return leg.
+
+- **Store-op family** (zero per-thread side-conditions — every store preserves the budget by `rfl`):
+  `storeObject_{modifiedTcb,nonTcb}` / `storeTcbIpcState{,_fromTcb,AndMessage}` /
+  `storeTcbReceiveComplete` / `storeTcbQueueLinks` / `storeObject_endpoint'` /
+  `endpointQueue{PopHead,Enqueue}` / `linkReply` / `linkCallerReply` / `linkServerStashedReply` /
+  `cleanupPreReceiveDonation` / `ipcUnwrapCaps` / `wakeThread_…_of_ready` `_timeoutBudgetFrame`.
+
+- **Per-transition frames** mirror each transition's `passiveServerIdle` decomposition but carry **no
+  precondition** (scheduler ops frame via `of_objects_eq`): `endpointSendDual` / `endpointCall` /
+  `endpointReceiveDual` / `endpointReply` / `endpointReplyRecv` / `endpointSendDualWithCaps` /
+  `endpointReceiveDualWithCaps` / `endpointCallWithCaps` / `endpointCallOnCore` (cross-core) +
+  the notification pair.  The retype pair (`coreIpcInvariantBundle` /
+  `lifecycleCompositionInvariantBundle`) via `lifecycleRetypeObject_preserves_blockedThreadTimeoutConsistent`
+  — the fresh-TCB slot discharged by a `hNewObjNoBudget` side-condition (a retyped TCB carries no
+  budget); every other slot frames from the pre-state.
+
+With this, the only IPC `ipcInvariantFull` conjunct still threaded anywhere is `donationOwnerValid`
+on the 2 bare reply bundles (`endpointReply`/`endpointReplyRecv`), which is architecturally
+composite-only.  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D5)
+
 ## v0.32.9 — IPC de-threading D6: `passiveServerIdle` FULLY de-threaded (13/13)
 
 Closes the D6 `passiveServerIdle` de-thread with the final, cross-core bundle.

@@ -4809,6 +4809,97 @@ theorem storeObject_endpoint_sameSchedContextBindings'
   exact storeObject_nonTcb_sameSchedContextBindings st st' oid (.endpoint ep)
     (fun _ => by simp) hObjInv hStore
 
+open SeLe4n.Model.SystemState in
+/-- D5: a `storeObject` rewriting a TCB whose `timeoutBudget` is preserved (`hBudgetEq`) frames
+`timeoutBudgetFrame` — the rewritten slot pulls back to the pre-state TCB with the same budget,
+every other slot is untouched.  (Every IPC TCB store satisfies `hBudgetEq` by `rfl`: none writes
+`timeoutBudget`.) -/
+theorem storeObject_modifiedTcb_timeoutBudgetFrame
+    (st st' : SystemState) (id : SeLe4n.ObjId) (origTcb newTcb : TCB)
+    (hOrig : st.objects[id]? = some (.tcb origTcb))
+    (hBudgetEq : newTcb.timeoutBudget = origTcb.timeoutBudget)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id (.tcb newTcb) st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  intro tid tcb' hTcb'
+  by_cases hEq : tid.toObjId = id
+  · rw [hEq, storeObject_objects_eq st st' id (.tcb newTcb) hObjInv hStore] at hTcb'
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hTcb')
+    exact ⟨origTcb, hEq ▸ hOrig, hBudgetEq.symm⟩
+  · rw [storeObject_objects_ne st st' id tid.toObjId (.tcb newTcb) hEq hObjInv hStore] at hTcb'
+    exact ⟨tcb', hTcb', rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D5: a `storeObject` of a **non-TCB** object frames `timeoutBudgetFrame` — no TCB slot changes,
+so every post-state TCB pulls back to the same pre-state TCB. -/
+theorem storeObject_nonTcb_timeoutBudgetFrame
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNewNonTcb : ∀ t, obj ≠ .tcb t)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  intro tid tcb' hTcb'
+  by_cases hEq : tid.toObjId = id
+  · rw [hEq, storeObject_objects_eq st st' id obj hObjInv hStore] at hTcb'
+    exact absurd (Option.some.inj hTcb') (hNewNonTcb tcb')
+  · rw [storeObject_objects_ne st st' id tid.toObjId obj hEq hObjInv hStore] at hTcb'
+    exact ⟨tcb', hTcb', rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D5: `storeTcbReceiveComplete` frames `timeoutBudgetFrame` (rewrites only ipcState/message). -/
+theorem storeTcbReceiveComplete_timeoutBudgetFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid.toObjId tcb
+        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
+        (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D5: `storeTcbQueueLinks` frames `timeoutBudgetFrame` (rewrites only queue-link fields). -/
+theorem storeTcbQueueLinks_timeoutBudgetFrame
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbQueueLinks at hStep
+  cases hL : lookupTcb st tid with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid.toObjId tcb
+        (tcbWithQueueLinks tcb prev pprev next) (lookupTcb_some_objects st tid tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D5: `pair`-shaped endpoint-store frame for `timeoutBudgetFrame`. -/
+theorem storeObject_endpoint_timeoutBudgetFrame'
+    (st : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint) (pair : Unit × SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.endpoint ep) st = .ok pair) :
+    timeoutBudgetFrame st pair.2 := by
+  obtain ⟨⟨⟩, st'⟩ := pair
+  exact storeObject_nonTcb_timeoutBudgetFrame st st' oid (.endpoint ep)
+    (fun _ => by simp) hObjInv hStore
+
 -- ============================================================================
 -- D6: `donationOwnerFrame` store-op family (the forward SchedContext/owner half)
 -- ============================================================================
@@ -5235,6 +5326,70 @@ theorem storeTcbReceiveComplete_passiveServerIdleFrame
         { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }
         (lookupTcb_some_objects st tid0 tcb hL) rfl (Or.inl (Or.inl rfl)) hObjInv hSO
 
+-- ============================================================================
+-- D5 `blockedThreadTimeoutConsistent` store-op frame family
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- D5: `storeTcbIpcState` frames `timeoutBudgetFrame` (the rewrite touches only `ipcState`). -/
+theorem storeTcbIpcState_timeoutBudgetFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid0 ipc = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbIpcState at hStep
+  cases hL : lookupTcb st tid0 with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
+        { tcb with ipcState := ipc } (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D5: `storeTcbIpcState_fromTcb` frames `timeoutBudgetFrame`. -/
+theorem storeTcbIpcState_fromTcb_timeoutBudgetFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState)
+    (hOrig : st.objects[tid0.toObjId]? = some (.tcb tcb))
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState_fromTcb st tid0 tcb ipc = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbIpcState_fromTcb at hStep
+  cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc }) st with
+  | error e => simp [hSO] at hStep
+  | ok p =>
+    obtain ⟨_, st''⟩ := p
+    simp only [hSO, Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
+      { tcb with ipcState := ipc } hOrig rfl hObjInv hSO
+
+open SeLe4n.Model.SystemState in
+/-- D5: `storeTcbIpcStateAndMessage` frames `timeoutBudgetFrame`. -/
+theorem storeTcbIpcStateAndMessage_timeoutBudgetFrame
+    (st st' : SystemState) (tid0 : SeLe4n.ThreadId) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid0 ipc msg = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hL : lookupTcb st tid0 with
+  | none => simp [hL] at hStep
+  | some tcb =>
+    simp only [hL] at hStep
+    cases hSO : storeObject tid0.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok p =>
+      obtain ⟨_, st''⟩ := p
+      simp only [hSO, Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_modifiedTcb_timeoutBudgetFrame st st'' tid0.toObjId tcb
+        { tcb with ipcState := ipc, pendingMessage := msg } (lookupTcb_some_objects st tid0 tcb hL) rfl hObjInv hSO
+
 open SeLe4n.Model.SystemState in
 /-- D3: a `storeObject` of a **non-TCB** object frames the clause (vacuous `hNew`). -/
 theorem storeObject_nonTcb_preserves_blockedOnReplyHasTarget
@@ -5633,6 +5788,124 @@ theorem endpointQueueEnqueue_sameSchedContextBindings
                     exact (hS1.trans hS2).trans (storeTcbQueueLinks_sameSchedContextBindings _ _ tid _ _ _ hInv2 hStep)
 
 open SeLe4n.Model.SystemState in
+/-- D5: `endpointQueuePopHead` frames `timeoutBudgetFrame` (endpoint metadata + queue-link
+rewrites only). -/
+theorem endpointQueuePopHead_timeoutBudgetFrame
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    timeoutBudgetFrame st st' := by
+  unfold endpointQueuePopHead at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hS1 := storeObject_endpoint_timeoutBudgetFrame' st endpointId _ pair hObjInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact hS1.trans (storeTcbQueueLinks_timeoutBudgetFrame
+                  pair.2 st3 headTid none none none hInv1 hFinal)
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInv1 hLink
+                  have hS2 := storeTcbQueueLinks_timeoutBudgetFrame
+                    pair.2 st2 nextTid none (some QueuePPrev.endpointHead) nextTcb.queueNext hInv1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact (hS1.trans hS2).trans (storeTcbQueueLinks_timeoutBudgetFrame
+                      st2 st3 headTid none none none hInv2 hFinal)
+
+open SeLe4n.Model.SystemState in
+/-- D5: `endpointQueueEnqueue` frames `timeoutBudgetFrame` (endpoint metadata + tail-link rewrite
+only). -/
+theorem endpointQueueEnqueue_timeoutBudgetFrame
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    timeoutBudgetFrame st st' := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                have hS1 := storeObject_endpoint_timeoutBudgetFrame' st endpointId _ pair hObjInv hStore
+                intro hStep
+                exact hS1.trans (storeTcbQueueLinks_timeoutBudgetFrame _ _ tid _ _ _ hInv1 hStep)
+            | some tailTid =>
+              cases hLookupT : lookupTcb st tailTid
+              · simp [hLookupT]
+              · rename_i tailTcb
+                simp only [hLookupT]
+                cases hStore : storeObject endpointId _ st
+                · simp
+                · rename_i pair
+                  simp only []
+                  have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                  have hS1 := storeObject_endpoint_timeoutBudgetFrame' st endpointId _ pair hObjInv hStore
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid _ _ (some tid)
+                  · simp
+                  · rename_i st2
+                    simp only []
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                    have hS2 := storeTcbQueueLinks_timeoutBudgetFrame _ _ tailTid _ _ _ hInv1 hLink1
+                    intro hStep
+                    exact (hS1.trans hS2).trans (storeTcbQueueLinks_timeoutBudgetFrame _ _ tid _ _ _ hInv2 hStep)
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointQueuePopHead` frames the SchedContext/owner side forward — it stores the
 endpoint (non-Sc/non-TCB) and rewrites only queue-link fields (`storeTcbQueueLinks`), preserving
 every TCB's `ipcState` and binding, hence every donation owner witness. -/
@@ -5897,6 +6170,75 @@ theorem linkServerStashedReply_sameSchedContextBindings
           { sTcb with pendingReceiveReply := none } ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hObjInv1 hStep)
 
 open SeLe4n.Model.SystemState in
+/-- D5: `linkReply` frames `timeoutBudgetFrame` (stores a `.reply` object — non-TCB). -/
+theorem linkReply_timeoutBudgetFrame
+    (st st' : SystemState) (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkReply rid caller st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold SystemState.linkReply at hStep
+  cases hR : st.getReply? rid with
+  | none => simp [hR] at hStep
+  | some r =>
+    simp only [hR] at hStep
+    split at hStep
+    · exact storeObject_nonTcb_timeoutBudgetFrame st st' rid.toObjId _ (fun _ => by simp) hObjInv hStep
+    · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- D5: `linkCallerReply` frames `timeoutBudgetFrame` (reply store + caller `replyObject` write). -/
+theorem linkCallerReply_timeoutBudgetFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hS1 := linkReply_timeoutBudgetFrame st st1 rid caller hObjInv hLink
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact hS1.trans (storeObject_modifiedTcb_timeoutBudgetFrame st1 st' caller.toObjId tcb
+          { tcb with replyObject := some rid } ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl hObjInv1 hStep)
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- D5: `linkServerStashedReply` frames `timeoutBudgetFrame` (`linkCallerReply` + the server
+stash-clear store). -/
+theorem linkServerStashedReply_timeoutBudgetFrame
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hS1 := linkCallerReply_timeoutBudgetFrame st st1 caller rid hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hS1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact hS1.trans (storeObject_modifiedTcb_timeoutBudgetFrame st1 st' server.toObjId sTcb
+          { sTcb with pendingReceiveReply := none } ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl hObjInv1 hStep)
+
+open SeLe4n.Model.SystemState in
 /-- D6: `linkCallerReply` frames `passiveServerIdle` (reply-object store + caller `replyObject`
 write — both preserve every `ipcState`/binding and the scheduler). -/
 theorem linkCallerReply_passiveServerIdleFrame
@@ -5974,6 +6316,32 @@ theorem cleanupPreReceiveDonation_passiveServerIdleFrame
             exact ⟨tcbI, hTcbI, by rw [hIdEq]; exact hBindEq.trans hUnbound',
               by rw [hSched] at hNotInQ'; exact hNotInQ',
               by rw [hSched] at hNotCurrent'; exact hNotCurrent', hIpcEq⟩
+
+open SeLe4n.Model.SystemState in
+/-- D5: `cleanupPreReceiveDonation` frames `timeoutBudgetFrame` — the donation-return rebinds two
+TCBs' `schedContextBinding` and the SchedContext's `boundThread`, never a `timeoutBudget`; the
+no-donation branches leave the state unchanged. -/
+theorem cleanupPreReceiveDonation_timeoutBudgetFrame
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    timeoutBudgetFrame st (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact timeoutBudgetFrame.refl st
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact timeoutBudgetFrame.refl st
+    | bound scId => exact timeoutBudgetFrame.refl st
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact timeoutBudgetFrame.refl st
+      | ok st' =>
+        simp only []
+        intro tid tcb' hTcb'
+        exact returnDonatedSchedContext_tcb_timeoutBudget_backward st st' receiver scId
+          originalOwner hObjInv hRet tid.toObjId tcb' hTcb'
 
 open SeLe4n.Model.SystemState in
 /-- D6: `linkReply` frames the SchedContext/owner side forward — it stores only the `.reply`
@@ -6100,6 +6468,19 @@ theorem ipcUnwrapCaps_sameSchedContextBindings
     (hObjInv : st.objects.invExt)
     (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
     sameSchedContextBindings st st' :=
+  fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
+    st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- D5: `ipcUnwrapCaps` frames `timeoutBudgetFrame` — it writes only CNode caps at `receiverRoot`,
+so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`). -/
+theorem ipcUnwrapCaps_timeoutBudgetFrame
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    timeoutBudgetFrame st st' :=
   fun y tcY hY => ⟨tcY, ipcUnwrapCaps_tcb_backward msg senderRoot receiverRoot slotBase grantRight
     st st' summary y.toObjId tcY hObjInv hStep hY, rfl⟩
 
@@ -6979,6 +7360,144 @@ theorem endpointReceiveDual_preserves_passiveServerIdle
       hReceiverReady hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
+/-- D5: `endpointReceiveDual` frames `timeoutBudgetFrame` — every store-op (queue pop/enqueue,
+ipcState/message writes, the reply link, the pre-receive donation-return, the stash store) and the
+scheduler steps preserve every TCB's `timeoutBudget`. -/
+theorem endpointReceiveDual_timeoutBudgetFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    timeoutBudgetFrame st st' := by
+  unfold endpointReceiveDual at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.sendQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId false st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInvPop : pair.2.2.objects.invExt :=
+            endpointQueuePopHead_preserves_objects_invExt endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          have hF1 := endpointQueuePopHead_timeoutBudgetFrame endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+          cases hSenderIpc : pair.2.1.ipcState with
+          | blockedOnCall _ =>
+            simp only [hSenderIpc, ite_true] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 (.blockedOnReply endpointId (some receiver)) none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame pair.2.2 st2 pair.1
+                (.blockedOnReply endpointId (some receiver)) none hObjInvPop hMsg)
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hF3 := hF2.trans (linkCallerReply_timeoutBudgetFrame st2 stLinked pair.1 rid hObjInvMsg hLink)
+                  revert hStep
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    intro h
+                    obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                    exact hF3.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame stLinked st4 receiver
+                      .ready _ hObjInvLink hPend)
+                  | error _ => simp
+          | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+            simp only [hSenderIpc] at hStep
+            cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+            | error e => simp [hMsg] at hStep
+            | ok st2 =>
+              simp only [hMsg] at hStep
+              have hObjInvMsg : st2.objects.invExt :=
+                storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
+              have hF2 := hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame pair.2.2 st2 pair.1
+                .ready none hObjInvPop hMsg)
+              have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+              have hF3 := hF2.trans (timeoutBudgetFrame.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1))
+              revert hStep
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
+              | ok st4 =>
+                intro h
+                obtain ⟨_, hEq⟩ := Prod.mk.inj (Except.ok.inj h); subst hEq
+                exact hF3.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame (ensureRunnable st2 pair.1) st4
+                  receiver .ready _ hObjInvEns hPend)
+              | error _ => simp
+      | none =>
+        cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+        | error _ => simp [hHead, hChecked] at hStep
+        | ok stClean =>
+          have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+            (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+          simp only [hHead, hChecked] at hStep
+          rw [hBridge] at hStep
+          have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+          have hFClean := cleanupPreReceiveDonation_timeoutBudgetFrame st receiver hObjInv
+          cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+          | error e => simp [hEnq] at hStep
+          | ok st1 =>
+            simp only [hEnq] at hStep
+            have hObjInvEnq : st1.objects.invExt :=
+              endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            have hF1 := hFClean.trans (endpointQueueEnqueue_timeoutBudgetFrame endpointId true receiver
+              (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq)
+            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc] at hStep
+              have hObjInv2 : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
+              have hF2 := hF1.trans (storeTcbIpcState_timeoutBudgetFrame st1 st2 receiver
+                (.blockedOnReceive endpointId) hObjInvEnq hIpc)
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact hF2.trans (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 receiver))
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  have hRecvObj : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  have hF3 := hF2.trans (storeObject_modifiedTcb_timeoutBudgetFrame st2 stStashed receiver.toObjId rTcb
+                    { rTcb with pendingReceiveReply := replyId } hRecvObj rfl hObjInv2 hStash)
+                  exact hF3.trans (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects stStashed receiver))
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointReceiveDual` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem endpointReceiveDual_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointReceiveDual_timeoutBudgetFrame st st' endpointId receiver senderId replyId hObjInv hStep) hAll
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointReceiveDualWithCaps` preserves `donationBudgetTransfer` (`endpointReceiveDual`
 preserves it; the trailing `ipcUnwrapCaps` is `sameSchedContextBindings`). -/
 theorem endpointReceiveDualWithCaps_preserves_donationBudgetTransfer
@@ -7243,6 +7762,66 @@ theorem endpointReceiveDualWithCaps_preserves_passiveServerIdle
       receiverCspaceRoot receiverSlotBase st st' senderId summary hReceiverReady hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
+/-- D5: `endpointReceiveDualWithCaps` frames `timeoutBudgetFrame` (`endpointReceiveDual` +
+`ipcUnwrapCaps`, neither touching any `timeoutBudget`). -/
+theorem endpointReceiveDualWithCaps_timeoutBudgetFrame
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    timeoutBudgetFrame st st' := by
+  simp only [endpointReceiveDualWithCaps] at hStep
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
+  | error e => simp [hRecv] at hStep
+  | ok pair =>
+    rcases pair with ⟨sid, stMid⟩
+    have hFMid := endpointReceiveDual_timeoutBudgetFrame st stMid endpointId receiver sid replyId hObjInv hRecv
+    have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid replyId hObjInv hRecv
+    simp [hRecv] at hStep
+    cases hTcb : stMid.getTcb? receiver with
+    | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+      | some msg =>
+        simp [hMsg] at hStep
+        split at hStep
+        · obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hFMid
+        · cases hLookup : lookupCspaceRoot stMid sid with
+          | none => simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg senderRoot receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hObjInvMid hUnwrap)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointReceiveDualWithCaps` preserves `blockedThreadTimeoutConsistent`. -/
+theorem endpointReceiveDualWithCaps_preserves_blockedThreadTimeoutConsistent
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (endpointRights : AccessRightSet)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
+             receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointReceiveDualWithCaps_timeoutBudgetFrame endpointId receiver replyId endpointRights
+      receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv hStep) hAll
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointReplyRecv` frames `passiveServerIdle`.  The reply leg unblocks the reply target
 `.ready` + reschedules it (allowed); the receive leg is `endpointReceiveDual`.  The receive-leg
 receiver is `.ready` in the post-reply state — whether it *is* the just-replied target (set `.ready`)
@@ -7328,6 +7907,73 @@ theorem endpointReplyRecv_preserves_passiveServerIdle
   passiveServerIdle_of_frame
     (endpointReplyRecv_passiveServerIdleFrame st st' endpointId receiver replyTarget msg replyId
       hReceiverReady hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- D5: `endpointReplyRecv` frames `timeoutBudgetFrame` — the reply leg (ipcState/message write +
+reschedule) and the receive leg (`endpointReceiveDual`) both preserve every TCB's `timeoutBudget`. -/
+theorem endpointReplyRecv_timeoutBudgetFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId expectedReplier =>
+      simp only [hIpc] at hStep
+      cases expectedReplier with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+          | error e => simp
+          | ok stReplied =>
+            simp only []
+            have hObjInvR := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReplied replyTarget _ _ hObjInv hMsg
+            have hF1 := (storeTcbIpcStateAndMessage_timeoutBudgetFrame st stReplied replyTarget .ready (some msg)
+              hObjInv hMsg).trans (timeoutBudgetFrame.of_objects_eq (ensureRunnable_preserves_objects stReplied replyTarget))
+            have hObjInvE : (ensureRunnable stReplied replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable stReplied replyTarget) with
+            | error e => simp
+            | ok pair =>
+              intro hStep
+              simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, rfl⟩ := hStep
+              exact hF1.trans (endpointReceiveDual_timeoutBudgetFrame
+                (ensureRunnable stReplied replyTarget) pair.2 endpointId receiver pair.1 replyId
+                hObjInvE hRecv)
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointReplyRecv` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem endpointReplyRecv_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointReplyRecv_timeoutBudgetFrame st st' endpointId receiver replyTarget msg replyId hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointReplyRecv` preserves `donationOwnerUnique` (reply leg unblocks `.ready`
@@ -7667,6 +8313,89 @@ theorem endpointCall_preserves_passiveServerIdle
     (endpointCall_passiveServerIdleFrame st st' endpointId caller msg hObjInv hCallerNotUnbound hStep) hInv
 
 open SeLe4n.Model.SystemState in
+/-- D5: `endpointCall` frames `timeoutBudgetFrame` — pop/enqueue, the receiver/caller ipcState
+writes, the reply-link store, and the scheduler steps all preserve every TCB's `timeoutBudget`. -/
+theorem endpointCall_timeoutBudgetFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold endpointCall at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hF1 := endpointQueuePopHead_timeoutBudgetFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg] at hStep
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInv1 hMsg
+            have hF2 := storeTcbIpcStateAndMessage_timeoutBudgetFrame pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg
+            have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by rwa [ensureRunnable_preserves_objects]
+            have hF3 : timeoutBudgetFrame st2 (ensureRunnable st2 pair.1) :=
+              timeoutBudgetFrame.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1)
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
+            | error e => simp [hIpc] at hStep
+            | ok st4 =>
+              simp only [hIpc] at hStep
+              have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) st4 caller _ _ hObjInvEns hIpc
+              have hF4 := storeTcbIpcStateAndMessage_timeoutBudgetFrame (ensureRunnable st2 pair.1) st4 caller
+                (.blockedOnReply endpointId (some pair.1)) none hObjInvEns hIpc
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hF5 := linkServerStashedReply_timeoutBudgetFrame st4 st5 caller pair.1 hObjInv4 hLink
+                exact ((((hF1.trans hF2).trans hF3).trans hF4).trans hF5).trans
+                  (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st5 caller))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false caller st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st1 hObjInv hEnq
+          have hF1 := endpointQueueEnqueue_timeoutBudgetFrame endpointId false caller st st1 hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 caller (.blockedOnCall endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 caller (.blockedOnCall endpointId) (some msg)
+              hObjInv1 hMsg)).trans
+              (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 caller))
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointCall` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem endpointCall_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointCall_timeoutBudgetFrame st st' endpointId caller msg hObjInv hStep) hAll
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDual` preserves every TCB's `schedContextBinding` (rendezvous: pop +
 receive-complete + reschedule; block: enqueue + `.blockedOnSend` + deschedule — no binding
 write). -/
@@ -7880,6 +8609,72 @@ theorem endpointSendDual_preserves_passiveServerIdle
     passiveServerIdle st' :=
   passiveServerIdle_of_frame
     (endpointSendDual_passiveServerIdleFrame st st' endpointId sender msg hObjInv hSenderNotUnbound hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- D5: `endpointSendDual` frames `timeoutBudgetFrame` — every store-op (queue pop/enqueue,
+receive-complete, ipcState-and-message write) preserves every TCB's `timeoutBudget`, and the
+scheduler steps leave the object map untouched. -/
+theorem endpointSendDual_timeoutBudgetFrame
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          have hF1 := endpointQueuePopHead_timeoutBudgetFrame endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hF1.trans (storeTcbReceiveComplete_timeoutBudgetFrame pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg)).trans
+              (timeoutBudgetFrame.of_objects_eq (ensureRunnable_preserves_objects st2 pair.1))
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false sender st st1 hObjInv hEnq
+          have hF1 := endpointQueueEnqueue_timeoutBudgetFrame endpointId false sender st st1 hObjInv hEnq
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 sender (.blockedOnSend endpointId) (some msg)
+              hObjInv1 hMsg)).trans
+              (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 sender))
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointSendDual` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem endpointSendDual_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointSendDual_timeoutBudgetFrame st st' endpointId sender msg hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
 /-- D6: `endpointSendDualWithCaps` preserves every TCB's binding (`endpointSendDual` +
@@ -8142,6 +8937,60 @@ theorem endpointSendDualWithCaps_preserves_passiveServerIdle
       senderCspaceRoot receiverSlotBase st st' summary hObjInv hSenderNotUnbound hStep) hInv
 
 open SeLe4n.Model.SystemState in
+/-- D5: `endpointSendDualWithCaps` frames `timeoutBudgetFrame` (`endpointSendDual` +
+`ipcUnwrapCaps`, neither touching any `timeoutBudget`). -/
+theorem endpointSendDualWithCaps_timeoutBudgetFrame
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    timeoutBudgetFrame st st' := by
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender msg st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hFMid := endpointSendDual_timeoutBudgetFrame st stMid endpointId sender msg hObjInv hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    simp [hSend] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg senderCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointSendDualWithCaps` preserves `blockedThreadTimeoutConsistent`. -/
+theorem endpointSendDualWithCaps_preserves_blockedThreadTimeoutConsistent
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointSendDualWithCaps_timeoutBudgetFrame endpointId sender msg endpointRights
+      senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep) hAll
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointCallWithCaps` frames `passiveServerIdle` (`endpointCall` + `ipcUnwrapCaps`). -/
 theorem endpointCallWithCaps_passiveServerIdleFrame
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
@@ -8197,6 +9046,59 @@ theorem endpointCallWithCaps_preserves_passiveServerIdle
   passiveServerIdle_of_frame
     (endpointCallWithCaps_passiveServerIdleFrame endpointId caller msg endpointRights
       callerCspaceRoot receiverSlotBase st st' summary hObjInv hCallerNotUnbound hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- D5: `endpointCallWithCaps` frames `timeoutBudgetFrame` (`endpointCall` + `ipcUnwrapCaps`). -/
+theorem endpointCallWithCaps_timeoutBudgetFrame
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    timeoutBudgetFrame st st' := by
+  simp only [endpointCallWithCaps] at hStep
+  cases hCall : endpointCall endpointId caller msg st with
+  | error e => simp [hCall] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hFMid := endpointCall_timeoutBudgetFrame st stMid endpointId caller msg hObjInv hCall
+    have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
+    simp [hCall] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hFMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact hFMid.trans (ipcUnwrapCaps_timeoutBudgetFrame msg callerCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hStep)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointCallWithCaps` preserves `blockedThreadTimeoutConsistent`. -/
+theorem endpointCallWithCaps_preserves_blockedThreadTimeoutConsistent
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (callerCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointCallWithCaps endpointId caller msg endpointRights
+             callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointCallWithCaps_timeoutBudgetFrame endpointId caller msg endpointRights
+      callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointSendDual` frames the clause (never sets `.blockedOnReply`). -/
@@ -8723,6 +9625,126 @@ theorem notificationSignal_preserves_passiveServerIdle
     (notificationSignal_passiveServerIdleFrame st st' notificationId badge hObjInv hStep) hInv
 
 open SeLe4n.Model.SystemState in
+/-- D5: `notificationWait` frames `timeoutBudgetFrame` — it writes only the notification object and
+the waiter's `ipcState` (`.ready` deliver / `.blockedOnNotification` block) plus a scheduler
+dequeue, none of which touch any TCB's `timeoutBudget`. -/
+theorem notificationWait_timeoutBudgetFrame
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    timeoutBudgetFrame st st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hF1 := storeObject_nonTcb_timeoutBudgetFrame st st1 notificationId (.notification _)
+          (fun _ => by simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact hF1.trans (storeTcbIpcState_timeoutBudgetFrame st1 st2 waiter .ready hObjInv1 hSI)
+    · split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          · contradiction
+          · split at hStep
+            next => contradiction
+            next st1 hSO =>
+              have hF1 := storeObject_nonTcb_timeoutBudgetFrame st st1 notificationId (.notification _)
+                (fun _ => by simp) hObjInv hSO
+              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+              have hWaiterObj : st.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
+                lookupTcb_some_objects st waiter waiterTcb hLookup
+              have hNeWN : waiter.toObjId ≠ notificationId := by
+                intro h; rw [h, hObj] at hWaiterObj; simp at hWaiterObj
+              have hOrig1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) := by
+                rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNeWN hObjInv hSO]
+                exact hWaiterObj
+              split at hStep
+              next => contradiction
+              next st2 hSI =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                exact (hF1.trans (storeTcbIpcState_fromTcb_timeoutBudgetFrame st1 st2 waiter waiterTcb
+                  (.blockedOnNotification notificationId) hOrig1 hObjInv1 hSI)).trans
+                  (timeoutBudgetFrame.of_objects_eq (removeRunnable_preserves_objects st2 waiter))
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `notificationWait` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem notificationWait_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (notificationWait_timeoutBudgetFrame st st' notificationId waiter badge hObjInv hStep) hAll
+
+open SeLe4n.Model.SystemState in
+/-- D5: `notificationSignal` frames `timeoutBudgetFrame` — writes only the notification object and
+(when a waiter is present) the woken head waiter's `ipcState`/message plus a scheduler enqueue. -/
+theorem notificationSignal_timeoutBudgetFrame
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hF1 := storeObject_nonTcb_timeoutBudgetFrame st st1 notificationId (.notification _)
+          (fun _ => by simp) hObjInv hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          exact (hF1.trans (storeTcbIpcStateAndMessage_timeoutBudgetFrame st1 st2 waiter .ready _
+            hObjInv1 hSM)).trans
+            (timeoutBudgetFrame.of_objects_eq (ensureRunnable_preserves_objects st2 waiter))
+    | none =>
+      simp only [hWaiters] at hStep
+      split at hStep
+      all_goals
+        exact storeObject_nonTcb_timeoutBudgetFrame st st' notificationId (.notification _)
+          (fun _ => by simp) hObjInv hStep
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `notificationSignal` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem notificationSignal_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (notificationSignal_timeoutBudgetFrame st st' notificationId badge hObjInv hStep) hAll
+
+open SeLe4n.Model.SystemState in
 /-- D6: `endpointReply` preserves every TCB's `schedContextBinding` (it unblocks the
 target `.ready` and reschedules — no binding write). -/
 theorem endpointReply_sameSchedContextBindings
@@ -8817,6 +9839,61 @@ theorem endpointReply_preserves_passiveServerIdle
     passiveServerIdle st' :=
   passiveServerIdle_of_frame
     (endpointReply_passiveServerIdleFrame st st' replier target msg hObjInv hStep) hInv
+
+open SeLe4n.Model.SystemState in
+/-- D5: `endpointReply` frames `timeoutBudgetFrame` — it unblocks the reply target `.ready` (an
+ipcState/message write) + reschedule, neither touching any `timeoutBudget`. -/
+theorem endpointReply_timeoutBudgetFrame
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  unfold endpointReply at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st target with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : tcb.ipcState with
+    | ready => simp [hIpc] at hStep
+    | blockedOnSend _ => simp [hIpc] at hStep
+    | blockedOnReceive _ => simp [hIpc] at hStep
+    | blockedOnNotification _ => simp [hIpc] at hStep
+    | blockedOnCall _ => simp [hIpc] at hStep
+    | blockedOnReply epId replyTarget =>
+      simp only [hIpc] at hStep
+      cases replyTarget with
+      | none => simp at hStep
+      | some expected =>
+        simp only at hStep
+        split at hStep
+        · revert hStep
+          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
+          | error e => simp
+          | ok st'' =>
+            intro hStep
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, rfl⟩ := hStep
+            exact (storeTcbIpcStateAndMessage_timeoutBudgetFrame st st'' target .ready (some msg)
+              hObjInv hMsg).trans
+              (timeoutBudgetFrame.of_objects_eq (ensureRunnable_preserves_objects st'' target))
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D5: `endpointReply` preserves `blockedThreadTimeoutConsistent` from the
+pre-state `allTimeoutBudgetsNone`. -/
+theorem endpointReply_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hAll : allTimeoutBudgetsNone st)
+    (hStep : endpointReply replier target msg st = .ok ((), st')) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_frame
+    (endpointReply_timeoutBudgetFrame st st' replier target msg hObjInv hStep) hAll
 
 open SeLe4n.Model.SystemState in
 /-- D3: `endpointReply` frames the clause (unblock to `.ready`). -/
@@ -11939,7 +13016,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
@@ -11965,7 +13042,9 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointReceiveDual_preserves_blockedThreadTimeoutConsistent st st' endpointId receiver senderId replyId hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    endpointReceiveDual_preserves_donationBudgetTransfer st st' endpointId receiver senderId replyId hInv.donationBudgetTransfer hObjInv hStep,
    endpointReceiveDual_establishes_blockedOnReplyHasTarget st st' endpointId receiver senderId replyId hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDual_establishes_blockedOnReplyHasReplyObject st st' endpointId
@@ -11991,7 +13070,7 @@ theorem endpointCall_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -12017,7 +13096,9 @@ theorem endpointCall_preserves_ipcInvariantFull
    hDualQueue',
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointCall_preserves_blockedThreadTimeoutConsistent st st' endpointId caller msg hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -12046,7 +13127,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -12072,7 +13153,9 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    hDualQueue',
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointSendDual_preserves_blockedThreadTimeoutConsistent st st' endpointId sender msg hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -12096,9 +13179,11 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
+    -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition;
+    -- no transition ever writes `timeoutBudget := some`).
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the head
@@ -12118,7 +13203,9 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    notificationSignal_preserves_queueNextBlockingConsistent st st' notificationId badge hObjInv hInv.queueNextBlockingConsistent hStep,
    notificationSignal_preserves_queueHeadBlockedConsistent st st' notificationId badge hObjInv hInv.queueHeadBlockedConsistent hNWC hStep,
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   -- IPC de-threading D5: `blockedThreadTimeoutConsistent` **established** from `allTimeoutBudgetsNone`.
+   notificationSignal_preserves_blockedThreadTimeoutConsistent st st' notificationId badge hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -12147,13 +13234,14 @@ theorem notificationWait_preserves_ipcInvariantFull
     -- `notificationWait` may re-block a thread that the carried preconditions do
     -- not exclude from being an endpoint queue head (see file note).
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hWaiterNotRecv : ∀ (tcb : TCB), st.getTcb? waiter = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
     -- IPC de-threading D6: the syscall caller is running, not awaiting a reply.
     (hWaiterNotReply : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition).
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -12172,7 +13260,10 @@ theorem notificationWait_preserves_ipcInvariantFull
    hWtpmn', hNoDup', hQMC',
    -- IPC de-threading D4: queueNext **established** from the pre-state.
    notificationWait_preserves_queueNextBlockingConsistent st st' notificationId waiter result hObjInv hInv.queueNextBlockingConsistent hStep,
-   hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hQHBC',
+   -- IPC de-threading D5: `blockedThreadTimeoutConsistent` **established** from the pre-state.
+   notificationWait_preserves_blockedThreadTimeoutConsistent st st' notificationId waiter result hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (notificationWait_sameSchedContextBindings st st' notificationId waiter result hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -12196,7 +13287,7 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hWtpmn' : waitingThreadsPendingMessageNone st')
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
@@ -12209,9 +13300,11 @@ theorem endpointReply_preserves_ipcInvariantFull
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    endpointReply_preserves_queueNextBlockingConsistent st st' replier target msg hObjInv hInv.queueNextBlockingConsistent hStep,
    endpointReply_preserves_queueHeadBlockedConsistent st st' replier target msg hObjInv hInv.queueHeadBlockedConsistent hStep,
+   -- IPC de-threading D5: `blockedThreadTimeoutConsistent` **established** from `allTimeoutBudgetsNone`.
+   endpointReply_preserves_blockedThreadTimeoutConsistent st st' replier target msg hObjInv hAllBudgetsNone hStep,
    -- IPC de-threading D7: `donationChainAcyclic` is **derived** from the (still-threaded)
    -- post-state `donationOwnerValid` via the subsumption lemma — no separate `hDCA'`.
-   hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
+   donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
    endpointReply_preserves_passiveServerIdle st st' replier target msg hObjInv hInv.passiveServerIdle hStep,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
@@ -12240,7 +13333,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
@@ -12255,7 +13348,9 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    hDualQueue',
    endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
    endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
+   hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointReplyRecv_preserves_blockedThreadTimeoutConsistent st st' endpointId receiver replyTarget msg replyId hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOV', hDOV',
    endpointReplyRecv_preserves_passiveServerIdle st st' endpointId receiver replyTarget msg replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep,
    endpointReplyRecv_preserves_donationBudgetTransfer st st' endpointId receiver replyTarget msg replyId hObjInv hInv.donationBudgetTransfer hStep,
    endpointReplyRecv_preserves_blockedOnReplyHasTarget st st' endpointId receiver replyTarget msg replyId hObjInv hInv.blockedOnReplyHasTarget hStep,
@@ -12286,7 +13381,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hSenderNotRecv : ∀ (tcb : TCB), st.getTcb? sender = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -12311,7 +13406,9 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     hInv.passiveServerIdle hStep
   exact ⟨endpointSendDualWithCaps_preserves_ipcInvariant endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointSendDualWithCaps_preserves_blockedThreadTimeoutConsistent endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationBudgetTransfer,
@@ -12346,7 +13443,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hReplyIdValid : ∀ rid, replyId = some rid → replyIdEstablishFresh st rid)
     (hReceiverNotRecv : ∀ (tcb : TCB), st.getTcb? receiver = some tcb →
@@ -12369,7 +13466,9 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     hObjInv hInv.passiveServerIdle hStep
   exact ⟨endpointReceiveDualWithCaps_preserves_ipcInvariant endpointId receiver replyId endpointRights
      receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointReceiveDualWithCaps_preserves_blockedThreadTimeoutConsistent endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    endpointReceiveDualWithCaps_preserves_donationBudgetTransfer endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationBudgetTransfer hObjInv hStep,
    endpointReceiveDualWithCaps_establishes_blockedOnReplyHasTarget endpointId receiver replyId endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.blockedOnReplyHasTarget hObjInv hStep,
    ⟨hRCLRecip', endpointReceiveDualWithCaps_establishes_blockedOnReplyHasReplyObject endpointId receiver
@@ -12400,7 +13499,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
-    (hBlockedTimeout' : blockedThreadTimeoutConsistent st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -12425,7 +13524,9 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     hInv.passiveServerIdle hStep
   exact ⟨endpointCallWithCaps_preserves_ipcInvariant endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary hInv.1 hObjInv hStep,
-   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout', donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
+   hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC',
+   endpointCallWithCaps_preserves_blockedThreadTimeoutConsistent endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv hAllBudgetsNone hStep,
+   donationOwnerValid_implies_donationChainAcyclic st' hDOVest, hDOVest, hPSIest,
    donationBudgetTransfer_of_sameSchedContextBindings
      (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
      hInv.donationBudgetTransfer,
