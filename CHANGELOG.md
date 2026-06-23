@@ -1,3 +1,24 @@
+## v0.32.18 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointCall` queueNext de-threaded
+
+Second enqueue-transition qNBC de-thread, reusing core (b) + the existing reply-store qNBC frames.
+
+- `endpointCall_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) — establishes
+  `queueNextBlockingConsistent` from the pre-state. Block branch mirrors `endpointSendDual` (sendQ
+  enqueue, `.blockedOnCall`; core (b)'s old-tail `.blockedOnSend`/`.blockedOnCall` both match
+  `.blockedOnCall endpointId`). Rendezvous (Call) branch: pop + receiver `.ready` store +
+  `ensureRunnable` + caller `.blockedOnReply` store (`queueNextBlockingMatch` with a `.blockedOnReply`
+  neighbour is `True` via the catch-all — the `.ready`-store, `_ready` frame; the caller-store
+  discharges `hFwd` by the concrete `.blockedOnReply` head, `hBwd` by casing the predecessor state)
+  + `linkServerStashedReply` (existing reply-store qNBC frame) + `removeRunnable`. No new sub-frames
+  were needed — all reply-store qNBC frames already existed.
+- **`endpointCall_preserves_ipcInvariantFull` drops `hQNBC'`** (established via the new theorem;
+  `hFreshCaller` / `hSendTailFresh` replace it). `hEQTB'` / `hQHBC'` remain threaded.
+
+Proof-only, additive + one bundle signature change (no Lean call sites), trace byte-identical, zero
+`sorry`/`axiom`; `DualQueueMembership` build green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.17 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointSendDual` queueNext de-threaded
 
 First complete enqueue-transition qNBC de-thread, consuming the v0.32.16 core (b).
