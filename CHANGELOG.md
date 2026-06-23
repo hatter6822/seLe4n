@@ -1,3 +1,44 @@
+## v0.32.11 — IPC de-threading D4 (Finding F-2) Slice 1: `endpointQueueTailBlockedConsistent` conjunct
+
+Adds the missing **reachable→blocked** structural invariant (tail specialisation) that the
+enqueue-style IPC transitions need to de-thread `queueNextBlockingConsistent` /
+`queueHeadBlockedConsistent` — the F-2 prerequisite the plan sequences before the D4-residual.
+
+- **`endpointQueueTailBlockedConsistent`** (`IPC/Invariant/Defs.lean`) — the dual of
+  `queueHeadBlockedConsistent` for the queue **tail**: a `receiveQ` tail is `.blockedOnReceive` on
+  that endpoint, a `sendQ` tail is `.blockedOnSend`/`.blockedOnCall`.  Added as the **19th
+  `ipcInvariantFull` conjunct** (def + `IpcInvariantFull` field + bridge + named projection +
+  `ipcInvariantFull_of_core_replyCallerLinkage` + `ipcInvariantFull_compositional`).
+
+  **Why it is needed (and not derivable):** `endpointQueueEnqueue` links the *old tail*'s
+  `queueNext` to the freshly-enqueued thread, so establishing `queueNextBlockingConsistent` on the
+  post-state requires the old tail to be blocked on the same endpoint (`queueNextBlockingMatch`).
+  The existing `ipcStateQueueMembershipConsistent` is the *blocked→reachable* converse;
+  `intrusiveQueueWellFormed` asserts the tail exists with `queueNext = none` but not that it is
+  blocked; and there is no head→tail reachability lemma to run a chain-propagation argument through.
+
+- **Preservation frame family** (`IPC/Invariant/QueueNextBlocking.lean`): the
+  `endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward` combinator (preserved by any step
+  that frames endpoints + every TCB's `ipcState`) + the `ensureRunnable` / `removeRunnable` /
+  `storeObject_{nonEndpointNonTcb,tcb_preserveIpc}` / `storeTcbIpcState{,AndMessage}` /
+  `storeTcbPendingMessage` `_preserves_endpointQueueTailBlockedConsistent` frames (head→tail duals)
+  + `endpointQueueTailBlockedConsistent_of_objects_eq`.
+
+- **Producers wired (19):** established (full preservation) for the root/frame producers —
+  `default_ipcInvariantFull` + the three `Architecture/Invariant.lean` object-frames + the boot
+  state (vacuous: boot endpoints have empty queues) + per-core; **threaded** `hEQTB'` for the
+  endpoint-queue-touching transition bundles (the 8 D4-residual + the notification/reply/retype
+  bundles), pending the Slice-2 enqueue-establish.
+
+This is the standard add-conjunct rollout (thread first, de-thread in the follow-up). **Slice 2**
+will establish `hEQTB'` for the enqueue transitions directly (the new tail is the freshly-blocked
+thread; the pop/donation legs leave the tail unchanged or empty) and de-thread
+`queueNextBlockingConsistent`/`queueHeadBlockedConsistent` from the 8 using the pre-state
+`hInv.endpointQueueTailBlockedConsistent`.  Proof-only, trace byte-identical, zero `sorry`/`axiom`;
+`RAW_LOOKUP_TID` re-anchored 1131→1135 (raw lookups in the new invariant-frame lemmas).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2)
+
 ## v0.32.10 — IPC de-threading D5: `blockedThreadTimeoutConsistent` FULLY de-threaded (13/13)
 
 Closes the D5 de-thread: `grep "hBlockedTimeout' : blockedThreadTimeoutConsistent st'"` is now empty

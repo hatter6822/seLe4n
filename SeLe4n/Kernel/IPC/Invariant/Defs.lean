@@ -1302,6 +1302,30 @@ def queueHeadBlockedConsistent (st : SystemState) : Prop :=
     (ep.sendQ.head = some hd →
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
 
+/-- IPC de-threading D4 (Finding F-2): queue **tail** blocking-state consistency — the dual of
+`queueHeadBlockedConsistent` for the tail boundary.  If a thread is the tail of an endpoint's
+`receiveQ`, it is `.blockedOnReceive` on that endpoint; if it is the tail of `sendQ`, it is
+`.blockedOnSend`/`.blockedOnCall` on that endpoint.
+
+This is the missing *reachable→blocked* fact (specialised to the tail) that the enqueue-style
+transitions need: `endpointQueueEnqueue` links the **old tail**'s `queueNext` to the freshly
+enqueued thread, so establishing `queueNextBlockingConsistent` on the post-state requires the old
+tail to be blocked on the same endpoint (`queueNextBlockingMatch`).  The existing
+`ipcStateQueueMembershipConsistent` is the *blocked→reachable* converse and does not supply it.
+
+Preserved by every transition by construction: `endpointQueueEnqueue` makes the freshly-enqueued
+thread the new tail and the paired block-store sets it `.blockedOnSend`/`.blockedOnReceive`/`.blockedOnCall`;
+`endpointQueuePopHead` either leaves the tail unchanged (≥2 elements) or empties the queue
+(`tail = none`, vacuous); all other transitions touch neither endpoint tails nor the relevant
+`ipcState`s. -/
+def endpointQueueTailBlockedConsistent (st : SystemState) : Prop :=
+  ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (tl : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[epId]? = some (.endpoint ep) →
+    st.objects[tl.toObjId]? = some (.tcb tcb) →
+    (ep.receiveQ.tail = some tl → tcb.ipcState = .blockedOnReceive epId) ∧
+    (ep.sendQ.tail = some tl →
+      tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
+
 -- ============================================================================
 -- Z6-J: Blocked thread timeout consistency
 -- ============================================================================
@@ -1509,6 +1533,15 @@ theorem donationOwnerUnique_of_objects_eq {st st' : SystemState}
   intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
   rw [hObjs] at h1 h2
   exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+
+/-- IPC de-threading D4 (Finding F-2): an object-preserving step frames
+`endpointQueueTailBlockedConsistent`. -/
+theorem endpointQueueTailBlockedConsistent_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcb hEp hTcb
+  rw [hObjs] at hEp hTcb
+  exact h epId ep tl tcb hEp hTcb
 
 -- ============================================================================
 -- Z7-H: Passive server idle invariant
@@ -1939,7 +1972,8 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
-  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st
+  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
+  endpointQueueTailBlockedConsistent st
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -1958,14 +1992,15 @@ re-established by `linkCallerReply` / `consumeCallerReply`, and
 `pendingReceiveReplyWellFormed` framed/established on the final state). -/
 theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
-    (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st) :
+    (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
+    (hTail : endpointQueueTailBlockedConsistent st) :
     ipcInvariantFull st :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -2019,6 +2054,7 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   replyCallerLinkage : replyCallerLinkage st
   pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
   donationOwnerUnique : donationOwnerUnique st
+  endpointQueueTailBlockedConsistent : endpointQueueTailBlockedConsistent st
 
 namespace ipcInvariantFull
 
@@ -2118,7 +2154,12 @@ elaborator. -/
 @[simp] theorem donationOwnerUnique {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem endpointQueueTailBlockedConsistent {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -2177,7 +2218,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
-           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique⟩
+           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
+           h.endpointQueueTailBlockedConsistent⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -2188,7 +2230,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
-           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique⟩
+           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
+           h.endpointQueueTailBlockedConsistent⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/

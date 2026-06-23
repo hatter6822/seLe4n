@@ -1577,9 +1577,10 @@ theorem ipcInvariantFull_compositional
     (hBRT : blockedOnReplyHasTarget st)
     (hRCL : replyCallerLinkage st)
     (hPRR : pendingReceiveReplyWellFormed st)
-    (hUnique : donationOwnerUnique st) :
+    (hUnique : donationOwnerUnique st)
+    (hEQTB : endpointQueueTailBlockedConsistent st) :
     ipcInvariantFull st :=
-  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hPSI, hDBT, hBRT, hRCL, hPRR, hUnique⟩
+  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hPSI, hDBT, hBRT, hRCL, hPRR, hUnique, hEQTB⟩
 
 -- ============================================================================
 -- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
@@ -11789,6 +11790,9 @@ theorem linkCallerReply_preserves_ipcInvariantFull
     (hUnique : donationOwnerUnique st)
     (hNotStashed : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
         st.getTcb? tid = some tcb → tcb.pendingReceiveReply ≠ some rid)
+    -- IPC de-threading D4 (Finding F-2): `linkCallerReply` stores reply objects + a `replyObject`
+    -- write, touching no endpoint queue; tail-blocked threaded pending the establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link
@@ -11796,6 +11800,7 @@ theorem linkCallerReply_preserves_ipcInvariantFull
       hPRR hNotStashed hStep)
     (donationOwnerUnique_of_sameSchedContextBindings
       (linkCallerReply_sameSchedContextBindings st st' caller rid hObjInv hStep) hUnique)
+    hEQTB'
   case link =>
     exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
       hRecip hObjInv hCallerBlk hThirdExc hStep
@@ -11847,6 +11852,9 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
     (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
     (hRCL' : replyCallerLinkage st')
+    -- IPC de-threading D4 (Finding F-2): `consumeCallerReply` touches no endpoint queue; threaded
+    -- pending the establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core hRCL'
@@ -11855,6 +11863,7 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
     (donationOwnerUnique_of_sameSchedContextBindings
       (consumeCallerReply_sameSchedContextBindings st st' caller rid hObjInv hStep)
       hInv.donationOwnerUnique)
+    hEQTB'
   case core =>
     unfold consumeCallerReply at hStep
     cases hCons : consumeReply rid st with
@@ -13025,6 +13034,8 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
@@ -13054,7 +13065,7 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
      replyId hObjInv hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
    endpointReceiveDual_preserves_donationOwnerUnique st st' endpointId receiver senderId replyId
-     hInv.donationOwnerUnique hObjInv hStep⟩
+     hInv.donationOwnerUnique hObjInv hStep, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCall` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause rather than threading it.
@@ -13080,6 +13091,8 @@ theorem endpointCall_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running caller holds a SchedContext (own or donated).
     (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
@@ -13110,7 +13123,7 @@ theorem endpointCall_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hCallerNotRecv hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointCall_sameSchedContextBindings st st' endpointId caller msg hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDual` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — `endpointSendDual` never
@@ -13137,6 +13150,8 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running sender holds a SchedContext (own or donated).
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -13166,7 +13181,7 @@ theorem endpointSendDual_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hSenderNotRecv hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointSendDual_sameSchedContextBindings st st' endpointId sender msg hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationSignal` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -13184,6 +13199,9 @@ theorem notificationSignal_preserves_ipcInvariantFull
     -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition;
     -- no transition ever writes `timeoutBudget := some`).
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    -- IPC de-threading D4 (Finding F-2): notificationSignal does not touch endpoint queues, so
+    -- tail-blocked is preserved; threaded here pending the establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the head
@@ -13216,7 +13234,7 @@ theorem notificationSignal_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hNWC hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (notificationSignal_sameSchedContextBindings st st' notificationId badge hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationWait` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -13242,6 +13260,9 @@ theorem notificationWait_preserves_ipcInvariantFull
         ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
     -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition).
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    -- IPC de-threading D4 (Finding F-2): notificationWait does not touch endpoint queues; threaded
+    -- pending the establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -13274,7 +13295,7 @@ theorem notificationWait_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hWaiterNotRecv hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (notificationWait_sameSchedContextBindings st st' notificationId waiter result hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReply` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — the reply only unblocks the
@@ -13290,6 +13311,9 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
+    -- IPC de-threading D4 (Finding F-2): endpointReply does not touch endpoint queues; threaded
+    -- pending the establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
@@ -13315,7 +13339,7 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_pendingReceiveReplyWellFormed st st' replier target msg hObjInv hInv.pendingReceiveReplyWellFormed hStep,
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointReply_sameSchedContextBindings st st' replier target msg hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
@@ -13342,6 +13366,8 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running receiver (the replyRecv server) is `.ready`.
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
@@ -13361,7 +13387,7 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
      msg replyId hObjInv hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
    endpointReplyRecv_preserves_donationOwnerUnique st st' endpointId receiver replyTarget msg replyId
-     hObjInv hInv.donationOwnerUnique hStep⟩
+     hObjInv hInv.donationOwnerUnique hStep, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDualWithCaps` preserves
 `ipcInvariantFull`, *preserving* the `replyCallerLinkage` third clause rather than
@@ -13391,6 +13417,8 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running sender holds a SchedContext (own or donated).
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
@@ -13422,7 +13450,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointSendDualWithCaps_sameSchedContextBindings endpointId sender msg endpointRights
        senderCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDualWithCaps` preserves
 `ipcInvariantFull`, **establishing** the `replyCallerLinkage` third clause (via the base
@@ -13452,6 +13480,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcInvariantFull st' := by
@@ -13479,7 +13509,7 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
      hInv.pendingReceiveReplyWellFormed hReplyIdValid hReceiverNotRecv
      hInv.queueHeadBlockedConsistent hStep,
    endpointReceiveDualWithCaps_preserves_donationOwnerUnique endpointId receiver replyId endpointRights
-     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerUnique hObjInv hStep⟩
+     receiverCspaceRoot receiverSlotBase st st' senderId summary hInv.donationOwnerUnique hObjInv hStep, hEQTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCallWithCaps` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause (via the base call establish + the
@@ -13509,6 +13539,8 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running caller holds a SchedContext (own or donated).
     (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
@@ -13540,6 +13572,6 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
    donationOwnerUnique_of_sameSchedContextBindings
      (endpointCallWithCaps_sameSchedContextBindings endpointId caller msg endpointRights
        callerCspaceRoot receiverSlotBase st st' summary hObjInv hStep)
-     hInv.donationOwnerUnique⟩
+     hInv.donationOwnerUnique, hEQTB'⟩
 
 end SeLe4n.Kernel

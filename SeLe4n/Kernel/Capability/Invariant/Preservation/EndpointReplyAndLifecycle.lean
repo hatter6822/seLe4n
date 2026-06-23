@@ -279,7 +279,13 @@ theorem coreIpcInvariantBundle_to_pendingReceiveReplyWellFormed {st : SystemStat
 /-- IPC de-threading D6: extract donation-owner uniqueness (18th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_donationOwnerUnique {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationOwnerUnique st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- IPC de-threading D4 (Finding F-2): extract endpoint-queue tail-blocked consistency
+(19th `ipcInvariantFull` conjunct). -/
+theorem coreIpcInvariantBundle_to_endpointQueueTailBlockedConsistent {st : SystemState}
+    (h : coreIpcInvariantBundle st) : endpointQueueTailBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -845,6 +851,8 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
         st.objects[epId]? = some (.endpoint ep) →
         (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    -- IPC de-threading D4 (Finding F-2): retype touches no endpoint queue; threaded pending establish.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hNewObjUnbound : ∀ (t : TCB), newObj = .tcb t → t.schedContextBinding = .unbound)
     -- IPC de-threading D6: a retyped TCB is created in an allowed passive state (`.ready`).
     (hNewObjAllowed : ∀ (t : TCB), newObj = .tcb t → passiveServerIdleAllowed t.ipcState)
@@ -902,7 +910,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
              hNewObjNoStash hTargetNotStashedReply hStep,
            lifecycleRetypeObject_preserves_donationOwnerUnique st st' authority target newObj
              hIpcFull.donationOwnerUnique (objects_invExt_of_capabilityInvariantBundle st hCap)
-             hNewObjUnbound hStep⟩
+             hNewObjUnbound hStep, hEQTB'⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
@@ -935,6 +943,8 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
         st.objects[epId]? = some (.endpoint ep) →
         (ep.receiveQ.head = some hd ∨ ep.sendQ.head = some hd) → hd.toObjId ≠ target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    -- IPC de-threading D4 (Finding F-2): retype touches no endpoint queue; threaded pending establish.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hNewObjUnbound : ∀ (t : TCB), newObj = .tcb t → t.schedContextBinding = .unbound)
     -- IPC de-threading D6: a retyped TCB is created in an allowed passive state (`.ready`).
     (hNewObjAllowed : ∀ (t : TCB), newObj = .tcb t → passiveServerIdleAllowed t.ipcState)
@@ -961,7 +971,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hAllBudgetsNone hNewObjUnbound hNewObjAllowed hNewObjNoBudget hTargetNotSc hTargetNotOwner hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hNewObjNoNext hTargetNotQueueLinked hNewObjNotEndpoint hTargetNotHead hAllBudgetsNone hEQTB' hNewObjUnbound hNewObjAllowed hNewObjNoBudget hTargetNotSc hTargetNotOwner hNewObjTarget hRCLRecip' hNewObjThird hNewObjNoStash hTargetNotStashedReply hReplyBacked' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep

@@ -1500,6 +1500,8 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hQNBC' : queueNextBlockingConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
+    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -1551,6 +1553,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hObjInv hInv.pendingReceiveReplyWellFormed hCallerNotRecv,
     donationOwnerUnique_of_sameSchedContextBindings
       (endpointCallOnCore_sameSchedContextBindings endpointId caller msg executingCore st hObjInv)
-      hInv.donationOwnerUnique⟩
+      hInv.donationOwnerUnique, hEQTB'⟩
 
 end SeLe4n.Kernel

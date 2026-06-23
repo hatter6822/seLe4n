@@ -3022,7 +3022,8 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
          fun tid tcb ep rt hObj hIpc => ?_⟩,
         ⟨fun tid tcb rid hObj hRep => ?_,
          fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩,
-        fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_⟩
+        fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_,
+        ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
       · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
@@ -3041,6 +3042,13 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
         have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
         rw [hTcb.2.2.2.2.2.1] at hBA; cases hBA
+      · -- IPC de-threading D4 (Finding F-2): endpointQueueTailBlockedConsistent (19th, vacuous —
+        -- boot endpoints have empty send/receive queues).
+        intro epId ep tl tcb hObjEp _
+        have hEp := (hBS epId _ hObjEp).1 ep rfl
+        constructor
+        · intro hRecv; rw [hEp.2.2.2] at hRecv; exact absurd hRecv (by simp)
+        · intro hSend; rw [hEp.2.1] at hSend; exact absurd hSend (by simp)
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

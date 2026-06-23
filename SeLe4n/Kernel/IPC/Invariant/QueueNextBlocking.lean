@@ -897,4 +897,201 @@ theorem storeTcbIpcState_preserves_queueHeadBlockedConsistent
       · rw [hFrame hd.toObjId hHdEq] at hTcb
         exact hInv epId ep hd hdTcb hEp hTcb
 
+-- ============================================================================
+-- Section: endpointQueueTailBlockedConsistent preservation (Finding F-2 dual)
+-- These mirror the `queueHeadBlockedConsistent` frames above, for the queue
+-- *tail* boundary.  The invariant reads the same fields (endpoint `*.tail`,
+-- thread `ipcState`), so the frame combinator + store-op frames are head→tail
+-- duals.
+-- ============================================================================
+
+/-- Tail dual of `queueHeadBlockedConsistent_of_endpoint_tcb_backward`: a step that preserves
+endpoints and every TCB's `ipcState` preserves `endpointQueueTailBlockedConsistent`. -/
+theorem endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward
+    (st st' : SystemState)
+    (hEpBack : ∀ (eid : SeLe4n.ObjId) (ep : Endpoint),
+      st'.objects[eid]? = some (.endpoint ep) → st.objects[eid]? = some (.endpoint ep))
+    (hTcbBack : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState)
+    (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcbTl hEp hTcb
+  have hEpPre := hEpBack epId ep hEp
+  obtain ⟨tcbTlPre, hTcbPre, hIpc⟩ := hTcbBack tl tcbTl hTcb
+  have hPre := hInv epId ep tl tcbTlPre hEpPre hTcbPre
+  rw [← hIpc]
+  exact ⟨fun h => hPre.1 h, fun h => hPre.2 h⟩
+
+/-- ensureRunnable preserves endpointQueueTailBlockedConsistent (doesn't change objects). -/
+theorem ensureRunnable_preserves_endpointQueueTailBlockedConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent (ensureRunnable st tid) := by
+  intro epId ep tl tcb hEp hTcb
+  rw [show (ensureRunnable st tid).objects = st.objects from
+    ensureRunnable_preserves_objects st tid] at hEp hTcb
+  exact hInv epId ep tl tcb hEp hTcb
+
+/-- removeRunnable preserves endpointQueueTailBlockedConsistent (doesn't change objects). -/
+theorem removeRunnable_preserves_endpointQueueTailBlockedConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent (removeRunnable st tid) := by
+  intro epId ep tl tcb hEp hTcb
+  rw [show (removeRunnable st tid).objects = st.objects from
+    removeRunnable_preserves_objects st tid] at hEp hTcb
+  exact hInv epId ep tl tcb hEp hTcb
+
+/-- `storeObject` of a non-endpoint non-TCB object preserves `endpointQueueTailBlockedConsistent`. -/
+theorem storeObject_nonEndpointNonTcb_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hNotEp : ∀ ep, obj ≠ .endpoint ep)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    endpointQueueTailBlockedConsistent st' := by
+  have hEqAt := storeObject_objects_eq st st' oid obj hObjInv hStore
+  refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st' ?_ ?_ hInv
+  · intro eid ep hEp
+    by_cases hEq : eid = oid
+    · rw [hEq, hEqAt] at hEp; exact (hNotEp ep (Option.some.inj hEp)).elim
+    · rwa [storeObject_objects_ne st st' oid eid obj hEq hObjInv hStore] at hEp
+  · intro y tcb' hY
+    by_cases hEq : y.toObjId = oid
+    · rw [hEq, hEqAt] at hY; exact (hNotTcb tcb' (Option.some.inj hY)).elim
+    · rw [storeObject_objects_ne st st' oid y.toObjId obj hEq hObjInv hStore] at hY
+      exact ⟨tcb', hY, rfl⟩
+
+/-- `storeObject` of a TCB preserving `ipcState` preserves `endpointQueueTailBlockedConsistent`. -/
+theorem storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[tid₀.toObjId]? = some (.tcb oldTcb))
+    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    endpointQueueTailBlockedConsistent st' := by
+  have hEqAt := storeObject_objects_eq st st' tid₀.toObjId (.tcb newTcb) hObjInv hStore
+  refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st st' ?_ ?_ hInv
+  · intro eid ep hEp
+    by_cases hEq : eid = tid₀.toObjId
+    · rw [hEq, hEqAt] at hEp; cases hEp
+    · rwa [storeObject_objects_ne st st' tid₀.toObjId eid (.tcb newTcb) hEq hObjInv hStore] at hEp
+  · intro y tcb' hY
+    by_cases hEq : y.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt] at hY
+      obtain rfl : newTcb = tcb' := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hY
+      exact ⟨oldTcb, by rw [hEq]; exact hOld, hSameIpc.symm⟩
+    · rw [storeObject_objects_ne st st' tid₀.toObjId y.toObjId (.tcb newTcb) hEq hObjInv hStore] at hY
+      exact ⟨tcb', hY, rfl⟩
+
+/-- `storeTcbIpcStateAndMessage` preserves `endpointQueueTailBlockedConsistent` when the thread is
+not a queue tail (`hNotTail`). -/
+theorem storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (hNotTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep tl tlTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hTlEq : tl.toObjId = tid.toObjId
+      · have hTidEq := ThreadId.toObjId_injective tl tid hTlEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotTail epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame tl.toObjId hTlEq] at hTcb
+        exact hInv epId ep tl tlTcb hEp hTcb
+
+/-- `storeTcbPendingMessage` preserves `endpointQueueTailBlockedConsistent` (changes only
+`pendingMessage`, never `ipcState` or any endpoint tail). -/
+theorem storeTcbPendingMessage_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbPendingMessage st tid msg = .ok st') :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold storeTcbPendingMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId
+        (.tcb { tcb with pendingMessage := msg }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      have hTcbObj := lookupTcb_some_objects st tid tcb hLookup
+      intro epId ep tl tlTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hTlEq : tl.toObjId = tid.toObjId
+      · rw [hTlEq, hEqAt] at hTcb
+        simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb
+        subst hTcb
+        exact hInv epId ep tl tcb hEp (by rw [hTlEq]; exact hTcbObj)
+      · rw [hFrame tl.toObjId hTlEq] at hTcb
+        exact hInv epId ep tl tlTcb hEp hTcb
+
+/-- `storeTcbIpcState` preserves `endpointQueueTailBlockedConsistent` when the thread is not a
+queue tail (`hNotTail`). -/
+theorem storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st')
+    (hNotTail : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.receiveQ.tail ≠ some tid ∧ ep.sendQ.tail ≠ some tid) :
+    endpointQueueTailBlockedConsistent st' := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hSt : storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState }) st with
+    | error e => simp [hSt] at hStep
+    | ok pair =>
+      simp only [hSt, Except.ok.injEq] at hStep; subst hStep
+      have hFrame := fun x (h : x ≠ tid.toObjId) =>
+        storeObject_objects_ne st pair.2 tid.toObjId x _ h hObjInv hSt
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hSt
+      intro epId ep tl tlTcb hEp hTcb
+      have hNeEp : epId ≠ tid.toObjId := by
+        intro h; subst h; rw [hEqAt] at hEp; cases hEp
+      rw [hFrame epId hNeEp] at hEp
+      by_cases hTlEq : tl.toObjId = tid.toObjId
+      · have hTidEq := ThreadId.toObjId_injective tl tid hTlEq; subst hTidEq
+        have ⟨hNR, hNS⟩ := hNotTail epId ep hEp
+        exact ⟨fun h => absurd h hNR, fun h => absurd h hNS⟩
+      · rw [hFrame tl.toObjId hTlEq] at hTcb
+        exact hInv epId ep tl tlTcb hEp hTcb
+
 end SeLe4n.Kernel
