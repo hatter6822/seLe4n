@@ -1223,6 +1223,29 @@ theorem storeTcbQueueLinks_stored_queueNext
         storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore,
         rfl⟩
 
+/-- `storeTcbQueueLinks` sets the target's `queuePrev` to `prev` (mirror of
+`storeTcbQueueLinks_stored_queueNext`). -/
+theorem storeTcbQueueLinks_stored_queuePrev
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    ∃ tcb', st'.objects[tid.toObjId]? = some (.tcb tcb') ∧ tcb'.queuePrev = prev := by
+  unfold storeTcbQueueLinks at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact ⟨tcbWithQueueLinks tcb prev pprev next,
+        storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore,
+        rfl⟩
+
 -- ============================================================================
 -- Section 7: Partial V3-J preservation (for rendezvous paths)
 -- ============================================================================

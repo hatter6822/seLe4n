@@ -1640,6 +1640,59 @@ theorem endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity
   (endpointQueueEnqueue_preserves_dualQueueSystemInvariant
     endpointId isReceiveQ enqueueTid st st' hStep hInv hObjInv hFreshTid hTailFresh).2.1
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b core (b): after `endpointQueueEnqueue`, any predecessor of the
+enqueued thread (`a` with `a.queueNext = some enqueueTid` in the post-state) is the queue's old
+tail, hence blocked on `endpointId` matching the queue (pre-state tail-blocked).  Discharges the
+block-store `hBwd` of the enqueue transitions' `queueNextBlockingConsistent` establishers.  Proof:
+post-state `tcbQueueLinkIntegrity` (forward) gives `enqueueTid.queuePrev = some a`;
+`endpointQueueEnqueue_enqueued_queuePrev` pins `enqueueTid.queuePrev = oldQueue.tail`, so
+`a = oldTail`, blocked by `hTail`; `endpointQueueEnqueue_tcb_ipcState_backward` carries the blocking
+state to the post-state TCB.  The freshness side-conditions (`hFreshTid` / `hTailFresh`) are those of
+`endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity`, dischargeable from the pre-state since the
+enqueued thread is `.ready` (hence not a queue member). -/
+theorem endpointQueueEnqueue_predecessor_blocked
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (enqueueTid : SeLe4n.ThreadId)
+    (st st' : SystemState) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hDQ : dualQueueSystemInvariant st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some enqueueTid ∧ ep.sendQ.tail ≠ some enqueueTid ∧
+      ep.receiveQ.head ≠ some enqueueTid ∧ ep.receiveQ.tail ≠ some enqueueTid)
+    (hTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId → ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid))
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st') :
+    ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st'.objects[a.toObjId]? = some (.tcb tcbA) →
+      tcbA.queueNext = some enqueueTid →
+      (isReceiveQ = true → tcbA.ipcState = .blockedOnReceive endpointId) ∧
+      (isReceiveQ = false →
+        tcbA.ipcState = .blockedOnSend endpointId ∨ tcbA.ipcState = .blockedOnCall endpointId) := by
+  intro a tcbA hA hAN
+  have hLI' := endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity endpointId isReceiveQ enqueueTid
+    st st' hObjInv hStep hDQ hFreshTid hTailFresh
+  obtain ⟨tcbEnq', hEnq', hEnqPrev'⟩ := hLI'.1 a tcbA hA enqueueTid hAN
+  obtain ⟨tcbEnq2, hEnq2, hEnqPrev2⟩ := endpointQueueEnqueue_enqueued_queuePrev endpointId isReceiveQ
+    enqueueTid st st' ep hObjInv hObj hStep
+  have hTcbEnqEq : tcbEnq' = tcbEnq2 := by simpa using hEnq'.symm.trans hEnq2
+  subst hTcbEnqEq
+  have hTailEq : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = some a := by
+    rw [← hEnqPrev2]; exact hEnqPrev'
+  obtain ⟨tcbA_pre, hA_pre, hIpcEq⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ
+    enqueueTid st st' a tcbA hObjInv hStep hA
+  have hTB := hTail endpointId ep a tcbA_pre hObj hA_pre
+  refine ⟨fun hR => ?_, fun hS => ?_⟩
+  · rw [← hIpcEq]; exact hTB.1 (by rw [hR] at hTailEq; simpa using hTailEq)
+  · rw [← hIpcEq]; exact hTB.2 (by rw [hS] at hTailEq; simpa using hTailEq)
+
 -- ============================================================================
 -- WS-L3/L3-C2: ipcStateQueueConsistent preservation for queue operations
 -- ============================================================================

@@ -233,14 +233,20 @@ What remains, per invariant:
     `tail.queueNext = none`; `none ⇒ post queue empty`).
   - **Block (enqueue + block-store) branch** — tail-blocked: the new sendQ/receiveQ tail is the
     freshly-blocked thread (transition-level, since the bare enqueue leaves it `.ready`). qNBC needs
-    **reusable core (b)**: the block-store `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`
-    `hBwd` — *the predecessor of the enqueued thread is the old tail, blocked on the same endpoint* —
-    from the enqueue's `oldTail.queueNext := tid` link + `tcbQueueLinkIntegrity` (reverse: pre-enqueue
-    `tid.queuePrev = none` ⇒ no predecessor; the enqueue adds exactly `oldTail → tid`) + pre-state
-    tail-blocked (old sendQ tail `.blockedOnSend`/`.blockedOnCall endpointId`) + the enqueue leaves
-    `oldTail.ipcState` unchanged. `hFwd` is vacuous (`tid.queueNext = none`). Empty-queue enqueue:
-    `hBwd` vacuous (no predecessor). The WithCaps variants compose the base establisher with
-    `ipcUnwrapCaps_preserves_{qNBC,tail-blocked}` (cap transfer writes only CNode caps).
+    **reusable core (b)** `endpointQueueEnqueue_predecessor_blocked`: the block-store
+    `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent` `hBwd` — *the predecessor of
+    the enqueued thread is the old tail, blocked on the same endpoint* — established cleanly via the
+    **post-state** route: `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity` (already exists,
+    `DualQueueMembership.lean:1620`) gives `a.queueNext = some tid ⇒ tid.queuePrev = some a` in `st'`;
+    the enqueue sets `tid.queuePrev := some oldTail` (non-empty) / `none` (empty), so `a = oldTail`
+    (resp. no predecessor). This needs one new small lemma — `endpointQueueEnqueue_enqueued_queuePrev`
+    characterising `tid.queuePrev` in `st'` (via `storeTcbQueueLinks_stored_queuePrev`, a mirror of
+    the existing `_stored_queueNext`) — which is cleaner than the pre-state guard-extraction +
+    multi-store `queueNext` tracing. Then pre-state tail-blocked (old tail `.blockedOnSend`/`.blockedOnCall`
+    resp. `.blockedOnReceive endpointId`) + `endpointQueueEnqueue_tcb_ipcState_backward` (the enqueue
+    leaves `oldTail.ipcState` unchanged) close the match. `hFwd` is vacuous (`tid.queueNext = none`).
+    The WithCaps variants compose the base establisher with `ipcUnwrapCaps_preserves_{qNBC,tail-blocked}`
+    (cap transfer writes only CNode caps).
   Cores (a)+(b) are built once in `QueueNextBlocking.lean`; the 8 establishers are then thin.
 
 - **Slice 2c — qHBC de-thread (needs a new reachable→blocked conjunct).** The pop's new head is a

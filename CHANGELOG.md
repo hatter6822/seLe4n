@@ -1,3 +1,33 @@
+## v0.32.16 — IPC de-threading D4 (Finding F-2) Slice 2b: enqueue-predecessor core (block-store qNBC `hBwd`)
+
+Builds the keystone reusable core that discharges the block branch's `queueNextBlockingConsistent`
+obligation for all 8 enqueue transitions — the hard half of Slice 2b's qNBC de-thread.
+
+- `storeTcbQueueLinks_stored_queuePrev` (`QueueMembership.lean`) — mirror of the existing
+  `_stored_queueNext`: a link store sets the target's `queuePrev` to `prev`.
+- `endpointQueueEnqueue_enqueued_queuePrev` (`QueueNextBlocking.lean`) — the enqueued thread's
+  post-state `queuePrev` is exactly the queue's **old tail** (`none` when the queue was empty),
+  read off the enqueue's final `storeTcbQueueLinks` on the enqueued thread.
+- `endpointQueueEnqueue_predecessor_blocked` (`DualQueueMembership.lean`) — **core (b)**: any `a`
+  with `a.queueNext = some enqueueTid` in the post-state is the old tail, hence blocked on
+  `endpointId` matching the queue. Proof via the *post-state* route: the existing
+  `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity` (forward) gives
+  `enqueueTid.queuePrev = some a`; `_enqueued_queuePrev` pins it to the old tail, so `a = oldTail`,
+  blocked by pre-state tail-blocked; `_tcb_ipcState_backward` carries the blocking state to the
+  post-state TCB. The `hFreshTid`/`hTailFresh` side-conditions are those of
+  `preserves_tcbQueueLinkIntegrity`, dischargeable since the enqueued thread is `.ready` (not a
+  queue member). This is cleaner than the pre-state guard-extraction + multi-store `queueNext`
+  tracing (the roadmap's "Slice 2b/2c implementation decomposition" core (b) is updated accordingly).
+
+With this, the block-store `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`
+`hBwd` is discharged; the 8 transition qNBC establishers reduce to thin branch compositions (the
+rendezvous branch is already clean: pop frame + unconditional `storeTcbReceiveComplete` + scheduler
+frames). Establishers + bundle de-threads land next.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (234 jobs) green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.15 — IPC de-threading D4 (Finding F-2) Slice 2b: `storeTcbReceiveComplete` tail-blocked frame + residual decomposition
 
 Adds the rendezvous-receiver tail-blocked frame and records the precise implementation
