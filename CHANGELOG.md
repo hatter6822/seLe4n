@@ -1,3 +1,32 @@
+## v0.32.25 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointCall` tail-blocked de-threaded
+
+Second transition tail-blocked de-thread — the `.call` rendezvous (with its caller `.blockedOnReply`
+store + `linkServerStashedReply`), plus the two reusable frames it needs.
+
+- `endpointQueuePopHead_fresh_not_tail` (`DualQueueMembership.lean`, core (a) companion) — a thread
+  `fresh` that is no pre-pop tail stays no post-pop tail (used for the *caller* `.blockedOnReply`
+  store's `hNotTail`; the caller is `.ready`, hence by freshness no tail). Unlike core (a) this needs
+  no `queueHeadBlockedConsistent` — `fresh` is never the popped head, so every post-pop tail (popped:
+  `none`/pre-pop; framed: unchanged) is `≠ some fresh` directly via the pre-pop freshness.
+- `linkServerStashedReply_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) —
+  the reply-link frame (`linkCallerReply` writes only `replyObject`; the server stash-clear stores the
+  server TCB preserving `ipcState`), via `storeObject_tcb_preserveIpc_…`.
+- `endpointCall_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) — rendezvous
+  branch: pop frame + receiver `.ready` store (receiver no tail, core (a)) + `ensureRunnable` + caller
+  `.blockedOnReply` store (caller no tail, `_fresh_not_tail` transported through the receiver store +
+  `ensureRunnable` via `storeTcbIpcStateAndMessage_endpoint_backward` + `ensureRunnable_preserves_objects`)
+  + `linkServerStashedReply` frame + `removeRunnable`. Block branch: core (c) (the new sendQ tail is
+  the `.blockedOnCall` caller) + `removeRunnable`.
+- **`endpointCall_preserves_ipcInvariantFull` drops `hEQTB'`** (established via the new theorem; the
+  `hFreshCaller` / `hQHBC` it already has suffice). `endpointCall` joins `endpointSendDual` as a bundle
+  free of **both** `hQNBC'` and `hEQTB'`.
+
+Proof-only, additive + one bundle signature change (no Lean call sites), trace byte-identical, zero
+`sorry`/`axiom`; full build (376 jobs) green, AK7 cascade unchanged. 5 enqueue-bearing bundles still
+thread `hEQTB'`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.24 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked pop-establish (core (a)) + `endpointSendDual` de-threaded
 
 Completes the tail-blocked (`hEQTB'`) foundation (core (a), the pop/rendezvous counterpart to
