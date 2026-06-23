@@ -1795,6 +1795,104 @@ theorem endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedCons
       · exact (hTail epId' ep' tl tcbPre hPre hTcbPre).2 hTl
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b core (c) variant: same as
+`endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent` but for the
+`storeTcbIpcState` block-store (`endpointReceiveDual`'s block leg writes ipcState only, no
+pendingMessage).  The proof is identical modulo the store lemma family. -/
+theorem endpointQueueEnqueue_blockStoreIpc_establishes_endpointQueueTailBlockedConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st1 st2 : SystemState) (ep : Endpoint)
+    (blockState : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (e : Endpoint),
+      st.objects[epId]? = some (.endpoint e) →
+      e.sendQ.tail ≠ some tid ∧ e.receiveQ.tail ≠ some tid)
+    (hBlock : if isReceiveQ then blockState = .blockedOnReceive endpointId
+              else blockState = .blockedOnSend endpointId ∨ blockState = .blockedOnCall endpointId)
+    (hEnq : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st1)
+    (hStore : storeTcbIpcState st1 tid blockState = .ok st2) :
+    endpointQueueTailBlockedConsistent st2 := by
+  have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId isReceiveQ tid st st1 hObjInv hEnq
+  obtain ⟨epEnq, hEpEnq, hEnqTail, hOtherTail⟩ :=
+    endpointQueueEnqueue_enqueued_is_tail endpointId isReceiveQ tid st st1 ep hObjInv hObj hEnq
+  intro epId' ep' tl tcb hEp' hTcb
+  have hEp'1 : st1.objects[epId']? = some (.endpoint ep') :=
+    storeTcbIpcState_endpoint_backward st1 st2 tid blockState epId' ep' hObjInv1 hStore hEp'
+  -- Resolve st1's endpoint at epId': the enqueue-updated endpoint (epId' = endpointId), or a
+  -- pre-state endpoint (epId' ≠ endpointId).
+  have hEpResolve : (epId' = endpointId ∧ ep' = epEnq) ∨
+      (epId' ≠ endpointId ∧ st.objects[epId']? = some (.endpoint ep')) := by
+    by_cases hEq : epId' = endpointId
+    · left; refine ⟨hEq, ?_⟩
+      have hEp'1' : st1.objects[endpointId]? = some (.endpoint ep') := hEq ▸ hEp'1
+      simpa using (hEpEnq.symm.trans hEp'1').symm
+    · right; exact ⟨hEq, endpointQueueEnqueue_endpoint_backward_ne endpointId isReceiveQ tid st st1
+        epId' ep' hEq hObjInv hEnq hEp'1⟩
+  refine ⟨fun hTl => ?_, fun hTl => ?_⟩
+  · -- receiveQ.tail = some tl → tcb.ipcState = .blockedOnReceive epId'
+    by_cases htid : tl = tid
+    · subst tl
+      have hState : tcb.ipcState = blockState :=
+        storeTcbIpcState_ipcState_eq st1 st2 tid blockState hObjInv1 hStore tcb hTcb
+      rcases hEpResolve with ⟨hEpIdEq, hEp'Eq⟩ | ⟨_, hPre⟩
+      · subst epId'; subst ep'
+        by_cases hR : isReceiveQ
+        · rw [hState]; simpa [hR] using hBlock
+        · have hOt : epEnq.receiveQ.tail = ep.receiveQ.tail := by simpa [hR] using hOtherTail
+          rw [hOt] at hTl
+          exact absurd hTl (hFreshTid endpointId ep hObj).2
+      · exact absurd hTl (hFreshTid epId' ep' hPre).2
+    · have hNeTl : tl.toObjId ≠ tid.toObjId := fun h => htid (ThreadId.toObjId_injective tl tid h)
+      have hTcb1 : st1.objects[tl.toObjId]? = some (.tcb tcb) := by
+        rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState tl.toObjId hNeTl hObjInv1 hStore]
+        exact hTcb
+      obtain ⟨tcbPre, hTcbPre, hIpcEq⟩ :=
+        endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ tid st st1 tl tcb hObjInv hEnq hTcb1
+      rw [← hIpcEq]
+      rcases hEpResolve with ⟨hEpIdEq, hEp'Eq⟩ | ⟨_, hPre⟩
+      · subst epId'; subst ep'
+        by_cases hR : isReceiveQ
+        · have hEt : epEnq.receiveQ.tail = some tid := by simpa [hR] using hEnqTail
+          rw [hEt] at hTl
+          exact absurd (Option.some.inj hTl).symm htid
+        · have hOt : epEnq.receiveQ.tail = ep.receiveQ.tail := by simpa [hR] using hOtherTail
+          rw [hOt] at hTl
+          exact (hTail endpointId ep tl tcbPre hObj hTcbPre).1 hTl
+      · exact (hTail epId' ep' tl tcbPre hPre hTcbPre).1 hTl
+  · -- sendQ.tail = some tl → tcb.ipcState = .blockedOnSend epId' ∨ .blockedOnCall epId'
+    by_cases htid : tl = tid
+    · subst tl
+      have hState : tcb.ipcState = blockState :=
+        storeTcbIpcState_ipcState_eq st1 st2 tid blockState hObjInv1 hStore tcb hTcb
+      rcases hEpResolve with ⟨hEpIdEq, hEp'Eq⟩ | ⟨_, hPre⟩
+      · subst epId'; subst ep'
+        by_cases hR : isReceiveQ
+        · have hOt : epEnq.sendQ.tail = ep.sendQ.tail := by simpa [hR] using hOtherTail
+          rw [hOt] at hTl
+          exact absurd hTl (hFreshTid endpointId ep hObj).1
+        · rw [hState]; simpa [hR] using hBlock
+      · exact absurd hTl (hFreshTid epId' ep' hPre).1
+    · have hNeTl : tl.toObjId ≠ tid.toObjId := fun h => htid (ThreadId.toObjId_injective tl tid h)
+      have hTcb1 : st1.objects[tl.toObjId]? = some (.tcb tcb) := by
+        rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState tl.toObjId hNeTl hObjInv1 hStore]
+        exact hTcb
+      obtain ⟨tcbPre, hTcbPre, hIpcEq⟩ :=
+        endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ tid st st1 tl tcb hObjInv hEnq hTcb1
+      rw [← hIpcEq]
+      rcases hEpResolve with ⟨hEpIdEq, hEp'Eq⟩ | ⟨_, hPre⟩
+      · subst epId'; subst ep'
+        by_cases hR : isReceiveQ
+        · have hOt : epEnq.sendQ.tail = ep.sendQ.tail := by simpa [hR] using hOtherTail
+          rw [hOt] at hTl
+          exact (hTail endpointId ep tl tcbPre hObj hTcbPre).2 hTl
+        · have hEt : epEnq.sendQ.tail = some tid := by simpa [hR] using hEnqTail
+          rw [hEt] at hTl
+          exact absurd (Option.some.inj hTl).symm htid
+      · exact (hTail epId' ep' tl tcbPre hPre hTcbPre).2 hTl
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b core (a): after `endpointQueuePopHead`, the popped head `tid` is
 **not a tail** of any queue in the post-pop state — the `hNotTail` obligation the rendezvous
 branches' `storeTcbReceiveComplete`/receiver-`.ready` tail-blocked frames need.  For the popped

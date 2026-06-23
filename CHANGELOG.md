@@ -1,3 +1,26 @@
+## v0.32.26 — IPC de-threading D4 (Finding F-2) Slice 2b: `storeTcbIpcState` core-(c) variant + plan sync
+
+Foundation top-up for the remaining tail-blocked establishers, plus a workstream-status refresh.
+
+- `endpointQueueEnqueue_blockStoreIpc_establishes_endpointQueueTailBlockedConsistent`
+  (`DualQueueMembership.lean`) — the `storeTcbIpcState` analogue of core (c)
+  (`…_blockStore_establishes_…`). `endpointReceiveDual`'s block leg writes the freshly-enqueued
+  receiver's `ipcState` via `storeTcbIpcState` (no `pendingMessage`), not `storeTcbIpcStateAndMessage`;
+  the proof is identical modulo the store-lemma family (`storeTcbIpcState_{ipcState_eq,endpoint_backward,
+  preserves_objects_ne}`), so the freshly-blocked receiver is still the new receiveQ tail.
+- `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` — Slice 2b note refreshed: the `hQNBC'` half is
+  fully de-threaded; the `hEQTB'` half has its complete foundation (cores (a)+(c) + the
+  `_enqueued_is_tail` / `_post_endpoint_tail` / `_fresh_not_tail` helpers + the `linkServerStashedReply`
+  and `storeTcbIpcState` frames) with **2/8 transitions** (`endpointSendDual`, `endpointCall`) free of
+  both `hQNBC'` and `hEQTB'`; the remaining 6 (`endpointReceiveDual`, `endpointReplyRecv`, 3×WithCaps,
+  `endpointCallOnCore`) are mechanical compositions of the cores per the documented per-transition
+  store sequences.
+
+Proof-only, additive (no bundle changes), trace byte-identical, zero `sorry`/`axiom`; full build
+(376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1151→1153.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.25 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointCall` tail-blocked de-threaded
 
 Second transition tail-blocked de-thread — the `.call` rendezvous (with its caller `.blockedOnReply`

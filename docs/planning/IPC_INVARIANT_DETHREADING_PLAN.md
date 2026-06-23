@@ -226,9 +226,23 @@ What remains, per invariant:
     `T_preserves_queueNextBlockingConsistent` establishers landed (`endpointSendDual` v0.32.17,
     `endpointCall` v0.32.18, `endpointReceiveDual` v0.32.19, the 3 WithCaps wrappers v0.32.20,
     `endpointReplyRecv` v0.32.21, cross-core `endpointCallOnCore` v0.32.22) and every bundle has
-    dropped `hQNBC'` — **zero remaining `hQNBC'` threading sites**. `hEQTB'` half still pending (the
-    `T_preserves_endpointQueueTailBlockedConsistent` enqueue-establishers — only `endpointReply` has one
-    so far; the enqueue transitions' new-tail-blocked establish is the residual work).
+    dropped `hQNBC'` — **zero remaining `hQNBC'` threading sites**.
+  - **`hEQTB'` half — 🔄 FOUNDATION COMPLETE + 2/8 transitions (v0.32.23–25).** The reusable cores:
+    **core (c)** `endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent`
+    (block branch: the freshly-enqueued+blocked thread is the new tail) + `endpointQueueEnqueue_enqueued_is_tail`
+    (v0.32.23); **core (a)** `endpointQueuePopHead_popped_not_tail` (rendezvous: the popped head is no
+    post-pop tail, via `endpointQueuePopHead_post_endpoint_tail` + `dualQueueEndpointWellFormed` P3 +
+    `queueHeadBlockedConsistent`) + the freshness companion `endpointQueuePopHead_fresh_not_tail`
+    (v0.32.24–25). Transition establishers + bundle de-threads landed: `endpointSendDual` (v0.32.24),
+    `endpointCall` (v0.32.25, + the `linkServerStashedReply` tail-blocked frame). **`endpointSendDual`
+    and `endpointCall` are now free of BOTH `hQNBC'` and `hEQTB'`.** Residual (mechanical, same pattern):
+    `endpointReceiveDual` (needs a `storeTcbIpcState` core-(c) variant — its block-store is
+    `storeTcbIpcState` not `…AndMessage`, but all the needed `storeTcbIpcState_{ipcState_eq,endpoint_backward,
+    preserves_objects_ne}` lemmas exist; rendezvous has Call/Send sub-paths with the receiver discharged
+    by `_fresh_not_tail`), `endpointReplyRecv` (composes the receive-leg establisher through the reply
+    phase, mirroring its qNBC establisher), the 3 WithCaps (compose base + an `ipcUnwrapCaps`
+    tail-blocked frame — cap transfer writes only CNode caps), and cross-core `endpointCallOnCore`
+    (mirrors `endpointCall` with the per-core scheduler frames, like its qNBC establisher).
   - **Rendezvous (pop) branch** — qNBC is *clean* (`endpointQueuePopHead_preserves_qNBC` +
     `storeTcbReceiveComplete_preserves_qNBC` [unconditional: the `.ready` woken thread matches any
     neighbour] + `ensureRunnable` frame). Tail-blocked uses the pop frame +
