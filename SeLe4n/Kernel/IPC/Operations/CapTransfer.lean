@@ -790,6 +790,29 @@ theorem ipcUnwrapCaps_tcb_backward
         st st' summary oid hNe hObjInv hStep] at hTcb'
     exact hTcb'
 
+/-- IPC de-threading D4 Slice 2b: `ipcUnwrapCaps` backward-preserves endpoints (mirror of
+`ipcUnwrapCaps_tcb_backward`): a post-state endpoint pulls back to the same pre-state endpoint,
+since the cap transfer writes only a CNode at `receiverRoot`. -/
+theorem ipcUnwrapCaps_endpoint_backward
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st'))
+    (hEp' : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
+  by_cases hNe : oid = receiverRoot
+  · rw [hNe] at hEp' ⊢
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg senderRoot receiverRoot slotBase
+      grantRight st st' summary hObjInv hStep with h | h
+    · rw [h] at hEp'; exact hEp'
+    · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hEp'; exact absurd hEp' (by simp)
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase grantRight
+        st st' summary oid hNe hObjInv hStep] at hEp'
+    exact hEp'
+
 /-- M3-E4: receiverRoot is never a notification after ipcUnwrapCaps. In the
 grant-denied path state is unchanged. In the loop, each ipcTransferSingleCap
 either errors (state unchanged) or stores a CNode at receiverRoot. -/

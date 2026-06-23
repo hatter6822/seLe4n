@@ -1221,6 +1221,140 @@ theorem endpointCallOnCore_preserves_queueNextBlockingConsistent
               show queueNextBlockingConsistent (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_queueNextBlockingConsistent st5 caller executingCore hInv5
 
+/-- IPC de-threading D4 Slice 2b: `removeRunnableOnCore` frames
+`endpointQueueTailBlockedConsistent` (object-store frame — `objects` unchanged). -/
+theorem removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent (removeRunnableOnCore st tid c) :=
+  endpointQueueTailBlockedConsistent_of_objects_eq
+    (removeRunnableOnCore_preserves_objects st tid c) h
+
+/-- IPC de-threading D4 Slice 2b: the cross-core wake of an already-`.ready` thread preserves
+`endpointQueueTailBlockedConsistent` (the wake's `ipcState := .ready` re-insert is
+object-lookup-invisible — the §2 keystone — and the invariant is lookup-only). -/
+theorem wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (h : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent (wakeThread st tid ec).1 := by
+  refine endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward st (wakeThread st tid ec).1 ?_ ?_ h
+  · intro eid ep hEp
+    rwa [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv eid] at hEp
+  · intro y tcb' hY
+    rw [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv y.toObjId] at hY
+    exact ⟨tcb', hY, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2b: the cross-core endpoint call **establishes**
+`endpointQueueTailBlockedConsistent`.  Mirrors the single-core
+`endpointCall_preserves_endpointQueueTailBlockedConsistent` (block branch: sendQ enqueue +
+`.blockedOnCall` block-store discharged via core (c)
+`endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent`; rendezvous
+branch: receiveQ pop [popped head not a post-pop tail via core (a)
+`endpointQueuePopHead_popped_not_tail`] + receiver `.ready` store + caller `.blockedOnReply`
+store [caller fresh ⇒ not a post-pop tail] + `linkServerStashedReply`), with the receiver wake
+framed by `wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready` (the receiver is
+`.ready` after its message store, so the wake is object-invisible) and the caller deschedule by
+`removeRunnableOnCore`'s object-store frame. -/
+theorem endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller) :
+    endpointQueueTailBlockedConsistent (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact hTail
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact hTail
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hTail
+  | some ep =>
+    have hObjEp : st.objects[endpointId]? = some (.endpoint ep) :=
+      (getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact hTail
+      | ok st' =>
+        simp only
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact hTail
+        | ok st'' =>
+          simp only
+          show endpointQueueTailBlockedConsistent (removeRunnableOnCore st'' caller executingCore)
+          exact removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent st'' caller executingCore <|
+            endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent
+              endpointId false caller st st' st'' ep (.blockedOnCall endpointId) (some msg)
+              hObjInv hObjEp hTail
+              (fun epId e hE => ⟨(hFreshCaller epId e hE).2.1, (hFreshCaller epId e hE).2.2.2⟩)
+              (by simp) hEnq hMsg
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact hTail
+      | ok pair =>
+        simp only
+        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+          pair.1 pair.2.1 hObjInv hPop
+        have hTail1 := endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent endpointId true st
+          pair.2.2 pair.1 pair.2.1 hObjInv hTail hPop
+        have hRecvNotTail := endpointQueuePopHead_popped_not_tail endpointId true st pair.2.2 pair.1
+          pair.2.1 ep hObjInv hObjEp hDQSI hQHBC hTail hPop
+        have hCallerNotTailPop := endpointQueuePopHead_fresh_not_tail endpointId true st pair.2.2 pair.1
+          pair.2.1 ep caller hObjInv hObjEp
+          (fun epId e hE => ⟨(hFreshCaller epId e hE).2.2.2, (hFreshCaller epId e hE).2.1⟩) hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact hTail
+        | ok st2 =>
+          simp only
+          have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _
+            (some msg) hObjInv1 hMsg
+          have hTail2 := storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
+            pair.2.2 st2 pair.1 .ready (some msg) hTail1 hObjInv1 hMsg hRecvNotTail
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg
+          have hTailW := wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready
+            st2 pair.1 executingCore tr hTrGet hTrReady hObjInv2 hTail2
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObjInv2
+          have hCallerNotTailW : ∀ (epId : SeLe4n.ObjId) (e : Endpoint),
+              (wakeThread st2 pair.1 executingCore).1.objects[epId]? = some (.endpoint e) →
+              e.receiveQ.tail ≠ some caller ∧ e.sendQ.tail ≠ some caller := by
+            intro epId e hE
+            rw [wakeThread_objects_getElem_eq_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObjInv2 epId] at hE
+            exact hCallerNotTailPop epId e
+              (storeTcbIpcStateAndMessage_endpoint_backward pair.2.2 st2 pair.1 .ready (some msg) epId e hObjInv1 hMsg hE)
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact hTail
+          | ok st4 =>
+            simp only
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ none hObjW hCS
+            have hTail4 := storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
+              (wakeThread st2 pair.1 executingCore).1 st4 caller
+              (.blockedOnReply endpointId (some pair.1)) none hTailW hObjW hCS hCallerNotTailW
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hTail
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hTail5 := linkServerStashedReply_preserves_endpointQueueTailBlockedConsistent
+                st4 st5 caller pair.1 hObjInv4 hTail4 hLink
+              show endpointQueueTailBlockedConsistent (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent st5 caller executingCore hTail5
+
 -- ============================================================================
 -- §7  SM6.A.1 — the remaining derivable conjuncts + full `ipcInvariantFull`
 -- ============================================================================
@@ -1641,8 +1775,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    -- IPC de-threading D4 (Finding F-2): tail-blocked threaded pending the enqueue-establish slice.
-    (hEQTB' : endpointQueueTailBlockedConsistent st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
         ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
@@ -1699,6 +1831,11 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hObjInv hInv.pendingReceiveReplyWellFormed hCallerNotRecv,
     donationOwnerUnique_of_sameSchedContextBindings
       (endpointCallOnCore_sameSchedContextBindings endpointId caller msg executingCore st hObjInv)
-      hInv.donationOwnerUnique, hEQTB'⟩
+      hInv.donationOwnerUnique,
+    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (cross-core
+    -- enqueue/pop-establish via cores (a)+(c); wake + deschedule are object-invisible frames).
+    endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent endpointId caller msg executingCore
+      st hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
+      hFreshCaller⟩
 
 end SeLe4n.Kernel

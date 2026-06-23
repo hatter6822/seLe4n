@@ -1,3 +1,45 @@
+## v0.32.27 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked (`hEQTB'`) FULLY de-threaded
+
+Closes the `hEQTB'` half of D4 Slice 2b — `endpointQueueTailBlockedConsistent` is now **established
+from the pre-state** in every `ipcInvariantFull` bundle (zero `hEQTB'` threading sites), matching the
+already-complete `hQNBC'` de-thread. Every endpoint-queue-touching transition now derives the 19th
+conjunct internally via cores (a) (`endpointQueuePopHead_popped_not_tail`) and (c)
+(`endpointQueueEnqueue_blockStore{,Ipc}_establishes_…`), so the dispatcher no longer has to supply a
+post-state tail-blocked witness.
+
+- `notificationWait_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) — a new
+  establisher for the one *notification* transition that threaded `hEQTB'`. `notificationWait` touches
+  no endpoint queue; its only TCB write is the running `waiter` (to `.ready` on badge delivery, or
+  `.blockedOnNotification` on block). The waiter is `.ready` in the pre-state (`hWaiterReady`, the
+  dispatcher fact: the syscall caller is running), hence by pre-state tail-blocked it is no endpoint
+  tail, so the rewrite cannot break tail-blockedness. Both branches discharged via
+  `storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent` (`hNotTail` from the waiter's
+  `.ready` state) + `removeRunnableOnCore`/`storeObject` frames.
+- `removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent` +
+  `wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready` +
+  `endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent`
+  (`CrossCore/EndpointCallInvariant.lean`) — the cross-core establisher mirrors the single-core
+  `endpointCall` proof with the per-core object-invisible frames: the receiver wake is invisible
+  because the receiver is `.ready` after its message store (`wakeThread_objects_getElem_eq_of_ready`,
+  the §2 keystone), and the caller deschedule is an `objects`-preserving frame.
+- **Bundle de-threads (removed `hEQTB'`, added the establisher call):** `endpointReplyRecv`, the 3
+  WithCaps wrappers (`endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` —
+  compose the base establisher; the cap transfer writes only CNode caps), cross-core
+  `endpointCallOnCore`, and `notificationWait` (gains the dischargeable `hWaiterReady` precondition in
+  place of the threaded `hEQTB'`). The three base transitions (`endpointSendDual`/`endpointCall`/
+  `endpointReceiveDual`) were de-threaded in v0.32.24–26; **every bundle is now free of BOTH `hQNBC'`
+  and `hEQTB'`.**
+- `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` — D4 row + Slice 2b note marked the `hEQTB'` half
+  complete; the remaining D4 residual is `hQHBC'` (Slice 2c, `queueNextTargetBlocked`).
+
+Proof-only; the only signature changes are the bundles swapping a threaded post-state `hEQTB'` for the
+pre-state `hWaiterReady` (`notificationWait`) or no new hypothesis at all (the establishers reuse the
+already-present `hFresh*` enqueue-freshness preconditions). Trace byte-identical, zero `sorry`/`axiom`;
+full build (376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1153→1157 (new frame/establisher raw lookups,
+mirroring the existing qNBC frame patterns).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
 ## v0.32.26 — IPC de-threading D4 (Finding F-2) Slice 2b: `storeTcbIpcState` core-(c) variant + plan sync
 
 Foundation top-up for the remaining tail-blocked establishers, plus a workstream-status refresh.
