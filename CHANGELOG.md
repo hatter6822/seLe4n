@@ -1,3 +1,33 @@
+## v0.32.37 — IPC de-threading D4 Slice 2c: qHBC pop core + de-thread `hQHBC'` from `notificationWait`
+
+First step of the actual Slice-2c goal — **de-threading `queueHeadBlockedConsistent` (`hQHBC'`)** —
+now that `queueNextTargetBlocked` (qNTB) is in the bundle (v0.32.36). Lands the rendezvous-pop keystone
+and the first wired `hQHBC'` de-thread.
+
+- **`endpointQueuePopHead_preserves_queueHeadBlockedConsistent`** (`DualQueueMembership.lean`) — the pop
+  core the endpoint transitions' rendezvous legs compose over. `endpointQueuePopHead` advances the
+  popped queue's head to the old head's `queueNext` target
+  (`endpointQueuePopHead_post_endpoint_queues`); that target is blocked on the **same** queue/endpoint
+  as the old head — which was the head, hence blocked by pre-state `qHBC` — via the strict link-target
+  invariant **qNTB**. The other queue's head and every other endpoint frame unchanged; the pop never
+  rewrites any `ipcState`. This is precisely the new-head blockedness that was *not* derivable before
+  qNTB (the pop's new head is a former *middle* element).
+- **`notificationWait_preserves_queueHeadBlockedConsistent`** (`DualQueueMembership.lean`) — the first
+  per-transition `qHBC` establisher, and the easiest: `notificationWait` touches the *notification*
+  waitQ, never an endpoint queue, so every endpoint head frames; the only `ipcState` write is the
+  running waiter (`.ready`/`.blockedOnNotification`), excluded from being an endpoint head by
+  `hWaiterReady` (a `.ready` thread is no head). Mirrors
+  `notificationWait_preserves_endpointQueueTailBlockedConsistent` (head for tail).
+- **De-threaded `hQHBC'` from `notificationWait_preserves_ipcInvariantFull`**: the bundle now
+  *establishes* the 9th conjunct from the pre-state instead of threading it. The remaining 7 endpoint
+  bundles + cross-core stay threaded pending their establishers (each composes the pop core above with
+  the enqueue+block-store `qHBC` keystone — a follow-on).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (pop core + establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.36 — IPC de-threading D4 Slice 2c: wire `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct
 
 Lands the atomic wire from the v0.32.35 recipe: `queueNextTargetBlocked` (qNTB — the strict

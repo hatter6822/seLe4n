@@ -367,9 +367,23 @@ What remains, per invariant:
   `lifecycleRetypeObject_preserves_queueNextTargetBlocked` + `coreIpcInvariantBundle_to_queueNextTargetBlocked`
   (`EndpointReplyAndLifecycle.lean`), `default_queueNextTargetBlocked` (`Architecture/Invariant.lean`).
   Full build (376) + staged (`Platform.Staged`) + `test_smoke` green, trace byte-identical;
-  `RAW_LOOKUP_TID` re-anchored 1195→1203.  **Remaining 2c work:** (a) per-transition qNTB establishers
+  `RAW_LOOKUP_TID` re-anchored 1195→1203.
+
+  **qHBC POP CORE + FIRST `hQHBC'` DE-THREAD LANDED (v0.32.37):** the rendezvous-pop keystone
+  **`endpointQueuePopHead_preserves_queueHeadBlockedConsistent`** — `endpointQueuePopHead` advances the
+  popped queue's head to the old head's `queueNext` target
+  (`endpointQueuePopHead_post_endpoint_queues`); that target is blocked on the **same** queue/endpoint
+  as the old head (the head, blocked by pre-state `qHBC`) via **qNTB**; the other queue's head + every
+  other endpoint frame (the pop rewrites no `ipcState`).  This is exactly the new-head blockedness that
+  was *not* derivable before qNTB (the new head is a former *middle* element).  First wired `hQHBC'`
+  de-thread: **`notificationWait`** (the easiest — touches the *notification* waitQ, never an endpoint
+  queue, so endpoint heads frame; the running waiter is `.ready` ⇒ not a head), via
+  `notificationWait_preserves_queueHeadBlockedConsistent` (head dual of the tail-blocked establisher).
+  `RAW_LOOKUP_TID` re-anchored 1203→1205.  **Remaining 2c work:** (a) per-transition qNTB establishers
   for the 9 threaded bundles (compose keystone + pop/rendezvous + the no-incoming core), de-thread
-  `hQNTB'`; (b) the `T_preserves_queueHeadBlockedConsistent` establishers using **pre-state** qNTB+qHBC,
+  `hQNTB'`; (b) the remaining `T_preserves_queueHeadBlockedConsistent` establishers for the 7 endpoint
+  bundles + cross-core (each composes the pop core above with the **enqueue+block-store `qHBC`
+  keystone** — the empty-queue case where the freshly-blocked thread becomes the head — still to build),
   drop `hQHBC'`.
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
