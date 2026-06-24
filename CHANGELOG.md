@@ -1,3 +1,31 @@
+## v0.32.43 — IPC de-threading D4 Slice 2c: de-thread `hQNTB'` from the call-family bundles
+
+Continues the `queueNextTargetBlocked` (qNTB) de-thread. `endpointCall` and `endpointCallWithCaps`
+now *establish* qNTB from the pre-state instead of threading `hQNTB'`.
+
+- **`linkServerStashedReply_preserves_queueNextTargetBlocked`** (`DualQueueMembership.lean`) — composes
+  the `linkCallerReply` qNTB frame with the `server.pendingReceiveReply := none` write (preserves
+  `ipcState`+`queueNext`).
+- **`endpointCall_preserves_queueNextTargetBlocked`** — rendezvous (pop receiveQ): pop frame + popped
+  receiver `.ready` store (no-incoming via the popped head) + `ensureRunnable` + the caller
+  `.blockedOnReply` store (non-queue-blocking; the running caller is `.ready`, so by the pre-state qNTB
+  it carries no blocked incoming link — `hCallerReady`, `caller ≠ receiver` via `hFreshCaller`) +
+  `linkServerStashedReply` + `removeRunnable`. Block path: the fused sendQ enqueue+`.blockedOnCall`
+  keystone + `removeRunnable`.
+- **`endpointCallWithCaps_preserves_queueNextTargetBlocked`** (base + cap-transfer frame).
+- De-threaded `hQNTB'` from `endpointCall_preserves_ipcInvariantFull` and
+  `endpointCallWithCaps_preserves_ipcInvariantFull`, each gaining the dischargeable `hCallerReady`
+  precondition (the running syscall caller is `.ready`; supplied by the reachability bundle at D8 —
+  exactly as the receive bundles carry `hReceiverReady`).
+
+Remaining `hQNTB'`-threaded bundles: `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
+`endpointSendDualWithCaps`, cross-core `endpointCallOnCore`.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.42 — IPC de-threading D4 Slice 2c: de-thread `hQNTB'` from the receive-family + `endpointReply` bundles
 
 Begins the **`queueNextTargetBlocked`** (qNTB) de-thread — the strict link-target conjunct (#20).

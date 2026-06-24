@@ -426,10 +426,14 @@ What remains, per invariant:
   non-queue-blocked thread has no blocked incoming link) + `cleanupPreReceiveDonation` / `ipcUnwrapCaps` qNTB
   frames.  Key insight: unlike `qNBC`, qNTB needs the **fused** enqueue+block-store keystone (not enqueue
   alone) and the no-incoming discipline for `.ready`/`.blockedOnReply` stores.  De-threaded `hQNTB'` from
-  `endpointReply`, `endpointReceiveDual`, `endpointReceiveDualWithCaps`.  **Remaining 2c work:** (a) the qNTB
-  establishers for `endpointCall` (+WithCaps), `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
-  `endpointSendDualWithCaps`, de-thread `hQNTB'`; (b) the cross-core `endpointCallOnCore` `qHBC`+`qNTB`
-  establishers (the last `hQHBC'`/`hQNTB'`-threaded site).
+  `endpointReply`, `endpointReceiveDual`, `endpointReceiveDualWithCaps` (v0.32.42) and
+  `endpointCall`, `endpointCallWithCaps` (v0.32.43; each gains the dischargeable `hCallerReady`
+  precondition — the running syscall caller is `.ready`, supplied by the reachability bundle at D8).
+  Frame `linkServerStashedReply_preserves_queueNextTargetBlocked` added.  **Remaining 2c work:**
+  (a) the qNTB establishers for `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
+  `endpointSendDualWithCaps`, de-thread `hQNTB'` (notifications are simpler — `.blockedOnNotification`
+  is *not* a qNTB-tracked direction, so the waitQ links are qNTB-irrelevant); (b) the cross-core
+  `endpointCallOnCore` `qHBC`+`qNTB` establishers (the last `hQHBC'`/`hQNTB'`-threaded site).
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).
