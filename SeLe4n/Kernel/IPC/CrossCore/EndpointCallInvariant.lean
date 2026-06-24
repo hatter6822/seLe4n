@@ -312,6 +312,45 @@ theorem wakeThread_preserves_blockedOnReplyHasTarget_of_ready
   rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId] at hTcb
   exact hInv tid tcb ep rt hTcb hBlk
 
+-- IPC de-threading D8 (cross-core receive/reply prep): the scheduler-op frames for the
+-- lookup-only conjuncts whose `removeRunnableOnCore`/`wakeThread` frames were not yet built
+-- (`blockedOnReplyHasTarget` / `pendingReceiveReplyWellFormed` / `donationOwnerUnique`).  These are
+-- consumed by the cross-core receive/reply bundles' Send-rendezvous (wake) and block (deschedule) legs.
+
+/-- `removeRunnableOnCore` preserves `blockedOnReplyHasTarget` (pure scheduler op, objects unchanged). -/
+theorem removeRunnableOnCore_preserves_blockedOnReplyHasTarget
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : blockedOnReplyHasTarget st) :
+    blockedOnReplyHasTarget (removeRunnableOnCore st tid c) :=
+  blockedOnReplyHasTarget_of_objects_eq (by rw [removeRunnableOnCore_preserves_objects]) h
+
+/-- `removeRunnableOnCore` preserves `pendingReceiveReplyWellFormed` (objects unchanged). -/
+theorem removeRunnableOnCore_preserves_pendingReceiveReplyWellFormed
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : pendingReceiveReplyWellFormed st) :
+    pendingReceiveReplyWellFormed (removeRunnableOnCore st tid c) :=
+  pendingReceiveReplyWellFormed_of_objects_eq (by rw [removeRunnableOnCore_preserves_objects]) h
+
+/-- `removeRunnableOnCore` preserves `donationOwnerUnique` (objects unchanged). -/
+theorem removeRunnableOnCore_preserves_donationOwnerUnique
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : donationOwnerUnique st) :
+    donationOwnerUnique (removeRunnableOnCore st tid c) :=
+  donationOwnerUnique_of_objects_eq (by rw [removeRunnableOnCore_preserves_objects]) h
+
+/-- The cross-core wake of an already-`.ready` thread preserves `donationOwnerUnique`
+(object-lookup-invisible re-insert — the §2 keystone — and the invariant reads only
+`objects[·.toObjId]?`). -/
+theorem wakeThread_preserves_donationOwnerUnique_of_ready
+    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
+    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt) (hInv : donationOwnerUnique st) :
+    donationOwnerUnique (wakeThread st wtid ec).1 := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid1.toObjId] at h1
+  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid2.toObjId] at h2
+  exact hInv tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
 effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store

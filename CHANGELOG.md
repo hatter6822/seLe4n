@@ -1,3 +1,27 @@
+## v0.32.50 — IPC de-threading D8 Slice 5: cross-core scheduler-op frames for the receive/reply bundles
+
+Builds the missing general cross-core scheduler-op frames for three lookup-only conjuncts, the
+foundation the (forthcoming) cross-core receive/reply `ipcInvariantFull` bundles consume on their
+Send-rendezvous (wake) and block (deschedule) legs. These frames are transition-agnostic — reusable
+by `endpointReceiveDualOnCore`, `endpointReplyOnCore`, and any future cross-core IPC bundle.
+
+- `removeRunnableOnCore_preserves_{blockedOnReplyHasTarget, pendingReceiveReplyWellFormed,
+  donationOwnerUnique}` — the deschedule is a pure scheduler op (objects unchanged), so each is a
+  one-liner off the conjunct's `_of_objects_eq` combinator.
+- `wakeThread_preserves_donationOwnerUnique_of_ready` — the cross-core wake of an already-`.ready`
+  thread is object-lookup-invisible (the §2 keystone `wakeThread_objects_getElem_eq_of_ready`); the
+  invariant reads only `objects[·.toObjId]?`, transported pointwise.
+
+(The `pendingReceiveReplyWellFormed` wake frame — a 2-conjunct invariant over `getTcb?`/`getReply?`
+— is deferred to its establisher slice, where the `getReply?` transport is in scope.)
+
+Pure additions to the staged `EndpointCallInvariant`; no production change. Full build green (376) +
+`Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero `sorry`/`axiom`.
+`RAW_LOOKUP_TID` re-anchored 1275→1276 (the `donationOwnerUnique` frame's `.toObjId` reads).
+Version 0.32.50.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 5 — cross-core receive/reply prep)
+
 ## v0.32.49 — IPC de-threading D8 Slice 4: cross-core `endpointCallOnCore` de-threads `ipcStateQueueMembershipConsistent`
 
 De-threads `hQMC'` from the staged cross-core `endpointCallOnCore_preserves_ipcInvariantFull`
