@@ -389,11 +389,21 @@ What remains, per invariant:
   head is a pre-state head (unchanged `ipcState`, blocked by `qHBC`) or `tid` in the empty case (blocked
   by `hBlock`); `tid` is fresh (`hFreshTid`), so heads no other queue.  `RAW_LOOKUP_TID` re-anchored
   1205→1213.  **Both legs of the endpoint transitions' `qHBC` preservation are now provable from the
-  pre-state** (qNTB for the pop's new head; `hBlock`/`qHBC` for the enqueue).  **Remaining 2c work:**
-  (a) per-transition qNTB establishers for the 9 threaded bundles (compose qNTB keystone + pop/rendezvous
-  + the no-incoming core), de-thread `hQNTB'`; (b) the per-transition `qHBC` establishers for the 7
-  endpoint bundles + cross-core — compose the pop core (rendezvous legs, with popped-head/receiver
-  "not a head" facts) + the enqueue keystones (block legs) — drop `hQHBC'`.
+  pre-state** (qNTB for the pop's new head; `hBlock`/`qHBC` for the enqueue).
+
+  **FIRST ENDPOINT `hQHBC'` DE-THREAD LANDED (v0.32.39):** `endpointSendDual` (+ `WithCaps`).
+  `endpointQueuePopHead_popped_not_head` (head dual of `…_popped_not_tail`: the popped head heads no
+  queue — popped-queue new head ≠ `tid` by `tcbQueueChainAcyclic_no_self_loop`; other queues by the
+  `qHBC` kind-pinning) + `endpointSendDual_preserves_queueHeadBlockedConsistent` (deliver: pop core +
+  `storeTcbReceiveComplete` [`hNotHead` = `…_popped_not_head`] + `ensureRunnable`; block: the
+  `storeTcbIpcStateAndMessage` enqueue keystone + `removeRunnable`) +
+  `ipcUnwrapCaps_preserves_queueHeadBlockedConsistent` + `endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent`.
+  `hQHBC'` dropped from both send bundles.  **Remaining 2c work:** (a) per-transition qNTB establishers
+  for the 9 `hQNTB'`-threaded bundles (compose qNTB keystone + pop/rendezvous + the no-incoming core),
+  de-thread `hQNTB'`; (b) the `qHBC` establishers for `endpointReceiveDual` / `endpointCall` (+ WithCaps)
+  + cross-core `endpointCallOnCore` — same pop-core + enqueue-keystone composition, but the deliver
+  branches are more involved (the Call sub-path's reply-link; the *running*-receiver `.ready` store
+  needs its own `hNotHead`) — drop `hQHBC'`.
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).

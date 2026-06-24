@@ -1,3 +1,34 @@
+## v0.32.39 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointSendDual` (+ WithCaps)
+
+First **endpoint** transition de-threaded for `queueHeadBlockedConsistent`, composing the v0.32.37 pop
+core and the v0.32.38 enqueue keystone. `endpointSendDual{,WithCaps}_preserves_ipcInvariantFull` now
+*establish* the 9th conjunct from the pre-state instead of threading `hQHBC'`.
+
+- **`endpointQueuePopHead_popped_not_head`** (`DualQueueMembership.lean`) — the head dual of the
+  existing `endpointQueuePopHead_popped_not_tail`: after the pop, the popped head `tid` heads no queue.
+  Popped queue: the new head is `headTcb.queueNext`, which differs from `tid` since a self-loop is
+  forbidden (`tcbQueueChainAcyclic_no_self_loop`). Every other queue: `tid`'s blocked state is pinned by
+  `qHBC` to the popped queue's kind on `endpointId`, contradicting any other (kind, endpoint) head.
+- **`endpointSendDual_preserves_queueHeadBlockedConsistent`** — deliver branch: pop core (new head
+  blocked via qNTB) + `storeTcbReceiveComplete` (the popped receiver `.ready`, `hNotHead` =
+  `…_popped_not_head`) + `ensureRunnable` frame; block branch: the `storeTcbIpcStateAndMessage` enqueue
+  keystone + `removeRunnable` frame.
+- **`ipcUnwrapCaps_preserves_queueHeadBlockedConsistent`** (the cap-transfer writes only CNode caps) +
+  **`endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent`** (base establish on `stMid` + the
+  optional cap-transfer frame).
+- De-threaded `hQHBC'` from both `endpointSendDual_preserves_ipcInvariantFull` and
+  `endpointSendDualWithCaps_preserves_ipcInvariantFull`.
+
+The remaining `hQHBC'`-threaded bundles are `endpointReceiveDual` / `endpointCall` (+ their WithCaps) +
+cross-core `endpointCallOnCore` — each needs its `qHBC` establisher (more complex deliver branches:
+the Call sub-path's reply-link, the running-receiver `.ready` store) plus, since they also thread
+`hQNTB'`, the symmetric qNTB establisher. Next slices.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.38 — IPC de-threading D4 Slice 2c: qHBC enqueue keystone (both store variants) + `post_head_cases`
 
 Lands the **block-leg** keystone for de-threading `queueHeadBlockedConsistent` (`hQHBC'`) from the
