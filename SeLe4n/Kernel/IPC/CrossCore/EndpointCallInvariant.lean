@@ -1774,6 +1774,9 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (cross-core
+    -- enqueue-establish is a follow-on slice); carries the strict link-target invariant.
+    (hQNTB' : queueNextTargetBlocked st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
@@ -1836,6 +1839,7 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     -- enqueue/pop-establish via cores (a)+(c); wake + deschedule are object-invisible frames).
     endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent endpointId caller msg executingCore
       st hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-      hFreshCaller⟩
+      hFreshCaller,
+    hQNTB'⟩
 
 end SeLe4n.Kernel

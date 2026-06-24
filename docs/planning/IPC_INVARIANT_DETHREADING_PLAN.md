@@ -352,6 +352,26 @@ What remains, per invariant:
   `T_preserves_queueHeadBlockedConsistent` establishers (pop new-head blocked via
   `queueNextTargetBlocked` + pre-state qHBC) and drop `hQHBC'` from the 9 bundles + cross-core.
 
+  **ATOMIC WIRE LANDED (v0.32.36):** `queueNextTargetBlocked` is now the **20th `ipcInvariantFull`
+  conjunct** per the validated recipe (the 5 `Defs.lean` edits + every producer wired).  **Established
+  from the pre-state** (genuine de-thread): `endpointSendDual` (the v0.32.33 establisher),
+  `lifecycleRetypeObject` (new frame — retyped object has `queueNext = none`, nobody links to the fresh
+  target), the 2 reply mutators (`linkCallerReply`/`consumeCallerReply` — new
+  `_preserves_queueNextTargetBlocked` frames via the new
+  `storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked` primitive), the 3 arch
+  object-frames, `boot`, and `default`.  **Threaded transitionally (`hQNTB'`)** for the 9 remaining IPC
+  bundles (`endpointReceiveDual`/`Call`/`notificationSignal`/`Wait`/`endpointReply`/`ReplyRecv`/3×WithCaps)
+  + cross-core `endpointCallOnCore` — their rendezvous/deliver branches set the *running* (not popped)
+  receiver/waiter `.ready`, whose no-incoming needs a `dualQueueSystemInvariant` derivation rather than
+  the popped-head structural fact; each de-threaded in its own follow-on commit.  New supporting frames:
+  `lifecycleRetypeObject_preserves_queueNextTargetBlocked` + `coreIpcInvariantBundle_to_queueNextTargetBlocked`
+  (`EndpointReplyAndLifecycle.lean`), `default_queueNextTargetBlocked` (`Architecture/Invariant.lean`).
+  Full build (376) + staged (`Platform.Staged`) + `test_smoke` green, trace byte-identical;
+  `RAW_LOOKUP_TID` re-anchored 1195→1203.  **Remaining 2c work:** (a) per-transition qNTB establishers
+  for the 9 threaded bundles (compose keystone + pop/rendezvous + the no-incoming core), de-thread
+  `hQNTB'`; (b) the `T_preserves_queueHeadBlockedConsistent` establishers using **pre-state** qNTB+qHBC,
+  drop `hQHBC'`.
+
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).
 

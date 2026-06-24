@@ -2002,7 +2002,8 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
   pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
-  endpointQueueTailBlockedConsistent st
+  endpointQueueTailBlockedConsistent st ∧
+  queueNextTargetBlocked st
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -2022,14 +2023,15 @@ re-established by `linkCallerReply` / `consumeCallerReply`, and
 theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
     (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
-    (hTail : endpointQueueTailBlockedConsistent st) :
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hQNTB : queueNextTargetBlocked st) :
     ipcInvariantFull st :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -2084,6 +2086,7 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
   donationOwnerUnique : donationOwnerUnique st
   endpointQueueTailBlockedConsistent : endpointQueueTailBlockedConsistent st
+  queueNextTargetBlocked : queueNextTargetBlocked st
 
 namespace ipcInvariantFull
 
@@ -2188,7 +2191,12 @@ elaborator. -/
 @[simp] theorem endpointQueueTailBlockedConsistent {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem queueNextTargetBlocked {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -2248,7 +2256,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
            h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
-           h.endpointQueueTailBlockedConsistent⟩
+           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -2260,7 +2268,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
            h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
-           h.endpointQueueTailBlockedConsistent⟩
+           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/

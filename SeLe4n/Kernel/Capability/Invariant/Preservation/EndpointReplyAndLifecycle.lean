@@ -285,7 +285,13 @@ theorem coreIpcInvariantBundle_to_donationOwnerUnique {st : SystemState}
 (19th `ipcInvariantFull` conjunct). -/
 theorem coreIpcInvariantBundle_to_endpointQueueTailBlockedConsistent {st : SystemState}
     (h : coreIpcInvariantBundle st) : endpointQueueTailBlockedConsistent st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- IPC de-threading D4 Slice 2c: extract queue-next target-blocked consistency
+(20th `ipcInvariantFull` conjunct). -/
+theorem coreIpcInvariantBundle_to_queueNextTargetBlocked {st : SystemState}
+    (h : coreIpcInvariantBundle st) : queueNextTargetBlocked st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -783,6 +789,43 @@ theorem lifecycleRetypeObject_preserves_queueNextBlockingConsistent
       rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target b.toObjId newObj hEqB hObjInv hStep] at hB
     exact hInv a b tcbA tcbB hAPre hBPre hN
 
+/-- IPC de-threading D4 Slice 2c: `lifecycleRetypeObject` frames `queueNextTargetBlocked`.
+The retyped object at `target` has `queueNext = none` (`hNewObjNoNext`, vacuating its outgoing
+link) and nobody links to `target` (`hTargetNotQueueLinked`, so it is never a link *target*); every
+other link recovers its pre-state TCBs and reuses the pre-state invariant.  Mirrors
+`lifecycleRetypeObject_preserves_queueNextBlockingConsistent` (qNTB's per-link obligation is the
+same pre-state application). -/
+theorem lifecycleRetypeObject_preserves_queueNextTargetBlocked
+    (st st' : SystemState)
+    (authority : CSpaceAddr)
+    (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hNewObjNoNext : ∀ (t : TCB), newObj = .tcb t → t.queueNext = none)
+    (hTargetNotQueueLinked : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB) (b : SeLe4n.ThreadId),
+        st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some b → b.toObjId ≠ target)
+    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  have hStoreAtTarget : st'.objects[target]? = some newObj := by
+    rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
+      ⟨_, _, _, _, _, _, hStore⟩
+    exact lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
+  intro a b tcbA tcbB hA hB hN
+  by_cases hEqA : a.toObjId = target
+  · -- a is the retyped object: `newObj = .tcb tcbA`, whose queueNext is none — vacuous.
+    have hObjEq : st'.objects[a.toObjId]? = some newObj := by rw [hEqA]; exact hStoreAtTarget
+    have hNewEq : newObj = .tcb tcbA := by rw [hObjEq] at hA; exact Option.some.inj hA
+    rw [hNewObjNoNext tcbA hNewEq] at hN; cases hN
+  · -- a is framed; recover its pre-state TCB.
+    have hAPre : st.objects[a.toObjId]? = some (.tcb tcbA) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target a.toObjId newObj hEqA hObjInv hStep] at hA
+    -- b ≠ target (nobody links to target in the pre-state, and `a.queueNext = some b`).
+    have hEqB : b.toObjId ≠ target := hTargetNotQueueLinked a tcbA b hAPre hN
+    have hBPre : st.objects[b.toObjId]? = some (.tcb tcbB) := by
+      rwa [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target b.toObjId newObj hEqB hObjInv hStep] at hB
+    exact hInv a b tcbA tcbB hAPre hBPre hN
+
 /-- IPC de-threading D4: `lifecycleRetypeObject` frames `queueHeadBlockedConsistent`.
 The retype writes `newObj` at `target`; endpoints and TCBs elsewhere frame from the
 pre-state.  If a *new* endpoint is created at `target`, its queue heads must be
@@ -958,7 +1001,12 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
            -- IPC de-threading D4 (Finding F-2): tail-blocked **established** from the pre-state.
            lifecycleRetypeObject_preserves_endpointQueueTailBlockedConsistent st st' authority target
              newObj hIpcFull.endpointQueueTailBlockedConsistent hObjInvSt hNewObjNotEndpoint
-             hTargetNotTail hStep⟩
+             hTargetNotTail hStep,
+           -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state
+           -- (retyped object has `queueNext = none`; nobody links to the fresh target).
+           lifecycleRetypeObject_preserves_queueNextTargetBlocked st st' authority target
+             newObj hIpcFull.queueNextTargetBlocked hObjInvSt hNewObjNoNext
+             hTargetNotQueueLinked hStep⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)

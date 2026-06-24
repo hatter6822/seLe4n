@@ -1609,6 +1609,45 @@ theorem storeObject_endpoint_preserves_queueNextTargetBlocked
   rw [hFrame b.toObjId hNeB] at hB
   exact hInv a b tcbA tcbB hA hB hN
 
+/-- `storeObject` of a TCB whose `ipcState` **and** `queueNext` both match the stored-over
+TCB preserves `queueNextTargetBlocked`.  `queueNextTargetBlocked` reads only those two fields,
+so a write that leaves both intact (e.g. a `replyObject` / `pendingMessage` mutation) cannot
+disturb any link's blocking-direction agreement.  This is the qNTB analogue of
+`storeObject_tcb_preserveIpc_preserves_endpointQueueTailBlockedConsistent`, additionally
+demanding `queueNext` equality (qNTB constrains the link target, which tail-blocked does not). -/
+theorem storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid₀ : SeLe4n.ThreadId) (oldTcb newTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hOld : st.objects[tid₀.toObjId]? = some (.tcb oldTcb))
+    (hSameIpc : newTcb.ipcState = oldTcb.ipcState)
+    (hSameNext : newTcb.queueNext = oldTcb.queueNext)
+    (hInv : queueNextTargetBlocked st)
+    (hStore : storeObject tid₀.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  have hEqAt := storeObject_objects_eq st st' tid₀.toObjId (.tcb newTcb) hObjInv hStore
+  have hFrame : ∀ x, x ≠ tid₀.toObjId → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeObject_objects_ne st st' tid₀.toObjId x (.tcb newTcb) hNe hObjInv hStore
+  -- For any thread `t`, recover an st-side TCB with matching `ipcState` and `queueNext`.
+  have hRecover : ∀ (t : SeLe4n.ThreadId) (tcbT : TCB),
+      st'.objects[t.toObjId]? = some (.tcb tcbT) →
+      ∃ tcbT', st.objects[t.toObjId]? = some (.tcb tcbT') ∧
+        tcbT'.ipcState = tcbT.ipcState ∧ tcbT'.queueNext = tcbT.queueNext := by
+    intro t tcbT hT
+    by_cases hEq : t.toObjId = tid₀.toObjId
+    · rw [hEq, hEqAt] at hT
+      obtain rfl : newTcb = tcbT := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hT
+      exact ⟨oldTcb, by rw [hEq]; exact hOld, hSameIpc.symm, hSameNext.symm⟩
+    · rw [hFrame t.toObjId hEq] at hT
+      exact ⟨tcbT, hT, rfl, rfl⟩
+  intro a b tcbA tcbB hA hB hN
+  obtain ⟨tcbA', hA', hIpcA, hNextA⟩ := hRecover a tcbA hA
+  obtain ⟨tcbB', hB', hIpcB, _⟩ := hRecover b tcbB hB
+  have hN' : tcbA'.queueNext = some b := by rw [hNextA]; exact hN
+  have hPre := hInv a b tcbA' tcbB' hA' hB' hN'
+  rw [hIpcA, hIpcB] at hPre
+  exact hPre
+
 /-- `storeTcbQueueLinks` preserves `queueNextTargetBlocked`: it rewrites only `tid`'s link fields, so
 the only *new* outgoing link is `tid.queueNext := next`; the caller discharges that one via
 `hNewLink` (in the enqueue establisher, the paired block-store makes the new target blocked on the

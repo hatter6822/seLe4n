@@ -1,3 +1,50 @@
+## v0.32.36 — IPC de-threading D4 Slice 2c: wire `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct
+
+Lands the atomic wire from the v0.32.35 recipe: `queueNextTargetBlocked` (qNTB — the strict
+link-target invariant `a.queueNext = some b ⇒ b carries a's blocking direction+endpoint) is now the
+**20th conjunct** of `ipcInvariantFull`. This is the enabler for de-threading `hQHBC'` (the actual
+Slice-2c goal, a follow-on): with qNTB in the bundle, every transition's `queueHeadBlockedConsistent`
+establisher can read the strict link-target fact from the **pre-state**.
+
+**Structural (`Defs.lean`)** — the 20-conjunct invariant:
+- `ipcInvariantFull` def gains `∧ queueNextTargetBlocked st`; the `IpcInvariantFull` structure gains the
+  matching field; the `ipcInvariantFull_iff_IpcInvariantFull` bridge carries it both directions.
+- The `endpointQueueTailBlockedConsistent` projection shifts `h.2.2…2` → `h.2.2…2.1`; a new
+  `queueNextTargetBlocked` projection `h.2.2…2.2` is added. `ipcInvariantFull_of_core_replyCallerLinkage`
+  and `ipcInvariantFull_compositional` take the new conjunct as a parameter.
+
+**Established from the pre-state** (genuine de-thread, zero new threading):
+- `endpointSendDual` — via the v0.32.33 establisher `endpointSendDual_preserves_queueNextTargetBlocked`
+  (deliver branch pops the receiveQ head + completes the receive; block branch is the enqueue+block-store
+  keystone).
+- `lifecycleRetypeObject` — new frame `lifecycleRetypeObject_preserves_queueNextTargetBlocked` (the
+  retyped object has `queueNext = none`; nobody links to the fresh target).
+- The two reply mutators — new frames `linkCallerReply` / `consumeCallerReply`
+  `_preserves_queueNextTargetBlocked` (reply/`replyObject` stores touch neither `queueNext` nor
+  `ipcState`), composed from the new reusable primitive
+  `storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked` + the existing reply-store
+  frames.
+- The three arch object-frames (`advanceTimerState` / `writeRegisterState` / `contextSwitchState`),
+  `bootFromPlatform`, and the `default` state — all via the object-equality / vacuous discharge.
+
+**Threaded transitionally** (`hQNTB'`, establisher is a follow-on slice): the 9 remaining IPC bundles
+(`endpointReceiveDual`, `endpointCall`, `notificationSignal`, `notificationWait`, `endpointReply`,
+`endpointReplyRecv`, and the three `…WithCaps` wrappers). Their rendezvous/deliver branches set the
+*running* (not popped) receiver/waiter `.ready`, whose no-incoming needs a `dualQueueSystemInvariant`
+derivation rather than the popped-head structural fact — deferred to per-transition establishers, each
+de-threaded in its own validated commit.
+
+New supporting frames: `storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked`
+(`QueueNextBlocking.lean`); `storeObject_reply` / `consumeReply` / `linkReply` / `linkCallerReply` /
+`consumeCallerReply` `_preserves_queueNextTargetBlocked` (`DualQueueMembership.lean`);
+`lifecycleRetypeObject_preserves_queueNextTargetBlocked` + `coreIpcInvariantBundle_to_queueNextTargetBlocked`
+(`EndpointReplyAndLifecycle.lean`); `default_queueNextTargetBlocked` (`Architecture/Invariant.lean`).
+
+Full build green (376 jobs), `test_smoke` green, trace byte-identical, zero `sorry`/`axiom`.
+`RAW_LOOKUP_TID` re-anchored 1195→1203 (new frame lemmas' raw `objects[…]?` lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.35 — IPC de-threading D4 Slice 2c: validated atomic-wire recipe (plan)
 
 Records the precise, **validated** recipe for the Slice-2c atomic wire (adding `queueNextTargetBlocked`

@@ -3023,6 +3023,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         ⟨fun tid tcb rid hObj hRep => ?_,
          fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩,
         fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_,
+        ?_,
         ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
@@ -3049,6 +3050,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         constructor
         · intro hRecv; rw [hEp.2.2.2] at hRecv; exact absurd hRecv (by simp)
         · intro hSend; rw [hEp.2.1] at hSend; exact absurd hSend (by simp)
+      · -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked (20th, vacuous — boot TCBs
+        -- have queueNext = none, so no link antecedent can hold).
+        intro a b tcbA tcbB hObjA _ hNext
+        have hTcb := (hBS a.toObjId _ hObjA).2.2.2.1 tcbA rfl
+        rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

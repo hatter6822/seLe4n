@@ -1578,9 +1578,10 @@ theorem ipcInvariantFull_compositional
     (hRCL : replyCallerLinkage st)
     (hPRR : pendingReceiveReplyWellFormed st)
     (hUnique : donationOwnerUnique st)
-    (hEQTB : endpointQueueTailBlockedConsistent st) :
+    (hEQTB : endpointQueueTailBlockedConsistent st)
+    (hQNTB : queueNextTargetBlocked st) :
     ipcInvariantFull st :=
-  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hPSI, hDBT, hBRT, hRCL, hPRR, hUnique, hEQTB⟩
+  ⟨hIpc, hDual, hBounded, hBadge, hWtpmn, hNoDup, hQMC, hQNBC, hQHBC, hBlockedTimeout, hDCA, hDOV, hPSI, hDBT, hBRT, hRCL, hPRR, hUnique, hEQTB, hQNTB⟩
 
 -- ============================================================================
 -- T4-E/F (M-IPC-3): WithCaps wrappers preserve ipcInvariantFull
@@ -12880,6 +12881,108 @@ theorem consumeCallerReply_preserves_endpointQueueTailBlockedConsistent
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl hInv1 hStep
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `storeObject` of a Reply object preserves
+`queueNextTargetBlocked` (a Reply is never a TCB, so no TCB's `ipcState`/`queueNext` changes). -/
+theorem storeObject_reply_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (rid : SeLe4n.ReplyId) (r : SeLe4n.Kernel.Reply)
+    (hObjInv : st.objects.invExt)
+    (hInv : queueNextTargetBlocked st)
+    (hStore : storeObject rid.toObjId (.reply r) st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  refine queueNextTargetBlocked_of_tcb_links_backward st st' ?_ hInv
+  intro y tcb' hY
+  have hEqAt : st'.objects[rid.toObjId]? = some (.reply r) :=
+    storeObject_objects_eq st st' rid.toObjId (.reply r) hObjInv hStore
+  by_cases hEq : y.toObjId = rid.toObjId
+  · rw [hEq, hEqAt] at hY; cases hY
+  · rw [storeObject_objects_ne st st' rid.toObjId y.toObjId (.reply r) hEq hObjInv hStore] at hY
+    exact ⟨tcb', hY, rfl, rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `consumeReply` frames `queueNextTargetBlocked`. -/
+theorem consumeReply_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hStep : SystemState.consumeReply rid st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  unfold SystemState.consumeReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => simp only [hGet, Except.ok.injEq, Prod.mk.injEq] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+  | some r =>
+    simp only [hGet] at hStep
+    exact storeObject_reply_preserves_queueNextTargetBlocked st st' rid _ hObjInv hInv hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `linkReply` frames `queueNextTargetBlocked`. -/
+theorem linkReply_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hStep : SystemState.linkReply rid caller st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  unfold SystemState.linkReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => simp [hGet] at hStep
+  | some r =>
+    simp only [hGet] at hStep
+    by_cases hFree : r.caller.isNone
+    · simp only [hFree, if_true] at hStep
+      exact storeObject_reply_preserves_queueNextTargetBlocked st st' rid _ hObjInv hInv hStep
+    · simp [hFree] at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `linkCallerReply` frames `queueNextTargetBlocked`.  Composes a
+`linkReply` (Reply store) with a `caller.replyObject` write (preserves `ipcState`/`queueNext`). -/
+theorem linkCallerReply_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p =>
+    obtain ⟨⟨⟩, st1⟩ := p
+    have hInv1 := linkReply_preserves_queueNextTargetBlocked st st1 rid caller hObjInv hInv hLink
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    simp only [hLink] at hStep
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      by_cases hRO : tcb.replyObject.isNone
+      · simp only [hRO, if_true] at hStep
+        exact storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st1 st' caller tcb
+          { tcb with replyObject := some rid } hObjInv1
+          ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hInv1 hStep
+      · simp [hRO] at hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `consumeCallerReply` frames `queueNextTargetBlocked`.  Composes a
+`consumeReply` (Reply store) with an optional `caller.replyObject := none` write. -/
+theorem consumeCallerReply_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  unfold SystemState.consumeCallerReply at hStep
+  cases hConsume : SystemState.consumeReply rid st with
+  | error e => simp [hConsume] at hStep
+  | ok p =>
+    obtain ⟨⟨⟩, st1⟩ := p
+    have hInv1 := consumeReply_preserves_queueNextTargetBlocked st st1 rid hObjInv hInv hConsume
+    have hObjInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hConsume
+    simp only [hConsume] at hStep
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep; exact hInv1
+    | some tcb =>
+      simp only [hT] at hStep
+      exact storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked st1 st' caller tcb
+        { tcb with replyObject := none } hObjInv1
+        ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl rfl hInv1 hStep
+
+open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D / #7.4: `linkCallerReply` preserves `ipcInvariantFull`.  It is the
 reply store (`linkReply`, success ⇒ slot held `.reply r`, writes
 `.reply { r with caller := some caller }`) followed by the caller-TCB
@@ -12918,6 +13021,9 @@ theorem linkCallerReply_preserves_ipcInvariantFull
     -- write, touching no endpoint queue; tail-blocked is established from the *pre-state*
     -- (`hTailPre`), since this transition takes `ipcInvariantCore` rather than the full bundle.
     (hTailPre : endpointQueueTailBlockedConsistent st)
+    -- IPC de-threading D4 Slice 2c (Finding F-2): qNTB likewise established from the *pre-state*
+    -- (`hQNTBPre`) — the reply/`replyObject` stores touch neither `queueNext` nor `ipcState`.
+    (hQNTBPre : queueNextTargetBlocked st)
     (hStep : linkCallerReply caller rid st = .ok ((), st')) :
     ipcInvariantFull st' := by
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core ?link
@@ -12927,6 +13033,8 @@ theorem linkCallerReply_preserves_ipcInvariantFull
       (linkCallerReply_sameSchedContextBindings st st' caller rid hObjInv hStep) hUnique)
     (linkCallerReply_preserves_endpointQueueTailBlockedConsistent st st' caller rid hObjInv
       hTailPre hStep)
+    (linkCallerReply_preserves_queueNextTargetBlocked st st' caller rid hObjInv
+      hQNTBPre hStep)
   case link =>
     exact linkCallerReply_establishes_replyCallerLinkage st st' caller rid
       hRecip hObjInv hCallerBlk hThirdExc hStep
@@ -12990,6 +13098,9 @@ theorem consumeCallerReply_preserves_ipcInvariantFull
     -- (`consumeCallerReply` stores a reply object + clears `replyObject`, touching no endpoint queue).
     (consumeCallerReply_preserves_endpointQueueTailBlockedConsistent st st' caller rid hObjInv
       hInv.endpointQueueTailBlockedConsistent hStep)
+    -- IPC de-threading D4 Slice 2c (Finding F-2): qNTB likewise established from the pre-state.
+    (consumeCallerReply_preserves_queueNextTargetBlocked st st' caller rid hObjInv
+      hInv.queueNextTargetBlocked hStep)
   case core =>
     unfold consumeCallerReply at hStep
     cases hCons : consumeReply rid st with
@@ -15521,6 +15632,10 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally — the rendezvous
+    -- (running-receiver `.ready`) establisher is a follow-on slice; the conjunct's purpose here is to
+    -- carry the strict link-target invariant so the `hQHBC'` de-thread can read it from the pre-state.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
@@ -15568,7 +15683,8 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state via cores (a)+(c).
    endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyId st st'
      senderId hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-     hFreshReceiver hStep⟩
+     hFreshReceiver hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCall` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause rather than threading it.
@@ -15608,6 +15724,9 @@ theorem endpointCall_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running caller holds a SchedContext (own or donated).
     (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointCall endpointId caller msg st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the rewritten
@@ -15655,7 +15774,8 @@ theorem endpointCall_preserves_ipcInvariantFull
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state via cores (a)+(c).
    endpointCall_preserves_endpointQueueTailBlockedConsistent st st' endpointId caller msg
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-     hFreshCaller hStep⟩
+     hFreshCaller hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDual` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — `endpointSendDual` never
@@ -15742,7 +15862,13 @@ theorem endpointSendDual_preserves_ipcInvariantFull
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state via cores (a)+(c).
    endpointSendDual_preserves_endpointQueueTailBlockedConsistent st st' endpointId sender msg
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-     hFreshSender hStep⟩
+     hFreshSender hStep,
+   -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state — the
+   -- deliver branch pops the receiveQ head (no incoming) and completes the receive; the block branch
+   -- is the enqueue+block-store keystone.
+   endpointSendDual_preserves_queueNextTargetBlocked st st' endpointId sender msg
+     hInv.queueNextTargetBlocked hInv.endpointQueueTailBlockedConsistent hInv.2.1 hObjInv
+     hFreshSender hSendTailFresh hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationSignal` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -15760,6 +15886,9 @@ theorem notificationSignal_preserves_ipcInvariantFull
     -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition;
     -- no transition ever writes `timeoutBudget := some`).
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the head
@@ -15800,7 +15929,8 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- IPC de-threading D4 (Finding F-2): tail-blocked **established** from the pre-state — the woken
    -- head waiter is `.blockedOnNotification` (`hNWC`), hence no endpoint tail.
    notificationSignal_preserves_endpointQueueTailBlockedConsistent st st' notificationId badge
-     hObjInv hInv.endpointQueueTailBlockedConsistent hNWC hStep⟩
+     hObjInv hInv.endpointQueueTailBlockedConsistent hNWC hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationWait` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -15830,6 +15960,9 @@ theorem notificationWait_preserves_ipcInvariantFull
     -- `endpointQueueTailBlockedConsistent` — a `.ready` thread is no endpoint tail).
     (hWaiterReady : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -15870,7 +16003,8 @@ theorem notificationWait_preserves_ipcInvariantFull
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (no endpoint
    -- queue touched; the running waiter is `.ready`, hence no endpoint tail).
    notificationWait_preserves_endpointQueueTailBlockedConsistent st st' notificationId waiter result
-     hObjInv hInv.endpointQueueTailBlockedConsistent hWaiterReady hStep⟩
+     hObjInv hInv.endpointQueueTailBlockedConsistent hWaiterReady hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReply` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — the reply only unblocks the
@@ -15886,6 +16020,9 @@ theorem endpointReply_preserves_ipcInvariantFull
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReply_preserves_ipcInvariant st st' replier target msg hInv.1 hObjInv hStep,
@@ -15919,7 +16056,8 @@ theorem endpointReply_preserves_ipcInvariantFull
    -- IPC de-threading D4 (Finding F-2): tail-blocked **established** from the pre-state — the
    -- unblocked `target` was `.blockedOnReply`, hence (by pre-state tail-blocked) no endpoint tail.
    endpointReply_preserves_endpointQueueTailBlockedConsistent st st' replier target msg
-     hObjInv hInv.endpointQueueTailBlockedConsistent hStep⟩
+     hObjInv hInv.endpointQueueTailBlockedConsistent hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReplyRecv` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (the unblock frames it, the receive leg
@@ -15961,6 +16099,9 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running receiver (the replyRecv server) is `.ready`.
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
@@ -15996,7 +16137,8 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    -- IPC de-threading D4 Slice 2b: tail-blocked **established** from the pre-state (reply phase frames
    -- endpoints; the receive-leg enqueue-establish discharges via cores (a)+(c)).
    endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyTarget msg
-     replyId st st' hInv hObjInv hFreshReceiver hStep⟩
+     replyId st st' hInv hObjInv hFreshReceiver hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDualWithCaps` preserves
 `ipcInvariantFull`, *preserving* the `replyCallerLinkage` third clause rather than
@@ -16042,6 +16184,9 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running sender holds a SchedContext (own or donated).
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
@@ -16084,7 +16229,8 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
    endpointSendDualWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId sender msg
      endpointRights senderCspaceRoot receiverSlotBase st st' summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-     hFreshSender hStep⟩
+     hFreshSender hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDualWithCaps` preserves
 `ipcInvariantFull`, **establishing** the `replyCallerLinkage` third clause (via the base
@@ -16130,6 +16276,9 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
     -- and `passiveServerIdle`).
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcInvariantFull st' := by
@@ -16169,7 +16318,8 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull
    endpointReceiveDualWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyId
      endpointRights receiverCspaceRoot receiverSlotBase st st' senderId summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-     hFreshReceiver hStep⟩
+     hFreshReceiver hStep,
+   hQNTB'⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointCallWithCaps` preserves `ipcInvariantFull`,
 **establishing** the `replyCallerLinkage` third clause (via the base call establish + the
@@ -16215,6 +16365,9 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running caller holds a SchedContext (own or donated).
     (hCallerNotUnbound : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
+    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
+    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
+    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointCallWithCaps endpointId caller msg endpointRights
              callerCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
@@ -16257,6 +16410,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariantFull
    endpointCallWithCaps_preserves_endpointQueueTailBlockedConsistent endpointId caller msg
      endpointRights callerCspaceRoot receiverSlotBase st st' summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
-     hFreshCaller hStep⟩
+     hFreshCaller hStep,
+   hQNTB'⟩
 
 end SeLe4n.Kernel
