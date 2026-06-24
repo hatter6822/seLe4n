@@ -1,3 +1,32 @@
+## v0.32.34 — IPC de-threading D4 Slice 2c: reusable no-incoming framing core
+
+Adds the reusable framing infrastructure for "no thread's `queueNext` points to `t`" — the discharge
+the rendezvous receiver-`.ready` / notification-waiter / reply-target stores need (setting a thread
+`.ready`/`.blockedOn{Notification,Reply}` only breaks `queueNextTargetBlocked` if some blocked thread
+links to it). This unblocks the per-transition establishers whose changed thread is not the popped
+head.
+
+- `queueNext_noIncoming_of_backward` (`QueueNextBlocking.lean`) — generic transport: any store with a
+  `queueNext`-preserving backward map carries the no-incoming fact forward.
+- `storeTcbIpcStateAndMessage_preserves_noIncoming` / `ensureRunnable_preserves_noIncoming` /
+  `storeObject_nonTcb_preserves_noIncoming` — the per-store instances (the message/scheduler/object
+  stores never touch `queueNext`).
+
+**Design note recorded in the plan:** every ipcState-changing store needs the no-incoming fact for
+its changed thread. For the *popped head* it is derived (`…_popped_no_incoming`); for a **fresh**
+receiver / notification-waiter / reply-target it is *not* derivable from the current invariants (it
+needs "queue-member ⇒ blocked," which qNTB+qHBC themselves close — a bootstrapping circularity), so
+those establishers take a **dischargeable** `hXNoIncoming` precondition framed through the transition's
+earlier stores by this core. **Strategic insight:** the `hQHBC'` de-thread (the actual 2c goal) is
+likely *more* tractable than completing every qNTB establisher, because `qHBC` constrains only
+endpoint *heads* and a fresh receiver is excluded from being a head by `hFreshReceiver` — so the
+receiver-`.ready` store preserves `qHBC` trivially.
+
+Still additive. Proof-only, trace byte-identical, zero `sorry`/`axiom`; module build green.
+`RAW_LOOKUP_TID` re-anchored 1185→1195.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.33 — IPC de-threading D4 Slice 2c: first per-transition qNTB establisher (`endpointSendDual`)
 
 First per-transition `queueNextTargetBlocked` establisher, composing the Slice-2c block keystone and

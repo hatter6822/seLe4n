@@ -1957,4 +1957,61 @@ theorem storeTcbReceiveComplete_preserves_queueNextTargetBlocked
         · rw [hFrame b.toObjId hEqB] at hB
           exact hInv a b tcbA tcbB hA hB hN
 
+/-- Generic transport of the "no thread's `queueNext` points to `t`" fact across any store that
+preserves every TCB's `queueNext` (supplied as a backward map). -/
+theorem queueNext_noIncoming_of_backward
+    (st st' : SystemState) (t : SeLe4n.ThreadId)
+    (hBack : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = tcb'.queueNext)
+    (hNoInc : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t) :
+    ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st'.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t := by
+  intro a tcbA hA hAN
+  obtain ⟨tcb0, h0, hQN⟩ := hBack a tcbA hA
+  rw [← hQN] at hAN
+  exact hNoInc a tcb0 h0 hAN
+
+/-- `storeTcbIpcStateAndMessage` preserves "no thread links to `t`" (it never touches `queueNext`). -/
+theorem storeTcbIpcStateAndMessage_preserves_noIncoming
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage) (t : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (hNoInc : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t) :
+    ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st'.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t :=
+  queueNext_noIncoming_of_backward st st' t
+    (fun y tcb' h => storeTcbIpcStateAndMessage_tcb_queueNext_backward st st' tid ipcState msg hObjInv hStep y tcb' h)
+    hNoInc
+
+/-- `ensureRunnable` preserves "no thread links to `t`" (objects unchanged). -/
+theorem ensureRunnable_preserves_noIncoming
+    (st : SystemState) (tid : SeLe4n.ThreadId) (t : SeLe4n.ThreadId)
+    (hNoInc : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t) :
+    ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      (ensureRunnable st tid).objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t :=
+  queueNext_noIncoming_of_backward st (ensureRunnable st tid) t
+    (fun y tcb' h => ⟨tcb', by rw [ensureRunnable_preserves_objects] at h; exact h, rfl⟩) hNoInc
+
+/-- `storeObject` of a non-TCB object preserves "no thread links to `t`" (it never touches a TCB). -/
+theorem storeObject_nonTcb_preserves_noIncoming
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject) (t : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hStep : storeObject oid obj st = .ok ((), st'))
+    (hNoInc : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t) :
+    ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st'.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some t := by
+  refine queueNext_noIncoming_of_backward st st' t (fun y tcb' h => ?_) hNoInc
+  by_cases hEq : y.toObjId = oid
+  · rw [hEq, storeObject_objects_eq st st' oid obj hObjInv hStep] at h
+    exact absurd (Option.some.inj h) (hNotTcb tcb')
+  · rw [storeObject_objects_ne st st' oid y.toObjId obj hEq hObjInv hStep] at h
+    exact ⟨tcb', h, rfl⟩
+
 end SeLe4n.Kernel

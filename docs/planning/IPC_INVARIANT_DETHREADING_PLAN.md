@@ -307,10 +307,30 @@ What remains, per invariant:
   discharge facts `endpointQueuePopHead_popped_queuePrev_none` (the pop's final
   `storeTcbQueueLinks headTid none none none` clears the head's `queuePrev`) and
   `endpointQueuePopHead_popped_no_incoming` (post-pop link integrity + cleared `queuePrev` ⇒ no thread
-  links to the popped head, so setting it `.ready` is safe).  **Remaining 2c work** (next slices, in
-  order): (2) the per-transition establishers composing keystone (block) + pop/rendezvous (the
-  receiver-`.ready` store via the `storeTcbIpcStateAndMessage` frame with `hFwd` trivial [`.ready`
-  source] + `hBwd` discharged by `…_popped_no_incoming`); (3) the **atomic** wire — add
+  links to the popped head, so setting it `.ready` is safe).  **`endpointSendDual` ESTABLISHER +
+  no-incoming framing core LANDED (v0.32.33–34):** the first per-transition establisher
+  `endpointSendDual_preserves_queueNextTargetBlocked` (block via keystone, rendezvous via
+  pop-preservation + `storeTcbReceiveComplete_preserves_queueNextTargetBlocked` [`hNoIncoming` =
+  `…_popped_no_incoming`] + `ensureRunnable`), plus the reusable no-incoming framing core
+  `queueNext_noIncoming_of_backward` + `{storeTcbIpcStateAndMessage,ensureRunnable,storeObject_nonTcb}_preserves_noIncoming`.
+  **Key design point** (discovered while extending to the *fresh*-receiver transitions): every
+  ipcState-changing store needs "no thread links to the changed thread"; for the *popped head* this is
+  derived (`…_popped_no_incoming`), but for a **fresh** receiver / notification-waiter / reply-target it
+  is **not** derivable from the current invariants (it needs "queue-member ⇒ blocked", which is exactly
+  what qNTB+qHBC *close* — a bootstrapping circularity), so those establishers take a **dischargeable**
+  `hXNoIncoming` precondition (the running/notification-blocked thread is not in an endpoint queue),
+  framed through the transition's earlier stores by the no-incoming core (the pop case additionally
+  needs a pop `queueNext`-backward, still to build).  **Strategic insight:** the **`hQHBC'` de-thread
+  (the actual goal) is likely *more* tractable than completing every qNTB establisher** — `qHBC`
+  constrains only endpoint *heads*, and a fresh receiver is excluded from being a head by
+  `hFreshReceiver`, so the receiver-`.ready` store preserves `qHBC` *trivially* (no no-incoming needed).
+  Two paths to the goal: (a) complete all qNTB establishers then wire+qHBC; or (b) wire qNTB with
+  `hQNTB'` *threaded* for the hard IPC bundles (established for the frame-style producers +
+  `endpointSendDual`), build the easier `qHBC` establishers, drop `hQHBC'`, then de-thread `hQNTB'` as
+  follow-on.  **Remaining 2c work** (next slices, in order): (2) the per-transition establishers
+  composing keystone (block) + pop/rendezvous (the receiver-`.ready` store via the
+  `storeTcbIpcStateAndMessage` frame with `hFwd` trivial [`.ready` source] + `hBwd` discharged by
+  `…_popped_no_incoming` or `hXNoIncoming`); (3) the **atomic** wire — add
   `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct (def + named `IpcInvariantFull`
   field + `iff` bridge + projection + `ipcInvariantFull_of_core_replyCallerLinkage`), establish it for
   every producer (most are object-frames; the enqueue/pop transitions use step 2), then build the
