@@ -1,3 +1,28 @@
+## v0.32.49 — IPC de-threading D8 Slice 4: cross-core `endpointCallOnCore` de-threads `ipcStateQueueMembershipConsistent`
+
+De-threads `hQMC'` from the staged cross-core `endpointCallOnCore_preserves_ipcInvariantFull`
+bundle — **both cross-core queue conjuncts (`endpointQueueNoDup` + `ipcStateQueueMembershipConsistent`)
+are now established from the pre-state**. The cross-core call bundle now threads only `hWtpmn'` and
+`hRCLRecip'` (plus the dischargeable reachability preconditions).
+
+- **Cross-core frames** (`EndpointCallInvariant.lean`):
+  `removeRunnableOnCore_preserves_ipcStateQueueMembershipConsistent` (objects unchanged) +
+  `wakeThread_preserves_ipcStateQueueMembershipConsistent_of_ready` (object-lookup-invisible wake of
+  an already-`.ready` thread), both via the pointwise `ipcStateQueueMembershipConsistent_of_objects_eq`.
+- **`endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent`** — a faithful cross-core mirror
+  of the single-core establisher (`ensureRunnable`→`wakeThread`, `removeRunnable`→`removeRunnableOnCore`):
+  the rendezvous pop yields membership-except-head (the head is the `.blockedOnReceive` receiveQ head
+  by `hQHBC`), the head set `.ready` collapses its obligation to `True`
+  (`storeTcbIpcStateAndMessage_partial_…`), the wake is object-invisible, and the `.blockedOnCall`
+  caller's sendQ membership is recovered from `endpointQueueEnqueue_thread_reachable`.
+- `linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent` promoted from `private` to public.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `GETTCB`/`GETENDPOINT` adoption 1661→1665 / 107→109; no should-drop regression.
+Version 0.32.49.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 4 — cross-core)
+
 ## v0.32.48 — IPC de-threading D8 Slice 3: cross-core `endpointCallOnCore` de-threads `endpointQueueNoDup`
 
 De-threads `hNoDup'` from the staged cross-core `endpointCallOnCore_preserves_ipcInvariantFull`
