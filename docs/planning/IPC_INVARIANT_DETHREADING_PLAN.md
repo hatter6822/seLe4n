@@ -418,10 +418,18 @@ What remains, per invariant:
   the new `storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked` frame, and
   the running-receiver readiness across the reply phase (`receiver ≠ replyTarget`).  `hQHBC'` dropped from
   `endpointCall{,WithCaps}` + `endpointReplyRecv` bundles.  **Every single-core IPC bundle now establishes
-  `qHBC`.**  **Remaining 2c work:** (a) per-transition qNTB establishers for the `hQNTB'`-threaded bundles
-  (compose qNTB keystone + pop/rendezvous + the no-incoming core), de-thread `hQNTB'`; (b) the cross-core
-  `endpointCallOnCore` `qHBC` establisher (coupled to the cross-core qNTB establisher — same follow-on
-  slice), the last `hQHBC'`-threaded site.
+  `qHBC`.**
+
+  **qNTB DE-THREAD IN PROGRESS (v0.32.42):** the strict link-target conjunct (#20).  Reusable frames:
+  `storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked` (non-queue-blocking
+  store to a no-blocked-incoming thread) + `queueNextTargetBlocked_no_incoming_of_notQueueBlocked` (a
+  non-queue-blocked thread has no blocked incoming link) + `cleanupPreReceiveDonation` / `ipcUnwrapCaps` qNTB
+  frames.  Key insight: unlike `qNBC`, qNTB needs the **fused** enqueue+block-store keystone (not enqueue
+  alone) and the no-incoming discipline for `.ready`/`.blockedOnReply` stores.  De-threaded `hQNTB'` from
+  `endpointReply`, `endpointReceiveDual`, `endpointReceiveDualWithCaps`.  **Remaining 2c work:** (a) the qNTB
+  establishers for `endpointCall` (+WithCaps), `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
+  `endpointSendDualWithCaps`, de-thread `hQNTB'`; (b) the cross-core `endpointCallOnCore` `qHBC`+`qNTB`
+  establishers (the last `hQHBC'`/`hQNTB'`-threaded site).
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).

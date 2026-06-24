@@ -1,3 +1,40 @@
+## v0.32.42 — IPC de-threading D4 Slice 2c: de-thread `hQNTB'` from the receive-family + `endpointReply` bundles
+
+Begins the **`queueNextTargetBlocked`** (qNTB) de-thread — the strict link-target conjunct (#20).
+Unlike `qNBC`, qNTB is *not* preserved by enqueue alone (it needs the fused enqueue+block-store
+keystone) nor by an arbitrary `.ready` store (it needs no blocked incoming link), so each establisher
+composes the strict frames below. `endpointReply`, `endpointReceiveDual`, and
+`endpointReceiveDualWithCaps` now *establish* qNTB from the pre-state instead of threading `hQNTB'`.
+
+- **Reusable qNTB frames** (`QueueNextBlocking.lean`):
+  `storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked` (v0.32.41) +
+  the master `storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked`
+  (a non-queue-blocking store — `.ready`/`.blockedOnReply` — to a thread with no blocked incoming link)
+  and `queueNextTargetBlocked_no_incoming_of_notQueueBlocked` (a non-queue-blocked thread has no blocked
+  incoming link, by the contrapositive of qNTB).
+- **Transition frames** (`DualQueueMembership.lean`):
+  `cleanupPreReceiveDonation_preserves_queueNextTargetBlocked` (`returnDonatedSchedContext` preserves
+  every TCB's `ipcState`+`queueNext`) and `ipcUnwrapCaps_preserves_queueNextTargetBlocked` (cap transfer
+  writes only CNode caps).
+- **`endpointReply_preserves_queueNextTargetBlocked`** — `.ready`-wake of the `.blockedOnReply` target
+  (no blocked thread links to it) + `ensureRunnable`.
+- **`endpointReceiveDual_preserves_queueNextTargetBlocked`** — rendezvous: pop frame + dequeued-sender
+  store (no-incoming via the popped head) + `linkCallerReply`/`ensureRunnable` + running-receiver
+  `.ready` store (receiver ≠ sender via `hFreshReceiver`, readiness transported backward → no-incoming
+  via the pre-state qNTB). Block path: cleanup frame + the fused enqueue+`.blockedOnReceive` keystone +
+  reply-stash + `removeRunnable`.
+- **`endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked`** (base + cap-transfer frame).
+- De-threaded `hQNTB'` from `endpointReply`, `endpointReceiveDual`, and
+  `endpointReceiveDualWithCaps` `_preserves_ipcInvariantFull`.
+
+Remaining `hQNTB'`-threaded bundles: `endpointCall` (+WithCaps), `notificationSignal`,
+`notificationWait`, `endpointReplyRecv`, `endpointSendDualWithCaps`, cross-core `endpointCallOnCore`.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.41 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointCall` (+ WithCaps) and `endpointReplyRecv`
 
 Completes the **single-core** `queueHeadBlockedConsistent` de-thread. `endpointCall{,WithCaps}` and
