@@ -1,3 +1,29 @@
+## v0.32.48 — IPC de-threading D8 Slice 3: cross-core `endpointCallOnCore` de-threads `endpointQueueNoDup`
+
+De-threads `hNoDup'` from the staged cross-core `endpointCallOnCore_preserves_ipcInvariantFull`
+bundle — the first cross-core queue conjunct established from the pre-state (mirroring the
+single-core Slice 1). `endpointCallOnCore` now *establishes* `endpointQueueNoDup`.
+
+- **Cross-core frames** (`EndpointCallInvariant.lean`): `removeRunnableOnCore_preserves_endpointQueueNoDup`
+  (objects unchanged — pure scheduler op) + `wakeThread_preserves_endpointQueueNoDup_of_ready`
+  (the cross-core wake of an already-`.ready` thread is object-lookup-invisible — the §2 keystone —
+  so the lookup-only invariant survives). Both via the pointwise `endpointQueueNoDup_of_objects_eq`.
+- **`endpointCallOnCore_preserves_endpointQueueNoDup`** — mirrors
+  `endpointCallOnCore_preserves_dualQueueSystemInvariant`, threading the noDup chain alongside the
+  dual-queue side-conditions the per-step noDup lemmas require (the enqueue/pop lemmas key K-1
+  self-loop-freedom off the post-state `dualQueueSystemInvariant`): rendezvous = pop + store(.ready) +
+  object-invisible wake + store(.blockedOnReply) + link + deschedule; block = enqueue + store + deschedule.
+- `linkServerStashedReply_preserves_endpointQueueNoDup` promoted from `private` to public (the
+  cross-core establisher consumes it).
+
+`hQMC'`/`hWtpmn'`/`hRCLRecip'` remain threaded in the cross-core bundle (next slices); QMC carries the
+`endpointQueuePopHead_…_except_head` + block-path membership reasoning.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `GETENDPOINT_ADOPTION` 105→107; no should-drop regression. Version 0.32.48.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 3 — cross-core)
+
 ## v0.32.47 — IPC de-threading D8 Slice 2: cap-transfer `badgeWellFormed` frame
 
 Builds the `ipcUnwrapCaps` `badgeWellFormed` frame — the one cap-transfer step that can affect

@@ -1079,6 +1079,132 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
               show dualQueueSystemInvariant (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st5 caller executingCore hInv5
 
+/-- IPC de-threading D8: `removeRunnableOnCore` preserves `endpointQueueNoDup`
+(objects unchanged — pure scheduler op). -/
+theorem removeRunnableOnCore_preserves_endpointQueueNoDup
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (h : endpointQueueNoDup st) :
+    endpointQueueNoDup (removeRunnableOnCore st tid c) :=
+  endpointQueueNoDup_of_objects_eq st _
+    (fun _ => by rw [removeRunnableOnCore_preserves_objects]) h
+
+/-- IPC de-threading D8: the cross-core wake of an already-`.ready` thread preserves
+`endpointQueueNoDup` — the wake's `ipcState := .ready` re-insert is object-lookup-invisible
+(the §2 keystone), and the invariant is lookup-only. -/
+theorem wakeThread_preserves_endpointQueueNoDup_of_ready
+    (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt)
+    (h : endpointQueueNoDup st) :
+    endpointQueueNoDup (wakeThread st tid ec).1 :=
+  endpointQueueNoDup_of_objects_eq st _
+    (fun oid => wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hObjInv oid) h
+
+/-- WS-SM SM6.A.1 / IPC de-threading D8: the cross-core endpoint call preserves
+`endpointQueueNoDup`. Mirrors `endpointCallOnCore_preserves_dualQueueSystemInvariant`,
+threading the noDup chain alongside the dual-queue side-conditions the per-step noDup
+lemmas require (the enqueue/pop lemmas key K-1 self-loop-freedom off the post-state
+`dualQueueSystemInvariant`). The receiver wake is object-invisible (`.ready`), the caller
+deschedule is a scheduler op. -/
+theorem endpointCallOnCore_preserves_endpointQueueNoDup
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hInv : endpointQueueNoDup st) (hDQSI : dualQueueSystemInvariant st)
+    (hObjInv : st.objects.invExt)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid)) :
+    endpointQueueNoDup (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact hInv
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact hInv
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hInv
+  | some ep =>
+    simp only
+    have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+      (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact hInv
+      | ok st' =>
+        simp only
+        have hDQ1 := endpointQueueEnqueue_preserves_dualQueueSystemInvariant
+          endpointId false caller st st' hEnq hDQSI hObjInv hFreshCaller hSendTailFresh
+        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt
+          endpointId false caller st st' hObjInv hEnq
+        have hND1 := endpointQueueEnqueue_preserves_endpointQueueNoDup
+          endpointId false caller st st' hInv hDQ1 hObjInv
+          (by
+            intro ep' hEp'
+            have hee : ep = ep' := by simpa using hEpObj.symm.trans hEp'
+            subst hee; simpa using hHead) hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact hInv
+        | ok st'' =>
+          simp only
+          have hND2 := storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
+            st' st'' caller _ _ hND1 hObj1 hMsg
+          show endpointQueueNoDup (removeRunnableOnCore st'' caller executingCore)
+          exact removeRunnableOnCore_preserves_endpointQueueNoDup st'' caller executingCore hND2
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact hInv
+      | ok pair =>
+        simp only
+        have hDQ1 := endpointQueuePopHead_preserves_dualQueueSystemInvariant
+          endpointId true st pair.2.2 pair.1 hObjInv hPop hDQSI
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt
+          endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        have hND1 := endpointQueuePopHead_preserves_endpointQueueNoDup
+          endpointId true st pair.2.2 pair.1 pair.2.1 hInv hDQSI hDQ1 hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact hInv
+        | ok st2 =>
+          simp only
+          have hND2 := storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
+            pair.2.2 st2 pair.1 _ _ hND1 hObj1 hMsg
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+            pair.2.2 st2 pair.1 _ _ hObj1 hMsg
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+          have hNDW := wakeThread_preserves_endpointQueueNoDup_of_ready
+            st2 pair.1 executingCore tr hTrGet hTrReady hObj2 hND2
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact hInv
+          | ok st4 =>
+            simp only
+            have hND4 := storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hNDW hObjW hCS
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hND5 := linkServerStashedReply_preserves_endpointQueueNoDup st4 st5 caller pair.1 hND4 hObjInv4 hLink
+              show endpointQueueNoDup (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_endpointQueueNoDup st5 caller executingCore hND5
+
 /-- IPC de-threading D4 Slice 2b: `removeRunnableOnCore` preserves
 `queueNextBlockingConsistent` (object-store frame — `objects` unchanged). -/
 theorem removeRunnableOnCore_preserves_queueNextBlockingConsistent
@@ -2119,7 +2245,6 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
           ep'.receiveQ.tail ≠ some tailTid))
     (hStep : (endpointCallOnCore endpointId caller msg executingCore st).1 = st')
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
     (hQMC' : ipcStateQueueMembershipConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -2156,7 +2281,12 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
       hInv.2.2.1 hObjInv,
     endpointCallOnCore_preserves_badgeWellFormed endpointId caller msg executingCore st
       hInv.2.2.2.1 hObjInv,
-    hWtpmn', hNoDup', hQMC',
+    hWtpmn',
+    -- IPC de-threading D8: endpointQueueNoDup **established** from the pre-state (cross-core
+    -- enqueue/pop + the object-invisible wake + scheduler-op deschedule).
+    endpointCallOnCore_preserves_endpointQueueNoDup endpointId caller msg executingCore st
+      hInv.endpointQueueNoDup hInv.2.1 hObjInv hFreshCaller hSendTailFresh,
+    hQMC',
     -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (cross-core enqueue-establish).
     endpointCallOnCore_preserves_queueNextBlockingConsistent endpointId caller msg executingCore st
       hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv

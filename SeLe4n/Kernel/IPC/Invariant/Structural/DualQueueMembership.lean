@@ -354,7 +354,8 @@ open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `endpointQueueNoDup`.
 Composes `linkCallerReply` with one server `.tcb` re-store that clears
 `pendingReceiveReply` (`queueNext` unchanged). -/
-private theorem linkServerStashedReply_preserves_endpointQueueNoDup
+-- IPC de-threading D8: public (consumed by the cross-core `endpointCallOnCore` noDup establisher).
+theorem linkServerStashedReply_preserves_endpointQueueNoDup
     (st st' : SystemState) (caller server : SeLe4n.ThreadId)
     (hInv : endpointQueueNoDup st) (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
