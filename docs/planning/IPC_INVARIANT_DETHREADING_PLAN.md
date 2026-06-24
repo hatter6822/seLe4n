@@ -407,10 +407,21 @@ What remains, per invariant:
   from the store's success + a readiness precondition). The establisher transports the running
   receiver's readiness **backward** through the pop + sender-store + reply-link (`receiver ≠ sender`
   since the sender is blocked, the receiver `.ready`).  `endpointReceiveDual{,WithCaps}` `hQHBC'`
-  dropped.  **Remaining 2c work:** (a) per-transition qNTB establishers for the `hQNTB'`-threaded
-  bundles (compose qNTB keystone + pop/rendezvous + the no-incoming core), de-thread `hQNTB'`; (b) the
-  `qHBC` establishers for `endpointCall` (+ WithCaps) + cross-core `endpointCallOnCore` +
-  `endpointReplyRecv` — same pattern (the receive helpers now carry over) — drop `hQHBC'`.
+  dropped.
+
+  **`endpointCall` + `endpointReplyRecv` `hQHBC'` DE-THREAD LANDED (v0.32.41) — single-core qHBC
+  de-thread COMPLETE.** `endpointCall_preserves_queueHeadBlockedConsistent` (rendezvous pop receiveQ +
+  caller `.blockedOnReply` store + `linkServerStashedReply`; block path = enqueue keystone) +
+  `endpointCallWithCaps` (base + cap-transfer frame).  `endpointReplyRecv_preserves_queueHeadBlockedConsistent`
+  composes the reply phase (`.ready`-wake of the `.blockedOnReply` target, no endpoint head) with the
+  receive-leg qHBC establisher; the receive leg's `queueNextTargetBlocked` precondition is transported via
+  the new `storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked` frame, and
+  the running-receiver readiness across the reply phase (`receiver ≠ replyTarget`).  `hQHBC'` dropped from
+  `endpointCall{,WithCaps}` + `endpointReplyRecv` bundles.  **Every single-core IPC bundle now establishes
+  `qHBC`.**  **Remaining 2c work:** (a) per-transition qNTB establishers for the `hQNTB'`-threaded bundles
+  (compose qNTB keystone + pop/rendezvous + the no-incoming core), de-thread `hQNTB'`; (b) the cross-core
+  `endpointCallOnCore` `qHBC` establisher (coupled to the cross-core qNTB establisher — same follow-on
+  slice), the last `hQHBC'`-threaded site.
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).

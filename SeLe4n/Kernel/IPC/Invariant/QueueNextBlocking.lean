@@ -1791,6 +1791,40 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
         · rw [hFrame b.toObjId hEqB] at hB
           exact hInv a b tcbA tcbB hA hB hN
 
+/-- IPC de-threading D4 Slice 2c: waking a `.blockedOnReply` thread to `.ready`
+(`storeTcbIpcStateAndMessage tid .ready`) preserves `queueNextTargetBlocked`.  The forward
+obligation is vacuous (`.ready` matches no blocking antecedent).  The backward obligation —
+"any pre-state thread `a` linking (`queueNext`) to `tid` while blocked forces `tid`'s new state to
+carry that blocking direction" — is discharged from the pre-state invariant: by `queueNextTargetBlocked`,
+such an `a` would force `tid` to *already* carry that blocking state, contradicting `tid`'s actual
+`.blockedOnReply` state.  Hence no blocked thread links to `tid`, so the (false) `.ready = blockedX`
+consequent is never demanded. -/
+theorem storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (tidTcb : TCB) (ep0 : SeLe4n.ObjId) (rt0 : Option SeLe4n.ThreadId)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hTidTcb : st.objects[tid.toObjId]? = some (.tcb tidTcb))
+    (hTidIpc : tidTcb.ipcState = .blockedOnReply ep0 rt0)
+    (hStep : storeTcbIpcStateAndMessage st tid .ready msg = .ok st') :
+    queueNextTargetBlocked st' := by
+  refine storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked st st' tid .ready msg hInv
+    hObjInv hStep ?_ ?_
+  · -- hFwd: `.ready` matches no blocking antecedent.
+    intro b tcbTid tcbB _ _ _
+    refine ⟨fun ep h => ?_, fun ep h => ?_⟩
+    · cases h
+    · rcases h with h | h <;> cases h
+  · -- hBwd: any blocked `a` linking to `tid` contradicts `tid`'s `.blockedOnReply` via pre-state qNTB.
+    intro a tcbA tcbTid hA hN hTid
+    rw [hTidTcb] at hTid
+    obtain rfl : tidTcb = tcbTid := by simpa using hTid
+    refine ⟨fun ep h => ?_, fun ep h => ?_⟩
+    · have hCarry := (hInv a tid tcbA tidTcb hA hTidTcb hN).1 ep h
+      rw [hTidIpc] at hCarry; cases hCarry
+    · have hCarry := (hInv a tid tcbA tidTcb hA hTidTcb hN).2 ep h
+      rcases hCarry with hC | hC <;> rw [hTidIpc] at hC <;> cases hC
+
 /-- `storeTcbIpcStateAndMessage` leaves every TCB's `queueNext` untouched — it rewrites only
 `ipcState`/`pendingMessage` (a record update that preserves `queueNext`).  For any post-state TCB
 there is a pre-state TCB at the same id with the same `queueNext`. -/

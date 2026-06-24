@@ -1,3 +1,41 @@
+## v0.32.41 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointCall` (+ WithCaps) and `endpointReplyRecv`
+
+Completes the **single-core** `queueHeadBlockedConsistent` de-thread. `endpointCall{,WithCaps}` and
+`endpointReplyRecv` now *establish* the 9th conjunct from the pre-state instead of threading `hQHBC'`.
+Every single-core IPC `ipcInvariantFull` bundle (`notificationWait`, `endpointSendDual` (+WithCaps),
+`endpointReceiveDual` (+WithCaps), `endpointCall` (+WithCaps), `endpointReplyRecv`) now de-threads
+`hQHBC'`; the only remaining threaded site is the staged cross-core `endpointCallOnCore`, coupled to
+the cross-core qNTB establisher (a follow-on slice).
+
+- **`endpointCall_preserves_queueHeadBlockedConsistent`** — rendezvous (pop receiveQ): pop core (new
+  head blocked via qNTB) + receiver `.ready` store (`hNotHead` = `…_popped_not_head`) + `ensureRunnable`
+  + caller `.blockedOnReply` store + `linkServerStashedReply` frame + `removeRunnable`. The caller-store
+  `hNotHead` is derived from the existing preconditions: the caller is not a receiveQ head (else `qHBC`
+  ⇒ `.blockedOnReceive`, contradicting `hCallerNotRecv`) and not a sendQ head (the pop leaves sendQ heads
+  untouched; `hFreshCaller` rules `caller` out in the pre-state). Block path: the
+  `storeTcbIpcStateAndMessage` enqueue keystone + `removeRunnable`.
+- **`endpointCallWithCaps_preserves_queueHeadBlockedConsistent`** (base establish on `stMid` + the
+  optional `ipcUnwrapCaps` frame).
+- **`storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked`**
+  (`QueueNextBlocking.lean`) — waking a `.blockedOnReply` thread to `.ready` preserves
+  `queueNextTargetBlocked`: the forward obligation is vacuous, and any pre-state thread linking to it
+  while blocked would (by pre-state qNTB) force it to *already* carry that blocking state, contradicting
+  `.blockedOnReply`.
+- **`endpointReplyRecv_preserves_queueHeadBlockedConsistent`** — composes the reply phase
+  (`storeTcbIpcStateAndMessage replyTarget .ready` + `ensureRunnable`; the unblocked `.blockedOnReply`
+  target is no endpoint head) with the `endpointReceiveDual` receive-leg qHBC establisher. The receive
+  leg's `queueNextTargetBlocked` precondition is transported via the new `.ready`-of-`.blockedOnReply`
+  qNTB frame; the running-receiver readiness is transported across the reply phase (`receiver ≠
+  replyTarget`, the latter `.blockedOnReply` while the former `.ready`).
+- De-threaded `hQHBC'` from `endpointCall_preserves_ipcInvariantFull`,
+  `endpointCallWithCaps_preserves_ipcInvariantFull`, and `endpointReplyRecv_preserves_ipcInvariantFull`
+  (their `hQNTB'` stays threaded pending the qNTB establisher).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.40 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointReceiveDual` (+ WithCaps)
 
 Second endpoint transition de-threaded for `queueHeadBlockedConsistent`, including the dual Call/Send
