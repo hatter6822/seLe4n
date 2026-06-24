@@ -1508,4 +1508,105 @@ theorem endpointQueueEnqueue_enqueued_is_tail
                 rw [hEpSt', hEpSt2, hEpPair]
                 refine ⟨_, rfl, ?_, ?_⟩ <;> (by_cases hR : isReceiveQ <;> simp [hR])
 
+-- ============================================================================
+-- Section: frame family for `queueNextTargetBlocked` (Finding F-2 Slice 2c).
+-- The invariant has the same `∀ a b, a.queueNext = some b → P(a,b)` shape as
+-- `queueNextBlockingConsistent`, so the object-preserving frames transport it
+-- identically.  The transition-level establishers (enqueue link + block-store,
+-- pop relink) reuse the Slice-2b cores and are built per transition.
+-- ============================================================================
+
+/-- Pointwise object lookup equality transports `queueNextTargetBlocked`. -/
+theorem queueNextTargetBlocked_of_objects_eq
+    (st st' : SystemState)
+    (hLk : ∀ (x : SeLe4n.ObjId), st'.objects[x]? = st.objects[x]?)
+    (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked st' := by
+  intro a b tcbA tcbB hA hB hN
+  rw [hLk] at hA hB
+  exact hInv a b tcbA tcbB hA hB hN
+
+/-- Backward combinator: if every `st'` TCB has an `st` counterpart with the **same** `ipcState`
+and `queueNext`, then `queueNextTargetBlocked` transports from `st` to `st'`.  This is the workhorse
+for every transition whose TCB writes leave both fields intact (queue-link relinks that the
+establisher reasons about separately, scheduler frames, object stores). -/
+theorem queueNextTargetBlocked_of_tcb_links_backward
+    (st st' : SystemState)
+    (hBack : ∀ (y : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[y.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.queueNext = tcb'.queueNext)
+    (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked st' := by
+  intro a b tcbA tcbB hA hB hN
+  obtain ⟨tcbAPre, hAPre, hIpcA, hNextA⟩ := hBack a tcbA hA
+  obtain ⟨tcbBPre, hBPre, hIpcB, _⟩ := hBack b tcbB hB
+  have hNPre : tcbAPre.queueNext = some b := by rw [hNextA]; exact hN
+  have hPre := hInv a b tcbAPre tcbBPre hAPre hBPre hNPre
+  rw [hIpcA, hIpcB] at hPre
+  exact hPre
+
+/-- `ensureRunnable` frames `queueNextTargetBlocked` (objects unchanged). -/
+theorem ensureRunnable_preserves_queueNextTargetBlocked
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked (ensureRunnable st tid) := by
+  apply queueNextTargetBlocked_of_objects_eq st (ensureRunnable st tid)
+  · intro x; unfold ensureRunnable; split
+    · rfl
+    · split <;> rfl
+  · exact hInv
+
+/-- `removeRunnable` frames `queueNextTargetBlocked` (objects unchanged). -/
+theorem removeRunnable_preserves_queueNextTargetBlocked
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : queueNextTargetBlocked st) :
+    queueNextTargetBlocked (removeRunnable st tid) := by
+  apply queueNextTargetBlocked_of_objects_eq st (removeRunnable st tid)
+  · intro x; unfold removeRunnable; simp
+  · exact hInv
+
+/-- `storeObject` of a non-TCB object frames `queueNextTargetBlocked` (no TCB's `ipcState`/`queueNext`
+changes). -/
+theorem storeObject_non_ep_non_tcb_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hPrevNotTcb : ∀ tcb, st.objects[oid]? ≠ some (.tcb tcb))
+    (hStore : storeObject oid obj st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  have hFrame : ∀ x, x ≠ oid → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeObject_objects_ne st st' oid x obj hNe hObjInv hStore
+  have hEqAt : st'.objects[oid]? = some obj :=
+    storeObject_objects_eq st st' oid obj hObjInv hStore
+  intro a b tcbA tcbB hA hB hN
+  have hNeA : a.toObjId ≠ oid := by
+    intro hEq; rw [hEq] at hA; rw [hEqAt] at hA; cases hA; exact absurd rfl (hNotTcb tcbA)
+  have hNeB : b.toObjId ≠ oid := by
+    intro hEq; rw [hEq] at hB; rw [hEqAt] at hB; cases hB; exact absurd rfl (hNotTcb tcbB)
+  rw [hFrame a.toObjId hNeA] at hA
+  rw [hFrame b.toObjId hNeB] at hB
+  exact hInv a b tcbA tcbB hA hB hN
+
+/-- `storeObject` of an endpoint frames `queueNextTargetBlocked` (no TCB changes). -/
+theorem storeObject_endpoint_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid (.endpoint ep) st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  have hFrame : ∀ x, x ≠ oid → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeObject_objects_ne st st' oid x _ hNe hObjInv hStore
+  have hEqAt : st'.objects[oid]? = some (.endpoint ep) :=
+    storeObject_objects_eq st st' oid _ hObjInv hStore
+  intro a b tcbA tcbB hA hB hN
+  have hNeA : a.toObjId ≠ oid := by
+    intro hEq; rw [hEq] at hA; rw [hEqAt] at hA; cases hA
+  have hNeB : b.toObjId ≠ oid := by
+    intro hEq; rw [hEq] at hB; rw [hEqAt] at hB; cases hB
+  rw [hFrame a.toObjId hNeA] at hA
+  rw [hFrame b.toObjId hNeB] at hB
+  exact hInv a b tcbA tcbB hA hB hN
+
 end SeLe4n.Kernel

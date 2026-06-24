@@ -1326,6 +1326,35 @@ def endpointQueueTailBlockedConsistent (st : SystemState) : Prop :=
     (ep.sendQ.tail = some tl →
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
 
+/-- IPC de-threading D4 Slice 2c: the *strict* per-link blocking-propagation invariant — the
+intra-queue successor of a blocked thread is blocked on the **same** endpoint/queue.
+
+This is the strict form of `queueNextBlockingMatch` (which admits a `.ready` successor via its
+catch-all): if `a.queueNext = some b` and `a` is blocked-on-a-queue, then `b` carries the *same*
+blocking direction and endpoint.  Together with `queueHeadBlockedConsistent` (the head is blocked)
+it yields "every reachable queue member is blocked", which is exactly the fact the **pop**
+(rendezvous) leg needs to re-establish `queueHeadBlockedConsistent`: after popping the head `H`
+(blocked on `epId` by the head invariant), the new head is `H.queueNext`, whose blockedness on
+`epId` is *not* derivable from the existing conjuncts (`queueNextBlockingMatch`'s catch-all permits a
+`.ready` target; `ipcStateQueueMembershipConsistent` is the blocked→reachable converse;
+`intrusiveQueueWellFormed` constrains only the head/tail boundary).  It generalises
+`endpointQueueTailBlockedConsistent` (the tail specialisation, which becomes derivable from this plus
+a tail-membership fact).
+
+Preserved by every transition by construction: `endpointQueueEnqueue` links the old tail's
+`queueNext` to the freshly enqueued thread and the paired block-store sets that thread blocked on the
+same endpoint (so the new link matches); `endpointQueuePopHead` removes the head's outgoing link
+(dropping the only obligation whose source leaves the queue) and leaves every interior link intact;
+all other transitions touch neither `queueNext` nor the relevant `ipcState`s. -/
+def queueNextTargetBlocked (st : SystemState) : Prop :=
+  ∀ (a b : SeLe4n.ThreadId) (tcbA tcbB : TCB),
+    st.objects[a.toObjId]? = some (.tcb tcbA) →
+    st.objects[b.toObjId]? = some (.tcb tcbB) →
+    tcbA.queueNext = some b →
+    (∀ ep, tcbA.ipcState = .blockedOnReceive ep → tcbB.ipcState = .blockedOnReceive ep) ∧
+    (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
+      (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep))
+
 -- ============================================================================
 -- Z6-J: Blocked thread timeout consistency
 -- ============================================================================

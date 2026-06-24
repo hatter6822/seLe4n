@@ -284,6 +284,23 @@ What remains, per invariant:
   largely carry over. Then drop `hQHBC'` from the 8. (`endpointQueueTailBlockedConsistent` becomes
   derivable from `queueNextTargetBlocked` + a tail-membership fact and can later be retired.)
 
+  **FOUNDATION LANDED (v0.32.29):** the `queueNextTargetBlocked` def (`Defs.lean`, two-clause strict
+  form: receive→receive and send/call→send/call, same endpoint) + the object-preserving frame family
+  (`QueueNextBlocking.lean`): `queueNextTargetBlocked_of_objects_eq` (pointwise),
+  `queueNextTargetBlocked_of_tcb_links_backward` (the workhorse combinator — backward maps preserving
+  both `ipcState` **and** `queueNext`), `ensureRunnable`/`removeRunnable` scheduler frames, and
+  `storeObject_{non_ep_non_tcb,endpoint}` object-store frames.  **Remaining 2c work** (next slices,
+  in order): (1) the two *link/state-mutating* frames — `storeTcbQueueLinks_preserves_queueNextTargetBlocked`
+  (an `hNewLink` discharge for the freshly-set link, mirroring the qNBC version) and
+  `storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` (`hBwd`/`hFwd` predecessor/successor
+  obligations); (2) the per-transition establishers reusing cores (a)/(b)/(c) (enqueue link matches
+  via the paired block-store; pop relink drops the head obligation); (3) the **atomic** wire — add
+  `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct (def + named `IpcInvariantFull`
+  field + `iff` bridge + projection + `ipcInvariantFull_of_core_replyCallerLinkage`), establish it for
+  every producer (most are object-frames; the enqueue/pop transitions use step 2), then build the
+  `T_preserves_queueHeadBlockedConsistent` establishers (pop new-head blocked via
+  `queueNextTargetBlocked` + pre-state qHBC) and drop `hQHBC'` from the 9 bundles + cross-core.
+
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).
 

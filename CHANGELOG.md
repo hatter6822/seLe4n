@@ -1,3 +1,33 @@
+## v0.32.29 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` foundation (def + frame family)
+
+Lays the foundation for the final D4 conjunct de-thread (`queueHeadBlockedConsistent`, `hQHBC'`), which
+the pop (rendezvous) leg cannot establish from the existing 19 conjuncts: after popping the head `H`
+(blocked on `epId`), the new head is `H.queueNext`, whose blockedness is not derivable
+(`queueNextBlockingMatch`'s catch-all permits a `.ready` successor). The fix is a new *per-link*
+invariant.
+
+- `queueNextTargetBlocked` (`Defs.lean`) — the **strict** form of `queueNextBlockingMatch`:
+  `a.queueNext = some b ⇒ b` carries the same blocking direction + endpoint as `a` (receive→receive,
+  send/call→send/call). Together with `queueHeadBlockedConsistent` it yields "every reachable queue
+  member is blocked", exactly what the pop's new-head obligation needs. Generalises
+  `endpointQueueTailBlockedConsistent` (the tail specialisation).
+- Object-preserving frame family (`QueueNextBlocking.lean`): `queueNextTargetBlocked_of_objects_eq`
+  (pointwise lookup transport), `queueNextTargetBlocked_of_tcb_links_backward` (the workhorse
+  combinator — backward maps preserving both `ipcState` and `queueNext`),
+  `ensureRunnable`/`removeRunnable` scheduler frames, and `storeObject_{non_ep_non_tcb,endpoint}`
+  object-store frames. All mirror the `queueNextBlockingConsistent` family (same `∀ a b,
+  a.queueNext = some b → …` shape).
+
+This is **additive infrastructure** — `queueNextTargetBlocked` is a standalone def, not yet a conjunct
+of `ipcInvariantFull`; nothing is de-threaded yet. Remaining 2c work (next slices, documented in the
+plan's Slice 2c note): the two state/link-mutating frames (`storeTcbQueueLinks` + `storeTcbIpcStateAndMessage`),
+the per-transition establishers, the atomic 20th-conjunct wire, and the `hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green.
+`RAW_LOOKUP_TID` re-anchored 1157→1161 (new frame lemmas).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.28 — IPC de-threading D1: de-thread 3 wiring conjuncts from 7 bundles
 
 De-threads `dualQueueSystemInvariant`, `endpointQueueNoDup`, and `ipcStateQueueMembershipConsistent`
