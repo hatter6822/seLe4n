@@ -1,3 +1,35 @@
+## v0.32.40 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointReceiveDual` (+ WithCaps)
+
+Second endpoint transition de-threaded for `queueHeadBlockedConsistent`, including the dual Call/Send
+rendezvous sub-paths. `endpointReceiveDual{,WithCaps}_preserves_ipcInvariantFull` now *establish* the
+9th conjunct from the pre-state instead of threading `hQHBC'`.
+
+- **`cleanupPreReceiveDonation_preserves_queueHeadBlockedConsistent`** (touches no endpoint, preserves
+  every `ipcState`) + **`storeTcbIpcStateAndMessage_ready_preserves_queueHeadBlockedConsistent`** — the
+  receiver-wake frame: setting a thread `.ready` when it was already `.ready` preserves `qHBC` (the
+  store succeeds, so the thread has a TCB; a `.ready` thread is no head, discharging `hNotHead`
+  internally).
+- **`endpointReceiveDual_preserves_queueHeadBlockedConsistent`** — rendezvous (pop sendQ): pop core +
+  the dequeued sender store (`hNotHead` = `…_popped_not_head`) + `linkCallerReply` frame (Call) /
+  `ensureRunnable` (Send) + the *running* receiver `.ready` store. The receiver was `.ready`,
+  transported **backward** through the pop + sender-store + reply-link (`receiver ≠ sender` since the
+  sender is blocked and the receiver `.ready`), so the ready-wake frame applies. Block path: cleanup
+  frame + the `storeTcbIpcState` enqueue keystone + optional reply-stash (`preserveIpc`) +
+  `removeRunnable`.
+- **`endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent`** (base establish on `stMid` +
+  the optional `ipcUnwrapCaps` frame).
+- De-threaded `hQHBC'` from `endpointReceiveDual_preserves_ipcInvariantFull` and
+  `endpointReceiveDualWithCaps_preserves_ipcInvariantFull` (their `hQNTB'` stays threaded pending the
+  qNTB establisher).
+
+Remaining `hQHBC'`-threaded bundles: `endpointCall` (+ WithCaps) + cross-core `endpointCallOnCore` +
+`endpointReplyRecv`. Next slices.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.39 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointSendDual` (+ WithCaps)
 
 First **endpoint** transition de-threaded for `queueHeadBlockedConsistent`, composing the v0.32.37 pop

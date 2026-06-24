@@ -398,12 +398,19 @@ What remains, per invariant:
   `storeTcbReceiveComplete` [`hNotHead` = `…_popped_not_head`] + `ensureRunnable`; block: the
   `storeTcbIpcStateAndMessage` enqueue keystone + `removeRunnable`) +
   `ipcUnwrapCaps_preserves_queueHeadBlockedConsistent` + `endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent`.
-  `hQHBC'` dropped from both send bundles.  **Remaining 2c work:** (a) per-transition qNTB establishers
-  for the 9 `hQNTB'`-threaded bundles (compose qNTB keystone + pop/rendezvous + the no-incoming core),
-  de-thread `hQNTB'`; (b) the `qHBC` establishers for `endpointReceiveDual` / `endpointCall` (+ WithCaps)
-  + cross-core `endpointCallOnCore` — same pop-core + enqueue-keystone composition, but the deliver
-  branches are more involved (the Call sub-path's reply-link; the *running*-receiver `.ready` store
-  needs its own `hNotHead`) — drop `hQHBC'`.
+  `hQHBC'` dropped from both send bundles.
+
+  **`endpointReceiveDual` `hQHBC'` DE-THREAD LANDED (v0.32.40):** the dual Call/Send rendezvous
+  sub-paths. Key helpers: `cleanupPreReceiveDonation_preserves_queueHeadBlockedConsistent` +
+  `storeTcbIpcStateAndMessage_ready_preserves_queueHeadBlockedConsistent` (the receiver-wake frame —
+  setting a thread `.ready` when already `.ready` preserves `qHBC`, `hNotHead` discharged internally
+  from the store's success + a readiness precondition). The establisher transports the running
+  receiver's readiness **backward** through the pop + sender-store + reply-link (`receiver ≠ sender`
+  since the sender is blocked, the receiver `.ready`).  `endpointReceiveDual{,WithCaps}` `hQHBC'`
+  dropped.  **Remaining 2c work:** (a) per-transition qNTB establishers for the `hQNTB'`-threaded
+  bundles (compose qNTB keystone + pop/rendezvous + the no-incoming core), de-thread `hQNTB'`; (b) the
+  `qHBC` establishers for `endpointCall` (+ WithCaps) + cross-core `endpointCallOnCore` +
+  `endpointReplyRecv` — same pattern (the receive helpers now carry over) — drop `hQHBC'`.
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).

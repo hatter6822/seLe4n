@@ -361,6 +361,30 @@ theorem storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent
       · rw [hFrame hd.toObjId hHdEq] at hTcb
         exact hInv epId ep hd hdTcb hEp hTcb
 
+/-- IPC de-threading D4 Slice 2c: `storeTcbIpcStateAndMessage` setting `tid` `.ready` preserves
+`queueHeadBlockedConsistent` provided `tid` was already `.ready` (`hReadyPre`).  The store succeeds, so
+`tid` has a TCB; a `.ready` thread is no endpoint head (`qHBC` pins heads to a blocked state), which
+discharges the `hNotHead` obligation internally.  This is the receiver-wake frame for the rendezvous
+deliver legs (the running receiver/caller, `.ready` before and after). -/
+theorem storeTcbIpcStateAndMessage_ready_preserves_queueHeadBlockedConsistent
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hInv : queueHeadBlockedConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hReadyPre : ∀ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.ipcState = .ready)
+    (hStep : storeTcbIpcStateAndMessage st tid .ready msg = .ok st') :
+    queueHeadBlockedConsistent st' := by
+  have hMem : ∃ tcbTid, st.objects[tid.toObjId]? = some (.tcb tcbTid) := by
+    unfold storeTcbIpcStateAndMessage at hStep
+    cases hL : lookupTcb st tid with
+    | none => simp [hL] at hStep
+    | some t => exact ⟨t, lookupTcb_some_objects st tid t hL⟩
+  obtain ⟨tcbTid, hMemTid⟩ := hMem
+  have hReady := hReadyPre tcbTid hMemTid
+  refine storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent st st' tid .ready msg hInv
+    hObjInv hStep (fun epId ep hEp => ⟨fun hHd => ?_, fun hHd => ?_⟩)
+  · have h := (hInv epId ep tid tcbTid hEp hMemTid).1 hHd; rw [hReady] at h; cases h
+  · rcases (hInv epId ep tid tcbTid hEp hMemTid).2 hHd with h | h <;> rw [hReady] at h <;> cases h
+
 /-- storeTcbPendingMessage preserves queueHeadBlockedConsistent. -/
 theorem storeTcbPendingMessage_preserves_queueHeadBlockedConsistent
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
