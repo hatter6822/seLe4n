@@ -1,3 +1,30 @@
+## v0.32.28 — IPC de-threading D1: de-thread 3 wiring conjuncts from 7 bundles
+
+De-threads `dualQueueSystemInvariant`, `endpointQueueNoDup`, and `ipcStateQueueMembershipConsistent`
+— three of the four D1 "wiring" conjuncts — from the seven `ipcInvariantFull` bundles whose
+per-transition establishers are reachable from `DualQueueMembership`. The freshness side-conditions
+these establishers need (`hFresh*` / `*TailFresh`) were already added to every enqueue bundle for the
+D4 qNBC/tail-blocked de-thread, so this slice is pure establisher-call substitution — no new lemmas.
+
+- **Bundles de-threaded** (removed the threaded `hDualQueue'`/`hNoDup'`/`hQMC'` post-state hypotheses,
+  replaced each with its `_preserves_*` establisher call from the pre-state `hInv : ipcInvariantFull st`
+  + the already-present freshness preconditions): the 3 base transitions `endpointSendDual` /
+  `endpointCall` / `endpointReceiveDual`; `notificationSignal`; `notificationWait`; `endpointReply`;
+  `endpointReplyRecv`. (`notificationSignal`/`notificationWait`/`endpointReply` already established
+  `dualQueueSystemInvariant`; this slice adds their NoDup + QMC.)
+- **Still threaded** (deferred to a follow-on D1 slice): `waitingThreadsPendingMessageNone` (its
+  transition establishers live in `PerOperation`, downstream of the bundles — needs an establisher
+  relocation upstream, or discharge at the D8 layer); and the D1 conjuncts of the 3 `*WithCaps`
+  bundles + cross-core `endpointCallOnCore`, whose establishers must be **built** (compose the base
+  establisher with new `ipcUnwrapCaps_preserves_{endpointQueueNoDup,ipcStateQueueMembershipConsistent}`
+  frames).
+
+Proof-only (bundle-internal rewiring; no new theorems, no signature changes visible to callers — the
+only callers are `#check`s). Trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) +
+`test_smoke` green. AK7 metrics unchanged (no new raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, D1)
+
 ## v0.32.27 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked (`hEQTB'`) FULLY de-threaded
 
 Closes the `hEQTB'` half of D4 Slice 2b — `endpointQueueTailBlockedConsistent` is now **established

@@ -15092,10 +15092,9 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
     (st st' : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — its transition
+    -- establisher lives in `PerOperation` (downstream of this bundle); de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -15136,10 +15135,19 @@ theorem endpointReceiveDual_preserves_ipcInvariantFull
   have hPSIest := endpointReceiveDual_preserves_passiveServerIdle st st' endpointId receiver senderId
     replyId hReceiverReady hObjInv hInv.passiveServerIdle hStep
   exact ⟨endpointReceiveDual_preserves_ipcInvariant st st' endpointId receiver senderId replyId hInv.1 hObjInv hStep,
-   hDualQueue',
+   -- IPC de-threading D1: dualQueueSystemInvariant **established** from the pre-state (enqueue-fresh).
+   endpointReceiveDual_preserves_dualQueueSystemInvariant endpointId receiver replyId st st' senderId
+     hObjInv hStep hInv.2.1 hFreshReceiver hRecvTailFresh,
    endpointReceiveDual_preserves_allPendingMessagesBounded endpointId receiver senderId replyId st st' hInv.2.2.1 hObjInv hStep,
    endpointReceiveDual_preserves_badgeWellFormed endpointId receiver senderId replyId st st' hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (enqueue-fresh).
+   endpointReceiveDual_preserves_endpointQueueNoDup endpointId receiver replyId st st' senderId
+     hInv.endpointQueueNoDup hInv.2.1 hObjInv hFreshReceiver hRecvTailFresh hStep,
+   endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent endpointId receiver replyId st st' senderId
+     hInv.ipcStateQueueMembershipConsistent hInv.2.1 hInv.queueNextBlockingConsistent
+     hInv.queueHeadBlockedConsistent hObjInv hFreshReceiver hRecvTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state via core (b).
    endpointReceiveDual_preserves_queueNextBlockingConsistent endpointId receiver replyId st st' senderId
      hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
@@ -15170,10 +15178,9 @@ theorem endpointCall_preserves_ipcInvariantFull
     (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — its transition
+    -- establisher lives in `PerOperation` (downstream of this bundle); de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -15214,10 +15221,18 @@ theorem endpointCall_preserves_ipcInvariantFull
   have hPSIest := endpointCall_preserves_passiveServerIdle st st' endpointId caller msg
     hObjInv hCallerNotUnbound hInv.passiveServerIdle hStep
   exact ⟨endpointCall_preserves_ipcInvariant st st' endpointId caller msg hInv.1 hObjInv hStep,
-   hDualQueue',
+   -- IPC de-threading D1: dualQueueSystemInvariant **established** from the pre-state (enqueue-fresh).
+   endpointCall_preserves_dualQueueSystemInvariant endpointId caller msg st st' hObjInv hStep hInv.2.1
+     hFreshCaller hSendTailFresh,
    endpointCall_preserves_allPendingMessagesBounded st st' endpointId caller msg hInv.2.2.1 hObjInv hStep,
    endpointCall_preserves_badgeWellFormed st st' endpointId caller msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (enqueue-fresh).
+   endpointCall_preserves_endpointQueueNoDup st st' endpointId caller msg hInv.endpointQueueNoDup
+     hInv.2.1 hObjInv hFreshCaller hSendTailFresh hStep,
+   endpointCall_preserves_ipcStateQueueMembershipConsistent st st' endpointId caller msg hInv hObjInv
+     hFreshCaller hSendTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state via core (b).
    endpointCall_preserves_queueNextBlockingConsistent st st' endpointId caller msg
      hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
@@ -15250,11 +15265,10 @@ theorem endpointSendDual_preserves_ipcInvariantFull
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (sender : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull st)
-    (hDualQueue' : dualQueueSystemInvariant st')
     (hObjInv : st.objects.invExt)
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — its transition
+    -- establisher lives in `PerOperation` (downstream of this bundle); de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -15295,10 +15309,18 @@ theorem endpointSendDual_preserves_ipcInvariantFull
   have hPSIest := endpointSendDual_preserves_passiveServerIdle st st' endpointId sender msg
     hObjInv hSenderNotUnbound hInv.passiveServerIdle hStep
   exact ⟨endpointSendDual_preserves_ipcInvariant st st' endpointId sender msg hInv.1 hObjInv hStep,
-   hDualQueue',
+   -- IPC de-threading D1: dualQueueSystemInvariant **established** from the pre-state (enqueue-fresh).
+   endpointSendDual_preserves_dualQueueSystemInvariant endpointId sender msg st st' hObjInv hStep hInv.2.1
+     hFreshSender hSendTailFresh,
    endpointSendDual_preserves_allPendingMessagesBounded st st' endpointId sender msg hInv.2.2.1 hObjInv hStep,
    endpointSendDual_preserves_badgeWellFormed st st' endpointId sender msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (enqueue-fresh).
+   endpointSendDual_preserves_endpointQueueNoDup st st' endpointId sender msg hInv.endpointQueueNoDup
+     hInv.2.1 hObjInv hFreshSender hSendTailFresh hStep,
+   endpointSendDual_preserves_ipcStateQueueMembershipConsistent st st' endpointId sender msg hInv hObjInv
+     hFreshSender hSendTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state via core (b).
    endpointSendDual_preserves_queueNextBlockingConsistent st st' endpointId sender msg
      hInv.queueNextBlockingConsistent hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv
@@ -15330,9 +15352,9 @@ theorem notificationSignal_preserves_ipcInvariantFull
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — establisher
+    -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
     (hNWC : notificationWaiterConsistent st)
     -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition;
@@ -15353,7 +15375,11 @@ theorem notificationSignal_preserves_ipcInvariantFull
    notificationSignal_preserves_dualQueueSystemInvariant st st' notificationId badge hInv.2.1 hObjInv hStep,
    notificationSignal_preserves_allPendingMessagesBounded st st' notificationId badge hInv.2.2.1 hObjInv hStep,
    notificationSignal_preserves_badgeWellFormed st st' notificationId badge hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (notificationSignal touches no endpoint queue).
+   notificationSignal_preserves_endpointQueueNoDup st st' notificationId badge hInv.endpointQueueNoDup hObjInv hStep,
+   notificationSignal_preserves_ipcStateQueueMembershipConsistent st st' notificationId badge hInv.ipcStateQueueMembershipConsistent hObjInv hStep,
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    notificationSignal_preserves_queueNextBlockingConsistent st st' notificationId badge hObjInv hInv.queueNextBlockingConsistent hStep,
    notificationSignal_preserves_queueHeadBlockedConsistent st st' notificationId badge hObjInv hInv.queueHeadBlockedConsistent hNWC hStep,
@@ -15385,9 +15411,9 @@ theorem notificationWait_preserves_ipcInvariantFull
     (result : Option SeLe4n.Badge)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — establisher
+    -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     -- IPC de-threading D4: `queueHeadBlockedConsistent` remains threaded —
     -- `notificationWait` may re-block a thread that the carried preconditions do
     -- not exclude from being an endpoint queue head (see file note).
@@ -15419,7 +15445,11 @@ theorem notificationWait_preserves_ipcInvariantFull
    notificationWait_preserves_dualQueueSystemInvariant st st' notificationId waiter result hInv.2.1 hObjInv hStep,
    notificationWait_preserves_allPendingMessagesBounded st st' notificationId waiter result hInv.2.2.1 hObjInv hStep,
    notificationWait_preserves_badgeWellFormed st st' notificationId waiter result hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (notificationWait touches no endpoint queue).
+   notificationWait_preserves_endpointQueueNoDup st st' notificationId waiter result hInv.endpointQueueNoDup hObjInv hStep,
+   notificationWait_preserves_ipcStateQueueMembershipConsistent st st' notificationId waiter result hInv.ipcStateQueueMembershipConsistent hObjInv hStep,
    -- IPC de-threading D4: queueNext **established** from the pre-state.
    notificationWait_preserves_queueNextBlockingConsistent st st' notificationId waiter result hObjInv hInv.queueNextBlockingConsistent hStep,
    hQHBC',
@@ -15450,9 +15480,9 @@ theorem endpointReply_preserves_ipcInvariantFull
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — establisher
+    -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
     (hRCLRecip' : replyCallerLinkageReciprocal st')
@@ -15462,7 +15492,11 @@ theorem endpointReply_preserves_ipcInvariantFull
    endpointReply_preserves_dualQueueSystemInvariant replier target msg st st' hObjInv hStep hInv.2.1,
    endpointReply_preserves_allPendingMessagesBounded st st' replier target msg hInv.2.2.1 hObjInv hStep,
    endpointReply_preserves_badgeWellFormed st st' replier target msg hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (the reply unblocks the target; no endpoint queue touched).
+   endpointReply_preserves_endpointQueueNoDup st st' replier target msg hInv.endpointQueueNoDup hObjInv hStep,
+   endpointReply_preserves_ipcStateQueueMembershipConsistent st st' replier target msg hInv.ipcStateQueueMembershipConsistent hObjInv hStep,
    -- IPC de-threading D4: queueNext/headBlocked **established** from the pre-state.
    endpointReply_preserves_queueNextBlockingConsistent st st' replier target msg hObjInv hInv.queueNextBlockingConsistent hStep,
    endpointReply_preserves_queueHeadBlockedConsistent st st' replier target msg hObjInv hInv.queueHeadBlockedConsistent hStep,
@@ -15497,10 +15531,9 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (replyId : Option SeLe4n.ReplyId)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hDualQueue' : dualQueueSystemInvariant st')
+    -- IPC de-threading D1: `waitingThreadsPendingMessageNone` remains threaded — establisher
+    -- downstream in `PerOperation`; de-threaded at the D8 layer.
     (hWtpmn' : waitingThreadsPendingMessageNone st')
-    (hNoDup' : endpointQueueNoDup st')
-    (hQMC' : ipcStateQueueMembershipConsistent st')
     (hQHBC' : queueHeadBlockedConsistent st')
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
     (hDOV' : donationOwnerValid st')
@@ -15531,10 +15564,18 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
-   hDualQueue',
+   -- IPC de-threading D1: dualQueueSystemInvariant **established** from the pre-state (enqueue-fresh).
+   endpointReplyRecv_preserves_dualQueueSystemInvariant endpointId receiver replyTarget msg replyId st st'
+     hObjInv hStep hInv.2.1 hFreshReceiver hRecvTailFresh,
    endpointReplyRecv_preserves_allPendingMessagesBounded st st' endpointId receiver replyTarget msg replyId hInv.2.2.1 hObjInv hStep,
    endpointReplyRecv_preserves_badgeWellFormed st st' endpointId receiver replyTarget msg replyId hInv.2.2.2.1 hObjInv hStep,
-   hWtpmn', hNoDup', hQMC',
+   hWtpmn',
+   -- IPC de-threading D1: endpointQueueNoDup / ipcStateQueueMembershipConsistent **established**
+   -- from the pre-state (enqueue-fresh).
+   endpointReplyRecv_preserves_endpointQueueNoDup endpointId receiver replyTarget msg replyId st st'
+     hInv.endpointQueueNoDup hInv.2.1 hObjInv hFreshReceiver hRecvTailFresh hStep,
+   endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent endpointId receiver replyTarget msg replyId
+     st st' hInv hObjInv hFreshReceiver hRecvTailFresh hStep,
    -- IPC de-threading D4 Slice 2b: queueNext **established** from the pre-state (reply phase + receive-leg enqueue-establish).
    endpointReplyRecv_preserves_queueNextBlockingConsistent endpointId receiver replyTarget msg replyId
      st st' hInv hObjInv hFreshReceiver hRecvTailFresh hStep,
