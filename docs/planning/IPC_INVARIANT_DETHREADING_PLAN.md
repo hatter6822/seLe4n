@@ -429,11 +429,12 @@ What remains, per invariant:
   `endpointReply`, `endpointReceiveDual`, `endpointReceiveDualWithCaps` (v0.32.42) and
   `endpointCall`, `endpointCallWithCaps` (v0.32.43; each gains the dischargeable `hCallerReady`
   precondition — the running syscall caller is `.ready`, supplied by the reachability bundle at D8).
-  Frame `linkServerStashedReply_preserves_queueNextTargetBlocked` added.  **Remaining 2c work:**
-  (a) the qNTB establishers for `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
-  `endpointSendDualWithCaps`, de-thread `hQNTB'` (notifications are simpler — `.blockedOnNotification`
-  is *not* a qNTB-tracked direction, so the waitQ links are qNTB-irrelevant); (b) the cross-core
-  `endpointCallOnCore` `qHBC`+`qNTB` establishers (the last `hQHBC'`/`hQNTB'`-threaded site).
+  Frame `linkServerStashedReply_preserves_queueNextTargetBlocked` added.  **Single-core qNTB
+  de-thread COMPLETE (v0.32.44):** `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
+  `endpointSendDualWithCaps` de-threaded (frames added: `storeTcbIpcState{,_no_incoming_nonQueueBlocked}_preserves_queueNextTargetBlocked`).
+  Every single-core IPC bundle now de-threads **both** `hQHBC'` and `hQNTB'`.  **Remaining 2c work:**
+  the cross-core `endpointCallOnCore` `qHBC`+`qNTB` establishers (the last `hQHBC'`/`hQNTB'`-threaded
+  site, in the staged `EndpointCallInvariant.lean`).
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).

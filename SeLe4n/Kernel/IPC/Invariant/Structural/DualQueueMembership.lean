@@ -15899,6 +15899,98 @@ theorem notificationWait_preserves_queueNextBlockingConsistent
   · contradiction
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `notificationWait` **establishes** `queueNextTargetBlocked`.  The
+notification store frames qNTB; the waiter is then either delivered the badge (`.ready`) or blocked
+(`.blockedOnNotification`) — both non-queue-blocking states.  The running waiter is `.ready`
+(`hWaiterReady`), so by the pre-state qNTB it carries no blocked incoming link, and either store
+preserves qNTB; the block path's `removeRunnable` frames. -/
+theorem notificationWait_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (waiter : SeLe4n.ThreadId)
+    (badge : Option SeLe4n.Badge)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hWaiterReady : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    queueNextTargetBlocked st' := by
+  simp only [notificationWait] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    split at hStep
+    · split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hInv1 := storeObject_non_ep_non_tcb_preserves_queueNextTargetBlocked
+          st st1 notificationId (.notification _) hInv hObjInv (fun _ => by simp)
+          (fun tcb => by rw [hObj]; simp) hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        split at hStep
+        next => contradiction
+        next st2 hSI =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          obtain ⟨wTcb1, hWMem1⟩ : ∃ t, st1.objects[waiter.toObjId]? = some (.tcb t) := by
+            unfold storeTcbIpcState at hSI
+            cases hL : lookupTcb st1 waiter with
+            | none => simp [hL] at hSI
+            | some t => exact ⟨t, lookupTcb_some_objects st1 waiter t hL⟩
+          have hWNe : waiter.toObjId ≠ notificationId := by
+            intro hEq; rw [hEq] at hWMem1
+            rw [storeObject_objects_eq st st1 notificationId _ hObjInv hSO] at hWMem1; simp at hWMem1
+          have hWReady1 : wTcb1.ipcState = .ready := by
+            have hWMemSt : st.objects[waiter.toObjId]? = some (.tcb wTcb1) := by
+              rw [← storeObject_objects_ne st st1 notificationId waiter.toObjId _ hWNe hObjInv hSO]
+              exact hWMem1
+            exact hWaiterReady wTcb1 hWMemSt
+          have hWNotBlocked1 : (∀ ep, wTcb1.ipcState ≠ .blockedOnReceive ep) ∧
+              (∀ ep, wTcb1.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, wTcb1.ipcState ≠ .blockedOnCall ep) :=
+            ⟨fun ep => by rw [hWReady1]; simp, fun ep => by rw [hWReady1]; simp,
+             fun ep => by rw [hWReady1]; simp⟩
+          exact storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+            st1 st2 waiter .ready hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+            (queueNextTargetBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter wTcb1 hWMem1
+              hWNotBlocked1) hSI
+    · split at hStep
+      · contradiction
+      · rename_i waiterTcb hLookup
+        split at hStep
+        · contradiction
+        · split at hStep
+          · contradiction
+          · split at hStep
+            next => contradiction
+            next st1 hSO =>
+              have hInv1 := storeObject_non_ep_non_tcb_preserves_queueNextTargetBlocked
+                st st1 notificationId (.notification _) hInv hObjInv (fun _ => by simp)
+                (fun tcb => by rw [hObj]; simp) hSO
+              have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+              split at hStep
+              next => contradiction
+              next st2 hSI =>
+                simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, rfl⟩ := hStep
+                have hLookup1 : lookupTcb st1 waiter = some waiterTcb :=
+                  lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hSO
+                rw [storeTcbIpcState_fromTcb_eq hLookup1] at hSI
+                have hWMem1 : st1.objects[waiter.toObjId]? = some (.tcb waiterTcb) :=
+                  lookupTcb_some_objects st1 waiter waiterTcb hLookup1
+                have hWReady1 : waiterTcb.ipcState = .ready :=
+                  hWaiterReady waiterTcb (lookupTcb_some_objects st waiter waiterTcb hLookup)
+                have hWNotBlocked1 : (∀ ep, waiterTcb.ipcState ≠ .blockedOnReceive ep) ∧
+                    (∀ ep, waiterTcb.ipcState ≠ .blockedOnSend ep) ∧
+                    (∀ ep, waiterTcb.ipcState ≠ .blockedOnCall ep) :=
+                  ⟨fun ep => by rw [hWReady1]; simp, fun ep => by rw [hWReady1]; simp,
+                   fun ep => by rw [hWReady1]; simp⟩
+                exact queueNextTargetBlocked_of_objects_eq st2 (removeRunnable st2 waiter)
+                  (fun x => by rw [removeRunnable_preserves_objects])
+                  (storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+                    st1 st2 waiter (.blockedOnNotification notificationId) hInv1 hObjInv1
+                    ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+                    (queueNextTargetBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter waiterTcb
+                      hWMem1 hWNotBlocked1) hSI)
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
 /-- D4: `notificationSignal` frames `queueNextBlockingConsistent`.  Stores the
 notification object (non-endpoint, non-TCB) then wakes the head waiter to `.ready`
 (badge-merge branch only re-stores the notification). -/
@@ -15993,6 +16085,62 @@ theorem notificationSignal_preserves_queueHeadBlockedConsistent
       simp only [hWaiters] at hStep
       exact storeObject_nonEndpointNonTcb_preserves_queueHeadBlockedConsistent
         st st' notificationId (.notification _) hObjInv (fun _ => by simp) (fun _ => by simp) hInv hStep
+  · contradiction
+  · contradiction
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `notificationSignal` **establishes** `queueNextTargetBlocked`.  The
+notification store frames qNTB (non-endpoint, non-TCB); the woken head waiter is a notification-queue
+member, hence `.blockedOnNotification` (`hNWC`) — a non-queue-blocking state, so by the pre-state qNTB
+it carries no blocked incoming link, and the `.ready` wake preserves qNTB; `ensureRunnable` frames. -/
+theorem notificationSignal_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hObjInv : st.objects.invExt) (hInv : queueNextTargetBlocked st)
+    (hNWC : notificationWaiterConsistent st)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  simp only [notificationSignal] at hStep
+  split at hStep
+  · rename_i ntfn hObj
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
+      simp only [hWaiters] at hStep
+      split at hStep
+      next => contradiction
+      next st1 hSO =>
+        have hInv1 := storeObject_non_ep_non_tcb_preserves_queueNextTargetBlocked
+          st st1 notificationId (.notification _) hInv hObjInv (fun _ => by simp)
+          (fun tcb => by rw [hObj]; simp) hSO
+        have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO
+        have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
+          (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
+        have hWaiterMem : waiter ∈ ntfn.waitingThreads := by
+          show waiter ∈ ntfn.waitingThreads.val
+          rw [hValEq]; exact List.mem_cons_self
+        obtain ⟨wTcb, hWTcb, hWIpc⟩ := hNWC notificationId ntfn waiter hObj hWaiterMem
+        split at hStep
+        next => contradiction
+        next st2 hSM =>
+          simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hNe : waiter.toObjId ≠ notificationId := by
+            intro hEq; rw [hEq] at hWTcb; rw [hObj] at hWTcb; simp at hWTcb
+          have hWTcb1 : st1.objects[waiter.toObjId]? = some (.tcb wTcb) := by
+            rw [storeObject_objects_ne st st1 notificationId waiter.toObjId _ hNe hObjInv hSO]; exact hWTcb
+          have hWaiterNotBlocked : (∀ ep, wTcb.ipcState ≠ .blockedOnReceive ep) ∧
+              (∀ ep, wTcb.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, wTcb.ipcState ≠ .blockedOnCall ep) :=
+            ⟨fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp, fun ep => by rw [hWIpc]; simp⟩
+          exact ensureRunnable_preserves_queueNextTargetBlocked st2 waiter
+            (storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+              st1 st2 waiter .ready _ hInv1 hObjInv1 ⟨fun _ => by simp, fun _ => by simp, fun _ => by simp⟩
+              (queueNextTargetBlocked_no_incoming_of_notQueueBlocked st1 hInv1 waiter wTcb hWTcb1
+                hWaiterNotBlocked) hSM)
+    | none =>
+      simp only [hWaiters] at hStep
+      exact storeObject_non_ep_non_tcb_preserves_queueNextTargetBlocked
+        st st' notificationId (.notification _) hInv hObjInv (fun _ => by simp)
+        (fun tcb => by rw [hObj]; simp) hStep
   · contradiction
   · contradiction
 
@@ -16344,6 +16492,60 @@ theorem endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent
             simp [hLookup] at hStep
             exact ipcUnwrapCaps_preserves_queueHeadBlockedConsistent msg senderCspaceRoot recvRoot
               receiverSlotBase _ stMid st' summary hObjInvMid hQHBCMid hStep
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `endpointSendDualWithCaps` **establishes** `queueNextTargetBlocked`
+— the base `endpointSendDual` establish on `stMid` + the optional `ipcUnwrapCaps` frame (cap transfer
+writes only CNode caps). -/
+theorem endpointSendDualWithCaps_preserves_queueNextTargetBlocked
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (senderCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hQNTB : queueNextTargetBlocked st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hObjInv : st.objects.invExt)
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId → ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
+    (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
+             senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
+    queueNextTargetBlocked st' := by
+  simp only [endpointSendDualWithCaps] at hStep
+  cases hSend : endpointSendDual endpointId sender msg st with
+  | error e => simp [hSend] at hStep
+  | ok pair =>
+    rcases pair with ⟨_, stMid⟩
+    have hQNTBMid := endpointSendDual_preserves_queueNextTargetBlocked st stMid endpointId
+      sender msg hQNTB hTail hDQSI hObjInv hFreshSender hSendTailFresh hSend
+    have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
+    simp [hSend] at hStep
+    cases hEp : st.getEndpoint? endpointId with
+    | none => simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none => simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hQNTBMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact ipcUnwrapCaps_preserves_queueNextTargetBlocked msg senderCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hObjInvMid hQNTBMid hStep
 
 open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointReceiveDual` **establishes** `queueHeadBlockedConsistent`
@@ -16992,6 +17194,144 @@ theorem endpointReplyRecv_preserves_queueHeadBlockedConsistent
       exact endpointReceiveDual_preserves_queueHeadBlockedConsistent
         endpointId receiver replyId _ stR.2 stR.1
         hQHBCE hQNTBE hDQSIE hObjInvE hReceiverReadyE hFreshReceiver'
+        (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `endpointReplyRecv` **establishes** `queueNextTargetBlocked` from the
+pre-state.  Composes the reply phase (`.ready`-wake of the `.blockedOnReply` target — qNTB-preserved
+via the `.ready`-of-`.blockedOnReply` frame) with the `endpointReceiveDual` receive-leg qNTB
+establisher; the receive leg's `dualQueueSystemInvariant`, `endpointQueueTailBlockedConsistent`,
+running-receiver readiness, and tail-freshness side-conditions are transported across the reply
+phase (`receiver ≠ replyTarget`). -/
+theorem endpointReplyRecv_preserves_queueNextTargetBlocked
+    (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (st st' : SystemState)
+    (hInvFull : ipcInvariantFull st)
+    (hObjInv : st.objects.invExt)
+    (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
+        tcb.ipcState = .ready)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid))
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  have hQNTB := hInvFull.queueNextTargetBlocked
+  have hDQSI := hInvFull.2.1
+  have hTail := hInvFull.endpointQueueTailBlockedConsistent
+  unfold endpointReplyRecv at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hLookup : lookupTcb st replyTarget with
+  | none => simp [hLookup] at hStep
+  | some replyTcb =>
+    simp only [hLookup] at hStep
+    rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
+    cases hIpc : replyTcb.ipcState with
+    | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
+      simp [hIpc] at hStep
+    | blockedOnReply ep0 expectedReplier =>
+      simp only [hIpc] at hStep
+      suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
+            queueNextTargetBlocked stR.2) by
+        cases expectedReplier with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
+          split at hStep
+          · revert hStep
+            cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
+            | error e => simp
+            | ok st1 =>
+              simp only []
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp
+              | ok result =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, hEq⟩; subst hEq
+                exact this st1 hMsg result hRecv
+          · simp_all
+      intro st1 hMsg stR hRecv
+      have hReplyTgtTcb : st.objects[replyTarget.toObjId]? = some (.tcb replyTcb) :=
+        lookupTcb_some_objects st replyTarget replyTcb hLookup
+      have hRecvNeReply : receiver ≠ replyTarget := by
+        intro h; subst h
+        rw [hReceiverReady replyTcb hReplyTgtTcb] at hIpc; cases hIpc
+      have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget _ (some msg) hObjInv hMsg
+      have hDQSI1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant _ _ _ _ _ hObjInv hMsg hDQSI
+      -- qNTB: waking `replyTarget` (`.blockedOnReply`) to `.ready` preserves the strict link-target.
+      have hQNTB1 := storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked
+        st st1 replyTarget (some msg) replyTcb ep0 expectedReplier hQNTB hObjInv hReplyTgtTcb hIpc hMsg
+      -- EQTB: `replyTarget` (`.blockedOnReply`) is no endpoint tail, so the reply store frames it.
+      have hNotTail : ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+          st.objects[epId']? = some (.endpoint ep') →
+          ep'.receiveQ.tail ≠ some replyTarget ∧ ep'.sendQ.tail ≠ some replyTarget := by
+        intro epId' ep' hEp'
+        refine ⟨fun hTl => ?_, fun hTl => ?_⟩
+        · have := (hTail epId' ep' replyTarget replyTcb hEp' hReplyTgtTcb).1 hTl
+          rw [hIpc] at this; cases this
+        · rcases (hTail epId' ep' replyTarget replyTcb hEp' hReplyTgtTcb).2 hTl with h | h <;>
+            rw [hIpc] at h <;> cases h
+      have hTail1 := storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent
+        st st1 replyTarget .ready (some msg) hTail hObjInv hMsg hNotTail
+      have hObjInvE : (ensureRunnable st1 replyTarget).objects.invExt :=
+        ensureRunnable_preserves_objects st1 replyTarget ▸ hObjInv1
+      have hDQSIE := ensureRunnable_preserves_dualQueueSystemInvariant st1 replyTarget hDQSI1
+      have hQNTBE := ensureRunnable_preserves_queueNextTargetBlocked st1 replyTarget hQNTB1
+      have hTailE := ensureRunnable_preserves_endpointQueueTailBlockedConsistent st1 replyTarget hTail1
+      -- Transport the running receiver's readiness across the reply phase (`receiver ≠ replyTarget`).
+      have hReceiverReadyE : ∀ (tcb : TCB),
+          (ensureRunnable st1 replyTarget).objects[receiver.toObjId]? = some (.tcb tcb) →
+          tcb.ipcState = .ready := by
+        intro tcb hMem
+        rw [ensureRunnable_preserves_objects st1 replyTarget] at hMem
+        rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 replyTarget .ready (some msg)
+          receiver.toObjId (fun h => hRecvNeReply (ThreadId.toObjId_injective receiver replyTarget h))
+          hObjInv hMsg] at hMem
+        exact hReceiverReady tcb hMem
+      -- Transport receiver-freshness across the reply phase (endpoints unchanged).
+      have hFreshReceiver' : ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+          (ensureRunnable st1 replyTarget).objects[epId']? = some (.endpoint ep') →
+          ep'.sendQ.head ≠ some receiver ∧ ep'.sendQ.tail ≠ some receiver ∧
+          ep'.receiveQ.head ≠ some receiver ∧ ep'.receiveQ.tail ≠ some receiver := by
+        intro epId' ep' hEp'
+        rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
+          ensureRunnable_preserves_objects st1 replyTarget] at hEp'
+        exact hFreshReceiver epId' ep'
+          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId' ep' hObjInv hMsg hEp')
+      -- Transport receive-tail-freshness across the reply phase.
+      have hRecvTailFresh' : ∀ (ep' : Endpoint) (tailTid : SeLe4n.ThreadId),
+          (ensureRunnable st1 replyTarget).objects[endpointId]? = some (.endpoint ep') →
+          ep'.receiveQ.tail = some tailTid →
+          ∀ (epId' : SeLe4n.ObjId) (ep'' : Endpoint),
+            (ensureRunnable st1 replyTarget).objects[epId']? = some (.endpoint ep'') →
+            (epId' ≠ endpointId →
+              ep''.sendQ.tail ≠ some tailTid ∧ ep''.receiveQ.tail ≠ some tailTid) ∧
+            (epId' = endpointId →
+              ep''.sendQ.tail ≠ some tailTid) := by
+        intro ep' tailTid hEp' hTl epId' ep'' hEp''
+        rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
+          ensureRunnable_preserves_objects st1 replyTarget] at hEp' hEp''
+        exact hRecvTailFresh ep' tailTid
+          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) endpointId ep' hObjInv hMsg hEp')
+          hTl epId' ep''
+          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId' ep'' hObjInv hMsg hEp'')
+      -- Delegate to the receive-leg qNTB establisher.
+      exact endpointReceiveDual_preserves_queueNextTargetBlocked
+        endpointId receiver replyId _ stR.2 stR.1
+        hQNTBE hDQSIE hTailE hObjInvE hReceiverReadyE hFreshReceiver' hRecvTailFresh'
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 open SeLe4n.Model.SystemState in
@@ -17711,9 +18051,6 @@ theorem notificationSignal_preserves_ipcInvariantFull
     -- IPC de-threading D5: no thread carries a timeout budget (dischargeable global precondition;
     -- no transition ever writes `timeoutBudget := some`).
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
-    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
-    (hQNTB' : queueNextTargetBlocked st')
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the head
@@ -17755,7 +18092,11 @@ theorem notificationSignal_preserves_ipcInvariantFull
    -- head waiter is `.blockedOnNotification` (`hNWC`), hence no endpoint tail.
    notificationSignal_preserves_endpointQueueTailBlockedConsistent st st' notificationId badge
      hObjInv hInv.endpointQueueTailBlockedConsistent hNWC hStep,
-   hQNTB'⟩
+   -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state — the
+   -- notification store frames qNTB; the woken `.blockedOnNotification` head waiter carries no
+   -- blocked incoming link, so the `.ready` wake preserves qNTB.
+   notificationSignal_preserves_queueNextTargetBlocked st st' notificationId badge
+     hObjInv hInv.queueNextTargetBlocked hNWC hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `notificationWait` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed) rather than threading it.
@@ -17781,9 +18122,6 @@ theorem notificationWait_preserves_ipcInvariantFull
     -- `endpointQueueTailBlockedConsistent` — a `.ready` thread is no endpoint tail).
     (hWaiterReady : ∀ (tcb : TCB), st.objects[waiter.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
-    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
-    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
-    (hQNTB' : queueNextTargetBlocked st')
     (hStep : notificationWait notificationId waiter st = .ok (result, st')) :
     ipcInvariantFull st' := by
   -- IPC de-threading D6: `donationOwnerValid` **established** from the pre-state — the only
@@ -17828,7 +18166,11 @@ theorem notificationWait_preserves_ipcInvariantFull
    -- queue touched; the running waiter is `.ready`, hence no endpoint tail).
    notificationWait_preserves_endpointQueueTailBlockedConsistent st st' notificationId waiter result
      hObjInv hInv.endpointQueueTailBlockedConsistent hWaiterReady hStep,
-   hQNTB'⟩
+   -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state — the
+   -- waiter is woken `.ready` or blocked `.blockedOnNotification` (both non-queue-blocking), and the
+   -- running waiter carries no blocked incoming link.
+   notificationWait_preserves_queueNextTargetBlocked st st' notificationId waiter result
+     hObjInv hInv.queueNextTargetBlocked hWaiterReady hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReply` preserves `ipcInvariantFull`,
 *preserving* the `replyCallerLinkage` third clause (framed — the reply only unblocks the
@@ -17922,9 +18264,6 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running receiver (the replyRecv server) is `.ready`.
     (hReceiverReady : ∀ (tcb : TCB), st.objects[receiver.toObjId]? = some (.tcb tcb) →
         tcb.ipcState = .ready)
-    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
-    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
-    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcInvariantFull st' :=
   ⟨endpointReplyRecv_preserves_ipcInvariant st st' endpointId receiver replyTarget msg hInv.1 hObjInv replyId hStep,
@@ -17965,7 +18304,11 @@ theorem endpointReplyRecv_preserves_ipcInvariantFull
    -- endpoints; the receive-leg enqueue-establish discharges via cores (a)+(c)).
    endpointReplyRecv_preserves_endpointQueueTailBlockedConsistent endpointId receiver replyTarget msg
      replyId st st' hInv hObjInv hFreshReceiver hStep,
-   hQNTB'⟩
+   -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state — the
+   -- reply phase frames qNTB (`.ready`-wake of `.blockedOnReply`), the receive-leg qNTB establisher
+   -- discharges via the pop frame and no-incoming stores.
+   endpointReplyRecv_preserves_queueNextTargetBlocked endpointId receiver replyTarget msg replyId
+     st st' hInv hObjInv hReceiverReady hFreshReceiver hRecvTailFresh hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointSendDualWithCaps` preserves
 `ipcInvariantFull`, *preserving* the `replyCallerLinkage` third clause rather than
@@ -18010,9 +18353,6 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
     -- IPC de-threading D6: the running sender holds a SchedContext (own or donated).
     (hSenderNotUnbound : ∀ (tcb : TCB), st.objects[sender.toObjId]? = some (.tcb tcb) →
         tcb.schedContextBinding ≠ .unbound)
-    -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked threaded transitionally (establisher is a
-    -- follow-on slice); carries the strict link-target invariant for the `hQHBC'` de-thread.
-    (hQNTB' : queueNextTargetBlocked st')
     (hStep : endpointSendDualWithCaps endpointId sender msg endpointRights
              senderCspaceRoot receiverSlotBase st = .ok (summary, st')) :
     ipcInvariantFull st' := by
@@ -18060,7 +18400,11 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariantFull
      endpointRights senderCspaceRoot receiverSlotBase st st' summary
      hInv.endpointQueueTailBlockedConsistent hInv.2.1 hInv.queueHeadBlockedConsistent hObjInv
      hFreshSender hStep,
-   hQNTB'⟩
+   -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked **established** from the pre-state
+   -- (base send establish + the cap-transfer frame).
+   endpointSendDualWithCaps_preserves_queueNextTargetBlocked endpointId sender msg
+     endpointRights senderCspaceRoot receiverSlotBase st st' summary hInv.queueNextTargetBlocked
+     hInv.endpointQueueTailBlockedConsistent hInv.2.1 hObjInv hFreshSender hSendTailFresh hStep⟩
 
 /-- IPC de-threading D2 (de-threaded): `endpointReceiveDualWithCaps` preserves
 `ipcInvariantFull`, **establishing** the `replyCallerLinkage` third clause (via the base

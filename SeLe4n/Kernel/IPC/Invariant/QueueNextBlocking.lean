@@ -1883,6 +1883,92 @@ theorem queueNextTargetBlocked_no_incoming_of_notQueueBlocked
     · exact hNotBlocked.2.1 ep h2
     · exact hNotBlocked.2.2 ep h2
 
+/-- IPC de-threading D4 Slice 2c: `storeTcbIpcState` (which rewrites only `ipcState`, preserving
+`queueNext`) preserves `queueNextTargetBlocked` given the forward/backward link obligations.  Mirrors
+`storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` for the message-free store. -/
+theorem storeTcbIpcState_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st')
+    (hFwd : ∀ (b : SeLe4n.ThreadId) (tcbTid tcbB : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      tcbTid.queueNext = some b →
+      st.objects[b.toObjId]? = some (.tcb tcbB) →
+      (∀ ep, ipcState = .blockedOnReceive ep → tcbB.ipcState = .blockedOnReceive ep) ∧
+      (∀ ep, (ipcState = .blockedOnSend ep ∨ ipcState = .blockedOnCall ep) →
+        (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep)))
+    (hBwd : ∀ (a : SeLe4n.ThreadId) (tcbA tcbTid : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) →
+      tcbA.queueNext = some tid →
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      (∀ ep, tcbA.ipcState = .blockedOnReceive ep → ipcState = .blockedOnReceive ep) ∧
+      (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
+        (ipcState = .blockedOnSend ep ∨ ipcState = .blockedOnCall ep))) :
+    queueNextTargetBlocked st' := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore, Except.ok.injEq] at hStep; subst hStep
+      have hEqAt := storeObject_objects_eq st pair.2 tid.toObjId _ hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.2.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne st pair.2 tid.toObjId x _ hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          rw [hIpcA, hIpcB]; exact ⟨fun _ h => h, fun _ h => h⟩
+        · rw [hFrame b.toObjId hEqB] at hB
+          rw [hIpcA]; rw [hQNA] at hN
+          exact hFwd b origTcb tcbB hOrigTcb hN hB
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          rw [hIpcB]
+          exact hBwd a tcbA origTcb hA hN hOrigTcb
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
+/-- IPC de-threading D4 Slice 2c: storing a **non-queue-blocking** state via `storeTcbIpcState` to a
+thread with **no blocked incoming `queueNext` link** preserves `queueNextTargetBlocked`.  The
+message-free counterpart of `storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked`
+(used by `notificationWait` to block the running waiter on `.blockedOnNotification`). -/
+theorem storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hIpcNotBlocked : (∀ ep, ipcState ≠ .blockedOnReceive ep) ∧
+      (∀ ep, ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, ipcState ≠ .blockedOnCall ep))
+    (hNoIncoming : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext = some tid →
+      (∀ ep, tcbA.ipcState ≠ .blockedOnReceive ep) ∧
+      (∀ ep, tcbA.ipcState ≠ .blockedOnSend ep) ∧ (∀ ep, tcbA.ipcState ≠ .blockedOnCall ep))
+    (hStep : storeTcbIpcState st tid ipcState = .ok st') :
+    queueNextTargetBlocked st' := by
+  refine storeTcbIpcState_preserves_queueNextTargetBlocked st st' tid ipcState hInv hObjInv hStep ?_ ?_
+  · intro b tcbTid tcbB _ _ _
+    refine ⟨fun ep h => absurd h (hIpcNotBlocked.1 ep), fun ep h => ?_⟩
+    rcases h with h | h
+    · exact absurd h (hIpcNotBlocked.2.1 ep)
+    · exact absurd h (hIpcNotBlocked.2.2 ep)
+  · intro a tcbA _ hA hN _
+    refine ⟨fun ep h => absurd h ((hNoIncoming a tcbA hA hN).1 ep), fun ep h => ?_⟩
+    rcases h with h | h
+    · exact absurd h ((hNoIncoming a tcbA hA hN).2.1 ep)
+    · exact absurd h ((hNoIncoming a tcbA hA hN).2.2 ep)
+
 /-- `storeTcbIpcStateAndMessage` leaves every TCB's `queueNext` untouched — it rewrites only
 `ipcState`/`pendingMessage` (a record update that preserves `queueNext`).  For any post-state TCB
 there is a pre-state TCB at the same id with the same `queueNext`. -/

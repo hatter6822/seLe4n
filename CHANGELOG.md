@@ -1,3 +1,35 @@
+## v0.32.44 — IPC de-threading D4 Slice 2c: complete the **single-core** `hQNTB'` de-thread
+
+Completes the `queueNextTargetBlocked` (qNTB) de-thread for every single-core IPC bundle.
+`notificationSignal`, `notificationWait`, `endpointReplyRecv`, and `endpointSendDualWithCaps` now
+*establish* qNTB from the pre-state. **Every single-core IPC `ipcInvariantFull` bundle now de-threads
+both `hQHBC'` and `hQNTB'`.** The only remaining threaded site is the staged cross-core
+`endpointCallOnCore`.
+
+- **`storeTcbIpcState_preserves_queueNextTargetBlocked`** + the
+  **`storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked`** wrapper
+  (`QueueNextBlocking.lean`) — the message-free counterparts of the `storeTcbIpcStateAndMessage`
+  frames, for `notificationWait`'s `.blockedOnNotification` block-store.
+- **`notificationSignal_preserves_queueNextTargetBlocked`** — the notification store frames qNTB; the
+  woken head waiter is `.blockedOnNotification` (`hNWC`, non-queue-blocking) so it carries no blocked
+  incoming link, and the `.ready` wake preserves qNTB.
+- **`notificationWait_preserves_queueNextTargetBlocked`** — both the badge-delivery (`.ready`) and the
+  block (`.blockedOnNotification`) paths are non-queue-blocking stores to the running (`.ready`)
+  waiter, which carries no blocked incoming link. (`.blockedOnNotification` is *not* a qNTB-tracked
+  direction, so the notification waitQ links are qNTB-irrelevant.)
+- **`endpointReplyRecv_preserves_queueNextTargetBlocked`** — composes the `.ready`-wake reply phase
+  with the `endpointReceiveDual` receive-leg qNTB establisher (transporting `dualQueueSystemInvariant`,
+  `endpointQueueTailBlockedConsistent`, receiver readiness, and tail-freshness across the reply phase).
+- **`endpointSendDualWithCaps_preserves_queueNextTargetBlocked`** (base `endpointSendDual` qNTB + the
+  cap-transfer frame).
+- De-threaded `hQNTB'` from the `notificationSignal`, `notificationWait`, `endpointReplyRecv`, and
+  `endpointSendDualWithCaps` `_preserves_ipcInvariantFull` bundles.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.43 — IPC de-threading D4 Slice 2c: de-thread `hQNTB'` from the call-family bundles
 
 Continues the `queueNextTargetBlocked` (qNTB) de-thread. `endpointCall` and `endpointCallWithCaps`
