@@ -289,11 +289,12 @@ What remains, per invariant:
   (`QueueNextBlocking.lean`): `queueNextTargetBlocked_of_objects_eq` (pointwise),
   `queueNextTargetBlocked_of_tcb_links_backward` (the workhorse combinator — backward maps preserving
   both `ipcState` **and** `queueNext`), `ensureRunnable`/`removeRunnable` scheduler frames, and
-  `storeObject_{non_ep_non_tcb,endpoint}` object-store frames.  **Remaining 2c work** (next slices,
-  in order): (1) the two *link/state-mutating* frames — `storeTcbQueueLinks_preserves_queueNextTargetBlocked`
-  (an `hNewLink` discharge for the freshly-set link, mirroring the qNBC version) and
+  `storeObject_{non_ep_non_tcb,endpoint}` object-store frames.  **Frame family COMPLETE (v0.32.30):**
+  the two *link/state-mutating* frames also landed — `storeTcbQueueLinks_preserves_queueNextTargetBlocked`
+  (`hNewLink` discharge for the freshly-set link) and
   `storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` (`hBwd`/`hFwd` predecessor/successor
-  obligations); (2) the per-transition establishers reusing cores (a)/(b)/(c) (enqueue link matches
+  obligations) — both ported from their qNBC analogues.  **Remaining 2c work** (next slices,
+  in order): (2) the per-transition establishers reusing cores (a)/(b)/(c) (enqueue link matches
   via the paired block-store; pop relink drops the head obligation); (3) the **atomic** wire — add
   `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct (def + named `IpcInvariantFull`
   field + `iff` bridge + projection + `ipcInvariantFull_of_core_replyCallerLinkage`), establish it for

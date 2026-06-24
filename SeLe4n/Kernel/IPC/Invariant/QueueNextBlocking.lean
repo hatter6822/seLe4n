@@ -1609,4 +1609,123 @@ theorem storeObject_endpoint_preserves_queueNextTargetBlocked
   rw [hFrame b.toObjId hNeB] at hB
   exact hInv a b tcbA tcbB hA hB hN
 
+/-- `storeTcbQueueLinks` preserves `queueNextTargetBlocked`: it rewrites only `tid`'s link fields, so
+the only *new* outgoing link is `tid.queueNext := next`; the caller discharges that one via
+`hNewLink` (in the enqueue establisher, the paired block-store makes the new target blocked on the
+same endpoint as `tid`).  Every other link is framed.  Mirrors
+`storeTcbQueueLinks_preserves_queueNextBlockingConsistent`. -/
+theorem storeTcbQueueLinks_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hNewLink : ∀ (b : SeLe4n.ThreadId) (tcbTid tcbB : TCB),
+      next = some b →
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      st.objects[b.toObjId]? = some (.tcb tcbB) →
+      (∀ ep, tcbTid.ipcState = .blockedOnReceive ep → tcbB.ipcState = .blockedOnReceive ep) ∧
+      (∀ ep, (tcbTid.ipcState = .blockedOnSend ep ∨ tcbTid.ipcState = .blockedOnCall ep) →
+        (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep))) :
+    queueNextTargetBlocked st' := by
+  have hFrame : ∀ x, x ≠ tid.toObjId → st'.objects[x]? = st.objects[x]? :=
+    fun x hNe => storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next x hNe hObjInv hStep
+  obtain ⟨tcb', hTcb', hQN'⟩ :=
+    storeTcbQueueLinks_stored_queueNext st st' tid prev pprev next hObjInv hStep
+  have hIpcBack := storeTcbQueueLinks_tcb_ipcState_backward st st' tid prev pprev next hObjInv hStep
+  intro a b tcbA tcbB hA hB hN
+  by_cases hEqA : a.toObjId = tid.toObjId
+  · by_cases hEqB : b.toObjId = tid.toObjId
+    · -- a = b = target: same `ipcState` (self), consequent trivial.
+      obtain ⟨origA, hOrigA, hIpcA⟩ := hIpcBack a tcbA hA
+      obtain ⟨origB, hOrigB, hIpcB⟩ := hIpcBack b tcbB hB
+      rw [hEqA] at hOrigA; rw [hEqB] at hOrigB
+      rw [hOrigA] at hOrigB; cases Option.some.inj hOrigB
+      have hSame : tcbA.ipcState = tcbB.ipcState := by rw [← hIpcA, ← hIpcB]
+      exact ⟨fun _ h => hSame ▸ h, fun _ h => hSame ▸ h⟩
+    · -- a = target, b ≠ target: the freshly-set link `tid → b`.
+      obtain ⟨origA, hOrigA, hIpcA⟩ := hIpcBack a tcbA hA
+      rw [hEqA] at hOrigA
+      rw [hEqA] at hA; rw [hTcb'] at hA
+      have hTcbEq : tcb' = tcbA := by cases Option.some.inj hA; rfl
+      rw [← hTcbEq, hQN'] at hN
+      rw [hFrame b.toObjId hEqB] at hB
+      have hLink := hNewLink b origA tcbB hN hOrigA hB
+      rw [hIpcA] at hLink
+      exact hLink
+  · -- a ≠ target.
+    rw [hFrame a.toObjId hEqA] at hA
+    by_cases hEqB : b.toObjId = tid.toObjId
+    · -- b = target: same `ipcState` via backward (link `a → b` already in `st`).
+      obtain ⟨origB, hOrigB, hIpcB⟩ := hIpcBack b tcbB hB
+      rw [hEqB] at hOrigB
+      have hPre := hInv a b tcbA origB hA (hEqB ▸ hOrigB) hN
+      rw [hIpcB] at hPre
+      exact hPre
+    · -- neither.
+      rw [hFrame b.toObjId hEqB] at hB
+      exact hInv a b tcbA tcbB hA hB hN
+
+/-- `storeTcbIpcStateAndMessage` preserves `queueNextTargetBlocked`: the only changed `ipcState` is
+`tid`'s.  The caller discharges the two links that touch `tid` — `hFwd` for `tid`'s outgoing link
+(`tid → b`: the new state propagates to `b`) and `hBwd` for any incoming link (`a → tid`: `a`'s state
+propagates to the new state).  Mirrors `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`. -/
+theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (hFwd : ∀ (b : SeLe4n.ThreadId) (tcbTid tcbB : TCB),
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      tcbTid.queueNext = some b →
+      st.objects[b.toObjId]? = some (.tcb tcbB) →
+      (∀ ep, ipcState = .blockedOnReceive ep → tcbB.ipcState = .blockedOnReceive ep) ∧
+      (∀ ep, (ipcState = .blockedOnSend ep ∨ ipcState = .blockedOnCall ep) →
+        (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep)))
+    (hBwd : ∀ (a : SeLe4n.ThreadId) (tcbA tcbTid : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) →
+      tcbA.queueNext = some tid →
+      st.objects[tid.toObjId]? = some (.tcb tcbTid) →
+      (∀ ep, tcbA.ipcState = .blockedOnReceive ep → ipcState = .blockedOnReceive ep) ∧
+      (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
+        (ipcState = .blockedOnSend ep ∨ ipcState = .blockedOnCall ep))) :
+    queueNextTargetBlocked st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hEqAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
+      have hOrigTcb := lookupTcb_some_objects st tid origTcb hLookup
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.snd.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne' st tid.toObjId x _ pair hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = ipcState := by cases Option.some.inj hA; rfl
+        have hQNA : tcbA.queueNext = origTcb.queueNext := by cases Option.some.inj hA; rfl
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          rw [hIpcA, hIpcB]; exact ⟨fun _ h => h, fun _ h => h⟩
+        · rw [hFrame b.toObjId hEqB] at hB
+          rw [hIpcA]; rw [hQNA] at hN
+          exact hFwd b origTcb tcbB hOrigTcb hN hB
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · rw [hEqB] at hB; rw [hEqAt] at hB
+          have hIpcB : tcbB.ipcState = ipcState := by cases Option.some.inj hB; rfl
+          have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          rw [hIpcB]
+          exact hBwd a tcbA origTcb hA hN hOrigTcb
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
 end SeLe4n.Kernel

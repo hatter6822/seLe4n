@@ -1,3 +1,29 @@
+## v0.32.30 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` link/state-mutating frames
+
+Completes the `queueNextTargetBlocked` frame family with the two frames the per-transition
+establishers compose over — the ones whose stores actually *change* a TCB's `queueNext` or `ipcState`
+(the object-preserving frames landed in v0.32.29).
+
+- `storeTcbQueueLinks_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — `storeTcbQueueLinks`
+  rewrites only `tid`'s link fields, so the only *new* outgoing link is `tid.queueNext := next`; the
+  caller discharges that one link via an `hNewLink` obligation (in the enqueue establisher, the paired
+  block-store makes the new target blocked on the same endpoint as `tid`). Every other link is framed.
+  Ported from `storeTcbQueueLinks_preserves_queueNextBlockingConsistent`.
+- `storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — the only
+  changed `ipcState` is `tid`'s; the caller discharges the two links touching `tid` via `hFwd` (the
+  outgoing `tid → b` link: the new state propagates to `b`) and `hBwd` (any incoming `a → tid` link:
+  `a`'s state propagates to the new state). Ported from
+  `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`.
+
+Still additive — `queueNextTargetBlocked` is not yet a conjunct of `ipcInvariantFull`. Remaining 2c
+work (next slices): the per-transition establishers (enqueue/pop, reusing cores (a)/(b)/(c)), the
+atomic 20th-conjunct wire, and the `hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; module build green.
+`RAW_LOOKUP_TID` re-anchored 1161→1167 (the two new frames use `lookupTcb`).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.29 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` foundation (def + frame family)
 
 Lays the foundation for the final D4 conjunct de-thread (`queueHeadBlockedConsistent`, `hQHBC'`), which
