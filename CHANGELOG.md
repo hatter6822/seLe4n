@@ -1,3 +1,24 @@
+## v0.32.35 — IPC de-threading D4 Slice 2c: validated atomic-wire recipe (plan)
+
+Records the precise, **validated** recipe for the Slice-2c atomic wire (adding `queueNextTargetBlocked`
+as the 20th `ipcInvariantFull` conjunct) in the plan's Slice 2c note, after prototyping the structural
+half in isolation and confirming it builds.
+
+- The 5 `Defs.lean` structural edits (def conjunct, `IpcInvariantFull` field, `iff`-bridge both
+  directions via named accessors, the single shifted projection `endpointQueueTailBlockedConsistent`
+  `h.2.2…2`→`h.2.2…2.1` + the new `queueNextTargetBlocked` projection `h.2.2…2.2`, and the
+  `ipcInvariantFull_of_core_replyCallerLinkage` + `ipcInvariantFull_compositional` params) — verified
+  by building `Defs.lean` in isolation with the 20-conjunct invariant.
+- The exact **17 producers** that then append a qNTB tuple term (10 direct-tuple bundles + 2 reply
+  mutators + 3 arch frames + cross-core + per-core), with the path-(b) per-producer recipe (thread
+  `hQNTB'` on the IPC/cross/per-core bundles, `endpointSendDual` establisher, object-frame for the arch
+  frames + reply mutators).
+
+Docs-only (the prototyped Lean edits were reverted to keep the tree green — the wire is one focused
+all-or-nothing commit best done next). No Lean change; `test_smoke` green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.34 — IPC de-threading D4 Slice 2c: reusable no-incoming framing core
 
 Adds the reusable framing infrastructure for "no thread's `queueNext` points to `t`" — the discharge

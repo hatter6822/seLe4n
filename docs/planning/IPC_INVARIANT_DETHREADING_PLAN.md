@@ -327,13 +327,28 @@ What remains, per invariant:
   Two paths to the goal: (a) complete all qNTB establishers then wire+qHBC; or (b) wire qNTB with
   `hQNTB'` *threaded* for the hard IPC bundles (established for the frame-style producers +
   `endpointSendDual`), build the easier `qHBC` establishers, drop `hQHBC'`, then de-thread `hQNTB'` as
-  follow-on.  **Remaining 2c work** (next slices, in order): (2) the per-transition establishers
-  composing keystone (block) + pop/rendezvous (the receiver-`.ready` store via the
-  `storeTcbIpcStateAndMessage` frame with `hFwd` trivial [`.ready` source] + `hBwd` discharged by
-  `…_popped_no_incoming` or `hXNoIncoming`); (3) the **atomic** wire — add
-  `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct (def + named `IpcInvariantFull`
-  field + `iff` bridge + projection + `ipcInvariantFull_of_core_replyCallerLinkage`), establish it for
-  every producer (most are object-frames; the enqueue/pop transitions use step 2), then build the
+  follow-on.  **Atomic-wire recipe VALIDATED (structural half builds in isolation):** the 5 `Defs.lean`
+  edits are (a) append `∧ queueNextTargetBlocked st` to the `ipcInvariantFull` def; (b) add the
+  `queueNextTargetBlocked` field to `structure IpcInvariantFull` (last); (c) append
+  `h.queueNextTargetBlocked` to **both** directions of `ipcInvariantFull_iff_IpcInvariantFull` (named
+  accessors — no positional shift); (d) **only the last** `@[simp]` projection shifts —
+  `endpointQueueTailBlockedConsistent` goes `h.2.2…2` (18 `.2`) → `h.2.2…2.1`, and add the new
+  `queueNextTargetBlocked` projection `h.2.2…2.2` (= 19 `.2`); (e) add `(hQNTB : queueNextTargetBlocked
+  st)` param + `, hQNTB` to `ipcInvariantFull_of_core_replyCallerLinkage` **and** the
+  `ipcInvariantFull_compositional` helper.  Then every **producer** appends a qNTB term to its tuple:
+  the **17 producers** are the 10 direct-tuple bundles (`endpointSendDual`/`Call`/`ReceiveDual`/
+  `notificationSignal`/`Wait`/`endpointReply`/`ReplyRecv`/3×WithCaps) + the 2 reply mutators
+  (`linkCallerReply`/`consumeCallerReply`, via `_of_core_replyCallerLinkage`) + 3 arch frames
+  (`advanceTimerState`/`writeRegisterState`/`contextSwitchState`) + cross-core `endpointCallOnCore` +
+  per-core (`CrossSubsystemPerCorePreservation`).  Path-(b) recipe: thread `(hQNTB' :
+  queueNextTargetBlocked st')` on the 10+cross-core+per-core bundles (append `, hQNTB'`); use the
+  `endpointSendDual` establisher for that one; object-frame (`queueNextTargetBlocked_of_objects_eq`) for
+  the 3 arch frames + the 2 reply mutators.  **Remaining 2c work** (next slices, in order): (2) the
+  per-transition establishers composing keystone (block) + pop/rendezvous (the receiver-`.ready` store
+  via the `storeTcbIpcStateAndMessage` frame with `hFwd` trivial [`.ready` source] + `hBwd` discharged
+  by `…_popped_no_incoming` or `hXNoIncoming`); (3) the **atomic** wire per the validated recipe above,
+  establish it for every producer (most are object-frames; the enqueue/pop transitions use step 2),
+  then build the
   `T_preserves_queueHeadBlockedConsistent` establishers (pop new-head blocked via
   `queueNextTargetBlocked` + pre-state qHBC) and drop `hQHBC'` from the 9 bundles + cross-core.
 
