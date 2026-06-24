@@ -58,8 +58,9 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `dualQueueSystemInvariant`.
 It is a `.reply` store (via `linkReply`) followed by a caller `.tcb` store that
 rewrites only `replyObject` (queue links unchanged), so both stores frame the
-dual-queue invariant. -/
-private theorem linkCallerReply_preserves_dualQueueSystemInvariant
+dual-queue invariant.
+IPC de-threading D8: public (consumed by the cross-core `endpointReceiveDualOnCore` establishers). -/
+theorem linkCallerReply_preserves_dualQueueSystemInvariant
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st'))

@@ -1,3 +1,29 @@
+## v0.32.51 — IPC de-threading D8 Slice 6: cross-core receive bundle — first establisher + README/spec metric resync
+
+Starts the cross-core receive bundle: `endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant`,
+the first of the receive transition's per-conjunct establishers. It is a faithful transcription of the
+single-core `endpointReceiveDual_preserves_dualQueueSystemInvariant` across the identical 3-path
+structure — the Call-rendezvous leg is byte-identical (pop + store(.blockedOnReply) + `linkCallerReply`
++ store(receiver→.ready)), the Send-rendezvous swaps `ensureRunnable` → the object-invisible
+`wakeThread` (via `wakeThread_preserves_dualQueueSystemInvariant_of_ready`), and the block leg swaps
+`removeRunnable` → `removeRunnableOnCore`. Reuses the existing per-step lemmas + cross-core frames.
+
+- `import SeLe4n.Kernel.IPC.CrossCore.EndpointReply` added to the staged `EndpointCallInvariant` (the
+  receive transition def); cycle-free (transition files do not import the staged invariant layer).
+- `linkCallerReply_preserves_dualQueueSystemInvariant` promoted from `private` to public.
+
+**Doc-sync fix (Codex PR #827 review, P2):** the README + `SELE4N_SPEC.md` metric blocks were stale
+against the regenerated `docs/codebase_map.json` (200,446 LoC / 6,516 decls → 208,843 / 6,668) because
+the per-slice map regeneration in v0.32.46–50 omitted `sync_readme_from_codebase_map.sh` (a Tier 0 gate
+not exercised by `test_smoke`). Resynced README.md + SELE4N_SPEC.md; `--check` now passes. (Going
+forward this runs each slice.)
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` + README/version sync gates green, trace
+byte-identical, zero `sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored 1276→1277. Version 0.32.51.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 6 — cross-core receive bundle)
+Refs: #827
+
 ## v0.32.50 — IPC de-threading D8 Slice 5: cross-core scheduler-op frames for the receive/reply bundles
 
 Builds the missing general cross-core scheduler-op frames for three lookup-only conjuncts, the

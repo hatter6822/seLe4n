@@ -11,6 +11,7 @@
 -- gated on the SM5.I FFI seam; see docs/planning/SMP_CROSS_CORE_IPC_PLAN.md).
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.Invariant
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
 
@@ -1117,6 +1118,174 @@ theorem endpointCallOnCore_preserves_dualQueueSystemInvariant
               have hInv5 := linkServerStashedReply_preserves_dualQueueSystemInvariant st4 st5 caller pair.1 hObjInv4 hLink hInv4
               show dualQueueSystemInvariant (removeRunnableOnCore st5 caller executingCore)
               exact removeRunnableOnCore_preserves_dualQueueSystemInvariant st5 caller executingCore hInv5
+
+-- ============================================================================
+-- WS-SM SM6.D / IPC de-threading D8: cross-core RECEIVE bundle establishers.
+-- `endpointReceiveDualOnCore` mirrors the single-core `endpointReceiveDual` (the
+-- Call-rendezvous leg is identical; the Send-rendezvous swaps `ensureRunnable` →
+-- the object-invisible `wakeThread`, and the block leg swaps `removeRunnable` →
+-- `removeRunnableOnCore`).  These reuse the single-core per-step lemmas + the
+-- cross-core scheduler-op frames above.
+-- ============================================================================
+
+-- (The `simp only [h…]` reductions mirror the single-core hyp-based template applied to the
+-- goal; the per-branch `cases h…` already substitutes the scrutinee, so the named args are a
+-- harmless redundancy — the linter is scoped off for this transcription rather than diverging
+-- from the single-core structure.)
+set_option linter.unusedSimpArgs false in
+/-- Cross-core receive preserves `dualQueueSystemInvariant`. -/
+theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st)
+    (hFreshReceiver : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver)
+    (hRecvTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.receiveQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.sendQ.tail ≠ some tailTid)) :
+    dualQueueSystemInvariant (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1 := by
+  unfold endpointReceiveDualOnCore
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only [hEp]; split <;> exact hInv
+  | some ep =>
+    simp only [hEp]
+    cases hHead : ep.sendQ.head with
+    | some sndr =>
+      simp only [hHead]
+      cases hPop : endpointQueuePopHead endpointId false st with
+      | error e => simp only [hPop]; exact hInv
+      | ok pair =>
+        simp only [hPop]
+        have hInv1 := endpointQueuePopHead_preserves_dualQueueSystemInvariant
+          _ _ _ _ _ hObjInv hPop hInv
+        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt
+          endpointId false st pair.2.2 pair.1 pair.2.1 hObjInv hPop
+        cases hSenderIpc : pair.2.1.ipcState with
+        | blockedOnCall epCall =>
+          simp only [hSenderIpc, ite_true]
+          cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1
+              (.blockedOnReply endpointId (some receiver)) none with
+          | error e => simp only [hStore]; exact hInv
+          | ok st2 =>
+            simp only [hStore]
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInv1 hStore
+            have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+              pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInv1 hStore hInv1
+            cases hReplyId : replyId with
+            | none => simp only [hReplyId]; exact hInv
+            | some rid =>
+              simp only [hReplyId]
+              cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+              | error e => simp only [hLink]; exact hInv
+              | ok pLink =>
+                obtain ⟨_, stLinked⟩ := pLink
+                simp only [hLink]
+                have hObjInvLink := linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInv2 hLink
+                have hInvLink := linkCallerReply_preserves_dualQueueSystemInvariant
+                  st2 stLinked pair.1 rid hObjInv2 hLink hInv2
+                cases hMsg : storeTcbIpcStateAndMessage stLinked receiver .ready pair.2.1.pendingMessage with
+                | error e => simp only [hMsg]; exact hInv
+                | ok st3 =>
+                  simp only [hMsg]
+                  exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                    stLinked _ receiver .ready pair.2.1.pendingMessage hObjInvLink hMsg hInvLink
+        | ready | blockedOnSend _ | blockedOnReceive _
+          | blockedOnReply _ _ | blockedOnNotification _ =>
+          simp only [hSenderIpc]
+          cases hStore : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
+          | error e => simp only [hStore]; exact hInv
+          | ok st2 =>
+            simp only [hStore]
+            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              pair.2.2 st2 pair.1 .ready none hObjInv1 hStore
+            have hInv2 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+              pair.2.2 st2 pair.1 .ready none hObjInv1 hStore hInv1
+            obtain ⟨tr, hTrGet, hTrReady⟩ :=
+              storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready none hObjInv1 hStore
+            have hInvW := wakeThread_preserves_dualQueueSystemInvariant_of_ready
+              st2 pair.1 executingCore tr hTrGet hTrReady hObjInv2 hInv2
+            have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObjInv2
+            cases hMsg : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 receiver .ready
+                pair.2.1.pendingMessage with
+            | error e => simp only [hMsg]; exact hInv
+            | ok st4 =>
+              simp only [hMsg]
+              exact storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                (wakeThread st2 pair.1 executingCore).1 _ receiver .ready pair.2.1.pendingMessage hObjW hMsg hInvW
+    | none =>
+      simp only [hHead]
+      cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+      | error _ => simp only [hChecked]; exact hInv
+      | ok stClean =>
+        have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+        simp only [hChecked]
+        rw [hBridge]
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hInv
+        have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+            (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep) →
+            ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+            ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
+          fun epId ep hEp =>
+            hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId ep hEp)
+        have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep) →
+            ep.receiveQ.tail = some tailTid →
+            ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+              (cleanupPreReceiveDonation st receiver).objects[epId']? = some (.endpoint ep') →
+              (epId' ≠ endpointId →
+                ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+              (epId' = endpointId →
+                ep'.sendQ.tail ≠ some tailTid) :=
+          fun ep tailTid hEp hTail epId' ep' hEp' =>
+            hRecvTailFresh ep tailTid
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep hEp) hTail
+              epId' ep'
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep' hEp')
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+        | error e => simp only [hEnq]; exact hInv
+        | ok st1 =>
+          simp only [hEnq]
+          have hInv1 := endpointQueueEnqueue_preserves_dualQueueSystemInvariant
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEnq hInvClean hObjInvClean
+            hFreshReceiverClean hRecvTailFreshClean
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+          cases hStore : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+          | error e => simp only [hStore]; exact hInv
+          | ok st2 =>
+            simp only [hStore]
+            have hInv2 := storeTcbIpcState_preserves_dualQueueSystemInvariant st1 st2 receiver _ hObjInv1 hStore hInv1
+            have hObjInv2 := storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInv1 hStore
+            cases hGetR : st2.getTcb? receiver with
+            | none =>
+              simp only [hGetR]
+              exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore hInv2
+            | some rTcb =>
+              simp only [hGetR]
+              cases hStash : storeObject receiver.toObjId
+                  (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+              | error e => simp only [hStash]; exact hInv
+              | ok pStash =>
+                obtain ⟨_, stStashed⟩ := pStash
+                simp only [hStash]
+                have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                  (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore
+                  (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
+                    st2 stStashed receiver.toObjId rTcb
+                    { rTcb with pendingReceiveReply := replyId } rfl rfl
+                    hTcbPre hObjInv2 hStash hInv2)
 
 /-- IPC de-threading D8: `removeRunnableOnCore` preserves `endpointQueueNoDup`
 (objects unchanged — pure scheduler op). -/
