@@ -1,3 +1,27 @@
+## v0.32.33 — IPC de-threading D4 Slice 2c: first per-transition qNTB establisher (`endpointSendDual`)
+
+First per-transition `queueNextTargetBlocked` establisher, composing the Slice-2c block keystone and
+pop/rendezvous foundation — the proven template the remaining transitions replicate.
+
+- `storeTcbReceiveComplete_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — the
+  rendezvous receiver-wake frame: `tid` becomes a `.ready` *source* (its outgoing strict-match
+  obligation is vacuous — `.ready ≠ blockedOn…`); as a *target* it would break the invariant, but the
+  caller-supplied `hNoIncoming` (the popped head has no incoming link) rules that out. Every other
+  link is framed.
+- `endpointSendDual_preserves_queueNextTargetBlocked` (`DualQueueMembership.lean`) — block branch:
+  sendQ enqueue + `.blockedOnSend` block-store via the keystone, then `removeRunnable`; rendezvous
+  branch: receiveQ pop (preserves qNTB) + receiver `.ready` store (`storeTcbReceiveComplete`,
+  `hNoIncoming` = `endpointQueuePopHead_popped_no_incoming`) + `ensureRunnable`.
+
+Still additive (not yet a conjunct of `ipcInvariantFull`). Remaining 2c: the rest of the
+per-transition establishers (`endpointCall`/`ReceiveDual`/`ReplyRecv`/WithCaps/cross-core + the
+non-enqueue framers), the atomic 20th-conjunct wire, and the `hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build + `test_smoke` green.
+`RAW_LOOKUP_TID` re-anchored 1184→1185.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.32 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` pop/rendezvous foundation
 
 Completes the pop (rendezvous) side of the Slice-2c establisher machinery.

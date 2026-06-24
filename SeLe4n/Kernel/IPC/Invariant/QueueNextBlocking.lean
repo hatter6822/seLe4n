@@ -1917,4 +1917,44 @@ theorem endpointQueuePopHead_popped_queuePrev_none
                     rintro ⟨rfl, _, rfl⟩
                     exact storeTcbQueueLinks_stored_queuePrev st2 st3 headTid none none none hInv2 hFinal
 
+/-- `storeTcbReceiveComplete` (sets `tid` `.ready`) preserves `queueNextTargetBlocked` provided `tid`
+has no incoming `queueNext` link (`hNoIncoming`).  `tid` becomes a `.ready` *source* (its outgoing
+links' strict-match obligation is vacuous — `.ready ≠ blockedOn…`); as a *target* it would break the
+invariant, but `hNoIncoming` rules out any link to it.  Every other link is framed.  The rendezvous
+wakes the popped head, whose `hNoIncoming` is `endpointQueuePopHead_popped_no_incoming`. -/
+theorem storeTcbReceiveComplete_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hInv : queueNextTargetBlocked st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st')
+    (hNoIncoming : ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some tid) :
+    queueNextTargetBlocked st' := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb { origTcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      have hEqAt := storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore
+      have hFrame : ∀ x, x ≠ tid.toObjId → pair.snd.objects[x]? = st.objects[x]? :=
+        fun x hNe => storeObject_objects_ne' st tid.toObjId x _ pair hNe hObjInv hStore
+      intro a b tcbA tcbB hA hB hN
+      by_cases hEqA : a.toObjId = tid.toObjId
+      · rw [hEqA] at hA; rw [hEqAt] at hA
+        have hIpcA : tcbA.ipcState = .ready := by cases Option.some.inj hA; rfl
+        rw [hIpcA]
+        exact ⟨fun ep h => by simp at h, fun ep h => by rcases h with h | h <;> simp at h⟩
+      · rw [hFrame a.toObjId hEqA] at hA
+        by_cases hEqB : b.toObjId = tid.toObjId
+        · have hBTid := SeLe4n.ThreadId.toObjId_injective b tid hEqB; subst hBTid
+          exact absurd hN (hNoIncoming a tcbA hA)
+        · rw [hFrame b.toObjId hEqB] at hB
+          exact hInv a b tcbA tcbB hA hB hN
+
 end SeLe4n.Kernel

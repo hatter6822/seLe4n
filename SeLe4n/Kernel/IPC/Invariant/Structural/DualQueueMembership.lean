@@ -2516,6 +2516,79 @@ theorem endpointSendDual_preserves_endpointQueueTailBlockedConsistent
                 (fun epId e hE => ⟨(hFreshSender epId e hE).2.1, (hFreshSender epId e hE).2.2.2⟩)
                 (by simp) hEnq hMsg
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: `endpointSendDual` **establishes** `queueNextTargetBlocked`.
+Block branch: sendQ enqueue + `.blockedOnSend` block-store via the Slice-2c keystone, then
+`removeRunnable` (frame).  Rendezvous branch: receiveQ pop (preserves qNTB) + receiver `.ready`
+store (`storeTcbReceiveComplete`, `hNoIncoming` discharged by `endpointQueuePopHead_popped_no_incoming`)
++ `ensureRunnable` (frame). -/
+theorem endpointSendDual_preserves_queueNextTargetBlocked
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (sender : SeLe4n.ThreadId) (msg : IpcMessage)
+    (hQNTB : queueNextTargetBlocked st)
+    (hInv : endpointQueueTailBlockedConsistent st)
+    (hDQSI : dualQueueSystemInvariant st)
+    (hObjInv : st.objects.invExt)
+    (hFreshSender : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some sender ∧ ep.sendQ.tail ≠ some sender ∧
+      ep.receiveQ.head ≠ some sender ∧ ep.receiveQ.tail ≠ some sender)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId → ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → ep'.receiveQ.tail ≠ some tailTid))
+    (hStep : endpointSendDual endpointId sender msg st = .ok ((), st')) :
+    queueNextTargetBlocked st' := by
+  unfold endpointSendDual at hStep
+  simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  simp only [show ¬(maxExtraCaps < msg.caps.size) from by
+    intro h; simp [h] at hStep, ↓reduceIte] at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : ep.receiveQ.head with
+      | some _ =>
+        cases hPop : endpointQueuePopHead endpointId true st with
+        | error e => simp [hHead, hPop] at hStep
+        | ok pair =>
+          simp only [hHead, hPop] at hStep
+          have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+            pair.1 pair.2.1 hObjInv hPop
+          have hQNTB1 := endpointQueuePopHead_preserves_queueNextTargetBlocked endpointId true st
+            pair.2.2 pair.1 pair.2.1 hObjInv hQNTB hPop
+          have hNoInc := endpointQueuePopHead_popped_no_incoming endpointId true st pair.2.2 pair.1
+            pair.2.1 hObjInv hDQSI hPop
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact ensureRunnable_preserves_queueNextTargetBlocked _ _ <|
+              storeTcbReceiveComplete_preserves_queueNextTargetBlocked pair.2.2 st2 pair.1
+                (some msg) hQNTB1 hObjInv1 hMsg hNoInc
+      | none =>
+        cases hEnq : endpointQueueEnqueue endpointId false sender st with
+        | error e => simp [hHead, hEnq] at hStep
+        | ok st1 =>
+          simp only [hHead, hEnq] at hStep
+          cases hMsg : storeTcbIpcStateAndMessage st1 sender (.blockedOnSend endpointId) (some msg) with
+          | error e => simp [hMsg] at hStep
+          | ok st2 =>
+            simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hEq⟩ := hStep; subst hEq
+            exact removeRunnable_preserves_queueNextTargetBlocked _ _ <|
+              endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked
+                endpointId false sender st st1 st2 ep (.blockedOnSend endpointId) (some msg)
+                hObjInv hObj hQNTB hInv hDQSI hFreshSender hSendTailFresh (by simp) hEnq hMsg
+
 -- ============================================================================
 -- WS-L3/L3-C2: ipcStateQueueConsistent preservation for queue operations
 -- ============================================================================
