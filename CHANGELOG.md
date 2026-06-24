@@ -1,3 +1,35 @@
+## v0.32.38 — IPC de-threading D4 Slice 2c: qHBC enqueue keystone (both store variants) + `post_head_cases`
+
+Lands the **block-leg** keystone for de-threading `queueHeadBlockedConsistent` (`hQHBC'`) from the
+endpoint transitions — the enqueue counterpart of the v0.32.37 rendezvous-pop core. Foundation only
+(the endpoint `qHBC` establishers that compose the pop core + this keystone are the next slice).
+
+- **`endpointQueueEnqueue_post_head_cases`** (`DualQueue/Transport.lean`) — the enqueue dual of
+  `endpointQueuePopHead_post_endpoint_queues`: after `endpointQueueEnqueue`, the enqueued queue's
+  **head** is either the freshly-enqueued `tid` (queue was empty) or the unchanged old head
+  (non-empty), and the *other* queue's head is unchanged. The endpoint is the only object whose
+  queue-boundary fields the enqueue rewrites (the subsequent `storeTcbQueueLinks` touch only TCB links).
+- **`endpointQueueEnqueue_blockStoreIpc_establishes_queueHeadBlockedConsistent`** (`storeTcbIpcState`
+  variant — the `Receive`/`Call` block legs) and
+  **`endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent`**
+  (`storeTcbIpcStateAndMessage` variant — the `Send` block legs). `endpointQueueEnqueue` appends `tid`
+  as the new tail (head iff the queue was empty); the paired block-store sets `tid` to `blockState`
+  (blocked on the enqueued direction's endpoint, `hBlock`). Every post-state head is therefore either a
+  pre-state head (unchanged `ipcState`, blocked by `qHBC`) or `tid` in the empty-queue case (blocked by
+  `hBlock`); `tid` is fresh (`hFreshTid`), so it heads no *other* queue. Mirrors the `qNTB` enqueue
+  keystone; `qHBC` reads only `ipcState`, so the `Send` variant's extra `pendingMessage` write is
+  invisible.
+
+With the v0.32.37 pop core, both legs of the endpoint transitions' `qHBC` preservation are now
+provable from the pre-state (qNTB for the pop's new head; `hBlock`/`qHBC` for the enqueue). Wiring the
+per-transition establishers (`endpointSendDual` / `Receive` / `Call` / `…WithCaps` / cross-core) +
+dropping their `hQHBC'` is the next slice.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (keystone + structural-lemma raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.37 — IPC de-threading D4 Slice 2c: qHBC pop core + de-thread `hQHBC'` from `notificationWait`
 
 First step of the actual Slice-2c goal — **de-threading `queueHeadBlockedConsistent` (`hQHBC'`)** —

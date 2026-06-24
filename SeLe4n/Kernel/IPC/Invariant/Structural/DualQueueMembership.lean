@@ -15093,6 +15093,233 @@ theorem endpointReply_preserves_queueNextBlockingConsistent
         · simp at hStep
 
 open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: the enqueue+block-store keystone for `queueHeadBlockedConsistent`.
+`endpointQueueEnqueue` appends `tid` as the new tail (head iff the queue was empty); the paired
+`storeTcbIpcState` sets `tid` to `blockState` (blocked on the enqueued direction's endpoint, `hBlock`).
+Every post-state head is therefore either a pre-state head (unchanged `ipcState`, blocked by `qHBC`) or
+`tid` in the empty-queue case (blocked by `hBlock`); `tid` is fresh (`hFreshTid`), so it heads no
+*other* queue.  Mirrors the `qNTB` enqueue keystone, supplying the block (enqueue) legs of the
+endpoint transitions' `qHBC` establishers (de-threads `hQHBC'`). -/
+theorem endpointQueueEnqueue_blockStoreIpc_establishes_queueHeadBlockedConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st1 st2 : SystemState) (ep : Endpoint)
+    (blockState : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (e : Endpoint),
+      st.objects[epId]? = some (.endpoint e) →
+      e.sendQ.head ≠ some tid ∧ e.sendQ.tail ≠ some tid ∧
+      e.receiveQ.head ≠ some tid ∧ e.receiveQ.tail ≠ some tid)
+    (hBlock : if isReceiveQ then blockState = .blockedOnReceive endpointId
+              else blockState = .blockedOnSend endpointId ∨ blockState = .blockedOnCall endpointId)
+    (hEnq : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st1)
+    (hStore : storeTcbIpcState st1 tid blockState = .ok st2) :
+    queueHeadBlockedConsistent st2 := by
+  have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId isReceiveQ tid st st1 hObjInv hEnq
+  obtain ⟨epPost, hEpPost, hHeadDisj, hOtherHead⟩ :=
+    endpointQueueEnqueue_post_head_cases endpointId isReceiveQ tid st st1 ep hObj hObjInv hEnq
+  -- The block-store writes a TCB at `tid`.
+  have hTidTcb : ∃ t, st2.objects[tid.toObjId]? = some (.tcb t) := by
+    unfold storeTcbIpcState at hStore
+    cases hLk : lookupTcb st1 tid with
+    | none => simp [hLk] at hStore
+    | some tcb0 =>
+      simp only [hLk] at hStore
+      cases hSt : storeObject tid.toObjId (.tcb { tcb0 with ipcState := blockState }) st1 with
+      | error e => simp [hSt] at hStore
+      | ok pair =>
+        simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+        exact ⟨_, storeObject_objects_eq' st1 tid.toObjId _ pair hObjInv1 hSt⟩
+  obtain ⟨tidTcb, hTidTcbMem⟩ := hTidTcb
+  -- Recover hd's pre-state ipcState for any hd ≠ tid (enqueue + block-store leave it intact).
+  have hHdBack : ∀ (h0 : SeLe4n.ThreadId) (t0 : TCB), h0.toObjId ≠ tid.toObjId →
+      st2.objects[h0.toObjId]? = some (.tcb t0) →
+      ∃ t0Pre, st.objects[h0.toObjId]? = some (.tcb t0Pre) ∧ t0Pre.ipcState = t0.ipcState := by
+    intro h0 t0 hNe hT0
+    have hT1 : st1.objects[h0.toObjId]? = some (.tcb t0) := by
+      rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState h0.toObjId hNe hObjInv1 hStore]
+      exact hT0
+    exact endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ tid st st1 h0 t0 hObjInv hEnq hT1
+  intro eid ep' hd tcbHd hEp' hTcb
+  have hEpNeTid : eid ≠ tid.toObjId := by
+    intro h; rw [h, hTidTcbMem] at hEp'; cases hEp'
+  have hEp1 : st1.objects[eid]? = some (.endpoint ep') := by
+    rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState eid hEpNeTid hObjInv1 hStore]
+    exact hEp'
+  by_cases hEidEp : eid = endpointId
+  · -- The enqueued endpoint: `ep' = epPost`.
+    subst eid
+    obtain rfl : ep' = epPost := by rw [hEp1] at hEpPost; simpa using hEpPost
+    cases hRQ : isReceiveQ with
+    | true =>
+      subst hRQ
+      simp only [↓reduceIte] at hHeadDisj hOtherHead hBlock
+      refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+      · -- receiveQ (enqueued): head is `tid` (⇒ blockState) or the old head (⇒ pre-state `qHBC`).
+        rcases hHeadDisj with hT | hOld
+        · have hHdEq : hd = tid := by have := hHd.symm.trans hT; simpa using this
+          have hState := storeTcbIpcState_ipcState_eq st1 st2 tid blockState hObjInv1 hStore tcbHd (hHdEq ▸ hTcb)
+          rw [hState]; exact hBlock
+        · have hHeadSt : ep.receiveQ.head = some hd := hOld.symm.trans hHd
+          have hNe : hd.toObjId ≠ tid.toObjId := by
+            intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+            exact (hFreshTid endpointId ep hObj).2.2.1 hHeadSt
+          obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+          rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).1 hHeadSt
+      · -- sendQ (other queue, unchanged): pre-state `qHBC`.
+        have hHeadSt : ep.sendQ.head = some hd := hOtherHead.symm.trans hHd
+        have hNe : hd.toObjId ≠ tid.toObjId := by
+          intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+          exact (hFreshTid endpointId ep hObj).1 hHeadSt
+        obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+        rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).2 hHeadSt
+    | false =>
+      subst hRQ
+      simp only [Bool.false_eq_true, ↓reduceIte] at hHeadDisj hOtherHead hBlock
+      refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+      · -- receiveQ (other queue, unchanged): pre-state `qHBC`.
+        have hHeadSt : ep.receiveQ.head = some hd := hOtherHead.symm.trans hHd
+        have hNe : hd.toObjId ≠ tid.toObjId := by
+          intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+          exact (hFreshTid endpointId ep hObj).2.2.1 hHeadSt
+        obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+        rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).1 hHeadSt
+      · -- sendQ (enqueued): head is `tid` (⇒ blockState) or the old head (⇒ pre-state `qHBC`).
+        rcases hHeadDisj with hT | hOld
+        · have hHdEq : hd = tid := by have := hHd.symm.trans hT; simpa using this
+          have hState := storeTcbIpcState_ipcState_eq st1 st2 tid blockState hObjInv1 hStore tcbHd (hHdEq ▸ hTcb)
+          rw [hState]; exact hBlock
+        · have hHeadSt : ep.sendQ.head = some hd := hOld.symm.trans hHd
+          have hNe : hd.toObjId ≠ tid.toObjId := by
+            intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+            exact (hFreshTid endpointId ep hObj).1 hHeadSt
+          obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+          rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).2 hHeadSt
+  · -- Other endpoint: `ep'` frames to `st`; `tid` heads it not (fresh).
+    have hEpSt : st.objects[eid]? = some (.endpoint ep') :=
+      endpointQueueEnqueue_endpoint_backward_ne endpointId isReceiveQ tid st st1 eid ep' hEidEp hObjInv hEnq hEp1
+    refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+    · have hNe : hd.toObjId ≠ tid.toObjId := by
+        intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+        exact (hFreshTid eid ep' hEpSt).2.2.1 hHd
+      obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+      rw [← hIpc]; exact (hQHBC eid ep' hd tPre hEpSt hPre).1 hHd
+    · have hNe : hd.toObjId ≠ tid.toObjId := by
+        intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+        exact (hFreshTid eid ep' hEpSt).1 hHd
+      obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+      rw [← hIpc]; exact (hQHBC eid ep' hd tPre hEpSt hPre).2 hHd
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: the `storeTcbIpcStateAndMessage` variant of the enqueue+block-store
+`queueHeadBlockedConsistent` keystone (for the `Send` transitions, which deliver a pending message
+with the block).  `qHBC` reads only `ipcState`, so the extra `pendingMessage` write is invisible;
+otherwise identical to `endpointQueueEnqueue_blockStoreIpc_establishes_queueHeadBlockedConsistent`. -/
+theorem endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st1 st2 : SystemState) (ep : Endpoint)
+    (blockState : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hQHBC : queueHeadBlockedConsistent st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (e : Endpoint),
+      st.objects[epId]? = some (.endpoint e) →
+      e.sendQ.head ≠ some tid ∧ e.sendQ.tail ≠ some tid ∧
+      e.receiveQ.head ≠ some tid ∧ e.receiveQ.tail ≠ some tid)
+    (hBlock : if isReceiveQ then blockState = .blockedOnReceive endpointId
+              else blockState = .blockedOnSend endpointId ∨ blockState = .blockedOnCall endpointId)
+    (hEnq : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st1)
+    (hStore : storeTcbIpcStateAndMessage st1 tid blockState msg = .ok st2) :
+    queueHeadBlockedConsistent st2 := by
+  have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId isReceiveQ tid st st1 hObjInv hEnq
+  obtain ⟨epPost, hEpPost, hHeadDisj, hOtherHead⟩ :=
+    endpointQueueEnqueue_post_head_cases endpointId isReceiveQ tid st st1 ep hObj hObjInv hEnq
+  have hTidTcb : ∃ t, st2.objects[tid.toObjId]? = some (.tcb t) := by
+    unfold storeTcbIpcStateAndMessage at hStore
+    cases hLk : lookupTcb st1 tid with
+    | none => simp [hLk] at hStore
+    | some tcb0 =>
+      simp only [hLk] at hStore
+      cases hSt : storeObject tid.toObjId (.tcb { tcb0 with ipcState := blockState, pendingMessage := msg }) st1 with
+      | error e => simp [hSt] at hStore
+      | ok pair =>
+        simp only [hSt, Except.ok.injEq] at hStore; subst hStore
+        exact ⟨_, storeObject_objects_eq' st1 tid.toObjId _ pair hObjInv1 hSt⟩
+  obtain ⟨tidTcb, hTidTcbMem⟩ := hTidTcb
+  have hHdBack : ∀ (h0 : SeLe4n.ThreadId) (t0 : TCB), h0.toObjId ≠ tid.toObjId →
+      st2.objects[h0.toObjId]? = some (.tcb t0) →
+      ∃ t0Pre, st.objects[h0.toObjId]? = some (.tcb t0Pre) ∧ t0Pre.ipcState = t0.ipcState := by
+    intro h0 t0 hNe hT0
+    have hT1 : st1.objects[h0.toObjId]? = some (.tcb t0) := by
+      rw [← storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 tid blockState msg h0.toObjId hNe hObjInv1 hStore]
+      exact hT0
+    exact endpointQueueEnqueue_tcb_ipcState_backward endpointId isReceiveQ tid st st1 h0 t0 hObjInv hEnq hT1
+  intro eid ep' hd tcbHd hEp' hTcb
+  have hEpNeTid : eid ≠ tid.toObjId := by
+    intro h; rw [h, hTidTcbMem] at hEp'; cases hEp'
+  have hEp1 : st1.objects[eid]? = some (.endpoint ep') := by
+    rw [← storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 tid blockState msg eid hEpNeTid hObjInv1 hStore]
+    exact hEp'
+  by_cases hEidEp : eid = endpointId
+  · subst eid
+    obtain rfl : ep' = epPost := by rw [hEp1] at hEpPost; simpa using hEpPost
+    cases hRQ : isReceiveQ with
+    | true =>
+      subst hRQ
+      simp only [↓reduceIte] at hHeadDisj hOtherHead hBlock
+      refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+      · rcases hHeadDisj with hT | hOld
+        · have hHdEq : hd = tid := by have := hHd.symm.trans hT; simpa using this
+          have hState := storeTcbIpcStateAndMessage_ipcState_eq st1 st2 tid blockState msg hObjInv1 hStore tcbHd (hHdEq ▸ hTcb)
+          rw [hState]; exact hBlock
+        · have hHeadSt : ep.receiveQ.head = some hd := hOld.symm.trans hHd
+          have hNe : hd.toObjId ≠ tid.toObjId := by
+            intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+            exact (hFreshTid endpointId ep hObj).2.2.1 hHeadSt
+          obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+          rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).1 hHeadSt
+      · have hHeadSt : ep.sendQ.head = some hd := hOtherHead.symm.trans hHd
+        have hNe : hd.toObjId ≠ tid.toObjId := by
+          intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+          exact (hFreshTid endpointId ep hObj).1 hHeadSt
+        obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+        rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).2 hHeadSt
+    | false =>
+      subst hRQ
+      simp only [Bool.false_eq_true, ↓reduceIte] at hHeadDisj hOtherHead hBlock
+      refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+      · have hHeadSt : ep.receiveQ.head = some hd := hOtherHead.symm.trans hHd
+        have hNe : hd.toObjId ≠ tid.toObjId := by
+          intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+          exact (hFreshTid endpointId ep hObj).2.2.1 hHeadSt
+        obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+        rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).1 hHeadSt
+      · rcases hHeadDisj with hT | hOld
+        · have hHdEq : hd = tid := by have := hHd.symm.trans hT; simpa using this
+          have hState := storeTcbIpcStateAndMessage_ipcState_eq st1 st2 tid blockState msg hObjInv1 hStore tcbHd (hHdEq ▸ hTcb)
+          rw [hState]; exact hBlock
+        · have hHeadSt : ep.sendQ.head = some hd := hOld.symm.trans hHd
+          have hNe : hd.toObjId ≠ tid.toObjId := by
+            intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+            exact (hFreshTid endpointId ep hObj).1 hHeadSt
+          obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+          rw [← hIpc]; exact (hQHBC endpointId ep hd tPre hObj hPre).2 hHeadSt
+  · have hEpSt : st.objects[eid]? = some (.endpoint ep') :=
+      endpointQueueEnqueue_endpoint_backward_ne endpointId isReceiveQ tid st st1 eid ep' hEidEp hObjInv hEnq hEp1
+    refine ⟨fun hHd => ?_, fun hHd => ?_⟩
+    · have hNe : hd.toObjId ≠ tid.toObjId := by
+        intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+        exact (hFreshTid eid ep' hEpSt).2.2.1 hHd
+      obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+      rw [← hIpc]; exact (hQHBC eid ep' hd tPre hEpSt hPre).1 hHd
+    · have hNe : hd.toObjId ≠ tid.toObjId := by
+        intro h; obtain rfl : hd = tid := ThreadId.toObjId_injective hd tid h
+        exact (hFreshTid eid ep' hEpSt).1 hHd
+      obtain ⟨tPre, hPre, hIpc⟩ := hHdBack hd tcbHd hNe hTcb
+      rw [← hIpc]; exact (hQHBC eid ep' hd tPre hEpSt hPre).2 hHd
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2c: `endpointQueuePopHead` **preserves** `queueHeadBlockedConsistent`
 using the pre-state `queueNextTargetBlocked`.  The pop advances the popped queue's head to the old
 head's `queueNext` target (`endpointQueuePopHead_post_endpoint_queues`); that target is blocked on the

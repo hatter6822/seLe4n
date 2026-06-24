@@ -379,12 +379,21 @@ What remains, per invariant:
   de-thread: **`notificationWait`** (the easiest — touches the *notification* waitQ, never an endpoint
   queue, so endpoint heads frame; the running waiter is `.ready` ⇒ not a head), via
   `notificationWait_preserves_queueHeadBlockedConsistent` (head dual of the tail-blocked establisher).
-  `RAW_LOOKUP_TID` re-anchored 1203→1205.  **Remaining 2c work:** (a) per-transition qNTB establishers
-  for the 9 threaded bundles (compose keystone + pop/rendezvous + the no-incoming core), de-thread
-  `hQNTB'`; (b) the remaining `T_preserves_queueHeadBlockedConsistent` establishers for the 7 endpoint
-  bundles + cross-core (each composes the pop core above with the **enqueue+block-store `qHBC`
-  keystone** — the empty-queue case where the freshly-blocked thread becomes the head — still to build),
-  drop `hQHBC'`.
+  `RAW_LOOKUP_TID` re-anchored 1203→1205.
+
+  **qHBC ENQUEUE KEYSTONE LANDED (v0.32.38):** the block-leg counterpart of the pop core.
+  `endpointQueueEnqueue_post_head_cases` (`Transport.lean`, the enqueue dual of
+  `endpointQueuePopHead_post_endpoint_queues`: enqueued-dir head = `tid` if empty else old head; other
+  dir unchanged) + the two keystones `endpointQueueEnqueue_blockStore{Ipc,}_establishes_queueHeadBlockedConsistent`
+  (`storeTcbIpcState` for `Receive`/`Call`, `storeTcbIpcStateAndMessage` for `Send`): every post-state
+  head is a pre-state head (unchanged `ipcState`, blocked by `qHBC`) or `tid` in the empty case (blocked
+  by `hBlock`); `tid` is fresh (`hFreshTid`), so heads no other queue.  `RAW_LOOKUP_TID` re-anchored
+  1205→1213.  **Both legs of the endpoint transitions' `qHBC` preservation are now provable from the
+  pre-state** (qNTB for the pop's new head; `hBlock`/`qHBC` for the enqueue).  **Remaining 2c work:**
+  (a) per-transition qNTB establishers for the 9 threaded bundles (compose qNTB keystone + pop/rendezvous
+  + the no-incoming core), de-thread `hQNTB'`; (b) the per-transition `qHBC` establishers for the 7
+  endpoint bundles + cross-core — compose the pop core (rendezvous legs, with popped-head/receiver
+  "not a head" facts) + the enqueue keystones (block legs) — drop `hQHBC'`.
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).
