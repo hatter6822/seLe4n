@@ -301,10 +301,16 @@ What remains, per invariant:
   + target blocked-same-endpoint ⇒ strict-match through `queueNextTargetBlocked_clause_of_predecessor_block`),
   `tid.queueNext = none` for the no-outgoing-link case, and the new `endpointQueueEnqueue_tcb_queueNext_backward_ne`
   + `storeTcbIpcStateAndMessage/storeTcbIpcState_tcb_queueNext_backward` backward helpers for the
-  framed pre-existing links.  **Remaining 2c work** (next slices, in order): (2) `endpointQueuePopHead`
-  qNTB preservation (the pop *removes* the head's outgoing link — no new link — but the rendezvous
-  receiver-`.ready` store needs "the popped head has no incoming link") + the per-transition
-  establishers composing keystone (block) + pop (rendezvous); (3) the **atomic** wire — add
+  framed pre-existing links.  **POP/RENDEZVOUS FOUNDATION LANDED (v0.32.32):**
+  `endpointQueuePopHead_preserves_queueNextTargetBlocked` (the pop only *removes* the head's outgoing
+  link + re-stores the new head's own `queueNext` unchanged — no new link), plus the receiver-`.ready`
+  discharge facts `endpointQueuePopHead_popped_queuePrev_none` (the pop's final
+  `storeTcbQueueLinks headTid none none none` clears the head's `queuePrev`) and
+  `endpointQueuePopHead_popped_no_incoming` (post-pop link integrity + cleared `queuePrev` ⇒ no thread
+  links to the popped head, so setting it `.ready` is safe).  **Remaining 2c work** (next slices, in
+  order): (2) the per-transition establishers composing keystone (block) + pop/rendezvous (the
+  receiver-`.ready` store via the `storeTcbIpcStateAndMessage` frame with `hFwd` trivial [`.ready`
+  source] + `hBwd` discharged by `…_popped_no_incoming`); (3) the **atomic** wire — add
   `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct (def + named `IpcInvariantFull`
   field + `iff` bridge + projection + `ipcInvariantFull_of_core_replyCallerLinkage`), establish it for
   every producer (most are object-frames; the enqueue/pop transitions use step 2), then build the

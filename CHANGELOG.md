@@ -1,3 +1,30 @@
+## v0.32.32 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` pop/rendezvous foundation
+
+Completes the pop (rendezvous) side of the Slice-2c establisher machinery.
+
+- `endpointQueuePopHead_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — the pop only
+  *removes* the popped head's outgoing link (`headTid.queueNext := none`, a frame whose `hNewLink` is
+  vacuous) and re-stores the new head's own `queueNext` unchanged (the relink, whose `hNewLink` is the
+  pre-existing link discharged from the post-endpoint-store invariant). No new link is created, so the
+  strict per-link invariant is preserved. Mirrors the qNBC analogue.
+- `endpointQueuePopHead_popped_queuePrev_none` (`QueueNextBlocking.lean`) — the pop's final store
+  (`storeTcbQueueLinks headTid none none none`) clears the popped head's `queuePrev`.
+- `endpointQueuePopHead_popped_no_incoming` (`DualQueueMembership.lean`) — post-pop link integrity
+  (`endpointQueuePopHead_preserves_tcbQueueLinkIntegrity`) + the cleared `queuePrev` ⇒ no thread's
+  `queueNext` points to the popped head. This is exactly the obligation the rendezvous receiver-`.ready`
+  store needs: setting a thread `.ready` only breaks `queueNextTargetBlocked` if some blocked thread
+  links to it (the `hBwd` side of the `storeTcbIpcStateAndMessage` frame; `hFwd` is trivial because a
+  `.ready` *source* never triggers the strict antecedent).
+
+Still additive (not yet a conjunct of `ipcInvariantFull`). Remaining 2c: the per-transition
+establishers (compose block keystone + pop/rendezvous), the atomic 20th-conjunct wire, and the
+`hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green.
+`RAW_LOOKUP_TID` re-anchored 1182→1184.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.31 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` enqueue+block-store keystone
 
 Lands the hardest single piece of Slice 2c — the per-transition enqueue establisher keystone. Unlike

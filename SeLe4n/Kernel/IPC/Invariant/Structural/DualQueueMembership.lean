@@ -1615,6 +1615,31 @@ theorem endpointQueuePopHead_preserves_tcbQueueLinkIntegrity
   (endpointQueuePopHead_preserves_dualQueueSystemInvariant
     endpointId isReceiveQ st st' tid hObjInv hStep hInv).2.1
 
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: after `endpointQueuePopHead`, no thread's `queueNext` points to the
+popped head — it had no predecessor (it was the head) and the pop clears its `queuePrev`, so post-pop
+link integrity (`tcbQueueLinkIntegrity`) forbids any incoming link.  This is the obligation the
+rendezvous receiver-`.ready` store needs: setting a thread `.ready` only breaks `queueNextTargetBlocked`
+if some blocked thread links to it. -/
+theorem endpointQueuePopHead_popped_no_incoming
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hDQ : dualQueueSystemInvariant st)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    ∀ (a : SeLe4n.ThreadId) (tcbA : TCB),
+      st'.objects[a.toObjId]? = some (.tcb tcbA) → tcbA.queueNext ≠ some rTid := by
+  obtain ⟨rTcb', hRTcb', hQPrev⟩ :=
+    endpointQueuePopHead_popped_queuePrev_none endpointId isReceiveQ st st' rTid rTcb hObjInv hStep
+  have hLink' := endpointQueuePopHead_preserves_tcbQueueLinkIntegrity endpointId isReceiveQ st st'
+    rTid rTcb hObjInv hStep hDQ
+  intro a tcbA hA hAN
+  obtain ⟨tcbR, hTcbR, hRPrev⟩ := hLink'.1 a tcbA hA rTid hAN
+  rw [hRTcb'] at hTcbR
+  obtain rfl : rTcb' = tcbR := by simpa using hTcbR
+  rw [hQPrev] at hRPrev
+  exact absurd hRPrev (by simp)
+
 /-- WS-L3/L3-B2: Enqueue preserves `tcbQueueLinkIntegrity` as a standalone
 property. Extracts from the bundled `dualQueueSystemInvariant` preservation. -/
 theorem endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity
