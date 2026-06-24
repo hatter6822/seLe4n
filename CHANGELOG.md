@@ -1,3 +1,33 @@
+## v0.32.47 — IPC de-threading D8 Slice 2: cap-transfer `badgeWellFormed` frame
+
+Builds the `ipcUnwrapCaps` `badgeWellFormed` frame — the one cap-transfer step that can affect
+`capabilityBadgesWellFormed` (it inserts message caps into the receiver's CSpace). The frame holds
+provided every transferred cap carries a valid badge, the precondition the dispatch layer discharges
+from the sender's pre-state `capabilityBadgesWellFormed` (message caps are looked up from the
+sender's CSpace). This is the foundational, reusable half of the badge de-thread; the `*WithCaps`
+badge establishers + `hBadge'` discharge land at the dispatch-payoff layer (the frame lives in the
+Capability invariant layer, which does not import the IPC structural layer).
+
+Chain (`Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean`):
+- `cspaceInsertSlot_preserves_badgeWellFormed` — the receiver-CNode write `cn.insert slot cap` keeps
+  every badge valid (inserted cap valid by precondition via `CNode.lookup_insert_eq`; the rest by
+  the pre-state via `_insert_ne`); `storeCapabilityRef` leaves objects unchanged. Models the
+  `cspaceMint`/`cspaceMutate` badge proofs.
+- `ipcTransferSingleCap_preserves_badgeWellFormed` — the CDT-edge steps (`ensureCdtNodeForSlot` ×2 +
+  `addEdge`) preserve objects, so the badge effect is exactly the `cspaceInsertSlot` write.
+- `ipcUnwrapCapsLoop_preserves_badgeWellFormed` — fuel induction; each transferred cap feeds the
+  single-cap frame (index-keyed precondition `∀ i c, caps[i]? = some c → badge-valid`), the
+  short-circuit/none branches leave state unchanged.
+- `ipcUnwrapCaps_preserves_badgeWellFormed` — grant-denied path is a no-op.
+
+Notifications are never touched, so `notificationBadgesWellFormed` carries unconditionally.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `GETCNODE_ADOPTION` 77→78 (the `getCNode?` read); no should-drop regression.
+Version 0.32.47.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 2)
+
 ## v0.32.46 — IPC de-threading D8 Slice 1: `*WithCaps` bundles de-thread `allPendingMessagesBounded` / `endpointQueueNoDup` / `ipcStateQueueMembershipConsistent`
 
 Begins the D8 dispatch-integration close-out by making the three single-core `*WithCaps`

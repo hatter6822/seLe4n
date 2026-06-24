@@ -214,6 +214,149 @@ theorem cspaceMutate_preserves_badgeWellFormed
         | _ => simp [hObj] at hStep
     · simp at hStep
 
+-- ============================================================================
+-- IPC de-threading D8: cap-transfer `badgeWellFormed` frame.
+-- `ipcUnwrapCaps` inserts the message caps into the receiver's CSpace, so it is
+-- the one cap-transfer step that can affect `capabilityBadgesWellFormed`. The
+-- frame holds provided every transferred cap carries a valid badge — the
+-- precondition the dispatch layer discharges from the sender's pre-state
+-- `capabilityBadgesWellFormed` (the message caps are looked up from the sender's
+-- CSpace). Notifications are never touched, so `notificationBadgesWellFormed`
+-- carries unconditionally.
+-- ============================================================================
+
+/-- IPC de-threading D8: `cspaceInsertSlot` preserves `badgeWellFormed` when the
+inserted cap has a valid badge. The only object write is the receiver CNode
+`cn.insert addr.slot cap`; `storeCapabilityRef` leaves objects unchanged. -/
+theorem cspaceInsertSlot_preserves_badgeWellFormed
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
+    (hCapValid : ∀ b, cap.badge = some b → b.valid)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    badgeWellFormed st' := by
+  obtain ⟨hNtfn, hCap⟩ := hInv
+  unfold cspaceInsertSlot at hStep
+  cases hObj : st.objects[addr.cnode]? with
+  | none => simp [hObj] at hStep
+  | some obj =>
+    cases obj with
+    | cnode cn =>
+      have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
+      simp only [hObj] at hStep
+      split at hStep
+      · simp at hStep
+      · cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
+        | error e => simp [hStore] at hStep
+        | ok storeResult =>
+          obtain ⟨_, stMid⟩ := storeResult
+          simp [hStore] at hStep
+          have hObjEqRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+          refine badgeWellFormed_of_objects_eq stMid st' hObjEqRef ⟨?_, ?_⟩
+          · exact storeObject_cnode_preserves_notificationBadgesWellFormed st stMid addr.cnode _
+              hNtfn hObjInv hStore
+          · exact storeObject_cnode_preserves_capabilityBadgesWellFormed st stMid addr.cnode _
+              hCap hObjInv hStore
+              (fun slot' cap' badge' hLk hBdg => by
+                by_cases hSlotEq : addr.slot = slot'
+                · subst hSlotEq
+                  rw [CNode.lookup_insert_eq cn addr.slot cap hUniq] at hLk
+                  cases hLk; exact hCapValid badge' hBdg
+                · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
+                  exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
+    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+    | schedContext _ | reply _ => simp [hObj] at hStep
+
+/-- IPC de-threading D8: `ipcTransferSingleCap` preserves `badgeWellFormed` when the
+transferred cap has a valid badge. The CDT-edge steps (`ensureCdtNodeForSlot` ×2 +
+`addEdge`) leave objects unchanged, so the badge effect is exactly the
+`cspaceInsertSlot` write. -/
+theorem ipcTransferSingleCap_preserves_badgeWellFormed
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState) (result : CapTransferResult)
+    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
+    (hCapValid : ∀ b, cap.badge = some b → b.valid)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    badgeWellFormed st' := by
+  simp only [ipcTransferSingleCap] at hStep
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+    | some emptySlot =>
+        simp [hSlot] at hStep
+        cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
+        | error e => simp [hIns] at hStep
+        | ok pair =>
+          simp [hIns] at hStep
+          obtain ⟨_, rfl⟩ := hStep
+          have hBadgeMid := cspaceInsertSlot_preserves_badgeWellFormed st pair.2
+            { cnode := receiverRoot, slot := emptySlot } cap hInv hObjInv hCapValid
+            (by rw [show pair = (pair.1, pair.2) from by simp]; exact hIns)
+          have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2 senderSlot
+          have hObjDst := SystemState.ensureCdtNodeForSlot_objects_eq
+            (SystemState.ensureCdtNodeForSlot pair.2 senderSlot).2
+            { cnode := receiverRoot, slot := emptySlot }
+          exact badgeWellFormed_of_objects_eq pair.2 _ (by simp only [hObjDst, hObjSrc]) hBadgeMid
+
+/-- IPC de-threading D8: `ipcUnwrapCapsLoop` preserves `badgeWellFormed` when every
+cap in `caps` carries a valid badge (each transferred cap feeds the single-cap
+frame; the error/short-circuit branch leaves state unchanged). -/
+theorem ipcUnwrapCapsLoop_preserves_badgeWellFormed
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
+    (hCaps : ∀ (i : Nat) (c : Capability), caps[i]? = some c → ∀ b, c.badge = some b → b.valid)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    badgeWellFormed st' := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hInv
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hInv
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hInvNext := ipcTransferSingleCap_preserves_badgeWellFormed cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hInv hObjInv (hCaps idx cap hCap) hTransfer
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hObjInv hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hInvNext hObjInvNext hStep
+        | noSlot => exact ih _ _ _ _ hInvNext hObjInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hInvNext hObjInvNext hStep
+
+/-- IPC de-threading D8: `ipcUnwrapCaps` preserves `badgeWellFormed` when every message
+cap carries a valid badge. Grant-denied path leaves state unchanged. -/
+theorem ipcUnwrapCaps_preserves_badgeWellFormed
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hInv : badgeWellFormed st) (hObjInv : st.objects.invExt)
+    (hCaps : ∀ (i : Nat) (c : Capability), msg.caps[i]? = some c → ∀ b, c.badge = some b → b.valid)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    badgeWellFormed st' := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+  · exact ipcUnwrapCapsLoop_preserves_badgeWellFormed _ _ _ _ _ _ _ _ _ _ hInv hObjInv hCaps hStep
+
 /-- M-D01: IPC single-cap transfer preserves the capability invariant bundle.
 
 The proof decomposes into the `.noSlot` case (state unchanged, trivial) and
