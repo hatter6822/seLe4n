@@ -1,3 +1,33 @@
+## v0.32.46 — IPC de-threading D8 Slice 1: `*WithCaps` bundles de-thread `allPendingMessagesBounded` / `endpointQueueNoDup` / `ipcStateQueueMembershipConsistent`
+
+Begins the D8 dispatch-integration close-out by making the three single-core `*WithCaps`
+`ipcInvariantFull` bundles (`endpointSendDualWithCaps` / `endpointReceiveDualWithCaps` /
+`endpointCallWithCaps`) *establish* three more conjuncts from the pre-state rather than threading
+them — removing 9 post-state threading sites (`hBounded'` / `hNoDup'` / `hQMC'` × 3 bundles). These
+were threaded only because the cap-transfer half of the composition (`ipcUnwrapCaps`) lacked the
+frame lemmas; the base (non-WithCaps) bundles already establish all three.
+
+- **`ipcUnwrapCaps` wiring frames** (`DualQueueMembership.lean`):
+  `ipcUnwrapCaps_preserves_allPendingMessagesBounded` / `_endpointQueueNoDup` /
+  `_ipcStateQueueMembershipConsistent` — the cap transfer writes only a CNode at `receiverRoot`, so
+  every TCB and endpoint is byte-identical: the subject pulls back via
+  `ipcUnwrapCaps_tcb_backward` / `_endpoint_backward` and any witness (endpoint, predecessor TCB)
+  pushes forward via `ipcUnwrapCaps_preserves_ep_objects` / `_preserves_tcb_objects`.
+- **`*WithCaps` establishers** (9 total): each composes the base transition's pre-state establish
+  (`st → stMid`) with the cap-transfer frame (`stMid → st'`), following the existing
+  `endpoint{Send,Call}DualWithCaps_establishes_blockedOnReplyHasTarget` case-split idiom.
+- De-threaded `hBounded'` / `hNoDup'` / `hQMC'` from all three `*WithCaps` `ipcInvariantFull`
+  bundles (which had no consumers — the discharge happens at the future dispatch payoff).
+
+Remaining `*WithCaps`-threaded conjuncts (later D8 slices): `hDualQueue'` (frame relocation),
+`hBadge'` (cap-transfer badge-validity frame), `hWtpmn'` + `hRCLRecip'` (dispatch-layer / composite).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored 1274→1275 (establisher invariant-frame raw lookups;
+`GETTCB`/`GETENDPOINT` adoption rose 1658→1661 / 99→105).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 1)
+
 ## v0.32.45 — IPC de-threading D4 Slice 2c: cross-core `endpointCallOnCore` — `qHBC`+`qNTB` de-thread COMPLETE
 
 De-threads the last `hQHBC'`/`hQNTB'`-threaded bundle, the staged cross-core `endpointCallOnCore`.
