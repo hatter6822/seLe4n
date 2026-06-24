@@ -1893,6 +1893,308 @@ theorem endpointQueueEnqueue_blockStoreIpc_establishes_endpointQueueTailBlockedC
       · exact (hTail epId' ep' tl tcbPre hPre hTcbPre).2 hTl
 
 open SeLe4n.Model.SystemState in
+/-- `storeTcbQueueLinks` `queueNext`-backward: every post-state TCB's `queueNext` is either preserved
+from the pre-state or equals the stored `next` (when the TCB is the store target). -/
+theorem storeTcbQueueLinks_tcb_queueNext_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (y : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : st'.objects[y.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧
+      (tcb.queueNext = tcb'.queueNext ∨ tcb'.queueNext = next) := by
+  by_cases hEq : y.toObjId = tid.toObjId
+  · obtain ⟨origTcb, hOrig⟩ : ∃ t, st.objects[tid.toObjId]? = some (.tcb t) := by
+      cases hL : lookupTcb st tid with
+      | none => exfalso; unfold storeTcbQueueLinks at hStep; rw [hL] at hStep; simp at hStep
+      | some t => exact ⟨t, lookupTcb_some_objects st tid t hL⟩
+    obtain ⟨tcbS, hTcbS, hQNS⟩ :=
+      storeTcbQueueLinks_stored_queueNext st st' tid prev pprev next hObjInv hStep
+    rw [hEq] at hTcb'
+    rw [hTcbS] at hTcb'
+    obtain rfl : tcbS = tcb' := by simpa using hTcb'
+    exact ⟨origTcb, by rw [hEq]; exact hOrig, Or.inr hQNS⟩
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next y.toObjId hEq hObjInv hStep] at hTcb'
+    exact ⟨tcb', hTcb', Or.inl rfl⟩
+
+open SeLe4n.Model.SystemState in
+/-- `endpointQueueEnqueue` `queueNext`-backward (for threads other than the enqueued one): the
+enqueue only ever sets `oldTail.queueNext := some enqueueTid` (and `enqueueTid.queueNext := none`), so
+for any `anyTid ≠ enqueueTid`, its post-state `queueNext` is either preserved from the pre-state or
+equals `some enqueueTid` (when `anyTid` is the old tail). -/
+theorem endpointQueueEnqueue_tcb_queueNext_backward_ne
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (enqueueTid : SeLe4n.ThreadId) (st st' : SystemState)
+    (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ enqueueTid st = .ok st')
+    (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb'))
+    (hNe : anyTid.toObjId ≠ enqueueTid.toObjId) :
+    ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧
+      (tcb.queueNext = tcb'.queueNext ∨ tcb'.queueNext = some enqueueTid) := by
+  unfold endpointQueueEnqueue at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st enqueueTid with
+      | none => simp [hLookup] at hStep
+      | some tcbE =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                simp only []; intro hStep
+                have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                rw [storeTcbQueueLinks_preserves_objects_ne pair.2 st' enqueueTid none
+                  (some .endpointHead) none anyTid.toObjId hNe hInv1 hStep] at hTcb'
+                by_cases hEqEp : anyTid.toObjId = endpointId
+                · rw [hEqEp] at hTcb'
+                  rw [storeObject_objects_eq' st endpointId _ pair hObjInv hStore] at hTcb'; cases hTcb'
+                · rw [storeObject_objects_ne st pair.2 endpointId anyTid.toObjId _ hEqEp hObjInv hStore] at hTcb'
+                  exact ⟨tcb', hTcb', Or.inl rfl⟩
+            | some tailTid =>
+              cases hLookupTail : lookupTcb st tailTid with
+              | none => simp [hLookupTail]
+              | some tailTcb =>
+                simp only [hLookupTail]
+                cases hStore : storeObject endpointId _ st with
+                | error e => simp
+                | ok pair =>
+                  simp only []
+                  cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev tailTcb.queuePPrev (some enqueueTid) with
+                  | error e => simp
+                  | ok st2 =>
+                    simp only []; intro hStep
+                    have hInv1 := storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
+                    rw [storeTcbQueueLinks_preserves_objects_ne st2 st' enqueueTid (some tailTid)
+                      (some (.tcbNext tailTid)) none anyTid.toObjId hNe hInv2 hStep] at hTcb'
+                    obtain ⟨tcb2, hTcb2, hDisj⟩ := storeTcbQueueLinks_tcb_queueNext_backward pair.2 st2
+                      tailTid tailTcb.queuePrev tailTcb.queuePPrev (some enqueueTid) hInv1 hLink1 anyTid tcb' hTcb'
+                    by_cases hEqEp : anyTid.toObjId = endpointId
+                    · rw [hEqEp] at hTcb2
+                      rw [storeObject_objects_eq' st endpointId _ pair hObjInv hStore] at hTcb2; cases hTcb2
+                    · rw [storeObject_objects_ne st pair.2 endpointId anyTid.toObjId _ hEqEp hObjInv hStore] at hTcb2
+                      exact ⟨tcb2, hTcb2, hDisj⟩
+
+/-- Slice-2c strict-match: a predecessor blocked on `endpointId` matching the enqueue direction (core
+(b) form) and a target equal to the block-store state (matching the same direction, `hBlock` form)
+strict-match per `queueNextTargetBlocked`. -/
+theorem queueNextTargetBlocked_clause_of_predecessor_block
+    (sA sB : ThreadIpcState) (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (hA : (isReceiveQ = true → sA = .blockedOnReceive endpointId) ∧
+          (isReceiveQ = false → sA = .blockedOnSend endpointId ∨ sA = .blockedOnCall endpointId))
+    (hBlock : if isReceiveQ then sB = .blockedOnReceive endpointId
+              else sB = .blockedOnSend endpointId ∨ sB = .blockedOnCall endpointId) :
+    (∀ ep, sA = .blockedOnReceive ep → sB = .blockedOnReceive ep) ∧
+    (∀ ep, (sA = .blockedOnSend ep ∨ sA = .blockedOnCall ep) →
+      (sB = .blockedOnSend ep ∨ sB = .blockedOnCall ep)) := by
+  by_cases hR : isReceiveQ
+  · have hAR := hA.1 hR
+    have hBR : sB = .blockedOnReceive endpointId := by simpa [hR] using hBlock
+    refine ⟨fun ep h => ?_, fun ep h => ?_⟩
+    · rw [hAR] at h; injection h with hEp; rw [hBR, hEp]
+    · rw [hAR] at h; rcases h with h | h <;> simp at h
+  · have hAS := hA.2 (by simpa using hR)
+    have hBS : sB = .blockedOnSend endpointId ∨ sB = .blockedOnCall endpointId := by
+      simpa [hR] using hBlock
+    refine ⟨fun ep h => ?_, fun ep h => ?_⟩
+    · rcases hAS with h' | h' <;> rw [h'] at h <;> simp at h
+    · rcases hAS with h' | h' <;> rcases h with hh | hh <;> rw [h'] at hh <;>
+        first
+        | (injection hh with hEp; subst hEp; rcases hBS with hb | hb <;> simp [hb])
+        | simp at hh
+
+open SeLe4n.Model.SystemState in
+/-- IPC de-threading D4 Slice 2c: an `endpointQueueEnqueue` followed by the block-store of the
+enqueued thread (to `.blockedOnSend`/`.blockedOnCall`/`.blockedOnReceive` on the *same* endpoint)
+**establishes** `queueNextTargetBlocked`.  The only *new* link is `oldTail → tid`, whose source is
+blocked-on-`endpointId` (core (b) `endpointQueueEnqueue_predecessor_blocked`) and whose target `tid`
+is blocked-on-`endpointId` by the block-store (`hBlock`), so they strict-match; `tid` itself has
+`queueNext = none` (no outgoing link); every other link is pre-existing — its source's `queueNext`
+is preserved by the enqueue (`endpointQueueEnqueue_tcb_queueNext_backward_ne`) and both endpoints'
+`ipcState`s are preserved through the enqueue + block-store, so it is framed from `hQNTB`. -/
+theorem endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st1 st2 : SystemState) (ep : Endpoint)
+    (blockState : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hQNTB : queueNextTargetBlocked st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hDQ : dualQueueSystemInvariant st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (e : Endpoint),
+      st.objects[epId]? = some (.endpoint e) →
+      e.sendQ.head ≠ some tid ∧ e.sendQ.tail ≠ some tid ∧
+      e.receiveQ.head ≠ some tid ∧ e.receiveQ.tail ≠ some tid)
+    (hTailFresh : ∀ (e : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint e) →
+      (if isReceiveQ then e.receiveQ else e.sendQ).tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId → ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid))
+    (hBlock : if isReceiveQ then blockState = .blockedOnReceive endpointId
+              else blockState = .blockedOnSend endpointId ∨ blockState = .blockedOnCall endpointId)
+    (hEnq : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st1)
+    (hStore : storeTcbIpcStateAndMessage st1 tid blockState msg = .ok st2) :
+    queueNextTargetBlocked st2 := by
+  have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId isReceiveQ tid st st1 hObjInv hEnq
+  have hPred := endpointQueueEnqueue_predecessor_blocked endpointId isReceiveQ tid st st1 ep
+    hObjInv hObj hDQ hTail hFreshTid hTailFresh hEnq
+  obtain ⟨tcbTidEnq, hTidEnqObj, hTidEnqNext⟩ :=
+    endpointQueueEnqueue_enqueued_queueNext_none endpointId isReceiveQ tid st st1 ep hObjInv hObj hEnq
+  intro a b tcbA tcbB hA hB hN
+  obtain ⟨tcbA1, hA1, hQNA1⟩ :=
+    storeTcbIpcStateAndMessage_tcb_queueNext_backward st1 st2 tid blockState msg hObjInv1 hStore a tcbA hA
+  have hN1 : tcbA1.queueNext = some b := by rw [hQNA1]; exact hN
+  by_cases hbtid : b.toObjId = tid.toObjId
+  · -- the new link `a → tid`
+    by_cases hatid : a.toObjId = tid.toObjId
+    · exfalso
+      rw [hatid] at hA1; rw [hTidEnqObj] at hA1
+      obtain rfl : tcbTidEnq = tcbA1 := by simpa using hA1
+      rw [hTidEnqNext] at hN1; exact absurd hN1 (by simp)
+    · have hA1' : st1.objects[a.toObjId]? = some (.tcb tcbA) := by
+        rw [← storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 tid blockState msg a.toObjId
+          hatid hObjInv1 hStore]
+        exact hA
+      have hBtidEq : b = tid := ThreadId.toObjId_injective b tid hbtid
+      have hAtoTid : tcbA.queueNext = some tid := by rw [hN, hBtidEq]
+      have hPredA := hPred a tcbA hA1' hAtoTid
+      have hStateB : tcbB.ipcState = blockState :=
+        storeTcbIpcStateAndMessage_ipcState_eq st1 st2 tid blockState msg hObjInv1 hStore tcbB (hbtid ▸ hB)
+      rw [hStateB]
+      exact queueNextTargetBlocked_clause_of_predecessor_block tcbA.ipcState blockState endpointId
+        isReceiveQ hPredA hBlock
+  · by_cases hatid : a.toObjId = tid.toObjId
+    · exfalso
+      rw [hatid] at hA1; rw [hTidEnqObj] at hA1
+      obtain rfl : tcbTidEnq = tcbA1 := by simpa using hA1
+      rw [hTidEnqNext] at hN1; exact absurd hN1 (by simp)
+    · -- pre-existing link `a → b` (`a, b ≠ tid`)
+      have hA1' : st1.objects[a.toObjId]? = some (.tcb tcbA) := by
+        rw [← storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 tid blockState msg a.toObjId
+          hatid hObjInv1 hStore]
+        exact hA
+      have hB1' : st1.objects[b.toObjId]? = some (.tcb tcbB) := by
+        rw [← storeTcbIpcStateAndMessage_preserves_objects_ne st1 st2 tid blockState msg b.toObjId
+          hbtid hObjInv1 hStore]
+        exact hB
+      obtain ⟨tcbA_st, hA_st, hDisjA⟩ := endpointQueueEnqueue_tcb_queueNext_backward_ne endpointId
+        isReceiveQ tid st st1 a tcbA hObjInv hEnq hA1' hatid
+      have hQNAst : tcbA_st.queueNext = some b := by
+        rcases hDisjA with h | h
+        · rw [h]; exact hN
+        · rw [hN] at h; exact absurd (congrArg (·.toObjId) (Option.some.inj h)) hbtid
+      obtain ⟨tcbA_st2, hA_st2, hIpcA⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId
+        isReceiveQ tid st st1 a tcbA hObjInv hEnq hA1'
+      obtain ⟨tcbB_st, hB_st, hIpcB⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId
+        isReceiveQ tid st st1 b tcbB hObjInv hEnq hB1'
+      have hAeq : tcbA_st = tcbA_st2 := by
+        have := hA_st.symm.trans hA_st2; simpa using this
+      have hPre := hQNTB a b tcbA_st tcbB_st hA_st hB_st hQNAst
+      have hIpcAeq : tcbA_st.ipcState = tcbA.ipcState := by rw [hAeq]; exact hIpcA
+      rw [← hIpcAeq, ← hIpcB]
+      exact hPre
+
+open SeLe4n.Model.SystemState in
+/-- Slice-2c core (c) `storeTcbIpcState` variant: same as
+`endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked` but for the `storeTcbIpcState`
+block-store (`endpointReceiveDual`'s block leg writes `ipcState` only, no `pendingMessage`). -/
+theorem endpointQueueEnqueue_blockStoreIpc_establishes_queueNextTargetBlocked
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st1 st2 : SystemState) (ep : Endpoint)
+    (blockState : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hObj : st.objects[endpointId]? = some (.endpoint ep))
+    (hQNTB : queueNextTargetBlocked st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hDQ : dualQueueSystemInvariant st)
+    (hFreshTid : ∀ (epId : SeLe4n.ObjId) (e : Endpoint),
+      st.objects[epId]? = some (.endpoint e) →
+      e.sendQ.head ≠ some tid ∧ e.sendQ.tail ≠ some tid ∧
+      e.receiveQ.head ≠ some tid ∧ e.receiveQ.tail ≠ some tid)
+    (hTailFresh : ∀ (e : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint e) →
+      (if isReceiveQ then e.receiveQ else e.sendQ).tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId → ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId → (if isReceiveQ then ep'.sendQ else ep'.receiveQ).tail ≠ some tailTid))
+    (hBlock : if isReceiveQ then blockState = .blockedOnReceive endpointId
+              else blockState = .blockedOnSend endpointId ∨ blockState = .blockedOnCall endpointId)
+    (hEnq : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st1)
+    (hStore : storeTcbIpcState st1 tid blockState = .ok st2) :
+    queueNextTargetBlocked st2 := by
+  have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId isReceiveQ tid st st1 hObjInv hEnq
+  have hPred := endpointQueueEnqueue_predecessor_blocked endpointId isReceiveQ tid st st1 ep
+    hObjInv hObj hDQ hTail hFreshTid hTailFresh hEnq
+  obtain ⟨tcbTidEnq, hTidEnqObj, hTidEnqNext⟩ :=
+    endpointQueueEnqueue_enqueued_queueNext_none endpointId isReceiveQ tid st st1 ep hObjInv hObj hEnq
+  intro a b tcbA tcbB hA hB hN
+  obtain ⟨tcbA1, hA1, hQNA1⟩ :=
+    storeTcbIpcState_tcb_queueNext_backward st1 st2 tid blockState hObjInv1 hStore a tcbA hA
+  have hN1 : tcbA1.queueNext = some b := by rw [hQNA1]; exact hN
+  by_cases hbtid : b.toObjId = tid.toObjId
+  · by_cases hatid : a.toObjId = tid.toObjId
+    · exfalso
+      rw [hatid] at hA1; rw [hTidEnqObj] at hA1
+      obtain rfl : tcbTidEnq = tcbA1 := by simpa using hA1
+      rw [hTidEnqNext] at hN1; exact absurd hN1 (by simp)
+    · have hA1' : st1.objects[a.toObjId]? = some (.tcb tcbA) := by
+        rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState a.toObjId hatid hObjInv1 hStore]
+        exact hA
+      have hBtidEq : b = tid := ThreadId.toObjId_injective b tid hbtid
+      have hAtoTid : tcbA.queueNext = some tid := by rw [hN, hBtidEq]
+      have hPredA := hPred a tcbA hA1' hAtoTid
+      have hStateB : tcbB.ipcState = blockState :=
+        storeTcbIpcState_ipcState_eq st1 st2 tid blockState hObjInv1 hStore tcbB (hbtid ▸ hB)
+      rw [hStateB]
+      exact queueNextTargetBlocked_clause_of_predecessor_block tcbA.ipcState blockState endpointId
+        isReceiveQ hPredA hBlock
+  · by_cases hatid : a.toObjId = tid.toObjId
+    · exfalso
+      rw [hatid] at hA1; rw [hTidEnqObj] at hA1
+      obtain rfl : tcbTidEnq = tcbA1 := by simpa using hA1
+      rw [hTidEnqNext] at hN1; exact absurd hN1 (by simp)
+    · have hA1' : st1.objects[a.toObjId]? = some (.tcb tcbA) := by
+        rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState a.toObjId hatid hObjInv1 hStore]
+        exact hA
+      have hB1' : st1.objects[b.toObjId]? = some (.tcb tcbB) := by
+        rw [← storeTcbIpcState_preserves_objects_ne st1 st2 tid blockState b.toObjId hbtid hObjInv1 hStore]
+        exact hB
+      obtain ⟨tcbA_st, hA_st, hDisjA⟩ := endpointQueueEnqueue_tcb_queueNext_backward_ne endpointId
+        isReceiveQ tid st st1 a tcbA hObjInv hEnq hA1' hatid
+      have hQNAst : tcbA_st.queueNext = some b := by
+        rcases hDisjA with h | h
+        · rw [h]; exact hN
+        · rw [hN] at h; exact absurd (congrArg (·.toObjId) (Option.some.inj h)) hbtid
+      obtain ⟨tcbA_st2, hA_st2, hIpcA⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId
+        isReceiveQ tid st st1 a tcbA hObjInv hEnq hA1'
+      obtain ⟨tcbB_st, hB_st, hIpcB⟩ := endpointQueueEnqueue_tcb_ipcState_backward endpointId
+        isReceiveQ tid st st1 b tcbB hObjInv hEnq hB1'
+      have hAeq : tcbA_st = tcbA_st2 := by
+        have := hA_st.symm.trans hA_st2; simpa using this
+      have hPre := hQNTB a b tcbA_st tcbB_st hA_st hB_st hQNAst
+      have hIpcAeq : tcbA_st.ipcState = tcbA.ipcState := by rw [hAeq]; exact hIpcA
+      rw [← hIpcAeq, ← hIpcB]
+      exact hPre
+
+open SeLe4n.Model.SystemState in
 /-- IPC de-threading D4 Slice 2b core (a): after `endpointQueuePopHead`, the popped head `tid` is
 **not a tail** of any queue in the post-pop state — the `hNotTail` obligation the rendezvous
 branches' `storeTcbReceiveComplete`/receiver-`.ready` tail-blocked frames need.  For the popped

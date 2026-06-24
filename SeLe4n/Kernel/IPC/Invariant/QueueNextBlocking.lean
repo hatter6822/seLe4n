@@ -1728,4 +1728,61 @@ theorem storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked
         · rw [hFrame b.toObjId hEqB] at hB
           exact hInv a b tcbA tcbB hA hB hN
 
+/-- `storeTcbIpcStateAndMessage` leaves every TCB's `queueNext` untouched — it rewrites only
+`ipcState`/`pendingMessage` (a record update that preserves `queueNext`).  For any post-state TCB
+there is a pre-state TCB at the same id with the same `queueNext`. -/
+theorem storeTcbIpcStateAndMessage_tcb_queueNext_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipcState : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st')
+    (y : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : st'.objects[y.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = tcb'.queueNext := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb { origTcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      by_cases hEqY : y.toObjId = tid.toObjId
+      · rw [hEqY] at hTcb'
+        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
+        obtain rfl : ({ origTcb with ipcState := ipcState, pendingMessage := msg } : TCB) = tcb' := by
+          simpa using hTcb'
+        exact ⟨origTcb, by rw [hEqY]; exact lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
+      · rw [storeObject_objects_ne' st tid.toObjId y.toObjId _ pair hEqY hObjInv hStore] at hTcb'
+        exact ⟨tcb', hTcb', rfl⟩
+
+/-- `storeTcbIpcState` leaves every TCB's `queueNext` untouched (it rewrites only `ipcState`). -/
+theorem storeTcbIpcState_tcb_queueNext_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipcState : ThreadIpcState)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcState st tid ipcState = .ok st')
+    (y : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : st'.objects[y.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = tcb'.queueNext := by
+  unfold storeTcbIpcState at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some origTcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { origTcb with ipcState := ipcState }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      by_cases hEqY : y.toObjId = tid.toObjId
+      · rw [hEqY] at hTcb'
+        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
+        obtain rfl : ({ origTcb with ipcState := ipcState } : TCB) = tcb' := by simpa using hTcb'
+        exact ⟨origTcb, by rw [hEqY]; exact lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
+      · rw [storeObject_objects_ne' st tid.toObjId y.toObjId _ pair hEqY hObjInv hStore] at hTcb'
+        exact ⟨tcb', hTcb', rfl⟩
+
 end SeLe4n.Kernel

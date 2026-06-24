@@ -293,9 +293,18 @@ What remains, per invariant:
   the two *link/state-mutating* frames also landed — `storeTcbQueueLinks_preserves_queueNextTargetBlocked`
   (`hNewLink` discharge for the freshly-set link) and
   `storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` (`hBwd`/`hFwd` predecessor/successor
-  obligations) — both ported from their qNBC analogues.  **Remaining 2c work** (next slices,
-  in order): (2) the per-transition establishers reusing cores (a)/(b)/(c) (enqueue link matches
-  via the paired block-store; pop relink drops the head obligation); (3) the **atomic** wire — add
+  obligations) — both ported from their qNBC analogues.  **KEYSTONE LANDED (v0.32.31):** the
+  enqueue+block-store establisher `endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked`
+  (+ its `storeTcbIpcState` variant) — the strict form must reason **end-to-end** (unlike qNBC, the
+  permissive→strict gap means the post-enqueue/pre-block-store state transiently *violates* qNTB), via
+  core (b) `endpointQueueEnqueue_predecessor_blocked` for the new `oldTail → tid` link (source blocked
+  + target blocked-same-endpoint ⇒ strict-match through `queueNextTargetBlocked_clause_of_predecessor_block`),
+  `tid.queueNext = none` for the no-outgoing-link case, and the new `endpointQueueEnqueue_tcb_queueNext_backward_ne`
+  + `storeTcbIpcStateAndMessage/storeTcbIpcState_tcb_queueNext_backward` backward helpers for the
+  framed pre-existing links.  **Remaining 2c work** (next slices, in order): (2) `endpointQueuePopHead`
+  qNTB preservation (the pop *removes* the head's outgoing link — no new link — but the rendezvous
+  receiver-`.ready` store needs "the popped head has no incoming link") + the per-transition
+  establishers composing keystone (block) + pop (rendezvous); (3) the **atomic** wire — add
   `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct (def + named `IpcInvariantFull`
   field + `iff` bridge + projection + `ipcInvariantFull_of_core_replyCallerLinkage`), establish it for
   every producer (most are object-frames; the enqueue/pop transitions use step 2), then build the

@@ -1,3 +1,36 @@
+## v0.32.31 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` enqueue+block-store keystone
+
+Lands the hardest single piece of Slice 2c — the per-transition enqueue establisher keystone. Unlike
+`queueNextBlockingConsistent` (whose permissive `queueNextBlockingMatch` catch-all survives the
+enqueue), the **strict** `queueNextTargetBlocked` is transiently *violated* in the post-enqueue /
+pre-block-store state (the link `oldTail → tid` exists while `tid` is still `.ready`), so it cannot be
+established by step-by-step frame composition — it must be proven **end-to-end** on the final state.
+
+- `endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked` (+ the `storeTcbIpcState`
+  variant `…_blockStoreIpc_…`) — establishes `queueNextTargetBlocked` after an `endpointQueueEnqueue`
+  followed by the block-store of the enqueued thread. Case analysis on each post-state link `a → b`:
+  the **new** link (`b = tid`) has a blocked source (core (b) `endpointQueueEnqueue_predecessor_blocked`)
+  and a target blocked on the **same** endpoint (the block-store + `hBlock`), so they strict-match;
+  `tid` has no outgoing link (`queueNext = none`); every **other** link is pre-existing, its source's
+  `queueNext` preserved by the enqueue and both endpoints' `ipcState`s preserved through enqueue +
+  block-store, so it is framed from the pre-state `queueNextTargetBlocked`.
+- Supporting backward helpers: `queueNextTargetBlocked_clause_of_predecessor_block` (strict-match from
+  the core-(b) + `hBlock` forms), `endpointQueueEnqueue_tcb_queueNext_backward_ne` (the enqueue only
+  sets `oldTail.queueNext := tid`, so any other thread's `queueNext` is preserved or equals
+  `some tid`), `storeTcbQueueLinks_tcb_queueNext_backward`, and
+  `storeTcbIpcStateAndMessage_tcb_queueNext_backward` / `storeTcbIpcState_tcb_queueNext_backward` (the
+  block-stores never touch `queueNext`).
+
+Still additive — `queueNextTargetBlocked` is not yet a conjunct of `ipcInvariantFull`, and the
+keystone is not yet wired into a transition. Remaining 2c: `endpointQueuePopHead` qNTB preservation
+(rendezvous), the per-transition establishers, the atomic 20th-conjunct wire, and the `hQHBC'`
+de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green.
+`RAW_LOOKUP_TID` re-anchored 1167→1182 (new backward helpers + keystone).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.30 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` link/state-mutating frames
 
 Completes the `queueNextTargetBlocked` frame family with the two frames the per-transition
