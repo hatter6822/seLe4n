@@ -1,3 +1,27 @@
+## v0.32.45 — IPC de-threading D4 Slice 2c: cross-core `endpointCallOnCore` — `qHBC`+`qNTB` de-thread COMPLETE
+
+De-threads the last `hQHBC'`/`hQNTB'`-threaded bundle, the staged cross-core `endpointCallOnCore`.
+**Zero `hQHBC'`/`hQNTB'`-threaded sites remain across the repository** — every IPC `ipcInvariantFull`
+bundle (single-core and cross-core) now *establishes* both `queueHeadBlockedConsistent` and
+`queueNextTargetBlocked` from the pre-state.
+
+- **Cross-core frames** (`EndpointCallInvariant.lean`):
+  `removeRunnableOnCore_preserves_queueHeadBlockedConsistent` / `_queueNextTargetBlocked` (object-store
+  frames) + `wakeThread_preserves_queueHeadBlockedConsistent_of_ready` / `_queueNextTargetBlocked_of_ready`
+  (the cross-core wake of an already-`.ready` thread is object-lookup-invisible — the §2 keystone —
+  so the lookup-only invariants survive).
+- **`endpointCallOnCore_preserves_queueHeadBlockedConsistent`** + **`_queueNextTargetBlocked`** — mirror
+  the single-core `endpointCall` establishers with the cross-core control flow (`getEndpoint?` decode,
+  `wakeThread` receiver wake, `removeRunnableOnCore` deschedule). The caller's pre-store TCB is recovered
+  via `storeTcbIpcStateAndMessage_getTcb?_backward` (avoiding the wake-state projection reduction).
+- De-threaded `hQHBC'`/`hQNTB'` from `endpointCallOnCore_preserves_ipcInvariantFull`, which gains the
+  dischargeable `hCallerReady` precondition (consistent with the single-core call bundles).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
 ## v0.32.44 — IPC de-threading D4 Slice 2c: complete the **single-core** `hQNTB'` de-thread
 
 Completes the `queueNextTargetBlocked` (qNTB) de-thread for every single-core IPC bundle.

@@ -432,9 +432,15 @@ What remains, per invariant:
   Frame `linkServerStashedReply_preserves_queueNextTargetBlocked` added.  **Single-core qNTB
   de-thread COMPLETE (v0.32.44):** `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
   `endpointSendDualWithCaps` de-threaded (frames added: `storeTcbIpcState{,_no_incoming_nonQueueBlocked}_preserves_queueNextTargetBlocked`).
-  Every single-core IPC bundle now de-threads **both** `hQHBC'` and `hQNTB'`.  **Remaining 2c work:**
-  the cross-core `endpointCallOnCore` `qHBC`+`qNTB` establishers (the last `hQHBC'`/`hQNTB'`-threaded
-  site, in the staged `EndpointCallInvariant.lean`).
+  Every single-core IPC bundle now de-threads **both** `hQHBC'` and `hQNTB'`.
+
+  **SLICE 2c COMPLETE (v0.32.45):** the cross-core `endpointCallOnCore` `qHBC`+`qNTB` establishers
+  landed (frames: `removeRunnableOnCore`/`wakeThread`-of-`.ready` for `qHBC`+`qNTB`; the wake is the
+  object-lookup-invisible §2 keystone).  **Zero `hQHBC'`/`hQNTB'`-threaded sites remain anywhere** —
+  every IPC `ipcInvariantFull` bundle, single-core and cross-core, now establishes both conjuncts
+  from the pre-state.  The dischargeable readiness preconditions threaded into the call/notification/
+  reply-recv bundles (`hCallerReady`/`hReceiverReady`/`hWaiterReady`) are supplied by the reachability
+  bundle at the D8 layer.
 
 - **D1 (4 wiring conjuncts):** same enqueue-freshness root — dischargeable once the caller-`.ready`
   freshness precondition is threaded from the dispatcher (independent of 2c).
