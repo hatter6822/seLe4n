@@ -398,6 +398,28 @@ theorem insertOrMerge_mem (S : LockSet) (l : LockId) (m : AccessMode)
     · left; exact hNew
     · right; right; exact hOld
 
+/-- WS-SM SM3.B: membership is **preserved** by `insertOrMerge` when the inserted
+key differs from the element's key.  The forward dual of `insertOrMerge_mem`: an
+existing member with a distinct `fst` survives both branches — the merge branch
+maps it to itself (its `snd` is untouched since the `if` guard is false), and the
+prepend branch keeps it in the tail.  This is what lets a per-object lock declared
+by an *inner* footprint remain a declared member after an outer `lockSetExtendOpt`
+adds a *different* lock (e.g. the stashed reply lock surviving the WithCaps
+destination-CNode extension). -/
+theorem mem_insertOrMerge_of_mem_of_ne (S : LockSet) (l : LockId) (m : AccessMode)
+    (p : LockId × AccessMode) (hMem : p ∈ S.pairs) (hNe : p.fst ≠ l) :
+    p ∈ (S.insertOrMerge l m).pairs := by
+  unfold LockSet.insertOrMerge
+  split
+  case h_1 _ =>
+    -- Merge case: pairs = S.pairs.map (fun q => if q.fst = l then … else q).
+    -- `p`'s key differs from `l`, so the map leaves `p` unchanged.
+    apply List.mem_map.mpr
+    exact ⟨p, hMem, by simp [hNe]⟩
+  case h_2 _ =>
+    -- Prepend case: pairs = (l, m) :: S.pairs.
+    exact List.mem_cons_of_mem _ hMem
+
 /-- WS-SM SM3.B: every element of `S₁.union S₂` traces back to an
 element of `S₁` or has its `fst` key matching some element's `fst`
 in `S₂`.

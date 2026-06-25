@@ -151,9 +151,15 @@ def lockSet_endpointCallWithCaps (callerTid : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (destCnodeObjId : SeLe4n.ObjId)
     (endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId)
-    (donatedScId : Option SeLe4n.SchedContextId) : LockSet :=
+    (donatedScId : Option SeLe4n.SchedContextId)
+    -- WS-SM SM6.D (PR #827 review): a server-first `Call` rendezvous through the
+    -- WithCaps path links the waiting server's stashed Reply object
+    -- (`linkServerStashedReply` writes `reply.caller`); thread `replyId` so that
+    -- write is covered by `replyLock rid` inside the WithCaps footprint, keeping
+    -- copied reply caps on another core inside the 2PL serialization.
+    (replyId : Option SeLe4n.ReplyId := none) : LockSet :=
   lockSetExtendOpt
-    (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId)
+    (lockSet_endpointCall callerTid cnodeRootObjId endpointObjId receiverTid donatedScId replyId)
     (some (cnodeLock destCnodeObjId, .write))
 
 -- ============================================================================
@@ -422,13 +428,14 @@ lock still has a kind in `permittedKinds .call` (the destination CNode is a
 not breach the call's lock ladder). -/
 theorem endpointCallWithCaps_lockSet_correct
     (caller : SeLe4n.ThreadId) (cnRoot destCnode endpointId : SeLe4n.ObjId)
-    (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId) :
+    (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    (replyId? : Option SeLe4n.ReplyId := none) :
     ∀ p ∈ (lockSet_endpointCallWithCaps caller cnRoot destCnode endpointId
-              receiver? donatedSc?).pairs,
+              receiver? donatedSc? replyId?).pairs,
       p.fst.kind ∈ permittedKinds .call := by
   unfold lockSet_endpointCallWithCaps
   refine lockSet_consistent_extendOpt _ _ _
-    (lockSet_consistent_call caller cnRoot endpointId receiver? donatedSc?) ?_
+    (lockSet_consistent_call caller cnRoot endpointId receiver? donatedSc? replyId?) ?_
   intro pp hpp
   cases hpp
   show LockKind.cnode ∈ permittedKinds .call
@@ -449,17 +456,21 @@ theorem endpointCallOnCore_atomic_under_lockSet
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    -- WS-SM SM6.D (PR #827 review): the lock-set carries the optional stashed
+    -- reply object so the server-first `linkServerStashedReply` write is inside
+    -- the 2PL bracket; the decomposition is generic over the footprint.
+    (replyId? : Option SeLe4n.ReplyId := none)
     (s : SystemState) :
-    withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
+    withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s
       = (releaseAll executingCore
-          (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).lockAcquireSequence.reverse
+          (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence.reverse
           (endpointCallOnCore endpointId caller msg executingCore
             (acquireAll executingCore
-              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).lockAcquireSequence s)).1,
+              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence s)).1,
          (endpointCallOnCore endpointId caller msg executingCore
             (acquireAll executingCore
-              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?).lockAcquireSequence s)).2) :=
+              (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

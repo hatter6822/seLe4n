@@ -68,6 +68,9 @@ open SeLe4n.Testing
 #check @lockSet_endpointCall_donation_extension
 #check @endpointCallWithCaps_lockSet_correct
 #check @endpointCallOnCore_atomic_under_lockSet
+-- SM6.D (PR #827 review): the stashed reply object's write lock is a declared
+-- member of the WithCaps `.call` footprint (server-first link serialised by 2PL).
+#check @lockSet_endpointCallWithCaps_reply_write_mem
 
 -- SM6.A.3 cross-core wake (plan Theorem 3.2.1):
 #check @endpointCallOnCore_emits_sgi_if_remote_receiver

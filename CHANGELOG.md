@@ -1,3 +1,31 @@
+## v0.32.53 — PR #827 review #1+#2: thread the stashed/supplied reply object into the call & replyRecv lock sets (2PL coverage)
+
+Fixes two P1 2PL-serialization gaps (Codex PR #827 review). The SM6.D reply fold makes a server-first
+`Call` rendezvous write the linked Reply object (`linkServerStashedReply` → `linkCallerReply` writes
+`reply.caller`) and a `replyRecv` receive-leg relink the prior Reply object — but several parametric
+lock-set theorems still acquired the **default `replyId := none`** footprint, so those reply-object
+writes could occur outside the per-object `replyLock rid`. With copied reply caps on another core that
+left the folded linkage outside the intended 2PL serialization. (The state-resolved runtime footprints
+`lockSet_endpointCallOnCore` / `lockSet_endpointReplyRecvOnCore` already thread the reply — via
+`endpointCallServerFirstReply?` / `target.replyObject` — so the live acquisition was correct; the gap was
+in the parametric atomicity/WithCaps theorems used to *prove* 2PL coverage.)
+
+- **#1 (call):** `lockSet_endpointCallWithCaps` gains a `replyId : Option ReplyId := none` parameter
+  threaded into the inner `lockSet_endpointCall`; `endpointCallWithCaps_lockSet_correct`,
+  `endpointCallOnCore_atomic_under_lockSet`, and (staged) `endpointCallOnCore_withLockSet_preserves_objects_invExt`
+  carry `replyId?` so they hold for the reply-threaded footprint (proofs are generic over the lock set;
+  this strictly generalizes the prior `none` statements). New `lockSet_endpointCallWithCaps_reply_write_mem`
+  proves `replyLock rid` is a declared member of the WithCaps `.call` footprint.
+- **#2 (replyRecv):** `endpointReplyRecvOnCore_atomic_under_lockSet` already took `replyId`; it now passes
+  it into the four `lockSet_replyRecv` calls so the bracket footprint includes `replyLock rid`.
+- New reusable `LockSet.mem_insertOrMerge_of_mem_of_ne` (membership preserved by `insertOrMerge` for a
+  distinct key) — the forward dual of `insertOrMerge_mem` — discharges the WithCaps reply-write coverage.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, AK7 baseline
+unchanged, zero `sorry`/`axiom`. Version 0.32.53.
+
+Refs: #827
+
 ## v0.32.52 — PR #827 review #4: `mintReplyCap` mints usable (`.write`) reply caps
 
 Fixes a P1 functional inconsistency (Codex PR #827 review): `mintReplyCap` minted **rights-less**

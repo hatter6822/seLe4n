@@ -717,6 +717,27 @@ theorem lockSet_endpointCall_reply_write_mem
   unfold lockSet_endpointCall
   exact self_write_mem_insertOrMerge _ (replyLock rid)
 
+/-- WS-SM SM6.D (PR #827 review): the per-object reply **write** lock is likewise a
+declared member of the **WithCaps** `.call` footprint once the linked reply object
+is resolved (`replyId := some rid`).  `lockSet_endpointCallWithCaps` extends the base
+call lock-set with the destination CNode write lock; the reply lock — a distinct key
+(`.reply` vs `.cnode`) — survives that extension (`mem_insertOrMerge_of_mem_of_ne`),
+so a server-first `Call` carrying transferred caps still serialises its
+`linkServerStashedReply` reply-object write under `replyLock rid`. -/
+theorem lockSet_endpointCallWithCaps_reply_write_mem
+    (callerTid : SeLe4n.ThreadId) (cnRoot destCnode endpointObjId : SeLe4n.ObjId)
+    (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
+    (rid : SeLe4n.ReplyId) :
+    (replyLock rid, AccessMode.write)
+      ∈ (lockSet_endpointCallWithCaps callerTid cnRoot destCnode endpointObjId
+            receiverTid donatedScId (some rid)).pairs := by
+  unfold lockSet_endpointCallWithCaps
+  exact LockSet.mem_insertOrMerge_of_mem_of_ne
+    (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId (some rid))
+    (cnodeLock destCnode) AccessMode.write (replyLock rid, AccessMode.write)
+    (lockSet_endpointCall_reply_write_mem callerTid cnRoot endpointObjId receiverTid donatedScId rid)
+    (by simp [replyLock, cnodeLock])
+
 -- ============================================================================
 -- §7  SM6.C.7 — Reply-replay protection
 -- ============================================================================
@@ -806,16 +827,16 @@ theorem endpointReplyRecvOnCore_atomic_under_lockSet
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId) (newSender? : Option SeLe4n.ThreadId)
     (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId)
     (s : SystemState) :
-    withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?)
+    withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId)
         executingCore (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s
       = (releaseAll executingCore
-          (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?).lockAcquireSequence.reverse
+          (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence.reverse
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore
-              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?).lockAcquireSequence s)).1,
+              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence s)).1,
          (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore
-              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?).lockAcquireSequence s)).2) :=
+              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

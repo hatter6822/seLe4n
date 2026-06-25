@@ -905,8 +905,13 @@ theorem endpointCallOnCore_withLockSet_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId)
     (receiver? : Option SeLe4n.ThreadId) (donatedSc? : Option SeLe4n.SchedContextId)
+    -- WS-SM SM6.D (PR #827 review): the bracket footprint carries the optional
+    -- stashed reply lock (`linkServerStashedReply`'s `reply.caller` write); the
+    -- preservation fold is generic over the lock set, so this strictly
+    -- generalizes the prior `replyId? = none` statement to the runtime footprint.
+    (replyId? : Option SeLe4n.ReplyId := none)
     (s : SystemState) (hObjInv : s.objects.invExt) :
-    (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc?)
+    (withLockSet (lockSet_endpointCall caller cnRoot endpointId receiver? donatedSc? replyId?)
         executingCore (endpointCallOnCore endpointId caller msg executingCore) s).1.objects.invExt :=
   withLockSet_invariant_preserved _ executingCore _ s (fun st => st.objects.invExt) hObjInv
     (fun l m s' h => acquireLockOnObject_preserves_invExt s' executingCore l m h)
