@@ -1,3 +1,42 @@
+## v0.32.56 — PR #827 review #3 (foundation): consumeCallerReply preservation lemmas
+
+First slice of the PR #827 #3 reply-fold — the remaining SM6.D reply-fold completion. #3 (P2) reports that
+the direct `endpointReply` / `endpointReplyRecv` primitives mark the answered caller `.ready` but never
+`consumeCallerReply`, so a below-API operation chain using them directly leaves the reply object in-use
+(`reply.caller` still set) and the ready caller still pointing at it (`tcb.replyObject` set) — the reply
+cap cannot be reused and `replyCallerLinkageReciprocal` is broken. (The live `.reply` / `replyRecv`
+dispatch is unaffected: `replyBody` / `replyRecvBody` consume the link as a separate step.)
+
+**Design (verified, plan-of-record).** The fix folds `consumeCallerReply target rid` into the primitives,
+keyed on the answered caller's `tcb.replyObject = some rid` (a no-op when `none`, so existing direct
+callers without a reply link are unchanged), so a direct reply establishes `replyCallerLinkageReciprocal`
+*internally* — de-threading the `hRCLRecip'` hypothesis from `endpointReply_preserves_ipcInvariantFull` —
+and the now-redundant separate `consumeCallerReply` is dropped from `replyBody` / `replyRecvBody` / the
+live `.reply` dispatch (else it would double-consume). Folding changes the post-state of the ~46
+`endpointReply{,Recv}_preserves_*` theorems (single-core) plus the cross-core `endpointReplyOnCore`
+surface, each of which must carry the new consume step via a per-conjunct `consumeCallerReply_preserves_*`
+frame.
+
+**This slice** lands the first two per-conjunct consume frames the folded peels consume:
+`consumeCallerReply_preserves_dualQueueSystemInvariant` and `consumeCallerReply_preserves_ipcInvariantCore`
+(each composes a `.reply` store frame — a no-op when the reply is absent — with a `.tcb` `replyObject :=
+none` store frame; `dualQueueSystemInvariant` via `…_of_queueAgree`, the core via the existing
+`storeObject_tcb_replyObject_preserves_ipcInvariantCore`).
+
+**Remaining slices** (each a coherent cut): the ~15 missing conjunct frames (`allPendingMessagesBounded`,
+`badgeWellFormed`, `endpointQueueNoDup`, `ipcStateQueue{,Membership}Consistent`,
+`blockedOnReplyHasReplyObject`, `donationOwnerUnique`, `passiveServerIdle`, `donationBudgetTransfer`,
+`blockedThreadTimeoutConsistent`, `waitingThreadsPendingMessageNone`, the scheduler/capability bundles,
+and the `projection` / `lowEquivalent` non-interference frames), each needing its own
+`storeObject_reply_preserves_*` + `storeObject_tcb_replyObject_preserves_*` frame; then the `endpointReply`
+/ `endpointReplyRecv` (and `…OnCore`) def fold; the ~46 proof peels; the live-path separate-consume
+removal; and the `main_trace_smoke.expected` refresh (a reply now single-use end-to-end).
+
+Full build green (376) + `Platform.Staged` (234) green, trace byte-identical (additive proof lemmas, no
+transition change), zero `sorry`/`axiom`. Version 0.32.56.
+
+Refs: #827
+
 ## v0.32.55 — PR #827 review #7: validate the receive stash against the pre-block state
 
 Fixes a P2 correctness regression introduced by v0.32.54 (#6, Codex PR #827 review). The #6 stash guard
