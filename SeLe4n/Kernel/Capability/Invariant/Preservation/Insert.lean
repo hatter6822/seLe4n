@@ -380,7 +380,7 @@ theorem mintReplyCap_preserves_capabilityInvariantBundle
           | some r =>
               have hInsert : cspaceInsertSlot dst
                   { target := .replyCap (SeLe4n.ReplyId.ofObjId target),
-                    rights := AccessRightSet.empty, badge := none } st
+                    rights := AccessRightSet.ofList [.write], badge := none } st
                   = .ok ((), st') := by simpa [hSrc, hTgt, hRep] using hStep
               exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst _ hInv
                 (fun cn hObj => hDstCapacity cn _ hObj)

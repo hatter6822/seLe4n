@@ -1161,15 +1161,20 @@ def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
             let rid := SeLe4n.ReplyId.ofObjId target
             match st'.getReply? rid with
             | some _ =>
-                -- WS-SM SM6.D (#1 residual): seL4-MCS reply capabilities are
-                -- **rights-less** — the cap conveys single-use reply authority by
-                -- *possession* (resolved by `extractReplyId` on `cap.target` alone),
-                -- never read/write rights.  Minting it rights-less prevents a reply
-                -- cap from being used as a spurious read/write authority on the
-                -- Reply object.
+                -- WS-SM SM6.D (#1 residual, PR #827 review): the minted reply cap
+                -- conveys **single-use reply authority**, which the live lookup paths
+                -- model as the `.write` right: `syscallRequiredRight .reply = .write`,
+                -- and both `resolveRecvReplyId` / `resolveReplyRecvReply` build the
+                -- reply-cap gate with `requiredRight := .write`.  A rights-less cap
+                -- would fail `.illegalAuthority` before `extractReplyId` ever inspects
+                -- `cap.target`, leaving a freshly minted reply cap unusable for
+                -- `reply` / `receive_with_reply` / `replyRecv`.  We mint exactly
+                -- `.write` (least authority sufficient for every reply gate; no
+                -- reply-cap consumer requires `.read`), matching the `.write`-bearing
+                -- reply caps the model/conformance suites construct.
                 let child : Capability :=
                   { target := .replyCap rid
-                    rights := AccessRightSet.empty
+                    rights := AccessRightSet.ofList [.write]
                     badge := none }
                 cspaceInsertSlot dst child st'
             | none => .error .invalidCapability

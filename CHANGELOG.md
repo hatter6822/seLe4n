@@ -1,3 +1,22 @@
+## v0.32.52 — PR #827 review #4: `mintReplyCap` mints usable (`.write`) reply caps
+
+Fixes a P1 functional inconsistency (Codex PR #827 review): `mintReplyCap` minted **rights-less**
+reply caps (`AccessRightSet.empty`), but every live reply-cap lookup gate requires `.write` —
+`syscallRequiredRight .reply = .write`, and both `resolveRecvReplyId` / `resolveReplyRecvReply` build
+the reply-cap gate with `requiredRight := .write`. So a freshly minted reply cap failed
+`.illegalAuthority` (in `syscallLookupCap`, before `extractReplyId` ever inspected `cap.target`),
+leaving it unusable for `reply` / `receive_with_reply` / `replyRecv`. The test/conformance suites
+already construct `.write`-bearing reply caps, so the rights-less mint was the lone outlier.
+
+`mintReplyCap` now mints `rights := AccessRightSet.ofList [.write]` — least authority sufficient for
+every reply gate (no reply-cap consumer requires `.read`), consistent with the model suites. Chosen
+over relaxing the gates (which would weaken an authority check). `mintReplyCap_preserves_capabilityInvariantBundle`
+updated to the new rights literal (the bundle does not constrain rights; structural).
+
+Full build green (376) + `test_smoke` green, trace byte-identical, zero `sorry`/`axiom`. Version 0.32.52.
+
+Refs: #827
+
 ## v0.32.51 — IPC de-threading D8 Slice 6: cross-core receive bundle — first establisher + README/spec metric resync
 
 Starts the cross-core receive bundle: `endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant`,
