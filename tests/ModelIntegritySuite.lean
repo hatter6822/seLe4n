@@ -788,6 +788,35 @@ def pendingReceiveReply_stash_injective : IO Unit := do
   expect "a distinct reply id stays free for another server"
     (!st.replyIsStashed otherRid)
 
+/-- WS-SM SM6.D (PR #827 review #7): `endpointReceiveDual` / `endpointReceiveDualOnCore`
+validate the server-supplied stash against the **input** state, not the post-block state.
+A `.ready` receiver carrying a *stale* `pendingReceiveReply` does NOT reserve that reply id
+(`replyIsStashed` is tied to `.blockedOnReceive`), so re-stashing its *own* reply object is
+legitimate — yet the very `storeTcbIpcState` that blocks the receiver makes it self-reserve
+`rid`, so a post-block validity check would falsely reject the re-stash with
+`.replyCapInvalid`.  This pins the self-reservation artefact the fix sidesteps: the predicate
+flips between the pre-block (`.ready`) and post-block (`.blockedOnReceive`) states. -/
+def replyStash_validated_against_preBlock_state : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  -- A *ready* receiver with a stale stash: its leftover `pendingReceiveReply` does NOT
+  -- reserve `rid`, so input-state validation correctly admits a re-stash of the same reply.
+  let readyTcb : TCB :=
+    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .ready,
+      pendingReceiveReply := some rid }
+  let stReady : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb readyTcb) |>.build)
+  expect "ready receiver's stale stash does NOT reserve rid (pre-block check admits re-stash)"
+    (!stReady.replyIsStashed rid)
+  -- The SAME receiver once `.blockedOnReceive` DOES self-reserve `rid` — so validating the
+  -- stash against this post-block state (the pre-#7 behaviour) would falsely reject.
+  let blockedTcb : TCB := { readyTcb with ipcState := .blockedOnReceive ⟨700⟩ }
+  let stBlocked : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb blockedTcb) |>.build)
+  expect "the same receiver post-block self-reserves rid (the false-rejection #7 avoids)"
+    (stBlocked.replyIsStashed rid)
+
 /-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
 derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.
 `lifecycleRetypeDirect` retypes in place (the holder keeps an `.object target` cap), so
@@ -2319,6 +2348,7 @@ def main : IO Unit := do
   -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
   reply_inUse_retype_rejected
   pendingReceiveReply_stash_injective
+  replyStash_validated_against_preBlock_state
   mintReplyCap_derives_backed_reply_cap
   -- WS-SM SM6.D (#7.4/#7.5): transition-boundary `blockedOnReply ⇒ replyObject`
   replyCallerLinkage_holds_at_call_rendezvous_boundary

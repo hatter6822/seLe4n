@@ -212,7 +212,11 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                         -- reject an absent / in-use / already-stashed `rid` before the store, so
                         -- a below-API cross-core caller cannot strand the `.blockedOnReceive`
                         -- receiver on a `pendingReceiveReply` that breaks well-formedness.
-                        if st''.replyStashValid replyId then
+                        -- PR #827 review #7: validate against the *input* state `st` (not the
+                        -- post-block `st''`) for the same reason as the single-core path — the
+                        -- post-block receiver self-reserves its own stale `rid` in
+                        -- `replyIsStashed`, which would falsely reject a legitimate re-stash.
+                        if st.replyStashValid replyId then
                           match storeObject receiver.toObjId
                               (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
                           | .error e => (st, .error e)

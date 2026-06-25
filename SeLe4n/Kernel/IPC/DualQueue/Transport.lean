@@ -2005,7 +2005,17 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                           -- a below-API caller could strand the now-`.blockedOnReceive` receiver
                           -- on a stash that violates `pendingReceiveReplyWellFormed`, which a
                           -- later `Call` rendezvous then fails closed on.
-                          if st''.replyStashValid replyId then
+                          -- PR #827 review #7: validate against the *input* state `st`, not the
+                          -- post-block `st''`.  After the `storeTcbIpcState` above marks the
+                          -- receiver `.blockedOnReceive`, the receiver's own (possibly stale)
+                          -- `pendingReceiveReply` would read as an active reservation in
+                          -- `replyIsStashed`, falsely rejecting a receiver that legitimately
+                          -- re-stashes its *own* reply object (same `rid`).  `cleanup`/`enqueue`
+                          -- touch neither the Reply at `rid` nor any other thread's block-state,
+                          -- so `replyStashValid st` equals the post-block check except for that
+                          -- self-reservation artefact (the receiver is not `.blockedOnReceive`
+                          -- in the input).
+                          if st.replyStashValid replyId then
                             match storeObject receiver.toObjId
                                 (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
                             | .error e => .error e

@@ -693,8 +693,8 @@ theorem endpointReceiveDual_preserves_endpointQueueNoDup
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -1254,8 +1254,8 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -3098,8 +3098,8 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -4974,8 +4974,8 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasReplyObject
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -7756,8 +7756,8 @@ theorem endpointReceiveDual_establishes_blockedOnReplyHasTarget
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -7895,8 +7895,8 @@ theorem endpointReceiveDual_preserves_donationBudgetTransfer
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -8032,8 +8032,8 @@ theorem endpointReceiveDual_preserves_donationOwnerUnique
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -8255,8 +8255,8 @@ theorem endpointReceiveDual_preserves_donationOwnerValid
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -8399,8 +8399,8 @@ theorem endpointReceiveDual_passiveServerIdleFrame
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -8557,8 +8557,8 @@ theorem endpointReceiveDual_timeoutBudgetFrame
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -13571,8 +13571,8 @@ theorem endpointReceiveDual_preserves_pendingReceiveReplyWellFormed
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -14583,8 +14583,8 @@ theorem endpointReceiveDual_preserves_queueNextBlockingConsistent
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -14757,8 +14757,8 @@ theorem endpointReceiveDual_preserves_endpointQueueTailBlockedConsistent
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -16891,8 +16891,8 @@ theorem endpointReceiveDual_preserves_queueHeadBlockedConsistent
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
@@ -17134,8 +17134,8 @@ theorem endpointReceiveDual_preserves_queueNextTargetBlocked
                 simp only [hGetR] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep

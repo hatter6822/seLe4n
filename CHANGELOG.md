@@ -1,3 +1,35 @@
+## v0.32.55 — PR #827 review #7: validate the receive stash against the pre-block state
+
+Fixes a P2 correctness regression introduced by v0.32.54 (#6, Codex PR #827 review). The #6 stash guard
+validated `replyStashValid` against the **post-block** state `st''` — the state *after* `storeTcbIpcState`
+marks the receiver `.blockedOnReceive`. Because `replyIsStashed` reserves a reply id only for a
+`.blockedOnReceive` TCB, a `.ready` receiver re-entering `endpointReceiveDual` with its own stale
+`pendingReceiveReply = some rid` (the same fresh `replyId`) becomes `.blockedOnReceive` *before* the check
+runs, so it now self-reserves `rid`: `replyIsStashed st'' rid = true`, `replyStashValid st'' (some rid) =
+false`, and the receive is falsely rejected with `.replyCapInvalid` — even though a ready receiver's stale
+stash is treated as non-reserving everywhere else.
+
+Both the single-core `endpointReceiveDual` (Transport) and the cross-core `endpointReceiveDualOnCore`
+(EndpointReply) no-sender branches now validate `st.replyStashValid replyId` against the **input** state
+`st`. `cleanupPreReceiveDonationChecked` and `endpointQueueEnqueue` touch neither the Reply at `rid` nor
+any other thread's block-state, and the receiver is still `.ready` in the input, so `replyStashValid st`
+equals the post-block check except for that self-reservation artefact — fixing the false rejection while
+admitting exactly the same genuinely-invalid ids. The fix is purely corrective: identical success
+post-states, identical genuine-error rejections.
+
+- The def change reads the function's own input binder `st` (in scope throughout) rather than the local
+  `st''`, so the 24 `endpointReceiveDual` preservation peels migrate `st2.replyStashValid replyId →
+  st.replyStashValid replyId` (the theorem input is uniformly `st`, so the `cases`/`if_pos` peel is
+  otherwise unchanged); the store and frame reasoning still run on the post-block state.
+- New `ModelIntegritySuite` regression test `replyStash_validated_against_preBlock_state` pins the
+  artefact: the `replyIsStashed` predicate flips between the pre-block (`.ready`, non-reserving) and
+  post-block (`.blockedOnReceive`, self-reserving) states for the same receiver and reply id.
+
+Full build green (376) + `Platform.Staged` (234) green, trace byte-identical, `ModelIntegritySuite` green,
+zero `sorry`/`axiom`. Version 0.32.55.
+
+Refs: #827
+
 ## v0.32.54 — PR #827 review #6: reject invalid reply ids before stashing receives
 
 Fixes a P2 correctness gap (Codex PR #827 review). The SM6.D server-first receive fold stashes a

@@ -2089,8 +2089,8 @@ theorem endpointReceiveDual_preserves_projection
                 simp only [hGetTcb] at hStep
                 -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
                 -- true; strip it to recover the pre-guard store reduction.
-                have hValid : st2.replyStashValid replyId = true := by
-                  cases hb : st2.replyStashValid replyId with
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
                   | false => simp [hb] at hStep
                   | true => rfl
                 rw [if_pos hValid] at hStep
