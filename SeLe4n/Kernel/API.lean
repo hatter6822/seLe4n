@@ -332,7 +332,7 @@ def resolveRecvReplyId (gate : SyscallGate) (decoded : SyscallDecodeResult)
               -- in-use treatment.  Explicit-MR0 failure is fail-closed before receive.
               match st.getReply? rid with
               | some r =>
-                  if r.caller.isNone && !replyIsStashed st rid then .ok (some rid)
+                  if r.caller.isNone && !st.replyIsStashed rid then .ok (some rid)
                   else .error .replyCapInvalid
               | none => .error .replyCapInvalid
 

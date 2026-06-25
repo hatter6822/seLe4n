@@ -1998,11 +1998,20 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                       match st''.getTcb? receiver with
                       | none => .ok (receiver, removeRunnable st'' receiver)
                       | some rTcb =>
-                          match storeObject receiver.toObjId
-                              (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
-                          | .error e => .error e
-                          | .ok ((), stStashed) =>
-                              .ok (receiver, removeRunnable stStashed receiver)
+                          -- WS-SM SM6.D (PR #827 review #6): reject an invalid stashed reply
+                          -- id *before* the store — `some rid` must name a present, free,
+                          -- not-already-stashed Reply (mirrors the API-side `resolveRecvReplyId`
+                          -- check; `none` clears the stash and is always valid).  Without this
+                          -- a below-API caller could strand the now-`.blockedOnReceive` receiver
+                          -- on a stash that violates `pendingReceiveReplyWellFormed`, which a
+                          -- later `Call` rendezvous then fails closed on.
+                          if st''.replyStashValid replyId then
+                            match storeObject receiver.toObjId
+                                (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
+                            | .error e => .error e
+                            | .ok ((), stStashed) =>
+                                .ok (receiver, removeRunnable stStashed receiver)
+                          else .error .replyCapInvalid
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 

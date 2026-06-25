@@ -783,10 +783,10 @@ def pendingReceiveReply_stash_injective : IO Unit := do
   -- the reserved rid is detected as stashed → a second `resolveRecvReplyId` for it
   -- fails closed, so no second server can stash it (injectivity maintained).
   expect "a blocked server's stash reserves its reply id (blocks a duplicate stash)"
-    (SeLe4n.Kernel.replyIsStashed st reservedRid)
+    (st.replyIsStashed reservedRid)
   -- a distinct reply id is not stashed → another server may stash it independently.
   expect "a distinct reply id stays free for another server"
-    (!SeLe4n.Kernel.replyIsStashed st otherRid)
+    (!st.replyIsStashed otherRid)
 
 /-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
 derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.

@@ -208,11 +208,17 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                     match st''.getTcb? receiver with
                     | none => (removeRunnableOnCore st'' receiver executingCore, .ok (receiver, none))
                     | some rTcb =>
-                        match storeObject receiver.toObjId
-                            (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
-                        | .error e => (st, .error e)
-                        | .ok ((), stStashed) =>
-                            (removeRunnableOnCore stStashed receiver executingCore, .ok (receiver, none))
+                        -- WS-SM SM6.D (PR #827 review #6): mirror the single-core stash guard —
+                        -- reject an absent / in-use / already-stashed `rid` before the store, so
+                        -- a below-API cross-core caller cannot strand the `.blockedOnReceive`
+                        -- receiver on a `pendingReceiveReply` that breaks well-formedness.
+                        if st''.replyStashValid replyId then
+                          match storeObject receiver.toObjId
+                              (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
+                          | .error e => (st, .error e)
+                          | .ok ((), stStashed) =>
+                              (removeRunnableOnCore stStashed receiver executingCore, .ok (receiver, none))
+                        else (st, .error .replyCapInvalid)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is `none`
       -- for both an absent object and a wrong-kinded one.  Recover the single-core

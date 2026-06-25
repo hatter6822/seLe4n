@@ -2087,6 +2087,13 @@ theorem endpointReceiveDual_preserves_projection
                     hProjTail]
               | some rTcb =>
                 simp only [hGetTcb] at hStep
+                -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                -- true; strip it to recover the pre-guard store reduction.
+                have hValid : st2.replyStashValid replyId = true := by
+                  cases hb : st2.replyStashValid replyId with
+                  | false => simp [hb] at hStep
+                  | true => rfl
+                rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId
                     (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
                 | error e => simp [hStash] at hStep

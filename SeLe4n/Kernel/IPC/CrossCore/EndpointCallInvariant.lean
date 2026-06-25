@@ -1278,19 +1278,23 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
               exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore hInv2
             | some rTcb =>
               simp only [hGetR]
-              cases hStash : storeObject receiver.toObjId
-                  (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
-              | error e => simp only [hStash]; exact hInv
-              | ok pStash =>
-                obtain ⟨_, stStashed⟩ := pStash
-                simp only [hStash]
-                have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
-                  (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
-                exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore
-                  (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
-                    st2 stStashed receiver.toObjId rTcb
-                    { rTcb with pendingReceiveReply := replyId } rfl rfl
-                    hTcbPre hObjInv2 hStash hInv2)
+              -- WS-SM SM6.D (PR #827 review #6): the cross-core stash guard; the
+              -- invalid branch returns the pre-state (invariant carried by `hInv`).
+              split
+              · cases hStash : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp only [hStash]; exact hInv
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash]
+                  have hTcbPre : st2.objects[receiver.toObjId]? = some (.tcb rTcb) :=
+                    (SystemState.getTcb?_eq_some_iff st2 receiver rTcb).mp hGetR
+                  exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore
+                    (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
+                      st2 stStashed receiver.toObjId rTcb
+                      { rTcb with pendingReceiveReply := replyId } rfl rfl
+                      hTcbPre hObjInv2 hStash hInv2)
+              · exact hInv
 
 /-- IPC de-threading D8: `removeRunnableOnCore` preserves `endpointQueueNoDup`
 (objects unchanged — pure scheduler op). -/

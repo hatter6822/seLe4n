@@ -1,3 +1,34 @@
+## v0.32.54 — PR #827 review #6: reject invalid reply ids before stashing receives
+
+Fixes a P2 correctness gap (Codex PR #827 review). The SM6.D server-first receive fold stashes a
+server-supplied reply object on the now-`.blockedOnReceive` receiver (`pendingReceiveReply := some
+rid`), but `endpointReceiveDual` / `endpointReceiveDualOnCore` stored it WITHOUT validating — so a
+below-API caller (a lower-level operation chain or test invoking the primitive directly with an
+invalid `rid`) could strand a `.blockedOnReceive` receiver whose stash violates
+`pendingReceiveReplyWellFormed` (no Reply at `rid`, or an in-use / already-stashed one), which a later
+`Call` rendezvous then fails closed on. The new preservation theorems carry an explicit
+`hReplyIdValid` precondition, but the transition itself did not enforce it.
+
+Both the single-core `endpointReceiveDual` (Transport) and the cross-core `endpointReceiveDualOnCore`
+(EndpointReply) no-sender branches now guard the stash store with `st.replyStashValid replyId`: a plain
+receive (`none`) clears any stale stash and is always valid; `some rid` is admitted iff the Reply is
+present, free (`caller = none`), and not already stashed by another blocked receiver — the Bool form of
+`replyIdEstablishFresh`, mirroring the API-side `resolveRecvReplyId` check. An invalid id now fails
+closed `.replyCapInvalid` *before* the store.
+
+- `replyIsStashed` moved from `Lifecycle/Operations/CleanupPreservation` to `Model/SystemState` (it is a
+  Model-level object-store fold) so the IPC primitive can reuse it without an IPC→Lifecycle import
+  cycle; new `SystemState.replyStashValid` composes `getReply?` + `replyIsStashed`. The three call sites
+  (`lifecyclePreRetypeCleanup`, `resolveRecvReplyId`, `ModelIntegritySuite`) now use `st.replyIsStashed`.
+- ~22 `endpointReceiveDual` preservation proofs peel the new guard (a `.ok` outcome forces it true) and
+  then proceed unchanged; the cross-core establisher splits on the guard (invalid branch returns the
+  pre-state, invariant carried).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, AK7 baseline
+unchanged, zero `sorry`/`axiom`. Version 0.32.54.
+
+Refs: #827
+
 ## v0.32.53 — PR #827 review #1+#2: thread the stashed/supplied reply object into the call & replyRecv lock sets (2PL coverage)
 
 Fixes two P1 2PL-serialization gaps (Codex PR #827 review). The SM6.D reply fold makes a server-first

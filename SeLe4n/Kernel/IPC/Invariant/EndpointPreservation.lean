@@ -882,6 +882,13 @@ theorem endpointReceiveDual_preserves_ipcInvariant
                 exact fun oid ntfn h => hInv2 oid ntfn (by rwa [removeRunnable_preserves_objects] at h)
               | some rTcb =>
                 simp only [hGetR] at hStep
+                -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                -- true; strip it to recover the pre-guard store reduction.
+                have hValid : st2.replyStashValid replyId = true := by
+                  cases hb : st2.replyStashValid replyId with
+                  | false => simp [hb] at hStep
+                  | true => rfl
+                rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
@@ -1372,6 +1379,13 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                   exact hGoal st2 hSchedEq hTcbInSt2 hEq.symm
                 | some rTcb =>
                   simp only [hGetR] at hStep
+                  -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                  -- true; strip it to recover the pre-guard store reduction.
+                  have hValid : st2.replyStashValid replyId = true := by
+                    cases hb : st2.replyStashValid replyId with
+                    | false => simp [hb] at hStep
+                    | true => rfl
+                  rw [if_pos hValid] at hStep
                   cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
                   | error e => simp [hStash] at hStep
                   | ok pStash =>
@@ -1748,6 +1762,13 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                   exact hGoal st2 rfl (fun _ _ => rfl) hEq.symm
                 | some rTcb =>
                   simp only [hGetR] at hStep
+                  -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                  -- true; strip it to recover the pre-guard store reduction.
+                  have hValid : st2.replyStashValid replyId = true := by
+                    cases hb : st2.replyStashValid replyId with
+                    | false => simp [hb] at hStep
+                    | true => rfl
+                  rw [if_pos hValid] at hStep
                   cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
                   | error e => simp [hStash] at hStep
                   | ok pStash =>
@@ -2071,6 +2092,13 @@ theorem endpointReceiveDual_preserves_objects_invExt
                 rwa [removeRunnable_preserves_objects]
               | some rTcb =>
                 simp only [hGetR] at hStep
+                -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                -- true; strip it to recover the pre-guard store reduction.
+                have hValid : st2.replyStashValid replyId = true := by
+                  cases hb : st2.replyStashValid replyId with
+                  | false => simp [hb] at hStep
+                  | true => rfl
+                rw [if_pos hValid] at hStep
                 cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
                 | error e => simp [hStash] at hStep
                 | ok pStash =>
