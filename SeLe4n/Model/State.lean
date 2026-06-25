@@ -2421,6 +2421,76 @@ def consumeCallerReply (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) : Kerne
         | some tcb =>
             storeObject caller.toObjId (.tcb { tcb with replyObject := none }) st1
 
+/-- WS-SM SM6.D (#7.3 fold, server-first Call linkage): link a freshly-dequeued
+`Call` caller (now `.blockedOnReply`) to the Reply object the rendezvous `server`
+stashed on its earlier server-first `Recv` (`server.pendingReceiveReply`), and clear
+that stash (one-shot).  Composed **inside** `endpointCall` / `endpointCallOnCore`'s
+server-waiting rendezvous (atomic with the blocking transition), replacing the former
+separate `linkServerFirstCaller` dispatch step.  Fails closed `.replyCapInvalid` when
+the server provided no reply object (a plain `Recv` cannot answer a `Call`); the
+caller-side single-use barrier in `linkCallerReply` rejects an already-linked caller.
+Reads the server explicitly (the dequeued thread) rather than re-deriving it from the
+caller's `blockedOnReply` payload. -/
+def linkServerStashedReply (caller server : SeLe4n.ThreadId) : Kernel Unit :=
+  fun st =>
+    match (st.getTcb? server).bind (·.pendingReceiveReply) with
+    | none => .error .replyCapInvalid
+    | some rid =>
+        match linkCallerReply caller rid st with
+        | .error e => .error e
+        | .ok ((), st1) =>
+            match st1.getTcb? server with
+            | none => .ok ((), st1)
+            | some sTcb =>
+                storeObject server.toObjId (.tcb { sTcb with pendingReceiveReply := none }) st1
+
+/-- WS-SM SM6.D (PR #822 review): does any TCB stash `rid` in its
+`pendingReceiveReply` (a *server-first* receive that is waiting to hand this Reply
+object to its next `Call`)?  Such a Reply is "in use" even though its `caller` is
+still `none` — retyping/deleting it would leave the waiting server pointing at a
+removed Reply, so the next `Call` rendezvous rolls back and the server cannot
+accept Call IPC.  Used by `lifecyclePreRetypeCleanup` (retype rejection) and by
+`replyStashValid` / `resolveRecvReplyId` (stash admission).
+
+PR #822 review: a stash reserves the Reply only while the server is STILL blocked
+on its server-first receive, awaiting the next `Call` to link.  The moment the
+server is woken by anything *other* than that Call — a bound notification, a `Send`
+rendezvous, a cancellation — its receive is over and the Reply is free, even if the
+now-`.ready` TCB's `pendingReceiveReply` field has not yet been scrubbed.  (A server
+woken *by* its Call is covered by `reply.caller`, set in the same atomic
+transition.)  Tying "stashed" to `.blockedOnReceive` makes the predicate robust to
+any wake path that does not eager-clear the stash, so a ready server never keeps the
+Reply permanently in use.  (Model-level object-store query; lives here — alongside
+`getReply?` and the reply-link helpers — so the `endpointReceiveDual` primitive can
+reject an already-stashed `rid` without an IPC→Lifecycle import cycle.) -/
+def replyIsStashed (st : SystemState) (rid : SeLe4n.ReplyId) : Bool :=
+  st.objects.fold (init := false) fun acc _oid obj =>
+    acc || match obj with
+      | .tcb t =>
+          match t.ipcState with
+          | .blockedOnReceive _ => t.pendingReceiveReply == some rid
+          | _ => false
+      | _ => false
+
+/-- WS-SM SM6.D (PR #827 review #6): is a server-supplied reply object valid to
+*stash* on a blocked receiver?  A plain receive (`none`) clears any stale stash and
+is always valid; `some rid` is valid iff the Reply is **present**, **free**
+(`caller = none`), and **not already stashed** by another blocked receiver — exactly
+`replyIdEstablishFresh` in Bool form (under `pendingReceiveReplyWellFormed`, where
+every stasher is `.blockedOnReceive`, `!replyIsStashed` coincides with the
+∀-over-all-TCBs unstashed clause).  Mirrors the API-side `resolveRecvReplyId` check
+so the `endpointReceiveDual` / `endpointReceiveDualOnCore` primitives **structurally
+reject** an absent / in-use / already-stashed `rid` rather than stranding a
+`.blockedOnReceive` receiver whose stash violates `pendingReceiveReplyWellFormed`
+(which a later `Call` would then fail closed on). -/
+def replyStashValid (st : SystemState) (replyId : Option SeLe4n.ReplyId) : Bool :=
+  match replyId with
+  | none => true
+  | some rid =>
+      match st.getReply? rid with
+      | some r => r.caller.isNone && !st.replyIsStashed rid
+      | none => false
+
 /-- WS-SM SM6.D: `linkCallerReply` fails closed (`.replyCapInvalid`) on an
 already-linked (in-use) reply — it never touches the caller TCB.  Inherits
 `linkReply`'s single-use barrier: a second `Call` cannot re-bind a reply that

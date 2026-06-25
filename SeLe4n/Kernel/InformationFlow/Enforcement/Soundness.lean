@@ -103,11 +103,12 @@ theorem endpointReceiveDualChecked_eq_endpointReceiveDual_when_allowed
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (st : SystemState)
     (hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = true) :
-    endpointReceiveDualChecked ctx endpointId receiver st =
-      endpointReceiveDual endpointId receiver st := by
+    endpointReceiveDualChecked ctx endpointId receiver replyId st =
+      endpointReceiveDual endpointId receiver replyId st := by
   unfold endpointReceiveDualChecked
   simp [hFlow]
 
@@ -117,10 +118,11 @@ theorem endpointReceiveDualChecked_flowDenied
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = false) :
-    endpointReceiveDualChecked ctx endpointId receiver st =
+    endpointReceiveDualChecked ctx endpointId receiver replyId st =
       .error .flowDenied := by
   unfold endpointReceiveDualChecked
   simp [hDeny]
@@ -164,11 +166,12 @@ theorem cspaceMoveChecked_denied_preserves_state
 theorem endpointReceiveDualChecked_denied_preserves_state
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (st : SystemState)
     (hDeny : securityFlowsTo (ctx.endpointLabelOf endpointId)
                (ctx.threadLabelOf receiver) = false) :
     ¬∃ (r : SeLe4n.ThreadId) (st' : SystemState),
-      endpointReceiveDualChecked ctx endpointId receiver st = .ok (r, st') := by
+      endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st') := by
   intro ⟨r, st', h⟩
   simp [endpointReceiveDualChecked, hDeny] at h
 
@@ -219,12 +222,13 @@ theorem enforcement_sufficiency_cspaceMove
 theorem enforcement_sufficiency_endpointReceiveDual
     (ctx : LabelingContext) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) :
     (securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true ∧
-       endpointReceiveDualChecked ctx endpointId receiver st =
-         endpointReceiveDual endpointId receiver st) ∨
+       endpointReceiveDualChecked ctx endpointId receiver replyId st =
+         endpointReceiveDual endpointId receiver replyId st) ∨
     (securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = false ∧
-       endpointReceiveDualChecked ctx endpointId receiver st =
+       endpointReceiveDualChecked ctx endpointId receiver replyId st =
          .error .flowDenied) := by
   cases hFlow : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
   | true => left; exact ⟨rfl, by simp [endpointReceiveDualChecked, hFlow]⟩
@@ -408,13 +412,14 @@ theorem enforcementSoundness_cspaceMoveChecked
 theorem enforcementSoundness_endpointReceiveDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (st : SystemState) (r : SeLe4n.ThreadId) (st' : SystemState)
-    (hStep : endpointReceiveDualChecked ctx endpointId receiver st = .ok (r, st')) :
+    (hStep : endpointReceiveDualChecked ctx endpointId receiver replyId st = .ok (r, st')) :
     securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true := by
   cases h : securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) with
   | true => rfl
   | false =>
-    have := endpointReceiveDualChecked_flowDenied ctx endpointId receiver st h
+    have := endpointReceiveDualChecked_flowDenied ctx endpointId receiver replyId st h
     rw [this] at hStep; simp at hStep
 
 -- ============================================================================
@@ -481,8 +486,8 @@ Success implies both flow checks pass: replier→target AND endpoint→receiver.
 theorem enforcementSoundness_endpointReplyRecvChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) (st st' : SystemState)
-    (hStep : endpointReplyRecvChecked ctx endpointId receiver replyTarget msg st = .ok ((), st')) :
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId) (st st' : SystemState)
+    (hStep : endpointReplyRecvChecked ctx endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
     securityFlowsTo (ctx.endpointLabelOf endpointId) (ctx.threadLabelOf receiver) = true := by
   unfold endpointReplyRecvChecked at hStep
@@ -777,8 +782,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       cspaceMoveChecked ctx src dst st = .ok ((), st') →
       securityFlowsTo (ctx.objectLabelOf src.cnode) (ctx.objectLabelOf dst.cnode) = true) ∧
     -- 5. endpointReceiveDualChecked: success implies endpoint→receiver flow allowed
-    (∀ eid receiver r,
-      endpointReceiveDualChecked ctx eid receiver st = .ok (r, st') →
+    (∀ eid receiver replyId r,
+      endpointReceiveDualChecked ctx eid receiver replyId st = .ok (r, st') →
       securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) ∧
     -- 6. registerServiceChecked: success implies caller→service flow allowed
     (∀ caller reg,
@@ -801,8 +806,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       notificationWaitChecked ctx ntfnId waiter st = .ok (r, st') →
       securityFlowsTo (ctx.objectLabelOf ntfnId) (ctx.threadLabelOf waiter) = true) ∧
     -- 11. endpointReplyRecvChecked: success implies both flow checks pass
-    (∀ eid receiver replyTarget msg,
-      endpointReplyRecvChecked ctx eid receiver replyTarget msg st = .ok ((), st') →
+    (∀ eid receiver replyTarget msg replyId,
+      endpointReplyRecvChecked ctx eid receiver replyTarget msg replyId st = .ok ((), st') →
       securityFlowsTo (ctx.threadLabelOf receiver) (ctx.threadLabelOf replyTarget) = true ∧
       securityFlowsTo (ctx.endpointLabelOf eid) (ctx.threadLabelOf receiver) = true) := by
   exact ⟨
@@ -815,8 +820,8 @@ theorem enforcementBridge_to_NonInterferenceStep
       enforcementSoundness_cspaceCopyChecked ctx src dst st st' hStep,
     fun src dst hStep =>
       enforcementSoundness_cspaceMoveChecked ctx src dst st st' hStep,
-    fun eid receiver r hStep =>
-      enforcementSoundness_endpointReceiveDualChecked ctx eid receiver st r st' hStep,
+    fun eid receiver replyId r hStep =>
+      enforcementSoundness_endpointReceiveDualChecked ctx eid receiver replyId st r st' hStep,
     fun caller reg hStep =>
       enforcementSoundness_registerServiceChecked ctx caller reg st st' hStep,
     fun eid caller msg rights cRoot slotBase r hStep =>
@@ -827,7 +832,7 @@ theorem enforcementBridge_to_NonInterferenceStep
       enforcementSoundness_cspaceMintChecked ctx src dst rights badge st st' hStep,
     fun ntfnId waiter r hStep =>
       enforcementSoundness_notificationWaitChecked ctx ntfnId waiter st r st' hStep,
-    fun eid receiver replyTarget msg hStep =>
-      enforcementSoundness_endpointReplyRecvChecked ctx eid receiver replyTarget msg st st' hStep⟩
+    fun eid receiver replyTarget msg replyId hStep =>
+      enforcementSoundness_endpointReplyRecvChecked ctx eid receiver replyTarget msg replyId st st' hStep⟩
 
 end SeLe4n.Kernel

@@ -620,7 +620,7 @@ Established by `linkCallerReply` (sets both fields reciprocally on a `blockedOnR
 caller, fail-closed on an in-use reply) and preserved by `consumeCallerReply`
 (clears both reciprocally); all other IPC transitions frame it (they touch neither
 field nor a linked caller's IPC state). -/
-def replyCallerLinkage (st : SystemState) : Prop :=
+def replyCallerLinkageReciprocal (st : SystemState) : Prop :=
   (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.replyObject = some rid →
@@ -632,21 +632,74 @@ def replyCallerLinkage (st : SystemState) : Prop :=
         ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
           tcb.ipcState = .blockedOnReply ep rt)
 
+/-- WS-SM SM6.D (#7.4 / IPC de-threading D2): the **third clause** of
+`replyCallerLinkage`, as a first-class predicate — every `.blockedOnReply` caller
+already carries a `replyObject`.  Named separately so the bundle's per-transition
+preservation can *concretely establish* it (rather than threading it), via a reusable
+frame family (`blockedOnReplyHasReplyObject_*`), and so consumers get a named
+projection.  The #7 D6 fold links the caller's reply atomically with the blocking
+store, so this holds at the transition boundary. -/
+def blockedOnReplyHasReplyObject (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
+      (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.ipcState = .blockedOnReply ep rt →
+      ∃ rid, tcb.replyObject = some rid
+
+/-- WS-SM SM6.D (#7.4): `replyCallerLinkage` = the bidirectional reciprocity
+(`replyCallerLinkageReciprocal`) **plus** the forward guarantee that every
+`.blockedOnReply` caller already carries a `replyObject` (`blockedOnReplyHasReplyObject`).
+The #7 D6 fold links the caller's reply object **atomically** with the blocking store
+(inside `endpointCall` / `endpointCallOnCore` / `endpointReceiveDual{,OnCore}`), so
+`blockedOnReply ⇒ replyObject` now holds at the **transition boundary**, not merely at
+syscall boundaries — closing the false-assurance gap where `ipcInvariantFull` (whose
+16th conjunct this is) admitted a `.blockedOnReply` caller with no Reply object to answer
+it (a thread blocked forever, since the public `.reply` path resolves authority through
+`reply.caller`).  The reciprocal clauses are factored out because they are the strongest
+invariant that survives the fold's intermediate state (post-blocking-store, pre-link):
+there the caller is `.blockedOnReply` yet not-yet-linked, so the third clause is
+momentarily false while reciprocity holds. -/
+def replyCallerLinkage (st : SystemState) : Prop :=
+  replyCallerLinkageReciprocal st ∧ blockedOnReplyHasReplyObject st
+
 /-- WS-SM SM6.D (PR #822 review): `replyCallerLinkage` reads only `st.objects`, so
 any transition that leaves the object store unchanged frames it.  Used by the
 non-IPC transitions (timer tick, register/context writes) and the default state. -/
 theorem replyCallerLinkage_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) (h : replyCallerLinkage st) :
     replyCallerLinkage st' := by
-  unfold replyCallerLinkage at h ⊢; rw [hObjs]; exact h
+  unfold replyCallerLinkage replyCallerLinkageReciprocal blockedOnReplyHasReplyObject at h ⊢
+  rw [hObjs]; exact h
+
+/-- WS-SM SM6.D (#7.4 / IPC de-threading D2, **consumer**): the safety property the
+strengthened `replyCallerLinkage` *delivers* — **every `.blockedOnReply` caller is
+answerable**.  Combining the third clause (`blockedOnReply ⇒ replyObject`) with the
+forward reciprocal clause (`replyObject ⇒ the Reply exists and names this TCB back`)
+shows that a blocked caller always has a concrete backing Reply object that names it,
+so the public `.reply` path (which resolves authority through `reply.caller`) can always
+answer it.  This is the formal statement of "no thread blocks forever on an unanswerable
+reply" — the false-assurance gap #7.4 closed, now cashed in as a usable lemma rather than
+a write-only invariant. -/
+theorem blockedOnReply_caller_is_answerable (st : SystemState)
+    (h : replyCallerLinkage st)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hBlk : tcb.ipcState = .blockedOnReply ep rt) :
+    ∃ (rid : SeLe4n.ReplyId) (r : Reply),
+      tcb.replyObject = some rid ∧
+      st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = some tid := by
+  obtain ⟨rid, hRep⟩ := h.2 tid tcb ep rt hTcb hBlk
+  obtain ⟨r, hr, hrc⟩ := h.1.1 tid tcb rid hTcb hRep
+  exact ⟨rid, r, hRep, hr, hrc⟩
 
 /-- WS-SM SM6.D (PR #822 review 6J9Kjg/6J9Kp6): a server-first receive **stash**
 (`TCB.pendingReceiveReply`) is well-formed — it occurs only on a TCB that is still
 `.blockedOnReceive` (the only state in which the server is awaiting its next `Call`
 to link the Reply), and it names an **existing free** Reply object (`reply.caller =
 none`).  Without this conjunct `ipcInvariantFull` admits a blocked receiver stashing
-an absent or already-linked Reply, which a later server-first `Call` (`linkServerFirstCaller`)
-then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
+an absent or already-linked Reply, which a later server-first `Call` (the folded
+`linkServerStashedReply`) then rejects with `.replyCapInvalid` while the receive stays pending.  Operationally
 already maintained: `resolveRecvReplyId` only stashes a free, present `rid`, and
 exit from `.blockedOnReceive` clears the stash (v0.31.111 / `replyIsStashed`); this
 conjunct *states* it.  The second clause states the stash is **injective** (no two
@@ -660,7 +713,7 @@ def pendingReceiveReplyWellFormed (st : SystemState) : Prop :=
   -- WS-SM SM6.D (PR #822 review): the stash is **injective** — at most one blocked
   -- receiver stashes any given Reply id.  Without this a model state could have two
   -- blocked servers stashing the same `rid`; a server-first `Call` linking one
-  -- (`linkServerFirstCaller` → `linkCallerReply`, which consumes `reply.caller`) would
+  -- (the folded `linkServerStashedReply` → `linkCallerReply`, which consumes `reply.caller`) would
   -- silently invalidate the other's stash, so its later `Call` fails closed
   -- `.replyCapInvalid` while its receive completes.  Operationally maintained by
   -- `resolveRecvReplyId` (it stashes only an un-stashed `rid`, `!replyIsStashed`).
@@ -678,6 +731,267 @@ theorem pendingReceiveReplyWellFormed_of_objects_eq {st st' : SystemState}
     pendingReceiveReplyWellFormed st' := by
   unfold pendingReceiveReplyWellFormed SystemState.getTcb? SystemState.getReply? at h ⊢
   rw [hObjs]; exact h
+
+-- ============================================================================
+-- WS-SM SM6.D (#7.1 fold): upstream reply-link / server-first-stash frames.
+--
+-- The #7 receive fold folds reply-linking into `endpointReceiveDual`: the Call
+-- branch threads `SystemState.linkCallerReply` (a `.reply` write then a `.tcb`
+-- `replyObject` write) and the no-sender branch writes the server-first stash
+-- (a `.tcb` `pendingReceiveReply` write).  None of those fields is read by any
+-- *structural* conjunct, so each new store frames every structural conjunct.
+-- These bare frames live here (upstream of every per-conjunct preservation file)
+-- so each consumer re-points its `endpointReceiveDual` proof to a named frame
+-- rather than re-deriving the store semantics inline.
+-- ============================================================================
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): storing any object that is **not** a `.notification`
+preserves `ipcInvariant` (notification well-formedness reads only `.notification`
+objects, and the stored slot post-store holds a non-notification).  The fold's
+`linkCallerReply` (`.reply` then `.tcb`) and server-first stash (`.tcb`) are all
+non-notification stores. -/
+theorem storeObject_preserves_ipcInvariant_of_ne_notification
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hNotNtfn : ∀ n, obj ≠ .notification n)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    ipcInvariant st' := by
+  intro oid ntfn hObj
+  by_cases hNe : oid = id
+  · rw [hNe, storeObject_objects_eq st st' id obj hObjInv hStore] at hObj
+    exact absurd (Option.some.inj hObj) (hNotNtfn ntfn)
+  · exact hInv oid ntfn (by rwa [storeObject_objects_ne st st' id oid obj hNe hObjInv hStore] at hObj)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `objects.invExt` — its two
+stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
+preserve the object-store extensional invariant. -/
+theorem linkCallerReply_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves the notification
+well-formedness conjunct `ipcInvariant` — both its `.reply` and `.tcb` stores are
+non-notification (cf. `storeObject_preserves_ipcInvariant_of_ne_notification`). -/
+theorem linkCallerReply_preserves_ipcInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    ipcInvariant st' := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hInv1 : ipcInvariant st1 := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_preserves_ipcInvariant_of_ne_notification st st1 rid.toObjId
+            (.reply { r with caller := some caller }) (fun _ => by exact KernelObject.noConfusion)
+            hInv hObjInv hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_ipcInvariant_of_ne_notification st1 st' caller.toObjId
+          (.tcb { tcb with replyObject := some rid }) (fun _ => by exact KernelObject.noConfusion)
+          hInv1 hObjInv1 hStep
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` leaves the scheduler unchanged (both
+its stores are `storeObject`, which does not touch the scheduler). -/
+theorem linkCallerReply_scheduler_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hSched1 : st1.scheduler = st.scheduler := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_scheduler_eq st st1 rid.toObjId _ hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact (storeObject_scheduler_eq st1 st' caller.toObjId _ hStep).trans hSched1
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` leaves the machine unchanged (both
+its stores are `storeObject`, which does not touch the machine registers). -/
+theorem linkCallerReply_machine_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hMach1 : st1.machine = st.machine := by
+      unfold linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_machine_eq st st1 rid.toObjId _ hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact (storeObject_machine_eq st1 st' caller.toObjId _ hStep).trans hMach1
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
+it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
+TCB store (which preserves it). -/
+theorem linkServerStashedReply_preserves_objects_invExt (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hObjInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact storeObject_preserves_objects_invExt st1 st' server.toObjId _ hObjInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `ipcInvariant` — both
+its sub-stores are non-notification (the `linkCallerReply` reply/TCB stores and the
+`pendingReceiveReply` TCB store). -/
+theorem linkServerStashedReply_preserves_ipcInvariant
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    ipcInvariant st' := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hInv1 := linkCallerReply_preserves_ipcInvariant st st1 caller rid hInv hObjInv hLink
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact storeObject_preserves_ipcInvariant_of_ne_notification st1 st' server.toObjId
+          (.tcb { sTcb with pendingReceiveReply := none }) (fun _ => by exact KernelObject.noConfusion)
+          hInv1 hObjInv1 hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` leaves the scheduler unchanged
+(every sub-store is `storeObject`, which does not touch the scheduler). -/
+theorem linkServerStashedReply_scheduler_eq (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hSched1 := linkCallerReply_scheduler_eq st st1 caller rid hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hSched1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact (storeObject_scheduler_eq st1 st' server.toObjId _ hStep).trans hSched1
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` leaves the machine unchanged
+(every sub-store is `storeObject`, which does not touch the machine registers). -/
+theorem linkServerStashedReply_machine_eq (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hMach1 := linkCallerReply_machine_eq st st1 caller rid hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hMach1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact (storeObject_machine_eq st1 st' server.toObjId _ hStep).trans hMach1
 
 /-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
 Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
@@ -988,6 +1302,59 @@ def queueHeadBlockedConsistent (st : SystemState) : Prop :=
     (ep.sendQ.head = some hd →
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
 
+/-- IPC de-threading D4 (Finding F-2): queue **tail** blocking-state consistency — the dual of
+`queueHeadBlockedConsistent` for the tail boundary.  If a thread is the tail of an endpoint's
+`receiveQ`, it is `.blockedOnReceive` on that endpoint; if it is the tail of `sendQ`, it is
+`.blockedOnSend`/`.blockedOnCall` on that endpoint.
+
+This is the missing *reachable→blocked* fact (specialised to the tail) that the enqueue-style
+transitions need: `endpointQueueEnqueue` links the **old tail**'s `queueNext` to the freshly
+enqueued thread, so establishing `queueNextBlockingConsistent` on the post-state requires the old
+tail to be blocked on the same endpoint (`queueNextBlockingMatch`).  The existing
+`ipcStateQueueMembershipConsistent` is the *blocked→reachable* converse and does not supply it.
+
+Preserved by every transition by construction: `endpointQueueEnqueue` makes the freshly-enqueued
+thread the new tail and the paired block-store sets it `.blockedOnSend`/`.blockedOnReceive`/`.blockedOnCall`;
+`endpointQueuePopHead` either leaves the tail unchanged (≥2 elements) or empties the queue
+(`tail = none`, vacuous); all other transitions touch neither endpoint tails nor the relevant
+`ipcState`s. -/
+def endpointQueueTailBlockedConsistent (st : SystemState) : Prop :=
+  ∀ (epId : SeLe4n.ObjId) (ep : Endpoint) (tl : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[epId]? = some (.endpoint ep) →
+    st.objects[tl.toObjId]? = some (.tcb tcb) →
+    (ep.receiveQ.tail = some tl → tcb.ipcState = .blockedOnReceive epId) ∧
+    (ep.sendQ.tail = some tl →
+      tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
+
+/-- IPC de-threading D4 Slice 2c: the *strict* per-link blocking-propagation invariant — the
+intra-queue successor of a blocked thread is blocked on the **same** endpoint/queue.
+
+This is the strict form of `queueNextBlockingMatch` (which admits a `.ready` successor via its
+catch-all): if `a.queueNext = some b` and `a` is blocked-on-a-queue, then `b` carries the *same*
+blocking direction and endpoint.  Together with `queueHeadBlockedConsistent` (the head is blocked)
+it yields "every reachable queue member is blocked", which is exactly the fact the **pop**
+(rendezvous) leg needs to re-establish `queueHeadBlockedConsistent`: after popping the head `H`
+(blocked on `epId` by the head invariant), the new head is `H.queueNext`, whose blockedness on
+`epId` is *not* derivable from the existing conjuncts (`queueNextBlockingMatch`'s catch-all permits a
+`.ready` target; `ipcStateQueueMembershipConsistent` is the blocked→reachable converse;
+`intrusiveQueueWellFormed` constrains only the head/tail boundary).  It generalises
+`endpointQueueTailBlockedConsistent` (the tail specialisation, which becomes derivable from this plus
+a tail-membership fact).
+
+Preserved by every transition by construction: `endpointQueueEnqueue` links the old tail's
+`queueNext` to the freshly enqueued thread and the paired block-store sets that thread blocked on the
+same endpoint (so the new link matches); `endpointQueuePopHead` removes the head's outgoing link
+(dropping the only obligation whose source leaves the queue) and leaves every interior link intact;
+all other transitions touch neither `queueNext` nor the relevant `ipcState`s. -/
+def queueNextTargetBlocked (st : SystemState) : Prop :=
+  ∀ (a b : SeLe4n.ThreadId) (tcbA tcbB : TCB),
+    st.objects[a.toObjId]? = some (.tcb tcbA) →
+    st.objects[b.toObjId]? = some (.tcb tcbB) →
+    tcbA.queueNext = some b →
+    (∀ ep, tcbA.ipcState = .blockedOnReceive ep → tcbB.ipcState = .blockedOnReceive ep) ∧
+    (∀ ep, (tcbA.ipcState = .blockedOnSend ep ∨ tcbA.ipcState = .blockedOnCall ep) →
+      (tcbB.ipcState = .blockedOnSend ep ∨ tcbB.ipcState = .blockedOnCall ep))
+
 -- ============================================================================
 -- Z6-J: Blocked thread timeout consistency
 -- ============================================================================
@@ -1029,6 +1396,65 @@ theorem blockedThreadTimeoutConsistent_of_all_none
   have := hNone tid tcb hTcb
   rw [this] at hBudget
   cases hBudget
+
+/-- IPC de-threading D5: the strong, transition-invariant form of the timeout-budget discipline —
+**no** thread carries a timeout budget.  The seL4-faithful `blockedThreadTimeoutConsistent`
+(budget ⇒ blocking IPC state) is strictly *weaker*; this form is what every IPC transition actually
+preserves, because no transition ever writes `timeoutBudget := some` (every TCB store either omits
+the `timeoutBudget` field or sets it `none`).  A state with all budgets `none` satisfies
+`blockedThreadTimeoutConsistent` vacuously (`blockedThreadTimeoutConsistent_of_all_none`), so a
+bundle can establish the conjunct on the post-state from this single, uniformly-dischargeable
+pre-state precondition — no per-thread "woken thread carries no budget" side-conditions. -/
+def allTimeoutBudgetsNone (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.timeoutBudget = none
+
+/-- IPC de-threading D5: the reusable timeout-budget preservation frame.  Every post-state thread's
+`timeoutBudget` matches a pre-state thread at the same key — true of every IPC transition, whose TCB
+stores all preserve the `timeoutBudget` field (none ever writes `timeoutBudget := some`).  A
+fresh-TCB retype is handled directly rather than through this frame, since the retyped slot has no
+pre-state TCB to transport back from. -/
+def timeoutBudgetFrame (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.timeoutBudget = tcb'.timeoutBudget
+
+namespace timeoutBudgetFrame
+
+/-- Reflexivity. -/
+theorem refl (st : SystemState) : timeoutBudgetFrame st st :=
+  fun _ tcb' h => ⟨tcb', h, rfl⟩
+
+/-- Transitivity: chain two frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : timeoutBudgetFrame st st') (h2 : timeoutBudgetFrame st' st'') :
+    timeoutBudgetFrame st st'' := by
+  intro tid tcb'' h
+  obtain ⟨tcb', h', hB'⟩ := h2 tid tcb'' h
+  obtain ⟨tcb, hh, hB⟩ := h1 tid tcb' h'
+  exact ⟨tcb, hh, hB.trans hB'⟩
+
+/-- A step that leaves the object map untouched frames trivially. -/
+theorem of_objects_eq {st st' : SystemState} (hEq : st'.objects = st.objects) :
+    timeoutBudgetFrame st st' :=
+  fun _ tcb' h => ⟨tcb', by rw [hEq] at h; exact h, rfl⟩
+
+end timeoutBudgetFrame
+
+/-- IPC de-threading D5: a timeout-budget frame carries `allTimeoutBudgetsNone` forward. -/
+theorem allTimeoutBudgetsNone_of_frame {st st' : SystemState}
+    (hFrame : timeoutBudgetFrame st st') (hAll : allTimeoutBudgetsNone st) :
+    allTimeoutBudgetsNone st' := by
+  intro tid tcb' hTcb'
+  obtain ⟨tcb, hTcb, hBudgetEq⟩ := hFrame tid tcb' hTcb'
+  rw [← hBudgetEq]; exact hAll tid tcb hTcb
+
+/-- IPC de-threading D5: establish `blockedThreadTimeoutConsistent` on the post-state of a
+budget-framing transition from the pre-state `allTimeoutBudgetsNone` precondition. -/
+theorem blockedThreadTimeoutConsistent_of_frame {st st' : SystemState}
+    (hFrame : timeoutBudgetFrame st st') (hAll : allTimeoutBudgetsNone st) :
+    blockedThreadTimeoutConsistent st' :=
+  blockedThreadTimeoutConsistent_of_all_none st' (allTimeoutBudgetsNone_of_frame hFrame hAll)
 
 -- ============================================================================
 -- Z7-F: Donation chain acyclicity
@@ -1076,7 +1502,16 @@ For every TCB with `.donated(scId, originalOwner)`:
 1. The SchedContext object exists in the store and points to the server
 2. The original owner thread exists as a TCB
 3. The original owner is blocked on reply (waiting for the server to reply)
-4. (AUD-7) The original owner's binding is `.bound scId` — bidirectional consistency -/
+4. (AUD-7 / Finding F-3) The original owner's binding is `.unbound` — the donor
+   gave up its SchedContext when it donated (`donateSchedContext` clears it),
+   so the SchedContext is referenced by **exactly one** binding (the server's
+   `.donated`).  This is what makes `donationBudgetTransfer` satisfiable for
+   donated states.  The donor is recoverable through the reply object (clause 3),
+   not through a residual `.bound` binding: `returnDonatedSchedContext` rebinds
+   it on reply.  `.unbound` is distinct from `.donated`, so this clause still
+   forbids donation chains of length ≥ 2 (see
+   `donationOwnerValid_implies_donationChainAcyclic` and
+   `donationChain_no_extension`). -/
 def donationOwnerValid (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
     (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
@@ -1085,18 +1520,76 @@ def donationOwnerValid (st : SystemState) : Prop :=
     (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
       sc.boundThread = some tid) ∧
     (∃ ownerTcb, st.objects[owner.toObjId]? = some (.tcb ownerTcb) ∧
-      ownerTcb.schedContextBinding = .bound scId ∧
+      ownerTcb.schedContextBinding = .unbound ∧
       ∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget)
+
+/-- Z7-H': Donation-owner uniqueness.  No two **distinct** threads name the same `owner` in a
+`.donated _ owner` binding.  Semantically: a thread becomes a donation `owner` only by donating
+its (single) SchedContext on a `Call`, and while it is `.blockedOnReply` it cannot make another
+call — so at most one server holds a `.donated _ owner` binding for it at a time.
+
+This is the consistency property the donation **return** needs: when `returnDonatedSchedContext`
+hands the SchedContext back (the owner goes `.unbound` → `.bound scId`), `donationOwnerValid`
+requires the *owner of every remaining donation* to still be `.unbound`; uniqueness guarantees the
+just-rebound owner is not the owner of any *other* live donation, so no remaining obligation
+breaks.  It is preserved by every IPC transition: the binding-frame transitions inject post-state
+donations into the pre-state (`sameSchedContextBindings`, backward), and the donation **return**
+only *removes* a donation. -/
+def donationOwnerUnique (st : SystemState) : Prop :=
+  ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
+    (scId1 scId2 : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId),
+    st.objects[tid1.toObjId]? = some (.tcb tcb1) →
+    st.objects[tid2.toObjId]? = some (.tcb tcb2) →
+    tcb1.schedContextBinding = .donated scId1 owner →
+    tcb2.schedContextBinding = .donated scId2 owner →
+    tid1 = tid2
+
+/-- Z7-H': the empty/donation-free state satisfies `donationOwnerUnique` vacuously. -/
+theorem donationOwnerUnique_of_no_donations
+    (st : SystemState)
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+      (owner : SeLe4n.ThreadId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId owner) :
+    donationOwnerUnique st := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 _ hB1 _
+  exact absurd hB1 (hNone tid1 tcb1 scId1 owner h1)
+
+/-- IPC de-threading D6: an object-store-preserving step frames `donationOwnerUnique`. -/
+theorem donationOwnerUnique_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : donationOwnerUnique st) :
+    donationOwnerUnique st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  rw [hObjs] at h1 h2
+  exact h tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+
+/-- IPC de-threading D4 (Finding F-2): an object-preserving step frames
+`endpointQueueTailBlockedConsistent`. -/
+theorem endpointQueueTailBlockedConsistent_of_objects_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects) (h : endpointQueueTailBlockedConsistent st) :
+    endpointQueueTailBlockedConsistent st' := by
+  intro epId ep tl tcb hEp hTcb
+  rw [hObjs] at hEp hTcb
+  exact h epId ep tl tcb hEp hTcb
 
 -- ============================================================================
 -- Z7-H: Passive server idle invariant
 -- ============================================================================
 
-/-- Z7-H: Unbound threads not in the RunQueue are passive servers.
+/-- Z7-H: Unbound threads not in the RunQueue are passive servers or donors.
 
-An unbound thread that is not runnable and not the current thread must be
-either blocked on receive (waiting for a client call) or inactive. It must
-not be blocked on send/call (which requires a SchedContext for timeout). -/
+An unbound thread that is not runnable and not the current thread must be in a
+benign idle/blocked state:
+- `.ready` (inactive, not yet enqueued), or
+- blocked on receive (a passive server waiting for a client call), or
+- blocked on notification, or
+- blocked on reply (Finding F-3): a **donor** that donated its SchedContext to a
+  passive server during a Call and is now `.unbound`, awaiting the reply that
+  `returnDonatedSchedContext` will rebind it through.
+
+It must **not** be blocked on send/call — those require a SchedContext for the
+timeout, which an unbound thread does not hold.  (A donor is `.blockedOnReply`,
+*not* `.blockedOnSend`/`.blockedOnCall`: it has already completed its Call.) -/
 def passiveServerIdle (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -1104,8 +1597,86 @@ def passiveServerIdle (st : SystemState) : Prop :=
     tid ∉ (st.scheduler.runQueueOnCore bootCoreId) →
     (st.scheduler.currentOnCore bootCoreId) ≠ some tid →
     (tcb.ipcState = .ready ∨
-     ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-             tcb.ipcState = .blockedOnNotification epId)
+     (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+              tcb.ipcState = .blockedOnNotification epId) ∨
+     ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
+
+/-- The set of `ipcState`s permitted for an unbound, descheduled (passive) thread by
+`passiveServerIdle` — `.ready`, `.blockedOnReceive`, `.blockedOnNotification`, or
+`.blockedOnReply` (definitionally the disjunction in `passiveServerIdle`'s conclusion).
+The excluded states are `.blockedOnSend`/`.blockedOnCall`, which require a SchedContext for
+their timeout. -/
+def passiveServerIdleAllowed (s : ThreadIpcState) : Prop :=
+  s = .ready ∨
+  (∃ epId, s = .blockedOnReceive epId ∨ s = .blockedOnNotification epId) ∨
+  ∃ epId replyTarget, s = .blockedOnReply epId replyTarget
+
+/-- IPC de-threading D6 (`passiveServerIdle`): the reusable preservation frame.
+
+A transition preserves `passiveServerIdle` whenever every thread that is **unbound + descheduled**
+(not in the boot run queue, not the boot current thread) **and not already in an allowed state** in
+the post-state pulls **back** to an unbound + descheduled thread in the pre-state with the *same*
+`ipcState`.
+
+The `¬ passiveServerIdleAllowed` filter is the crux: the only threads a transition newly drives into
+a `.blockedOnSend`/`.blockedOnCall` (non-allowed) state are the running sender/caller — which hold a
+SchedContext (not `.unbound`, so excluded by the `unbound` hypothesis) — while every thread the
+transition *blocks* into an allowed state (`.blockedOnReceive`/`.blockedOnNotification`/
+`.blockedOnReply`) or *wakes* `.ready` is filtered out by `passiveServerIdleAllowed`.  Hence the
+pullback obligation only ever fires on threads the transition leaves untouched. -/
+structure passiveServerIdleFrame (st st' : SystemState) : Prop where
+  pullback : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    tcb'.schedContextBinding = .unbound →
+    tid ∉ (st'.scheduler.runQueueOnCore bootCoreId) →
+    (st'.scheduler.currentOnCore bootCoreId) ≠ some tid →
+    ¬ passiveServerIdleAllowed tcb'.ipcState →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.schedContextBinding = .unbound ∧
+      tid ∉ (st.scheduler.runQueueOnCore bootCoreId) ∧
+      (st.scheduler.currentOnCore bootCoreId) ≠ some tid ∧
+      tcb.ipcState = tcb'.ipcState
+
+namespace passiveServerIdleFrame
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) : passiveServerIdleFrame st st :=
+  ⟨fun _ tcb' h hU hQ hC _ => ⟨tcb', h, hU, hQ, hC, rfl⟩⟩
+
+/-- Transitivity: chain two passive-server frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : passiveServerIdleFrame st st') (h2 : passiveServerIdleFrame st' st'') :
+    passiveServerIdleFrame st st'' :=
+  ⟨fun tid tcb'' h hU hQ hC hNA => by
+    obtain ⟨tcb', h', hU', hQ', hC', hIpc'⟩ := h2.pullback tid tcb'' h hU hQ hC hNA
+    obtain ⟨tcb, hh, hUU, hQQ, hCC, hIpc⟩ := h1.pullback tid tcb' h' hU' hQ' hC' (hIpc' ▸ hNA)
+    exact ⟨tcb, hh, hUU, hQQ, hCC, hIpc.trans hIpc'⟩⟩
+
+/-- A step that leaves the object map **and** the boot-core scheduler state untouched frames
+trivially. -/
+theorem of_objects_scheduler_eq {st st' : SystemState}
+    (hObjs : st'.objects = st.objects)
+    (hRq : st'.scheduler.runQueueOnCore bootCoreId = st.scheduler.runQueueOnCore bootCoreId)
+    (hCur : st'.scheduler.currentOnCore bootCoreId = st.scheduler.currentOnCore bootCoreId) :
+    passiveServerIdleFrame st st' :=
+  ⟨fun _ tcb' h hU hQ hC _ =>
+    ⟨tcb', by rw [hObjs] at h; exact h, hU, by rw [hRq] at hQ; exact hQ,
+      by rw [hCur] at hC; exact hC, rfl⟩⟩
+
+end passiveServerIdleFrame
+
+/-- IPC de-threading D6 (`passiveServerIdle`): preservation from the reusable frame. -/
+theorem passiveServerIdle_of_frame {st st' : SystemState}
+    (hFrame : passiveServerIdleFrame st st')
+    (hInv : passiveServerIdle st) :
+    passiveServerIdle st' := by
+  intro tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent'
+  by_cases hAllowed : passiveServerIdleAllowed tcb'.ipcState
+  · exact hAllowed
+  · obtain ⟨tcb, hTcb, hUnbound, hNotInQ, hNotCurrent, hIpc⟩ :=
+      hFrame.pullback tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hAllowed
+    rw [← hIpc]
+    exact hInv tid tcb hTcb hUnbound hNotInQ hNotCurrent
 
 -- ============================================================================
 -- Z7-I: Donation budget transfer consistency
@@ -1147,8 +1718,9 @@ theorem donationChainAcyclic_of_no_donated
 /-- AG8-F: `donationOwnerValid` subsumes `donationChainAcyclic`.
 
 Proves that 2-cycles are structurally impossible when donation owners
-have `.bound` bindings. If thread `tid1` has `.donated scId1 tid2`, then
-by `donationOwnerValid`, `tid2` has `.bound scId1`. Since `.bound` and
+have `.unbound` bindings (Finding F-3: the donor relinquishes its
+SchedContext on donation). If thread `tid1` has `.donated scId1 tid2`, then
+by `donationOwnerValid`, `tid2` has `.unbound`. Since `.unbound` and
 `.donated` are distinct constructors of `SchedContextBinding`, `tid2` cannot
 simultaneously have `.donated scId2 tid1`. Contradiction. -/
 theorem donationOwnerValid_implies_donationChainAcyclic
@@ -1157,21 +1729,22 @@ theorem donationOwnerValid_implies_donationChainAcyclic
     donationChainAcyclic st := by
   intro tid1 tid2 tcb1 tcb2 scId1 scId2 hTcb1 hTcb2 hDon1 hDon2
   -- tid1 has .donated scId1 tid2, so by donationOwnerValid:
-  -- tid2 (the owner) has .bound scId1
+  -- tid2 (the owner) has .unbound
   have ⟨_, hOwner⟩ := hDOV tid1 tcb1 scId1 tid2 hTcb1 hDon1
   obtain ⟨ownerTcb, hOwnerTcb, hBound, _⟩ := hOwner
   -- Equate ownerTcb with tcb2: both come from st.objects[tid2.toObjId]?
   rw [hTcb2] at hOwnerTcb
   cases hOwnerTcb -- ownerTcb = tcb2
-  -- Now: hBound : tcb2.schedContextBinding = .bound scId1
+  -- Now: hBound : tcb2.schedContextBinding = .unbound
   --      hDon2  : tcb2.schedContextBinding = .donated scId2 tid1
-  -- .bound ≠ .donated — constructor disjointness
+  -- .unbound ≠ .donated — constructor disjointness
   rw [hDon2] at hBound; cases hBound
 
 /-- AG8-F: Donation chains cannot extend beyond length 1.
 
 If thread `tid` has `.donated scId owner`, then by `donationOwnerValid`,
-the `owner` has `schedContextBinding = .bound scId`. Since `.bound` and
+the `owner` has `schedContextBinding = .unbound` (Finding F-3: the donor
+relinquishes its SchedContext on donation). Since `.unbound` and
 `.donated` are distinct constructors of `SchedContextBinding`, the owner
 cannot also have a `.donated` binding. This prevents donation chains of
 length ≥ 2 entirely — not just cycles, but all extensions. -/
@@ -1190,7 +1763,7 @@ theorem donationChain_no_extension
   obtain ⟨ownerTcb', hOwnerTcb', hBound, _⟩ := hOwner
   rw [hOwnerTcb] at hOwnerTcb'
   cases hOwnerTcb' -- ownerTcb' = ownerTcb
-  -- hBound : ownerTcb.schedContextBinding = .bound scId
+  -- hBound : ownerTcb.schedContextBinding = .unbound
   -- hContra : ownerTcb.schedContextBinding = .donated scId2 owner2
   rw [hContra] at hBound; cases hBound
 
@@ -1226,6 +1799,157 @@ theorem donationBudgetTransfer_of_no_shared
   intro tid1 tid2 tcb1 tcb2 scId h1 h2 _ hB1 _
   have := hNone tid1 tcb1 h1
   simp [this, SchedContextBinding.scId?] at hB1
+
+-- ============================================================================
+-- IPC de-threading D6: SchedContext-binding frame for `donationBudgetTransfer`
+-- ============================================================================
+
+/-- IPC de-threading D6: two states have **the same SchedContext bindings** when every
+post-state TCB slot pulls back to a pre-state TCB carrying an equal `schedContextBinding`.
+This is the exact frame `donationBudgetTransfer` (which reads only `schedContextBinding`)
+needs: it is preserved by every core IPC transition that never writes a binding (all but
+the donation primitives `donateSchedContext` / `returnDonatedSchedContext`).  Stated
+backward (post ⟹ pre) so it composes directly with the store-frame style used throughout
+the de-threading proofs. -/
+def sameSchedContextBindings (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.schedContextBinding = tcb'.schedContextBinding
+
+namespace sameSchedContextBindings
+
+/-- Reflexivity: a state has the same bindings as itself. -/
+theorem refl (st : SystemState) : sameSchedContextBindings st st :=
+  fun _ tcb' h => ⟨tcb', h, rfl⟩
+
+/-- Transitivity: chain two binding-preserving steps. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : sameSchedContextBindings st st') (h2 : sameSchedContextBindings st' st'') :
+    sameSchedContextBindings st st'' := by
+  intro tid tcb'' hObj''
+  obtain ⟨tc', hObj', hEq'⟩ := h2 tid tcb'' hObj''
+  obtain ⟨tc, hObj, hEq⟩ := h1 tid tc' hObj'
+  exact ⟨tc, hObj, hEq.trans hEq'⟩
+
+/-- A transition that leaves the object store untouched (a scheduler-only step such
+as `removeRunnable` / `ensureRunnable`) preserves all bindings. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    sameSchedContextBindings st st' :=
+  fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
+
+end sameSchedContextBindings
+
+/-- IPC de-threading D6: `donationBudgetTransfer` transfers across any transition that
+preserves every TCB's `schedContextBinding`.  The frame reads the two witness TCBs'
+bindings back into the pre-state, where `donationBudgetTransfer st` rules out the shared
+SchedContext. -/
+theorem donationBudgetTransfer_of_sameSchedContextBindings
+    {st st' : SystemState}
+    (hSame : sameSchedContextBindings st st')
+    (hDBT : donationBudgetTransfer st) :
+    donationBudgetTransfer st' := by
+  intro tid1 tid2 tcb1 tcb2 scId h1 h2 hNe hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
+  exact hDBT tid1 tid2 tc1 tc2 scId hP1 hP2 hNe
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
+/-- IPC de-threading D6 (`donationOwnerUnique`): every binding-frame transition preserves
+donation-owner uniqueness.  `sameSchedContextBindings` pulls each post-state `.donated _ owner`
+back to a pre-state `.donated _ owner` (same owner), so two post-state donations sharing an owner
+pull back to two pre-state donations sharing it — equal by `donationOwnerUnique st`. -/
+theorem donationOwnerUnique_of_sameSchedContextBindings
+    {st st' : SystemState}
+    (hSame : sameSchedContextBindings st st')
+    (hInv : donationOwnerUnique st) :
+    donationOwnerUnique st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 owner hP1 hP2
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
+/-- IPC de-threading D6 (`donationOwnerValid`): the **forward** half of the preservation
+frame, packaged so it composes through a transition's store-op decomposition with
+`.trans` exactly the way `sameSchedContextBindings` does for the backward binding half.
+
+`donationOwnerValid` reads, about a donation `tid ↦ .donated scId owner`: the donated
+SchedContext `scId` (clause 1's existence + `boundThread`) and the `owner`'s TCB
+(clause 2's `.unbound` binding + `.blockedOnReply` state).  Both are read on the
+**owner/SchedContext** side, so they must be carried **forward** (`st → st'`):
+
+* `scForward` — every donated SchedContext object survives the step; and
+* `ownerForward` — every thread that is `.unbound` and `.blockedOnReply` in the
+  pre-state stays `.unbound` and `.blockedOnReply` in the post-state (so it is still a
+  valid donation owner).
+
+A transition's `tid`-side binding is pulled **backward** by `sameSchedContextBindings`;
+the two together feed `donationOwnerValid_of_frames`. -/
+structure donationOwnerFrame (st st' : SystemState) : Prop where
+  scForward : ∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) →
+    st'.objects[scId.toObjId]? = some (.schedContext sc)
+  ownerForward : ∀ (owner : SeLe4n.ThreadId) (ownerTcb : TCB),
+    st.objects[owner.toObjId]? = some (.tcb ownerTcb) →
+    ownerTcb.schedContextBinding = .unbound →
+    (∃ epId replyTarget, ownerTcb.ipcState = .blockedOnReply epId replyTarget) →
+    ∃ ownerTcb', st'.objects[owner.toObjId]? = some (.tcb ownerTcb') ∧
+      ownerTcb'.schedContextBinding = .unbound ∧
+      ∃ epId replyTarget, ownerTcb'.ipcState = .blockedOnReply epId replyTarget
+
+namespace donationOwnerFrame
+
+/-- Reflexivity: a state frames onto itself. -/
+theorem refl (st : SystemState) : donationOwnerFrame st st :=
+  ⟨fun _ _ h => h, fun _ ownerTcb h hU hR => ⟨ownerTcb, h, hU, hR⟩⟩
+
+/-- Transitivity: chain two donation-owner frames. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : donationOwnerFrame st st') (h2 : donationOwnerFrame st' st'') :
+    donationOwnerFrame st st'' :=
+  ⟨fun scId sc h => h2.scForward scId sc (h1.scForward scId sc h),
+   fun owner ownerTcb h hU hR => by
+     obtain ⟨t', h', hU', hR'⟩ := h1.ownerForward owner ownerTcb h hU hR
+     exact h2.ownerForward owner t' h' hU' hR'⟩
+
+/-- A step that leaves the object map untouched frames trivially (scheduler-only
+ops: `removeRunnable`, `ensureRunnable`, `removeRunnableOnCore`, …). -/
+theorem of_objects_eq {st st' : SystemState}
+    (hEq : st'.objects = st.objects) : donationOwnerFrame st st' :=
+  ⟨fun scId sc h => by rw [hEq]; exact h,
+   fun owner ownerTcb h hU hR => ⟨ownerTcb, by rw [hEq]; exact h, hU, hR⟩⟩
+
+end donationOwnerFrame
+
+/-- IPC de-threading D6 (`donationOwnerValid`): the reusable preservation frame.
+
+A transition preserves `donationOwnerValid` whenever it preserves every TCB's
+`schedContextBinding` **backward** (`hBind`, to pull a post-state `.donated` binding
+back to the pre-state) and frames the SchedContext/owner side **forward**
+(`hFrame : donationOwnerFrame`).
+
+Binding-free, SchedContext-free, owner-non-waking transitions (the notification pair,
+`endpointSendDual`) discharge `hBind` from the existing `sameSchedContextBindings`
+frame and `hFrame` because the only TCBs they rewrite are the running caller / a
+freshly-woken `.blockedOnReceive`|`.blockedOnNotification` thread — never a
+`.blockedOnReply` donation owner — and they store no SchedContext object.  The
+reply/call transitions that *do* wake the owner restore the witness through
+`applyReplyDonation` / `applyCallDonation` at the donation-wrapper level, not the
+bare transition. -/
+theorem donationOwnerValid_of_frames
+    {st st' : SystemState}
+    (hBind : sameSchedContextBindings st st')
+    (hFrame : donationOwnerFrame st st')
+    (hInv : donationOwnerValid st) :
+    donationOwnerValid st' := by
+  intro tid tcb scId owner hTcb hBinding
+  obtain ⟨tcbSt, hTcbSt, hBindEq⟩ := hBind tid tcb hTcb
+  rw [hBinding] at hBindEq
+  obtain ⟨⟨sc, hScSt, hBound⟩, ⟨ownerTcb, hOwnerSt, hUnbound, ep, rt, hReply⟩⟩ :=
+    hInv tid tcbSt scId owner hTcbSt hBindEq
+  exact ⟨⟨sc, hFrame.scForward scId sc hScSt, hBound⟩,
+    hFrame.ownerForward owner ownerTcb hOwnerSt hUnbound ⟨ep, rt, hReply⟩⟩
 
 -- ============================================================================
 -- Full IPC invariant bundle (16 conjuncts)
@@ -1277,7 +2001,9 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   blockedOnReplyHasTarget st ∧ replyCallerLinkage st ∧
-  pendingReceiveReplyWellFormed st
+  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
+  endpointQueueTailBlockedConsistent st ∧
+  queueNextTargetBlocked st
 
 /-- WS-SM SM6.D (PR #822 review): the structural core is exactly the first 15
 conjuncts of `ipcInvariantFull`. -/
@@ -1296,14 +2022,16 @@ re-established by `linkCallerReply` / `consumeCallerReply`, and
 `pendingReceiveReplyWellFormed` framed/established on the final state). -/
 theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hCore : ipcInvariantCore st) (hLink : replyCallerLinkage st)
-    (hPRR : pendingReceiveReplyWellFormed st) :
+    (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hQNTB : queueNextTargetBlocked st) :
     ipcInvariantFull st :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR⟩
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB⟩
 
 -- ============================================================================
 -- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
@@ -1356,6 +2084,9 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
   replyCallerLinkage : replyCallerLinkage st
   pendingReceiveReplyWellFormed : pendingReceiveReplyWellFormed st
+  donationOwnerUnique : donationOwnerUnique st
+  endpointQueueTailBlockedConsistent : endpointQueueTailBlockedConsistent st
+  queueNextTargetBlocked : queueNextTargetBlocked st
 
 namespace ipcInvariantFull
 
@@ -1450,7 +2181,22 @@ elaborator. -/
 @[simp] theorem pendingReceiveReplyWellFormed {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem donationOwnerUnique {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.donationOwnerUnique st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem endpointQueueTailBlockedConsistent {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem queueNextTargetBlocked {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -1509,7 +2255,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
-           h.pendingReceiveReplyWellFormed⟩
+           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
+           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
            h.allPendingMessagesBounded, h.badgeWellFormed,
@@ -1520,7 +2267,8 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.donationOwnerValid, h.passiveServerIdle,
            h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget, h.replyCallerLinkage,
-           h.pendingReceiveReplyWellFormed⟩
+           h.pendingReceiveReplyWellFormed, h.donationOwnerUnique,
+           h.endpointQueueTailBlockedConsistent, h.queueNextTargetBlocked⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
 Used by callers that prefer the named-field form. -/
@@ -2243,6 +2991,743 @@ theorem returnDonatedSchedContext_tcb_queue_backward
                   rw [hPres1] at hTcb1Obj
                   exact ⟨tcb1, hTcb1Obj, by rw [hQN1, hQN2], by rw [hQP1, hQP2], by rw [hIpc1, hIpc2], by rw [hMsg1, hMsg2]⟩
     | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D2: `returnDonatedSchedContext` preserves each TCB's
+`(ipcState, replyObject)` pair backward — its three stores rewrite only a
+`SchedContext`'s `boundThread` and two TCBs' `schedContextBinding`, never `ipcState`
+or `replyObject`, so each store frames the pair (`rfl`).  Mirrors
+`returnDonatedSchedContext_tcb_queue_backward`; feeds the
+`blockedOnReplyHasReplyObject` frame for the receive-block path. -/
+theorem returnDonatedSchedContext_tcb_ipcState_replyObject_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st'.objects[tid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
+      tcb.ipcState = tcb'.ipcState ∧ tcb.replyObject = tcb'.replyObject := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq] at hTcb'
+                have hTcb2 : ∃ tcb2, p2.2.objects[tid]? = some (.tcb tcb2) ∧
+                    tcb2.ipcState = tcb'.ipcState ∧ tcb2.replyObject = tcb'.replyObject := by
+                  by_cases hEq3 : tid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hTcb'
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                    simp at hTcb'; obtain ⟨rfl⟩ := hTcb'
+                    have hSO := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                    exact ⟨serverTcb, hSO, rfl, rfl⟩
+                  · exact ⟨tcb', (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hEq3 hInv2 hS3).symm ▸ hTcb', rfl, rfl⟩
+                obtain ⟨tcb2, hTcb2Obj, hIpc2, hRepl2⟩ := hTcb2
+                have hTcb1 : ∃ tcb1, p1.2.objects[tid]? = some (.tcb tcb1) ∧
+                    tcb1.ipcState = tcb2.ipcState ∧ tcb1.replyObject = tcb2.replyObject := by
+                  by_cases hEq2 : tid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hTcb2Obj
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb2Obj
+                    simp at hTcb2Obj; obtain ⟨rfl⟩ := hTcb2Obj
+                    have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                    exact ⟨clientTcb, hCO, rfl, rfl⟩
+                  · exact ⟨tcb2, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hEq2 hInv1 hS2).symm ▸ hTcb2Obj, rfl, rfl⟩
+                obtain ⟨tcb1, hTcb1Obj, hIpc1, hRepl1⟩ := hTcb1
+                by_cases hEq1 : tid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hTcb1Obj
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb1Obj
+                  simp at hTcb1Obj
+                · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1
+                  rw [hPres1] at hTcb1Obj
+                  exact ⟨tcb1, hTcb1Obj, by rw [hIpc1, hIpc2], by rw [hRepl1, hRepl2]⟩
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D5: `returnDonatedSchedContext` preserves each TCB's `timeoutBudget` backward —
+its three stores rewrite only a `SchedContext`'s `boundThread` and two TCBs' `schedContextBinding`,
+never `timeoutBudget`, so each store frames the field (`rfl`).  Mirrors
+`returnDonatedSchedContext_tcb_ipcState_replyObject_backward`; feeds the donation-return leg of the
+receive family's `timeoutBudgetFrame`. -/
+theorem returnDonatedSchedContext_tcb_timeoutBudget_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st'.objects[tid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
+      tcb.timeoutBudget = tcb'.timeoutBudget := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq] at hTcb'
+                have hTcb2 : ∃ tcb2, p2.2.objects[tid]? = some (.tcb tcb2) ∧
+                    tcb2.timeoutBudget = tcb'.timeoutBudget := by
+                  by_cases hEq3 : tid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hTcb'
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                    simp at hTcb'; obtain ⟨rfl⟩ := hTcb'
+                    have hSO := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                    exact ⟨serverTcb, hSO, rfl⟩
+                  · exact ⟨tcb', (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hEq3 hInv2 hS3).symm ▸ hTcb', rfl⟩
+                obtain ⟨tcb2, hTcb2Obj, hBud2⟩ := hTcb2
+                have hTcb1 : ∃ tcb1, p1.2.objects[tid]? = some (.tcb tcb1) ∧
+                    tcb1.timeoutBudget = tcb2.timeoutBudget := by
+                  by_cases hEq2 : tid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hTcb2Obj
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb2Obj
+                    simp at hTcb2Obj; obtain ⟨rfl⟩ := hTcb2Obj
+                    have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                    exact ⟨clientTcb, hCO, rfl⟩
+                  · exact ⟨tcb2, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hEq2 hInv1 hS2).symm ▸ hTcb2Obj, rfl⟩
+                obtain ⟨tcb1, hTcb1Obj, hBud1⟩ := hTcb1
+                by_cases hEq1 : tid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hTcb1Obj
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb1Obj
+                  simp at hTcb1Obj
+                · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1
+                  rw [hPres1] at hTcb1Obj
+                  exact ⟨tcb1, hTcb1Obj, by rw [hBud1, hBud2]⟩
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D6: characterise each TCB's `schedContextBinding` after
+`returnDonatedSchedContext`.  Unlike `ipcState`/`replyObject` (preserved), the binding *changes*
+at the two written TCB slots: the original owner regains `.bound scId`, the server becomes
+`.unbound`; every other slot frames from the pre-state. -/
+theorem returnDonatedSchedContext_tcb_schedContextBinding_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st'.objects[tid]? = some (.tcb tcb')) :
+    (tid = serverTid.toObjId → tcb'.schedContextBinding = .unbound) ∧
+    (tid ≠ serverTid.toObjId → tid = originalOwner.toObjId →
+      tcb'.schedContextBinding = .bound scId) ∧
+    (tid ≠ serverTid.toObjId → tid ≠ originalOwner.toObjId →
+      ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
+        tcb.schedContextBinding = tcb'.schedContextBinding) := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq] at hTcb'
+                refine ⟨?_, ?_, ?_⟩
+                · -- tid = serverTid → `.unbound` (the final server store)
+                  intro hTidS; subst hTidS
+                  unfold storeObject at hS3; cases hS3
+                  simp only [RHTable_getElem?_eq_get?] at hTcb'
+                  rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                  simp only [beq_self_eq_true, if_true, Option.some.injEq, KernelObject.tcb.injEq] at hTcb'
+                  rw [← hTcb']
+                · -- tid ≠ serverTid, tid = owner → `.bound scId`
+                  intro hTidNS hTidO
+                  rw [storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hTidNS hInv2 hS3] at hTcb'
+                  subst hTidO
+                  unfold storeObject at hS2; cases hS2
+                  simp only [RHTable_getElem?_eq_get?] at hTcb'
+                  rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb'
+                  simp only [beq_self_eq_true, if_true, Option.some.injEq, KernelObject.tcb.injEq] at hTcb'
+                  rw [← hTcb']
+                · -- tid ≠ serverTid, ≠ owner → framed to the pre-state
+                  intro hTidNS hTidNO
+                  rw [storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hTidNS hInv2 hS3] at hTcb'
+                  rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hTidNO hInv1 hS2] at hTcb'
+                  by_cases hTidSc : tid = scId.toObjId
+                  · subst hTidSc; unfold storeObject at hS1; cases hS1
+                    simp only [RHTable_getElem?_eq_get?] at hTcb'
+                    rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb'
+                    simp at hTcb'
+                  · rw [storeObject_objects_ne st p1.2 scId.toObjId tid _ hTidSc hObjInv hS1] at hTcb'
+                    exact ⟨tcb', hTcb', rfl⟩
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationBudgetTransfer`.  Given
+the server held the SchedContext in the pre-state (`hServerScId`), the return moves it from the
+server (now `.unbound`) to the owner (`.bound scId`).  A post-state pair sharing some `scId''`
+must therefore both pull back into the pre-state (the server cannot be one of them — it is now
+`.unbound`), where `donationBudgetTransfer st` rules the share out — using the server's pre-state
+`scId` reference for the owner-vs-framed case. -/
+theorem returnDonatedSchedContext_preserves_donationBudgetTransfer
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerScId : stcb.schedContextBinding.scId? = some scId)
+    (hInv : donationBudgetTransfer st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationBudgetTransfer st' := by
+  intro tid1 tid2 tcb1 tcb2 scId'' h1 h2 hNe hB1 hB2
+  -- The server's post-binding is `.unbound`, so neither witness is the server.
+  have hNS : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding.scId? = some scId'' → tid.toObjId ≠ serverTid.toObjId := by
+    intro tid tcb hObj hB hEq
+    rw [(returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId originalOwner
+      hObjInv h tid.toObjId tcb hObj).1 hEq] at hB
+    simp [SchedContextBinding.scId?] at hB
+  have hNS1 := hNS tid1 tcb1 h1 hB1
+  have hNS2 := hNS tid2 tcb2 h2 hB2
+  -- A non-server, non-owner slot frames to a pre-state TCB carrying the same `scId''`.
+  have hPre : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb) →
+      tid.toObjId ≠ serverTid.toObjId → tid.toObjId ≠ originalOwner.toObjId →
+      tcb.schedContextBinding.scId? = some scId'' →
+      ∃ ptcb, st.objects[tid.toObjId]? = some (.tcb ptcb) ∧
+        ptcb.schedContextBinding.scId? = some scId'' := by
+    intro tid tcb hObj hNeS hNeO hB
+    obtain ⟨ptcb, hPreObj, hPbind⟩ := (returnDonatedSchedContext_tcb_schedContextBinding_backward
+      st st' serverTid scId originalOwner hObjInv h tid.toObjId tcb hObj).2.2 hNeS hNeO
+    exact ⟨ptcb, hPreObj, by rw [hPbind]; exact hB⟩
+  -- The owner's post-binding is `.bound scId`, forcing `scId'' = scId`.
+  have hOwnerScId : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st'.objects[tid.toObjId]? = some (.tcb tcb) →
+      tid.toObjId ≠ serverTid.toObjId → tid.toObjId = originalOwner.toObjId →
+      tcb.schedContextBinding.scId? = some scId'' → scId'' = scId := by
+    intro tid tcb hObj hNeS hEqO hB
+    rw [(returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId originalOwner
+      hObjInv h tid.toObjId tcb hObj).2.1 hNeS hEqO] at hB
+    simp only [SchedContextBinding.scId?, Option.some.injEq] at hB
+    exact hB.symm
+  by_cases hO1 : tid1.toObjId = originalOwner.toObjId
+  · have hEqScId := hOwnerScId tid1 tcb1 h1 hNS1 hO1 hB1
+    have hO2 : tid2.toObjId ≠ originalOwner.toObjId := fun hEq =>
+      hNe (ThreadId.toObjId_injective tid1 tid2 (hO1.trans hEq.symm))
+    obtain ⟨ptcb2, hPre2, hPbind2⟩ := hPre tid2 tcb2 h2 hNS2 hO2 hB2
+    refine hInv tid2 serverTid ptcb2 stcb scId hPre2 hServerObj (fun hEq => hNS2 (by rw [hEq])) ?_ hServerScId
+    rw [← hEqScId]; exact hPbind2
+  · by_cases hO2 : tid2.toObjId = originalOwner.toObjId
+    · have hEqScId := hOwnerScId tid2 tcb2 h2 hNS2 hO2 hB2
+      obtain ⟨ptcb1, hPre1, hPbind1⟩ := hPre tid1 tcb1 h1 hNS1 hO1 hB1
+      refine hInv tid1 serverTid ptcb1 stcb scId hPre1 hServerObj (fun hEq => hNS1 (by rw [hEq])) ?_ hServerScId
+      rw [← hEqScId]; exact hPbind1
+    · obtain ⟨ptcb1, hPre1, hPbind1⟩ := hPre tid1 tcb1 h1 hNS1 hO1 hB1
+      obtain ⟨ptcb2, hPre2, hPbind2⟩ := hPre tid2 tcb2 h2 hNS2 hO2 hB2
+      exact hInv tid1 tid2 ptcb1 ptcb2 scId'' hPre1 hPre2 hNe hPbind1 hPbind2
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves the object map at every key other
+than the three it writes (`scId` SchedContext, `originalOwner` TCB, `serverTid` TCB). -/
+theorem returnDonatedSchedContext_objects_ne
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (oid : SeLe4n.ObjId)
+    (hNeSc : oid ≠ scId.toObjId) (hNeO : oid ≠ originalOwner.toObjId)
+    (hNeS : oid ≠ serverTid.toObjId) :
+    st'.objects[oid]? = st.objects[oid]? := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                rw [storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hNeS hInv2 hS3]
+                rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hNeO hInv1 hS2]
+                rw [storeObject_objects_ne st p1.2 scId.toObjId oid _ hNeSc hObjInv hS1]
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationBudgetTransfer` — it is
+either a no-op (no donated binding) or a single `returnDonatedSchedContext` of the receiver's own
+donation (`scId? = some scId`), which preserves the conjunct. -/
+theorem cleanupPreReceiveDonation_preserves_donationBudgetTransfer
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationBudgetTransfer st) :
+    donationBudgetTransfer (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact hInv
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact hInv
+    | bound scId => exact hInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hInv
+      | ok st' =>
+        simp only []
+        exact returnDonatedSchedContext_preserves_donationBudgetTransfer st st' receiver scId
+          originalOwner hObjInv recvTcb (lookupTcb_some_objects st receiver recvTcb hL)
+          (by rw [hBind]; rfl) hInv hRet
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerValid`.  The return
+hands `scId` back to `originalOwner` (server `.donated scId originalOwner` → server `.unbound`,
+owner `.unbound` → `.bound scId`, `sc.boundThread := originalOwner`).  For every *remaining*
+donation `tid ↦ .donated scId' owner'` (`tid` is neither the server — now `.unbound` — nor the
+owner — now `.bound`): its SchedContext clause survives because `scId' ≠ scId` (else `tid` and the
+server would both bind `scId`, forcing `tid = serverTid`); and its owner clause survives because
+`owner' ≠ originalOwner` — **the one place donation-owner uniqueness is needed**: were `owner'`
+the just-rebound `originalOwner`, both `tid` and the server would name it, forcing `tid = serverTid`
+again. -/
+theorem returnDonatedSchedContext_preserves_donationOwnerValid
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId originalOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValid st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerValid st' := by
+  intro tid tcb scId' owner' hTcb hBinding
+  have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
+    originalOwner hObjInv h tid.toObjId tcb hTcb
+  have hTidNS : tid.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hBack.1 hEq] at hBinding; cases hBinding
+  have hTidNO : tid.toObjId ≠ originalOwner.toObjId := by
+    intro hEq; rw [hBack.2.1 hTidNS hEq] at hBinding; cases hBinding
+  obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hTidNS hTidNO
+  have hBind0' : tcb0.schedContextBinding = .donated scId' owner' := hBind0.trans hBinding
+  -- Pre-state witnesses for `tid`'s donation and for the server's donation.
+  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, ep, rt, hReply0⟩⟩ :=
+    hInv tid tcb0 scId' owner' hTcb0 hBind0'
+  obtain ⟨⟨scS, hScS, hBoundS⟩, ⟨oOwnerTcb, hOOwner, _⟩⟩ :=
+    hInv serverTid stcb scId originalOwner hServerObj hServerBind
+  -- `scId' ≠ scId`: else `sc' = scS` ⇒ `boundThread` is both `tid` and `serverTid`.
+  have hScIdNe : scId'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hSc'
+    obtain rfl := KernelObject.schedContext.inj (Option.some.inj hSc')
+    rw [hBoundS] at hBound'
+    exact hTidNS (by rw [(Option.some.inj hBound').symm])
+  -- `tid`'s SchedContext slot is not a TCB slot the return rewrote.
+  have hScNeO : scId'.toObjId ≠ originalOwner.toObjId := by
+    intro hEq; rw [hEq, hOOwner] at hSc'; cases hSc'
+  have hScNeS : scId'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hSc'; cases hSc'
+  -- `owner' ≠ serverTid` (server is `.donated`, owner is `.unbound`) and `owner' ≠ originalOwner`
+  -- (uniqueness).
+  have hOwnerNS : owner'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hOwner0
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hOwner0)
+    rw [hServerBind] at hUnbound0; cases hUnbound0
+  have hOwnerNO : owner'.toObjId ≠ originalOwner.toObjId := by
+    intro hEq
+    have hOwnerEq : owner' = originalOwner := ThreadId.toObjId_injective owner' originalOwner hEq
+    have := hUnique tid serverTid tcb0 stcb scId' scId originalOwner hTcb0 hServerObj
+      (hOwnerEq ▸ hBind0') hServerBind
+    exact hTidNS (by rw [this])
+  have hOwnerNSc : owner'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hOwner0; cases hOwner0
+  refine ⟨⟨sc', ?_, hBound'⟩, ⟨ownerTcb, ?_, hUnbound0, ep, rt, hReply0⟩⟩
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv h
+      scId'.toObjId hScIdNe hScNeO hScNeS]; exact hSc'
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId originalOwner hObjInv h
+      owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS]; exact hOwner0
+
+/-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationOwnerValid` — a no-op
+unless the receiver holds a donated SchedContext, in which case the single
+`returnDonatedSchedContext` preserves the invariant (donation-owner uniqueness in hand). -/
+theorem cleanupPreReceiveDonation_preserves_donationOwnerValid
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValid st) :
+    donationOwnerValid (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact hInv
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact hInv
+    | bound scId => exact hInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hInv
+      | ok st' =>
+        simp only []
+        exact returnDonatedSchedContext_preserves_donationOwnerValid st st' receiver scId
+          originalOwner hObjInv recvTcb (lookupTcb_some_objects st receiver recvTcb hL) hBind
+          hUnique hInv hRet
+
+/-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerUnique`.  The return
+only *removes* a donation (the server's `.donated`), so every post-state donation injects backward
+to a pre-state donation at the same `tid` with the same `owner` — uniqueness is inherited. -/
+theorem returnDonatedSchedContext_preserves_donationOwnerUnique
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationOwnerUnique st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    donationOwnerUnique st' := by
+  have hPull : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scIdx : SeLe4n.SchedContextId)
+      (owner : SeLe4n.ThreadId),
+      st'.objects[tid.toObjId]? = some (.tcb tcb) → tcb.schedContextBinding = .donated scIdx owner →
+      ∃ tcb0, st.objects[tid.toObjId]? = some (.tcb tcb0) ∧
+        tcb0.schedContextBinding = .donated scIdx owner := by
+    intro tid tcb scIdx owner hTcb hB
+    have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
+      originalOwner hObjInv h tid.toObjId tcb hTcb
+    have hNS : tid.toObjId ≠ serverTid.toObjId := by intro hEq; rw [hBack.1 hEq] at hB; cases hB
+    have hNO : tid.toObjId ≠ originalOwner.toObjId := by intro hEq; rw [hBack.2.1 hNS hEq] at hB; cases hB
+    obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hNS hNO
+    exact ⟨tcb0, hTcb0, hBind0.trans hB⟩
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hPB1⟩ := hPull tid1 tcb1 scId1 owner h1 hB1
+  obtain ⟨tc2, hP2, hPB2⟩ := hPull tid2 tcb2 scId2 owner h2 hB2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 owner hP1 hP2 hPB1 hPB2
+
+/-- IPC de-threading D6: `cleanupPreReceiveDonation` preserves `donationOwnerUnique`. -/
+theorem cleanupPreReceiveDonation_preserves_donationOwnerUnique
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : donationOwnerUnique st) :
+    donationOwnerUnique (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases hL : lookupTcb st receiver with
+  | none => exact hInv
+  | some recvTcb =>
+    simp only []
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact hInv
+    | bound scId => exact hInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hInv
+      | ok st' =>
+        simp only []
+        exact returnDonatedSchedContext_preserves_donationOwnerUnique st st' receiver scId
+          originalOwner hObjInv hInv hRet
+
+/-- IPC de-threading D2: `cleanupPreReceiveDonation` preserves each TCB's
+`(ipcState, replyObject)` pair backward — it is either a no-op (no donated binding) or a
+single `returnDonatedSchedContext`, which frames the pair.  Lift of
+`returnDonatedSchedContext_tcb_ipcState_replyObject_backward`. -/
+theorem cleanupPreReceiveDonation_tcb_ipcState_replyObject_backward
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : (cleanupPreReceiveDonation st receiver).objects[tid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = tcb'.ipcState ∧ tcb.replyObject = tcb'.replyObject := by
+  unfold cleanupPreReceiveDonation at hTcb'
+  cases hLookup : lookupTcb st receiver with
+  | none => simp only [hLookup] at hTcb'; exact ⟨tcb', hTcb', rfl, rfl⟩
+  | some recvTcb =>
+    simp only [hLookup] at hTcb'
+    cases hBinding : recvTcb.schedContextBinding with
+    | unbound => simp only [hBinding] at hTcb'; exact ⟨tcb', hTcb', rfl, rfl⟩
+    | bound _ => simp only [hBinding] at hTcb'; exact ⟨tcb', hTcb', rfl, rfl⟩
+    | donated scId originalOwner =>
+      simp only [hBinding] at hTcb'
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => simp only [hReturn] at hTcb'; exact ⟨tcb', hTcb', rfl, rfl⟩
+      | ok st' =>
+        simp only [hReturn] at hTcb'
+        exact returnDonatedSchedContext_tcb_ipcState_replyObject_backward st st' receiver scId
+          originalOwner hObjInv hReturn tid.toObjId tcb' hTcb'
+
+/-- IPC de-threading D3: `returnDonatedSchedContext` preserves each TCB's
+`pendingReceiveReply` backward — its three stores rewrite only a `SchedContext`'s
+`boundThread` and two TCBs' `schedContextBinding`, never the stash, so each store
+frames it (`rfl`).  Mirrors `returnDonatedSchedContext_tcb_ipcState_replyObject_backward`;
+feeds the `pendingReceiveReplyWellFormed` freshness transport for the receive-block
+path. -/
+theorem returnDonatedSchedContext_tcb_pendingReceiveReply_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st'.objects[tid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
+      tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq] at hTcb'
+                have hTcb2 : ∃ tcb2, p2.2.objects[tid]? = some (.tcb tcb2) ∧
+                    tcb2.pendingReceiveReply = tcb'.pendingReceiveReply := by
+                  by_cases hEq3 : tid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hTcb'
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                    simp at hTcb'; obtain ⟨rfl⟩ := hTcb'
+                    have hSO := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                    exact ⟨serverTcb, hSO, rfl⟩
+                  · exact ⟨tcb', (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hEq3 hInv2 hS3).symm ▸ hTcb', rfl⟩
+                obtain ⟨tcb2, hTcb2Obj, hPrr2⟩ := hTcb2
+                have hTcb1 : ∃ tcb1, p1.2.objects[tid]? = some (.tcb tcb1) ∧
+                    tcb1.pendingReceiveReply = tcb2.pendingReceiveReply := by
+                  by_cases hEq2 : tid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hTcb2Obj
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb2Obj
+                    simp at hTcb2Obj; obtain ⟨rfl⟩ := hTcb2Obj
+                    have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                    exact ⟨clientTcb, hCO, rfl⟩
+                  · exact ⟨tcb2, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hEq2 hInv1 hS2).symm ▸ hTcb2Obj, rfl⟩
+                obtain ⟨tcb1, hTcb1Obj, hPrr1⟩ := hTcb1
+                by_cases hEq1 : tid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hTcb1Obj
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb1Obj
+                  simp at hTcb1Obj
+                · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1
+                  rw [hPres1] at hTcb1Obj
+                  exact ⟨tcb1, hTcb1Obj, by rw [hPrr1, hPrr2]⟩
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D3: `returnDonatedSchedContext` exact-preserves a present
+`.reply` object — its three stores write a SchedContext and two TCBs, none of which
+is the reply slot `oid` (which currently holds a `.reply`).  Forward direction. -/
+theorem returnDonatedSchedContext_preserves_reply
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    st'.objects[oid]? = some (.reply r) := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        have hNe1 : oid ≠ scId.toObjId := by intro hEq; rw [hEq, hObj] at hReply; cases hReply
+        have hR1 : p1.2.objects[oid]? = some (.reply r) := by
+          rw [storeObject_objects_ne st p1.2 scId.toObjId oid _ hNe1 hObjInv hS1]; exact hReply
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            have hNe2 : oid ≠ originalOwner.toObjId := by
+              intro hEq
+              have hTcbObj := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+              rw [← hEq, hR1] at hTcbObj; cases hTcbObj
+            have hR2 : p2.2.objects[oid]? = some (.reply r) := by
+              rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hNe2 hInv1 hS2]; exact hR1
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq]
+                have hNe3 : oid ≠ serverTid.toObjId := by
+                  intro hEqS
+                  have hTcbObj := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                  rw [← hEqS, hR2] at hTcbObj; cases hTcbObj
+                rw [storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hNe3 hInv2 hS3]; exact hR2
+    | _ => simp only []; intro h; cases h
+
+/-- IPC de-threading D3: `cleanupPreReceiveDonation` preserves `pendingReceiveReply`
+backward (no-op or a single `returnDonatedSchedContext`).  Lift of
+`returnDonatedSchedContext_tcb_pendingReceiveReply_backward`. -/
+theorem cleanupPreReceiveDonation_tcb_pendingReceiveReply_backward
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : (cleanupPreReceiveDonation st receiver).objects[tid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
+  unfold cleanupPreReceiveDonation at hTcb'
+  cases hLookup : lookupTcb st receiver with
+  | none => simp only [hLookup] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+  | some recvTcb =>
+    simp only [hLookup] at hTcb'
+    cases hBinding : recvTcb.schedContextBinding with
+    | unbound => simp only [hBinding] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+    | bound _ => simp only [hBinding] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+    | donated scId originalOwner =>
+      simp only [hBinding] at hTcb'
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => simp only [hReturn] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+      | ok st' =>
+        simp only [hReturn] at hTcb'
+        exact returnDonatedSchedContext_tcb_pendingReceiveReply_backward st st' receiver scId
+          originalOwner hObjInv hReturn tid.toObjId tcb' hTcb'
+
+set_option linter.unusedSimpArgs false in
+/-- IPC de-threading D3: `cleanupPreReceiveDonation` exact-preserves a present
+`.reply` object (no-op or a single `returnDonatedSchedContext`).  Lift of
+`returnDonatedSchedContext_preserves_reply`. -/
+theorem cleanupPreReceiveDonation_preserves_reply
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt) :
+    (cleanupPreReceiveDonation st receiver).objects[oid]? = some (.reply r) := by
+  unfold cleanupPreReceiveDonation
+  cases hLookup : lookupTcb st receiver with
+  | none => simp only [hLookup]; exact hReply
+  | some recvTcb =>
+    simp only [hLookup]
+    cases hBinding : recvTcb.schedContextBinding with
+    | unbound => simp only [hBinding]; exact hReply
+    | bound _ => simp only [hBinding]; exact hReply
+    | donated scId originalOwner =>
+      simp only [hBinding]
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => simp only [hReturn]; exact hReply
+      | ok st' =>
+        simp only [hReturn]
+        exact returnDonatedSchedContext_preserves_reply st st' receiver scId originalOwner
+          oid r hReply hObjInv hReturn
+
+/-- IPC de-threading D2: `cleanupPreReceiveDonation` **preserves** the third clause of
+`replyCallerLinkage`.  Cleanup never alters any TCB's `ipcState` or `replyObject`
+(`cleanupPreReceiveDonation_tcb_ipcState_replyObject_backward`), so a `.blockedOnReply`
+TCB in the cleaned state maps back to one already carrying a reply.  Frames the receive
+no-sender (block) path. -/
+theorem cleanupPreReceiveDonation_preserves_blockedOnReplyHasReplyObject
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st) :
+    blockedOnReplyHasReplyObject (cleanupPreReceiveDonation st receiver) := by
+  intro tid tcb ep rt hTcb hBlk
+  obtain ⟨tcb0, hTcb0, hIpc, hRepl⟩ :=
+    cleanupPreReceiveDonation_tcb_ipcState_replyObject_backward st receiver hObjInv tid tcb hTcb
+  obtain ⟨rid, hRid⟩ := hInv tid tcb0 ep rt hTcb0 (by rw [hIpc]; exact hBlk)
+  exact ⟨rid, hRepl ▸ hRid⟩
 
 /-- AI4-A: TCB forward transport through returnDonatedSchedContext for queue fields.
 If a TCB exists in the pre-state, there's a TCB in the post-state with the same

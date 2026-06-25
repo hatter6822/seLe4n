@@ -208,7 +208,9 @@ theorem cleanupNoStaleSchedRef_smp_of_singleCore_and_idle {st : SystemState}
 
 /-- SM4.D: the natural SMP generalisation of `passiveServerIdle` — an
 unbound thread that is in no core's run queue and is no core's current
-thread is in a passive state. -/
+thread is in a passive state (ready / blocked-on-receive / -notification /
+-reply).  (Finding F-3: the passive states include `.blockedOnReply` — a
+donor descheduled while awaiting the reply that returns its SchedContext.) -/
 def passiveServerIdle_scheduledNowhere (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.getTcb? tid = some tcb →
@@ -216,8 +218,9 @@ def passiveServerIdle_scheduledNowhere (st : SystemState) : Prop :=
     (∀ c : CoreId, tid ∉ (st.scheduler.runQueueOnCore c)) →
     (∀ c : CoreId, st.scheduler.currentOnCore c ≠ some tid) →
     (tcb.ipcState = .ready ∨
-     ∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
-             tcb.ipcState = .blockedOnNotification epId)
+     (∃ epId, tcb.ipcState = .blockedOnReceive epId ∨
+              tcb.ipcState = .blockedOnNotification epId) ∨
+     ∃ epId replyTarget, tcb.ipcState = .blockedOnReply epId replyTarget)
 
 /-- SM4.D: the natural-SMP form follows directly from the single-core
 `passiveServerIdle` (the natural form's "scheduled nowhere" hypotheses
@@ -276,15 +279,15 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates_smp
 
 theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (receiver senderId : SeLe4n.ThreadId)
+    (receiver senderId : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
     (hPre : ipcSchedulerContractPredicates_smp st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st'))
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st'))
     (hNonBootIdle : ∀ c, c ≠ bootCoreId → (st'.scheduler.runQueueOnCore c).toList = []) :
     ipcSchedulerContractPredicates_smp st' :=
   ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
     (endpointReceiveDual_preserves_ipcSchedulerContractPredicates st st' endpointId receiver
-      senderId (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
+      senderId replyId (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
     hNonBootIdle
 
 theorem endpointCall_preserves_ipcSchedulerContractPredicates_smp
@@ -315,14 +318,15 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates_smp
 theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates_smp
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
     (hPre : ipcSchedulerContractPredicates_smp st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st'))
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st'))
     (hNonBootIdle : ∀ c, c ≠ bootCoreId → (st'.scheduler.runQueueOnCore c).toList = []) :
     ipcSchedulerContractPredicates_smp st' :=
   ipcSchedulerContractPredicates_smp_of_singleCore_and_idle
     (endpointReplyRecv_preserves_ipcSchedulerContractPredicates st st' endpointId receiver
-      replyTarget msg (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv hStep)
+      replyTarget msg (ipcSchedulerContractPredicates_smp_to_singleCore st hPre) hObjInv replyId hStep)
     hNonBootIdle
 
 theorem notificationSignal_preserves_ipcSchedulerContractPredicates_smp

@@ -246,6 +246,14 @@ theorem storeTcbIpcStateAndMessage_preserves_ipcInvariant
     ipcInvariant st' := by
   exact fun oid ntfn h => hInv oid ntfn (storeTcbIpcStateAndMessage_notification_backward st st' tid ipc msg oid ntfn hObjInv hStep h)
 
+/-- Finding F-1: `storeTcbReceiveComplete` preserves ipcInvariant (pure backward
+transport).  Mirror of `storeTcbIpcStateAndMessage_preserves_ipcInvariant`. -/
+theorem storeTcbReceiveComplete_preserves_ipcInvariant
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    ipcInvariant st' := by
+  exact fun oid ntfn h => hInv oid ntfn (storeTcbReceiveComplete_notification_backward st st' tid msg oid ntfn hObjInv hStep h)
+
 /-- storeTcbIpcState preserves ipcInvariant (pure backward transport). -/
 theorem storeTcbIpcState_preserves_ipcInvariant
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
@@ -360,12 +368,12 @@ theorem endpointSendDual_preserves_ipcInvariant
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hInv1 := endpointQueuePopHead_preserves_ipcInvariant endpointId true st pair.2.2 pair.1 hInv hObjInv hPop
-          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2.2 st2 pair.1 .ready (some msg) hInv1 hObjInv1 hMsg
+            have hInv2 := storeTcbReceiveComplete_preserves_ipcInvariant pair.2.2 st2 pair.1 (some msg) hInv1 hObjInv1 hMsg
             exact fun oid ntfn h => hInv2 oid ntfn (by rwa [ensureRunnable_preserves_objects] at h)
       | none =>
         -- Blocking path: Enqueue → storeTcbIpcStateAndMessage → removeRunnable
@@ -430,8 +438,8 @@ theorem endpointReply_message_bounded
 theorem endpointReplyRecv_message_bounded
     (st st' : SystemState)
     (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    (msg : IpcMessage) (replyId : Option SeLe4n.ReplyId)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     msg.bounded := by
   unfold endpointReplyRecv at hStep
   by_cases hR : maxMessageRegisters < msg.registers.size
@@ -472,12 +480,12 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
           have hObjInv1 : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
           have hSchedPop := endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop
-          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
-            have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 .ready (some msg) hMsg
+            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some msg) hMsg
             have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedPop
             refine ⟨?_, ?_, ?_⟩
             · unfold queueCurrentConsistent
@@ -508,9 +516,9 @@ theorem endpointSendDual_preserves_schedulerInvariantBundle
                 obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId true st pair.2.2 pair.1 x.toObjId tcbX hObjInv hPop hTcbX
                 by_cases hNeTid : x.toObjId = pair.1.toObjId
                 · have hTargetTcb : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
-                  have h := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg hTargetTcb
+                  have h := storeTcbReceiveComplete_tcb_exists_at_target pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg hTargetTcb
                   rwa [← hNeTid] at h
-                · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
+                · exact ⟨tcb1, (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
       | none =>
         -- Blocking: Enqueue → storeTcbIpcStateAndMessage(.blockedOnSend) → removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false sender st with
@@ -596,20 +604,20 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
             (fun tid tcb' h => endpointQueuePopHead_tcb_ipcState_backward endpointId true st pair.2.2 pair.1 tid tcb' hObjInv hPop h)
             ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
           -- Now storeTcbIpcStateAndMessage(.ready, receiver) + ensureRunnable
-          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             rcases hContractPop with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
-            have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 .ready (some msg) hMsg
+            have hSchedMsg := storeTcbReceiveComplete_scheduler_eq pair.2.2 st2 pair.1 (some msg) hMsg
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
             · -- runnableThreadIpcReady
               intro tid tcb' hTcb' hRun'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · exact storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
-              · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+              · exact storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hReady' tid tcb' hTcbPre (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -618,10 +626,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -630,10 +638,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -642,10 +650,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -654,10 +662,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' eid rt hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -666,10 +674,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
               intro tid tcb' nid hTcb' hIpcState'
               rw [ensureRunnable_preserves_objects] at hTcb'
               by_cases hNe : tid.toObjId = pair.1.toObjId
-              · have := storeTcbIpcStateAndMessage_ipcState_eq pair.2.2 st2 pair.1 .ready (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
+              · have := storeTcbReceiveComplete_ipcState_eq pair.2.2 st2 pair.1 (some msg) hObjInv1 hMsg tcb' (hNe ▸ hTcb')
                 rw [this] at hIpcState'; cases hIpcState'
               · have hNeTid : tid ≠ pair.1 := fun h => hNe (congrArg ThreadId.toObjId h)
-                have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 .ready (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
+                have hTcbPre := (storeTcbReceiveComplete_preserves_objects_ne pair.2.2 st2 pair.1 (some msg) tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                 intro hRun'
                 rcases ensureRunnable_mem_reverse st2 pair.1 tid hRun' with hOld | hEq
                 · exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
@@ -758,9 +766,10 @@ theorem endpointSendDual_preserves_ipcSchedulerContractPredicates
 theorem endpointReceiveDual_preserves_ipcInvariant
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcInvariant st' := by
   unfold endpointReceiveDual at hStep
   cases hObj : st.objects[endpointId]? with
@@ -791,12 +800,25 @@ theorem endpointReceiveDual_preserves_ipcInvariant
               have hObjInvMsg : st2.objects.invExt :=
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
               have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hInv1 hObjInvPop hMsg
-              revert hStep
-              -- AK1-D: atomic (.ready, senderMsg) receiver update
-              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
-              | ok st4 =>
-                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInv2 hObjInvMsg hPend
-              | error _ => simp
+              -- WS-SM SM6.D (#7.1 fold): atomic reply-link of the dequeued caller.
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hInvLink := linkCallerReply_preserves_ipcInvariant st2 stLinked pair.1 rid hInv2 hObjInvMsg hLink
+                  revert hStep
+                  -- AK1-D: atomic (.ready, senderMsg) receiver update
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInvLink hObjInvLink hPend
+                  | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             -- senderWasCall = false, send path
             simp only [hSenderIpc] at hStep
@@ -848,19 +870,317 @@ theorem endpointReceiveDual_preserves_ipcInvariant
             cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
               have hInv2 := storeTcbIpcState_preserves_ipcInvariant st1 st2 receiver _ hInv1 hObjInvEnq hIpc
-              exact fun oid ntfn h => hInv2 oid ntfn (by rwa [removeRunnable_preserves_objects] at h)
+              have hObjInv2 : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
+              -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact fun oid ntfn h => hInv2 oid ntfn (by rwa [removeRunnable_preserves_objects] at h)
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                -- true; strip it to recover the pre-guard store reduction.
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
+                  | false => simp [hb] at hStep
+                  | true => rfl
+                rw [if_pos hValid] at hStep
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  have hInv3 : ipcInvariant stStashed :=
+                    storeObject_preserves_ipcInvariant_of_ne_notification st2 stStashed receiver.toObjId _
+                      (fun _ => by exact KernelObject.noConfusion) hInv2 hObjInv2 hStash
+                  exact fun oid ntfn h => hInv3 oid ntfn (by rwa [removeRunnable_preserves_objects] at h)
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` forwards TCB existence — it only
+re-stores the caller's TCB (`replyObject` field) and the reply object, so a TCB
+present at any slot `y` in the pre-state is still a TCB in the post-state.  Used
+by the scheduler-bundle and contract-predicate preservation proofs to carry the
+`currentThreadValid` / runnable-TCB obligations across the atomic reply-link. -/
+private theorem linkCallerReply_tcb_forward
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (y : SeLe4n.ObjId) (tcbY : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st'))
+    (hTcb : st.objects[y]? = some (.tcb tcbY)) :
+    ∃ tcbY', st'.objects[y]? = some (.tcb tcbY') := by
+  by_cases hyC : y = caller.toObjId
+  · -- caller slot: the final store writes a `.tcb` there.
+    subst hyC
+    obtain ⟨tcb', hGet', _⟩ := linkCallerReply_replyObject_some st caller rid hObjInv st' hStep
+    exact ⟨tcb', (getTcb?_eq_some_iff st' caller tcb').mp hGet'⟩
+  · -- non-caller slot: both stores leave it equal to the pre-state.
+    unfold SystemState.linkCallerReply at hStep
+    cases hLink : linkReply rid caller st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      -- linkReply only stores the reply object at `rid.toObjId`.
+      have hyR : y ≠ rid.toObjId := by
+        intro hEq
+        unfold linkReply at hLink
+        cases hGetR : st.getReply? rid with
+        | none => simp [hGetR] at hLink
+        | some r =>
+          have hRobj := (getReply?_eq_some_iff st rid r).mp hGetR
+          rw [hEq, hRobj] at hTcb
+          simp at hTcb
+      have hLinkFrame : st1.objects[y]? = st.objects[y]? := by
+        unfold linkReply at hLink
+        cases hGetR : st.getReply? rid with
+        | none => simp [hGetR] at hLink
+        | some r =>
+          simp only [hGetR] at hLink
+          split at hLink
+          · exact storeObject_objects_ne st st1 rid.toObjId y _ hyR hObjInv hLink
+          · simp at hLink
+      cases hT : st1.getTcb? caller with
+      | none => simp [hT] at hStep
+      | some tcb =>
+        simp only [hT] at hStep
+        split at hStep
+        · have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+          have hFinalFrame := storeObject_objects_ne st1 st' caller.toObjId y _ hyC hInv1 hStep
+          exact ⟨tcbY, by rw [hFinalFrame, hLinkFrame]; exact hTcb⟩
+        · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` backward-preserves TCB ipcState —
+its only TCB write rewrites the caller's `replyObject` (never `ipcState`) and its
+reply write touches no TCB.  A TCB present at slot `y` in the post-state therefore
+maps back to a TCB at `y` in the pre-state with identical `ipcState`.  Feeds
+`contracts_of_same_scheduler_ipcState` so the contract predicates transport across
+the atomic reply-link. -/
+theorem linkCallerReply_tcb_ipcState_backward
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (y : SeLe4n.ThreadId) (tcbY' : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st'))
+    (hTcb : st'.objects[y.toObjId]? = some (.tcb tcbY')) :
+    ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcbY'.ipcState := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        have hT1obj : st1.objects[caller.toObjId]? = some (.tcb tcb) :=
+          (getTcb?_eq_some_iff st1 caller tcb).mp hT
+        -- linkReply stores exactly a `.reply` at `rid.toObjId` and nothing else, so
+        -- `st1` agrees with `st` off `rid.toObjId`, and `st1` holds a reply at `rid`.
+        obtain ⟨hReplyAtRid, hLinkFrame⟩ :
+            (∃ r, st1.objects[rid.toObjId]? = some (.reply r)) ∧
+            (∀ z, z ≠ rid.toObjId → st1.objects[z]? = st.objects[z]?) := by
+          unfold linkReply at hLink
+          cases hGetR : st.getReply? rid with
+          | none => simp [hGetR] at hLink
+          | some r =>
+            simp only [hGetR] at hLink
+            split at hLink
+            · exact ⟨⟨{ r with caller := some caller },
+                storeObject_inserted_object_lookup st rid.toObjId
+                  (.reply { r with caller := some caller }) hObjInv st1 hLink⟩,
+                fun z hz => storeObject_objects_ne st st1 rid.toObjId z _ hz hObjInv hLink⟩
+            · simp at hLink
+        -- caller ≠ rid (a TCB and a reply cannot share a slot).
+        have hCR : caller.toObjId ≠ rid.toObjId := by
+          intro hEq; obtain ⟨r, hr⟩ := hReplyAtRid
+          rw [hEq, hr] at hT1obj; simp at hT1obj
+        by_cases hyC : y.toObjId = caller.toObjId
+        · -- post-state TCB at caller is `{ tcb with replyObject := some rid }`.
+          have hStoreLk := storeObject_inserted_object_lookup st1 caller.toObjId
+            (.tcb { tcb with replyObject := some rid }) hInv1 st' hStep
+          rw [hyC] at hTcb
+          simp only [RHTable_getElem?_eq_get?] at hTcb
+          rw [hStoreLk] at hTcb
+          have htcbY' : tcbY' = { tcb with replyObject := some rid } :=
+            KernelObject.tcb.inj (Option.some.inj hTcb.symm)
+          refine ⟨tcb, ?_, ?_⟩
+          · rw [hyC, ← hLinkFrame caller.toObjId hCR]; exact hT1obj
+          · rw [htcbY']
+        · -- non-caller slot: the final store frames `y`; pull the TCB back to `st1`.
+          have hFinalFrame := storeObject_objects_ne st1 st' caller.toObjId y.toObjId _ hyC hInv1 hStep
+          have hSt1Y : st1.objects[y.toObjId]? = some (.tcb tcbY') := by
+            rw [← hFinalFrame]; exact hTcb
+          by_cases hyR : y.toObjId = rid.toObjId
+          · -- `st1` holds a reply at `rid`, contradicting a TCB there.
+            exfalso; obtain ⟨r, hr⟩ := hReplyAtRid
+            rw [hyR, hr] at hSt1Y; simp at hSt1Y
+          · refine ⟨tcbY', ?_, rfl⟩
+            rw [← hLinkFrame y.toObjId hyR]; exact hSt1Y
+      · simp at hStep
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` forwards TCB existence — it
+composes `linkCallerReply` (whose only TCB write re-stores the caller's TCB) with a
+single `pendingReceiveReply`-clearing re-store of the `server` TCB.  Neither write
+removes a TCB, so a TCB present at any slot `y` in the pre-state is still a TCB in the
+post-state.  Feeds the scheduler-bundle `currentThreadValid` obligation across the
+atomic call-path fold. -/
+theorem linkServerStashedReply_tcb_forward
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (y : SeLe4n.ObjId) (tcbY : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
+    (hTcb : st.objects[y]? = some (.tcb tcbY)) :
+    ∃ tcbY', st'.objects[y]? = some (.tcb tcbY') := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      -- Forward the TCB across the `linkCallerReply` leg.
+      obtain ⟨tcb1, hTcb1⟩ := linkCallerReply_tcb_forward st st1 caller rid y tcbY hObjInv hLink hTcb
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact ⟨tcb1, hTcb1⟩
+      | some sTcb =>
+        simp only [hT] at hStep
+        by_cases hyS : y = server.toObjId
+        · -- server slot: the final store writes a `.tcb` there.
+          subst hyS
+          have hLk := storeObject_inserted_object_lookup st1 server.toObjId
+            (.tcb { sTcb with pendingReceiveReply := none }) hObjInv1 st' hStep
+          exact ⟨{ sTcb with pendingReceiveReply := none }, by
+            simp only [RHTable_getElem?_eq_get?]; exact hLk⟩
+        · -- non-server slot: the final store frames `y`.
+          have hFrame := storeObject_objects_ne st1 st' server.toObjId y _ hyS hObjInv1 hStep
+          exact ⟨tcb1, by rw [hFrame]; exact hTcb1⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` backward-preserves TCB ipcState —
+its `linkCallerReply` leg rewrites only the caller's `replyObject` (never `ipcState`),
+and the final server re-store clears `pendingReceiveReply` (also leaving `ipcState`
+untouched).  A TCB present at slot `y` in the post-state therefore maps back to a TCB at
+`y` in the pre-state with identical `ipcState`.  Feeds
+`contracts_of_same_scheduler_ipcState` so the contract predicates transport across the
+atomic call-path fold. -/
+theorem linkServerStashedReply_tcb_ipcState_backward
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (y : SeLe4n.ThreadId) (tcbY' : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st'))
+    (hTcb : st'.objects[y.toObjId]? = some (.tcb tcbY')) :
+    ∃ tcb, st.objects[y.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcbY'.ipcState := by
+  unfold SystemState.linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : SystemState.linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      -- First peel the final server-store backward to a TCB (same ipcState) in `st1`,
+      -- then apply the `linkCallerReply` backward lemma to reach `st`.
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq
+        exact linkCallerReply_tcb_ipcState_backward st st1 caller rid y tcbY' hObjInv hLink hTcb
+      | some sTcb =>
+        simp only [hT] at hStep
+        -- Establish a TCB at `y` in `st1` with `ipcState = tcbY'.ipcState`.
+        have hSt1Y : ∃ t1, st1.objects[y.toObjId]? = some (.tcb t1) ∧ t1.ipcState = tcbY'.ipcState := by
+          by_cases hyS : y.toObjId = server.toObjId
+          · -- post-state TCB at server is `{ sTcb with pendingReceiveReply := none }`.
+            have hStoreLk := storeObject_inserted_object_lookup st1 server.toObjId
+              (.tcb { sTcb with pendingReceiveReply := none }) hObjInv1 st' hStep
+            rw [hyS] at hTcb
+            simp only [RHTable_getElem?_eq_get?] at hTcb
+            rw [hStoreLk] at hTcb
+            have htcbY' : tcbY' = { sTcb with pendingReceiveReply := none } :=
+              KernelObject.tcb.inj (Option.some.inj hTcb.symm)
+            refine ⟨sTcb, ?_, ?_⟩
+            · rw [hyS]; exact (getTcb?_eq_some_iff st1 server sTcb).mp hT
+            · rw [htcbY']
+          · -- non-server slot: the final store frames `y`; pull the TCB back to `st1`.
+            have hFrame := storeObject_objects_ne st1 st' server.toObjId y.toObjId _ hyS hObjInv1 hStep
+            exact ⟨tcbY', by rw [← hFrame]; exact hTcb, rfl⟩
+        obtain ⟨t1, hT1, hIpcEq1⟩ := hSt1Y
+        obtain ⟨tcb, hTcb0, hIpcEq0⟩ :=
+          linkCallerReply_tcb_ipcState_backward st st1 caller rid y t1 hObjInv hLink hT1
+        exact ⟨tcb, hTcb0, by rw [hIpcEq0, hIpcEq1]⟩
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the scheduler-invariant
+bundle.  The scheduler is unchanged (`linkServerStashedReply_scheduler_eq`), discharging
+the `queueCurrentConsistent` / `runQueueUnique` conjuncts; `currentThreadValid` carries
+across via `linkServerStashedReply_tcb_forward`. -/
+theorem linkServerStashedReply_preserves_schedulerInvariantBundle
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hInv : schedulerInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  rcases hInv with ⟨hQCC, hRQU, hCTV⟩
+  have hSched := linkServerStashedReply_scheduler_eq st st' caller server hStep
+  refine ⟨?_, ?_, ?_⟩
+  · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSched]
+  · show st'.scheduler.runnable.Nodup
+    rw [show st'.scheduler.runnable = st.scheduler.runnable from congrArg SchedulerState.runnable hSched]
+    exact hRQU
+  · unfold currentThreadValid; rw [hSched]
+    cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+    | none => simp
+    | some x =>
+      simp only []
+      have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
+        simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+      rcases hCTV' with ⟨tcbX, hTcbX⟩
+      exact linkServerStashedReply_tcb_forward st st' caller server x.toObjId tcbX hObjInv hStep hTcbX
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the IPC↔scheduler
+contract predicates.  It leaves the scheduler unchanged and every TCB's `ipcState`
+untouched (it writes only `replyObject` / `pendingReceiveReply` fields), so
+`contracts_of_same_scheduler_ipcState` transports the predicates verbatim. -/
+theorem linkServerStashedReply_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (caller server : SeLe4n.ThreadId)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' :=
+  contracts_of_same_scheduler_ipcState st st'
+    (linkServerStashedReply_scheduler_eq st st' caller server hStep)
+    (fun tid tcb' h =>
+      linkServerStashedReply_tcb_ipcState_backward st st' caller server tid tcb' hObjInv hStep h)
+    hContract
 
 /-- WS-F1/TPI-D08: endpointReceiveDual preserves schedulerInvariantBundle. -/
 theorem endpointReceiveDual_preserves_schedulerInvariantBundle
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (hInv : schedulerInvariantBundle st)
     (hCurrNotHead : currentNotEndpointQueueHead st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     schedulerInvariantBundle st' := by
   rcases hInv with ⟨hQCC, hRQU, hCTV⟩
   unfold endpointReceiveDual at hStep
@@ -893,32 +1213,49 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInv1 hMsg
               have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hMsg
               have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedPop
-              revert hStep
-              -- AK1-D: atomic (.ready, senderMsg) receiver update
-              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
-              | ok st4 =>
-                intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                have hSchedPend := storeTcbIpcStateAndMessage_scheduler_eq _ _ receiver _ _ hPend
-                refine ⟨?_, ?_, ?_⟩
-                · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSchedPend, hSchedEq]
-                · show st4.scheduler.runnable.Nodup
-                  rw [show st4.scheduler.runnable = st2.scheduler.runnable from congrArg SchedulerState.runnable hSchedPend, hSchedEq]; exact hRQU
-                · unfold currentThreadValid; rw [hSchedPend, hSchedEq]
-                  cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
-                  | none => simp
-                  | some x =>
-                    simp only []
-                    have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by simp [currentThreadValid, hCurr] at hCTV; exact hCTV
-                    rcases hCTV' with ⟨tcbX, hTcbX⟩
-                    obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId false st pair.2.2 pair.1 x.toObjId tcbX hObjInv hPop hTcbX
-                    by_cases hNeTid : x.toObjId = pair.1.toObjId
-                    · have hTargetTcb : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
-                      have htgt := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInv1 hMsg hTargetTcb
-                      obtain ⟨tcb_tgt, htcb_tgt⟩ := htgt
-                      exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcb_tgt hObjInvMsg hPend (by rwa [← hNeTid] at htcb_tgt)
-                    · have h1 := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1
-                      exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcb1 hObjInvMsg hPend h1
-              | error _ => simp
+              -- WS-SM SM6.D (#7.1 fold): atomic reply-link of the dequeued caller.
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  have hSchedLink : stLinked.scheduler = st.scheduler :=
+                    (linkCallerReply_scheduler_eq st2 stLinked pair.1 rid hLink).trans hSchedEq
+                  revert hStep
+                  -- AK1-D: atomic (.ready, senderMsg) receiver update
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                    have hSchedPend := storeTcbIpcStateAndMessage_scheduler_eq _ _ receiver _ _ hPend
+                    refine ⟨?_, ?_, ?_⟩
+                    · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSchedPend, hSchedLink]
+                    · show st4.scheduler.runnable.Nodup
+                      rw [show st4.scheduler.runnable = stLinked.scheduler.runnable from congrArg SchedulerState.runnable hSchedPend, hSchedLink]; exact hRQU
+                    · unfold currentThreadValid; rw [hSchedPend, hSchedLink]
+                      cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
+                      | none => simp
+                      | some x =>
+                        simp only []
+                        have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+                        rcases hCTV' with ⟨tcbX, hTcbX⟩
+                        obtain ⟨tcb1, hTcb1⟩ := endpointQueuePopHead_tcb_forward endpointId false st pair.2.2 pair.1 x.toObjId tcbX hObjInv hPop hTcbX
+                        -- Establish a TCB at x.toObjId in st2 (post message-store), then
+                        -- forward it across the reply-link and the receiver store.
+                        have hTcbSt2 : ∃ t, st2.objects[x.toObjId]? = some (.tcb t) := by
+                          by_cases hNeTid : x.toObjId = pair.1.toObjId
+                          · have hTargetTcb : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
+                            exact (storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInv1 hMsg hTargetTcb).imp fun _ h => by rwa [← hNeTid] at h
+                          · exact ⟨tcb1, (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1⟩
+                        obtain ⟨tcbSt2, hTcbSt2'⟩ := hTcbSt2
+                        obtain ⟨tcbLink, hTcbLink⟩ := linkCallerReply_tcb_forward st2 stLinked pair.1 rid x.toObjId tcbSt2 hObjInvMsg hLink hTcbSt2'
+                        exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcbLink hObjInvLink hPend hTcbLink
+                  | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             -- senderWasCall = false, send path
             simp only [hSenderIpc] at hStep
@@ -1002,47 +1339,92 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
             cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
               have hSchedIpc := storeTcbIpcState_scheduler_eq st1 st2 receiver _ hIpc
               have hSchedEq : st2.scheduler = st.scheduler := hSchedIpc.trans (hSchedEnq.trans hSchedClean)
+              have hObjInvIpc : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
+              -- Forward the current thread's TCB through cleanup → enqueue → ipcState
+              -- store, parametric in the final post-state `S` (either `st2` or the
+              -- stash store of `st2`).  `hTcbInSt2 x hNe : ∃ t, st2.objects[x]? = .tcb t`.
+              have hTcbInSt2 : ∀ x : SeLe4n.ThreadId, x ≠ receiver →
+                  st.scheduler.currentOnCore bootCoreId = some x →
+                  ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb) := by
+                intro x hEq' hCurr
+                have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
+                  simp [currentThreadValid, hCurr] at hCTV; exact hCTV
+                rcases hCTV' with ⟨tcbX, hTcbX⟩
+                -- AI4-A: cleanupPreReceiveDonation stores TCBs at receiver/owner
+                -- and SchedContext at scId — the current thread x ≠ receiver,
+                -- so its TCB is either unchanged or re-stored as a TCB.
+                have hTcbClean : ∃ tcb', (cleanupPreReceiveDonation st receiver).objects[x.toObjId]? = some (.tcb tcb') :=
+                  cleanupPreReceiveDonation_tcb_forward st receiver x hObjInv ⟨tcbX, hTcbX⟩
+                obtain ⟨tcbClean, hTcbClean'⟩ := hTcbClean
+                obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 x.toObjId tcbClean hObjInvClean hEnq hTcbClean'
+                have hNeTid : x.toObjId ≠ receiver.toObjId := fun h => hEq' (threadId_toObjId_injective h)
+                exact ⟨tcb1, (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ x.toObjId hNeTid hObjInvEnq hIpc) ▸ hTcb1⟩
+              -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
+              -- Generalise over the final state `S` (`st2` or the stash store), proving
+              -- the bundle from a scheduler-equality and a current-TCB forwarder.
+              suffices hGoal : ∀ S : SystemState, S.scheduler = st.scheduler →
+                  (∀ x : SeLe4n.ThreadId, x ≠ receiver →
+                    st.scheduler.currentOnCore bootCoreId = some x →
+                    ∃ tcb, S.objects[x.toObjId]? = some (.tcb tcb)) →
+                  st' = removeRunnable S receiver →
+                  schedulerInvariantBundle st' by
+                cases hGetR : st2.getTcb? receiver with
+                | none =>
+                  simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep
+                  exact hGoal st2 hSchedEq hTcbInSt2 hEq.symm
+                | some rTcb =>
+                  simp only [hGetR] at hStep
+                  -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                  -- true; strip it to recover the pre-guard store reduction.
+                  have hValid : st.replyStashValid replyId = true := by
+                    cases hb : st.replyStashValid replyId with
+                    | false => simp [hb] at hStep
+                    | true => rfl
+                  rw [if_pos hValid] at hStep
+                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                  | error e => simp [hStash] at hStep
+                  | ok pStash =>
+                    obtain ⟨_, stStashed⟩ := pStash
+                    simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                    obtain ⟨_, hEq⟩ := hStep
+                    have hSchedStash : stStashed.scheduler = st.scheduler :=
+                      (storeObject_scheduler_eq st2 stStashed receiver.toObjId _ hStash).trans hSchedEq
+                    refine hGoal stStashed hSchedStash (fun x hEq' hCurr => ?_) hEq.symm
+                    obtain ⟨tcbS2, hTcbS2⟩ := hTcbInSt2 x hEq' hCurr
+                    have hNeTid : x.toObjId ≠ receiver.toObjId := fun h => hEq' (threadId_toObjId_injective h)
+                    exact ⟨tcbS2, (storeObject_objects_ne st2 stStashed receiver.toObjId x.toObjId _ hNeTid hObjInvIpc hStash) ▸ hTcbS2⟩
+              -- Discharge the generalised bundle for an arbitrary `S = removeRunnable S receiver`.
+              intro S hSchedS hTcbS hEq; subst hEq
               refine ⟨?_, ?_, ?_⟩
               · unfold queueCurrentConsistent
-                rw [removeRunnable_scheduler_current, hSchedEq]
+                rw [removeRunnable_scheduler_current, hSchedS]
                 cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => simp
                 | some x =>
                   by_cases hEq' : x = receiver
                   · subst hEq'; simp
                   · rw [if_neg (show ¬(some x = some receiver) from fun h => hEq' (Option.some.inj h))]
-                    show x ∉ (removeRunnable st2 receiver).scheduler.runnable
+                    show x ∉ (removeRunnable S receiver).scheduler.runnable
                     have hNotMem : x ∉ st.scheduler.runnable := by
                       have := hQCC; simp [queueCurrentConsistent, hCurr] at this; exact this
-                    exact removeRunnable_not_mem_of_not_mem st2 receiver x (hSchedEq ▸ hNotMem)
-              · exact removeRunnable_nodup st2 receiver (hSchedEq ▸ hRQU)
+                    exact removeRunnable_not_mem_of_not_mem S receiver x (hSchedS ▸ hNotMem)
+              · exact removeRunnable_nodup S receiver (hSchedS ▸ hRQU)
               · unfold currentThreadValid
                 rw [removeRunnable_preserves_objects, removeRunnable_scheduler_current,
-                    hSchedEq]
+                    hSchedS]
                 cases hCurr : (st.scheduler.currentOnCore bootCoreId) with
                 | none => simp
                 | some x =>
                   by_cases hEq' : x = receiver
                   · subst hEq'; simp
                   · rw [if_neg (show ¬(some x = some receiver) from fun h => hEq' (Option.some.inj h))]
-                    show ∃ tcb, st2.objects[x.toObjId]? = some (.tcb tcb)
-                    have hCTV' : ∃ tcb', st.objects[x.toObjId]? = some (.tcb tcb') := by
-                      simp [currentThreadValid, hCurr] at hCTV; exact hCTV
-                    rcases hCTV' with ⟨tcbX, hTcbX⟩
-                    -- Forward tcb lookup through cleanup + enqueue
-                    -- AI4-A: cleanupPreReceiveDonation stores TCBs at receiver/owner
-                    -- and SchedContext at scId — the current thread x ≠ receiver,
-                    -- so its TCB is either unchanged or re-stored as a TCB.
-                    have hTcbClean : ∃ tcb', (cleanupPreReceiveDonation st receiver).objects[x.toObjId]? = some (.tcb tcb') :=
-                      cleanupPreReceiveDonation_tcb_forward st receiver x hObjInv ⟨tcbX, hTcbX⟩
-                    obtain ⟨tcbClean, hTcbClean'⟩ := hTcbClean
-                    obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 x.toObjId tcbClean hObjInvClean hEnq hTcbClean'
-                    have hNeTid : x.toObjId ≠ receiver.toObjId := fun h => hEq' (threadId_toObjId_injective h)
-                    exact ⟨tcb1, (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ x.toObjId hNeTid hObjInvEnq hIpc) ▸ hTcb1⟩
+                    show ∃ tcb, S.objects[x.toObjId]? = some (.tcb tcb)
+                    exact hTcbS x hEq' hCurr
 
 /-- AK1-D (I-M02): Specialised contracts-preservation lemma for a `.ready`
     write. Unlike `contracts_of_same_scheduler_ipcState`, this helper does
@@ -1118,9 +1500,10 @@ theorem storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicate
 theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) (senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (hContract : ipcSchedulerContractPredicates st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold endpointReceiveDual at hStep
@@ -1216,15 +1599,34 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                     · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 _ none tid.toObjId hNe hObjInv1 hMsg).symm.trans hTcb'
                       intro hRun'
                       exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
-                -- storeTcbPendingMessage preserves contracts
-                revert hStep
-                -- AK1-D: atomic (.ready, senderMsg) receiver update
-                cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
-                | ok st4 =>
-                  intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                  exact storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
-                    _ _ receiver _ hObjInvMsg hPend hContractSt2
-                | error _ => simp
+                -- WS-SM SM6.D (#7.1 fold): atomic reply-link of the dequeued caller.
+                cases hReplyId : replyId with
+                | none => simp [hReplyId] at hStep
+                | some rid =>
+                  simp only [hReplyId] at hStep
+                  cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                  | error e => simp [hLink] at hStep
+                  | ok pLink =>
+                    obtain ⟨_, stLinked⟩ := pLink
+                    simp only [hLink] at hStep
+                    have hObjInvLink : stLinked.objects.invExt :=
+                      linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                    -- The reply-link preserves scheduler and every TCB's ipcState, so
+                    -- the contracts transport from `st2` to `stLinked`.
+                    have hContractLink : ipcSchedulerContractPredicates stLinked :=
+                      contracts_of_same_scheduler_ipcState st2 stLinked
+                        (linkCallerReply_scheduler_eq st2 stLinked pair.1 rid hLink)
+                        (fun tid tcb' h => linkCallerReply_tcb_ipcState_backward st2 stLinked pair.1 rid tid tcb' hObjInvMsg hLink h)
+                        hContractSt2
+                    -- storeTcbPendingMessage preserves contracts
+                    revert hStep
+                    -- AK1-D: atomic (.ready, senderMsg) receiver update
+                    cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                    | ok st4 =>
+                      intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                      exact storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+                        _ _ receiver _ hObjInvLink hPend hContractLink
+                    | error _ => simp
             | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
               -- senderWasCall = false, send path
               simp only [hSenderIpc] at hStep
@@ -1340,70 +1742,106 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
             cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
               rcases hContractEnq with ⟨hReady', hBlockSend', hBlockRecv', hBlockCall', hBlockReply', hBlockNotif'⟩
               have hSchedIpc := storeTcbIpcState_scheduler_eq st1 st2 receiver _ hIpc
+              have hObjInvIpc : st2.objects.invExt :=
+                storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq2 hIpc
+              -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
+              -- Generalise over the final base state `Sbase` (`st2` or its stash store):
+              -- both agree with `st2` at every non-receiver slot and share its scheduler.
+              suffices hGoal : ∀ Sbase : SystemState, Sbase.scheduler = st2.scheduler →
+                  (∀ tid : SeLe4n.ThreadId, tid ≠ receiver →
+                    Sbase.objects[tid.toObjId]? = st2.objects[tid.toObjId]?) →
+                  st' = removeRunnable Sbase receiver →
+                  ipcSchedulerContractPredicates st' by
+                cases hGetR : st2.getTcb? receiver with
+                | none =>
+                  simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep
+                  exact hGoal st2 rfl (fun _ _ => rfl) hEq.symm
+                | some rTcb =>
+                  simp only [hGetR] at hStep
+                  -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                  -- true; strip it to recover the pre-guard store reduction.
+                  have hValid : st.replyStashValid replyId = true := by
+                    cases hb : st.replyStashValid replyId with
+                    | false => simp [hb] at hStep
+                    | true => rfl
+                  rw [if_pos hValid] at hStep
+                  cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                  | error e => simp [hStash] at hStep
+                  | ok pStash =>
+                    obtain ⟨_, stStashed⟩ := pStash
+                    simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                    obtain ⟨_, hEq⟩ := hStep
+                    refine hGoal stStashed (storeObject_scheduler_eq st2 stStashed receiver.toObjId _ hStash)
+                      (fun tid hNe => ?_) hEq.symm
+                    have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
+                    exact storeObject_objects_ne st2 stStashed receiver.toObjId tid.toObjId _ hNeObjId hObjInvIpc hStash
+              -- Discharge the generalised contracts for an arbitrary base state `Sbase`.
+              intro Sbase hSchedBase hObjBase hEq; subst hEq
+              have hSchedBaseEq : Sbase.scheduler = st1.scheduler := hSchedBase.trans hSchedIpc
               refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
               · -- runnableThreadIpcReady
                 intro tid tcb' hTcb' hRun'
                 rw [removeRunnable_preserves_objects] at hTcb'
                 by_cases hNe : tid = receiver
-                · subst hNe; exact absurd hRun' (removeRunnable_not_mem_self st2 _)
+                · subst hNe; exact absurd hRun' (removeRunnable_not_mem_self Sbase _)
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans hTcb'
-                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 receiver tid).mp hRun'
-                  exact hReady' tid tcb' hTcbPre (show tid ∈ st1.scheduler.runnable by rwa [← hSchedIpc])
+                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
+                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
+                  exact hReady' tid tcb' hTcbPre (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
               · -- blockedOnSendNotRunnable
                 intro tid tcb' eid hTcb' hIpcState'
                 rw [removeRunnable_preserves_objects] at hTcb'
                 by_cases hNe : tid = receiver
-                · subst hNe; exact removeRunnable_not_mem_self st2 _
+                · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans hTcb'
+                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
                   intro hRun'
-                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 receiver tid).mp hRun'
-                  exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedIpc])
+                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
+                  exact hBlockSend' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
               · -- blockedOnReceiveNotRunnable
                 intro tid tcb' eid hTcb' hIpcState'
                 rw [removeRunnable_preserves_objects] at hTcb'
                 by_cases hNe : tid = receiver
-                · subst hNe; exact removeRunnable_not_mem_self st2 _
+                · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans hTcb'
+                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
                   intro hRun'
-                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 receiver tid).mp hRun'
-                  exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedIpc])
+                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
+                  exact hBlockRecv' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
               · -- blockedOnCallNotRunnable
                 intro tid tcb' eid hTcb' hIpcState'
                 rw [removeRunnable_preserves_objects] at hTcb'
                 by_cases hNe : tid = receiver
-                · subst hNe; exact removeRunnable_not_mem_self st2 _
+                · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans hTcb'
+                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
                   intro hRun'
-                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 receiver tid).mp hRun'
-                  exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedIpc])
+                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
+                  exact hBlockCall' tid tcb' eid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
               · -- blockedOnReplyNotRunnable
                 intro tid tcb' eid rt hTcb' hIpcState'
                 rw [removeRunnable_preserves_objects] at hTcb'
                 by_cases hNe : tid = receiver
-                · subst hNe; exact removeRunnable_not_mem_self st2 _
+                · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans hTcb'
+                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
                   intro hRun'
-                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 receiver tid).mp hRun'
-                  exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedIpc])
+                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
+                  exact hBlockReply' tid tcb' eid rt hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
               · -- blockedOnNotificationNotRunnable (WS-F6/D2)
                 intro tid tcb' nid hTcb' hIpcState'
                 rw [removeRunnable_preserves_objects] at hTcb'
                 by_cases hNe : tid = receiver
-                · subst hNe; exact removeRunnable_not_mem_self st2 _
+                · subst hNe; exact removeRunnable_not_mem_self Sbase _
                 · have hNeObjId : tid.toObjId ≠ receiver.toObjId := fun h => hNe (threadId_toObjId_injective h)
-                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans hTcb'
+                  have hTcbPre := (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ tid.toObjId hNeObjId hObjInvEnq2 hIpc).symm.trans ((hObjBase tid hNe).symm.trans hTcb')
                   intro hRun'
-                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem st2 receiver tid).mp hRun'
-                  exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedIpc])
+                  have ⟨hRunSt2, _⟩ := (removeRunnable_runnable_mem Sbase receiver tid).mp hRun'
+                  exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ st1.scheduler.runnable by rwa [← hSchedBaseEq])
 
 /-- WS-F1/TPI-D08: endpointQueueRemoveDual preserves ipcInvariant.
 Arbitrary O(1) removal only modifies TCB queue links and endpoint head/tail pointers
@@ -1529,13 +1967,13 @@ theorem endpointSendDual_preserves_objects_invExt
           simp only [hHead, hPop] at hStep
           have hObjInvPop : pair.2.2.objects.invExt :=
             endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 pair.2.1 hObjInv hPop
-          cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+          cases hMsg : storeTcbReceiveComplete pair.2.2 pair.1 (some msg) with
           | error e => simp [hMsg] at hStep
           | ok st2 =>
             simp only [hMsg, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hObjInvMsg : st2.objects.invExt :=
-              storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObjInvPop hMsg
+              storeTcbReceiveComplete_preserves_objects_invExt pair.2.2 st2 pair.1 _ hObjInvPop hMsg
             rwa [ensureRunnable_preserves_objects]
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false sender st with
@@ -1557,8 +1995,9 @@ theorem endpointSendDual_preserves_objects_invExt
 theorem endpointReceiveDual_preserves_objects_invExt
     (st stMid : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver senderId : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, stMid)) :
+    (hStep : endpointReceiveDual endpointId receiver replyId st = .ok (senderId, stMid)) :
     stMid.objects.invExt := by
   unfold endpointReceiveDual at hStep
   cases hObj : st.objects[endpointId]? with
@@ -1584,14 +2023,26 @@ theorem endpointReceiveDual_preserves_objects_invExt
               simp only [hMsg] at hStep
               have hObjInvMsg : st2.objects.invExt :=
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
-              revert hStep
-              -- AK1-D: atomic (.ready, senderMsg) receiver update
-              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
-              | ok st4 =>
-                intro h
-                have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                exact storeTcbIpcStateAndMessage_preserves_objects_invExt st2 _ receiver _ _ hObjInvMsg hPend
-              | error _ => simp
+              -- WS-SM SM6.D (#7.1 fold): atomic reply-link of the dequeued caller.
+              cases hReplyId : replyId with
+              | none => simp [hReplyId] at hStep
+              | some rid =>
+                simp only [hReplyId] at hStep
+                cases hLink : SystemState.linkCallerReply pair.1 rid st2 with
+                | error e => simp [hLink] at hStep
+                | ok pLink =>
+                  obtain ⟨_, stLinked⟩ := pLink
+                  simp only [hLink] at hStep
+                  have hObjInvLink : stLinked.objects.invExt :=
+                    linkCallerReply_preserves_objects_invExt st2 stLinked pair.1 rid hObjInvMsg hLink
+                  revert hStep
+                  -- AK1-D: atomic (.ready, senderMsg) receiver update
+                  cases hPend : storeTcbIpcStateAndMessage stLinked receiver .ready _ with
+                  | ok st4 =>
+                    intro h
+                    have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
+                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked _ receiver _ _ hObjInvLink hPend
+                  | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             simp only [hSenderIpc] at hStep
             cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready none with
@@ -1630,11 +2081,33 @@ theorem endpointReceiveDual_preserves_objects_invExt
             cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
             | error e => simp [hIpc] at hStep
             | ok st2 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
               have hObjInvIpc : st2.objects.invExt :=
                 storeTcbIpcState_preserves_objects_invExt st1 st2 receiver _ hObjInvEnq hIpc
-              rwa [removeRunnable_preserves_objects]
+              -- WS-SM SM6.D (#7.1 fold): server-first stash store on the blocked receiver.
+              cases hGetR : st2.getTcb? receiver with
+              | none =>
+                simp only [hGetR, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                rwa [removeRunnable_preserves_objects]
+              | some rTcb =>
+                simp only [hGetR] at hStep
+                -- WS-SM SM6.D (PR #827 review #6): the `.ok` outcome forces the stash guard
+                -- true; strip it to recover the pre-guard store reduction.
+                have hValid : st.replyStashValid replyId = true := by
+                  cases hb : st.replyStashValid replyId with
+                  | false => simp [hb] at hStep
+                  | true => rfl
+                rw [if_pos hValid] at hStep
+                cases hStash : storeObject receiver.toObjId (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                | error e => simp [hStash] at hStep
+                | ok pStash =>
+                  obtain ⟨_, stStashed⟩ := pStash
+                  simp only [hStash, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  have hObjInvStash : stStashed.objects.invExt :=
+                    storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _ hObjInvIpc hStash
+                  rwa [removeRunnable_preserves_objects]
 
 /-- M3-E4: endpointSendDualWithCaps preserves ipcInvariant. Every branch
 either returns the post-send state (preserved by endpointSendDual) or
@@ -1687,6 +2160,7 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
 /-- M3-E4: endpointReceiveDualWithCaps preserves ipcInvariant. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (endpointRights : AccessRightSet)
     (receiverCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot)
@@ -1694,18 +2168,18 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     (summary : CapTransferSummary)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReceiveDualWithCaps endpointId receiver endpointRights
+    (hStep : endpointReceiveDualWithCaps endpointId receiver replyId endpointRights
              receiverCspaceRoot receiverSlotBase st = .ok ((senderId, summary), st')) :
     ipcInvariant st' := by
   simp only [endpointReceiveDualWithCaps] at hStep
-  cases hRecv : endpointReceiveDual endpointId receiver st with
+  cases hRecv : endpointReceiveDual endpointId receiver replyId st with
   | error e => simp [hRecv] at hStep
   | ok pair =>
     rcases pair with ⟨sid, stMid⟩
     have hInvMid := endpointReceiveDual_preserves_ipcInvariant st stMid endpointId
-      receiver sid hInv hObjInv hRecv
+      receiver sid replyId hInv hObjInv hRecv
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId
-      receiver sid hObjInv hRecv
+      receiver sid replyId hObjInv hRecv
     simp [hRecv] at hStep
     -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
     -- `getTcb?`; case-split on the typed helper.

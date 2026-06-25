@@ -382,6 +382,65 @@ theorem ipcUnwrapCaps_preserves_ntfn_objects
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hNtfn
   · exact ipcUnwrapCapsLoop_preserves_ntfn_objects _ _ _ _ _ _ _ _ _ _ _ _ hNtfn hObjInv hStep
 
+/-- IPC de-threading D3: `ipcUnwrapCapsLoop` preserves all `.reply` objects (it only
+ever writes a CNode at `receiverRoot`).  Mirror of
+`ipcUnwrapCapsLoop_preserves_ntfn_objects`. -/
+theorem ipcUnwrapCapsLoop_preserves_reply_objects
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.reply r) := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hReply
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hReply
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hObjInv hTransfer
+        have hReplyNext := ipcTransferSingleCap_preserves_reply_objects cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result oid r hReply hObjInv hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+        | noSlot => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hReplyNext hObjInvNext hStep
+
+/-- IPC de-threading D3: `ipcUnwrapCaps` preserves all `.reply` objects.  Any reply
+in `st` survives unchanged in `st'` because cap transfer only writes CNodes (via
+`cspaceInsertSlot` at `receiverRoot`) and CDT fields. -/
+theorem ipcUnwrapCaps_preserves_reply_objects
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.reply r) := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hReply
+  · exact ipcUnwrapCapsLoop_preserves_reply_objects _ _ _ _ _ _ _ _ _ _ _ _ hReply hObjInv hStep
+
 theorem ipcUnwrapCapsLoop_receiverRoot_not_ntfn
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
@@ -511,6 +570,62 @@ theorem ipcUnwrapCapsLoop_preserves_tcb_objects
         | noSlot => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
         | grantDenied => exact ih _ _ _ _ hTcbNext hObjInvNext hStep
 
+/-- IPC de-threading D6 helper: each step of `ipcUnwrapCapsLoop` preserves a SchedContext at
+`oid` — mirror of `ipcUnwrapCapsLoop_preserves_tcb_objects`. -/
+theorem ipcUnwrapCapsLoop_preserves_schedContext_objects
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hSc : st.objects[oid]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.schedContext sc) := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact hSc
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e =>
+        simp [hTransfer] at hStep
+        obtain ⟨_, rfl⟩ := hStep; exact hSc
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hObjInv hTransfer
+        have hScNext := ipcTransferSingleCap_preserves_schedContext_objects cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result oid sc hSc hObjInv hTransfer
+        simp [hTransfer] at hStep
+        cases result with
+        | installed c s => exact ih _ _ _ _ hScNext hObjInvNext hStep
+        | noSlot => exact ih _ _ _ _ hScNext hObjInvNext hStep
+        | grantDenied => exact ih _ _ _ _ hScNext hObjInvNext hStep
+
+/-- IPC de-threading D6 helper: `ipcUnwrapCaps` preserves all SchedContext objects. -/
+theorem ipcUnwrapCaps_preserves_schedContext_objects
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hSc : st.objects[oid]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.objects[oid]? = some (.schedContext sc) := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hSc
+  · exact ipcUnwrapCapsLoop_preserves_schedContext_objects _ _ _ _ _ _ _ _ _ _ _ _ hSc hObjInv hStep
+
 /-- ipcUnwrapCaps preserves all TCB objects. -/
 theorem ipcUnwrapCaps_preserves_tcb_objects
     (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
@@ -526,6 +641,53 @@ theorem ipcUnwrapCaps_preserves_tcb_objects
   split at hStep
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hTcb
   · exact ipcUnwrapCapsLoop_preserves_tcb_objects _ _ _ _ _ _ _ _ _ _ _ _ hTcb hObjInv hStep
+
+/-- IPC de-threading D2: each step of `ipcUnwrapCapsLoop` leaves `receiverRoot` **either
+unchanged or a CNode** — a step that mutates `receiverRoot` does so only via a successful
+`ipcTransferSingleCap`, which requires (and preserves) a CNode there; otherwise it
+short-circuits with the state unchanged.  So the post-loop object at `receiverRoot` is
+either the original or a CNode — never a freshly-introduced object of another kind. -/
+theorem ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode
+    (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)
+    (fuel : Nat) (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCapsLoop caps senderRoot receiverRoot idx nextBase accResults fuel st
+             = .ok (summary, st')) :
+    st'.objects[receiverRoot]? = st.objects[receiverRoot]? ∨
+      ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
+  induction fuel generalizing idx nextBase accResults st with
+  | zero =>
+    simp [ipcUnwrapCapsLoop] at hStep
+    obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
+  | succ n ih =>
+    simp only [ipcUnwrapCapsLoop] at hStep
+    cases hCap : caps[idx]? with
+    | none => simp [hCap] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
+    | some cap =>
+      simp [hCap] at hStep
+      cases hTransfer : ipcTransferSingleCap cap
+          { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+          receiverRoot nextBase maxExtraCaps st with
+      | error e => simp [hTransfer] at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
+      | ok pair =>
+        rcases pair with ⟨result, stNext⟩
+        obtain ⟨cn, hCn⟩ := ipcTransferSingleCap_ok_implies_cnode_at_root cap _ receiverRoot
+          nextBase maxExtraCaps st stNext result hTransfer
+        have hObjInvNext := ipcTransferSingleCap_preserves_objects_invExt cap _ receiverRoot nextBase
+          maxExtraCaps st stNext result hObjInv hTransfer
+        obtain ⟨cnNext, hCnNext⟩ := ipcTransferSingleCap_receiverRoot_stays_cnode cap _ receiverRoot
+          nextBase maxExtraCaps st stNext result cn hCn hObjInv hTransfer
+        simp [hTransfer] at hStep
+        have key : st'.objects[receiverRoot]? = stNext.objects[receiverRoot]? ∨
+            ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
+          cases result with
+          | installed c s => exact ih _ _ _ stNext hObjInvNext hStep
+          | noSlot => exact ih _ _ _ stNext hObjInvNext hStep
+          | grantDenied => exact ih _ _ _ stNext hObjInvNext hStep
+        rcases key with h | h
+        · exact Or.inr ⟨cnNext, h.trans hCnNext⟩
+        · exact Or.inr h
 
 /-- M3-E4: ipcUnwrapCapsLoop preserves CNode type at receiverRoot.
 If receiverRoot is a CNode before the loop, it remains a CNode after
@@ -584,6 +746,72 @@ theorem ipcUnwrapCaps_preserves_cnode_at_root
   split at hStep
   · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact ⟨cn, hCn⟩
   · exact ipcUnwrapCapsLoop_preserves_cnode_at_root _ _ _ _ _ _ _ _ _ _ _ hCn hObjInv hStep
+
+/-- IPC de-threading D2: `ipcUnwrapCaps` leaves `receiverRoot` either unchanged or a CNode
+(grant-denied / no-grant paths leave the whole state unchanged; the loop case is
+`ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode`). -/
+theorem ipcUnwrapCaps_objects_at_root_orig_or_cnode
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st')) :
+    st'.objects[receiverRoot]? = st.objects[receiverRoot]? ∨
+      ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
+  unfold ipcUnwrapCaps at hStep
+  split at hStep
+  · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact Or.inl rfl
+  · exact ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode _ _ _ _ _ _ _ _ _ _ hObjInv hStep
+
+/-- IPC de-threading D2: `ipcUnwrapCaps` preserves TCB objects **backward** — a `.tcb` in
+the post-state was a `.tcb` (same fields) in the pre-state.  Cap transfer never creates a
+TCB: it writes only `receiverRoot`, and only as a CNode
+(`ipcUnwrapCaps_objects_at_root_orig_or_cnode`), so a post-state TCB at `receiverRoot`
+means that slot was unchanged; every other slot is framed by
+`ipcUnwrapCaps_preserves_objects_ne`. -/
+theorem ipcUnwrapCaps_tcb_backward
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st'))
+    (hTcb' : st'.objects[oid]? = some (.tcb tcb)) :
+    st.objects[oid]? = some (.tcb tcb) := by
+  by_cases hNe : oid = receiverRoot
+  · rw [hNe] at hTcb' ⊢
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg senderRoot receiverRoot slotBase
+      grantRight st st' summary hObjInv hStep with h | h
+    · rw [h] at hTcb'; exact hTcb'
+    · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hTcb'; exact absurd hTcb' (by simp)
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase grantRight
+        st st' summary oid hNe hObjInv hStep] at hTcb'
+    exact hTcb'
+
+/-- IPC de-threading D4 Slice 2b: `ipcUnwrapCaps` backward-preserves endpoints (mirror of
+`ipcUnwrapCaps_tcb_backward`): a post-state endpoint pulls back to the same pre-state endpoint,
+since the cap transfer writes only a CNode at `receiverRoot`. -/
+theorem ipcUnwrapCaps_endpoint_backward
+    (msg : IpcMessage) (senderRoot receiverRoot : SeLe4n.ObjId)
+    (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg senderRoot receiverRoot slotBase grantRight st
+             = .ok (summary, st'))
+    (hEp' : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
+  by_cases hNe : oid = receiverRoot
+  · rw [hNe] at hEp' ⊢
+    rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg senderRoot receiverRoot slotBase
+      grantRight st st' summary hObjInv hStep with h | h
+    · rw [h] at hEp'; exact hEp'
+    · obtain ⟨cn', hCn'⟩ := h; rw [hCn'] at hEp'; exact absurd hEp' (by simp)
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg senderRoot receiverRoot slotBase grantRight
+        st st' summary oid hNe hObjInv hStep] at hEp'
+    exact hEp'
 
 /-- M3-E4: receiverRoot is never a notification after ipcUnwrapCaps. In the
 grant-denied path state is unchanged. In the loop, each ipcTransferSingleCap

@@ -334,7 +334,7 @@ private def runReplyRecvChecks : IO Unit := do
   IO.println "--- §3.5 SM6.C.5 replyRecv combined op (reply leg wakes caller) ---"
   -- The reply leg of replyRecv wakes the recorded caller; the receive leg then
   -- blocks the server on the (empty) endpoint.
-  let (st', res) := endpointReplyRecvOnCore epId serverTid clientLocalTid replyMsg bootCoreId stBase
+  let (st', res) := endpointReplyRecvOnCore epId serverTid clientLocalTid replyMsg none bootCoreId stBase
   assertBool "replyRecv succeeds (reply leg + receive leg)"
     (match res with | .ok _ => true | .error _ => false)
   assertBool "replyRecv reply leg delivers the payload to the caller (.ready + registers)"

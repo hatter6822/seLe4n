@@ -121,6 +121,51 @@ theorem storeTcbQueueLinks_notification_backward
         rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
   · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep] at hNtfn; exact hNtfn
 
+/-- IPC de-threading D3: `storeTcbQueueLinks` preserves `.reply` objects backward
+(it only writes a TCB).  Mirror of `storeTcbQueueLinks_notification_backward`. -/
+theorem storeTcbQueueLinks_reply_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hReply : st'.objects[oid]? = some (.reply r)) :
+    st.objects[oid]? = some (.reply r) := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq; unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some tcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hReply; cases hReply
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep] at hReply; exact hReply
+
+/-- IPC de-threading D3: `storeTcbQueueLinks` exact-preserves a present `.reply`
+object forward (it writes only the TCB at `tid.toObjId`, which held a TCB — never
+the reply slot).  Forward dual of `storeTcbQueueLinks_reply_backward`. -/
+theorem storeTcbQueueLinks_reply_forward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (hReply : st.objects[oid]? = some (.reply r)) :
+    st'.objects[oid]? = some (.reply r) := by
+  by_cases hEq : oid = tid.toObjId
+  · -- target slot held a reply, but `storeTcbQueueLinks` requires a TCB there.
+    exfalso; subst hEq; unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some origTcb =>
+      have hTcbObj := lookupTcb_some_objects st tid origTcb hLookup
+      rw [hReply] at hTcbObj; cases hTcbObj
+  · rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next oid hEq hObjInv hStep]; exact hReply
+
 /-- WS-F1: For any TCB in the post-storeTcbQueueLinks state, a TCB with the same
 ipcState exists in the pre-state. At non-target ObjIds the TCB is identical;
 at the target, only queue link fields change. -/
@@ -164,6 +209,39 @@ theorem storeTcbQueueLinks_tcb_pendingMessage_backward
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.pendingMessage = tcb'.pendingMessage := by
   by_cases hEq : anyTid.toObjId = tid.toObjId
   · -- Target: queue links changed but pendingMessage preserved
+    unfold storeTcbQueueLinks at hStep
+    cases hLookup : lookupTcb st tid with
+    | none => simp [hLookup] at hStep
+    | some origTcb =>
+      simp only [hLookup] at hStep
+      cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks origTcb prev pprev next)) st with
+      | error e => simp [hStore] at hStep
+      | ok pair =>
+        simp only [hStore] at hStep
+        have := Except.ok.inj hStep; subst this
+        rw [hEq, storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hTcb'
+        simp at hTcb'; subst hTcb'
+        exact ⟨origTcb, hEq ▸ lookupTcb_some_objects st tid origTcb hLookup, rfl⟩
+  · -- Non-target: object unchanged
+    rw [storeTcbQueueLinks_preserves_objects_ne st st' tid prev pprev next anyTid.toObjId hEq hObjInv hStep] at hTcb'
+    exact ⟨tcb', hTcb', rfl⟩
+
+/-- IPC de-threading D3: `storeTcbQueueLinks` preserves `pendingReceiveReply`
+for all TCBs.  At the target, `tcbWithQueueLinks` only modifies queue link
+fields; at non-targets, the object is unchanged.  Mirror of
+`storeTcbQueueLinks_tcb_pendingMessage_backward`, used to transport the
+`pendingReceiveReplyWellFormed` stash-freshness fact past an enqueue. -/
+theorem storeTcbQueueLinks_tcb_pendingReceiveReply_backward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st')
+    (anyTid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧
+      tcb.pendingReceiveReply = tcb'.pendingReceiveReply := by
+  by_cases hEq : anyTid.toObjId = tid.toObjId
+  · -- Target: queue links changed but pendingReceiveReply preserved
     unfold storeTcbQueueLinks at hStep
     cases hLookup : lookupTcb st tid with
     | none => simp [hLookup] at hStep

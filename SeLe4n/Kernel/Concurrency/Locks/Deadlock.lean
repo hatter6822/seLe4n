@@ -899,8 +899,8 @@ structure KernelOperation where
 
 /-- WS-SM SM3.D.6: build the `KernelOperation` for an `endpointCall`.  The optional
 `f` (PR #822 review) is the server-first stashed reply object the rendezvous links
-(`linkServerFirstCaller`), so the deadlock/WCRT footprint accounts for the per-object
-reply write-lock on a server-first `Call`. -/
+(the folded `linkServerStashedReply`), so the deadlock/WCRT footprint accounts for the
+per-object reply write-lock on a server-first `Call`. -/
 def KernelOperation.ofEndpointCall (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option SchedContextId)
     (f : Option ReplyId := none) : KernelOperation :=

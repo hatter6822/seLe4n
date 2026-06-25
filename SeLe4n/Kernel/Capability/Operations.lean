@@ -1161,9 +1161,20 @@ def mintReplyCap (src dst : CSpaceAddr) : Kernel Unit :=
             let rid := SeLe4n.ReplyId.ofObjId target
             match st'.getReply? rid with
             | some _ =>
+                -- WS-SM SM6.D (#1 residual, PR #827 review): the minted reply cap
+                -- conveys **single-use reply authority**, which the live lookup paths
+                -- model as the `.write` right: `syscallRequiredRight .reply = .write`,
+                -- and both `resolveRecvReplyId` / `resolveReplyRecvReply` build the
+                -- reply-cap gate with `requiredRight := .write`.  A rights-less cap
+                -- would fail `.illegalAuthority` before `extractReplyId` ever inspects
+                -- `cap.target`, leaving a freshly minted reply cap unusable for
+                -- `reply` / `receive_with_reply` / `replyRecv`.  We mint exactly
+                -- `.write` (least authority sufficient for every reply gate; no
+                -- reply-cap consumer requires `.read`), matching the `.write`-bearing
+                -- reply caps the model/conformance suites construct.
                 let child : Capability :=
                   { target := .replyCap rid
-                    rights := AccessRightSet.ofList [.read, .write]
+                    rights := AccessRightSet.ofList [.write]
                     badge := none }
                 cspaceInsertSlot dst child st'
             | none => .error .invalidCapability
@@ -1855,6 +1866,69 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
   · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hTcb
+
+/-- IPC de-threading D6 helper: ipcTransferSingleCap preserves all SchedContext objects.
+Same reasoning as TCB/endpoint preservation: a SchedContext at `receiverRoot` makes
+`getCNode?` return `none`, so the transfer falls into `.error .objectNotFound` — contradicting
+`hStep`'s `.ok`; every other slot is framed by `ipcTransferSingleCap_preserves_objects_ne`. -/
+theorem ipcTransferSingleCap_preserves_schedContext_objects
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (oid : SeLe4n.ObjId) (sc : SchedContext)
+    (hSc : st.objects[oid]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.objects[oid]? = some (.schedContext sc) := by
+  by_cases hNe : oid = receiverRoot
+  · subst hNe
+    simp only [ipcTransferSingleCap] at hStep
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hSc]
+    simp [hCnNone] at hStep
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep]
+    exact hSc
+
+/-- IPC de-threading D3: ipcTransferSingleCap preserves all `.reply` objects.
+Same reasoning as the endpoint/TCB family: a `.reply` at `receiverRoot` makes
+`getCNode?` return `none`, so the function fails closed (`.objectNotFound`),
+contradicting `.ok`; at every other slot use `_preserves_objects_ne`. -/
+theorem ipcTransferSingleCap_preserves_reply_objects
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState)
+    (result : CapTransferResult) (oid : SeLe4n.ObjId) (r : SeLe4n.Kernel.Reply)
+    (hReply : st.objects[oid]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    st'.objects[oid]? = some (.reply r) := by
+  by_cases hNe : oid = receiverRoot
+  · subst hNe
+    simp only [ipcTransferSingleCap] at hStep
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hReply]
+    simp [hCnNone] at hStep
+  · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
+      scanLimit st st' result oid hNe hObjInv hStep]
+    exact hReply
+
+/-- IPC de-threading D2: a successful `ipcTransferSingleCap` proves its `receiverRoot`
+was a CNode — the transfer reads `getCNode? receiverRoot` and fails closed
+(`.objectNotFound`) when it is `none`, so `.ok` rules out a non-CNode root. -/
+theorem ipcTransferSingleCap_ok_implies_cnode_at_root
+    (cap : Capability) (senderSlot : CSpaceAddr)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot)
+    (scanLimit : Nat) (st st' : SystemState) (result : CapTransferResult)
+    (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
+             = .ok (result, st')) :
+    ∃ cn, st.objects[receiverRoot]? = some (.cnode cn) := by
+  unfold ipcTransferSingleCap at hStep
+  cases hGet : st.getCNode? receiverRoot with
+  | none => simp [hGet] at hStep
+  | some cn => exact ⟨cn, (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hGet⟩
 
 /-- M3-E4 helper: ipcTransferSingleCap keeps receiverRoot as a CNode.
 The function only succeeds when receiverRoot is a CNode. On noSlot the state is

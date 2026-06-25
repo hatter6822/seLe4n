@@ -783,10 +783,39 @@ def pendingReceiveReply_stash_injective : IO Unit := do
   -- the reserved rid is detected as stashed → a second `resolveRecvReplyId` for it
   -- fails closed, so no second server can stash it (injectivity maintained).
   expect "a blocked server's stash reserves its reply id (blocks a duplicate stash)"
-    (SeLe4n.Kernel.replyIsStashed st reservedRid)
+    (st.replyIsStashed reservedRid)
   -- a distinct reply id is not stashed → another server may stash it independently.
   expect "a distinct reply id stays free for another server"
-    (!SeLe4n.Kernel.replyIsStashed st otherRid)
+    (!st.replyIsStashed otherRid)
+
+/-- WS-SM SM6.D (PR #827 review #7): `endpointReceiveDual` / `endpointReceiveDualOnCore`
+validate the server-supplied stash against the **input** state, not the post-block state.
+A `.ready` receiver carrying a *stale* `pendingReceiveReply` does NOT reserve that reply id
+(`replyIsStashed` is tied to `.blockedOnReceive`), so re-stashing its *own* reply object is
+legitimate — yet the very `storeTcbIpcState` that blocks the receiver makes it self-reserve
+`rid`, so a post-block validity check would falsely reject the re-stash with
+`.replyCapInvalid`.  This pins the self-reservation artefact the fix sidesteps: the predicate
+flips between the pre-block (`.ready`) and post-block (`.blockedOnReceive`) states. -/
+def replyStash_validated_against_preBlock_state : IO Unit := do
+  let rid : SeLe4n.ReplyId := ⟨505⟩
+  -- A *ready* receiver with a stale stash: its leftover `pendingReceiveReply` does NOT
+  -- reserve `rid`, so input-state validation correctly admits a re-stash of the same reply.
+  let readyTcb : TCB :=
+    { tid := ⟨603⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+      ipcState := .ready,
+      pendingReceiveReply := some rid }
+  let stReady : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb readyTcb) |>.build)
+  expect "ready receiver's stale stash does NOT reserve rid (pre-block check admits re-stash)"
+    (!stReady.replyIsStashed rid)
+  -- The SAME receiver once `.blockedOnReceive` DOES self-reserve `rid` — so validating the
+  -- stash against this post-block state (the pre-#7 behaviour) would falsely reject.
+  let blockedTcb : TCB := { readyTcb with ipcState := .blockedOnReceive ⟨700⟩ }
+  let stBlocked : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty |>.withObject ⟨603⟩ (.tcb blockedTcb) |>.build)
+  expect "the same receiver post-block self-reserves rid (the false-rejection #7 avoids)"
+    (stBlocked.replyIsStashed rid)
 
 /-- WS-SM SM6.D (PR #822 review, Phase H): `mintReplyCap` is the production path that
 derives `.replyCap` authority from an `.object` cap targeting a retyped Reply object.
@@ -829,6 +858,81 @@ def mintReplyCap_derives_backed_reply_cap : IO Unit := do
   match SeLe4n.Kernel.mintReplyCap badSrc badDst st with
   | .error e => expect "mintReplyCap from a non-Reply object → invalidCapability" (e == .invalidCapability)
   | .ok _ => throw <| IO.userError "mintReplyCap from a non-Reply object must be rejected"
+
+/-- WS-SM SM6.D (#7.4 / #7.5): the strengthened `replyCallerLinkage` third clause
+(`blockedOnReply ⇒ replyObject`) holds at the **transition boundary** of a Call
+rendezvous.  The #7 D6 fold links the caller's reply object **atomically** with the
+blocking store, so the post-state of `endpointCall` has the blocked caller carrying a
+`replyObject` — never the "unanswerable" intermediate (a `.blockedOnReply` caller with
+no Reply to answer it) that the pre-fold dispatch-layer linkage transiently admitted.
+This drives the real single-core fold end-to-end: server stashes (#7.2), caller links
+(#7.3a). -/
+def replyCallerLinkage_holds_at_call_rendezvous_boundary : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  let mkReadyTcb (n : Nat) : TCB :=
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb (mkReadyTcb 1))
+      |>.withObject caller.toObjId (.tcb (mkReadyTcb 2))
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server, caller]
+      |>.build)
+  match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) st0 with
+  | .error _ => throw <| IO.userError "server-first receive (stash) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error _ => throw <| IO.userError "call rendezvous should succeed and link the caller"
+    | .ok ((), st') =>
+      -- third clause at the boundary: the blocked caller carries a replyObject.
+      match st'.getTcb? caller with
+      | some tcb =>
+          expect "blockedOnReply caller carries a replyObject at the transition boundary"
+            (match tcb.ipcState with
+             | .blockedOnReply _ _ => tcb.replyObject == some rid
+             | _ => false)
+      | none => throw <| IO.userError "caller TCB should be present after the rendezvous"
+      -- reciprocity: the reply names the caller back (replyCallerLinkage reciprocal).
+      expect "the reply object names the caller back (reciprocity)"
+        ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)))
+
+/-- WS-SM SM6.D (#7.4 / #7.5): a Call that rendezvouses with a server holding **no**
+reply object fails closed (`.replyCapInvalid`) and leaves **no** unanswerable
+`.blockedOnReply` caller — the fold makes the whole `endpointCall` atomic, so the
+fail-closed path returns the pre-state unchanged (the caller stays `.ready`). This is
+the negative dual of the transition-boundary invariant: no raw transition can reach a
+`.blockedOnReply` caller without a linked Reply. -/
+def call_without_reply_object_fails_closed_no_unanswerable_block : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let mkReadyTcb (n : Nat) : TCB :=
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb (mkReadyTcb 1))
+      |>.withObject caller.toObjId (.tcb (mkReadyTcb 2))
+      |>.withRunnable [server, caller]
+      |>.build)
+  -- plain receive (no reply object): server blocks with no stash.
+  match SeLe4n.Kernel.endpointReceiveDual epId server none st0 with
+  | .error _ => throw <| IO.userError "plain (no-reply) receive setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error e =>
+        expect "Call with no server reply object fails closed (replyCapInvalid)"
+          (e == .replyCapInvalid)
+        -- the fail-closed path strands no caller: it is still `.ready` in the pre-state.
+        expect "fail-closed Call leaves no unanswerable blockedOnReply caller"
+          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
+    | .ok _ => throw <| IO.userError "Call with no server reply object must be rejected"
 
 /-- WS-SM SM6.D (PR #822 review, Phase H #1.a): runtime witness for the new
 `replyCapPointsToValidReply` conjunct of `capabilityInvariantBundle`.  The invariant states that
@@ -2244,7 +2348,11 @@ def main : IO Unit := do
   -- WS-SM SM6.D (PR #822 review): in-use Reply retype rejected, free Reply allowed
   reply_inUse_retype_rejected
   pendingReceiveReply_stash_injective
+  replyStash_validated_against_preBlock_state
   mintReplyCap_derives_backed_reply_cap
+  -- WS-SM SM6.D (#7.4/#7.5): transition-boundary `blockedOnReply ⇒ replyObject`
+  replyCallerLinkage_holds_at_call_rendezvous_boundary
+  call_without_reply_object_fails_closed_no_unanswerable_block
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
   reply_cap_end_to_end_retype_mint_link
   lifecycle_reply_cap_metadata_backed

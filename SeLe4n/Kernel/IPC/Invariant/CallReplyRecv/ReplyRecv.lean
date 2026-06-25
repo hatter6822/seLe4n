@@ -34,7 +34,8 @@ theorem endpointReplyRecv_preserves_ipcInvariant
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
     (hInv : ipcInvariant st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    (replyId : Option SeLe4n.ReplyId)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcInvariant st' := by
   unfold endpointReplyRecv at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
@@ -54,7 +55,7 @@ theorem endpointReplyRecv_preserves_ipcInvariant
       simp only [hIpc] at hStep
       -- Helper: given st1 from storeTcbIpcStateAndMessage, prove via endpointReceiveDual
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-          (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
             ipcInvariant stR.2) by
         -- AK1-B (I-H02): Fail-closed on expectedReplier = none
         cases expectedReplier with
@@ -67,7 +68,7 @@ theorem endpointReplyRecv_preserves_ipcInvariant
             | error e => simp
             | ok st1 =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -80,7 +81,7 @@ theorem endpointReplyRecv_preserves_ipcInvariant
         fun oid ntfn h => hInv1 oid ntfn (by rwa [ensureRunnable_preserves_objects] at h)
       have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
       have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
-      exact endpointReceiveDual_preserves_ipcInvariant _ stR.2 endpointId receiver stR.1 hInv2 hObjInvEns (by
+      exact endpointReceiveDual_preserves_ipcInvariant _ stR.2 endpointId receiver stR.1 replyId hInv2 hObjInvEns (by
         have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 /-- WS-H12a: endpointReplyRecv preserves schedulerInvariantBundle.
@@ -92,7 +93,8 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
     (hObjInv : st.objects.invExt)
     (hCurrReady : currentThreadIpcReady st)
     (hCurrNotHead : currentNotEndpointQueueHead st)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    (replyId : Option SeLe4n.ReplyId)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     schedulerInvariantBundle st' := by
   unfold endpointReplyRecv at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
@@ -111,7 +113,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
     | blockedOnReply _ expectedReplier =>
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-          (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
             schedulerInvariantBundle stR.2) by
         -- AK1-B (I-H02): Fail-closed on expectedReplier = none
         cases expectedReplier with
@@ -124,7 +126,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
             | error e => simp
             | ok st1 =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -170,7 +172,7 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
       have hTargetTcbObj := lookupTcb_some_objects st replyTarget tcb hLookup
       have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
       have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
-      exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 hInvMid
+      exact endpointReceiveDual_preserves_schedulerInvariantBundle _ stR.2 endpointId receiver stR.1 replyId hInvMid
         (by
           unfold currentNotEndpointQueueHead
           rw [ensureRunnable_scheduler_current, hSchedEq]
@@ -197,7 +199,8 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
     (receiver replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
     (hContract : ipcSchedulerContractPredicates st)
     (hObjInv : st.objects.invExt)
-    (hStep : endpointReplyRecv endpointId receiver replyTarget msg st = .ok ((), st')) :
+    (replyId : Option SeLe4n.ReplyId)
+    (hStep : endpointReplyRecv endpointId receiver replyTarget msg replyId st = .ok ((), st')) :
     ipcSchedulerContractPredicates st' := by
   rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
   unfold endpointReplyRecv at hStep
@@ -217,7 +220,7 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
     | blockedOnReply _ expectedReplier =>
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-          (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
             ipcSchedulerContractPredicates stR.2) by
         -- AK1-B (I-H02): Fail-closed on expectedReplier = none
         cases expectedReplier with
@@ -230,7 +233,7 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
             | error e => simp
             | ok st1 =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
               | error e => simp
               | ok result =>
                 simp only [Except.ok.injEq, Prod.mk.injEq]
@@ -308,7 +311,7 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
             · exact absurd hEq hNeTid
       have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 replyTarget .ready (some msg) hObjInv hMsg
       have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by rwa [ensureRunnable_preserves_objects]
-      exact endpointReceiveDual_preserves_ipcSchedulerContractPredicates _ stR.2 endpointId receiver stR.1 hContractMid hObjInvEns (by
+      exact endpointReceiveDual_preserves_ipcSchedulerContractPredicates _ stR.2 endpointId receiver stR.1 replyId hContractMid hObjInvEns (by
         have : stR = (stR.1, stR.2) := Prod.ext rfl rfl
         rw [this] at hRecv; exact hRecv)
 
@@ -477,10 +480,17 @@ theorem endpointCall_preserves_objects_invExt
             cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st4 =>
-              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
+              simp only [hIpc] at hStep
               have hObjInvIpc := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 caller _ none hObjInvEns hIpc
-              rwa [removeRunnable_preserves_objects]
+              -- WS-SM SM6.D (#7.3 fold): thread the server-first reply link.
+              cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+              | error e => simp [hLink] at hStep
+              | ok pL =>
+                obtain ⟨_, st5⟩ := pL
+                simp only [hLink, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                have hObjInv5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 hObjInvIpc hLink
+                rwa [removeRunnable_preserves_objects]
       | none =>
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
         | error e => simp [hHead, hEnq] at hStep

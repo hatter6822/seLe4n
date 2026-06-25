@@ -102,7 +102,7 @@ private def chain2SendSendReceiveFifo : IO Unit := do
   let msg2 : IpcMessage := .empty
   let (_, st1) ← expectOkSt "chain2: send msg1" (SeLe4n.Kernel.endpointSendDual epId tid1 msg1 st0)
   let (_, st2) ← expectOkSt "chain2: send msg2" (SeLe4n.Kernel.endpointSendDual epId tid2 msg2 st1)
-  let (sender, st3) ← expectOkSt "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 st2)
+  let (sender, st3) ← expectOkSt "chain2: receive" (SeLe4n.Kernel.endpointReceiveDual epId tid3 none st2)
   expect "chain2: FIFO sender order" (sender = tid1)
   assertInvariants "chain2: send→send→receive" st3
 
@@ -285,9 +285,9 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
   let (_, st1) ← expectOkSt "chain8: sender A enqueue" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st0)
   let (_, st2) ← expectOkSt "chain8: sender B enqueue" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st1)
   let (_, st3) ← expectOkSt "chain8: sender C enqueue" (SeLe4n.Kernel.endpointSendDual epId tidC .empty st2)
-  let (firstSender, st4) ← expectOkSt "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD st3)
-  let (secondSender, st5) ← expectOkSt "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD st4)
-  let (thirdSender, st6) ← expectOkSt "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD st5)
+  let (firstSender, st4) ← expectOkSt "chain8: receiver D dequeues first" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st3)
+  let (secondSender, st5) ← expectOkSt "chain8: receiver D dequeues second" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st4)
+  let (thirdSender, st6) ← expectOkSt "chain8: receiver D dequeues third" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st5)
   expect "chain8: FIFO #1 returns sender A" (firstSender = tidA)
   expect "chain8: FIFO #2 returns sender B" (secondSender = tidB)
   expect "chain8: FIFO #3 returns sender C" (thirdSender = tidC)
@@ -299,9 +299,9 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
   assertInvariants "chain8: three-sender FIFO ordering" st6
 
   let (_, st7) ← expectOkSt "chain8: interleave sender A" (SeLe4n.Kernel.endpointSendDual epId tidA .empty st6)
-  let (interleaveFirst, st8) ← expectOkSt "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD st7)
+  let (interleaveFirst, st8) ← expectOkSt "chain8: interleave receiver gets A" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st7)
   let (_, st9) ← expectOkSt "chain8: interleave sender B" (SeLe4n.Kernel.endpointSendDual epId tidB .empty st8)
-  let (interleaveSecond, st10) ← expectOkSt "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD st9)
+  let (interleaveSecond, st10) ← expectOkSt "chain8: interleave receiver gets B" (SeLe4n.Kernel.endpointReceiveDual epId tidD none st9)
   expect "chain8: interleaved receive #1 sender A" (interleaveFirst = tidA)
   expect "chain8: interleaved receive #2 sender B" (interleaveSecond = tidB)
   let interleavedEndpointObj := st10.objects[epId]?
@@ -706,7 +706,7 @@ private def chain12IpcCapTransfer : IO Unit := do
 
   -- Step 1: Receiver blocks on endpoint
   let (_, st1) ← expectOkSt "chain12: receiver blocks on endpoint"
-    (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
   -- Step 2: Sender sends with caps (immediate rendezvous)
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[cap1, cap2, cap3], badge := none }
@@ -757,7 +757,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.buildChecked)
 
   let (_, st1) ← expectOkSt "chain13: receiver blocks"
-    (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
   let msg : IpcMessage := { registers := #[⟨99⟩], caps := #[cap1], badge := none }
   let (summary, st2) ← expectOkSt "chain13: send without grant right"
@@ -817,7 +817,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
 
   -- Step 1: Receiver blocks on endpoint
   let (_, st1) ← expectOkSt "chain14: receiver blocks on endpoint"
-    (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
+    (SeLe4n.Kernel.endpointReceiveDual epId receiver none st0)
 
   -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
   let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE

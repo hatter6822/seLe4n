@@ -3018,13 +3018,21 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       -- replyObject = none and boot Replies have caller = none) ∧
       -- pendingReceiveReplyWellFormed (17th, vacuous — boot TCBs have
       -- pendingReceiveReply = none).
-      refine ⟨⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩,
+      refine ⟨⟨⟨fun tid tcb rid hObj hRep => ?_, fun rid r tid hObj hCaller => ?_⟩,
+         fun tid tcb ep rt hObj hIpc => ?_⟩,
         ⟨fun tid tcb rid hObj hRep => ?_,
-         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩⟩
+         fun tid₁ _ tcb₁ _ _ hObj₁ _ hRep₁ _ => ?_⟩,
+        fun tidA _ tcbA _ _ _ _ hA _ hBA _ => ?_,
+        ?_,
+        ?_⟩
       · have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.1] at hRep; cases hRep
       · have hR := (hBS rid.toObjId _ hObj).2.2.2.2.2.2 r rfl
         rw [hR.1] at hCaller; cases hCaller
+      · -- WS-SM SM6.D (#7.4): replyCallerLinkage third clause (vacuous — boot TCBs
+        -- have ipcState = .ready, never .blockedOnReply, so no caller needs a reply).
+        have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+        rw [hTcb.2.1] at hIpc; cases hIpc
       · have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hObj
         have hTcb := (hBS tid.toObjId _ hObjRaw).2.2.2.1 tcb rfl
         rw [hTcb.2.2.2.2.2.2.2] at hRep; cases hRep
@@ -3032,6 +3040,21 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
         have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
         rw [hTcb.2.2.2.2.2.2.2] at hRep₁; cases hRep₁
+      · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
+        have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
+        rw [hTcb.2.2.2.2.2.1] at hBA; cases hBA
+      · -- IPC de-threading D4 (Finding F-2): endpointQueueTailBlockedConsistent (19th, vacuous —
+        -- boot endpoints have empty send/receive queues).
+        intro epId ep tl tcb hObjEp _
+        have hEp := (hBS epId _ hObjEp).1 ep rfl
+        constructor
+        · intro hRecv; rw [hEp.2.2.2] at hRecv; exact absurd hRecv (by simp)
+        · intro hSend; rw [hEp.2.1] at hSend; exact absurd hSend (by simp)
+      · -- IPC de-threading D4 Slice 2c: queueNextTargetBlocked (20th, vacuous — boot TCBs
+        -- have queueNext = none, so no link antecedent can hold).
+        intro a b tcbA tcbB hObjA _ hNext
+        have hTcb := (hBS a.toObjId _ hObjA).2.2.2.1 tcbA rfl
+        rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by

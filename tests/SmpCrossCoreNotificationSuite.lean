@@ -426,7 +426,7 @@ private def runErrorChecks : IO Unit := do
 private def runBoundChecks : IO Unit := do
   IO.println "--- §3.8 SM6.B bound notification (bind / deliver / unbind) ---"
   -- Block the to-be-bound TCB on receive (it joins the endpoint's receive queue).
-  match endpointReceiveDual epId boundTid stBoundBase with
+  match endpointReceiveDual epId boundTid none stBoundBase with
   | .ok (_, stRecv) =>
       match bindNotification nId boundTid stRecv with
       | .ok ((), stBound) =>
@@ -476,7 +476,7 @@ private def runBoundChecks : IO Unit := do
     (((notificationSignalBoundOnCore nId badge bootCoreId stBoundBase).1.objects[nId]?) ==
      ((notificationSignalOnCore nId badge bootCoreId stBoundBase).1.objects[nId]?))
   -- Bind precondition: binding an already-bound notification fails (illegalState).
-  match endpointReceiveDual epId boundTid stBoundBase with
+  match endpointReceiveDual epId boundTid none stBoundBase with
   | .ok (_, stRecv) =>
       match bindNotification nId boundTid stRecv with
       | .ok ((), stBound) =>
@@ -514,7 +514,7 @@ private def runReviewFixChecks : IO Unit := do
   | .error _ => assertBool "review #2 bind setup succeeded" false
   -- review #5: on the bound-delivery path the lock-set covers the endpoint + bound TCB
   -- (the writes `notificationSignalBoundOnCore` performs), all with permitted kinds.
-  match endpointReceiveDual epId boundTid stBoundBase with
+  match endpointReceiveDual epId boundTid none stBoundBase with
   | .ok (_, stRecv) =>
       match bindNotification nId boundTid stRecv with
       | .ok ((), stBnd) =>

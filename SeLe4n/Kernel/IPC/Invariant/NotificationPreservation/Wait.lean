@@ -141,6 +141,30 @@ theorem storeTcbIpcStateAndMessage_preserves_badgeWellFormed
                         storeObject_nonCNode_preserves_capabilityBadgesWellFormed
                            st pair.2 tid.toObjId _ hCap hObjInv hStore (fun cn h => by cases h)⟩
 
+/-- Finding F-1: `storeTcbReceiveComplete` preserves `badgeWellFormed`.
+Stores a `.tcb` object (not notification, not CNode).  Mirror of
+`storeTcbIpcStateAndMessage_preserves_badgeWellFormed`. -/
+theorem storeTcbReceiveComplete_preserves_badgeWellFormed
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage)
+    (hInv : badgeWellFormed st)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    badgeWellFormed st' := by
+  obtain ⟨hNtfn, hCap⟩ := hInv
+  unfold storeTcbReceiveComplete at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep; revert hStep
+    cases hStore : storeObject tid.toObjId _ st with
+    | error e => simp
+    | ok pair => simp only []; intro hEq; cases hEq
+                 exact ⟨storeObject_nonNotification_preserves_notificationBadgesWellFormed
+                           st pair.2 tid.toObjId _ hNtfn hObjInv hStore (fun ntfn h => by cases h),
+                        storeObject_nonCNode_preserves_capabilityBadgesWellFormed
+                           st pair.2 tid.toObjId _ hCap hObjInv hStore (fun cn h => by cases h)⟩
+
 /-- U4-K: `storeTcbQueueLinks` preserves `badgeWellFormed`.
 Stores a `.tcb` object (not notification, not CNode). -/
 theorem storeTcbQueueLinks_preserves_badgeWellFormed

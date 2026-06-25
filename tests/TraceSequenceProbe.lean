@@ -205,7 +205,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
       | .error err => classifyError .capCopy err
   | .receive =>
       if threadBlocked == true then .expectedFailure .endpointStateMismatch
-      else match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid st with
+      else match SeLe4n.Kernel.endpointReceiveDual probeEndpointId tid none st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .receive err
   -- WS-F7/D2d: Notification signal — wake a waiter or accumulate badge

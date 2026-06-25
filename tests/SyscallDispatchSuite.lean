@@ -640,44 +640,60 @@ private def sd050_bindNotification_requires_ntfn_cap : IO Unit := do
     "bind with a read-only notification cap should fail with illegalAuthority"
 
 
-/-- SD-051: faithful seL4-MCS receive linkage (`linkReceivedCaller`, the new
-    `.receive`-arm step). After `endpointReceiveDual` rendezvouses a `Call` (moving
-    the caller to `.blockedOnReply`), the kernel links that caller to the
-    server-supplied reply object so the server's later `.reply` resolves authority
-    through `reply.caller`. A `Call` rendezvous carrying NO reply object is rejected
-    fail-closed (`.replyCapInvalid`) — the post-state is discarded, so the caller is
-    not stranded. A non-`Call` (`.ready`) rendezvous links nothing. -/
+/-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
+    itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
+    After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
+    `.blockedOnReply`), the transition links that caller to the server-supplied reply
+    object so the server's later `.reply` resolves authority through `reply.caller`. A
+    `Call` rendezvous carrying NO reply object is rejected fail-closed
+    (`.replyCapInvalid`) — the post-state is discarded, so the caller is not stranded.
+    A non-`Call` (`Send`) rendezvous links nothing. -/
 private def sd051_receiveLinkCaller : IO Unit := do
   let server : SeLe4n.ThreadId := ⟨1⟩
   let caller : SeLe4n.ThreadId := ⟨2⟩
   let epId   : SeLe4n.ObjId := ⟨10⟩
   let rid    : SeLe4n.ReplyId := ⟨707⟩
-  let st : SystemState :=
+  -- #7.2 fold: the receive linkage is now part of `endpointReceiveDual` itself, so
+  -- these assertions exercise the real transition (caller enqueued via a `Call`),
+  -- not an isolated dispatch helper.
+  let stReady : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
-      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
       |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server, caller]
       |>.build)
-  -- (a) link the Call caller (now blockedOnReply) to the server-supplied reply object
-  expect "sd051a_receive_links_caller"
-    (match SeLe4n.Kernel.linkReceivedCaller caller (some rid) st with
-     | .ok ((), st') =>
-        (st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
-        (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid))
-     | .error _ => false)
-    "Call caller should be linked to the server-supplied reply object"
-  -- (b) a Call rendezvous with NO reply object is rejected fail-closed (not stranded)
-  expect "sd051b_call_without_reply_rejected"
-    (match SeLe4n.Kernel.linkReceivedCaller caller none st with
-     | .error .replyCapInvalid => true | _ => false)
-    "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
-  -- (c) a non-Call (.ready) rendezvous links nothing
-  expect "sd051c_ready_rendezvous_no_link"
-    (match SeLe4n.Kernel.linkReceivedCaller server (some rid) st with
-     | .ok ((), st') => (st'.getTcb? server).all (fun t => decide (t.replyObject = none))
-     | .error _ => false)
-    "a non-Call (ready) rendezvous must not establish a reply link"
+  -- Caller issues a `Call` → enqueues `.blockedOnCall` on the endpoint sendQ.
+  match SeLe4n.Kernel.endpointCall epId caller .empty stReady with
+  | .error _ => failLine "sd051_setup" "endpointCall setup should succeed"
+  | .ok (_, stCalled) =>
+      -- (a) the receive transition dequeues the Call caller (→ `.blockedOnReply`) and
+      -- links it to the server-supplied reply object in the same step.
+      expect "sd051a_receive_links_caller"
+        (match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stCalled with
+         | .ok (_, st') =>
+            (st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+            (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid))
+         | .error _ => false)
+        "Call caller should be linked to the server-supplied reply object"
+      -- (b) a Call rendezvous carrying NO reply object is rejected fail-closed (the
+      -- post-state is discarded, so the caller is not stranded `.blockedOnReply`).
+      expect "sd051b_call_without_reply_rejected"
+        (match SeLe4n.Kernel.endpointReceiveDual epId server none stCalled with
+         | .error .replyCapInvalid => true | _ => false)
+        "a Call rendezvous without a reply object must be rejected (.replyCapInvalid)"
+  -- (c) a non-Call (`Send`) rendezvous links nothing (the dequeued sender → `.ready`).
+  match SeLe4n.Kernel.endpointSendDual epId caller .empty stReady with
+  | .error _ => failLine "sd051c_setup" "endpointSendDual setup should succeed"
+  | .ok (_, stSent) =>
+      expect "sd051c_ready_rendezvous_no_link"
+        (match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stSent with
+         | .ok (_, st') =>
+            (st'.getTcb? caller).all (fun t => decide (t.replyObject = none)) &&
+            (st'.getReply? rid).all (fun r => decide (r.caller = none))
+         | .error _ => false)
+        "a non-Call (Send) rendezvous must not establish a reply link"
 
 /-- SD-052: faithful seL4-MCS `.replyRecv` body (`replyRecvBody`). Replies to the
     recorded previous caller (resolved from the reply object), CONSUMES the answered
@@ -818,79 +834,100 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
 /-- SD-053: faithful seL4-MCS server-first receive linkage. (a) A server that blocks
     on `Recv` with a reply object STASHES it on `pendingReceiveReply` (it cannot link
     yet — no caller is queued). (b) When a later `Call` rendezvouses with that waiting
-    server (caller `.blockedOnReply ep (some server)`), `linkServerFirstCaller` links
-    the caller to the stashed reply object and clears the stash. Together with sd051
-    (caller-first) this closes both receive/Call orderings. -/
+    server, the rendezvous (`endpointCall`, #7.3a fold) links the caller to the stashed
+    reply object and clears the stash *atomically* — no intermediate `.blockedOnReply`
+    state without a linked Reply. Together with sd051 (caller-first) this closes both
+    receive/Call orderings. -/
 private def sd053_serverFirstLink : IO Unit := do
   let server : SeLe4n.ThreadId := ⟨1⟩
   let caller : SeLe4n.ThreadId := ⟨2⟩
   let epId   : SeLe4n.ObjId := ⟨10⟩
   let rid    : SeLe4n.ReplyId := ⟨707⟩
-  -- (a) server blocked on receive stashes the reply object (no premature link)
+  -- (a) #7.2 fold: a server receiving with no sender blocks on the endpoint and
+  -- stashes the reply object on its own TCB (no premature link to any caller).
   let stA : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId })
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
       |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server]
       |>.build)
-  match SeLe4n.Kernel.linkReceivedCaller server (some rid) stA with
-  | .ok ((), st') =>
+  match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stA with
+  | .ok (_, st') =>
       expect "sd053a_server_stashes_reply"
         ((st'.getTcb? server).any (fun t => decide (t.pendingReceiveReply = some rid)))
         "a server blocked on receive should stash the reply object"
       expect "sd053a_no_premature_link"
         ((st'.getReply? rid).all (fun r => decide (r.caller = none)))
         "the stash must not prematurely set reply.caller"
-  | .error _ => failLine "sd053a" "linkReceivedCaller (server block path) should succeed"
-  -- (b) a later Call rendezvous links the caller to the server's stashed reply object
-  let stB : SystemState :=
+  | .error _ => failLine "sd053a" "server-first receive (stash) should succeed"
+  -- (b) #7.3a fold: a later Call rendezvous links the caller to the server's stashed
+  -- reply object ATOMICALLY inside `endpointCall` (formerly the separate
+  -- `linkServerFirstCaller` dispatch step), so there is no intermediate state where the
+  -- caller is `.blockedOnReply` but unlinked.  Driven end-to-end: stash via (a)'s
+  -- receive, then rendezvous via a real `endpointCall`.
+  let stBBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
-      |>.withObject caller.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
       |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server, caller]
       |>.build)
-  match SeLe4n.Kernel.linkServerFirstCaller caller stB with
-  | .ok ((), st') =>
-      expect "sd053b_caller_linked"
-        ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
-         (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid)))
-        "the Call caller should be linked to the server's stashed reply object"
-      expect "sd053b_stash_cleared"
-        ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
-        "the server's stash should be cleared after linking"
-  | .error _ => failLine "sd053b" "linkServerFirstCaller should succeed"
+  match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) stBBase with
+  | .error _ => failLine "sd053b" "server-first receive (stash) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .ok ((), st') =>
+        expect "sd053b_caller_linked"
+          ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)) &&
+           (st'.getTcb? caller).any (fun t => decide (t.replyObject = some rid)))
+          "the Call caller should be linked to the server's stashed reply object"
+        expect "sd053b_stash_cleared"
+          ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
+          "the server's stash should be cleared after linking"
+        expect "sd053b_caller_blocked_on_reply"
+          ((st'.getTcb? caller).any (fun t => decide (t.ipcState = .blockedOnReply epId (some server))))
+          "the linked Call caller should land blockedOnReply awaiting the server"
+    | .error _ => failLine "sd053b" "server-first Call rendezvous should succeed and link"
   -- (c) PR #822 review: a plain receive (no reply object) CLEARS a stale stash so a
   -- later Call cannot reuse it (server woke via Send / was cancelled, then re-Recv's).
   let stStale : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId
-          (.tcb { mkTcb 1 with ipcState := .blockedOnReceive epId, pendingReceiveReply := some rid })
+          (.tcb { mkTcb 1 with ipcState := .ready, pendingReceiveReply := some rid })
+      |>.withRunnable [server]
       |>.build)
-  match SeLe4n.Kernel.linkReceivedCaller server none stStale with
-  | .ok ((), st') =>
+  match SeLe4n.Kernel.endpointReceiveDual epId server none stStale with
+  | .ok (_, st') =>
       expect "sd053c_plain_receive_clears_stale_stash"
         ((st'.getTcb? server).all (fun t => decide (t.pendingReceiveReply = none)))
         "a plain (no-reply) receive must clear any stale pendingReceiveReply"
   | .error _ => failLine "sd053c" "plain receive (clear stash) should succeed"
-  -- (d) PR #822 review: a Call that rendezvouses with a waiting server holding NO
-  -- reply object (plain Recv) is rejected fail-closed (cannot answer a Call).
-  let stNoStash : SystemState :=
+  -- (d) PR #822 review / #7.3a fold: a Call that rendezvouses with a waiting server
+  -- holding NO reply object (plain Recv) is rejected fail-closed (cannot answer a
+  -- Call).  The fold makes `endpointCall` *itself* fail closed — no intermediate state
+  -- strands the caller `.blockedOnReply` with no linked Reply.
+  let stDBase : SystemState :=
     (SeLe4n.Testing.BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
       |>.withObject server.toObjId (.tcb { mkTcb 1 with ipcState := .ready })
-      |>.withObject caller.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server) })
+      |>.withObject caller.toObjId (.tcb { mkTcb 2 with ipcState := .ready })
+      |>.withRunnable [server, caller]
       |>.build)
-  match SeLe4n.Kernel.linkServerFirstCaller caller stNoStash with
-  | .error e =>
-      expect "sd053d_server_first_call_without_reply_rejected"
-        (e == .replyCapInvalid)
-        "a server-first Call with no stashed reply object must be rejected"
-  | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
+  match SeLe4n.Kernel.endpointReceiveDual epId server none stDBase with
+  | .error _ => failLine "sd053d" "plain receive (no-reply) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error e =>
+        expect "sd053d_server_first_call_without_reply_rejected"
+          (e == .replyCapInvalid)
+          "a server-first Call with no stashed reply object must be rejected"
+        expect "sd053d_caller_not_stranded"
+          ((stRecv.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
+          "the rejected call must not strand the caller in blockedOnReply (fail-closed, no state change)"
+    | .ok _ => failLine "sd053d" "server-first Call without a reply object must be rejected"
   -- (e) PR #822 review: a plain `Send` that wakes a server-first receiver clears the
   -- server's reply stash — the server left `.blockedOnReceive` for `.ready`, so the
   -- stash (which lives only on a blocked receiver) must not survive, and a future

@@ -452,6 +452,20 @@ theorem projectKernelObject_normalizes_reply_replyId
     | _ => True := by
   simp [projectKernelObject]
 
+/-- WS-SM SM6.D (#7.1 fold): the projection of a Reply object is **invariant under
+    its `caller` field** — `projectKernelObject` overwrites `caller` to `none`
+    regardless of its actual value (and leaves every other field that differs
+    between `r` and `{ r with caller := c }` untouched — there are none).  This is
+    the projection-blindness the fold's atomic `linkCallerReply` reply-write
+    (`reply.caller := some caller`) relies on for non-interference: writing the
+    caller back-link is invisible to any observer, high- or low-domain. -/
+theorem projectKernelObject_reply_caller_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (r : SeLe4n.Kernel.Reply)
+    (c : Option SeLe4n.ThreadId) :
+    projectKernelObject ctx observer (.reply { r with caller := c })
+      = projectKernelObject ctx observer (.reply r) := by
+  simp [projectKernelObject]
+
 /-- Project object store to observer-visible subset.
 
 WS-F3/F-22: Objects are now filtered through `projectKernelObject` to redact

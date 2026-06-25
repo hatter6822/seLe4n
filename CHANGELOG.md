@@ -1,3 +1,2799 @@
+## v0.32.56 — PR #827 review #3 (foundation): consumeCallerReply preservation lemmas
+
+First slice of the PR #827 #3 reply-fold — the remaining SM6.D reply-fold completion. #3 (P2) reports that
+the direct `endpointReply` / `endpointReplyRecv` primitives mark the answered caller `.ready` but never
+`consumeCallerReply`, so a below-API operation chain using them directly leaves the reply object in-use
+(`reply.caller` still set) and the ready caller still pointing at it (`tcb.replyObject` set) — the reply
+cap cannot be reused and `replyCallerLinkageReciprocal` is broken. (The live `.reply` / `replyRecv`
+dispatch is unaffected: `replyBody` / `replyRecvBody` consume the link as a separate step.)
+
+**Design (verified, plan-of-record).** The fix folds `consumeCallerReply target rid` into the primitives,
+keyed on the answered caller's `tcb.replyObject = some rid` (a no-op when `none`, so existing direct
+callers without a reply link are unchanged), so a direct reply establishes `replyCallerLinkageReciprocal`
+*internally* — de-threading the `hRCLRecip'` hypothesis from `endpointReply_preserves_ipcInvariantFull` —
+and the now-redundant separate `consumeCallerReply` is dropped from `replyBody` / `replyRecvBody` / the
+live `.reply` dispatch (else it would double-consume). Folding changes the post-state of the ~46
+`endpointReply{,Recv}_preserves_*` theorems (single-core) plus the cross-core `endpointReplyOnCore`
+surface, each of which must carry the new consume step via a per-conjunct `consumeCallerReply_preserves_*`
+frame.
+
+**This slice** lands the first two per-conjunct consume frames the folded peels consume:
+`consumeCallerReply_preserves_dualQueueSystemInvariant` and `consumeCallerReply_preserves_ipcInvariantCore`
+(each composes a `.reply` store frame — a no-op when the reply is absent — with a `.tcb` `replyObject :=
+none` store frame; `dualQueueSystemInvariant` via `…_of_queueAgree`, the core via the existing
+`storeObject_tcb_replyObject_preserves_ipcInvariantCore`).
+
+**Remaining slices** (each a coherent cut): the ~15 missing conjunct frames (`allPendingMessagesBounded`,
+`badgeWellFormed`, `endpointQueueNoDup`, `ipcStateQueue{,Membership}Consistent`,
+`blockedOnReplyHasReplyObject`, `donationOwnerUnique`, `passiveServerIdle`, `donationBudgetTransfer`,
+`blockedThreadTimeoutConsistent`, `waitingThreadsPendingMessageNone`, the scheduler/capability bundles,
+and the `projection` / `lowEquivalent` non-interference frames), each needing its own
+`storeObject_reply_preserves_*` + `storeObject_tcb_replyObject_preserves_*` frame; then the `endpointReply`
+/ `endpointReplyRecv` (and `…OnCore`) def fold; the ~46 proof peels; the live-path separate-consume
+removal; and the `main_trace_smoke.expected` refresh (a reply now single-use end-to-end).
+
+Full build green (376) + `Platform.Staged` (234) green, trace byte-identical (additive proof lemmas, no
+transition change), zero `sorry`/`axiom`. Version 0.32.56.
+
+Refs: #827
+
+## v0.32.55 — PR #827 review #7: validate the receive stash against the pre-block state
+
+Fixes a P2 correctness regression introduced by v0.32.54 (#6, Codex PR #827 review). The #6 stash guard
+validated `replyStashValid` against the **post-block** state `st''` — the state *after* `storeTcbIpcState`
+marks the receiver `.blockedOnReceive`. Because `replyIsStashed` reserves a reply id only for a
+`.blockedOnReceive` TCB, a `.ready` receiver re-entering `endpointReceiveDual` with its own stale
+`pendingReceiveReply = some rid` (the same fresh `replyId`) becomes `.blockedOnReceive` *before* the check
+runs, so it now self-reserves `rid`: `replyIsStashed st'' rid = true`, `replyStashValid st'' (some rid) =
+false`, and the receive is falsely rejected with `.replyCapInvalid` — even though a ready receiver's stale
+stash is treated as non-reserving everywhere else.
+
+Both the single-core `endpointReceiveDual` (Transport) and the cross-core `endpointReceiveDualOnCore`
+(EndpointReply) no-sender branches now validate `st.replyStashValid replyId` against the **input** state
+`st`. `cleanupPreReceiveDonationChecked` and `endpointQueueEnqueue` touch neither the Reply at `rid` nor
+any other thread's block-state, and the receiver is still `.ready` in the input, so `replyStashValid st`
+equals the post-block check except for that self-reservation artefact — fixing the false rejection while
+admitting exactly the same genuinely-invalid ids. The fix is purely corrective: identical success
+post-states, identical genuine-error rejections.
+
+- The def change reads the function's own input binder `st` (in scope throughout) rather than the local
+  `st''`, so the 24 `endpointReceiveDual` preservation peels migrate `st2.replyStashValid replyId →
+  st.replyStashValid replyId` (the theorem input is uniformly `st`, so the `cases`/`if_pos` peel is
+  otherwise unchanged); the store and frame reasoning still run on the post-block state.
+- New `ModelIntegritySuite` regression test `replyStash_validated_against_preBlock_state` pins the
+  artefact: the `replyIsStashed` predicate flips between the pre-block (`.ready`, non-reserving) and
+  post-block (`.blockedOnReceive`, self-reserving) states for the same receiver and reply id.
+
+Full build green (376) + `Platform.Staged` (234) green, trace byte-identical, `ModelIntegritySuite` green,
+zero `sorry`/`axiom`. Version 0.32.55.
+
+Refs: #827
+
+## v0.32.54 — PR #827 review #6: reject invalid reply ids before stashing receives
+
+Fixes a P2 correctness gap (Codex PR #827 review). The SM6.D server-first receive fold stashes a
+server-supplied reply object on the now-`.blockedOnReceive` receiver (`pendingReceiveReply := some
+rid`), but `endpointReceiveDual` / `endpointReceiveDualOnCore` stored it WITHOUT validating — so a
+below-API caller (a lower-level operation chain or test invoking the primitive directly with an
+invalid `rid`) could strand a `.blockedOnReceive` receiver whose stash violates
+`pendingReceiveReplyWellFormed` (no Reply at `rid`, or an in-use / already-stashed one), which a later
+`Call` rendezvous then fails closed on. The new preservation theorems carry an explicit
+`hReplyIdValid` precondition, but the transition itself did not enforce it.
+
+Both the single-core `endpointReceiveDual` (Transport) and the cross-core `endpointReceiveDualOnCore`
+(EndpointReply) no-sender branches now guard the stash store with `st.replyStashValid replyId`: a plain
+receive (`none`) clears any stale stash and is always valid; `some rid` is admitted iff the Reply is
+present, free (`caller = none`), and not already stashed by another blocked receiver — the Bool form of
+`replyIdEstablishFresh`, mirroring the API-side `resolveRecvReplyId` check. An invalid id now fails
+closed `.replyCapInvalid` *before* the store.
+
+- `replyIsStashed` moved from `Lifecycle/Operations/CleanupPreservation` to `Model/SystemState` (it is a
+  Model-level object-store fold) so the IPC primitive can reuse it without an IPC→Lifecycle import
+  cycle; new `SystemState.replyStashValid` composes `getReply?` + `replyIsStashed`. The three call sites
+  (`lifecyclePreRetypeCleanup`, `resolveRecvReplyId`, `ModelIntegritySuite`) now use `st.replyIsStashed`.
+- ~22 `endpointReceiveDual` preservation proofs peel the new guard (a `.ok` outcome forces it true) and
+  then proceed unchanged; the cross-core establisher splits on the guard (invalid branch returns the
+  pre-state, invariant carried).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, AK7 baseline
+unchanged, zero `sorry`/`axiom`. Version 0.32.54.
+
+Refs: #827
+
+## v0.32.53 — PR #827 review #1+#2: thread the stashed/supplied reply object into the call & replyRecv lock sets (2PL coverage)
+
+Fixes two P1 2PL-serialization gaps (Codex PR #827 review). The SM6.D reply fold makes a server-first
+`Call` rendezvous write the linked Reply object (`linkServerStashedReply` → `linkCallerReply` writes
+`reply.caller`) and a `replyRecv` receive-leg relink the prior Reply object — but several parametric
+lock-set theorems still acquired the **default `replyId := none`** footprint, so those reply-object
+writes could occur outside the per-object `replyLock rid`. With copied reply caps on another core that
+left the folded linkage outside the intended 2PL serialization. (The state-resolved runtime footprints
+`lockSet_endpointCallOnCore` / `lockSet_endpointReplyRecvOnCore` already thread the reply — via
+`endpointCallServerFirstReply?` / `target.replyObject` — so the live acquisition was correct; the gap was
+in the parametric atomicity/WithCaps theorems used to *prove* 2PL coverage.)
+
+- **#1 (call):** `lockSet_endpointCallWithCaps` gains a `replyId : Option ReplyId := none` parameter
+  threaded into the inner `lockSet_endpointCall`; `endpointCallWithCaps_lockSet_correct`,
+  `endpointCallOnCore_atomic_under_lockSet`, and (staged) `endpointCallOnCore_withLockSet_preserves_objects_invExt`
+  carry `replyId?` so they hold for the reply-threaded footprint (proofs are generic over the lock set;
+  this strictly generalizes the prior `none` statements). New `lockSet_endpointCallWithCaps_reply_write_mem`
+  proves `replyLock rid` is a declared member of the WithCaps `.call` footprint.
+- **#2 (replyRecv):** `endpointReplyRecvOnCore_atomic_under_lockSet` already took `replyId`; it now passes
+  it into the four `lockSet_replyRecv` calls so the bracket footprint includes `replyLock rid`.
+- New reusable `LockSet.mem_insertOrMerge_of_mem_of_ne` (membership preserved by `insertOrMerge` for a
+  distinct key) — the forward dual of `insertOrMerge_mem` — discharges the WithCaps reply-write coverage.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, AK7 baseline
+unchanged, zero `sorry`/`axiom`. Version 0.32.53.
+
+Refs: #827
+
+## v0.32.52 — PR #827 review #4: `mintReplyCap` mints usable (`.write`) reply caps
+
+Fixes a P1 functional inconsistency (Codex PR #827 review): `mintReplyCap` minted **rights-less**
+reply caps (`AccessRightSet.empty`), but every live reply-cap lookup gate requires `.write` —
+`syscallRequiredRight .reply = .write`, and both `resolveRecvReplyId` / `resolveReplyRecvReply` build
+the reply-cap gate with `requiredRight := .write`. So a freshly minted reply cap failed
+`.illegalAuthority` (in `syscallLookupCap`, before `extractReplyId` ever inspected `cap.target`),
+leaving it unusable for `reply` / `receive_with_reply` / `replyRecv`. The test/conformance suites
+already construct `.write`-bearing reply caps, so the rights-less mint was the lone outlier.
+
+`mintReplyCap` now mints `rights := AccessRightSet.ofList [.write]` — least authority sufficient for
+every reply gate (no reply-cap consumer requires `.read`), consistent with the model suites. Chosen
+over relaxing the gates (which would weaken an authority check). `mintReplyCap_preserves_capabilityInvariantBundle`
+updated to the new rights literal (the bundle does not constrain rights; structural).
+
+Full build green (376) + `test_smoke` green, trace byte-identical, zero `sorry`/`axiom`. Version 0.32.52.
+
+Refs: #827
+
+## v0.32.51 — IPC de-threading D8 Slice 6: cross-core receive bundle — first establisher + README/spec metric resync
+
+Starts the cross-core receive bundle: `endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant`,
+the first of the receive transition's per-conjunct establishers. It is a faithful transcription of the
+single-core `endpointReceiveDual_preserves_dualQueueSystemInvariant` across the identical 3-path
+structure — the Call-rendezvous leg is byte-identical (pop + store(.blockedOnReply) + `linkCallerReply`
++ store(receiver→.ready)), the Send-rendezvous swaps `ensureRunnable` → the object-invisible
+`wakeThread` (via `wakeThread_preserves_dualQueueSystemInvariant_of_ready`), and the block leg swaps
+`removeRunnable` → `removeRunnableOnCore`. Reuses the existing per-step lemmas + cross-core frames.
+
+- `import SeLe4n.Kernel.IPC.CrossCore.EndpointReply` added to the staged `EndpointCallInvariant` (the
+  receive transition def); cycle-free (transition files do not import the staged invariant layer).
+- `linkCallerReply_preserves_dualQueueSystemInvariant` promoted from `private` to public.
+
+**Doc-sync fix (Codex PR #827 review, P2):** the README + `SELE4N_SPEC.md` metric blocks were stale
+against the regenerated `docs/codebase_map.json` (200,446 LoC / 6,516 decls → 208,843 / 6,668) because
+the per-slice map regeneration in v0.32.46–50 omitted `sync_readme_from_codebase_map.sh` (a Tier 0 gate
+not exercised by `test_smoke`). Resynced README.md + SELE4N_SPEC.md; `--check` now passes. (Going
+forward this runs each slice.)
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` + README/version sync gates green, trace
+byte-identical, zero `sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored 1276→1277. Version 0.32.51.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 6 — cross-core receive bundle)
+Refs: #827
+
+## v0.32.50 — IPC de-threading D8 Slice 5: cross-core scheduler-op frames for the receive/reply bundles
+
+Builds the missing general cross-core scheduler-op frames for three lookup-only conjuncts, the
+foundation the (forthcoming) cross-core receive/reply `ipcInvariantFull` bundles consume on their
+Send-rendezvous (wake) and block (deschedule) legs. These frames are transition-agnostic — reusable
+by `endpointReceiveDualOnCore`, `endpointReplyOnCore`, and any future cross-core IPC bundle.
+
+- `removeRunnableOnCore_preserves_{blockedOnReplyHasTarget, pendingReceiveReplyWellFormed,
+  donationOwnerUnique}` — the deschedule is a pure scheduler op (objects unchanged), so each is a
+  one-liner off the conjunct's `_of_objects_eq` combinator.
+- `wakeThread_preserves_donationOwnerUnique_of_ready` — the cross-core wake of an already-`.ready`
+  thread is object-lookup-invisible (the §2 keystone `wakeThread_objects_getElem_eq_of_ready`); the
+  invariant reads only `objects[·.toObjId]?`, transported pointwise.
+
+(The `pendingReceiveReplyWellFormed` wake frame — a 2-conjunct invariant over `getTcb?`/`getReply?`
+— is deferred to its establisher slice, where the `getReply?` transport is in scope.)
+
+Pure additions to the staged `EndpointCallInvariant`; no production change. Full build green (376) +
+`Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero `sorry`/`axiom`.
+`RAW_LOOKUP_TID` re-anchored 1275→1276 (the `donationOwnerUnique` frame's `.toObjId` reads).
+Version 0.32.50.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 5 — cross-core receive/reply prep)
+
+## v0.32.49 — IPC de-threading D8 Slice 4: cross-core `endpointCallOnCore` de-threads `ipcStateQueueMembershipConsistent`
+
+De-threads `hQMC'` from the staged cross-core `endpointCallOnCore_preserves_ipcInvariantFull`
+bundle — **both cross-core queue conjuncts (`endpointQueueNoDup` + `ipcStateQueueMembershipConsistent`)
+are now established from the pre-state**. The cross-core call bundle now threads only `hWtpmn'` and
+`hRCLRecip'` (plus the dischargeable reachability preconditions).
+
+- **Cross-core frames** (`EndpointCallInvariant.lean`):
+  `removeRunnableOnCore_preserves_ipcStateQueueMembershipConsistent` (objects unchanged) +
+  `wakeThread_preserves_ipcStateQueueMembershipConsistent_of_ready` (object-lookup-invisible wake of
+  an already-`.ready` thread), both via the pointwise `ipcStateQueueMembershipConsistent_of_objects_eq`.
+- **`endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent`** — a faithful cross-core mirror
+  of the single-core establisher (`ensureRunnable`→`wakeThread`, `removeRunnable`→`removeRunnableOnCore`):
+  the rendezvous pop yields membership-except-head (the head is the `.blockedOnReceive` receiveQ head
+  by `hQHBC`), the head set `.ready` collapses its obligation to `True`
+  (`storeTcbIpcStateAndMessage_partial_…`), the wake is object-invisible, and the `.blockedOnCall`
+  caller's sendQ membership is recovered from `endpointQueueEnqueue_thread_reachable`.
+- `linkServerStashedReply_preserves_ipcStateQueueMembershipConsistent` promoted from `private` to public.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `GETTCB`/`GETENDPOINT` adoption 1661→1665 / 107→109; no should-drop regression.
+Version 0.32.49.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 4 — cross-core)
+
+## v0.32.48 — IPC de-threading D8 Slice 3: cross-core `endpointCallOnCore` de-threads `endpointQueueNoDup`
+
+De-threads `hNoDup'` from the staged cross-core `endpointCallOnCore_preserves_ipcInvariantFull`
+bundle — the first cross-core queue conjunct established from the pre-state (mirroring the
+single-core Slice 1). `endpointCallOnCore` now *establishes* `endpointQueueNoDup`.
+
+- **Cross-core frames** (`EndpointCallInvariant.lean`): `removeRunnableOnCore_preserves_endpointQueueNoDup`
+  (objects unchanged — pure scheduler op) + `wakeThread_preserves_endpointQueueNoDup_of_ready`
+  (the cross-core wake of an already-`.ready` thread is object-lookup-invisible — the §2 keystone —
+  so the lookup-only invariant survives). Both via the pointwise `endpointQueueNoDup_of_objects_eq`.
+- **`endpointCallOnCore_preserves_endpointQueueNoDup`** — mirrors
+  `endpointCallOnCore_preserves_dualQueueSystemInvariant`, threading the noDup chain alongside the
+  dual-queue side-conditions the per-step noDup lemmas require (the enqueue/pop lemmas key K-1
+  self-loop-freedom off the post-state `dualQueueSystemInvariant`): rendezvous = pop + store(.ready) +
+  object-invisible wake + store(.blockedOnReply) + link + deschedule; block = enqueue + store + deschedule.
+- `linkServerStashedReply_preserves_endpointQueueNoDup` promoted from `private` to public (the
+  cross-core establisher consumes it).
+
+`hQMC'`/`hWtpmn'`/`hRCLRecip'` remain threaded in the cross-core bundle (next slices); QMC carries the
+`endpointQueuePopHead_…_except_head` + block-path membership reasoning.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `GETENDPOINT_ADOPTION` 105→107; no should-drop regression. Version 0.32.48.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 3 — cross-core)
+
+## v0.32.47 — IPC de-threading D8 Slice 2: cap-transfer `badgeWellFormed` frame
+
+Builds the `ipcUnwrapCaps` `badgeWellFormed` frame — the one cap-transfer step that can affect
+`capabilityBadgesWellFormed` (it inserts message caps into the receiver's CSpace). The frame holds
+provided every transferred cap carries a valid badge, the precondition the dispatch layer discharges
+from the sender's pre-state `capabilityBadgesWellFormed` (message caps are looked up from the
+sender's CSpace). This is the foundational, reusable half of the badge de-thread; the `*WithCaps`
+badge establishers + `hBadge'` discharge land at the dispatch-payoff layer (the frame lives in the
+Capability invariant layer, which does not import the IPC structural layer).
+
+Chain (`Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean`):
+- `cspaceInsertSlot_preserves_badgeWellFormed` — the receiver-CNode write `cn.insert slot cap` keeps
+  every badge valid (inserted cap valid by precondition via `CNode.lookup_insert_eq`; the rest by
+  the pre-state via `_insert_ne`); `storeCapabilityRef` leaves objects unchanged. Models the
+  `cspaceMint`/`cspaceMutate` badge proofs.
+- `ipcTransferSingleCap_preserves_badgeWellFormed` — the CDT-edge steps (`ensureCdtNodeForSlot` ×2 +
+  `addEdge`) preserve objects, so the badge effect is exactly the `cspaceInsertSlot` write.
+- `ipcUnwrapCapsLoop_preserves_badgeWellFormed` — fuel induction; each transferred cap feeds the
+  single-cap frame (index-keyed precondition `∀ i c, caps[i]? = some c → badge-valid`), the
+  short-circuit/none branches leave state unchanged.
+- `ipcUnwrapCaps_preserves_badgeWellFormed` — grant-denied path is a no-op.
+
+Notifications are never touched, so `notificationBadgesWellFormed` carries unconditionally.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `GETCNODE_ADOPTION` 77→78 (the `getCNode?` read); no should-drop regression.
+Version 0.32.47.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 2)
+
+## v0.32.46 — IPC de-threading D8 Slice 1: `*WithCaps` bundles de-thread `allPendingMessagesBounded` / `endpointQueueNoDup` / `ipcStateQueueMembershipConsistent`
+
+Begins the D8 dispatch-integration close-out by making the three single-core `*WithCaps`
+`ipcInvariantFull` bundles (`endpointSendDualWithCaps` / `endpointReceiveDualWithCaps` /
+`endpointCallWithCaps`) *establish* three more conjuncts from the pre-state rather than threading
+them — removing 9 post-state threading sites (`hBounded'` / `hNoDup'` / `hQMC'` × 3 bundles). These
+were threaded only because the cap-transfer half of the composition (`ipcUnwrapCaps`) lacked the
+frame lemmas; the base (non-WithCaps) bundles already establish all three.
+
+- **`ipcUnwrapCaps` wiring frames** (`DualQueueMembership.lean`):
+  `ipcUnwrapCaps_preserves_allPendingMessagesBounded` / `_endpointQueueNoDup` /
+  `_ipcStateQueueMembershipConsistent` — the cap transfer writes only a CNode at `receiverRoot`, so
+  every TCB and endpoint is byte-identical: the subject pulls back via
+  `ipcUnwrapCaps_tcb_backward` / `_endpoint_backward` and any witness (endpoint, predecessor TCB)
+  pushes forward via `ipcUnwrapCaps_preserves_ep_objects` / `_preserves_tcb_objects`.
+- **`*WithCaps` establishers** (9 total): each composes the base transition's pre-state establish
+  (`st → stMid`) with the cap-transfer frame (`stMid → st'`), following the existing
+  `endpoint{Send,Call}DualWithCaps_establishes_blockedOnReplyHasTarget` case-split idiom.
+- De-threaded `hBounded'` / `hNoDup'` / `hQMC'` from all three `*WithCaps` `ipcInvariantFull`
+  bundles (which had no consumers — the discharge happens at the future dispatch payoff).
+
+Remaining `*WithCaps`-threaded conjuncts (later D8 slices): `hDualQueue'` (frame relocation),
+`hBadge'` (cap-transfer badge-validity frame), `hWtpmn'` + `hRCLRecip'` (dispatch-layer / composite).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored 1274→1275 (establisher invariant-frame raw lookups;
+`GETTCB`/`GETENDPOINT` adoption rose 1658→1661 / 99→105).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D8 close-out, Slice 1)
+
+## v0.32.45 — IPC de-threading D4 Slice 2c: cross-core `endpointCallOnCore` — `qHBC`+`qNTB` de-thread COMPLETE
+
+De-threads the last `hQHBC'`/`hQNTB'`-threaded bundle, the staged cross-core `endpointCallOnCore`.
+**Zero `hQHBC'`/`hQNTB'`-threaded sites remain across the repository** — every IPC `ipcInvariantFull`
+bundle (single-core and cross-core) now *establishes* both `queueHeadBlockedConsistent` and
+`queueNextTargetBlocked` from the pre-state.
+
+- **Cross-core frames** (`EndpointCallInvariant.lean`):
+  `removeRunnableOnCore_preserves_queueHeadBlockedConsistent` / `_queueNextTargetBlocked` (object-store
+  frames) + `wakeThread_preserves_queueHeadBlockedConsistent_of_ready` / `_queueNextTargetBlocked_of_ready`
+  (the cross-core wake of an already-`.ready` thread is object-lookup-invisible — the §2 keystone —
+  so the lookup-only invariants survive).
+- **`endpointCallOnCore_preserves_queueHeadBlockedConsistent`** + **`_queueNextTargetBlocked`** — mirror
+  the single-core `endpointCall` establishers with the cross-core control flow (`getEndpoint?` decode,
+  `wakeThread` receiver wake, `removeRunnableOnCore` deschedule). The caller's pre-store TCB is recovered
+  via `storeTcbIpcStateAndMessage_getTcb?_backward` (avoiding the wake-state projection reduction).
+- De-threaded `hQHBC'`/`hQNTB'` from `endpointCallOnCore_preserves_ipcInvariantFull`, which gains the
+  dischargeable `hCallerReady` precondition (consistent with the single-core call bundles).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.44 — IPC de-threading D4 Slice 2c: complete the **single-core** `hQNTB'` de-thread
+
+Completes the `queueNextTargetBlocked` (qNTB) de-thread for every single-core IPC bundle.
+`notificationSignal`, `notificationWait`, `endpointReplyRecv`, and `endpointSendDualWithCaps` now
+*establish* qNTB from the pre-state. **Every single-core IPC `ipcInvariantFull` bundle now de-threads
+both `hQHBC'` and `hQNTB'`.** The only remaining threaded site is the staged cross-core
+`endpointCallOnCore`.
+
+- **`storeTcbIpcState_preserves_queueNextTargetBlocked`** + the
+  **`storeTcbIpcState_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked`** wrapper
+  (`QueueNextBlocking.lean`) — the message-free counterparts of the `storeTcbIpcStateAndMessage`
+  frames, for `notificationWait`'s `.blockedOnNotification` block-store.
+- **`notificationSignal_preserves_queueNextTargetBlocked`** — the notification store frames qNTB; the
+  woken head waiter is `.blockedOnNotification` (`hNWC`, non-queue-blocking) so it carries no blocked
+  incoming link, and the `.ready` wake preserves qNTB.
+- **`notificationWait_preserves_queueNextTargetBlocked`** — both the badge-delivery (`.ready`) and the
+  block (`.blockedOnNotification`) paths are non-queue-blocking stores to the running (`.ready`)
+  waiter, which carries no blocked incoming link. (`.blockedOnNotification` is *not* a qNTB-tracked
+  direction, so the notification waitQ links are qNTB-irrelevant.)
+- **`endpointReplyRecv_preserves_queueNextTargetBlocked`** — composes the `.ready`-wake reply phase
+  with the `endpointReceiveDual` receive-leg qNTB establisher (transporting `dualQueueSystemInvariant`,
+  `endpointQueueTailBlockedConsistent`, receiver readiness, and tail-freshness across the reply phase).
+- **`endpointSendDualWithCaps_preserves_queueNextTargetBlocked`** (base `endpointSendDual` qNTB + the
+  cap-transfer frame).
+- De-threaded `hQNTB'` from the `notificationSignal`, `notificationWait`, `endpointReplyRecv`, and
+  `endpointSendDualWithCaps` `_preserves_ipcInvariantFull` bundles.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.43 — IPC de-threading D4 Slice 2c: de-thread `hQNTB'` from the call-family bundles
+
+Continues the `queueNextTargetBlocked` (qNTB) de-thread. `endpointCall` and `endpointCallWithCaps`
+now *establish* qNTB from the pre-state instead of threading `hQNTB'`.
+
+- **`linkServerStashedReply_preserves_queueNextTargetBlocked`** (`DualQueueMembership.lean`) — composes
+  the `linkCallerReply` qNTB frame with the `server.pendingReceiveReply := none` write (preserves
+  `ipcState`+`queueNext`).
+- **`endpointCall_preserves_queueNextTargetBlocked`** — rendezvous (pop receiveQ): pop frame + popped
+  receiver `.ready` store (no-incoming via the popped head) + `ensureRunnable` + the caller
+  `.blockedOnReply` store (non-queue-blocking; the running caller is `.ready`, so by the pre-state qNTB
+  it carries no blocked incoming link — `hCallerReady`, `caller ≠ receiver` via `hFreshCaller`) +
+  `linkServerStashedReply` + `removeRunnable`. Block path: the fused sendQ enqueue+`.blockedOnCall`
+  keystone + `removeRunnable`.
+- **`endpointCallWithCaps_preserves_queueNextTargetBlocked`** (base + cap-transfer frame).
+- De-threaded `hQNTB'` from `endpointCall_preserves_ipcInvariantFull` and
+  `endpointCallWithCaps_preserves_ipcInvariantFull`, each gaining the dischargeable `hCallerReady`
+  precondition (the running syscall caller is `.ready`; supplied by the reachability bundle at D8 —
+  exactly as the receive bundles carry `hReceiverReady`).
+
+Remaining `hQNTB'`-threaded bundles: `notificationSignal`, `notificationWait`, `endpointReplyRecv`,
+`endpointSendDualWithCaps`, cross-core `endpointCallOnCore`.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.42 — IPC de-threading D4 Slice 2c: de-thread `hQNTB'` from the receive-family + `endpointReply` bundles
+
+Begins the **`queueNextTargetBlocked`** (qNTB) de-thread — the strict link-target conjunct (#20).
+Unlike `qNBC`, qNTB is *not* preserved by enqueue alone (it needs the fused enqueue+block-store
+keystone) nor by an arbitrary `.ready` store (it needs no blocked incoming link), so each establisher
+composes the strict frames below. `endpointReply`, `endpointReceiveDual`, and
+`endpointReceiveDualWithCaps` now *establish* qNTB from the pre-state instead of threading `hQNTB'`.
+
+- **Reusable qNTB frames** (`QueueNextBlocking.lean`):
+  `storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked` (v0.32.41) +
+  the master `storeTcbIpcStateAndMessage_no_incoming_nonQueueBlocked_preserves_queueNextTargetBlocked`
+  (a non-queue-blocking store — `.ready`/`.blockedOnReply` — to a thread with no blocked incoming link)
+  and `queueNextTargetBlocked_no_incoming_of_notQueueBlocked` (a non-queue-blocked thread has no blocked
+  incoming link, by the contrapositive of qNTB).
+- **Transition frames** (`DualQueueMembership.lean`):
+  `cleanupPreReceiveDonation_preserves_queueNextTargetBlocked` (`returnDonatedSchedContext` preserves
+  every TCB's `ipcState`+`queueNext`) and `ipcUnwrapCaps_preserves_queueNextTargetBlocked` (cap transfer
+  writes only CNode caps).
+- **`endpointReply_preserves_queueNextTargetBlocked`** — `.ready`-wake of the `.blockedOnReply` target
+  (no blocked thread links to it) + `ensureRunnable`.
+- **`endpointReceiveDual_preserves_queueNextTargetBlocked`** — rendezvous: pop frame + dequeued-sender
+  store (no-incoming via the popped head) + `linkCallerReply`/`ensureRunnable` + running-receiver
+  `.ready` store (receiver ≠ sender via `hFreshReceiver`, readiness transported backward → no-incoming
+  via the pre-state qNTB). Block path: cleanup frame + the fused enqueue+`.blockedOnReceive` keystone +
+  reply-stash + `removeRunnable`.
+- **`endpointReceiveDualWithCaps_preserves_queueNextTargetBlocked`** (base + cap-transfer frame).
+- De-threaded `hQNTB'` from `endpointReply`, `endpointReceiveDual`, and
+  `endpointReceiveDualWithCaps` `_preserves_ipcInvariantFull`.
+
+Remaining `hQNTB'`-threaded bundles: `endpointCall` (+WithCaps), `notificationSignal`,
+`notificationWait`, `endpointReplyRecv`, `endpointSendDualWithCaps`, cross-core `endpointCallOnCore`.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.41 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointCall` (+ WithCaps) and `endpointReplyRecv`
+
+Completes the **single-core** `queueHeadBlockedConsistent` de-thread. `endpointCall{,WithCaps}` and
+`endpointReplyRecv` now *establish* the 9th conjunct from the pre-state instead of threading `hQHBC'`.
+Every single-core IPC `ipcInvariantFull` bundle (`notificationWait`, `endpointSendDual` (+WithCaps),
+`endpointReceiveDual` (+WithCaps), `endpointCall` (+WithCaps), `endpointReplyRecv`) now de-threads
+`hQHBC'`; the only remaining threaded site is the staged cross-core `endpointCallOnCore`, coupled to
+the cross-core qNTB establisher (a follow-on slice).
+
+- **`endpointCall_preserves_queueHeadBlockedConsistent`** — rendezvous (pop receiveQ): pop core (new
+  head blocked via qNTB) + receiver `.ready` store (`hNotHead` = `…_popped_not_head`) + `ensureRunnable`
+  + caller `.blockedOnReply` store + `linkServerStashedReply` frame + `removeRunnable`. The caller-store
+  `hNotHead` is derived from the existing preconditions: the caller is not a receiveQ head (else `qHBC`
+  ⇒ `.blockedOnReceive`, contradicting `hCallerNotRecv`) and not a sendQ head (the pop leaves sendQ heads
+  untouched; `hFreshCaller` rules `caller` out in the pre-state). Block path: the
+  `storeTcbIpcStateAndMessage` enqueue keystone + `removeRunnable`.
+- **`endpointCallWithCaps_preserves_queueHeadBlockedConsistent`** (base establish on `stMid` + the
+  optional `ipcUnwrapCaps` frame).
+- **`storeTcbIpcStateAndMessage_ready_of_blockedOnReply_preserves_queueNextTargetBlocked`**
+  (`QueueNextBlocking.lean`) — waking a `.blockedOnReply` thread to `.ready` preserves
+  `queueNextTargetBlocked`: the forward obligation is vacuous, and any pre-state thread linking to it
+  while blocked would (by pre-state qNTB) force it to *already* carry that blocking state, contradicting
+  `.blockedOnReply`.
+- **`endpointReplyRecv_preserves_queueHeadBlockedConsistent`** — composes the reply phase
+  (`storeTcbIpcStateAndMessage replyTarget .ready` + `ensureRunnable`; the unblocked `.blockedOnReply`
+  target is no endpoint head) with the `endpointReceiveDual` receive-leg qHBC establisher. The receive
+  leg's `queueNextTargetBlocked` precondition is transported via the new `.ready`-of-`.blockedOnReply`
+  qNTB frame; the running-receiver readiness is transported across the reply phase (`receiver ≠
+  replyTarget`, the latter `.blockedOnReply` while the former `.ready`).
+- De-threaded `hQHBC'` from `endpointCall_preserves_ipcInvariantFull`,
+  `endpointCallWithCaps_preserves_ipcInvariantFull`, and `endpointReplyRecv_preserves_ipcInvariantFull`
+  (their `hQNTB'` stays threaded pending the qNTB establisher).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.40 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointReceiveDual` (+ WithCaps)
+
+Second endpoint transition de-threaded for `queueHeadBlockedConsistent`, including the dual Call/Send
+rendezvous sub-paths. `endpointReceiveDual{,WithCaps}_preserves_ipcInvariantFull` now *establish* the
+9th conjunct from the pre-state instead of threading `hQHBC'`.
+
+- **`cleanupPreReceiveDonation_preserves_queueHeadBlockedConsistent`** (touches no endpoint, preserves
+  every `ipcState`) + **`storeTcbIpcStateAndMessage_ready_preserves_queueHeadBlockedConsistent`** — the
+  receiver-wake frame: setting a thread `.ready` when it was already `.ready` preserves `qHBC` (the
+  store succeeds, so the thread has a TCB; a `.ready` thread is no head, discharging `hNotHead`
+  internally).
+- **`endpointReceiveDual_preserves_queueHeadBlockedConsistent`** — rendezvous (pop sendQ): pop core +
+  the dequeued sender store (`hNotHead` = `…_popped_not_head`) + `linkCallerReply` frame (Call) /
+  `ensureRunnable` (Send) + the *running* receiver `.ready` store. The receiver was `.ready`,
+  transported **backward** through the pop + sender-store + reply-link (`receiver ≠ sender` since the
+  sender is blocked and the receiver `.ready`), so the ready-wake frame applies. Block path: cleanup
+  frame + the `storeTcbIpcState` enqueue keystone + optional reply-stash (`preserveIpc`) +
+  `removeRunnable`.
+- **`endpointReceiveDualWithCaps_preserves_queueHeadBlockedConsistent`** (base establish on `stMid` +
+  the optional `ipcUnwrapCaps` frame).
+- De-threaded `hQHBC'` from `endpointReceiveDual_preserves_ipcInvariantFull` and
+  `endpointReceiveDualWithCaps_preserves_ipcInvariantFull` (their `hQNTB'` stays threaded pending the
+  qNTB establisher).
+
+Remaining `hQHBC'`-threaded bundles: `endpointCall` (+ WithCaps) + cross-core `endpointCallOnCore` +
+`endpointReplyRecv`. Next slices.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.39 — IPC de-threading D4 Slice 2c: de-thread `hQHBC'` from `endpointSendDual` (+ WithCaps)
+
+First **endpoint** transition de-threaded for `queueHeadBlockedConsistent`, composing the v0.32.37 pop
+core and the v0.32.38 enqueue keystone. `endpointSendDual{,WithCaps}_preserves_ipcInvariantFull` now
+*establish* the 9th conjunct from the pre-state instead of threading `hQHBC'`.
+
+- **`endpointQueuePopHead_popped_not_head`** (`DualQueueMembership.lean`) — the head dual of the
+  existing `endpointQueuePopHead_popped_not_tail`: after the pop, the popped head `tid` heads no queue.
+  Popped queue: the new head is `headTcb.queueNext`, which differs from `tid` since a self-loop is
+  forbidden (`tcbQueueChainAcyclic_no_self_loop`). Every other queue: `tid`'s blocked state is pinned by
+  `qHBC` to the popped queue's kind on `endpointId`, contradicting any other (kind, endpoint) head.
+- **`endpointSendDual_preserves_queueHeadBlockedConsistent`** — deliver branch: pop core (new head
+  blocked via qNTB) + `storeTcbReceiveComplete` (the popped receiver `.ready`, `hNotHead` =
+  `…_popped_not_head`) + `ensureRunnable` frame; block branch: the `storeTcbIpcStateAndMessage` enqueue
+  keystone + `removeRunnable` frame.
+- **`ipcUnwrapCaps_preserves_queueHeadBlockedConsistent`** (the cap-transfer writes only CNode caps) +
+  **`endpointSendDualWithCaps_preserves_queueHeadBlockedConsistent`** (base establish on `stMid` + the
+  optional cap-transfer frame).
+- De-threaded `hQHBC'` from both `endpointSendDual_preserves_ipcInvariantFull` and
+  `endpointSendDualWithCaps_preserves_ipcInvariantFull`.
+
+The remaining `hQHBC'`-threaded bundles are `endpointReceiveDual` / `endpointCall` (+ their WithCaps) +
+cross-core `endpointCallOnCore` — each needs its `qHBC` establisher (more complex deliver branches:
+the Call sub-path's reply-link, the running-receiver `.ready` store) plus, since they also thread
+`hQNTB'`, the symmetric qNTB establisher. Next slices.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.38 — IPC de-threading D4 Slice 2c: qHBC enqueue keystone (both store variants) + `post_head_cases`
+
+Lands the **block-leg** keystone for de-threading `queueHeadBlockedConsistent` (`hQHBC'`) from the
+endpoint transitions — the enqueue counterpart of the v0.32.37 rendezvous-pop core. Foundation only
+(the endpoint `qHBC` establishers that compose the pop core + this keystone are the next slice).
+
+- **`endpointQueueEnqueue_post_head_cases`** (`DualQueue/Transport.lean`) — the enqueue dual of
+  `endpointQueuePopHead_post_endpoint_queues`: after `endpointQueueEnqueue`, the enqueued queue's
+  **head** is either the freshly-enqueued `tid` (queue was empty) or the unchanged old head
+  (non-empty), and the *other* queue's head is unchanged. The endpoint is the only object whose
+  queue-boundary fields the enqueue rewrites (the subsequent `storeTcbQueueLinks` touch only TCB links).
+- **`endpointQueueEnqueue_blockStoreIpc_establishes_queueHeadBlockedConsistent`** (`storeTcbIpcState`
+  variant — the `Receive`/`Call` block legs) and
+  **`endpointQueueEnqueue_blockStore_establishes_queueHeadBlockedConsistent`**
+  (`storeTcbIpcStateAndMessage` variant — the `Send` block legs). `endpointQueueEnqueue` appends `tid`
+  as the new tail (head iff the queue was empty); the paired block-store sets `tid` to `blockState`
+  (blocked on the enqueued direction's endpoint, `hBlock`). Every post-state head is therefore either a
+  pre-state head (unchanged `ipcState`, blocked by `qHBC`) or `tid` in the empty-queue case (blocked by
+  `hBlock`); `tid` is fresh (`hFreshTid`), so it heads no *other* queue. Mirrors the `qNTB` enqueue
+  keystone; `qHBC` reads only `ipcState`, so the `Send` variant's extra `pendingMessage` write is
+  invisible.
+
+With the v0.32.37 pop core, both legs of the endpoint transitions' `qHBC` preservation are now
+provable from the pre-state (qNTB for the pop's new head; `hBlock`/`qHBC` for the enqueue). Wiring the
+per-transition establishers (`endpointSendDual` / `Receive` / `Call` / `…WithCaps` / cross-core) +
+dropping their `hQHBC'` is the next slice.
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (keystone + structural-lemma raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.37 — IPC de-threading D4 Slice 2c: qHBC pop core + de-thread `hQHBC'` from `notificationWait`
+
+First step of the actual Slice-2c goal — **de-threading `queueHeadBlockedConsistent` (`hQHBC'`)** —
+now that `queueNextTargetBlocked` (qNTB) is in the bundle (v0.32.36). Lands the rendezvous-pop keystone
+and the first wired `hQHBC'` de-thread.
+
+- **`endpointQueuePopHead_preserves_queueHeadBlockedConsistent`** (`DualQueueMembership.lean`) — the pop
+  core the endpoint transitions' rendezvous legs compose over. `endpointQueuePopHead` advances the
+  popped queue's head to the old head's `queueNext` target
+  (`endpointQueuePopHead_post_endpoint_queues`); that target is blocked on the **same** queue/endpoint
+  as the old head — which was the head, hence blocked by pre-state `qHBC` — via the strict link-target
+  invariant **qNTB**. The other queue's head and every other endpoint frame unchanged; the pop never
+  rewrites any `ipcState`. This is precisely the new-head blockedness that was *not* derivable before
+  qNTB (the pop's new head is a former *middle* element).
+- **`notificationWait_preserves_queueHeadBlockedConsistent`** (`DualQueueMembership.lean`) — the first
+  per-transition `qHBC` establisher, and the easiest: `notificationWait` touches the *notification*
+  waitQ, never an endpoint queue, so every endpoint head frames; the only `ipcState` write is the
+  running waiter (`.ready`/`.blockedOnNotification`), excluded from being an endpoint head by
+  `hWaiterReady` (a `.ready` thread is no head). Mirrors
+  `notificationWait_preserves_endpointQueueTailBlockedConsistent` (head for tail).
+- **De-threaded `hQHBC'` from `notificationWait_preserves_ipcInvariantFull`**: the bundle now
+  *establishes* the 9th conjunct from the pre-state instead of threading it. The remaining 7 endpoint
+  bundles + cross-core stay threaded pending their establishers (each composes the pop core above with
+  the enqueue+block-store `qHBC` keystone — a follow-on).
+
+Full build green (376) + `Platform.Staged` (234) + `test_smoke` green, trace byte-identical, zero
+`sorry`/`axiom`. `RAW_LOOKUP_TID` re-anchored (pop core + establisher raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.36 — IPC de-threading D4 Slice 2c: wire `queueNextTargetBlocked` as the 20th `ipcInvariantFull` conjunct
+
+Lands the atomic wire from the v0.32.35 recipe: `queueNextTargetBlocked` (qNTB — the strict
+link-target invariant `a.queueNext = some b ⇒ b carries a's blocking direction+endpoint) is now the
+**20th conjunct** of `ipcInvariantFull`. This is the enabler for de-threading `hQHBC'` (the actual
+Slice-2c goal, a follow-on): with qNTB in the bundle, every transition's `queueHeadBlockedConsistent`
+establisher can read the strict link-target fact from the **pre-state**.
+
+**Structural (`Defs.lean`)** — the 20-conjunct invariant:
+- `ipcInvariantFull` def gains `∧ queueNextTargetBlocked st`; the `IpcInvariantFull` structure gains the
+  matching field; the `ipcInvariantFull_iff_IpcInvariantFull` bridge carries it both directions.
+- The `endpointQueueTailBlockedConsistent` projection shifts `h.2.2…2` → `h.2.2…2.1`; a new
+  `queueNextTargetBlocked` projection `h.2.2…2.2` is added. `ipcInvariantFull_of_core_replyCallerLinkage`
+  and `ipcInvariantFull_compositional` take the new conjunct as a parameter.
+
+**Established from the pre-state** (genuine de-thread, zero new threading):
+- `endpointSendDual` — via the v0.32.33 establisher `endpointSendDual_preserves_queueNextTargetBlocked`
+  (deliver branch pops the receiveQ head + completes the receive; block branch is the enqueue+block-store
+  keystone).
+- `lifecycleRetypeObject` — new frame `lifecycleRetypeObject_preserves_queueNextTargetBlocked` (the
+  retyped object has `queueNext = none`; nobody links to the fresh target).
+- The two reply mutators — new frames `linkCallerReply` / `consumeCallerReply`
+  `_preserves_queueNextTargetBlocked` (reply/`replyObject` stores touch neither `queueNext` nor
+  `ipcState`), composed from the new reusable primitive
+  `storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked` + the existing reply-store
+  frames.
+- The three arch object-frames (`advanceTimerState` / `writeRegisterState` / `contextSwitchState`),
+  `bootFromPlatform`, and the `default` state — all via the object-equality / vacuous discharge.
+
+**Threaded transitionally** (`hQNTB'`, establisher is a follow-on slice): the 9 remaining IPC bundles
+(`endpointReceiveDual`, `endpointCall`, `notificationSignal`, `notificationWait`, `endpointReply`,
+`endpointReplyRecv`, and the three `…WithCaps` wrappers). Their rendezvous/deliver branches set the
+*running* (not popped) receiver/waiter `.ready`, whose no-incoming needs a `dualQueueSystemInvariant`
+derivation rather than the popped-head structural fact — deferred to per-transition establishers, each
+de-threaded in its own validated commit.
+
+New supporting frames: `storeObject_tcb_preserveIpcAndQueueNext_preserves_queueNextTargetBlocked`
+(`QueueNextBlocking.lean`); `storeObject_reply` / `consumeReply` / `linkReply` / `linkCallerReply` /
+`consumeCallerReply` `_preserves_queueNextTargetBlocked` (`DualQueueMembership.lean`);
+`lifecycleRetypeObject_preserves_queueNextTargetBlocked` + `coreIpcInvariantBundle_to_queueNextTargetBlocked`
+(`EndpointReplyAndLifecycle.lean`); `default_queueNextTargetBlocked` (`Architecture/Invariant.lean`).
+
+Full build green (376 jobs), `test_smoke` green, trace byte-identical, zero `sorry`/`axiom`.
+`RAW_LOOKUP_TID` re-anchored 1195→1203 (new frame lemmas' raw `objects[…]?` lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.35 — IPC de-threading D4 Slice 2c: validated atomic-wire recipe (plan)
+
+Records the precise, **validated** recipe for the Slice-2c atomic wire (adding `queueNextTargetBlocked`
+as the 20th `ipcInvariantFull` conjunct) in the plan's Slice 2c note, after prototyping the structural
+half in isolation and confirming it builds.
+
+- The 5 `Defs.lean` structural edits (def conjunct, `IpcInvariantFull` field, `iff`-bridge both
+  directions via named accessors, the single shifted projection `endpointQueueTailBlockedConsistent`
+  `h.2.2…2`→`h.2.2…2.1` + the new `queueNextTargetBlocked` projection `h.2.2…2.2`, and the
+  `ipcInvariantFull_of_core_replyCallerLinkage` + `ipcInvariantFull_compositional` params) — verified
+  by building `Defs.lean` in isolation with the 20-conjunct invariant.
+- The exact **17 producers** that then append a qNTB tuple term (10 direct-tuple bundles + 2 reply
+  mutators + 3 arch frames + cross-core + per-core), with the path-(b) per-producer recipe (thread
+  `hQNTB'` on the IPC/cross/per-core bundles, `endpointSendDual` establisher, object-frame for the arch
+  frames + reply mutators).
+
+Docs-only (the prototyped Lean edits were reverted to keep the tree green — the wire is one focused
+all-or-nothing commit best done next). No Lean change; `test_smoke` green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.34 — IPC de-threading D4 Slice 2c: reusable no-incoming framing core
+
+Adds the reusable framing infrastructure for "no thread's `queueNext` points to `t`" — the discharge
+the rendezvous receiver-`.ready` / notification-waiter / reply-target stores need (setting a thread
+`.ready`/`.blockedOn{Notification,Reply}` only breaks `queueNextTargetBlocked` if some blocked thread
+links to it). This unblocks the per-transition establishers whose changed thread is not the popped
+head.
+
+- `queueNext_noIncoming_of_backward` (`QueueNextBlocking.lean`) — generic transport: any store with a
+  `queueNext`-preserving backward map carries the no-incoming fact forward.
+- `storeTcbIpcStateAndMessage_preserves_noIncoming` / `ensureRunnable_preserves_noIncoming` /
+  `storeObject_nonTcb_preserves_noIncoming` — the per-store instances (the message/scheduler/object
+  stores never touch `queueNext`).
+
+**Design note recorded in the plan:** every ipcState-changing store needs the no-incoming fact for
+its changed thread. For the *popped head* it is derived (`…_popped_no_incoming`); for a **fresh**
+receiver / notification-waiter / reply-target it is *not* derivable from the current invariants (it
+needs "queue-member ⇒ blocked," which qNTB+qHBC themselves close — a bootstrapping circularity), so
+those establishers take a **dischargeable** `hXNoIncoming` precondition framed through the transition's
+earlier stores by this core. **Strategic insight:** the `hQHBC'` de-thread (the actual 2c goal) is
+likely *more* tractable than completing every qNTB establisher, because `qHBC` constrains only
+endpoint *heads* and a fresh receiver is excluded from being a head by `hFreshReceiver` — so the
+receiver-`.ready` store preserves `qHBC` trivially.
+
+Still additive. Proof-only, trace byte-identical, zero `sorry`/`axiom`; module build green.
+`RAW_LOOKUP_TID` re-anchored 1185→1195.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.33 — IPC de-threading D4 Slice 2c: first per-transition qNTB establisher (`endpointSendDual`)
+
+First per-transition `queueNextTargetBlocked` establisher, composing the Slice-2c block keystone and
+pop/rendezvous foundation — the proven template the remaining transitions replicate.
+
+- `storeTcbReceiveComplete_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — the
+  rendezvous receiver-wake frame: `tid` becomes a `.ready` *source* (its outgoing strict-match
+  obligation is vacuous — `.ready ≠ blockedOn…`); as a *target* it would break the invariant, but the
+  caller-supplied `hNoIncoming` (the popped head has no incoming link) rules that out. Every other
+  link is framed.
+- `endpointSendDual_preserves_queueNextTargetBlocked` (`DualQueueMembership.lean`) — block branch:
+  sendQ enqueue + `.blockedOnSend` block-store via the keystone, then `removeRunnable`; rendezvous
+  branch: receiveQ pop (preserves qNTB) + receiver `.ready` store (`storeTcbReceiveComplete`,
+  `hNoIncoming` = `endpointQueuePopHead_popped_no_incoming`) + `ensureRunnable`.
+
+Still additive (not yet a conjunct of `ipcInvariantFull`). Remaining 2c: the rest of the
+per-transition establishers (`endpointCall`/`ReceiveDual`/`ReplyRecv`/WithCaps/cross-core + the
+non-enqueue framers), the atomic 20th-conjunct wire, and the `hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build + `test_smoke` green.
+`RAW_LOOKUP_TID` re-anchored 1184→1185.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.32 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` pop/rendezvous foundation
+
+Completes the pop (rendezvous) side of the Slice-2c establisher machinery.
+
+- `endpointQueuePopHead_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — the pop only
+  *removes* the popped head's outgoing link (`headTid.queueNext := none`, a frame whose `hNewLink` is
+  vacuous) and re-stores the new head's own `queueNext` unchanged (the relink, whose `hNewLink` is the
+  pre-existing link discharged from the post-endpoint-store invariant). No new link is created, so the
+  strict per-link invariant is preserved. Mirrors the qNBC analogue.
+- `endpointQueuePopHead_popped_queuePrev_none` (`QueueNextBlocking.lean`) — the pop's final store
+  (`storeTcbQueueLinks headTid none none none`) clears the popped head's `queuePrev`.
+- `endpointQueuePopHead_popped_no_incoming` (`DualQueueMembership.lean`) — post-pop link integrity
+  (`endpointQueuePopHead_preserves_tcbQueueLinkIntegrity`) + the cleared `queuePrev` ⇒ no thread's
+  `queueNext` points to the popped head. This is exactly the obligation the rendezvous receiver-`.ready`
+  store needs: setting a thread `.ready` only breaks `queueNextTargetBlocked` if some blocked thread
+  links to it (the `hBwd` side of the `storeTcbIpcStateAndMessage` frame; `hFwd` is trivial because a
+  `.ready` *source* never triggers the strict antecedent).
+
+Still additive (not yet a conjunct of `ipcInvariantFull`). Remaining 2c: the per-transition
+establishers (compose block keystone + pop/rendezvous), the atomic 20th-conjunct wire, and the
+`hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green.
+`RAW_LOOKUP_TID` re-anchored 1182→1184.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.31 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` enqueue+block-store keystone
+
+Lands the hardest single piece of Slice 2c — the per-transition enqueue establisher keystone. Unlike
+`queueNextBlockingConsistent` (whose permissive `queueNextBlockingMatch` catch-all survives the
+enqueue), the **strict** `queueNextTargetBlocked` is transiently *violated* in the post-enqueue /
+pre-block-store state (the link `oldTail → tid` exists while `tid` is still `.ready`), so it cannot be
+established by step-by-step frame composition — it must be proven **end-to-end** on the final state.
+
+- `endpointQueueEnqueue_blockStore_establishes_queueNextTargetBlocked` (+ the `storeTcbIpcState`
+  variant `…_blockStoreIpc_…`) — establishes `queueNextTargetBlocked` after an `endpointQueueEnqueue`
+  followed by the block-store of the enqueued thread. Case analysis on each post-state link `a → b`:
+  the **new** link (`b = tid`) has a blocked source (core (b) `endpointQueueEnqueue_predecessor_blocked`)
+  and a target blocked on the **same** endpoint (the block-store + `hBlock`), so they strict-match;
+  `tid` has no outgoing link (`queueNext = none`); every **other** link is pre-existing, its source's
+  `queueNext` preserved by the enqueue and both endpoints' `ipcState`s preserved through enqueue +
+  block-store, so it is framed from the pre-state `queueNextTargetBlocked`.
+- Supporting backward helpers: `queueNextTargetBlocked_clause_of_predecessor_block` (strict-match from
+  the core-(b) + `hBlock` forms), `endpointQueueEnqueue_tcb_queueNext_backward_ne` (the enqueue only
+  sets `oldTail.queueNext := tid`, so any other thread's `queueNext` is preserved or equals
+  `some tid`), `storeTcbQueueLinks_tcb_queueNext_backward`, and
+  `storeTcbIpcStateAndMessage_tcb_queueNext_backward` / `storeTcbIpcState_tcb_queueNext_backward` (the
+  block-stores never touch `queueNext`).
+
+Still additive — `queueNextTargetBlocked` is not yet a conjunct of `ipcInvariantFull`, and the
+keystone is not yet wired into a transition. Remaining 2c: `endpointQueuePopHead` qNTB preservation
+(rendezvous), the per-transition establishers, the atomic 20th-conjunct wire, and the `hQHBC'`
+de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green.
+`RAW_LOOKUP_TID` re-anchored 1167→1182 (new backward helpers + keystone).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.30 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` link/state-mutating frames
+
+Completes the `queueNextTargetBlocked` frame family with the two frames the per-transition
+establishers compose over — the ones whose stores actually *change* a TCB's `queueNext` or `ipcState`
+(the object-preserving frames landed in v0.32.29).
+
+- `storeTcbQueueLinks_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — `storeTcbQueueLinks`
+  rewrites only `tid`'s link fields, so the only *new* outgoing link is `tid.queueNext := next`; the
+  caller discharges that one link via an `hNewLink` obligation (in the enqueue establisher, the paired
+  block-store makes the new target blocked on the same endpoint as `tid`). Every other link is framed.
+  Ported from `storeTcbQueueLinks_preserves_queueNextBlockingConsistent`.
+- `storeTcbIpcStateAndMessage_preserves_queueNextTargetBlocked` (`QueueNextBlocking.lean`) — the only
+  changed `ipcState` is `tid`'s; the caller discharges the two links touching `tid` via `hFwd` (the
+  outgoing `tid → b` link: the new state propagates to `b`) and `hBwd` (any incoming `a → tid` link:
+  `a`'s state propagates to the new state). Ported from
+  `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`.
+
+Still additive — `queueNextTargetBlocked` is not yet a conjunct of `ipcInvariantFull`. Remaining 2c
+work (next slices): the per-transition establishers (enqueue/pop, reusing cores (a)/(b)/(c)), the
+atomic 20th-conjunct wire, and the `hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; module build green.
+`RAW_LOOKUP_TID` re-anchored 1161→1167 (the two new frames use `lookupTcb`).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.29 — IPC de-threading D4 Slice 2c: `queueNextTargetBlocked` foundation (def + frame family)
+
+Lays the foundation for the final D4 conjunct de-thread (`queueHeadBlockedConsistent`, `hQHBC'`), which
+the pop (rendezvous) leg cannot establish from the existing 19 conjuncts: after popping the head `H`
+(blocked on `epId`), the new head is `H.queueNext`, whose blockedness is not derivable
+(`queueNextBlockingMatch`'s catch-all permits a `.ready` successor). The fix is a new *per-link*
+invariant.
+
+- `queueNextTargetBlocked` (`Defs.lean`) — the **strict** form of `queueNextBlockingMatch`:
+  `a.queueNext = some b ⇒ b` carries the same blocking direction + endpoint as `a` (receive→receive,
+  send/call→send/call). Together with `queueHeadBlockedConsistent` it yields "every reachable queue
+  member is blocked", exactly what the pop's new-head obligation needs. Generalises
+  `endpointQueueTailBlockedConsistent` (the tail specialisation).
+- Object-preserving frame family (`QueueNextBlocking.lean`): `queueNextTargetBlocked_of_objects_eq`
+  (pointwise lookup transport), `queueNextTargetBlocked_of_tcb_links_backward` (the workhorse
+  combinator — backward maps preserving both `ipcState` and `queueNext`),
+  `ensureRunnable`/`removeRunnable` scheduler frames, and `storeObject_{non_ep_non_tcb,endpoint}`
+  object-store frames. All mirror the `queueNextBlockingConsistent` family (same `∀ a b,
+  a.queueNext = some b → …` shape).
+
+This is **additive infrastructure** — `queueNextTargetBlocked` is a standalone def, not yet a conjunct
+of `ipcInvariantFull`; nothing is de-threaded yet. Remaining 2c work (next slices, documented in the
+plan's Slice 2c note): the two state/link-mutating frames (`storeTcbQueueLinks` + `storeTcbIpcStateAndMessage`),
+the per-transition establishers, the atomic 20th-conjunct wire, and the `hQHBC'` de-thread.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green.
+`RAW_LOOKUP_TID` re-anchored 1157→1161 (new frame lemmas).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2c)
+
+## v0.32.28 — IPC de-threading D1: de-thread 3 wiring conjuncts from 7 bundles
+
+De-threads `dualQueueSystemInvariant`, `endpointQueueNoDup`, and `ipcStateQueueMembershipConsistent`
+— three of the four D1 "wiring" conjuncts — from the seven `ipcInvariantFull` bundles whose
+per-transition establishers are reachable from `DualQueueMembership`. The freshness side-conditions
+these establishers need (`hFresh*` / `*TailFresh`) were already added to every enqueue bundle for the
+D4 qNBC/tail-blocked de-thread, so this slice is pure establisher-call substitution — no new lemmas.
+
+- **Bundles de-threaded** (removed the threaded `hDualQueue'`/`hNoDup'`/`hQMC'` post-state hypotheses,
+  replaced each with its `_preserves_*` establisher call from the pre-state `hInv : ipcInvariantFull st`
+  + the already-present freshness preconditions): the 3 base transitions `endpointSendDual` /
+  `endpointCall` / `endpointReceiveDual`; `notificationSignal`; `notificationWait`; `endpointReply`;
+  `endpointReplyRecv`. (`notificationSignal`/`notificationWait`/`endpointReply` already established
+  `dualQueueSystemInvariant`; this slice adds their NoDup + QMC.)
+- **Still threaded** (deferred to a follow-on D1 slice): `waitingThreadsPendingMessageNone` (its
+  transition establishers live in `PerOperation`, downstream of the bundles — needs an establisher
+  relocation upstream, or discharge at the D8 layer); and the D1 conjuncts of the 3 `*WithCaps`
+  bundles + cross-core `endpointCallOnCore`, whose establishers must be **built** (compose the base
+  establisher with new `ipcUnwrapCaps_preserves_{endpointQueueNoDup,ipcStateQueueMembershipConsistent}`
+  frames).
+
+Proof-only (bundle-internal rewiring; no new theorems, no signature changes visible to callers — the
+only callers are `#check`s). Trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) +
+`test_smoke` green. AK7 metrics unchanged (no new raw lookups).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, D1)
+
+## v0.32.27 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked (`hEQTB'`) FULLY de-threaded
+
+Closes the `hEQTB'` half of D4 Slice 2b — `endpointQueueTailBlockedConsistent` is now **established
+from the pre-state** in every `ipcInvariantFull` bundle (zero `hEQTB'` threading sites), matching the
+already-complete `hQNBC'` de-thread. Every endpoint-queue-touching transition now derives the 19th
+conjunct internally via cores (a) (`endpointQueuePopHead_popped_not_tail`) and (c)
+(`endpointQueueEnqueue_blockStore{,Ipc}_establishes_…`), so the dispatcher no longer has to supply a
+post-state tail-blocked witness.
+
+- `notificationWait_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) — a new
+  establisher for the one *notification* transition that threaded `hEQTB'`. `notificationWait` touches
+  no endpoint queue; its only TCB write is the running `waiter` (to `.ready` on badge delivery, or
+  `.blockedOnNotification` on block). The waiter is `.ready` in the pre-state (`hWaiterReady`, the
+  dispatcher fact: the syscall caller is running), hence by pre-state tail-blocked it is no endpoint
+  tail, so the rewrite cannot break tail-blockedness. Both branches discharged via
+  `storeTcbIpcState_preserves_endpointQueueTailBlockedConsistent` (`hNotTail` from the waiter's
+  `.ready` state) + `removeRunnableOnCore`/`storeObject` frames.
+- `removeRunnableOnCore_preserves_endpointQueueTailBlockedConsistent` +
+  `wakeThread_preserves_endpointQueueTailBlockedConsistent_of_ready` +
+  `endpointCallOnCore_preserves_endpointQueueTailBlockedConsistent`
+  (`CrossCore/EndpointCallInvariant.lean`) — the cross-core establisher mirrors the single-core
+  `endpointCall` proof with the per-core object-invisible frames: the receiver wake is invisible
+  because the receiver is `.ready` after its message store (`wakeThread_objects_getElem_eq_of_ready`,
+  the §2 keystone), and the caller deschedule is an `objects`-preserving frame.
+- **Bundle de-threads (removed `hEQTB'`, added the establisher call):** `endpointReplyRecv`, the 3
+  WithCaps wrappers (`endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`/`endpointCallWithCaps` —
+  compose the base establisher; the cap transfer writes only CNode caps), cross-core
+  `endpointCallOnCore`, and `notificationWait` (gains the dischargeable `hWaiterReady` precondition in
+  place of the threaded `hEQTB'`). The three base transitions (`endpointSendDual`/`endpointCall`/
+  `endpointReceiveDual`) were de-threaded in v0.32.24–26; **every bundle is now free of BOTH `hQNBC'`
+  and `hEQTB'`.**
+- `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` — D4 row + Slice 2b note marked the `hEQTB'` half
+  complete; the remaining D4 residual is `hQHBC'` (Slice 2c, `queueNextTargetBlocked`).
+
+Proof-only; the only signature changes are the bundles swapping a threaded post-state `hEQTB'` for the
+pre-state `hWaiterReady` (`notificationWait`) or no new hypothesis at all (the establishers reuse the
+already-present `hFresh*` enqueue-freshness preconditions). Trace byte-identical, zero `sorry`/`axiom`;
+full build (376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1153→1157 (new frame/establisher raw lookups,
+mirroring the existing qNBC frame patterns).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.26 — IPC de-threading D4 (Finding F-2) Slice 2b: `storeTcbIpcState` core-(c) variant + plan sync
+
+Foundation top-up for the remaining tail-blocked establishers, plus a workstream-status refresh.
+
+- `endpointQueueEnqueue_blockStoreIpc_establishes_endpointQueueTailBlockedConsistent`
+  (`DualQueueMembership.lean`) — the `storeTcbIpcState` analogue of core (c)
+  (`…_blockStore_establishes_…`). `endpointReceiveDual`'s block leg writes the freshly-enqueued
+  receiver's `ipcState` via `storeTcbIpcState` (no `pendingMessage`), not `storeTcbIpcStateAndMessage`;
+  the proof is identical modulo the store-lemma family (`storeTcbIpcState_{ipcState_eq,endpoint_backward,
+  preserves_objects_ne}`), so the freshly-blocked receiver is still the new receiveQ tail.
+- `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` — Slice 2b note refreshed: the `hQNBC'` half is
+  fully de-threaded; the `hEQTB'` half has its complete foundation (cores (a)+(c) + the
+  `_enqueued_is_tail` / `_post_endpoint_tail` / `_fresh_not_tail` helpers + the `linkServerStashedReply`
+  and `storeTcbIpcState` frames) with **2/8 transitions** (`endpointSendDual`, `endpointCall`) free of
+  both `hQNBC'` and `hEQTB'`; the remaining 6 (`endpointReceiveDual`, `endpointReplyRecv`, 3×WithCaps,
+  `endpointCallOnCore`) are mechanical compositions of the cores per the documented per-transition
+  store sequences.
+
+Proof-only, additive (no bundle changes), trace byte-identical, zero `sorry`/`axiom`; full build
+(376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1151→1153.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.25 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointCall` tail-blocked de-threaded
+
+Second transition tail-blocked de-thread — the `.call` rendezvous (with its caller `.blockedOnReply`
+store + `linkServerStashedReply`), plus the two reusable frames it needs.
+
+- `endpointQueuePopHead_fresh_not_tail` (`DualQueueMembership.lean`, core (a) companion) — a thread
+  `fresh` that is no pre-pop tail stays no post-pop tail (used for the *caller* `.blockedOnReply`
+  store's `hNotTail`; the caller is `.ready`, hence by freshness no tail). Unlike core (a) this needs
+  no `queueHeadBlockedConsistent` — `fresh` is never the popped head, so every post-pop tail (popped:
+  `none`/pre-pop; framed: unchanged) is `≠ some fresh` directly via the pre-pop freshness.
+- `linkServerStashedReply_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) —
+  the reply-link frame (`linkCallerReply` writes only `replyObject`; the server stash-clear stores the
+  server TCB preserving `ipcState`), via `storeObject_tcb_preserveIpc_…`.
+- `endpointCall_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) — rendezvous
+  branch: pop frame + receiver `.ready` store (receiver no tail, core (a)) + `ensureRunnable` + caller
+  `.blockedOnReply` store (caller no tail, `_fresh_not_tail` transported through the receiver store +
+  `ensureRunnable` via `storeTcbIpcStateAndMessage_endpoint_backward` + `ensureRunnable_preserves_objects`)
+  + `linkServerStashedReply` frame + `removeRunnable`. Block branch: core (c) (the new sendQ tail is
+  the `.blockedOnCall` caller) + `removeRunnable`.
+- **`endpointCall_preserves_ipcInvariantFull` drops `hEQTB'`** (established via the new theorem; the
+  `hFreshCaller` / `hQHBC` it already has suffice). `endpointCall` joins `endpointSendDual` as a bundle
+  free of **both** `hQNBC'` and `hEQTB'`.
+
+Proof-only, additive + one bundle signature change (no Lean call sites), trace byte-identical, zero
+`sorry`/`axiom`; full build (376 jobs) green, AK7 cascade unchanged. 5 enqueue-bearing bundles still
+thread `hEQTB'`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.24 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked pop-establish (core (a)) + `endpointSendDual` de-threaded
+
+Completes the tail-blocked (`hEQTB'`) foundation (core (a), the pop/rendezvous counterpart to
+v0.32.23's core (c)) and lands the first full vertical de-thread — `endpointSendDual`.
+
+- `endpointQueuePopHead_post_endpoint_tail` (`QueueMembership.lean`) — post-pop tail characterisation
+  (modelled on `_post_endpoint_queues`): the popped queue's tail is `none` (sole element) or the
+  unchanged pre-pop tail; the other queue's tail is unchanged.
+- `endpointQueuePopHead_popped_not_tail` (`DualQueueMembership.lean`, **core (a)**) — the popped head
+  `tid` is **not a tail** of any post-pop queue (the `hNotTail` obligation the rendezvous branches'
+  `storeTcbReceiveComplete` tail-blocked frame needs). Popped queue: post-pop tail is `none` or
+  differs from the head by intrusive well-formedness (`tail.queueNext = none` vs the multi-element
+  head's `some`, via `dualQueueEndpointWellFormed` P3). Every other queue: `tid`'s blocked state is
+  pinned by `queueHeadBlockedConsistent` to the popped kind on `endpointId`, which
+  `endpointQueueTailBlockedConsistent` would contradict for any *other* (kind, endpoint). Uses
+  `endpointQueuePopHead_returns_{head,pre_tcb}` for the head id/TCB.
+- `endpointSendDual_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`) — the
+  first transition tail-blocked establisher. Rendezvous (pop) branch: pop frame +
+  `storeTcbReceiveComplete` (the woken receiver is `.ready` but no tail, by core (a)) +
+  `ensureRunnable`. Block branch: core (c) (the freshly-blocked sender is the new sendQ tail,
+  `.blockedOnSend endpointId`) + `removeRunnable`.
+- **`endpointSendDual_preserves_ipcInvariantFull` drops `hEQTB'`** (established via the new theorem;
+  the `hFreshSender` / `hQHBC`(=`hInv.queueHeadBlockedConsistent`) it already has suffice). With the
+  v0.32.17 qNBC de-thread, `endpointSendDual` is now the first bundle free of **both** `hQNBC'` and
+  `hEQTB'`. `hQHBC'` remains threaded (Slice 2c).
+
+Proof-only, additive + one bundle signature change (no Lean call sites), trace byte-identical, zero
+`sorry`/`axiom`; full build (376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1150→1151. The remaining
+7 enqueue-bearing bundles still thread `hEQTB'` pending their (mechanical) establishers.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.23 — IPC de-threading D4 (Finding F-2) Slice 2b: tail-blocked enqueue-establish foundation (core (c))
+
+The `endpointQueueTailBlockedConsistent` (`hEQTB'`) half of Slice 2b begins: the two reusable
+foundation lemmas the enqueue transitions' tail-blocked establishers compose over. Additive,
+no de-thread yet (the `hEQTB'` bundle removals follow in subsequent cuts).
+
+- `endpointQueueEnqueue_enqueued_is_tail` (`QueueNextBlocking.lean`) — after `endpointQueueEnqueue`,
+  the enqueued thread is the **tail** of the target queue (`isReceiveQ ? receiveQ : sendQ`), and the
+  *other* queue's tail is unchanged. The endpoint store sets the target queue's `tail := some tid`;
+  the trailing `storeTcbQueueLinks` writes only TCB links, so the endpoint (≠ any TCB objId, by
+  `objects.invExt`) survives unchanged (`storeObject_objects_eq'` + `storeTcbQueueLinks_preserves_objects_ne`).
+- `endpointQueueEnqueue_blockStore_establishes_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`,
+  **core (c)**) — an `endpointQueueEnqueue` followed by the block-store of the enqueued thread (to
+  `.blockedOnSend`/`.blockedOnCall`/`.blockedOnReceive` on the *same* endpoint) **establishes**
+  `endpointQueueTailBlockedConsistent`. The freshly-enqueued thread becomes the new tail (via
+  `_enqueued_is_tail`) and the block-store makes it blocked-on-this-endpoint
+  (`storeTcbIpcStateAndMessage_ipcState_eq`); every other tail is framed — the enqueue touches only
+  the target queue's tail and the block-store only the enqueued thread, fresh by `hFreshTid` (so it
+  is no other queue's tail). The proof case-splits each tail obligation on `tl = tid` (the new tail,
+  matched by the block state per `hBlock`) vs. `tl ≠ tid` (framed back to the pre-state tail via
+  `storeTcbIpcStateAndMessage_preserves_objects_ne` + `endpointQueueEnqueue_tcb_ipcState_backward` +
+  `endpointQueueEnqueue_endpoint_backward_ne`, then `hTail`).
+
+Proof-only, additive (no bundle changes), trace byte-identical, zero `sorry`/`axiom`; full build
+(376 jobs) green. `RAW_LOOKUP_TID` re-anchored 1148→1150 (the two new frame lemmas' typed-id object
+lookups — a documented should-drop re-baseline).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.22 — IPC de-threading D4 (Finding F-2) Slice 2b: cross-core `endpointCallOnCore` queueNext de-threaded
+
+Fifth and final qNBC de-thread of the slice — the cross-core (per-core scheduler) endpoint call.
+**`queueNextBlockingConsistent` is now de-threaded from every IPC enqueue-bearing transition** (the
+single-core send/call/receive base + WithCaps wrappers, `endpointReplyRecv`, and now the cross-core
+`endpointCallOnCore`); there are zero remaining `hQNBC'` threading sites in the codebase.
+
+- `removeRunnableOnCore_preserves_queueNextBlockingConsistent`,
+  `wakeThread_preserves_queueNextBlockingConsistent_of_ready` (`EndpointCallInvariant.lean`) — the two
+  per-core scheduler-op qNBC frames, via `queueNextBlockingConsistent_of_objects_eq`: `removeRunnableOnCore`
+  leaves `objects` literally unchanged; the cross-core wake of an already-`.ready` thread is
+  object-lookup-invisible (`wakeThread_objects_getElem_eq_of_ready`, the SM6.A §2 keystone). Mirror the
+  existing `*_preserves_dualQueueSystemInvariant` per-core frames.
+- `endpointCallOnCore_preserves_queueNextBlockingConsistent` (`EndpointCallInvariant.lean`) — establishes
+  `queueNextBlockingConsistent` from the pre-state. Mirrors the single-core
+  `endpointCall_preserves_queueNextBlockingConsistent` step-for-step (block branch: sendQ enqueue +
+  `.blockedOnCall` block-store with `hFwd` vacuous via `endpointQueueEnqueue_enqueued_queueNext_none` and
+  `hBwd` via core (b) `endpointQueueEnqueue_predecessor_blocked`; rendezvous branch: receiveQ pop +
+  receiver `.ready` store + caller `.blockedOnReply` store [`queueNextBlockingMatch` catch-all both ways] +
+  `linkServerStashedReply`), with the inserted receiver wake framed by the new
+  `wakeThread_preserves_queueNextBlockingConsistent_of_ready` and both deschedules by
+  `removeRunnableOnCore`'s object frame. Unfold structure cloned from
+  `endpointCallOnCore_preserves_dualQueueSystemInvariant`.
+- **`endpointCallOnCore_preserves_ipcInvariantFull` drops `hQNBC'`** (established via the new theorem;
+  the `hFreshCaller` / `hSendTailFresh` it already threads for the dual-queue establish are reused).
+  `hEQTB'` / `hQHBC'` remain threaded.
+
+Proof-only, additive + one bundle signature change (no Lean call sites — the bundle is a top-level
+payoff theorem), trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green, AK7 cascade
+metrics unchanged. Next: Slice 2c (`queueHeadBlockedConsistent` via a new `queueNextTargetBlocked`
+conjunct) and the `endpointQueueTailBlockedConsistent` (`hEQTB'`) enqueue-establish slice.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.21 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointReplyRecv` queueNext de-threaded
+
+Fourth enqueue-bearing transition qNBC de-thread — the two-phase reply+receive folded transition.
+
+- `endpointReplyRecv_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) —
+  establishes `queueNextBlockingConsistent` from the pre-state by composing the reply phase
+  (`storeTcbIpcStateAndMessage replyTarget .ready` + `ensureRunnable` — clean `queueNext`/`ipcState`
+  frames) with the `endpointReceiveDual` receive leg (`endpointReceiveDual_preserves_queueNextBlockingConsistent`,
+  the v0.32.19 enqueue-establish). The receive-leg preconditions (qNBC, `dualQueueSystemInvariant`,
+  `endpointQueueTailBlockedConsistent`, `objects.invExt`, receiver-freshness) are carried across the
+  reply phase: the `.ready`-store frames preserve qNBC / DQSI / invExt; the unblocked `replyTarget`
+  was `.blockedOnReply`, hence (by pre-state tail-blocked) no endpoint tail, so
+  `storeTcbIpcStateAndMessage_preserves_endpointQueueTailBlockedConsistent` applies (`hNotTail`
+  discharged exactly as the `endpointReply` tail-blocked establisher); and the two freshness
+  hypotheses transport via `storeTcbIpcStateAndMessage_endpoint_backward` + `ensureRunnable_preserves_objects`
+  (endpoints unchanged by the reply phase). Structurally mirrors the existing
+  `endpointReplyRecv_preserves_ipcStateQueueMembershipConsistent` two-phase composition.
+- **`endpointReplyRecv_preserves_ipcInvariantFull` drops `hQNBC'`** (now established via the new
+  theorem; `hFreshReceiver` / `hRecvTailFresh` replace it). `hEQTB'` / `hQHBC'` remain threaded.
+
+Proof-only, additive + one bundle signature change (no Lean call sites — the bundle is a top-level
+payoff theorem), trace byte-identical, zero `sorry`/`axiom`; full build (376 jobs) green, AK7 cascade
+metrics unchanged. The sole remaining single-core qNBC-threading site is the cross-core
+`endpointCallOnCore` (`EndpointCallInvariant.lean`).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.20 — IPC de-threading D4 (Finding F-2) Slice 2b: WithCaps wrappers queueNext de-threaded
+
+Completes qNBC de-threading across all six send/call/receive bundles — the three capability-transfer
+wrappers now compose the base enqueue-establish with the cap-transfer frame.
+
+- `endpointSendDualWithCaps_preserves_queueNextBlockingConsistent`,
+  `endpointCallWithCaps_preserves_queueNextBlockingConsistent`,
+  `endpointReceiveDualWithCaps_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) —
+  each **establishes** `queueNextBlockingConsistent` from the pre-state by composing the base
+  transition's qNBC establish on the intermediate state with the optional `ipcUnwrapCaps` leg
+  (`ipcUnwrapCaps_preserves_queueNextBlockingConsistent` — cap transfer writes only CNode caps,
+  framing every `queueNext`/`ipcState`). The Send/Call wrappers gate the cap leg on the endpoint
+  receive-queue head; the Receive wrapper gates on the *receiver*'s delivered `pendingMessage` (the
+  receive op already dequeued the rendezvous sender), mirroring the existing
+  `endpointReceiveDualWithCaps` framing template.
+- **`endpoint{SendDual,Call,ReceiveDual}WithCaps_preserves_ipcInvariantFull` each drop `hQNBC'`**
+  (now established via the new theorem; `hFreshSender` / `hFreshCaller` / `hFreshReceiver` +
+  `hSendTailFresh` / `hRecvTailFresh` replace it, identical to the base-transition bundles in
+  v0.32.17–19). `hEQTB'` / `hQHBC'` remain threaded pending the tail-blocked establish slice.
+
+With this, `queueNextBlockingConsistent` is de-threaded from every single-core send/call/receive
+bundle (base + WithCaps). Proof-only, additive + three bundle signature changes (no Lean call
+sites — the WithCaps bundles are top-level payoff theorems), trace byte-identical, zero
+`sorry`/`axiom`; full build (376 jobs) green, AK7 cascade metrics unchanged.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.19 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointReceiveDual` queueNext de-threaded
+
+Third enqueue-transition qNBC de-thread — the receiveQ-enqueue (`isReceiveQ = true`) case, with
+Call/Send rendezvous sub-paths.
+
+- `cleanupPreReceiveDonation_preserves_endpointQueueTailBlockedConsistent` (`DualQueueMembership.lean`)
+  — one-off frame (the cleanup donation-return rewrites only `schedContextBinding`, preserving every
+  endpoint + `ipcState`), needed because `endpointReceiveDual`'s block path enqueues on the
+  post-cleanup state; a clean combinator application over the existing endpoint / ipcState backward
+  lemmas.
+- `endpointReceiveDual_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) —
+  establishes `queueNextBlockingConsistent` from the pre-state. Rendezvous (pop sendQ): Call sub-path
+  (caller `.blockedOnReply` store [catch-all match] + `linkCallerReply` + receiver `.ready` store) and
+  Send sub-path (sender `.ready` + `ensureRunnable` + receiver `.ready`). Block path: cleanup (qNBC +
+  the new tail-blocked frame) + receiveQ enqueue + receiver `.blockedOnReceive` store (`hBwd` via
+  core (b) with `isReceiveQ = true`: the old receiveQ tail is `.blockedOnReceive endpointId`) +
+  optional reply-stash store (`queueNext`/`ipcState`-preserving) + `removeRunnable`.
+- **`endpointReceiveDual_preserves_ipcInvariantFull` drops `hQNBC'`** (established; `hFreshReceiver` /
+  `hRecvTailFresh` replace it). `hEQTB'` / `hQHBC'` remain threaded.
+
+This proves core (b) generalises to the receiveQ-enqueue direction. Proof-only, additive + one bundle
+signature change (no Lean call sites), trace byte-identical, zero `sorry`/`axiom`; full build (234
+jobs) green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.18 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointCall` queueNext de-threaded
+
+Second enqueue-transition qNBC de-thread, reusing core (b) + the existing reply-store qNBC frames.
+
+- `endpointCall_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) — establishes
+  `queueNextBlockingConsistent` from the pre-state. Block branch mirrors `endpointSendDual` (sendQ
+  enqueue, `.blockedOnCall`; core (b)'s old-tail `.blockedOnSend`/`.blockedOnCall` both match
+  `.blockedOnCall endpointId`). Rendezvous (Call) branch: pop + receiver `.ready` store +
+  `ensureRunnable` + caller `.blockedOnReply` store (`queueNextBlockingMatch` with a `.blockedOnReply`
+  neighbour is `True` via the catch-all — the `.ready`-store, `_ready` frame; the caller-store
+  discharges `hFwd` by the concrete `.blockedOnReply` head, `hBwd` by casing the predecessor state)
+  + `linkServerStashedReply` (existing reply-store qNBC frame) + `removeRunnable`. No new sub-frames
+  were needed — all reply-store qNBC frames already existed.
+- **`endpointCall_preserves_ipcInvariantFull` drops `hQNBC'`** (established via the new theorem;
+  `hFreshCaller` / `hSendTailFresh` replace it). `hEQTB'` / `hQHBC'` remain threaded.
+
+Proof-only, additive + one bundle signature change (no Lean call sites), trace byte-identical, zero
+`sorry`/`axiom`; `DualQueueMembership` build green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.17 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointSendDual` queueNext de-threaded
+
+First complete enqueue-transition qNBC de-thread, consuming the v0.32.16 core (b).
+
+- `endpointQueueEnqueue_enqueued_queueNext_none` (`QueueNextBlocking.lean`) — the enqueued thread's
+  post-state `queueNext` is `none`; discharges the block-store `hFwd` vacuously.
+- `endpointSendDual_preserves_queueNextBlockingConsistent` (`DualQueueMembership.lean`) — establishes
+  `queueNextBlockingConsistent` from the pre-state. Rendezvous (pop) branch is clean — pop frame +
+  *unconditional* `storeTcbReceiveComplete` (a `.ready` thread matches any neighbour) + `ensureRunnable`
+  frame. Block branch — enqueue frame + the block-store, whose `hFwd` is vacuous (the new tail's
+  `queueNext = none`) and whose `hBwd` is discharged by core (b) `endpointQueueEnqueue_predecessor_blocked`
+  (the old sendQ tail is the unique predecessor, `.blockedOnSend`/`.blockedOnCall endpointId` by
+  pre-state tail-blocked) + `removeRunnable` frame.
+- **`endpointSendDual_preserves_ipcInvariantFull` drops `hQNBC'`**, establishing the conjunct via the
+  new theorem. The freshness side-conditions (`hFreshSender` / `hSendTailFresh`) replace it — the same
+  dischargeable pre-state conditions the existing `endpointSendDual_preserves_endpointQueueNoDup` and
+  D1 use (the running sender is `.ready`, hence not a queue member; the old tail is not a cross-queue
+  tail). `hEQTB'` / `hQHBC'` remain threaded (tail-establish + Slice 2c pending).
+
+This is the canonical pattern; the remaining 7 enqueue transitions follow it (the WithCaps variants
+compose with `ipcUnwrapCaps_preserves_queueNextBlockingConsistent`).
+
+Proof-only, additive + one bundle signature change (the `*_preserves_ipcInvariantFull` bundles have
+no Lean call sites), trace byte-identical, zero `sorry`/`axiom`; full build (234 jobs) + staged
+cross-core green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.16 — IPC de-threading D4 (Finding F-2) Slice 2b: enqueue-predecessor core (block-store qNBC `hBwd`)
+
+Builds the keystone reusable core that discharges the block branch's `queueNextBlockingConsistent`
+obligation for all 8 enqueue transitions — the hard half of Slice 2b's qNBC de-thread.
+
+- `storeTcbQueueLinks_stored_queuePrev` (`QueueMembership.lean`) — mirror of the existing
+  `_stored_queueNext`: a link store sets the target's `queuePrev` to `prev`.
+- `endpointQueueEnqueue_enqueued_queuePrev` (`QueueNextBlocking.lean`) — the enqueued thread's
+  post-state `queuePrev` is exactly the queue's **old tail** (`none` when the queue was empty),
+  read off the enqueue's final `storeTcbQueueLinks` on the enqueued thread.
+- `endpointQueueEnqueue_predecessor_blocked` (`DualQueueMembership.lean`) — **core (b)**: any `a`
+  with `a.queueNext = some enqueueTid` in the post-state is the old tail, hence blocked on
+  `endpointId` matching the queue. Proof via the *post-state* route: the existing
+  `endpointQueueEnqueue_preserves_tcbQueueLinkIntegrity` (forward) gives
+  `enqueueTid.queuePrev = some a`; `_enqueued_queuePrev` pins it to the old tail, so `a = oldTail`,
+  blocked by pre-state tail-blocked; `_tcb_ipcState_backward` carries the blocking state to the
+  post-state TCB. The `hFreshTid`/`hTailFresh` side-conditions are those of
+  `preserves_tcbQueueLinkIntegrity`, dischargeable since the enqueued thread is `.ready` (not a
+  queue member). This is cleaner than the pre-state guard-extraction + multi-store `queueNext`
+  tracing (the roadmap's "Slice 2b/2c implementation decomposition" core (b) is updated accordingly).
+
+With this, the block-store `storeTcbIpcStateAndMessage_preserves_queueNextBlockingConsistent`
+`hBwd` is discharged; the 8 transition qNBC establishers reduce to thin branch compositions (the
+rendezvous branch is already clean: pop frame + unconditional `storeTcbReceiveComplete` + scheduler
+frames). Establishers + bundle de-threads land next.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; full build (234 jobs) green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.15 — IPC de-threading D4 (Finding F-2) Slice 2b: `storeTcbReceiveComplete` tail-blocked frame + residual decomposition
+
+Adds the rendezvous-receiver tail-blocked frame and records the precise implementation
+decomposition for the remaining D4 (and D1/D6/D8) work.
+
+- `storeTcbReceiveComplete_preserves_endpointQueueTailBlockedConsistent` (`QueueNextBlocking.lean`)
+  — tail dual of the existing `_preserves_queueHeadBlockedConsistent`: the rendezvous receiver is
+  set `.ready`, so it must not be a queue tail; the `hNotTail` obligation is discharged by the
+  caller from the post-pop state (where the woken head has been removed from its queue). This is the
+  store-frame the enqueue transitions' rendezvous branch composes over for tail-blocked.
+
+- **Plan decomposition** (`IPC_INVARIANT_DETHREADING_PLAN.md` → "Slice 2b/2c implementation
+  decomposition"): the two reusable cores the 8 transition establishers reduce to — (a) *the popped
+  head is not a post-pop tail* (rendezvous tail-blocked `hNotTail`), (b) *the enqueued thread's
+  predecessor is the old tail, blocked on the same endpoint* (block-store qNBC `hBwd`, via
+  `tcbQueueLinkIntegrity` + pre-state tail-blocked) — plus the **Slice 2c design choice**: the
+  per-link `queueNextTargetBlocked` conjunct (strict `queueNextBlockingMatch`, no `.ready` target),
+  which with `queueHeadBlockedConsistent` gives "every member blocked" and de-threads `qHBC` — a
+  cleaner alternative to the closure-style `endpointQueueMemberBlocked`. D1/D6/D8 residuals noted.
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; `QueueNextBlocking` + IPC
+invariant hub build green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b/2c)
+
+## v0.32.14 — IPC de-threading D4 (Finding F-2) Slice 2b: `endpointQueuePopHead` tail-blocked frame
+
+Completes the pop-side of the Slice-2b tail-blocked foundation: the transition-level frame the
+enqueue transitions' rendezvous (pop) branch composes over.
+
+- `endpointQueuePopHead_preserves_endpointQueueTailBlockedConsistent` — popping the head either
+  leaves the popped queue's tail unchanged (≥2 elements: the stored endpoint keeps `tail := q.tail`)
+  or empties the queue (1 element: `q' = {}`, `tail = none`, vacuous); the other queue and every
+  thread's `ipcState` are untouched. Decomposes (mirroring the existing
+  `endpointQueuePopHead_preserves_queueNextBlockingConsistent`) into the endpoint store — whose new
+  tails are discharged from the pre-state `endpointQueueTailBlockedConsistent` via the v0.32.13
+  `storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent` helper (the popped queue's
+  new tail is the old tail or `none`, the other queue's is unchanged) — followed by the head /
+  successor relinks, which are link-only TCB writes carried by
+  `storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent`.
+
+This is the last *standalone* tail-blocked queue-operation frame: the enqueue case is intrinsically
+**transition-level** (the enqueue makes the new tail `.ready`; tail-blocked is restored only by the
+paired block-store), so it is established directly in the per-transition establishers (next).
+
+Proof-only, additive, trace byte-identical, zero `sorry`/`axiom`; `QueueNextBlocking` + IPC invariant
+hub build green. AK7 cascade unchanged (the pop frame's lookups are endpoint-id, not thread `.toObjId`).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.13 — IPC de-threading D4 (Finding F-2) Slice 2b foundation: queue-boundary store frames + qNBC/qHBC scope correction
+
+Lands the reusable queue-boundary store frames that the enqueue/pop transition establishers
+(Slice 2b proper) compose over, and **corrects the Slice-2 scope** with an analysis-grounded
+distinction between what the tail specialisation can and cannot de-thread.
+
+**New frames** (`IPC/Invariant/QueueNextBlocking.lean`):
+
+- `storeTcbQueueLinks_preserves_queueHeadBlockedConsistent` /
+  `storeTcbQueueLinks_preserves_endpointQueueTailBlockedConsistent` — a link-only TCB write
+  leaves every endpoint and every `ipcState` untouched, so both invariants fall straight out of
+  the `_of_endpoint_tcb_backward` combinator + the existing `storeTcbQueueLinks_endpoint_backward`
+  / `storeTcbQueueLinks_tcb_ipcState_backward` lemmas (clean term-mode proofs).
+- `storeObject_endpoint_preserves_queueHeadBlockedConsistent` /
+  `storeObject_endpoint_preserves_endpointQueueTailBlockedConsistent` — an endpoint store changes
+  only the queue-boundary fields the two invariants read, so each takes a caller-supplied
+  `hNewHeads` / `hNewTails` obligation describing the new endpoint's head / tail blocking
+  (every TCB's `ipcState` is unchanged by an endpoint store, so the obligation is stated against
+  the pre-state TCBs).
+
+**Scope correction (Slice 2b vs 2c).** Closer analysis shows the `endpointQueueTailBlockedConsistent`
+conjunct (Slice 1) de-threads **`queueNextBlockingConsistent`** from the 8 enqueue transitions
+(the enqueue link `oldTail.queueNext := tid` is link-compatible because the old tail is
+`.blockedOnSend`/`.blockedOnCall` by pre-state tail-blocked; the pop leg already preserves qNBC)
+and **self-establishes the tail conjunct**, but it does **not** de-thread
+**`queueHeadBlockedConsistent`** for the pop (rendezvous) leg: after popping the head, the new
+head is the old *second* queue element, whose blockedness is not derivable from the 19 conjuncts
+(`queueNextBlockingMatch (.blockedOnReceive _) .ready` is `True` via the catch-all, so qNBC does
+not force it; `ipcStateQueueMembershipConsistent` is the blocked→reachable converse;
+`intrusiveQueueWellFormed` constrains only head/tail). That is precisely the **full**
+`endpointQueueMemberBlocked` (reachable→blocked for *every* member) that **Finding F-2** names as
+the eventual remediation — the tail specialisation is the partial step sufficient for qNBC. The
+plan's Slice-2 note is updated: **Slice 2b** de-threads qNBC + `hEQTB'` from the 8 (qHBC stays
+threaded); **Slice 2c** adds `endpointQueueMemberBlocked` and de-threads qHBC.
+
+Proof-only, additive (no existing signature changed), trace byte-identical, zero `sorry`/`axiom`;
+`QueueNextBlocking` + IPC invariant hub build green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2b)
+
+## v0.32.12 — IPC de-threading D4 (Finding F-2) Slice 2a: tail-blocked established for the non-enqueue transitions
+
+De-threads the Slice-1 `hEQTB'` scaffolding from the **5 IPC transition bundles that touch no
+endpoint queue** — each now *establishes* the 19th `ipcInvariantFull` conjunct
+(`endpointQueueTailBlockedConsistent`) from the pre-state rather than threading the post-state
+hypothesis.  An enqueue is the only way to change which thread sits at an endpoint tail, so a
+transition that writes no endpoint queue trivially preserves tail-blockedness.
+
+- **`notificationSignal`** — the only TCB it rewrites is the woken head waiter, which is
+  `.blockedOnNotification` (`notificationWaiterConsistent`), hence by pre-state tail-blockedness not
+  an endpoint tail; established via `notificationSignal_preserves_endpointQueueTailBlockedConsistent`.
+- **`endpointReply`** — the unblocked `target` was `.blockedOnReply`, hence (pre-state tail-blocked)
+  not an endpoint tail; `endpointReply_preserves_endpointQueueTailBlockedConsistent`.
+- **`consumeCallerReply`** / **`linkCallerReply`** — a reply-object store plus a caller-TCB
+  `replyObject` write, neither touching a queue or any `ipcState`.  `consumeCallerReply` reads the
+  conjunct off its full pre-state `hInv`; `linkCallerReply` (which carries only `ipcInvariantCore`)
+  takes a `hTailPre : endpointQueueTailBlockedConsistent st` pre-state precondition.
+- **`lifecycleRetypeObject`** (`coreIpcInvariantBundle` + `lifecycleCompositionInvariantBundle`) —
+  the threaded `hEQTB'` is replaced by `hTargetNotTail`, the **tail dual of the existing
+  `hTargetNotHead`** precondition (a retype never creates an endpoint nor writes an endpoint tail);
+  established via the new `lifecycleRetypeObject_preserves_endpointQueueTailBlockedConsistent`.
+
+New leaf establishers: the reply-mutator family (`storeObject_reply` / `consumeReply` / `linkReply`
+/ `linkCallerReply` / `consumeCallerReply` `_preserves_endpointQueueTailBlockedConsistent`, pure
+frames over the head→tail store lemmas; relocated ahead of the reply bundles to resolve the forward
+reference) and `lifecycleRetypeObject_preserves_endpointQueueTailBlockedConsistent` (the tail dual
+of the qHBC retype frame).  The 8 enqueue-style bundles (+`notificationWait`) keep `hEQTB'` threaded
+pending Slice 2b/2c.
+
+Proof-only, trace byte-identical, zero `sorry`/`axiom`; full build + `test_smoke` green;
+`RAW_LOOKUP_TID` re-anchored 1135→1139 (raw lookups in the retype tail establisher).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2, Slice 2a)
+
+## v0.32.11 — IPC de-threading D4 (Finding F-2) Slice 1: `endpointQueueTailBlockedConsistent` conjunct
+
+Adds the missing **reachable→blocked** structural invariant (tail specialisation) that the
+enqueue-style IPC transitions need to de-thread `queueNextBlockingConsistent` /
+`queueHeadBlockedConsistent` — the F-2 prerequisite the plan sequences before the D4-residual.
+
+- **`endpointQueueTailBlockedConsistent`** (`IPC/Invariant/Defs.lean`) — the dual of
+  `queueHeadBlockedConsistent` for the queue **tail**: a `receiveQ` tail is `.blockedOnReceive` on
+  that endpoint, a `sendQ` tail is `.blockedOnSend`/`.blockedOnCall`.  Added as the **19th
+  `ipcInvariantFull` conjunct** (def + `IpcInvariantFull` field + bridge + named projection +
+  `ipcInvariantFull_of_core_replyCallerLinkage` + `ipcInvariantFull_compositional`).
+
+  **Why it is needed (and not derivable):** `endpointQueueEnqueue` links the *old tail*'s
+  `queueNext` to the freshly-enqueued thread, so establishing `queueNextBlockingConsistent` on the
+  post-state requires the old tail to be blocked on the same endpoint (`queueNextBlockingMatch`).
+  The existing `ipcStateQueueMembershipConsistent` is the *blocked→reachable* converse;
+  `intrusiveQueueWellFormed` asserts the tail exists with `queueNext = none` but not that it is
+  blocked; and there is no head→tail reachability lemma to run a chain-propagation argument through.
+
+- **Preservation frame family** (`IPC/Invariant/QueueNextBlocking.lean`): the
+  `endpointQueueTailBlockedConsistent_of_endpoint_tcb_backward` combinator (preserved by any step
+  that frames endpoints + every TCB's `ipcState`) + the `ensureRunnable` / `removeRunnable` /
+  `storeObject_{nonEndpointNonTcb,tcb_preserveIpc}` / `storeTcbIpcState{,AndMessage}` /
+  `storeTcbPendingMessage` `_preserves_endpointQueueTailBlockedConsistent` frames (head→tail duals)
+  + `endpointQueueTailBlockedConsistent_of_objects_eq`.
+
+- **Producers wired (19):** established (full preservation) for the root/frame producers —
+  `default_ipcInvariantFull` + the three `Architecture/Invariant.lean` object-frames + the boot
+  state (vacuous: boot endpoints have empty queues) + per-core; **threaded** `hEQTB'` for the
+  endpoint-queue-touching transition bundles (the 8 D4-residual + the notification/reply/retype
+  bundles), pending the Slice-2 enqueue-establish.
+
+This is the standard add-conjunct rollout (thread first, de-thread in the follow-up). **Slice 2**
+will establish `hEQTB'` for the enqueue transitions directly (the new tail is the freshly-blocked
+thread; the pop/donation legs leave the tail unchanged or empty) and de-thread
+`queueNextBlockingConsistent`/`queueHeadBlockedConsistent` from the 8 using the pre-state
+`hInv.endpointQueueTailBlockedConsistent`.  Proof-only, trace byte-identical, zero `sorry`/`axiom`;
+`RAW_LOOKUP_TID` re-anchored 1131→1135 (raw lookups in the new invariant-frame lemmas).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-2)
+
+## v0.32.10 — IPC de-threading D5: `blockedThreadTimeoutConsistent` FULLY de-threaded (13/13)
+
+Closes the D5 de-thread: `grep "hBlockedTimeout' : blockedThreadTimeoutConsistent st'"` is now empty
+across the tree.  Every `*_preserves_ipcInvariantFull` bundle **establishes** the timeout/budget
+consistency conjunct on the post-state from a single, uniform, dischargeable pre-state precondition
+`hAllBudgetsNone : allTimeoutBudgetsNone st` (replacing the threaded post-state hypothesis).
+
+- **Key insight** — no IPC transition ever writes `timeoutBudget := some` (every TCB store omits or
+  zeroes the field), so the kernel in fact maintains the *stronger* discipline that **no thread
+  carries a timeout budget**.  A state with all budgets `none` satisfies the seL4-faithful
+  `blockedThreadTimeoutConsistent` (budget ⇒ blocking IPC state) **vacuously**
+  (`blockedThreadTimeoutConsistent_of_all_none`).  This avoids per-transition per-woken-thread
+  `⟨woken⟩.timeoutBudget = none` side-conditions — which a rendezvous-partner queue head would force
+  into an awkward phrasing, and which are only dischargeable from the global all-none fact anyway.
+
+- **Foundation** (`IPC/Invariant/Defs.lean`): `allTimeoutBudgetsNone` + `timeoutBudgetFrame`
+  (budget-preservation: every post-state TCB pulls back to a pre-state TCB with equal `timeoutBudget`,
+  parallel to `sameSchedContextBindings`) with `refl`/`trans`/`of_objects_eq`,
+  `allTimeoutBudgetsNone_of_frame`, and `blockedThreadTimeoutConsistent_of_frame` (frame + pre-state
+  all-none ⇒ post-state consistent).  Plus `returnDonatedSchedContext_tcb_timeoutBudget_backward`
+  (mirror of the existing `_ipcState_replyObject_backward`) for the donation-return leg.
+
+- **Store-op family** (zero per-thread side-conditions — every store preserves the budget by `rfl`):
+  `storeObject_{modifiedTcb,nonTcb}` / `storeTcbIpcState{,_fromTcb,AndMessage}` /
+  `storeTcbReceiveComplete` / `storeTcbQueueLinks` / `storeObject_endpoint'` /
+  `endpointQueue{PopHead,Enqueue}` / `linkReply` / `linkCallerReply` / `linkServerStashedReply` /
+  `cleanupPreReceiveDonation` / `ipcUnwrapCaps` / `wakeThread_…_of_ready` `_timeoutBudgetFrame`.
+
+- **Per-transition frames** mirror each transition's `passiveServerIdle` decomposition but carry **no
+  precondition** (scheduler ops frame via `of_objects_eq`): `endpointSendDual` / `endpointCall` /
+  `endpointReceiveDual` / `endpointReply` / `endpointReplyRecv` / `endpointSendDualWithCaps` /
+  `endpointReceiveDualWithCaps` / `endpointCallWithCaps` / `endpointCallOnCore` (cross-core) +
+  the notification pair.  The retype pair (`coreIpcInvariantBundle` /
+  `lifecycleCompositionInvariantBundle`) via `lifecycleRetypeObject_preserves_blockedThreadTimeoutConsistent`
+  — the fresh-TCB slot discharged by a `hNewObjNoBudget` side-condition (a retyped TCB carries no
+  budget); every other slot frames from the pre-state.
+
+With this, the only IPC `ipcInvariantFull` conjunct still threaded anywhere is `donationOwnerValid`
+on the 2 bare reply bundles (`endpointReply`/`endpointReplyRecv`), which is architecturally
+composite-only.  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D5)
+
+## v0.32.9 — IPC de-threading D6: `passiveServerIdle` FULLY de-threaded (13/13)
+
+Closes the D6 `passiveServerIdle` de-thread with the final, cross-core bundle.
+`grep "hPSI' : passiveServerIdle st'"` is now empty across the tree — the scheduler-sensitive
+conjunct is **established from the pre-state on every `*_preserves_ipcInvariantFull` bundle**.
+
+- **`endpointCallOnCore_passiveServerIdleFrame`** — the cross-core mirror of the single-core call
+  frame.  Two new per-core scheduler frames make it work:
+  - `wakeThread_passiveServerIdleFrame_of_ready` — `wakeThread` (= `enqueueRunnableOnCore` on the
+    woken thread's target core) only *adds* to a run queue (`enqueueRunnableOnCore_mem_old`) and
+    preserves every core's `current` (`enqueueRunnableOnCore_currentOnCore`), leaving the object map
+    unchanged for a `.ready` thread.  Clean — even the woken thread pulls back (the wake cannot have
+    removed it from the boot queue).
+  - `removeRunnableOnCore_passiveServerIdleFrame` — frames the bootCore run queue/current by per-core
+    locality, case-splitting on `executingCore = bootCoreId` (`removeRunnableOnCore_runQueueOnCore_self`
+    / `_ne`), given the removed thread is bound or allowed.
+  `endpointCallOnCore_preserves_ipcInvariantFull` drops `hPSI'`, carrying the dischargeable
+  `hCallerNotUnbound` (as the single-core `endpointCall` does).  The file-header architectural note —
+  which previously called `passiveServerIdle` a "genuinely scheduler-sensitive" carried hypothesis —
+  is corrected to reflect the de-thread.
+
+With this, **`passiveServerIdle` is de-threaded from all 13 bundles**.  The only IPC `ipcInvariantFull`
+conjunct still threaded anywhere is `donationOwnerValid` on the 2 bare reply bundles
+(`endpointReply`/`endpointReplyRecv`), which is architecturally composite-only (the bare transitions
+wake the `.blockedOnReply` owner without returning the donation).  `RAW_LOOKUP_TID` re-anchored
+1117→1122.  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.8 — IPC de-threading D6: `passiveServerIdle` from the retype bundles (12/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the two `lifecycleRetypeObject` retype bundles.
+
+- **`lifecycleRetypeObject_preserves_passiveServerIdle`** — the retype reduces to a single
+  `storeObject target newObj`, which leaves the boot scheduler untouched.  At the retype slot the
+  post-state object is `newObj`; if it is a TCB it is freshly created in an allowed passive state
+  (`hNewObjAllowed`, dischargeable: a retyped TCB is `.ready`), satisfying the conclusion directly.
+  Every other slot frames from the pre-state.
+- `lifecycleRetypeObject_preserves_coreIpcInvariantBundle` and
+  `lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle` drop `hPSI'`, adding the
+  dischargeable `hNewObjAllowed` caller obligation (alongside the existing `hNewObjUnbound`).
+
+`passiveServerIdle` is now de-threaded from **12/13 bundles** — only the cross-core
+`endpointCallOnCore` remains (its per-core `wakeThread`/`removeRunnableOnCore` touch a specific
+core's run queue, so the bootCore-pinned `passiveServerIdle` needs a per-core scheduler frame).
+`RAW_LOOKUP_TID` re-anchored 1116→1117.  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.7 — IPC de-threading D6: `passiveServerIdle` from the receive family (10/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the receive family — the clean half of the
+remaining bundles (every rewritten thread lands in an allowed passive state, so no new "blocker
+holds a SchedContext" precondition is needed).
+
+- **`cleanupPreReceiveDonation_passiveServerIdleFrame`** (the keystone) — the pre-receive
+  donation-return rebinds the owner `.unbound → .bound` (keeping its `.blockedOnReply`) and the
+  receiver `.donated → .unbound`, preserving `ipcState` and the scheduler.  The pullback obligation
+  excludes the owner (now **bound**, contradicting `unbound`) and the receiver (now **allowed** —
+  `.ready` by `hReceiverReady`); every other thread's binding is framed by the 3-way
+  `returnDonatedSchedContext_tcb_schedContextBinding_backward` lemma.
+- **`endpointReceiveDual` / `endpointReceiveDualWithCaps` / `endpointReplyRecv`** de-threaded:
+  rendezvous sets the sender `.ready`/`.blockedOnReply` + completes the receiver `.ready`; blocking
+  returns the receiver's own donation + sets it `.blockedOnReceive` + deschedules — all allowed
+  states.  The 3 bundles drop `hPSI'`, reusing the dischargeable `hReceiverReady` (the running
+  receiver is `.ready`; added to the `endpointReplyRecv` bundle, already present on the other two).
+
+`passiveServerIdle` is now de-threaded from **10/13 bundles** — only the 2 retype bundles and the
+cross-core `endpointCallOnCore` remain.  `RAW_LOOKUP_TID` re-anchored 1105→1116.  Proof-only, trace
+byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.6 — IPC de-threading D6: `passiveServerIdle` from the send/call WithCaps (7/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the cap-carrying send/call variants.
+
+- **`ipcUnwrapCaps_passiveServerIdleFrame`** — `ipcUnwrapCaps` writes only CNode caps at the receiver
+  root, so every TCB object survives byte-identical (`ipcUnwrapCaps_tcb_backward`) and the scheduler
+  is untouched (`ipcUnwrapCaps_preserves_scheduler`); a clean frame via `passiveServerIdleFrame_of_backward`.
+- **`endpointSendDualWithCaps`** / **`endpointCallWithCaps`** — compose the base
+  `endpointSendDual`/`endpointCall` frame with the cap-transfer frame, threading the same dischargeable
+  `hSenderNotUnbound` / `hCallerNotUnbound` precondition.  Both `*WithCaps_preserves_ipcInvariantFull`
+  bundles drop `hPSI'`.
+
+`passiveServerIdle` is now de-threaded from **7/13 bundles**.  `RAW_LOOKUP_TID` re-anchored 1099→1105.
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.5 — IPC de-threading D6: `passiveServerIdle` from `endpointCall` (5/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the call path and the reply-link frames.
+
+- **`endpointCall_passiveServerIdleFrame`** — the rendezvous path completes the receiver `.ready`,
+  reschedules it, sets the caller `.blockedOnReply` (an *allowed* passive state), stashes the reply,
+  and deschedules the caller (clean); the block path sets the caller `.blockedOnCall` (a *non-allowed*
+  state) and deschedules it.  The descheduled `.blockedOnCall` caller carries the dischargeable
+  precondition `hCallerNotUnbound` (a running caller holds a SchedContext), excluding it from the
+  pullback obligation.  `endpointCall_preserves_ipcInvariantFull` drops `hPSI'`.
+- **Reply-link micro-frames**: `linkCallerReply_passiveServerIdleFrame` and
+  `linkServerStashedReply_passiveServerIdleFrame` (both clean, via `passiveServerIdleFrame_of_backward`
+  — the reply-object store and the caller/server TCB rewrites preserve every `ipcState`/binding and
+  the scheduler).  Reused by the receive family next.
+
+`passiveServerIdle` is now de-threaded from **5/13 bundles**.  `RAW_LOOKUP_TID` re-anchored 1096→1099.
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.4 — IPC de-threading D6: `passiveServerIdle` from `endpointReply` (4/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the (clean) reply path.
+
+- **`endpointReply_passiveServerIdleFrame`** — `endpointReply` unblocks the reply target `.ready`
+  (an allowed passive state) and reschedules it, descheduling no thread, so it frames
+  `passiveServerIdle` with **no** new precondition (it reuses the `storeTcbIpcStateAndMessage` and
+  `ensureRunnable` micro-frames).  `endpointReply_preserves_ipcInvariantFull` drops `hPSI'`; it keeps
+  `hDOV'` threaded, since bare `endpointReply` is composite-only for `donationOwnerValid` (it wakes
+  the `.blockedOnReply` owner without returning the donation).
+
+`passiveServerIdle` is now de-threaded from **4/13 bundles**.  Proof-only, trace byte-identical,
+zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.3 — IPC de-threading D6: `passiveServerIdle` from `endpointSendDual` (3/13)
+
+Continues the D6 `passiveServerIdle` de-thread with the send path and the reusable queue frames.
+
+- **`endpointSendDual_passiveServerIdleFrame`** — the rendezvous path completes the receiver `.ready`
+  and reschedules it (clean); the block path sets the sender `.blockedOnSend` (a *non-allowed* state)
+  and deschedules it.  The descheduled `.blockedOnSend` sender is the one thread that would otherwise
+  violate the invariant, so the bundle carries the dischargeable precondition `hSenderNotUnbound`
+  (a running sender holds a SchedContext — its own or a donated one — so it is never `.unbound`),
+  which excludes it from the frame's pullback obligation.  `endpointSendDual_preserves_ipcInvariantFull`
+  drops `hPSI'`.
+- **Reusable queue micro-frames**: `passiveServerIdleFrame_of_backward` (any transition preserving
+  every TCB's `ipcState`+binding backward and leaving the boot scheduler untouched frames the
+  invariant), `endpointQueuePopHead_passiveServerIdleFrame`, `endpointQueueEnqueue_passiveServerIdleFrame`
+  (queue-link rewrites — clean), and `storeTcbReceiveComplete_passiveServerIdleFrame` (sets `.ready`).
+
+`passiveServerIdle` is now de-threaded from **3/13 bundles**.  `RAW_LOOKUP_TID` re-anchored 1091→1096.
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.2 — IPC de-threading D6: `passiveServerIdle` foundation + notification pair (2/13)
+
+Opens the D6 `passiveServerIdle` de-thread — the first *scheduler-aware* conjunct (it constrains
+unbound threads by their boot-core run-queue / current-thread membership, not just the object map).
+
+- **Foundation**: `passiveServerIdleAllowed` (the permitted passive states — `.ready`,
+  `.blockedOnReceive`, `.blockedOnNotification`, `.blockedOnReply`), the reusable
+  `passiveServerIdleFrame` predicate, and `passiveServerIdle_of_frame`.  The frame's pullback
+  obligation is filtered to fire **only** for threads that are unbound, descheduled, **and not
+  already in an allowed state** in the post-state.  That is the crux: the sole threads a transition
+  newly drives into a `.blockedOnSend`/`.blockedOnCall` (non-allowed) state are the running
+  sender/caller, which hold a SchedContext (excluded by the `unbound` hypothesis); every thread
+  *blocked into* an allowed state or *woken* `.ready` is excluded by the filter.  So the obligation
+  only ever lands on threads the transition leaves untouched, which pull back trivially.
+- **Micro-frame family**: `storeObject_oldNonTcb` / `storeObject_modifiedTcb` /
+  `storeTcbIpcState{,_fromTcb,AndMessage}` `_passiveServerIdleFrame` (each with a bound-or-allowed
+  side-condition on the rewritten thread), `ensureRunnable_passiveServerIdleFrame` (only *adds* to
+  the run queue → clean), and `removeRunnable_passiveServerIdleFrame` (the removed thread must be
+  bound or already allowed), built on the existing `removeRunnable_mem` / `ensureRunnable_mem_old` /
+  `*_scheduler_current` scheduler lemmas.
+- **Notification pair de-threaded**: `notificationWait` (waiter woken `.ready` or blocked
+  `.blockedOnNotification` + descheduled — both allowed) and `notificationSignal` (head waiter woken
+  `.ready` + rescheduled) drop `hPSI'`, establishing `passiveServerIdle` with **no** new precondition
+  (the only touched thread always lands in an allowed passive state).
+
+`passiveServerIdle` is now de-threaded from **2/13 bundles**.  `RAW_LOOKUP_TID` re-anchored
+1083→1091 (invariant-frame raw lookups).  Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.1 — IPC de-threading D6: `donationOwnerValid` from the receive family (11/13)
+
+Continues the D6 `donationOwnerValid` de-thread: each receive-family `*_preserves_ipcInvariantFull`
+bundle now **establishes** `donationOwnerValid` from the pre-state instead of threading the post-state
+hypothesis `hDOV'`.
+
+- **`endpointReceiveDual_preserves_donationOwnerValid`** — the rendezvous (sendQ-head-present) path
+  pops the sender + sets it `.blockedOnReply` (Call leg) or `.ready` (Send leg) + completes the
+  receiver `.ready`; both rewritten threads are framed by `donationOwnerFrame`.  The sender is the
+  sendQ **head**, hence `.blockedOnSend`/`.blockedOnCall` by `queueHeadBlockedConsistent` (never a
+  `.blockedOnReply` owner), and the running receiver is `.ready` (dischargeable `hReceiverReady`).
+  `hReceiverReady` does double duty: it supplies the receiver-store's `hPreNotReply` *and* rules out
+  the Call-leg corner where the receiver is the dequeued sender (which would make the receiver-store
+  overwrite a just-set `.blockedOnReply`, breaking the per-step frame).  The blocking (no-sender) path
+  returns the receiver's *own* donation via `cleanupPreReceiveDonation_preserves_donationOwnerValid`,
+  sound by the `donationOwnerUnique` 18th conjunct (v0.32.0).
+- **`endpointReceiveDualWithCaps_preserves_donationOwnerValid`** — composes the base establish with
+  `ipcUnwrapCaps_donationOwnerFrame` (the trailing cap transfer writes only CNode caps).
+- Both receive `*_preserves_ipcInvariantFull` bundles drop `hDOV'`, adding the dischargeable pre-state
+  precondition `hReceiverReady` (the running receiver is `.ready`).
+
+`donationOwnerValid` is now de-threaded from **11/13 bundles**.  The 2 remaining are the
+`endpointReply`/`endpointReplyRecv` reply pair — architecturally composite-only (the bare transitions
+wake the `.blockedOnReply` owner without returning the donation; the return lives in the
+`*WithDonation` wrappers via `applyReplyDonation`), so their de-thread belongs to the composite/D8
+layer.  `RAW_LOOKUP_TID` re-anchored 1071→1083 (invariant-frame raw lookups in the new establishers).
+Proof-only, trace byte-identical, zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6)
+
+## v0.32.0 — IPC `ipcInvariantFull` de-threading: donation-invariant milestone
+
+Minor-version milestone for the IPC `ipcInvariantFull` de-threading workstream's donation-invariant
+phase (D6/D7).  Each `*_preserves_ipcInvariantFull` bundle now *establishes* these conjuncts from the
+pre-state rather than *assuming* them on the post-state:
+
+- **`donationChainAcyclic`** — fully de-threaded (D7, v0.31.176): derived from `donationOwnerValid`
+  via `donationOwnerValid_implies_donationChainAcyclic`.
+- **`donationBudgetTransfer`** — **fully de-threaded, 13/13 bundles** (v0.31.182): the first conjunct
+  established entirely from the pre-state on its own per-transition proof (`sameSchedContextBindings`
+  frame + the donation-return preservation argument).  Unblocked by the **Finding F-3** deep fix
+  (the donation primitive now completes the SchedContext ownership transfer, seL4-MCS-faithful, so
+  `donationOwnerValid ∧ donationBudgetTransfer` are jointly satisfiable for donated states).
+- **`donationOwnerValid`** — de-threaded from **9/13 bundles** (the notification pair, `endpointSendDual`,
+  `endpointCall`, `endpointCallOnCore`, the retype pair, the two clean WithCaps) via the reusable
+  `donationOwnerFrame` predicate (backward `sameSchedContextBindings` + forward SchedContext/owner
+  witnesses).  The 4 remaining are the donation-return / owner-waking family.
+- **`donationOwnerUnique`** — **added as the 18th `ipcInvariantFull` conjunct** (v0.31.189) and
+  established across all 13 bundles + retype + cross-core + default + boot + the architecture-layer
+  object-frame transitions.  This is the consistency property the donation **return** preservation
+  needs; with it, `cleanupPreReceiveDonation_preserves_donationOwnerValid` is proven — **unblocking**
+  the receive-family (`endpointReceiveDual`, `endpointReceiveDualWithCaps`) `donationOwnerValid`
+  de-thread (the decomposition is the next slice).  The `endpointReply`/`endpointReplyRecv` pair is
+  architecturally composite-only: the bare transitions wake the `.blockedOnReply` donation owner
+  without returning the donation (the donation-return lives in the `*WithDonation` wrappers via
+  `applyReplyDonation`), so their `donationOwnerValid` de-thread belongs to the composite/D8 layer,
+  not the bare bundle.
+
+Across the phase: ~30 reusable frame/store-op/transition lemmas (the `donationOwnerFrame` family, the
+`sameSchedContextBindings` extensions, the SchedContext-preservation chain through `ipcUnwrapCaps`,
+the donation-return preservation lemmas).  Every slice proof-only, trace byte-identical, zero
+`sorry`/`axiom`.
+
+Remaining for D6: the receive-family `donationOwnerValid` de-thread (now unblocked), the
+`endpointReply`/`endpointReplyRecv` composite, and `passiveServerIdle` (13 bundles).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6/D7)
+
+## v0.31.189 — IPC de-threading D6: add `donationOwnerUnique` (18th `ipcInvariantFull` conjunct)
+
+Adds donation-owner uniqueness as a first-class `ipcInvariantFull` conjunct — the consistency
+property the donation **return** needs and that the receive-family `donationOwnerValid` de-thread
+was blocked on.
+
+**The gap.** `cleanupPreReceiveDonation` (the donation return on `endpointReceiveDual`'s blocking
+path) rebinds the owner `.unbound` → `.bound scId`.  `donationOwnerValid` requires the owner of
+*every* live donation to be `.unbound`, so the return is safe only if the just-rebound owner is not
+also the owner of some *other* donation.  The prior invariant set permitted that (two servers each
+`.donated _ owner`), so the bare transition could not be shown to preserve `donationOwnerValid`.
+
+**The fix (implement-the-improvement).** `donationOwnerUnique st` — no two distinct threads name the
+same `owner` in a `.donated _ owner` binding — is a true property of the model (a thread becomes an
+owner only by donating its single SchedContext on a `Call`, and while `.blockedOnReply` cannot call
+again).  It is preserved by every transition: binding-frame transitions inject post-state donations
+backward into the pre-state (`donationOwnerUnique_of_sameSchedContextBindings`, via
+`sameSchedContextBindings`); the donation return only *removes* a donation
+(`returnDonatedSchedContext_preserves_donationOwnerUnique`); retype creates a fresh `.unbound` TCB
+(`lifecycleRetypeObject_preserves_donationOwnerUnique`); object-preserving steps frame it
+(`donationOwnerUnique_of_objects_eq`).
+
+Integrated as the 18th conjunct of `ipcInvariantFull` (+ the `IpcInvariantFull` structure field, the
+bridge, the projection, `ipcInvariantFull_of_core_replyCallerLinkage` / `ipcInvariantFull_compositional`)
+and **established across all 13 IPC bundles** + retype + cross-core + default + boot + the
+architecture-layer object-frame transitions.  With it in hand,
+`cleanupPreReceiveDonation_preserves_donationOwnerValid` is provable (the owner-uniqueness use is the
+single non-trivial step), unblocking the receive-family `donationOwnerValid` de-thread.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); test_full passes; AK7
+`RAW_LOOKUP_TID` re-anchored 1060→1071; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerUnique)
+
+## v0.31.188 — IPC de-threading D6: `donationOwnerValid` de-threaded from the clean WithCaps (9/13)
+
+Extends `donationOwnerValid` de-threading to the two cap-transfer transitions whose base is already
+done — `endpointSendDualWithCaps` and `endpointCallWithCaps`.
+
+New SchedContext-preservation chain for the cap transfer (mirrors the existing
+`_preserves_tcb_objects` family — a SchedContext at `receiverRoot` makes `getCNode?` return `none`,
+contradicting the transfer's `.ok`, so it can never be overwritten):
+- `ipcTransferSingleCap_preserves_schedContext_objects` (Capability/Operations.lean);
+- `ipcUnwrapCapsLoop_preserves_schedContext_objects` + `ipcUnwrapCaps_preserves_schedContext_objects`
+  (CapTransfer.lean).
+
+`ipcUnwrapCaps_donationOwnerFrame` then frames both witnesses forward: SchedContexts via the new
+chain, TCBs via the existing `ipcUnwrapCaps_preserves_tcb_objects`. The WithCaps frames compose the
+base `endpointSendDual`/`endpointCall` `_donationOwnerFrame` with the cap-transfer frame, threading
+the base's `hQHBC` + `hSenderNotReply`/`hCallerNotReply` dischargeable preconditions. Both bundles
+drop `hDOV'`.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1054→1060; zero `sorry`/`axiom`.
+
+The 4 remaining `donationOwnerValid` bundles are the donation-return / owner-waking family
+(`endpointReceiveDual{,WithCaps}` via `cleanupPreReceiveDonation`; `endpointReply`/`endpointReplyRecv`
+which wake the `.blockedOnReply` owner), needing the composite `*WithDonation` donation-return
+treatment.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 9/13)
+
+## v0.31.187 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointCallOnCore` (7/13)
+
+Extends `donationOwnerValid` de-threading to the cross-core `endpointCallOnCore`, completing the
+**call path** (single-core `endpointCall` + cross-core `endpointCallOnCore`).
+
+`endpointCallOnCore_donationOwnerFrame` is the cross-core mirror of `endpointCall_donationOwnerFrame`:
+the per-core `wakeThread` (receiver wake) and `removeRunnableOnCore` (caller deschedule) replace the
+boot-core `ensureRunnable`/`removeRunnable`. The new `wakeThread_donationOwnerFrame_of_ready` frames
+the wake — the woken thread is already `.ready` (set by the preceding receiver store), so `wakeThread`
+leaves the object map element-wise unchanged. The rendezvous receiver (receiveQ head,
+`.blockedOnReceive` via `hQHBC`) and the running caller (`hCallerNotReply`, threaded through the wake
+via `wakeThread_objects_getElem_eq_of_ready`) are the only `ipcState`-changed TCBs; neither is a
+`.blockedOnReply` owner.
+
+The bundle (`subst hStep`-shaped, stated on `(endpointCallOnCore …).1`) de-threads `hDOV'` via
+`donationOwnerValid_of_frames`, adding the dischargeable `hCallerNotReply`.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1052→1054; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 7/13)
+
+## v0.31.186 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointCall` (6/13)
+
+Extends `donationOwnerValid` de-threading to `endpointCall` — the central client→server rendezvous,
+and the first transition whose own action introduces a `.blockedOnReply` thread (the blocked caller).
+
+`endpointCall_donationOwnerFrame` composes the rendezvous (pop receiver + wake `.ready` + reschedule
++ block caller `.blockedOnReply` + link the server-stashed reply + deschedule) and the block path
+(enqueue caller + `.blockedOnCall` + deschedule). The two TCBs whose `ipcState` changes are:
+- the rendezvous receiver — the receiveQ **head**, hence `.blockedOnReceive` by
+  `hInv.queueHeadBlockedConsistent`; and
+- the running `caller` — discharged by the dischargeable `hCallerNotReply`. The caller is *set*
+  `.blockedOnReply`, but it was not a `.blockedOnReply` owner *before*, so no existing owner witness
+  is lost (the caller-store pre-state is recovered via `storeTcbIpcStateAndMessage_ipcState_eq` for
+  the caller=receiver self-rendezvous case, and `_preserves_objects_ne` +
+  `endpointQueuePopHead_tcb_ipcState_backward` otherwise).
+
+New reusable forward link-helper frames carry the reply-link leg (each preserves `ipcState`/binding,
+so even a `.blockedOnReply` owner survives):
+- `linkReply_donationOwnerFrame` (a `.reply` object store, non-Sc/non-TCB);
+- `linkCallerReply_donationOwnerFrame` (+ the caller `replyObject` write);
+- `linkServerStashedReply_donationOwnerFrame` (+ the server stash-clear write).
+
+The bundle drops `hDOV'` and adds the dischargeable `hCallerNotReply`.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1048→1052; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 6/13)
+
+## v0.31.185 — IPC de-threading D6: `donationOwnerValid` de-threaded from the retype pair (5/13)
+
+Extends `donationOwnerValid` de-threading to the two `lifecycleRetypeObject` bundles
+(`coreIpcInvariantBundle` + `lifecycleCompositionInvariantBundle`).
+
+Unlike the frame-able transitions, the retype reduces to a single `storeObject target newObj`
+that can *create* a fresh TCB binding where there was none, so the backward
+`sameSchedContextBindings` (and hence `donationOwnerValid_of_frames`) does not apply. The new
+`lifecycleRetypeObject_preserves_donationOwnerValid` is a direct proof:
+- at the retype slot (`tid = target`) a `.donated` binding is impossible — a fresh retyped TCB is
+  `.unbound` (the already-threaded `hNewObjUnbound`);
+- at every framed slot the donated SchedContext and the donation owner must not be the retype
+  target, discharged by two new dischargeable side-conditions `hTargetNotSc` / `hTargetNotOwner`
+  (the retyped slot is untyped/freed memory — not a live SchedContext nor a `.blockedOnReply`
+  owner), replacing the threaded `hDOV'`.
+
+Both bundles drop `hDOV'`; the composition bundle threads the two side-conditions through to the
+core bundle.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1045→1048; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 5/13)
+
+## v0.31.184 — IPC de-threading D6: `donationOwnerValid` de-threaded from `endpointSendDual` (3/13)
+
+Extends `donationOwnerValid` de-threading to `endpointSendDual` (the first queue-touching
+transition), building the forward `donationOwnerFrame` lemmas for the queue operations.
+
+New ipcState+binding-**preserving** store-op frames (these preserve owner witnesses
+*unconditionally*, even for a `.blockedOnReply` owner, because they touch no `ipcState`/binding
+field):
+- `storeObject_modifiedTcbPreservingOwner_donationOwnerFrame` — a TCB rewrite that preserves
+  `ipcState` and `schedContextBinding`;
+- `storeTcbQueueLinks_donationOwnerFrame` — queue-link rewrite (`tcbWithQueueLinks` touches only
+  `queuePrev`/`queuePPrev`/`queueNext`);
+- `endpointQueuePopHead_donationOwnerFrame` / `endpointQueueEnqueue_donationOwnerFrame` — endpoint
+  store + queue-link rewrites;
+- `storeTcbReceiveComplete_donationOwnerFrame` — the receive-complete `.ready` store (pre-state
+  `≠ .blockedOnReply`).
+
+`endpointSendDual_donationOwnerFrame` composes them across both paths: the rendezvous receiver is
+the receiveQ **head**, hence `.blockedOnReceive` by `hInv.queueHeadBlockedConsistent` (via
+`endpointQueuePopHead_returns_head` + `endpointQueuePopHead_tcb_ipcState_backward`); the block-path
+sender is the running caller (dischargeable `hSenderNotReply` threaded into the bundle). Neither is
+a `.blockedOnReply` donation owner, so the bundle de-threads `hDOV'`.
+
+Architectural note refined in the plan (binds the remaining 10): only `endpointReply`/
+`endpointReplyRecv` actually wake the donation owner (needing the `*WithDonation` composite); the
+receive family additionally returns a donation (binding change). `endpointCall` blocks its caller
+and wakes a receiver — owner-non-waking, so the queue-op frames apply there next.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1041→1045; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 3/13)
+
+## v0.31.183 — IPC de-threading D6: `donationOwnerValid` de-threaded from the notification pair (2/13)
+
+Opens the `donationOwnerValid` de-threading with the reusable forward-frame infrastructure and
+the two binding-free, owner-non-waking notification transitions.
+
+`donationOwnerValid` reads, about a donation `tid ↦ .donated scId owner`, the donated
+SchedContext (clause 1) and the `owner` TCB's `.unbound` + `.blockedOnReply` witness (clause 2).
+Both are on the owner/SchedContext side, so they are carried **forward** by a new packaged
+predicate `donationOwnerFrame` (`scForward` + `ownerForward`, with `refl`/`trans`/`of_objects_eq`),
+mirroring the way `sameSchedContextBindings` carries the `tid`-side binding **backward**. The
+frame lemma `donationOwnerValid_of_frames` consumes both halves.
+
+Store-op family producing `donationOwnerFrame`:
+- `storeObject_oldNonScNonTcb_donationOwnerFrame` — a store whose old slot is neither a
+  SchedContext nor a TCB (notification / endpoint) cannot disturb either witness;
+- `storeObject_modifiedTcb_donationOwnerFrame` + the `storeTcbIpcState{,_fromTcb,AndMessage}`
+  wrappers — a TCB rewrite frames the owner side **iff the rewritten thread's pre-state
+  `ipcState` is not `.blockedOnReply`** (an owner is `.blockedOnReply`, so a non-`.blockedOnReply`
+  rewrite cannot land on an owner).
+
+Transitions de-threaded (`hDOV'` removed, `donationOwnerValid` established from
+`hInv.donationOwnerValid`):
+- `notificationWait` — adds the dischargeable `hWaiterNotReply` (the syscall caller is running,
+  not awaiting a reply), discharging the waiter's `.ready`/`.blockedOnNotification` rewrite;
+- `notificationSignal` — the woken **head** waiter is a notification-queue member, hence
+  `.blockedOnNotification` via the already-threaded `hNWC : notificationWaiterConsistent`.
+
+Architectural finding recorded in the plan (binds the remaining 11): the bare
+`endpointReply`/`endpointReplyRecv`/`endpointCall` transitions wake the `.blockedOnReply`
+donation owner **without** returning the donation (the donation-return lives in the
+`*WithDonation` wrappers), so they do not preserve `donationOwnerValid` at the bare level — those
+must be de-threaded one level up, composed with `applyReplyDonation`/`applyCallDonation`. The
+queue-touching transitions additionally need forward `donationOwnerFrame` lemmas for the
+`endpointQueuePopHead`/`Enqueue` link rewrites.
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored (the forward-frame store-op pull-back reads, invariant-frame style); zero
+`sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationOwnerValid 2/13)
+
+## v0.31.182 — IPC de-threading D6: `donationBudgetTransfer` FULLY de-threaded (13/13 bundles)
+
+Closes `donationBudgetTransfer` across **all 13** `*_preserves_ipcInvariantFull` bundles —
+`grep "hDBT' : donationBudgetTransfer st'"` is now empty. This is the **first `ipcInvariantFull`
+conjunct established entirely from the pre-state**: D7's `donationChainAcyclic` is *derived* from the
+still-threaded `donationOwnerValid` (`donationOwnerValid_implies_donationChainAcyclic`), whereas
+`donationBudgetTransfer` now stands on its own per-transition proof with no threaded post-state
+hypothesis anywhere.
+
+The final slice closes the last 4 bundles:
+
+- **The 3 binding-touching receive-family bundles** (`endpointReceiveDual`,
+  `endpointReceiveDualWithCaps`, `endpointReplyRecv`) go through
+  `cleanupPreReceiveDonation_preserves_donationBudgetTransfer`. These transitions *do* rewrite a
+  `schedContextBinding` (the pre-receive donation-return hands the SchedContext back from the server
+  to its original owner), so the `sameSchedContextBindings` frame does **not** apply. Instead a
+  dedicated argument: `returnDonatedSchedContext_tcb_schedContextBinding_backward` pins the 3-way
+  post-state binding shape (the server becomes `.unbound`, the owner becomes `.bound scId`, every
+  other TCB pulls back unchanged), and `returnDonatedSchedContext_preserves_donationBudgetTransfer`
+  shows the move keeps the SchedContext singly-held, so no new scId-sharing pair can arise.
+- **`endpointCallOnCore`** (cross-core) goes through the new
+  `endpointCallOnCore_sameSchedContextBindings` — the mirror of the single-core frame in
+  `IPC/CrossCore/`. The cross-core call's only non-store effects are `wakeThread` /
+  `removeRunnableOnCore`, which are scheduler-only writes, so every TCB's `schedContextBinding` is
+  byte-identical across the step (new keystone `wakeThread_sameSchedContextBindings_of_ready`).
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1021→1028 (the donation-return preservation lemmas' object-store-boundary pull-back
+reads, matching the invariant-frame style); zero `sorry`/`axiom`.
+
+Remaining D6: `donationOwnerValid` (13 bundles) + `passiveServerIdle` (13 bundles) — the
+per-transition establish/preserve conjuncts with scheduler/ipcState coupling.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 — donationBudgetTransfer complete)
+
+## v0.31.181 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from the 2 retype bundles (9/13)
+
+Extends D6 to the two `lifecycleRetypeObject` `ipcInvariantFull`-carrying bundles
+(`coreIpcInvariantBundle` + `lifecycleCompositionInvariantBundle`), de-threading
+`donationBudgetTransfer` from **9/13** bundles. Unlike the binding-frame transitions, retype
+creates a *fresh* object at `target`, so `sameSchedContextBindings` does not apply; instead a new
+`lifecycleRetypeObject_preserves_donationBudgetTransfer` discharges the conjunct off the single
+`storeObject target newObj` reduction with a `newObj`-keyed side-condition `hNewObjUnbound` (a
+retyped TCB is `.unbound`, holding no SchedContext, so it cannot be one of two threads sharing an
+scId; every other slot frames from the pre-state). The two bundles thread `hNewObjUnbound` in place
+of `hDBT'` (the same caller-obligation flavour as the existing `hNewObjTarget`/`hNewObjThird`).
+
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 `RAW_LOOKUP_TID`
+re-anchored 1019→1021 (the retype frame's two object-store reads, matching the invariant-frame
+style); zero `sorry`/`axiom`.
+
+Remaining D6 `donationBudgetTransfer` (4 bundles): `endpointCallOnCore` (cross-core) and the
+binding-touching `endpointReceiveDual` / `endpointReceiveDualWithCaps` / `endpointReplyRecv`
+(donation-return composition); then `donationOwnerValid` + `passiveServerIdle`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
+## v0.31.180 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from `endpointCall` + the 2 clean `WithCaps` (7/13)
+
+Extends D6 to `endpointCall`, `endpointSendDualWithCaps`, and `endpointCallWithCaps`
+(`donationBudgetTransfer` now de-threaded from **7/13** bundles — every binding-free single-core
+transition). New `sameSchedContextBindings` building blocks:
+- the reply-link family `linkReply` / `linkCallerReply` / `linkServerStashedReply`
+  `_sameSchedContextBindings` (each composes a `.reply`-object store + TCB `replyObject` /
+  `pendingReceiveReply` writes — never a binding) + the missing `linkReply_preserves_objects_invExt`,
+- `ipcUnwrapCaps_sameSchedContextBindings` — a one-liner off the existing
+  `ipcUnwrapCaps_tcb_backward` (cap transfer writes only CNode caps, leaving every TCB slot
+  byte-identical),
+- `endpointCall_sameSchedContextBindings` (rendezvous pop + wake + block-`.blockedOnReply` +
+  `linkServerStashedReply` + deschedule; block: enqueue + `.blockedOnCall`), and
+- `endpointSendDualWithCaps` / `endpointCallWithCaps` `_sameSchedContextBindings` (base transition
+  ≫ `ipcUnwrapCaps`).
+
+`hDBT'` removed from the three bundles; established via `donationBudgetTransfer_of_sameSchedContextBindings`.
+Proof-only; trace byte-identical; build green (376 production + 234 staged); AK7 unchanged; zero
+`sorry`/`axiom`.
+
+Remaining D6 `donationBudgetTransfer` (6 bundles): `endpointCallOnCore` (cross-core), the
+binding-touching `endpointReceiveDual` / `endpointReceiveDualWithCaps` / `endpointReplyRecv`
+(donation-return composition) and the 2 retype bundles; then `donationOwnerValid` +
+`passiveServerIdle`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
+## v0.31.179 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from `endpointSendDual` (queue-op `sameSchedContextBindings`)
+
+Extends D6 to the `endpointSendDual` `ipcInvariantFull` bundle (4/13 `donationBudgetTransfer`
+de-threads now) by building the **queue-op** `sameSchedContextBindings` infrastructure:
+- `storeTcbQueueLinks_sameSchedContextBindings` (the queue-link rewrite preserves bindings —
+  `tcbWithQueueLinks` touches only `queueNext/Prev/PPrev`),
+- `storeObject_endpoint_sameSchedContextBindings'` (the `pair`-shaped endpoint-store frame),
+- `endpointQueuePopHead_sameSchedContextBindings` / `endpointQueueEnqueue_sameSchedContextBindings`
+  (the dequeue/enqueue neighbour-relink compositions), and
+- `endpointSendDual_sameSchedContextBindings` (rendezvous: pop + receive-complete + reschedule;
+  block: enqueue + `.blockedOnSend` + deschedule).
+
+`hDBT'` removed from `endpointSendDual_preserves_ipcInvariantFull`; the conjunct is established
+from the pre-state via `donationBudgetTransfer_of_sameSchedContextBindings`. The new queue lemmas
+read the endpoint slot by `objects[endpointId]?` (an `ObjId`, not `tid.toObjId`), so AK7
+`RAW_LOOKUP_TID` is unchanged. Proof-only; trace byte-identical; build green (376 production +
+234 staged); zero `sorry`/`axiom`.
+
+Remaining D6 `donationBudgetTransfer`: `endpointCall`/`endpointCallOnCore` (+`linkServerStashedReply`),
+the 3 `WithCaps` (`ipcUnwrapCaps`), the binding-touching `endpointReceiveDual`/`endpointReplyRecv`
+(donation-return composition) and the 2 retype bundles (`newObj`-`.unbound`); then
+`donationOwnerValid` + `passiveServerIdle`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
+## v0.31.178 — IPC de-threading D6 (partial): `donationBudgetTransfer` de-threaded from 3 bundles via the `sameSchedContextBindings` frame
+
+Begins D6 (the donation conjuncts, unblocked by the v0.31.177 Finding F-3 remediation) by
+de-threading `donationBudgetTransfer` — the binding-only donation invariant — from the
+`notificationWait`, `notificationSignal`, and `endpointReply` `ipcInvariantFull` bundles
+(`hDBT'` removed; the conjunct is now **established** from the pre-state rather than assumed).
+
+Reusable infrastructure (`Defs.lean`):
+- `sameSchedContextBindings st st'` — every post-state TCB pulls back to a pre-state TCB with
+  an equal `schedContextBinding` (backward frame, `refl` / `trans` / `of_objects_eq`).
+- `donationBudgetTransfer_of_sameSchedContextBindings` — `donationBudgetTransfer` transfers
+  across any binding-preserving step (it reads only `schedContextBinding`).
+
+Store-op family (`DualQueueMembership.lean`, mirroring the `blockedOnReplyHasTarget` op-lemmas):
+`storeObject_modifiedTcb_sameSchedContextBindings` (foundational) +
+`storeObject_nonTcb` / `storeTcbIpcState` / `storeTcbIpcState_fromTcb` /
+`storeTcbIpcStateAndMessage` / `storeTcbReceiveComplete` `_sameSchedContextBindings`, plus the
+three transition lemmas `{notificationWait,notificationSignal,endpointReply}_sameSchedContextBindings`.
+This rests on the fact (verified) that **only** the donation primitives
+(`donateSchedContext` / `returnDonatedSchedContext`) ever write a `schedContextBinding`, so the
+core IPC transitions preserve all bindings by construction.
+
+Remaining D6: the other 10 `donationBudgetTransfer` bundles (queue-op + `ipcUnwrapCaps` +
+retype `newObj` `sameSchedContextBindings`), and the per-transition `donationOwnerValid` /
+`passiveServerIdle` establish/preserve machinery. Proof-only; trace byte-identical; build green
+(376 production + 234 staged); `test_full` green; zero `sorry`/`axiom`.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D6 partial)
+
+## v0.31.177 — Finding F-3 REMEDIATED (deep code/model fix): donation completes the SchedContext ownership transfer
+
+Closes **Finding F-3** (the `donationOwnerValid` ∧ `donationBudgetTransfer` joint-unsatisfiability
+for donated states, recorded at v0.31.176) with the **deep code/model fix** — completing the
+SchedContext ownership transfer in the donation primitive — rather than the originally-sketched
+spec-weakening. The donor now relinquishes its SchedContext on donation, matching seL4 MCS
+`sched_context_donate` (which clears the previous holder's `tcb_sched_context`).
+
+**Root cause.** `donateSchedContext` (`Endpoint.lean`) transferred the SchedContext to the server
+(`sc.boundThread := server`, server `.donated scId client`) but **left the donor client
+`.bound scId`**. Both then referenced `scId`, which `donationBudgetTransfer` forbids — so
+`ipcInvariantFull` was unsatisfiable for every donated state and the IPC preservation proofs
+vacuously skipped all donating `.call`s.
+
+**The fix (implement-the-improvement; `donationBudgetTransfer` is NOT weakened):**
+- **`donateSchedContext`** — adds a donor-clear store (client `.bound scId` → `.unbound`), ordered
+  before the server `.donated` store so the server-binding postcondition stays free of a
+  `clientTid ≠ serverTid` side-condition. After donation the SchedContext is referenced by exactly
+  one binding (the server's `.donated`).
+- **`donationOwnerValid`** clause 4 — owner `.bound scId` → owner **`.unbound`** (the donor is
+  recoverable through the reply object, not a residual `.bound`). The acyclicity subsumption
+  (`donationOwnerValid_implies_donationChainAcyclic`, `donationChain_no_extension`) survives
+  verbatim — `.unbound ≠ .donated` is the same constructor disjointness as `.bound ≠ .donated`.
+- **`passiveServerIdle`** (+ the per-core / scheduled-nowhere / smp mirrors) — also permits
+  `.blockedOnReply` for unbound non-runqueue threads (a donor awaiting reply is a benign unbound
+  state); `.ready` stays the leftmost disjunct so the boot/default proofs are unchanged.
+- **`donationBudgetTransfer`** — **unchanged**; now literally true for donated states.
+
+**Cascade re-proved (proof-only):** `donateSchedContext_{scheduler_eq,server_binding,machine_eq}`
+and `donateSchedContext_ok_server_donated` (thread the extra store; server `.donated` remains the
+final object write), and `applyCallDonation_preserves_projection` — whose previously-unused
+`hCallerObjHigh` hypothesis now discharges the donor-clear store (the projection erases
+`schedContextBinding`, so the donor-clear is information-flow-invisible).
+
+**Why the deep fix:** keeps `donationBudgetTransfer` untouched (strongest guarantee retained),
+seL4-faithful, **trace byte-identical** (the donation trace checks the *server's* binding
+post-donation and the *donor's* only post-*return*, where it is rebound), **information-flow-invisible**,
+and adds **no** new `SchedContextBinding` constructor. **Unblocks D6** (the donation conjuncts are
+now jointly satisfiable for donated states, so the establish/preserve proofs become provable rather
+than vacuous).
+
+Build green (376 production jobs + 234 staged); `test_full` green; trace byte-identical;
+zero `sorry`/`axiom`; no AK7 drift.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md §"Finding F-3" (REMEDIATED)
+
+## v0.31.176 — IPC invariant de-threading D7 COMPLETE: `donationChainAcyclic` de-threaded (13/13) + Finding F-3
+
+De-threads `donationChainAcyclic` from all 13 `ipcInvariantFull` bundles via the existing
+subsumption lemma `donationOwnerValid_implies_donationChainAcyclic st' hDOV'` (derived from the
+still-threaded `donationOwnerValid` hypothesis) — no per-transition lemmas needed.
+`grep "hDCA' : donationChainAcyclic st'"` is now empty. 3 files, proof-only.
+
+**Finding F-3 (Medium — specification false-assurance gap; recorded, not yet fixed):** the
+de-threading of the D6 donation conjuncts surfaced that `donationOwnerValid` (`Defs.lean:1394`)
+and `donationBudgetTransfer` (`Defs.lean:1433`) are **jointly unsatisfiable for any state with a
+live SchedContext donation** — `donationOwnerValid`'s AUD-7 clause requires the donation owner to
+keep `.bound scId` while the server holds `.donated scId`, but `donationBudgetTransfer` forbids any
+two distinct TCBs referencing the same scId. The production `.call` path (`donateSchedContext`,
+`Endpoint.lean:329`) leaves the client `.bound` while making the server `.donated`, so every
+donating call produces the inconsistent pair; `donationBudgetTransfer` is only ever established
+vacuously (boot). Consequence: `ipcInvariantFull` cannot hold across a donating call, so the IPC
+preservation proofs vacuously skip donated states. Remediation (weaken `donationBudgetTransfer` to
+forbid only genuine double-*run*, matching the documented intent) is a standalone invariant-def PR
+sequenced before D6 — see `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` §"Finding F-3". D5 and
+the remaining D6 conjuncts stay threaded (D5 needs from-scratch timeout-budget preconditions; D6 is
+F-3-blocked).
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`; no AK7 drift.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D7 complete, Finding F-3)
+
+## v0.31.175 — IPC invariant de-threading D4 (partial): `queueNext`/`queueHeadBlocked` de-threaded from 9 bundle-slots + Finding F-2
+
+De-threads `queueNextBlockingConsistent` from 5 bundles and `queueHeadBlockedConsistent` from 4
+(`endpointReply`, `notificationSignal`, `notificationWait` [queueNext only], the
+`lifecycleRetypeObject` core+composition pair — the retype pair via dischargeable
+`hNewObjNoNext`/`hTargetNotQueueLinked`/`hNewObjNotEndpoint`/`hTargetNotHead` side-conditions,
+analogues of the existing `newObj` constraints). ~46 reusable store/transition frames added
+across `QueueNextBlocking.lean`, `DualQueueMembership.lean`, `EndpointReplyAndLifecycle.lean`
+(`storeTcbReceiveComplete_*`, `storeTcbPendingMessage_*`, `endpointQueue{Enqueue,PopHead}_*`,
+`storeTcbIpcState_*` + `.ready`/`.blockedOnNotification` specializations, the reply-path frames,
+and the generic `queueNextBlockingConsistent_of_tcb_links_backward`).
+
+**Finding F-2 (recorded, not a defect — a missing-strengthening gap):** the remaining 8
+enqueue-style transitions (`endpointSendDual`, `endpointCall`, `endpointReceiveDual`,
+`endpointReplyRecv`, 3 WithCaps, `endpointCallOnCore`; + `notificationWait` headBlocked)
+cannot be de-threaded store-by-store because they enqueue a `.ready` thread then block it,
+transiently violating `queueHeadBlockedConsistent` and lacking a `reachable→blocked` fact for
+`queueNextBlockingConsistent`'s predecessor obligation. The codebase has only the converse
+(`ipcStateQueueMembershipConsistent`, blocked→reachable). Remediation is to **add** the
+`endpointQueueMemberBlocked` invariant (queue members are blocked on their endpoint) as a new
+`ipcInvariantFull` conjunct — sized as its own prerequisite slice, which also unblocks D1. See
+`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` §"Finding F-2".
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`. AK7
+`RAW_LOOKUP_TID` re-anchored 989→1012.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D4 partial, Finding F-2)
+
+## v0.31.174 — IPC invariant de-threading D3 COMPLETE: `pendingReceiveReplyWellFormed` fully de-threaded (15/15)
+
+Closes the D3 conjunct de-threading (12/15 → **15/15**) — `grep "hPRR' :
+pendingReceiveReplyWellFormed st'"` is now empty across the whole tree. The conjunct is
+*proven* preserved/established by every IPC transition rather than threaded as a post-state
+assumption. Final slice — the `endpointCall` family:
+
+- **`linkServerStashedReply_preserves_pendingReceiveReplyWellFormed`** — the net-effect crux.
+  `endpointCall`'s server-waiting branch delivers to the blocked server via
+  `storeTcbIpcStateAndMessage … .ready` (which *keeps* the stash `rid`) then
+  `linkServerStashedReply` links `rid` to the caller and *clears* the server stash. The
+  intermediate state violates C1 (server `.ready` while stashing), so the proof reasons about
+  the composite from the pre-deliver state via **C2-uniqueness**: the server is the sole staser
+  of `rid` (C2), so after the clear no thread stashes `rid`, making the link C1-safe and
+  preserving C2 injectivity.
+- **`endpointCall_preserves_ipcInvariantFull`** — de-threaded; replaces `hPRR'` with the
+  dischargeable `hCallerNotRecv` (the Call-issuing caller is the running thread, not a stashing
+  `.blockedOnReceive`). `endpointCall` *consumes* a stash, never establishes one, so it needs
+  pre-state PRR, not `hReplyIdValid`.
+- **`endpointCallOnCore`** (cross-core), **`endpointSendDualWithCaps`**, **`endpointCallWithCaps`**
+  de-threaded, composing the existing `ipcUnwrapCaps` / `endpointSendDual` / `endpointCall` PRR
+  frames.
+
+This conjunct's de-threading also surfaced and fixed a genuine kernel-correctness gap
+(**Finding F-1**, v0.31.170): the Send/notification receive-completion wakes left a stale
+server-first reply stash on a `.ready` thread. All preconditions threaded across the 15 bundles
+(`hSenderNotRecv`, `hWaiterNotRecv`, `hReceiverNotRecv`, `hCallerNotRecv`, `hReplyIdValid`,
+`notificationWaiterConsistent`, `hNotStashed`, the lifecycle `newObj` side-conditions) are
+dischargeable pre-state facts (the D2 precedent).
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`. AK7 all
+green.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3 COMPLETE, 15/15)
+
+## v0.31.173 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from the `endpointReceiveDual` establish family (12/15)
+
+De-threads the conjunct's canonical ESTABLISH and its dependents (8/15 → **12/15**):
+
+- **`endpointReceiveDual_preserves_ipcInvariantFull`** — the no-sender branch establishes a
+  fresh stash (`pendingReceiveReply := replyId`). New
+  `endpointReceiveDual_preserves_pendingReceiveReplyWellFormed` threads `hReplyIdValid`
+  (replyId, when present, names a present-free-unstashed reply — the receive syscall's
+  reply-cap validation) + `hReceiverNotRecv` (the completing receiver is the running thread,
+  not mid-receive-stash) and reuses the existing `queueHeadBlockedConsistent` conjunct (the
+  popped sendQ head is `.blockedOnSend`/`.blockedOnCall`, never stashing). The freshness facts
+  transport through the `cleanup → enqueue → storeTcbIpcState` chain to the stash-write,
+  discharged by `storeObject_establishStash_…`.
+- **`endpointReceiveDualWithCaps`, `endpointReplyRecv`** de-threaded (depend on the establish +
+  `ipcUnwrapCaps_preserves_pendingReceiveReplyWellFormed`).
+
+Reusable reply-store infrastructure added (the foundation the remaining `endpointCall` family
+also needs): a `replyIdEstablishFresh` predicate + per-step preservation frames; the
+`*_tcb_pendingReceiveReply_backward` / `*_preserves_reply` backward/forward frames for
+`storeTcbQueueLinks` / `endpointQueue{Enqueue,PopHead}` / `returnDonatedSchedContext` /
+`cleanupPreReceiveDonation` / `ipcTransferSingleCap` / `ipcUnwrapCaps{,Loop}`, across
+`Core.lean`, `Transport.lean`, `Defs.lean`, `Capability/Operations.lean`, `CapTransfer.lean`,
+`DualQueueMembership.lean`.
+
+All three new preconditions are dischargeable pre-state facts (the D2 precedent). **Optional
+non-defect note**: `endpointReceiveDual`'s rendezvous keeps the stash field via
+`storeTcbIpcStateAndMessage` (correct — the woken running-receiver/`blockedOnSend`-sender carry
+no stash, so it is behaviourally identical to `storeTcbReceiveComplete`); a defensive-symmetry
+refactor that would drop `hReceiverNotRecv`/`hQHBC` is recorded as a low-priority closure target
+in the plan, not shipped here (it is an F-1-sized re-prove for a behaviour-identical result).
+
+3 bundles remain (`endpointCall`, `endpointCallOnCore`, `endpointCallWithCaps` /
+`endpointSendDualWithCaps`). Proof-only; trace byte-identical; full build green (376 jobs); zero
+`sorry`/`axiom`. AK7 `RAW_LOOKUP_TID` re-anchored 943→965, `GETTCB_ADOPTION` 1437→1478.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3, 12/15 bundles)
+
+## v0.31.172 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from `linkCallerReply` + `lifecycleRetypeObject` (8/15)
+
+Continues the D3 conjunct de-threading (5/15 → **8/15** bundles).
+
+- **`linkCallerReply_preserves_ipcInvariantFull`** — new frame
+  `linkCallerReply_preserves_pendingReceiveReplyWellFormed` (composes `linkReply`'s
+  `.reply` write via `linkReply_preserves_…` with an all-`tid tcb` `hNotStashed`
+  precondition, then the trailing caller-TCB `replyObject := some rid` write via
+  `storeObject_tcb_preserveFields_…`). Bundle de-threaded (drops `hPRR'`, adds
+  `hNotStashed` + pre-state `hPRR`; relocated after the frame family). This frame is also a
+  dependency for the upcoming `endpointReceiveDual`-establish and `endpointCall` slices.
+- **`lifecycleRetypeObject_preserves_{coreIpcInvariantBundle,lifecycleCompositionInvariantBundle}`**
+  — new frame `lifecycleRetypeObject_preserves_pendingReceiveReplyWellFormed` (reduces to a
+  single `storeObject target newObj` via `lifecycleRetypeObject_ok_as_storeObject`, proved
+  directly off the post-state since the retype target slot can hold any prior object kind;
+  two `newObj`-keyed side-conditions `hNewObjNoStash` — a retyped TCB stashes nothing — and
+  `hTargetNotStashedReply` — no blocked receiver stashes a reply at the retype slot). Both
+  bundles de-threaded.
+
+7 bundles remain (the `endpointReceiveDual` establish, `endpointCall`/`OnCore`, the WithCaps
+trio, `endpointReplyRecv`) — see `docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` §"D3
+remaining". Proof-only; trace byte-identical; full build green (376 jobs); zero
+`sorry`/`axiom`. AK7 `RAW_LOOKUP_TID` re-anchored 941→943, `GETTCB_ADOPTION` 1421→1437.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3, 8/15 bundles)
+
+## v0.31.171 — IPC invariant de-threading D3: de-thread `pendingReceiveReplyWellFormed` from 5/15 bundles
+
+With Finding F-1 remediated (v0.31.170), `pendingReceiveReplyWellFormed` is a true invariant
+and can be *proven* (not threaded) per transition.  This cut de-threads `hPRR'` from **5 of
+the 15** `*_preserves_ipcInvariantFull` bundles, deriving the 17th conjunct concretely from
+the pre-state:
+
+- `endpointReply` and `consumeCallerReply` — no new precondition (the woken target is
+  `.blockedOnReply`, resp. the op only frees a reply + clears `replyObject`, so C1/C2 hold).
+- `notificationSignal` — threads the pre-state invariant `notificationWaiterConsistent st`
+  (the woken queue-head waiter is `.blockedOnNotification`, hence not stashing).
+- `notificationWait` and `endpointSendDual` — thread a dischargeable `hWaiterNotRecv` /
+  `hSenderNotRecv` (the calling/sending thread is not a stashing `.blockedOnReceive` thread —
+  the scheduler dispatches only `.ready` threads).  `endpointSendDual`'s rendezvous branch
+  clears the stash via the F-1 `storeTcbReceiveComplete`.
+
+These three new preconditions are genuine pre-state facts (mirroring how D2 threaded
+`replyCallerLinkageReciprocal st'` / `newObj` side-conditions), replacing the post-state
+`pendingReceiveReplyWellFormed st'` assumption.  10 reusable lemmas added:
+`endpointQueue{PopHead,Enqueue}_preserves_…`, `storeObject_endpoint_preserves_…'`,
+`storeTcb{IpcState,IpcStateAndMessage}_notReceiving_preserves_…`, and the 5 per-transition
+preserves.
+
+The **10 remaining bundles** are precisely characterized in
+`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md` (§"D3 remaining"): they need reply-store
+infrastructure beyond the `blockedOnReplyHasTarget` template — the `endpointReceiveDual`
+ESTABLISH (`hReplyIdValid` present-free-unstashed + cleanup/link reply-half frames),
+`endpointCall`'s mid-transition stash window (end-to-end object-diff proof), the WithCaps
+(`ipcUnwrapCaps` reply-slot disjointness), `linkCallerReply`, and the tractable
+`lifecycleRetypeObject` pair.  These were deliberately left threaded rather than risk an
+unsound freshness lemma.
+
+Proof-only; trace byte-identical; full build green (376 jobs); zero `sorry`/`axiom`.  AK7
+`GETTCB_ADOPTION` re-anchored 1404→1421 (new frames adopt the typed accessors);
+`RAW_LOOKUP_TID` unchanged at 941.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3, 5/15 bundles)
+
+## v0.31.170 — IPC invariant de-threading D3: Finding F-1 REMEDIATED — eager stash-clear makes `pendingReceiveReplyWellFormed` a true invariant
+
+Closes the kernel-correctness gap recorded in v0.31.169.  The three **non-Call**
+receive-completion wakes that previously left a stale server-first reply stash on a
+`.ready` thread now clear it, so `pendingReceiveReplyWellFormed` clause C1
+(`pendingReceiveReply = some rid ⇒ .blockedOnReceive`) is genuinely preserved.
+
+A dedicated store helper **`storeTcbReceiveComplete`** (`= storeTcbIpcStateAndMessage` with
+`ipcState := .ready` hardcoded **and** `pendingReceiveReply := none`) backs the delivery in:
+- `endpointSendDual` rendezvous (a plain `Send` completing a server-first `Recv`),
+- `notificationSignalBound` and `notificationSignalBoundOnCore` (a `Signal` to a bound TCB
+  blocked on receive).
+
+`storeTcbIpcStateAndMessage` itself is **unchanged** — the `endpointCall` rendezvous delivers
+to the server with it and then consumes the stash via `linkServerStashedReply`, so a *global*
+clear would fail the Call link closed `.replyCapInvalid` (this was verified to regress the
+F1-03 `[IMT-011/012/014]` trace; the surgical per-wake clear avoids it).
+
+20 mirror frames `storeTcbReceiveComplete_*` (each a near-verbatim copy of its
+`storeTcbIpcStateAndMessage_*` sibling, placed adjacently; the `.ready`-specialisation drops
+the now-vacuous `ipc`/`hTargetOk`/`hStashOk`/`hNotBlocked` side-conditions —
+`_preserves_pendingReceiveReplyWellFormed` in particular has *vacuous* keystone discharges
+since the stored TCB carries no stash) carry the three transitions' structural / info-flow /
+lock-set proofs across the helper swap.  The de-threading of `pendingReceiveReplyWellFormed`
+(per-transition establishes/preserves + bundle `hPRR'` removal) is now unblocked.
+
+Semantic change confined to the three Send/notification wake paths; all Call/Receive/Reply
+paths untouched.  Trace **byte-identical** (the smoke trace exercises a `Call`, not a
+stashing-receiver-then-`Send`); full build green (376 jobs); `test_full` (Tier 0-3) green;
+zero `sorry`/`axiom`.  AK7 `RAW_LOOKUP_TID` re-anchored 929→941 (the mirror frames reproduce
+the siblings' raw `…toObjId]?` invariant predicates); `GETTCB_ADOPTION` 1398→1404.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-1, remediated)
+
+## v0.31.169 — IPC invariant de-threading D3: Finding F-1 — `pendingReceiveReplyWellFormed` is not preserved by Send/notification wakes (tracked debt)
+
+De-threading `pendingReceiveReplyWellFormed` (the 17th `ipcInvariantFull` conjunct) by
+*proving* — not threading — its per-transition preservation surfaced a genuine
+kernel-correctness gap, now recorded as **Finding F-1** in
+`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md`.
+
+**The gap.** Clause C1 requires every TCB with `pendingReceiveReply = some rid` to be
+`.blockedOnReceive`.  A server-first `Recv` stashes `replyId` on the now-blocked receiver
+(in the endpoint `receiveQ`).  Two transitions then wake such a receiver to `.ready` via
+`storeTcbIpcStateAndMessage` **without clearing the stash**, leaving a `.ready` thread that
+still carries the stash — a C1 violation:
+- `endpointSendDual` rendezvous (a plain `Send` to a stashing receiver); the
+  `endpointReceiveDual` source comment (`Transport.lean:1736‑1738`) even acknowledges this
+  "woke via `Send`" stale stash and relies on a lazy clear on the next `Recv`;
+- `notificationSignalBound` (a `Signal` to a bound TCB blocked on receive).
+
+This is exactly why the `*_preserves_ipcInvariantFull` bundles **thread** `hPRR'` rather
+than prove it — the threading masked that the conjunct is not a true kernel invariant.
+
+**Severity: Low** (model-completeness, not an exploitable channel).  The information-flow
+projection already *erases* `pendingReceiveReply`
+(`projectKernelObject_erases_pendingReceiveReply`), so a stale stash is invisible to a low
+observer — no covert channel.  Impact is confined to `ipcInvariantFull`'s 17th conjunct not
+being machine-checked end-to-end where threaded.
+
+**Remediation (recorded; weakening C1 is forbidden):** eagerly clear `pendingReceiveReply`
+on the **non-Call** receive-completion wakes (`endpointSendDual` rendezvous +
+`notificationSignalBound`).  **Not** globally in `storeTcbIpcStateAndMessage`: the
+`endpointCall` rendezvous delivers with the same helper but then consumes the stash via
+`linkServerStashedReply`, so a global clear fails the Call link closed `.replyCapInvalid`
+(verified — it breaks the F1-03 `[IMT-011/012/014]` trace; the Call path already clears the
+stash correctly).  Closure then proceeds with the v0.31.168 frame family: per-transition
+establishes/preserves + bundle `hPRR'` removal.
+
+Investigated a global `storeTcbIpcStateAndMessage` clear (it builds — ~14 mechanical frame
+literal fixes — but regresses the F1-03 Call trace as above), so it was reverted; the tree
+is unchanged from v0.31.168 apart from this finding record.  Docs-only; build/trace
+unchanged (376 jobs).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (Finding F-1)
+
+## v0.31.168 — IPC invariant de-threading D3: `pendingReceiveReplyWellFormed` frame family (keystones + store frames)
+
+Lands the reusable frame family for the third D3 conjunct, `pendingReceiveReplyWellFormed` —
+the **2-clause coupling** invariant (C1: every `pendingReceiveReply = some rid` TCB is
+`.blockedOnReceive` *and* the Reply `rid` is present with `caller = none`; C2: the stash is
+injective).  C1 reads *both* the TCB store and the Reply store, and C2 couples two TCBs, so
+this is the subtlest structural conjunct so far.
+
+Three store-kind keystones, each tractable without a separate kind-stability invariant
+because a coincident Reply/TCB slot holds disjoint kinds (`.reply` ≠ `.tcb`), so the two
+accessor facts contradict — a TCB store frames every Reply lookup, and vice versa:
+- `storeObject_tcb_preserves_pendingReceiveReplyWellFormed` (TCB store; `hNewC1` stash
+  well-formedness + `hNewC2` freshness discharges; Reply lookups frame automatically);
+- `storeObject_reply_preserves_pendingReceiveReplyWellFormed` (Reply store; `hNewFree` —
+  the stored Reply is free iff a blocked receiver stashes it);
+- `storeObject_nonTcbReply_preserves_pendingReceiveReplyWellFormed` (neither kind; a store
+  may *remove* a TCB but adds none, Replies untouched).
+
+Built atop the keystones: `storeObject_establishStash_…` (introduce a fresh valid stash —
+the server-first receive path), `storeObject_tcb_preserveFields_…` (ipcState + stash
+unchanged), `storeTcbIpcStateAndMessage_…` / `storeTcbIpcState_…` (the new ipcState keeps a
+stashing thread `.blockedOnReceive`, `hStashOk`; freshness is pre-state injectivity),
+`storeTcbQueueLinks_…` (unconditional), `consumeReply_…` (clears `caller`, free outright),
+`linkReply_…` (sets `caller`; requires `rid` unstashed).  These mirror the
+`blockedOnReplyHasTarget` family shape; per-transition establishes/preserves + bundle wiring
+follow next (the keystones are the reusable foundation, as with the D2 frame family).
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `RAW_LOOKUP_TID`
+re-anchored 922→929 (additive slot-level `.toObjId]?` lookups in the keystones'
+kind-disjointness reasoning); `GETTCB_ADOPTION` 1371→1398.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3)
+
+## v0.31.167 — IPC invariant de-threading D3: `blockedOnReplyHasTarget` fully de-threaded (all remaining bundles wired)
+
+Completes the second conjunct's de-threading.  v0.31.166 built the
+`blockedOnReplyHasTarget` frame family + establishes/preserves for every transition and
+wired the `endpointCall` / `endpointReceiveDual` bundles; this cut wires the **remaining
+bundles**, so `blockedOnReplyHasTarget` is now established/preserved *concretely* (no
+threaded `hBRT'` post-state hypothesis) across the **entire** `ipcInvariantFull` surface.
+
+Bundles de-threaded here — `hBRT'` removed, the clause established/preserved from
+`hInv.blockedOnReplyHasTarget`:
+`endpointSendDual`, `notificationSignal`, `notificationWait`, `endpointReply`,
+`endpointReplyRecv` (preserves); the three WithCaps (`endpointSendDualWithCaps` preserves;
+`endpointReceiveDualWithCaps` / `endpointCallWithCaps` establish); the cross-core
+`endpointCallOnCore` (establishes, the no-`hStep` post-`subst` variant on
+`(endpointCallOnCore …).1`); and the two `lifecycleRetypeObject` bundles
+(`_preserves_coreIpcInvariantBundle` / `_preserves_lifecycleCompositionInvariantBundle`),
+which swap `hBRT'` for a clean `newObj` well-formedness side-condition `hNewObjTarget`
+(a `.blockedOnReply` retyped TCB must carry a `some` reply target — analogous to the
+existing `hNewObjThird`).
+
+Two frames added to close the `consumeCallerReply` path:
+`consumeReply_preserves_blockedOnReplyHasTarget` (a non-TCB reply store / no-op) and
+`consumeCallerReply_preserves_blockedOnReplyHasTarget` — note that *unlike* the third
+clause, `consumeCallerReply` **is** preservable here: it clears `reply.caller` and the
+caller's `replyObject` but never touches `ipcState`, which is all this clause reads.
+`consumeCallerReply_preserves_ipcInvariantFull` itself needed no edit — it already derives
+`blockedOnReplyHasTarget st'` concretely as the 15th conjunct of its `ipcInvariantCore st'`
+goal through the `ipcInvariantFull_of_core_replyCallerLinkage` assembly seam, so there was
+never an `hBRT'` token to remove.
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `GETTCB_ADOPTION`
+re-anchored 1369→1371 (the two new frames adopt the typed `getTcb?` accessor);
+`RAW_LOOKUP_TID` unchanged at 922.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3)
+
+## v0.31.166 — IPC invariant de-threading D3: `blockedOnReplyHasTarget` frame family + establishes/preserves (endpointCall/endpointReceiveDual bundles wired)
+
+Begins the second conjunct's de-threading.  `blockedOnReplyHasTarget` reads only each TCB's
+`ipcState` (a `.blockedOnReply` TCB carries a `some` reply target), and every IPC
+`.blockedOnReply` store uses `(some receiver)` — so the clause is *established directly by
+the store* (a unified `hTargetOk` discharge), with no atomic reply link needed (simpler
+than the third clause).
+
+Built (mirroring the `blockedOnReplyHasReplyObject` family): the keystone, objects-eq,
+non-TCB store, `storeTcbIpcStateAndMessage`/`storeTcbIpcState`/`_fromTcb`, queue-links,
+`endpointQueuePopHead`/`Enqueue` frames; the link/cleanup/wake/`ipcUnwrapCaps`/retype
+preserves; and the establishes/preserves for **every** transition —
+`endpoint{Call,ReceiveDual,CallOnCore}` + the three WithCaps (establishes), plus
+`endpointSendDual`/`notification{Signal,Wait}`/`endpointReply`/`endpointReplyRecv`/retype
+(preserves).  `linkCallerReply_tcb_ipcState_backward` de-privatized for the preserve.
+
+The `endpointCall` / `endpointReceiveDual` `ipcInvariantFull` bundles are **wired** —
+`hBRT'` removed, the clause established concretely from `hInv.blockedOnReplyHasTarget` —
+demonstrating the de-threading end-to-end.  The remaining ~11 bundles' wiring is mechanical
+(swap the threaded `hBRT'` for the already-built establish/preserve).
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `RAW_LOOKUP_TID`
+re-anchored 919→922 (additive `.toObjId]?` lookups in the D3 frames).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D3)
+
+## v0.31.165 — IPC invariant de-threading D2: lifecycle/retype bundles establish `blockedOnReplyHasReplyObject` (every soundly-de-threadable bundle done)
+
+De-threads the third clause from the two `lifecycleRetypeObject` bundles
+(`_preserves_coreIpcInvariantBundle` / `_preserves_lifecycleCompositionInvariantBundle`,
+Capability subsystem).  With this, **every `ipcInvariantFull` bundle whose third clause is
+sound to establish or preserve is de-threaded** — the lone remaining `consumeCallerReply`
+deliberately stays threaded (it clears `replyObject` without unblocking, so it cannot
+establish the clause standalone; the fused reply transition re-establishes it).
+
+`lifecycleRetypeObject` writes the caller-supplied `newObj` verbatim at `target`, so it
+*establishes* the third clause from a clean `newObj` well-formedness side-condition
+(`hNewObjThird`: a `.blockedOnReply` retyped TCB must carry a reply — analogous to the
+CNode/notification `newObj` constraints the bundle already takes).  Every non-`target` slot
+is framed (`lifecycleRetypeObject_ok_lookup_preserved_ne`); the `target` obligation is
+exactly `hNewObjThird`.  Both bundles are de-threaded in place (thread
+`replyCallerLinkageReciprocal st'` + `hNewObjThird`, removing the post-state
+`replyCallerLinkage st'` assumption).
+
+Proof-only; trace byte-identical; full build green (376 jobs).  AK7 `RAW_LOOKUP_TID`
+re-anchored 918→919 for the one additive `.toObjId]?` object-store lookup in the retype
+frame.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2′)
+
+## v0.31.164 — IPC invariant de-threading D2: the 3 WithCaps bundles establish/preserve `blockedOnReplyHasReplyObject` (ALL IPC bundles de-threaded)
+
+De-threads the third clause from the three capability-transfer IPC bundles
+(`endpointCallWithCaps`/`endpointReceiveDualWithCaps`/`endpointSendDualWithCaps`).  With
+this, **every IPC bundle that can soundly establish or preserve the third clause is
+de-threaded** (the lone exception, `consumeCallerReply`, deliberately stays threaded: it
+clears a caller's `replyObject` without unblocking, so it cannot establish the clause
+standalone).
+
+The WithCaps route through their base transition (reusing the base establish/preserve) plus
+an optional `ipcUnwrapCaps` cap transfer.  New self-contained cap-transfer frame chain:
+
+- `ipcTransferSingleCap_ok_implies_cnode_at_root` — a successful single-cap transfer proves
+  `receiverRoot` was a CNode (it reads `getCNode? receiverRoot` and fails closed otherwise).
+- `ipcUnwrapCapsLoop_objects_at_root_orig_or_cnode` / `ipcUnwrapCaps_objects_at_root_orig_or_cnode`
+  — `ipcUnwrapCaps` leaves `receiverRoot` either **unchanged or a CNode** (a mutating step
+  goes through a successful transfer, which requires/preserves a CNode there; otherwise it
+  short-circuits with the state unchanged).
+- `ipcUnwrapCaps_tcb_backward` — cap transfer never creates a TCB (it writes only
+  `receiverRoot`, only as a CNode), so a post-state `.tcb` maps back to the same pre-state
+  `.tcb`; every other slot is framed by `ipcUnwrapCaps_preserves_objects_ne`.
+- `ipcUnwrapCaps_preserves_blockedOnReplyHasReplyObject` and the three
+  `endpoint*WithCaps_{establishes,preserves}_blockedOnReplyHasReplyObject` compositions.
+
+The three bundle theorems are relocated to the end of `DualQueueMembership.lean` in
+de-threaded form (thread only `replyCallerLinkageReciprocal st'`).  Proof-only; trace
+byte-identical; full build green (376 jobs).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
+## v0.31.163 — IPC invariant de-threading D2: `endpointReply`/`endpointReplyRecv` preserve `blockedOnReplyHasReplyObject` (bundles de-threaded)
+
+De-threads the third clause from the two reply-path bundles — **8 of 11**
+`replyCallerLinkage`-threading IPC bundles now de-threaded; every IPC transition whose
+third clause it is *sound* to establish or preserve is done.
+
+- `endpointReply_preserves_blockedOnReplyHasReplyObject` — `endpointReply` only *unblocks*
+  the replied-to target (`.blockedOnReply → .ready`), shrinking the `.blockedOnReply` set,
+  so the clause is framed (the `fromTcb` store is converted to the plain store via
+  `storeTcbIpcStateAndMessage_fromTcb_eq` and reuses the non-blocked frame).
+- `endpointReplyRecv_preserves_blockedOnReplyHasReplyObject` — composes the unblock frame
+  with the receive leg, which *establishes* the clause by **reusing**
+  `endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`.
+
+Both bundle theorems relocated to the end of `DualQueueMembership.lean` in de-threaded form
+(thread only `replyCallerLinkageReciprocal st'`).  Proof-only; trace byte-identical.
+
+Remaining `replyCallerLinkage`-threading bundles: the three WithCaps variants (route
+through the base transition + an `ipcUnwrapCaps` cap-transfer frame) and two lifecycle
+retype bundles.  `consumeCallerReply` deliberately stays threaded: it clears a caller's
+`replyObject` without unblocking, so it cannot establish the third clause standalone (its
+pre-fusion status — the fused reply transition re-establishes it).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
+## v0.31.162 — IPC invariant de-threading D2: `notificationSignal`/`notificationWait` preserve `blockedOnReplyHasReplyObject` (bundles de-threaded)
+
+De-threads the third clause from the two notification bundles — **6 of 11**
+`replyCallerLinkage`-threading IPC bundles now de-threaded.  Neither notification
+transition ever sets a TCB to `.blockedOnReply` (signal wakes the head waiter `.ready`;
+wait sets the waiter `.ready` on the deliver path or `.blockedOnNotification` on the block
+path), and the notification-object stores are non-TCB, so the third clause is framed by
+two new reusable frames plus the existing store/scheduler frames:
+
+- `storeObject_nonTcb_preserves_blockedOnReplyHasReplyObject` — the keystone with a vacuous
+  `hNew` for any non-`.tcb` stored object (generalises the `.endpoint` helper).
+- `storeTcbIpcState_fromTcb_nonBlocked_preserves_blockedOnReplyHasReplyObject` — the
+  pre-looked-up `storeTcbIpcState_fromTcb` analogue of the non-blocked store frame (covers
+  the `.blockedOnNotification` block-path store).
+- `notificationSignal_preserves_blockedOnReplyHasReplyObject` /
+  `notificationWait_preserves_blockedOnReplyHasReplyObject` — mirror the corresponding
+  `_preserves_waitingThreadsPendingMessageNone` navigations.
+
+The two bundle theorems are relocated to the end of `DualQueueMembership.lean` in
+de-threaded form (thread only `replyCallerLinkageReciprocal st'`).  Proof-only; trace
+byte-identical.  Remaining: the reply-consuming bundles
+(`endpointReply`/`endpointReplyRecv`/`consumeCallerReply`), the three WithCaps
+(`ipcUnwrapCaps` cap-transfer frame), and two lifecycle/retype bundles.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
+## v0.31.161 — IPC invariant de-threading D2: `endpointSendDual` preserves `blockedOnReplyHasReplyObject` (bundle de-threaded)
+
+First **preserve-only** bundle de-threaded (vs the three establish cases in v0.31.159–160).
+`endpointSendDual` never sets a TCB to `.blockedOnReply` (rendezvous → receiver `.ready`;
+blocking → sender `.blockedOnSend`) and never touches `replyObject`, so the third clause is
+framed throughout: `endpointSendDual_preserves_blockedOnReplyHasReplyObject` composes the
+existing pop/enqueue/non-blocked-store/objects-eq frames.
+`endpointSendDual_preserves_ipcInvariantFull` is relocated to the end of
+`DualQueueMembership.lean` (after that frame theorem) in de-threaded form — it threads only
+`replyCallerLinkageReciprocal st'` and *preserves* the third clause.
+
+Proof-only; trace byte-identical.  Remaining `replyCallerLinkage`-threading IPC bundles
+(`endpointReply`/`endpointReplyRecv`/`consumeCallerReply`, `notificationSignal`/`Wait`, the
+three WithCaps) each require new frame machinery in their subsystem (reply-consumption,
+notification-op navigation, `ipcUnwrapCaps` cap-transfer) and are tracked for follow-up.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
+## v0.31.160 — IPC invariant de-threading D2 (per-core): `endpointCallOnCore` establishes `blockedOnReplyHasReplyObject`
+
+Extends the D2 third-clause de-threading to the per-core cross-core call.  The per-core
+`endpointCallOnCore` has an **identical object-store backbone** to single-core
+`endpointCall` — the per-core scheduler ops (`wakeThread` of the `.ready` receiver,
+`removeRunnableOnCore`) are object-framing — so the same frame family composes:
+
+- `wakeThread_preserves_blockedOnReplyHasReplyObject_of_ready` — the cross-core wake of an
+  already-`.ready` thread is object-invisible (`wakeThread_objects_getElem_eq_of_ready`),
+  so it frames the third clause.  The receiver is `.ready` from the preceding message
+  store (`storeTcbIpcStateAndMessage_getTcb?_ipcState`).
+- `endpointCallOnCore_establishes_blockedOnReplyHasReplyObject` — navigates the rendezvous
+  (pop → receiver `.ready` store → wake → caller `.blockedOnReply` store → atomic
+  `linkServerStashedReply` → `removeRunnableOnCore`) and blocking branches, mirroring
+  `endpointCallOnCore_preserves_ipcInvariant`.
+
+`endpointCallOnCore_preserves_ipcInvariantFull` is de-threaded in place (it threads only
+`replyCallerLinkageReciprocal st'` and establishes the third clause).  This completes all
+**three** IPC transitions that can introduce a `.blockedOnReply` thread (the single-core
+`endpointCall`/`endpointReceiveDual` plus this per-core call).  The remaining bundles
+(`endpointSendDual`/`endpointReply`/`endpointReplyRecv`/`notification{Signal,Wait}`/the
+three WithCaps/`consumeCallerReply`) are preserve-only — the third clause is framed or
+shrinks (a `.blockedOnReply` thread is never freshly introduced), de-threaded next.
+
+Proof-only; trace byte-identical.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
+## v0.31.159 — IPC invariant de-threading D2: `endpointCall`/`endpointReceiveDual` establish `blockedOnReplyHasReplyObject` (bundles de-threaded)
+
+Completes the D2 slice for both single-core IPC transitions that can introduce a
+`.blockedOnReply` thread.  Their `*_preserves_ipcInvariantFull` bundle theorems no longer
+*thread* the full `replyCallerLinkage st'`: they thread only the reciprocal half
+(`replyCallerLinkageReciprocal st'`, threaded pre-#7.4) and **concretely establish** the
+third clause (`blockedOnReplyHasReplyObject st'`) from the pre-state plus the step.  This
+closes the #7.4 false-assurance gap — a `.blockedOnReply` caller with no backing Reply to
+answer it — at the *transition* boundary, not merely at syscall boundaries.
+
+New establish theorems + the reusable frame family that composes them:
+
+- `endpointQueuePopHead_preserves_blockedOnReplyHasReplyObject` (the gateway frame;
+  mirrors `endpointQueuePopHead_preserves_objects_invExt`'s navigation) and
+  `endpointQueueEnqueue_preserves_blockedOnReplyHasReplyObject`.
+- Store frames: `storeObject_endpoint_preserves_…{,'}`,
+  `storeTcbIpcState_nonBlocked_preserves_…`, `storeTcbIpcStateAndMessage_off_preserves_…`.
+- Reply-link establishes: `linkCallerReply_establishes_blockedOnReplyHasReplyObject` (the
+  third-clause-only companion of the reciprocal establish — no reciprocal hypothesis) and
+  `linkServerStashedReply_establishes_blockedOnReplyHasReplyObject`.
+- Donation-cleanup frames: `returnDonatedSchedContext_tcb_ipcState_replyObject_backward`,
+  `cleanupPreReceiveDonation_tcb_ipcState_replyObject_backward`, and
+  `cleanupPreReceiveDonation_preserves_blockedOnReplyHasReplyObject`.
+- Compositions: `endpointCall_establishes_blockedOnReplyHasReplyObject` (rendezvous +
+  blocking branches) and `endpointReceiveDual_establishes_blockedOnReplyHasReplyObject`
+  (Call + Send + Block branches).
+
+The two single-core bundle theorems are relocated to the end of
+`IPC/Invariant/Structural/DualQueueMembership.lean` (after the establish theorems they now
+depend on) in de-threaded form.  Proof-only — no transition semantics change, trace
+byte-identical.  AK7 `RAW_LOOKUP_TID` baseline re-anchored 903→918 for the additive
+navigation mirror proofs (`GETTCB_ADOPTION` 1355→1361).
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md (D2)
+
+## v0.31.158 — IPC invariant de-threading: `blockedOnReplyHasReplyObject` frame family (D2 foundation)
+
+Building blocks for the D2 slice (concretely *establishing* the third clause of
+`replyCallerLinkage` through the folded IPC transitions, rather than threading it).  The
+third clause reads only each TCB's `(ipcState, replyObject)` pair, so it frames cleanly
+through a single `storeObject`:
+
+- **Keystone** — `storeObject_preserves_blockedOnReplyHasReplyObject`: a `storeObject`
+  preserves the third clause provided it does not introduce a `.blockedOnReply` TCB lacking
+  a `replyObject` (`hNew`); every other slot is framed.
+- `blockedOnReplyHasReplyObject_of_objects_eq` (object-store-preserving steps, e.g.
+  `ensureRunnable` / `removeRunnable`).
+- `storeTcbIpcStateAndMessage_nonBlocked_preserves_blockedOnReplyHasReplyObject` (a store
+  whose new `ipcState` is not `.blockedOnReply` — the receiver-`.ready` rendezvous store).
+- `storeTcbQueueLinks_preserves_blockedOnReplyHasReplyObject` (queue-link writes preserve
+  `ipcState`/`replyObject`; `hNew` discharged from the input invariant).
+
+These are the reusable per-step frames the upcoming `<transition>_establishes_replyCallerLinkage`
+proofs compose (with the existing atomic-link establish lemma).  No `sorry`/`axiom`; full build
+green; trace byte-identical (proofs only).  Remaining D2 work (the `endpointQueuePopHead` frame
+via the `revert`/`split` pattern, the caller-store + link assembly, then wiring into the bundle
+theorems) and D1/D3–D8 are sequenced in the plan.  Version bumped 0.31.157 → 0.31.158.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md §D2
+
+## v0.31.157 — IPC invariant de-threading workstream: plan + `blockedOnReplyHasReplyObject` predicate + answerable-caller consumer (D0 + D2-consumer)
+
+Opens the **IPC `ipcInvariantFull` de-threading** workstream
+(`docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md`): make every IPC transition's
+`*_preserves_ipcInvariantFull` theorem *concretely prove* the ~14 structural conjuncts
+instead of **threading** them as post-state hypotheses.  The plan inventories the surface
+(≈11 bundle theorems × 14 conjuncts; ~half wiring, ~half from-scratch — `donationChainAcyclic`
+is the research-grade item) and sequences it into coherent slices D0–D8.
+
+This first increment lands the foundation + the highest-value self-contained piece:
+
+- **D0 — named predicate.** Factor the #7.4 third clause of `replyCallerLinkage` into a
+  first-class `blockedOnReplyHasReplyObject` predicate (`blockedOnReply ⇒ replyObject`), so
+  the per-transition preservation can establish it via a reusable frame family, and consumers
+  get a named projection.  `replyCallerLinkage := replyCallerLinkageReciprocal ∧ blockedOnReplyHasReplyObject`
+  (definitionally identical to before — all #7.4 proofs, `default`, and boot unchanged).
+- **D2 consumer — `blockedOnReply_caller_is_answerable`.** The safety property the strengthened
+  invariant *delivers*: every `.blockedOnReply` caller has a concrete backing Reply object that
+  names it (third clause ⇒ `replyObject`, then forward reciprocity ⇒ the Reply exists and
+  reciprocates).  This is the formal "no thread blocks forever on an unanswerable reply", turning
+  the previously write-only invariant into a usable lemma.
+
+No `sorry`/`axiom`; full build green; trace byte-identical (definitions/proofs only).  Remaining
+de-threading slices (D1 wiring, D2 establish, D3–D8) are sequenced in the plan as future PRs.
+Version bumped 0.31.156 → 0.31.157.
+
+Refs: docs/planning/IPC_INVARIANT_DETHREADING_PLAN.md
+
+## v0.31.156 — Reply objects (seL4-MCS): completion-plan closeout (documentation)
+
+Documentation reconciliation marking the reply-objects completion plan
+(`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`) **complete**.  Every actionable item is now
+landed — #1 (`replyCapPointsToValidReply`), #2 (retype→reply-cap authority), #7.0–#7.5 (the D6
+`blockedOnReply ⇒ replyObject` transition fold), and residual-debt #1 (rights-less reply caps)
+/ #2 (conjunct-count comment) / #3 (badge-less reply caps).  Updates the plan's status header,
+status table, §#7 heading, and per-residual notes to their landed state (matching the code; no
+behavioural change).  Version bumped 0.31.155 → 0.31.156.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md
+
+## v0.31.155 — Reply objects (seL4-MCS): rights-less reply capabilities (residual-debt #1)
+
+Closes the last actionable residual debt of the reply-objects completion plan
+(`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md` §residual-debt #1): `mintReplyCap` now mints
+`.replyCap rid` with `rights := AccessRightSet.empty` instead of `[.read, .write]`.
+
+**seL4-MCS reply capabilities are rights-less** — a reply cap conveys single-use reply
+authority by *possession*, not by read/write rights: the `.reply` / `.replyRecv` path resolves
+it through `extractReplyId` on `cap.target` alone and never gates on `cap.rights`.  Minting it
+rights-less prevents a reply cap from doubling as a spurious read/write authority on the Reply
+object (a small capability-confinement hardening).  `mintReplyCap` was the only production
+reply-cap mint, so this makes the whole kernel's reply-cap derivation faithful; the one
+invariant proof (`mintReplyCap_preserves_capabilityInvariantBundle`) is updated to the
+rights-less shape (it is rights-agnostic — only the slot write and the reply-target resolution
+matter).
+
+No `sorry`/`axiom`; `test_full.sh` green; the retype→mint→link→use round-trip
+(`ModelIntegritySuite`) passes; trace byte-identical.  With this, **every actionable item in the
+reply-objects completion plan is landed** (#1, #2, #3, #4, #5, #6, #7.1–#7.5, residual-debt #1/#2).
+Version bumped 0.31.154 → 0.31.155.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §residual-debt #1
+
+## v0.31.154 — Reply objects (seL4-MCS): D6 transition fold — strengthen `replyCallerLinkage` (blockedOnReply ⇒ replyObject) + transition-boundary tests (#7.4/#7.5)
+
+Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
+§#7.4/#7.5): land the **invariant** the whole #7 fold was building toward.  Now that the
+reply-link is atomic with the blocking store (#7.1–#7.3b), `replyCallerLinkage` gains a third
+clause — **`blockedOnReply ⇒ replyObject`** — so `ipcInvariantFull` (whose 16th conjunct this
+is) no longer admits a `.blockedOnReply` caller with no Reply object to answer it (a thread
+blocked forever).  The guarantee now holds at the **transition boundary**, not merely at
+syscall boundaries.
+
+- **#7.4 — strengthen `replyCallerLinkage`.** Factor the bidirectional reciprocity into a
+  reusable `replyCallerLinkageReciprocal` (the strongest invariant that survives the fold's
+  post-blocking-store / pre-link intermediate), and define
+  `replyCallerLinkage := reciprocal ∧ (blockedOnReply ⇒ replyObject)`.  The atomic-link prover
+  `linkCallerReply_establishes_replyCallerLinkage` now discharges the third clause directly
+  (the linked caller carries `replyObject`; every other blocked caller is framed via the new
+  `hThirdExc` intermediate-state hypothesis).  `default` / boot establish it vacuously (no
+  `.blockedOnReply` TCBs).  `consumeCallerReply` — reply-link teardown prep — preserves only
+  the *reciprocal* half on its own (`…_preserves_replyCallerLinkageReciprocal`): standalone it
+  clears `replyObject` **without** unblocking, so the *fused* reply transition (which unblocks
+  first) re-establishes the third clause; `consumeCallerReply_preserves_ipcInvariantFull` and
+  the live IPC transitions thread `replyCallerLinkage st'` exactly as before (the 16-conjunct
+  threading architecture is unchanged — only the definition strengthened).
+- **#7.5 — transition-boundary tests.**  `ModelIntegritySuite` drives the real single-core
+  fold end-to-end and asserts the third clause holds at the `endpointCall` boundary (the
+  blocked caller carries a `replyObject`, reciprocated by the Reply) and its negative dual (a
+  Call with no server reply fails closed, stranding no caller).  `NegativeStateSuite` adds the
+  "no unanswerable `blockedOnReply`" fail-closed check to its reply coverage.
+
+No `sorry`/`axiom`; `test_full.sh` green (Tier 0–3, invariant surface anchors included); trace
+byte-identical.  AK7 cascade re-anchored (third-clause `objects[tid.toObjId]?` +3; test
+`getTcb?` adoption +2).  Remaining D6 work: residual debt #1 (rights-less reply caps).  Version
+bumped 0.31.153 → 0.31.154.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7.4/#7.5
+
+## v0.31.153 — Reply objects (seL4-MCS): D6 transition fold — per-core call fold lands, `linkServerFirstCaller` deleted (#7.3b)
+
+Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
+§#7.3b): fold the server-first reply linkage into the **cross-core** `endpointCallOnCore`
+rendezvous, completing the call-side fold begun in #7.3a (single-core). The link now runs
+atomically inside the blocking transition (`linkServerStashedReply` at the `st4 → st5` seam,
+before the caller deschedule), so a `Call` either lands `.blockedOnReply` **with** a linked
+reply or fails closed `.replyCapInvalid` — there is no "green intermediate" where the caller
+is blocked-on-reply but unlinked. Behaviour-preserving reordering of the existing
+dispatch-layer link; the boot trace stays byte-identical.
+
+- **Transition + characterization.** `endpointCallOnCore` composes `linkServerStashedReply`;
+  `endpointCallOnCore_rendezvous_eq` and its four callers (`_emits_sgi_if_remote_receiver`,
+  `_no_sgi_if_local_receiver`, `_perCore_blocking`, `_reply_linkage_under_lockSet`) gain the
+  `st5`/`hLink` success precondition (SGI / blocking / lock-set conclusions unchanged).
+- **Invariant + non-interference.** `EndpointCallInvariant`'s five conjunct proofs thread the
+  (now-public) `StoreObjectFrame` link frames. The staged boot-core `endpointCallOnCore_call_path_NI`
+  and ∀-core `_smp` re-base on new `objectIndexSet`-completeness propagation frames
+  (`endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt` made public; four
+  `wakeThread`/`enqueueRunnableOnCore` frames added — a raw insert at an existing key leaves
+  `objectIndexSet` untouched) and the new `linkServerStashedReply_preserves_projection{,OnCore}`
+  (the per-core frame from `linkServerStashedReply_{scheduler,machine}_eq` + `projectStateOnCore_congr`).
+  Projection erases the reply-link fields, so the NI conclusions are unchanged.
+- **Live dispatch + cleanup.** The three `.call` dispatch arms drop the post-dispatch
+  `linkServerFirstCaller` step (it would now double-link and fail); **`linkServerFirstCaller` is
+  deleted**. SD-053(b,d) migrate to drive the real `endpointCall` fold end-to-end, and
+  `SmpCrossCoreCallSuite` gains atomic-link + fail-closed ("no green intermediate") assertions.
+
+No `sorry`/`axiom`; default + staged builds green; `SmpCrossCoreCallSuite` / `SyscallDispatchSuite`
+pass; trace byte-identical to `tests/fixtures/main_trace_smoke.expected`. AK7 cascade re-anchored
+for one proof-level `getTcb?`→objects-side conversion (`GETTCB_ADOPTION` +12, a net adoption gain).
+Remaining D6 work (tracked in the plan): **#7.4** (strengthen `replyCallerLinkage` with the third
+clause, now unblocked), **#7.5** (transition-boundary tests), and residual debt #1 (rights-less
+reply caps). Version bumped 0.31.152 → 0.31.153.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7.3b
+
+## v0.31.152 — Reply objects (seL4-MCS): D6 transition fold — receive folds + single-core call fold land (#7.1/#7.2/#7.3a)
+
+Phase D6 of the reply-objects completion plan (`docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md`
+§#7): fold the reply-object linkage **into** the blocking IPC transitions so
+`blockedOnReply ⇒ replyObject` will hold at the transition boundary (not just the syscall
+boundary). Three green-incremental slices land here; each is a behaviour-preserving reordering
+of an existing dispatch-layer link, so the boot trace stays byte-identical.
+
+- **#7.1 — single-core receive fold.** `endpointReceiveDual` takes a required
+  `replyId : Option ReplyId`: a `Call` rendezvous links the dequeued caller to the
+  server-supplied reply object via `linkCallerReply` (fail-closed `.replyCapInvalid` on a Call
+  carrying none); the no-sender path stashes `pendingReceiveReply`; the Send path is unchanged.
+  Threaded through `endpointReplyRecv`, `endpointReceiveDualWithCaps`,
+  `endpointReceiveDualChecked`, `endpointReplyRecvWithDonation`, and re-based the full IPC +
+  information-flow preservation surface (projection erases the reply-link fields, so the
+  non-interference results stay hypothesis-free).
+- **#7.2 — per-core receive fold + production dispatch.** Repeats the fold for the SM6.C
+  cross-core `endpointReceiveDualOnCore`, rewires the live `.receive`/`.replyRecv` dispatch
+  through it, and **deletes the now-dead `linkReceivedCaller`** (its SD-051/SD-053 unit tests
+  migrated to drive the real transition — a strictly stronger test).
+- **#7.3a — single-core call fold.** `endpointCall`'s server-waiting rendezvous reads the woken
+  server's stashed reply (`pendingReceiveReply`) and links the caller atomically via the new
+  `SystemState.linkServerStashedReply`, failing closed when the server provided no reply object
+  (matching the production dispatch's existing behaviour). Server-first receive sites in the
+  trace harness and negative-state suite now supply a backing `.reply` object.
+
+No `sorry`/`axiom`; `test_full.sh` green; trace byte-identical to
+`tests/fixtures/main_trace_smoke.expected`. Remaining D6 work (tracked in the plan): **#7.3b**
+(per-core call fold + delete `linkServerFirstCaller`), **#7.4** (strengthen `replyCallerLinkage`
+with the third clause, gated on #7.3b), **#7.5** (transition-boundary tests), and residual
+debt #1 (rights-less reply caps). Version bumped 0.31.151 → 0.31.152.
+
+Refs: docs/planning/REPLY_OBJECTS_COMPLETION_PLAN.md §#7 (#7.1/#7.2/#7.3a)
+
 ## v0.31.151 — Reply objects plan review follow-up: clarify #7 ordering and tracked residuals
 
 Documentation-only follow-up to the reply-objects completion plan review. The plan now makes

@@ -117,18 +117,28 @@ theorem donateSchedContext_scheduler_eq
         | error _ => intro h; cases h
         | ok p1 =>
           simp only []
-          cases hLookup : lookupTcb p1.2 serverTid with
+          -- F-3: donor-clear store between the SC store and the server store
+          cases hLC : lookupTcb p1.2 clientTid with
           | none => intro h; cases h
           | some _ =>
             simp only []
-            cases hS2 : storeObject serverTid.toObjId _ p1.2 with
+            cases hS2 : storeObject clientTid.toObjId _ p1.2 with
             | error _ => intro h; cases h
             | ok p2 =>
-              simp only [Except.ok.injEq]
-              intro hEq; subst hEq
-              have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
-              have h2 := storeObject_scheduler_eq_local p1.2 _ _ _ hS2
-              exact h2.trans h1
+              simp only []
+              cases hLookup : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some _ =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have h1 := storeObject_scheduler_eq_local st _ _ _ hS1
+                  have h2 := storeObject_scheduler_eq_local p1.2 _ _ _ hS2
+                  have h3 := storeObject_scheduler_eq_local p2.2 _ _ _ hS3
+                  exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 
 /-- Z7-B/AH2-D: applyCallDonation preserves the scheduler exactly. -/
@@ -231,23 +241,35 @@ theorem donateSchedContext_server_binding
         | error _ => intro h; cases h
         | ok p1 =>
           simp only []
-          cases hL : lookupTcb p1.2 serverTid with
+          -- F-3: donor-clear store between the SC store and the server store
+          cases hLC : lookupTcb p1.2 clientTid with
           | none => intro h; cases h
-          | some serverTcb =>
+          | some _ =>
             simp only []
-            cases hS2 : storeObject serverTid.toObjId _ p1.2 with
+            cases hS2 : storeObject clientTid.toObjId _ p1.2 with
             | error _ => intro h; cases h
             | ok p2 =>
-              simp only [Except.ok.injEq]
-              intro hEq; subst hEq
-              have hInvP1 : p1.2.objects.invExt := by
-                unfold storeObject at hS1; cases hS1
-                exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-              have : p2.2.objects[serverTid.toObjId]? =
-                  some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) := by
-                unfold storeObject at hS2; cases hS2
-                exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP1
-              exact ⟨_, this, rfl⟩
+              simp only []
+              cases hL : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some serverTcb =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have hInvP1 : p1.2.objects.invExt := by
+                    unfold storeObject at hS1; cases hS1
+                    exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+                  have hInvP2 : p2.2.objects.invExt := by
+                    unfold storeObject at hS2; cases hS2
+                    exact RHTable_insert_preserves_invExt _ _ _ hInvP1
+                  have : p3.2.objects[serverTid.toObjId]? =
+                      some (.tcb { serverTcb with schedContextBinding := .donated clientScId clientTid }) := by
+                    unfold storeObject at hS3; cases hS3
+                    exact RobinHood.RHTable.getElem?_insert_self _ _ _ hInvP2
+                  exact ⟨_, this, rfl⟩
     | _ => simp only []; intro h; cases h
 
 /-- Z7-K2: After returnDonatedSchedContext, the server's binding is .unbound. -/
@@ -406,18 +428,28 @@ theorem donateSchedContext_machine_eq
         | error _ => intro h; cases h
         | ok p1 =>
           simp only []
-          cases hLookup : lookupTcb p1.2 serverTid with
+          -- F-3: donor-clear store between the SC store and the server store
+          cases hLC : lookupTcb p1.2 clientTid with
           | none => intro h; cases h
           | some _ =>
             simp only []
-            cases hS2 : storeObject serverTid.toObjId _ p1.2 with
+            cases hS2 : storeObject clientTid.toObjId _ p1.2 with
             | error _ => intro h; cases h
             | ok p2 =>
-              simp only [Except.ok.injEq]
-              intro hEq; subst hEq
-              have h1 := storeObject_machine_eq_local st _ _ _ hS1
-              have h2 := storeObject_machine_eq_local p1.2 _ _ _ hS2
-              exact h2.trans h1
+              simp only []
+              cases hLookup : lookupTcb p2.2 serverTid with
+              | none => intro h; cases h
+              | some _ =>
+                simp only []
+                cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+                | error _ => intro h; cases h
+                | ok p3 =>
+                  simp only [Except.ok.injEq]
+                  intro hEq; subst hEq
+                  have h1 := storeObject_machine_eq_local st _ _ _ hS1
+                  have h2 := storeObject_machine_eq_local p1.2 _ _ _ hS2
+                  have h3 := storeObject_machine_eq_local p2.2 _ _ _ hS3
+                  exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 
 /-- AG8-G: Donation is atomic — `donateSchedContext` preserves the

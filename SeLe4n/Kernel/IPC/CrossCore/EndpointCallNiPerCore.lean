@@ -473,6 +473,28 @@ theorem removeRunnableOnCore_preserves_projectionOnCore (ctx : LabelingContext)
 -- §5  SM6.A.7 — the ∀-core (`lowEquivalent_smp`) non-interference theorem
 -- ============================================================================
 
+/-- WS-SM SM6.D (#7.3 fold): the per-core form of `linkServerStashedReply_preserves_projection`.
+The rendezvous reply-link (the `.call` fold's atomic reply-stitch) preserves every
+core's per-core observer projection when both the caller and server objects are high:
+the whole-state projection is preserved (`linkServerStashedReply_preserves_projection`),
+and the scheduler / machine registers are untouched (`*_scheduler_eq` / `*_machine_eq`),
+so the per-core congruence applies on every core. -/
+theorem linkServerStashedReply_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (c : CoreId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hServerObjHigh : objectObservable ctx observer server.toObjId = false)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkServerStashedReply caller server st = .ok ((), st')) :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  have hSched := linkServerStashedReply_scheduler_eq st st' caller server hStep
+  have hMach := linkServerStashedReply_machine_eq st st' caller server hStep
+  exact projectStateOnCore_congr ctx observer
+    (linkServerStashedReply_preserves_projection ctx observer st st' caller server
+      hCallerObjHigh hServerObjHigh hIdxComplete hObjInv hStep)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
+
 /-- WS-SM SM6.A.7 (per-core / ∀-core non-interference): a cross-core endpoint
 call at a **non-observable** endpoint, between a non-observable caller and a
 non-observable receiver, is invisible to a low observer on *every* core — the
@@ -490,7 +512,7 @@ theorem endpointCallOnCore_call_path_NI_smp
     (ctx : LabelingContext) (observer : IfObserver)
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) (ep : Endpoint)
-    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 : SystemState)
+    (receiver : SeLe4n.ThreadId) (recvTcb0 : TCB) (st' st'' st4 st5 : SystemState)
     (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
@@ -499,7 +521,13 @@ theorem endpointCallOnCore_call_path_NI_smp
     (hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) = .ok st'')
     (hCallerStore : storeTcbIpcStateAndMessage (wakeThread st'' receiver executingCore).1
         caller (.blockedOnReply endpointId (some receiver)) none = .ok st4)
+    -- WS-SM SM6.D (#7.3b fold): the server-first reply link folds into the rendezvous.
+    (hLink : SystemState.linkServerStashedReply caller receiver st4 = .ok ((), st5))
     (hObjInv : st.objects.invExt)
+    -- WS-SM SM6.D (#7.3b): structural completeness for the link's `.reply` re-store
+    -- projection-invisibility (mirrors the boot-core `endpointCallOnCore_call_path_NI`).
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : objectIndexSetComplete st)
     (hEndpointHigh : objectObservable ctx observer endpointId = false)
     (hReceiverHigh : threadObservable ctx observer receiver = false)
     (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
@@ -514,19 +542,42 @@ theorem endpointCallOnCore_call_path_NI_smp
     endpointQueuePopHead_preserves_objects_invExt endpointId true st st' receiver recvTcb0 hObjInv hPop
   have hInv'' : st''.objects.invExt :=
     storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' receiver .ready (some msg) hInv' hStore
+  have hInvW : (wakeThread st'' receiver executingCore).1.objects.invExt :=
+    wakeThread_preserves_objects_invExt st'' receiver executingCore hInv''
+  -- WS-SM SM6.D (#7.3b): propagate `objectIndexSet` completeness/invExt to `st4`
+  -- (pop → store-receiver → wake-of-ready-receiver → store-caller; all monotone).
+  obtain ⟨hIdxPop, hObjSetPop⟩ :=
+    endpointQueuePopHead_preserves_objectIndexSetComplete_and_invExt endpointId true st st'
+      receiver recvTcb0 hObjInv hObjSetInv hIdxComplete hPop
+  have hIdxSt'' := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st' st'' receiver
+    .ready (some msg) hInv' hObjSetPop hIdxPop hStore
+  have hObjSetSt'' := storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt st' st'' receiver
+    .ready (some msg) hObjSetPop hStore
+  obtain ⟨recvTcb'', hRecvGet, hRecvReady⟩ :=
+    storeTcbIpcStateAndMessage_getTcb?_ipcState st' st'' receiver .ready (some msg) hInv' hStore
+  have hIdxW := wakeThread_preserves_objectIndexSetComplete_of_ready st'' receiver executingCore
+    recvTcb'' hRecvGet hRecvReady hInv'' hIdxSt''
+  have hObjSetW := wakeThread_preserves_objectIndexSet_invExt st'' receiver executingCore hObjSetSt''
+  have hIdxSt4 := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
+    (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
+    none hInvW hObjSetW hIdxW hCallerStore
+  have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+    (wakeThread st'' receiver executingCore).1 st4 caller (.blockedOnReply endpointId (some receiver))
+    none hInvW hCallerStore
   show projectStateOnCore ctx observer
       (endpointCallOnCore endpointId caller msg executingCore st).1 c
     = projectStateOnCore ctx observer st c
   rw [endpointCallOnCore_rendezvous_eq endpointId caller msg executingCore st ep receiver
-        recvTcb0 st' st'' st4 hSz1 hSz2 hObj hHead hPop hStore hCallerStore]
-  show projectStateOnCore ctx observer (removeRunnableOnCore st4 caller executingCore) c
+        recvTcb0 st' st'' st4 st5 hSz1 hSz2 hObj hHead hPop hStore hCallerStore hLink]
+  show projectStateOnCore ctx observer (removeRunnableOnCore st5 caller executingCore) c
     = projectStateOnCore ctx observer st c
-  rw [removeRunnableOnCore_preserves_projectionOnCore ctx observer st4 caller executingCore c
+  rw [removeRunnableOnCore_preserves_projectionOnCore ctx observer st5 caller executingCore c
         hCallerHigh,
+      linkServerStashedReply_preserves_projectionOnCore ctx observer st4 st5 caller receiver c
+        hCallerObjHigh hReceiverObjHigh hIdxSt4 hObjInv4 hLink,
       storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer
         (wakeThread st'' receiver executingCore).1 st4 caller
-        (.blockedOnReply endpointId (some receiver)) none c hCallerObjHigh
-        (wakeThread_preserves_objects_invExt st'' receiver executingCore hInv'') hCallerStore,
+        (.blockedOnReply endpointId (some receiver)) none c hCallerObjHigh hInvW hCallerStore,
       wakeThread_preserves_projectionOnCore ctx observer st'' receiver executingCore c
         hReceiverHigh hReceiverObjHigh hInv'',
       storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer st' st'' receiver .ready

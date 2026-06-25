@@ -148,6 +148,7 @@ Returns the post-state paired with `Except KernelError (ThreadId × Option (Core
 × SgiKind))`: the rendezvous/blocked thread id and the optional cross-core SGI
 (the woken `blockedOnSend` sender's, else `none`). -/
 def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId)
     (executingCore : CoreId) (st : SystemState) :
     SystemState × Except KernelError (SeLe4n.ThreadId × Option (CoreId × SgiKind)) :=
   match st.getEndpoint? endpointId with
@@ -166,9 +167,21 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
                     (.blockedOnReply endpointId (some receiver)) none with
                 | .error e => (st, .error e)
                 | .ok st'' =>
-                    match storeTcbIpcStateAndMessage st'' receiver .ready senderMsg with
-                    | .ok st''' => (st''', .ok (sender, none))
-                    | .error e => (st, .error e)
+                    -- WS-SM SM6.D (#7.2 fold): link the dequeued caller (now
+                    -- `.blockedOnReply`) to the server-supplied reply object in the
+                    -- same transition (the former `linkReceivedCaller` dispatch step).
+                    -- A Call rendezvous carrying no reply object fails closed
+                    -- (`.replyCapInvalid`); the pre-state is returned, so the caller is
+                    -- never stranded `.blockedOnReply` with no reply.
+                    match replyId with
+                    | none => (st, .error .replyCapInvalid)
+                    | some rid =>
+                        match SystemState.linkCallerReply sender rid st'' with
+                        | .error e => (st, .error e)
+                        | .ok ((), stLinked) =>
+                            match storeTcbIpcStateAndMessage stLinked receiver .ready senderMsg with
+                            | .ok st''' => (st''', .ok (sender, none))
+                            | .error e => (st, .error e)
               else
                 match storeTcbIpcStateAndMessage st' sender .ready none with
                 | .error e => (st, .error e)
@@ -187,7 +200,29 @@ def endpointReceiveDualOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.Thr
             | .ok st' =>
                 match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
                 | .error e => (st, .error e)
-                | .ok st'' => (removeRunnableOnCore st'' receiver executingCore, .ok (receiver, none))
+                | .ok st'' =>
+                    -- WS-SM SM6.D (#7.2 fold): server-first stash — record the
+                    -- server-supplied reply object on the now-`.blockedOnReceive`
+                    -- receiver so a later `Call` rendezvous links to it.  `none`
+                    -- (a plain receive) clears any stale stash.
+                    match st''.getTcb? receiver with
+                    | none => (removeRunnableOnCore st'' receiver executingCore, .ok (receiver, none))
+                    | some rTcb =>
+                        -- WS-SM SM6.D (PR #827 review #6): mirror the single-core stash guard —
+                        -- reject an absent / in-use / already-stashed `rid` before the store, so
+                        -- a below-API cross-core caller cannot strand the `.blockedOnReceive`
+                        -- receiver on a `pendingReceiveReply` that breaks well-formedness.
+                        -- PR #827 review #7: validate against the *input* state `st` (not the
+                        -- post-block `st''`) for the same reason as the single-core path — the
+                        -- post-block receiver self-reserves its own stale `rid` in
+                        -- `replyIsStashed`, which would falsely reject a legitimate re-stash.
+                        if st.replyStashValid replyId then
+                          match storeObject receiver.toObjId
+                              (.tcb { rTcb with pendingReceiveReply := replyId }) st'' with
+                          | .error e => (st, .error e)
+                          | .ok ((), stStashed) =>
+                              (removeRunnableOnCore stStashed receiver executingCore, .ok (receiver, none))
+                        else (st, .error .replyCapInvalid)
   | none =>
       -- Typed-accessor dispatch (AK7 cascade discipline): `getEndpoint?` is `none`
       -- for both an absent object and a wrong-kinded one.  Recover the single-core
@@ -209,13 +244,16 @@ caller wake and, on a `blockedOnSend` rendezvous, the receive-leg sender wake).
 On any failed leg the pre-state is returned (`withLockSet` clean release), so the
 combined op is all-or-nothing exactly as the single-core `endpointReplyRecv`. -/
 def endpointReplyRecvOnCore (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyTarget : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (replyTarget : SeLe4n.ThreadId) (msg : IpcMessage)
+    -- WS-SM SM6.D (#7.2 fold): the reply object the server supplies for the *next*
+    -- caller on the receive leg, threaded into the folded `endpointReceiveDualOnCore`.
+    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
     (st : SystemState) :
     SystemState × Except KernelError (List (CoreId × SgiKind)) :=
   match endpointReplyOnCore receiver replyTarget msg executingCore st with
   | (_, .error e) => (st, .error e)
   | (st1, .ok replySgi?) =>
-      match endpointReceiveDualOnCore endpointId receiver executingCore st1 with
+      match endpointReceiveDualOnCore endpointId receiver replyId executingCore st1 with
       | (_, .error e) => (st, .error e)
       | (st2, .ok (_, recvSgi?)) => (st2, .ok (replySgi?.toList ++ recvSgi?.toList))
 
@@ -677,8 +715,9 @@ theorem lockSet_endpointReceive_reply_write_mem
 /-- WS-SM SM6.D (PR #822 review 6J-NL9): the per-object reply **write** lock is a
 declared member of the `.call` lock-set footprint once the linked reply object is
 resolved (`replyId := some rid`).  A server-first `Call` rendezvous links the caller
-to the waiting server's stashed Reply object (`linkServerFirstCaller` → `linkCallerReply`
-writes `reply.caller`); that write is now serialised under the per-object reply lock. -/
+to the waiting server's stashed Reply object (the folded `linkServerStashedReply` →
+`linkCallerReply` writes `reply.caller`); that write is now serialised under the
+per-object reply lock. -/
 theorem lockSet_endpointCall_reply_write_mem
     (callerTid : SeLe4n.ThreadId) (cnRoot endpointObjId : SeLe4n.ObjId)
     (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
@@ -687,6 +726,27 @@ theorem lockSet_endpointCall_reply_write_mem
       ∈ (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId (some rid)).pairs := by
   unfold lockSet_endpointCall
   exact self_write_mem_insertOrMerge _ (replyLock rid)
+
+/-- WS-SM SM6.D (PR #827 review): the per-object reply **write** lock is likewise a
+declared member of the **WithCaps** `.call` footprint once the linked reply object
+is resolved (`replyId := some rid`).  `lockSet_endpointCallWithCaps` extends the base
+call lock-set with the destination CNode write lock; the reply lock — a distinct key
+(`.reply` vs `.cnode`) — survives that extension (`mem_insertOrMerge_of_mem_of_ne`),
+so a server-first `Call` carrying transferred caps still serialises its
+`linkServerStashedReply` reply-object write under `replyLock rid`. -/
+theorem lockSet_endpointCallWithCaps_reply_write_mem
+    (callerTid : SeLe4n.ThreadId) (cnRoot destCnode endpointObjId : SeLe4n.ObjId)
+    (receiverTid : Option SeLe4n.ThreadId) (donatedScId : Option SeLe4n.SchedContextId)
+    (rid : SeLe4n.ReplyId) :
+    (replyLock rid, AccessMode.write)
+      ∈ (lockSet_endpointCallWithCaps callerTid cnRoot destCnode endpointObjId
+            receiverTid donatedScId (some rid)).pairs := by
+  unfold lockSet_endpointCallWithCaps
+  exact LockSet.mem_insertOrMerge_of_mem_of_ne
+    (lockSet_endpointCall callerTid cnRoot endpointObjId receiverTid donatedScId (some rid))
+    (cnodeLock destCnode) AccessMode.write (replyLock rid, AccessMode.write)
+    (lockSet_endpointCall_reply_write_mem callerTid cnRoot endpointObjId receiverTid donatedScId rid)
+    (by simp [replyLock, cnodeLock])
 
 -- ============================================================================
 -- §7  SM6.C.7 — Reply-replay protection
@@ -773,19 +833,20 @@ theorem endpointReplyOnCore_atomic_under_lockSet
 2PL-atomic step under its `replyRecv` lock-set. -/
 theorem endpointReplyRecvOnCore_atomic_under_lockSet
     (endpointId : SeLe4n.ObjId) (receiver target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId)
     (executingCore : CoreId) (cnRoot : SeLe4n.ObjId) (newSender? : Option SeLe4n.ThreadId)
     (donatedSc? : Option SeLe4n.SchedContextId) (donatedOwner? : Option SeLe4n.ThreadId)
     (s : SystemState) :
-    withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?)
-        executingCore (endpointReplyRecvOnCore endpointId receiver target msg executingCore) s
+    withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId)
+        executingCore (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s
       = (releaseAll executingCore
-          (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?).lockAcquireSequence.reverse
-          (endpointReplyRecvOnCore endpointId receiver target msg executingCore
+          (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence.reverse
+          (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore
-              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?).lockAcquireSequence s)).1,
-         (endpointReplyRecvOnCore endpointId receiver target msg executingCore
+              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence s)).1,
+         (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore
             (acquireAll executingCore
-              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner?).lockAcquireSequence s)).2) :=
+              (lockSet_replyRecv receiver cnRoot target endpointId newSender? donatedSc? donatedOwner? replyId).lockAcquireSequence s)).2) :=
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================

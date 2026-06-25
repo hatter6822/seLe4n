@@ -256,6 +256,24 @@ theorem storeTcbIpcStateAndMessage_fromTcb_eq
   unfold storeTcbIpcStateAndMessage_fromTcb storeTcbIpcStateAndMessage
   simp [hLookup]
 
+/-- IPC de-threading D3 (Finding F-1): complete a receive — set the receiver `.ready`
+with the delivered message **and** clear its server-first `pendingReceiveReply` stash.
+Used by the **non-Call** receive-completion wakes (`endpointSendDual` rendezvous,
+`notificationSignalBound{,OnCore}`): the receive completed without a `Call`, so the
+stashed reply object is moot and the `pendingReceiveReplyWellFormed` discipline ("a
+thread that is not `.blockedOnReceive` holds no server-first reply stash") requires it
+cleared.  Distinct from `storeTcbIpcStateAndMessage`, which **preserves** the stash for
+the `Call` rendezvous, where `linkServerStashedReply` consumes it. -/
+def storeTcbReceiveComplete (st : SystemState) (tid : SeLe4n.ThreadId)
+    (msg : Option IpcMessage) : Except KernelError SystemState :=
+  match lookupTcb st tid with
+  | none => .error .objectNotFound
+  | some tcb =>
+      match storeObject tid.toObjId
+          (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+      | .error e => .error e
+      | .ok ((), st') => .ok st'
+
 /-- WS-L1: `lookupTcb` is preserved when `storeObject` targets a notification
 (different ObjId from any TCB). Used to justify `_fromTcb` usage after an
 intervening notification store. Accepts both `((), st')` and `pair` forms. -/
@@ -284,11 +302,26 @@ theorem lookupTcb_preserved_by_storeObject_notification
 
 /-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
 
-Performs the bidirectional binding:
-1. Server TCB gets `schedContextBinding := .donated(clientScId, clientTid)`
-2. SchedContext `boundThread` updated to point to server
+Performs the full ownership transfer of the SchedContext from donor to server:
+1. SchedContext `boundThread` updated to point to the server.
+2. Donor (client) TCB's `schedContextBinding` cleared to `.unbound` — the donor
+   gives up its SchedContext for the duration of the Call.
+3. Server TCB gets `schedContextBinding := .donated(clientScId, clientTid)`.
 
-**Preconditions** (enforced by caller `endpointCall`):
+**Donor-clear (Finding F-3 remediation).** Clearing the donor here is what makes
+the SchedContext referenced by **exactly one** binding after donation — the
+server's `.donated` — never jointly with a residual donor `.bound`.  Without it,
+`donationBudgetTransfer` (no two threads share one SchedContext) and
+`donationOwnerValid` (the donor is `.unbound`, awaiting the reply that returns
+the SchedContext) are jointly unsatisfiable for every donated state, so
+`ipcInvariantFull` would vacuously skip all donating Calls.  This mirrors seL4
+MCS `sched_context_donate`, which clears the previous holder's
+`tcb_sched_context` before binding the SchedContext to the new thread.  The
+donor remains recoverable: the server's `.donated scId clientTid` records the
+owner, and the reply object (`blockedOnReply`) links the donor to the call so
+`returnDonatedSchedContext` rebinds it on reply.
+
+**Preconditions** (enforced by caller `endpointCall` / `applyCallDonation`):
 - Server has `schedContextBinding = .unbound` (passive)
 - Client has `schedContextBinding = .bound clientScId`
 - SchedContext `sc.boundThread = some clientTid`
@@ -296,14 +329,18 @@ Performs the bidirectional binding:
 Returns the updated state or error if lookups fail.
 
 **Atomicity contract (AC3-A / I-02)**:
-This function performs 2 sequential `storeObject` mutations (through states
-`st` → `st1` → `st2`) with an intermediate lookup:
+This function performs 3 sequential `storeObject` mutations (through states
+`st` → `st1` → `st2` → `st3`) with intermediate lookups:
   1. `storeObject` SchedContext with `boundThread := some serverTid` → `st1`.
-  2. `lookupTcb st1 serverTid` to find the server TCB (pure read, no mutation).
-  3. `storeObject` server TCB with `schedContextBinding := .donated` → `st2`.
+  2. `storeObject` donor TCB with `schedContextBinding := .unbound` → `st2`.
+  3. `storeObject` server TCB with `schedContextBinding := .donated` → `st3`.
+The donor store is ordered **before** the server store so the server's
+`.donated` binding is the final object write, keeping the server-binding
+postcondition (`donateSchedContext_server_binding`) free of a
+`clientTid ≠ serverTid` side-condition.
 In the `KernelM` monad (`Except KernelError`), `.error` carries **no state** —
-only the error value. If step 1 succeeds but step 2 or 3 fails, the
-intermediate state `st1` is discarded by the monad's `bind` operation and the
+only the error value. If an early step succeeds but a later step fails, the
+intermediate state is discarded by the monad's `bind` operation and the
 caller receives `.error` with no access to the partial state. There is no
 "partial state leak" risk in the pure model.
 On hardware, kernel transitions execute with interrupts disabled (single-core
@@ -323,18 +360,35 @@ def donateSchedContext
     match storeObject clientScId.toObjId (.schedContext sc') st with
     | .error e => .error e
     | .ok ((), st1) =>
-      -- Step 3: Look up and update server TCB with donated binding
-      match lookupTcb st1 serverTid with
+      -- Step 3 (F-3 fix): Clear the donor's binding — the client gives up its
+      -- SchedContext for the duration of the Call.  Ordered before the server
+      -- store so the server's `.donated` write is the final object mutation.
+      match lookupTcb st1 clientTid with
       | none => .error .objectNotFound
-      | some serverTcb =>
-        let serverTcb' := { serverTcb with
-          schedContextBinding := .donated clientScId clientTid }
-        match storeObject serverTid.toObjId (.tcb serverTcb') st1 with
+      | some clientTcb =>
+        let clientTcb' := { clientTcb with schedContextBinding := .unbound }
+        match storeObject clientTid.toObjId (.tcb clientTcb') st1 with
         | .error e => .error e
         | .ok ((), st2) =>
-          -- S-05/PERF-O1: Add server to per-SchedContext thread index
-          .ok { st2 with scThreadIndex :=
-            (scThreadIndexAdd st2.scThreadIndex clientScId serverTid) }
+          -- Step 4: Look up and update server TCB with donated binding
+          match lookupTcb st2 serverTid with
+          | none => .error .objectNotFound
+          | some serverTcb =>
+            let serverTcb' := { serverTcb with
+              schedContextBinding := .donated clientScId clientTid }
+            match storeObject serverTid.toObjId (.tcb serverTcb') st2 with
+            | .error e => .error e
+            | .ok ((), st3) =>
+              -- S-05/PERF-O1 + F-3: the SchedContext's referencing threads change
+              -- from {donor} to {server}: add the server and remove the now-`.unbound`
+              -- donor.  This keeps `scThreadIndexConsistent` (a thread is indexed under
+              -- `scId` iff its binding references `scId`) and `timeoutBlockedThreads`
+              -- accurate — only the server (which actually runs on the SchedContext) is
+              -- iterated on budget exhaustion, never the descheduled donor.
+              .ok { st3 with scThreadIndex :=
+                (scThreadIndexRemove
+                  (scThreadIndexAdd st3.scThreadIndex clientScId serverTid)
+                  clientScId clientTid) }
   | _ => .error .objectNotFound
 
 /-- Z7-C2: Return a donated SchedContext from a server back to the original
@@ -387,9 +441,14 @@ def returnDonatedSchedContext
             match storeObject serverTid.toObjId (.tcb serverTcb') st2 with
             | .error e => .error e
             | .ok ((), st3) =>
-              -- S-05/PERF-O1: Remove server from per-SchedContext thread index
+              -- S-05/PERF-O1 + F-3: the SchedContext's referencing threads change
+              -- from {server} back to {originalOwner}: remove the server and re-add the
+              -- now-`.bound` donor (the inverse of `donateSchedContext`'s index update),
+              -- keeping `scThreadIndexConsistent`.
               .ok { st3 with scThreadIndex :=
-                (scThreadIndexRemove st3.scThreadIndex scId serverTid) }
+                (scThreadIndexAdd
+                  (scThreadIndexRemove st3.scThreadIndex scId serverTid)
+                  scId originalOwner) }
   | _ => .error .objectNotFound
 
 /-- Z7-E: Clean up an active donation when a server with `.donated` binding

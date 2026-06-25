@@ -495,12 +495,13 @@ Returns `flowDenied` when `securityFlowsTo endpointLabel receiverLabel = false`.
 def endpointReceiveDualChecked
     (ctx : LabelingContext)
     (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) : Kernel SeLe4n.ThreadId :=
+    (receiver : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) : Kernel SeLe4n.ThreadId :=
   fun st =>
     let endpointLabel := ctx.endpointLabelOf endpointId
     let receiverLabel := ctx.threadLabelOf receiver
     if securityFlowsTo endpointLabel receiverLabel then
-      endpointReceiveDual endpointId receiver st
+      endpointReceiveDual endpointId receiver replyId st
     else
       .error .flowDenied
 
@@ -620,7 +621,8 @@ def endpointReplyRecvChecked
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
     (replyTarget : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
+    (msg : IpcMessage)
+    (replyId : Option SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
     let receiverLabel := ctx.threadLabelOf receiver
     let targetLabel := ctx.threadLabelOf replyTarget
@@ -629,7 +631,7 @@ def endpointReplyRecvChecked
     if securityFlowsTo receiverLabel targetLabel then
       -- Receive leg: endpoint → receiver
       if securityFlowsTo endpointLabel receiverLabel then
-        endpointReplyRecv endpointId receiver replyTarget msg st
+        endpointReplyRecv endpointId receiver replyTarget msg replyId st
       else
         .error .flowDenied
     else
