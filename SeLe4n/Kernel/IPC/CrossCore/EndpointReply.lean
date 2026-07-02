@@ -93,6 +93,12 @@ legitimate authority (seL4-MCS reply caps are delegatable).  It fails closed
 caller `.ready`).  The `replier` parameter is retained for caller documentation
 (the dispatch passes the cap holder) though the gate it fed has been removed.
 
+WS-SM SM6.D (PR #827 review #3 fold): a delivered reply now **consumes** the
+answered caller↔Reply link atomically (`consumeCallerReply`, keyed on the woken
+caller's own `replyObject`; no-op when unlinked) — the former separate
+dispatch-layer consume is folded in, so a direct below-API caller gets full
+single-use reply semantics.
+
 Returns the post-state paired with `Except KernelError (Option (CoreId ×
 SgiKind))`: an error on a failed step (pre-state returned, so a `withLockSet`
 bracket still releases cleanly), or `.ok sgi?` with the optional cross-core SGI
@@ -121,12 +127,26 @@ def endpointReplyOnCore (_replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
             -- delegated authority (seL4-MCS reply caps are delegatable), so this
             -- below-API primitive no longer gates on `replier == expected`.  The
             -- replay barrier remains: only a caller still in `.blockedOnReply` is
-            -- delivered (a consumed reply leaves the caller `.ready`), and the
-            -- single-use `reply.caller := none` consume is composed by the dispatch.
+            -- delivered (a consumed reply leaves the caller `.ready`).
             match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
             | .error e => (st, .error e)
-            | .ok st' => ((wakeThread st' target executingCore).1,
-                          .ok (wakeThread st' target executingCore).2)
+            | .ok st' =>
+                -- WS-SM SM6.D (PR #827 #3 fold): tear down the answered
+                -- caller↔Reply link atomically with the delivery (single-use,
+                -- seL4-MCS): clear `reply.caller` + the woken target's
+                -- `replyObject`, keyed on the caller's own forward link (no-op
+                -- when unlinked).  Formerly the separate dispatch-layer
+                -- `consumeCallerReply`; a direct below-API caller now gets full
+                -- reply semantics.  `consumeCallerReply` is total, so the error
+                -- surface and the surfaced wake SGI are unchanged.
+                match tcb.replyObject with
+                | none => ((wakeThread st' target executingCore).1,
+                           .ok (wakeThread st' target executingCore).2)
+                | some rid =>
+                    match SystemState.consumeCallerReply target rid
+                        (wakeThread st' target executingCore).1 with
+                    | .ok ((), st'') => (st'', .ok (wakeThread st' target executingCore).2)
+                    | .error e => (st, .error e)
       | _ => (st, .error .replyCapInvalid)
 
 /-- WS-SM SM6.C.5 (plan §3.1): endpoint receive across cores — the receive leg of
@@ -365,12 +385,15 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
 -- §3  Path reduction lemmas (full characterisation of each control path)
 -- ============================================================================
 
-/-- WS-SM SM6.C.1: full reduction of the **reply** (success) path — the caller
-`target` is in `blockedOnReply` state recording an authorised replier (`some
-expected`).  Authority flows from holding the reply cap (resolved by the dispatch),
-so the delivery is independent of `replier` (PR #822 review 6J-lYm).  The post-state
-delivers the reply message + `.ready` to the caller and wakes it cross-core; the
-surfaced SGI is exactly the caller wake's. -/
+/-- WS-SM SM6.C.1: full reduction of the **reply** (success) path for an
+**unlinked** caller (`tcb.replyObject = none` — the folded PR #827 #3 consume is
+a no-op) — the caller `target` is in `blockedOnReply` state recording an
+authorised replier (`some expected`).  Authority flows from holding the reply cap
+(resolved by the dispatch), so the delivery is independent of `replier` (PR #822
+review 6J-lYm).  The post-state delivers the reply message + `.ready` to the
+caller and wakes it cross-core; the surfaced SGI is exactly the caller wake's.
+For a caller carrying a forward reply link see the companion
+`endpointReplyOnCore_reply_eq_linked`. -/
 theorem endpointReplyOnCore_reply_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
@@ -378,13 +401,72 @@ theorem endpointReplyOnCore_reply_eq
     (hSz2 : ¬ msg.caps.size > maxExtraCaps)
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
-    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
+    (hRO : tcb.replyObject = none) :
     endpointReplyOnCore replier target msg executingCore st
       = ((wakeThread st' target executingCore).1, .ok (wakeThread st' target executingCore).2) := by
   unfold endpointReplyOnCore
   rw [if_neg hSz1, if_neg hSz2]
   simp only [hLk, hIpc]
   simp only [hStore]
+  simp only [hRO]
+
+/-- WS-SM SM6.D (PR #827 review #3 fold): full reduction of the **reply** (success)
+path for a **linked** caller (`tcb.replyObject = some rid`).  A delivered reply now
+consumes the answered caller↔Reply link **atomically** with the delivery
+(single-use, seL4-MCS): after the store + cross-core wake, the folded
+`consumeCallerReply target rid` clears `reply.caller` and the woken caller's
+`replyObject`.  The consume is total (`consumeCallerReply_isOk`), so the transition
+still succeeds and the surfaced SGI is exactly the caller wake's — the post-state
+is the consume's output on the wake state.  (Formerly the consume was a separate
+dispatch-layer step; folding it in gives a direct below-API caller full single-use
+reply semantics.) -/
+theorem endpointReplyOnCore_reply_eq_linked
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId)
+    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
+    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
+    (hLk : lookupTcb st target = some tcb)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
+    (hRO : tcb.replyObject = some rid) :
+    ∃ st'', SystemState.consumeCallerReply target rid
+        (wakeThread st' target executingCore).1 = .ok ((), st'')
+      ∧ endpointReplyOnCore replier target msg executingCore st
+          = (st'', .ok (wakeThread st' target executingCore).2) := by
+  obtain ⟨st'', hCons⟩ := SystemState.consumeCallerReply_isOk
+    (wakeThread st' target executingCore).1 target rid
+  refine ⟨st'', hCons, ?_⟩
+  unfold endpointReplyOnCore
+  rw [if_neg hSz1, if_neg hSz2]
+  simp only [hLk, hIpc]
+  simp only [hStore]
+  simp only [hRO, hCons]
+
+/-- WS-SM SM6.C.1 (branch-independent `.2` reduction): whatever the caller's
+forward reply link, a successful reply surfaces exactly the caller wake's SGI —
+the folded consume (PR #827 #3) is total and scheduler-invisible, so it cannot
+disturb the result component.  The uniform driver behind the §4 SGI-emission and
+§9 per-core-consistency conclusions. -/
+theorem endpointReplyOnCore_reply_snd_eq
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
+    (hSz1 : ¬ msg.registers.size > maxMessageRegisters)
+    (hSz2 : ¬ msg.caps.size > maxExtraCaps)
+    (hLk : lookupTcb st target = some tcb)
+    (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
+    (endpointReplyOnCore replier target msg executingCore st).2
+      = .ok (wakeThread st' target executingCore).2 := by
+  cases hRO : tcb.replyObject with
+  | none =>
+      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+            hSz1 hSz2 hLk hIpc hStore hRO]
+  | some rid =>
+      obtain ⟨st'', _, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
+        executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+      rw [hEq]
 
 /-- WS-SM SM6.C.7 (replay barrier): a reply to a caller **not** in `blockedOnReply`
 state fails closed with `.replyCapInvalid` — no state change, no wake.  Because a
@@ -419,11 +501,12 @@ theorem endpointReplyOnCore_delegated_replier_eq
     (hLk : lookupTcb st target = some tcb)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (_hDelegated : (replier == expected) = false)
-    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st') :
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
+    (hRO : tcb.replyObject = none) :
     endpointReplyOnCore replier target msg executingCore st
       = ((wakeThread st' target executingCore).1, .ok (wakeThread st' target executingCore).2) :=
   endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-    hSz1 hSz2 hLk hIpc hStore
+    hSz1 hSz2 hLk hIpc hStore hRO
 
 -- ============================================================================
 -- §4  SM6.C.2 — Cross-core caller wake: SGI emission (`endpointReply_remote_wake`)
@@ -450,10 +533,8 @@ theorem endpointReplyOnCore_remote_wake
     (hRemote : determineTargetCore st' target ≠ executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2
       = .ok (some (determineTargetCore st' target, SgiKind.reschedule)) := by
-  rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+  rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep expected
         hSz1 hSz2 hLk hIpc hStore]
-  show Except.ok (wakeThread st' target executingCore).2
-      = Except.ok (some (determineTargetCore st' target, SgiKind.reschedule))
   rw [wakeThread_emits_sgi_if_remote st' target executingCore targetTcb' hTcb' hRemote]
 
 /-- WS-SM SM6.C.2: dually, a cross-core reply whose caller is *local* (home core =
@@ -469,9 +550,8 @@ theorem endpointReplyOnCore_no_sgi_if_local
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hLocal : determineTargetCore st' target = executingCore) :
     (endpointReplyOnCore replier target msg executingCore st).2 = .ok none := by
-  rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+  rw [endpointReplyOnCore_reply_snd_eq replier target msg executingCore st st' tcb ep expected
         hSz1 hSz2 hLk hIpc hStore]
-  show Except.ok (wakeThread st' target executingCore).2 = Except.ok none
   rw [wakeThread_no_sgi_if_local st' target executingCore hLocal]
 
 /-- WS-SM SM6.C.2: a failed reply (wrong replier, no recorded target, caller not
@@ -587,7 +667,10 @@ After the cross-core reply the caller resolves to a TCB whose `ipcState` is
 caller-TCB write lock (`lockSet_endpointReply_target_tcb_write_mem`) covers this
 write, so under the 2PL bracket the payload cannot be mis-delivered to a
 concurrently-running thread on another core (the "reply payload delivered to wrong
-TCB" risk row, mitigated). -/
+TCB" risk row, mitigated).  On a linked caller the folded consume (PR #827 #3)
+additionally clears the caller's `replyObject`, but preserves its `ipcState` /
+`pendingMessage` (`consumeCallerReply_tcb_backward`), so the delivered payload
+survives the atomic link teardown. -/
 theorem endpointReplyOnCore_perCore_delivery
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st st' : SystemState) (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId)
@@ -605,13 +688,31 @@ theorem endpointReplyOnCore_perCore_delivery
     storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg) hObjInv hStore'
   have hSelf : st'.getTcb? target = some { tcb with ipcState := .ready, pendingMessage := some msg } :=
     storeTcbIpcStateAndMessage_fromTcb_self st st' target tcb .ready (some msg) hObjInv hStore
-  rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hStore]
-  refine ⟨{ tcb with ipcState := .ready, pendingMessage := some msg }, ?_, rfl, rfl⟩
-  show (wakeThread st' target executingCore).1.getTcb? target = some _
-  rw [wakeThread_getTcb?_eq_of_ready st' target executingCore
-        { tcb with ipcState := .ready, pendingMessage := some msg } hSelf rfl hInv' target]
-  exact hSelf
+  have hWake : (wakeThread st' target executingCore).1.getTcb? target
+      = some { tcb with ipcState := .ready, pendingMessage := some msg } := by
+    rw [wakeThread_getTcb?_eq_of_ready st' target executingCore
+          { tcb with ipcState := .ready, pendingMessage := some msg } hSelf rfl hInv' target]
+    exact hSelf
+  cases hRO : tcb.replyObject with
+  | none =>
+      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+            hSz1 hSz2 hLk hIpc hStore hRO]
+      exact ⟨{ tcb with ipcState := .ready, pendingMessage := some msg }, hWake, rfl, rfl⟩
+  | some rid =>
+      obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
+        executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+      rw [hEq]
+      have hInvW : (wakeThread st' target executingCore).1.objects.invExt :=
+        wakeThread_preserves_objects_invExt st' target executingCore hInv'
+      have hObjW : (wakeThread st' target executingCore).1.objects[target.toObjId]?
+          = some (.tcb { tcb with ipcState := .ready, pendingMessage := some msg }) :=
+        (SystemState.getTcb?_eq_some_iff _ target _).mp hWake
+      obtain ⟨tx, hTx, hIpcEq, hMsgEq, _⟩ :=
+        SystemState.consumeCallerReply_tcb_backward
+          (wakeThread st' target executingCore).1 st'' target rid hInvW hCons
+          target.toObjId { tcb with ipcState := .ready, pendingMessage := some msg } hObjW
+      exact ⟨tx, (SystemState.getTcb?_eq_some_iff st'' target tx).mpr hTx,
+        by rw [hIpcEq], by rw [hMsgEq]⟩
 
 -- ── SM6.C.6 — the caller-TCB write lock is in the footprint (the reply-state
 --    lifecycle write `blockedOnReply → .ready` lands on this lock) ──
@@ -877,9 +978,25 @@ theorem endpointReplyOnCore_perCore_consistent
     rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
   have hSched : st'.scheduler = st.scheduler :=
     storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready (some msg) hStore'
-  rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hStore]
   obtain ⟨hRQ, hCur⟩ := wakeThread_independent_of_other_core st' target executingCore c' hOther
-  exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
+  cases hRO : tcb.replyObject with
+  | none =>
+      rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+            hSz1 hSz2 hLk hIpc hStore hRO]
+      exact ⟨by rw [hRQ, hSched], by rw [hCur, hSched]⟩
+  | some rid =>
+      obtain ⟨st'', hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
+        executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+      -- The folded consume is scheduler-invisible (`consumeCallerReply_scheduler_eq`),
+      -- so the other-core frame transports across it unchanged.
+      have hSchedC : st''.scheduler = (wakeThread st' target executingCore).1.scheduler :=
+        SystemState.consumeCallerReply_scheduler_eq
+          (wakeThread st' target executingCore).1 st'' target rid hCons
+      rw [hEq]
+      constructor
+      · show st''.scheduler.runQueueOnCore c' = st.scheduler.runQueueOnCore c'
+        rw [hSchedC, hRQ, hSched]
+      · show st''.scheduler.currentOnCore c' = st.scheduler.currentOnCore c'
+        rw [hSchedC, hCur, hSched]
 
 end SeLe4n.Kernel

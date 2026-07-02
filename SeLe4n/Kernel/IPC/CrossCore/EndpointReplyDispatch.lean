@@ -137,17 +137,18 @@ reply-cap holder `replier` (a delegated cap holder is not the donee — PR #822
 review).  Surfaces the reply-leg caller-wake SGI; the chain-walk SGIs are
 re-derived from the committed diff.
 
-**Delivery-only — does NOT consume the first-class Reply linkage** (PR #822 Codex
-review): this helper takes raw `replier`/`target` threads and performs the wake +
-donation + PIP only.  The single-use Reply-object teardown (`consumeCallerReply` —
-clear `target.replyObject` *and* `reply.caller := none`) is **composed separately
-by the live `.reply` dispatch arm** (`API.dispatchWithCap{,Checked}`), which first
-resolves the reply *capability* to `(rid, reply.caller = target)` and, after this
-primitive delivers, calls `consumeCallerReply target rid`.  A direct caller of this
-below-API helper (e.g. the SM6.C cross-core suite, which anchors it as a
-building-block) **must not** treat it as full reply semantics — it must compose the
-consume itself, or the Reply object is left in-use (`reply.caller`/`replyObject`
-stale), so later lifecycle cleanup / reuse of that Reply is rejected. -/
+**Full reply semantics — the single-use Reply-object teardown is folded into the
+transition** (PR #827 review #3, superseding the PR #822 delivery-only split):
+`endpointReplyOnCore` itself consumes the answered caller↔Reply link atomically
+with the delivery (`consumeCallerReply` — clear `target.replyObject` *and*
+`reply.caller := none`, keyed on the woken caller's own `replyObject`).  This
+dispatch helper therefore adds only the SchedContext donation **return** and the
+PIP **reversion** on top; the live `.reply` dispatch arm
+(`API.dispatchWithCap{,Checked}`) resolves the reply *capability* to
+`(rid, reply.caller = target)` and routes here with **no** separate consume step.
+A direct below-API caller of `endpointReplyOnCore` now gets single-use reply
+semantics by construction — the Reply object is freed the moment the reply is
+delivered, so it can be re-linked or cleaned up immediately. -/
 def endpointReplyCrossCoreDispatch
     (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId) (msg : IpcMessage)
     (executingCore : CoreId) (st : SystemState) :

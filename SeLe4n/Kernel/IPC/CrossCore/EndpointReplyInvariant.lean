@@ -43,7 +43,8 @@ open SeLe4n.Kernel.Concurrency
 
 /-- WS-SM SM6.C: the post-state of a cross-core reply is **either** the pre-state
 (every error / non-`blockedOnReply` / wrong-replier path returns `st`) **or** the
-cross-core wake of the reply-store result (the single success path).  This is the
+cross-core wake of the reply-store result, followed — when the woken caller carried
+a linked Reply — by the folded single-use consume (PR #827 review #3).  This is the
 control-flow factoring the invariant proofs case on. -/
 theorem endpointReplyOnCore_state_eq
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
@@ -51,8 +52,13 @@ theorem endpointReplyOnCore_state_eq
     (endpointReplyOnCore replier target msg executingCore st).1 = st
     ∨ ∃ tcb st', lookupTcb st target = some tcb
         ∧ storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st'
-        ∧ (endpointReplyOnCore replier target msg executingCore st).1
-            = (wakeThread st' target executingCore).1 := by
+        ∧ ((tcb.replyObject = none ∧
+              (endpointReplyOnCore replier target msg executingCore st).1
+                = (wakeThread st' target executingCore).1)
+           ∨ ∃ rid, tcb.replyObject = some rid ∧
+              SystemState.consumeCallerReply target rid
+                  (wakeThread st' target executingCore).1
+                = .ok ((), (endpointReplyOnCore replier target msg executingCore st).1)) := by
   unfold endpointReplyOnCore
   split
   · exact Or.inl rfl
@@ -70,7 +76,16 @@ theorem endpointReplyOnCore_state_eq
         -- is the reply cap), so the `some expected` arm is directly the store match.
         split
         · exact Or.inl rfl
-        · next st' hStore => exact Or.inr ⟨tcb, st', hLk, hStore, rfl⟩
+        · next st' hStore =>
+          -- PR #827 #3 fold: case on the woken caller's reply link.
+          cases hRO : tcb.replyObject with
+          | none =>
+            exact Or.inr ⟨tcb, st', hLk, hStore, Or.inl ⟨hRO, rfl⟩⟩
+          | some rid =>
+            obtain ⟨stC, hCons⟩ := SystemState.consumeCallerReply_isOk
+              (wakeThread st' target executingCore).1 target rid
+            simp only [hCons]
+            exact Or.inr ⟨tcb, st', hLk, hStore, Or.inr ⟨rid, hRO, hCons⟩⟩
     · exact Or.inl rfl
 
 -- ============================================================================
@@ -84,13 +99,17 @@ theorem endpointReplyOnCore_preserves_objects_invExt
     (st : SystemState) (hObjInv : st.objects.invExt) :
     (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt := by
   rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
-    hEq | ⟨tcb, st', hLk, hStore, hEq⟩
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
   · rw [hEq]; exact hObjInv
-  · rw [hEq]
-    have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
-    exact wakeThread_preserves_objects_invExt st' target executingCore
-      (storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg) hObjInv hStore')
+    have hWake : (wakeThread st' target executingCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt st' target executingCore
+        (storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg) hObjInv hStore')
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact hWake
+    · -- PR #827 #3 fold: the consume is two object-store writes; invExt carries.
+      exact SystemState.consumeCallerReply_preserves_objects_invExt _ _ target rid hWake hCons
 
 -- ============================================================================
 -- §3  `ipcInvariant` (notification well-formedness) preservation
@@ -105,10 +124,9 @@ theorem endpointReplyOnCore_preserves_ipcInvariant
     (st : SystemState) (hInv : ipcInvariant st) (hObjInv : st.objects.invExt) :
     ipcInvariant (endpointReplyOnCore replier target msg executingCore st).1 := by
   rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
-    hEq | ⟨tcb, st', hLk, hStore, hEq⟩
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
   · rw [hEq]; exact hInv
-  · rw [hEq]
-    have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
       rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
     have hInv1 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st st' target .ready (some msg)
       hInv hObjInv hStore'
@@ -116,7 +134,14 @@ theorem endpointReplyOnCore_preserves_ipcInvariant
       hObjInv hStore'
     obtain ⟨tr, hGet, hReady⟩ :=
       storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
-    exact fun oid ntfn h => hInv1 oid ntfn
-      (by rwa [wakeThread_objects_getElem_eq_of_ready st' target executingCore tr hGet hReady hObjInv1 oid] at h)
+    have hWakeInv : ipcInvariant (wakeThread st' target executingCore).1 :=
+      fun oid ntfn h => hInv1 oid ntfn
+        (by rwa [wakeThread_objects_getElem_eq_of_ready st' target executingCore tr hGet hReady hObjInv1 oid] at h)
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact hWakeInv
+    · -- PR #827 #3 fold: the consume touches only a `.reply` and a `.tcb` slot.
+      have hWakeObjInv : (wakeThread st' target executingCore).1.objects.invExt :=
+        wakeThread_preserves_objects_invExt st' target executingCore hObjInv1
+      exact consumeCallerReply_preserves_ipcInvariant _ _ target rid hWakeObjInv hWakeInv hCons
 
 end SeLe4n.Kernel

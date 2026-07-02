@@ -478,17 +478,18 @@ def replyRecvReturnDonation (tid recordedServer : SeLe4n.ThreadId)
 body, shared by both dispatch arms (so the checked arm = a flow-gated wrapper over
 exactly this).  Steps reusing the verified cross-core transitions:
 1. **reply leg** — `endpointReplyOnCore` delivers to `prevCaller` (the recorded
-   caller).  **Deliver only**: the donated-SC return + PIP reversion are deferred
-   to step 5 — returning the server's SC and descheduling it *before* the receive
-   leg would leave a server that immediately rendezvouses with a queued `Call`
-   stuck `.ready` but absent from the run queues (PR #822 review, 6J90-w);
-2. **consume** — `consumeCallerReply` tears down the answered reply link
-   (single-use barrier), freeing the reply object;
-3. **receive + re-link leg** — `endpointReceiveDualOnCore … (some rid)` receives the
+   caller) and, **atomically with the delivery** (PR #827 review #3 fold), tears
+   down the answered reply link (`consumeCallerReply`, keyed on the caller's own
+   `replyObject` — the single-use barrier), freeing the reply object.  The
+   donated-SC return + PIP reversion are deferred to step 3 — returning the
+   server's SC and descheduling it *before* the receive leg would leave a server
+   that immediately rendezvouses with a queued `Call` stuck `.ready` but absent
+   from the run queues (PR #822 review, 6J90-w);
+2. **receive + re-link leg** — `endpointReceiveDualOnCore … (some rid)` receives the
    next message and, on a `Call` rendezvous, links the *same* freed reply object to
    the next caller atomically (#7.2 fold — faithful one-object reuse, formerly the
    separate `linkReceivedCaller` step);
-4. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
+3. **donation** — `replyRecvReturnDonation` returns the old client's SC and, when a
    new `Call` rendezvoused, donates the new client's SC so the passive server keeps
    running on the new request's budget (seL4-MCS SC-follows-message). -/
 def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -504,17 +505,14 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
     match endpointReplyOnCore tid prevCaller msg executingCore st with
     | (_, .error e) => .error e
     | (st1, .ok _replySgi) =>
-        match SystemState.consumeCallerReply prevCaller rid st1 with
-        | .error e => .error e
-        | .ok ((), st2) =>
-            -- WS-SM SM6.D (#7.2 fold): the receive leg links the *same* reply object
-            -- `rid` (freed by the `consumeCallerReply` above) to the next `Call`
-            -- caller atomically — faithful one-object reuse, formerly the separate
-            -- `linkReceivedCaller nextThread (some rid)` dispatch step.
-            match endpointReceiveDualOnCore epId tid (some rid) executingCore st2 with
-            | (_, .error e) => .error e
-            | (st3, .ok (nextThread, _)) =>
-                replyRecvReturnDonation tid recordedServer nextThread serverCore st3
+        -- WS-SM SM6.D (#7.2 fold): the receive leg links the *same* reply object
+        -- `rid` (freed by the reply leg's folded consume — PR #827 review #3) to
+        -- the next `Call` caller atomically — faithful one-object reuse, formerly
+        -- the separate `linkReceivedCaller nextThread (some rid)` dispatch step.
+        match endpointReceiveDualOnCore epId tid (some rid) executingCore st1 with
+        | (_, .error e) => .error e
+        | (st2, .ok (nextThread, _)) =>
+            replyRecvReturnDonation tid recordedServer nextThread serverCore st2
 
 -- ============================================================================
 -- Syscall soundness theorems
@@ -1226,9 +1224,12 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         -- to its recorded caller (`reply.caller`), reply to that caller through
         -- the cross-core dispatch (the `blockedOnReply` caller woken on its
         -- *home* core via `wakeThread`, donated SchedContext returned, PIP
-        -- reverted cross-core; replier descheduled on `executingCore`), then
-        -- **consume** the single-use linkage (`reply.caller := none`).  Fails
-        -- closed (`.replyCapInvalid`) on a dangling reply or an unlinked caller.
+        -- reverted cross-core; replier descheduled on `executingCore`).  The
+        -- single-use linkage consume (`reply.caller := none` +
+        -- `caller.replyObject := none`) is **folded into `endpointReplyOnCore`**
+        -- (PR #827 review #3) — atomic with the delivery, no separate dispatch
+        -- step.  Fails closed (`.replyCapInvalid`) on a dangling reply or an
+        -- unlinked caller.
         match st.getReply? rid with
         | none => .error .replyCapInvalid
         | some reply =>
@@ -1238,10 +1239,7 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
             let executingCore := determineExecutingCore st tid
             match endpointReplyCrossCoreDispatch tid callerTid
                 { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) =>
-              match SystemState.consumeCallerReply callerTid rid st' with
-              | .ok ((), st'') => .ok ((), st'')
-              | .error e => .error e
+            | (st', .ok _) => .ok ((), st')
             | (_, .error e) => .error e
     | _ => fun _ => .error .invalidCapability
   -- WS-K-C: CSpace operations — cap targets a CNode, message registers
@@ -1394,8 +1392,11 @@ gated by `securityFlowsTo` before execution via enforcement wrappers.
 U5-B/U-M01: `.call` now routes through `endpointCallChecked` wrapper instead
 of an inline `securityFlowsTo` guard, ensuring consistent enforcement layer.
 
-U5-C/U-M04: `.reply` now routes through `endpointReplyChecked` wrapper for
-defense-in-depth, even though reply caps are single-use authority.
+U5-C/U-M04 (updated WS-SM SM6.C/D): `.reply` routes through the
+info-flow-checked **cross-core** dispatch `endpointReplyCrossCoreDispatchChecked`
+(the SM-IF flow gate that superseded the single-core `endpointReplyChecked`
+wrapper) for defense-in-depth, even though reply caps are single-use authority;
+the single-use consume is folded into `endpointReplyOnCore` (PR #827 review #3).
 
 **Design**: Operations that don't cross domain boundaries (CSpace delete,
 lifecycle retype, VSpace map/unmap, service revoke/query) are left unchecked
@@ -1514,9 +1515,11 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         -- `ReplyId` to its recorded caller (`reply.caller`), then route through
         -- the info-flow-checked cross-core dispatch (same SM-IF flow guard
         -- `securityFlowsTo replierLabel callerLabel`, caller woken on its *home*
-        -- core, donated-SC return, cross-core PIP reversion), then **consume**
-        -- the single-use linkage.  Fails closed (`.replyCapInvalid`) on a
-        -- dangling reply or an unlinked caller.
+        -- core, donated-SC return, cross-core PIP reversion).  The single-use
+        -- linkage consume is **folded into `endpointReplyOnCore`** (PR #827
+        -- review #3) — atomic with the delivery, no separate dispatch step.
+        -- Fails closed (`.replyCapInvalid`) on a dangling reply or an unlinked
+        -- caller.
         match st.getReply? rid with
         | none => .error .replyCapInvalid
         | some reply =>
@@ -1535,10 +1538,7 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
               let executingCore := determineExecutingCore st tid
               match endpointReplyCrossCoreDispatchChecked ctx tid callerTid
                   { registers := body, caps := #[], badge := cap.badge } executingCore st with
-              | (st', .ok _) =>
-                match SystemState.consumeCallerReply callerTid rid st' with
-                | .ok ((), st'') => .ok ((), st'')
-                | .error e => .error e
+              | (st', .ok _) => .ok ((), st')
               | (_, .error e) => .error e
             else .error .replyCapInvalid
     | _ => fun _ => .error .invalidCapability
@@ -1926,11 +1926,11 @@ This is a conditional equivalence: unlike the capability-only arms which are
 structurally identical (unconditional), `.reply` requires the flow hypothesis.
 
 WS-SM SM6.D: the reply cap names a `ReplyId`; both arms perform the identical
-`getReply? rid → reply.caller` resolution and the identical post-dispatch
-`consumeCallerReply` consume, differing only in the checked-vs-unchecked
-cross-core dispatch.  The equivalence therefore holds, at a state where the
-resolution yields `callerTid`, exactly when the flow to that resolved caller is
-allowed. -/
+`getReply? rid → reply.caller` resolution, differing only in the
+checked-vs-unchecked cross-core dispatch (the single-use consume is folded into
+`endpointReplyOnCore` — PR #827 review #3 — so it is identical by construction).
+The equivalence therefore holds, at a state where the resolution yields
+`callerTid`, exactly when the flow to that resolved caller is allowed. -/
 theorem checkedDispatch_reply_eq_unchecked_when_allowed
     (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (gate : SyscallGate) (cap : Capability)
@@ -1945,8 +1945,9 @@ theorem checkedDispatch_reply_eq_unchecked_when_allowed
     : dispatchWithCapChecked ctx decoded tid gate cap st =
     dispatchWithCap decoded tid gate cap st := by
   -- Unfold both dispatch to the `.reply` arm; resolve the reply linkage with the
-  -- resolution hypotheses so both arms reduce to the same consume-wrapped
-  -- cross-core dispatch, then collapse checked → unchecked under the flow guard.
+  -- resolution hypotheses so both arms reduce to the same cross-core dispatch
+  -- (which folds the consume), then collapse checked → unchecked under the flow
+  -- guard.
   simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly,
     hSyscall, hCap, hReply, hCaller, hFlow, if_true]
   rw [endpointReplyCrossCoreDispatchChecked_flow_allowed ctx tid callerTid _ _ st hFlow]
@@ -2450,12 +2451,13 @@ theorem dispatchWithCap_call_uses_crossCoreDispatch
 
 /-- WS-K-E / WS-SM SM6.D: When reply dispatch is invoked, the IPC message body is
 populated from decoded message registers via `extractMessageRegisters`; the reply
-cap's `ReplyId` is resolved to its recorded caller (`reply.caller`), the reply is
+cap's `ReplyId` is resolved to its recorded caller (`reply.caller`) and the reply is
 routed through the **cross-core** dispatch (`endpointReplyCrossCoreDispatch` — the
 caller woken on its home core, the donated SchedContext returned, and
 priority-inheritance reverted cross-core, at `determineExecutingCore st tid` —
-the replier's own core), and the single-use linkage is **consumed**
-(`consumeCallerReply`).  Fails closed on a dangling reply or an unlinked caller. -/
+the replier's own core).  The single-use linkage consume is folded into
+`endpointReplyOnCore` (PR #827 review #3) — atomic with the delivery.  Fails
+closed on a dangling reply or an unlinked caller. -/
 theorem dispatchWithCap_reply_populates_msg
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (rid : SeLe4n.ReplyId)
@@ -2473,10 +2475,7 @@ theorem dispatchWithCap_reply_populates_msg
             let executingCore := determineExecutingCore st tid
             match endpointReplyCrossCoreDispatch tid callerTid
                 { registers := body, caps := #[], badge := cap.badge } executingCore st with
-            | (st', .ok _) =>
-              match SystemState.consumeCallerReply callerTid rid st' with
-              | .ok ((), st'') => .ok ((), st'')
-              | .error e => .error e
+            | (st', .ok _) => .ok ((), st')
             | (_, .error e) => .error e := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 

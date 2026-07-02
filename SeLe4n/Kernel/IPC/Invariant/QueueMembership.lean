@@ -575,6 +575,65 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
                     (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
                     (fun epId => by intro h; cases h) hIpc
 
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves
+`ipcStateQueueMembershipConsistent` — `ipcState`/`queueNext` are preserved TCB
+fields and endpoints are untouched, so both the head and the queue-predecessor
+membership witnesses transport. -/
+theorem consumeCallerReply_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcStateQueueMembershipConsistent st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  have hBwd := consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hStObj
+  rw [hIS]
+  cases hq : ty.ipcState with
+  | ready => exact True.intro
+  | blockedOnNotification _ => exact True.intro
+  | blockedOnReply _ _ => exact True.intro
+  | blockedOnSend epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEpSt, hcond⟩ := hbase
+      refine ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+      cases hcond with
+      | inl h => exact Or.inl h
+      | inr h =>
+          obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
+          obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
+          exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+  | blockedOnReceive epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEpSt, hcond⟩ := hbase
+      refine ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+      cases hcond with
+      | inl h => exact Or.inl h
+      | inr h =>
+          obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
+          obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
+          exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+  | blockedOnCall epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEpSt, hcond⟩ := hbase
+      refine ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+      cases hcond with
+      | inl h => exact Or.inl h
+      | inr h =>
+          obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
+          obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
+          exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+
+
 /-- endpointReply preserves ipcStateQueueMembershipConsistent. -/
 theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
     (st st' : SystemState) (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
@@ -600,16 +659,31 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
           | some expected =>
             simp only at hStep
             split at hStep
-            · generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
-              cases rMsg with
-              | error e => simp at hStep
+            · cases hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+              | error e => simp [hMsg] at hStep
               | ok st1 =>
-                simp at hStep; obtain ⟨_, rfl⟩ := hStep
-                exact ensureRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
-                  storeTcbIpcStateAndMessage_fromTcb_preserves_ipcStateQueueMembershipConsistent
-                    st st1 target tcb .ready (some msg) hInv hObjInv hLookup
-                    (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
-                    (fun epId => by intro h; cases h) hMsg
+                simp only [hMsg] at hStep
+                have hMid : ipcStateQueueMembershipConsistent (ensureRunnable st1 target) :=
+                  ensureRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
+                    storeTcbIpcStateAndMessage_fromTcb_preserves_ipcStateQueueMembershipConsistent
+                      st st1 target tcb .ready (some msg) hInv hObjInv hLookup
+                      (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
+                      (fun epId => by intro h; cases h) hMsg
+                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                  rw [ensureRunnable_preserves_objects]
+                  have hMsg' := hMsg
+                  rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                    st st1 target .ready (some msg) hObjInv hMsg'
+                cases hRO : tcb.replyObject with
+                | none =>
+                  simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                  rw [← hStep]; exact hMid
+                | some rid =>
+                  simp only [hRO] at hStep
+                  exact consumeCallerReply_preserves_ipcStateQueueMembershipConsistent _ _ target rid
+                    hObjInvMid hMid hStep
             · simp at hStep
         | _ => simp [hIpc] at hStep
 

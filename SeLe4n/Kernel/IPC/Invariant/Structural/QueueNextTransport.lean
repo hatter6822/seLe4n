@@ -852,6 +852,44 @@ theorem storeTcbPendingMessage_preserves_dualQueueSystemInvariant
 -- endpointQueueEnqueue/PopHead with state transition frame lemmas.
 -- ============================================================================
 
+open SeLe4n.Model.SystemState in
+/-- `consumeCallerReply` preserves `dualQueueSystemInvariant`.  The reply write frames
+the endpoint/TCB-queue structure (`storeObject_reply_preserves_…`; a no-op when the
+reply is already absent); the `replyObject := none` TCB write preserves the queue links
+(`…_of_queueAgree`). -/
+theorem consumeCallerReply_preserves_dualQueueSystemInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : dualQueueSystemInvariant st)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    dualQueueSystemInvariant st' := by
+  unfold SystemState.consumeCallerReply at hStep
+  cases hConsume : SystemState.consumeReply rid st with
+  | error e => simp [hConsume] at hStep
+  | ok p =>
+    obtain ⟨⟨⟩, st1⟩ := p
+    have hObjInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hConsume
+    have hInv1 : dualQueueSystemInvariant st1 := by
+      unfold SystemState.consumeReply at hConsume
+      cases hGetR : st.getReply? rid with
+      | none =>
+        simp only [hGetR, Except.ok.injEq, Prod.mk.injEq, true_and] at hConsume
+        rw [← hConsume]; exact hInv
+      | some r =>
+        simp only [hGetR] at hConsume
+        exact storeObject_reply_preserves_dualQueueSystemInvariant st st1 rid.toObjId
+          { r with caller := none } hObjInv hConsume
+          (Or.inl ⟨r, (getReply?_eq_some_iff st rid r).mp hGetR⟩) hInv
+    simp only [hConsume] at hStep
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hInv1
+    | some tcb =>
+      simp only [hT] at hStep
+      exact storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree st1 st'
+        caller.toObjId tcb { tcb with replyObject := none } rfl rfl
+        ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hObjInv1 hStep hInv1
+
 /-- WS-H5: endpointReply preserves dualQueueSystemInvariant.
 endpointReply performs storeTcbIpcStateAndMessage + ensureRunnable —
 neither touches queue links or endpoint queue boundaries. -/
@@ -892,7 +930,19 @@ theorem endpointReply_preserves_dualQueueSystemInvariant
                 have hInv1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                   st st1 target .ready (some msg) hObjInv hStore hInv
                 have hInvER := ensureRunnable_preserves_dualQueueSystemInvariant st1 target hInv1
-                simp at hStep; subst hStep; exact hInvER
+                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                  rw [ensureRunnable_preserves_objects]
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                    st st1 target .ready (some msg) hObjInv hStore
+                cases hRO : tcb.replyObject with
+                | none =>
+                  simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                  rw [← hStep]; exact hInvER
+                | some rid =>
+                  simp only [hRO] at hStep
+                  exact consumeCallerReply_preserves_dualQueueSystemInvariant _ _ target rid
+                    hObjInvMid hInvER hStep
             · simp at hStep
 
 -- ---- WS-H5: storeTcbQueueLinks helper lemmas for queue invariant proofs ----

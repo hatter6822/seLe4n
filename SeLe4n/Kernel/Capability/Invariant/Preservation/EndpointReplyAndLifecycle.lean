@@ -196,13 +196,20 @@ theorem endpointReply_preserves_capabilityInvariantBundle
               simp only at hStep
               split at hStep
               · -- authorized = true
-                revert hStep
                 cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
-                | error e => simp
+                | error e => simp [hTcb] at hStep
                 | ok st1 =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hStEq⟩; subst hStEq
-                    exact this st1 hTcb
+                    simp only [hTcb] at hStep
+                    have hMid := this st1 hTcb
+                    -- PR #827 #3 fold: peel the atomic caller↔Reply consume.
+                    cases hRO : tcb.replyObject with
+                    | none =>
+                      simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      rw [← hStep]; exact hMid
+                    | some rid =>
+                      simp only [hRO] at hStep
+                      exact consumeCallerReply_preserves_capabilityInvariantBundle
+                        _ _ target rid hMid hStep
               · -- authorized = false
                 simp_all
           -- Dispatch to extracted lemma

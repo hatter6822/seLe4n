@@ -495,6 +495,29 @@ theorem linkServerStashedReply_preserves_projectionOnCore (ctx : LabelingContext
       hCallerObjHigh hServerObjHigh hIdxComplete hObjInv hStep)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
+/-- WS-SM SM6.D (PR #827 review #3 fold): the per-core form of
+`consumeCallerReply_preserves_projection`.  The reply primitives' folded
+single-use link teardown preserves every core's per-core observer projection when
+the answered caller is high: the whole-state projection is preserved (the
+`.reply` `caller := none` write is projection-stripped, the caller-TCB
+`replyObject := none` write is high), and the scheduler / machine registers are
+untouched (`consumeCallerReply_{scheduler,machine}_eq`), so the per-core
+congruence applies on every core. -/
+theorem consumeCallerReply_preserves_projectionOnCore (ctx : LabelingContext)
+    (observer : IfObserver) (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (c : CoreId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    projectStateOnCore ctx observer st' c = projectStateOnCore ctx observer st c := by
+  have hSched := SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep
+  have hMach := SystemState.consumeCallerReply_machine_eq st st' caller rid hStep
+  exact projectStateOnCore_congr ctx observer
+    (consumeCallerReply_preserves_projection ctx observer st st' caller rid
+      hCallerObjHigh hIdxComplete hObjInv hStep)
+    (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
+
 /-- WS-SM SM6.A.7 (per-core / ∀-core non-interference): a cross-core endpoint
 call at a **non-observable** endpoint, between a non-observable caller and a
 non-observable receiver, is invisible to a low observer on *every* core — the

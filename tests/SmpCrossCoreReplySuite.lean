@@ -114,10 +114,10 @@ open SeLe4n.Testing
 -- on receive / a server-first Call links a Reply object under the reply write lock).
 #check @lockSet_endpointReceive_reply_write_mem
 #check @lockSet_endpointCall_reply_write_mem
--- PR #822 Codex review: a below-API delivery+donation+PIP primitive — it does NOT
--- consume the Reply linkage; the single-use `consumeCallerReply` teardown is
--- composed by the live `.reply` API arm.  Anchored here as a building block, not as
--- full reply semantics.
+-- PR #827 review #3 (reply-fold): the single-use `consumeCallerReply` teardown is
+-- folded into `endpointReplyOnCore` itself — atomic with the delivery — so this
+-- below-API dispatch (delivery + donation return + PIP reversion) and every direct
+-- caller of the primitive get full single-use reply semantics by construction.
 #check @endpointReplyCrossCoreDispatch
 #check @endpointReplyCrossCoreDispatchChecked
 #check @endpointReplyCrossCoreDispatchChecked_flow_denied
@@ -171,11 +171,13 @@ example (ctx : LabelingContext) (observer : IfObserver)
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : objectIndexSetComplete st)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false) :
     lowEquivalent_smp ctx observer (endpointReplyOnCore replier target msg executingCore st).1 st :=
   endpointReplyOnCore_reply_path_NI_smp ctx observer replier target msg executingCore st st' tcb ep
-    expected hSz1 hSz2 hLk hIpc hStore hObjInv hTargetHigh hTargetObjHigh
+    expected hSz1 hSz2 hLk hIpc hStore hObjInv hObjSetInv hIdxComplete hTargetHigh hTargetObjHigh
 
 -- ============================================================================
 -- §3  Runtime assertions (Tier-2): the SM6.C cross-core reply scenarios
@@ -330,6 +332,55 @@ private def runReplayChecks : IO Unit := do
     (match (endpointReplyOnCore serverTid ⟨9999⟩ replyMsg bootCoreId stBase).2 with
      | .error .objectNotFound => true | _ => false)
 
+private def replyId707 : SeLe4n.ReplyId := ⟨707⟩
+
+/-- `stBase` with a first-class Reply object **mutually linked** to the local
+client (the seL4-MCS Call-time linkage: `reply.caller = clientLocal` and
+`clientLocal.replyObject = reply`) — the pair the PR #827 #3 fold consumes. -/
+private def stLinked : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject epId (.endpoint {})
+    |>.withObject serverTid.toObjId (.tcb (mkTcb 601 50 none .ready))
+    |>.withObject clientLocalTid.toObjId
+        (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                  replyObject := some replyId707 })
+    |>.withObject clientRemoteTid.toObjId
+        (.tcb (mkTcb 603 30 (some core1) (.blockedOnReply epId (some serverTid))))
+    |>.withObject replyId707.toObjId
+        (.reply { replyId := replyId707, caller := some clientLocalTid })
+    |>.withRunnable [serverTid]
+    |>.build)
+
+private def runConsumeChecks : IO Unit := do
+  IO.println "--- §3.8 PR #827 #3 reply-fold: the in-transition single-use consume ---"
+  -- A reply to a LINKED caller tears down both halves of the caller↔Reply link
+  -- atomically with the delivery (formerly the separate dispatch-step consume).
+  let (post, res) := endpointReplyOnCore serverTid clientLocalTid replyMsg bootCoreId stLinked
+  assertBool "linked reply delivers (payload + .ready)"
+    (match res, post.getTcb? clientLocalTid with
+     | .ok _, some t => decide (t.ipcState = .ready ∧ t.pendingMessage = some replyMsg)
+     | _, _ => false)
+  assertBool "folded consume clears the Reply's caller (single-use barrier)"
+    (match post.getReply? replyId707 with
+     | some r => decide (r.caller = none)
+     | none => false)
+  assertBool "folded consume clears the woken caller's replyObject"
+    (match post.getTcb? clientLocalTid with
+     | some t => decide (t.replyObject = none)
+     | none => false)
+  -- Replay on the consumed reply: the caller is `.ready`, so a second reply
+  -- fails closed — the freed Reply is available for re-linking (one-object reuse).
+  assertBool "replay after the folded consume fails closed"
+    (match (endpointReplyOnCore serverTid clientLocalTid replyMsg2 bootCoreId post).2 with
+     | .error .replyCapInvalid => true | _ => false)
+  -- An UNLINKED caller (no replyObject) is delivered with a no-op consume — the
+  -- below-API direct-reply behaviour is unchanged.
+  let (post2, res2) := endpointReplyOnCore serverTid clientRemoteTid replyMsg bootCoreId stLinked
+  assertBool "unlinked reply still delivers unchanged (no-op consume)"
+    (match res2, post2.getTcb? clientRemoteTid with
+     | .ok _, some t => decide (t.ipcState = .ready ∧ t.replyObject = none)
+     | _, _ => false)
+
 private def runReplyRecvChecks : IO Unit := do
   IO.println "--- §3.5 SM6.C.5 replyRecv combined op (reply leg wakes caller) ---"
   -- The reply leg of replyRecv wakes the recorded caller; the receive leg then
@@ -421,6 +472,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runDeliveryChecks
   runWakeChecks
   runReplayChecks
+  runConsumeChecks
   runReplyRecvChecks
   runDonationChecks
   runDispatchChecks

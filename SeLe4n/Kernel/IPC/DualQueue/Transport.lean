@@ -2116,7 +2116,17 @@ Fails if the target is not in blockedOnReply state.
 WS-H1/M-02: Validates the `replier` matches the `replyTarget` recorded in the
 target's `blockedOnReply` state. If `replyTarget` is `some serverId` and
 `replier ≠ serverId`, the operation fails with `replyCapInvalid`, preventing
-confused-deputy attacks where unauthorized threads reply to blocked callers. -/
+confused-deputy attacks where unauthorized threads reply to blocked callers.
+
+WS-SM SM6.D (PR #827 review #3 fold): a delivered reply now **consumes** the
+answered caller↔Reply link atomically — after the `.ready` store the transition
+clears `reply.caller` and the target's `replyObject` (`consumeCallerReply`),
+keyed on the caller's own forward link (`tcb.replyObject`; a no-op when
+unlinked).  A *direct* below-API reply therefore establishes
+`replyCallerLinkageReciprocal` internally and the Reply object is single-use
+end-to-end; the former separate dispatch-layer consume is gone.
+`consumeCallerReply` is total (`consumeCallerReply_isOk`), so the folded
+transition's error surface is exactly the delivery leg's. -/
 def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
@@ -2146,14 +2156,28 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
                 -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
                 match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
                 | .error e => .error e
-                | .ok st' => .ok ((), ensureRunnable st' target)
+                | .ok st' =>
+                    -- WS-SM SM6.D (PR #827 #3 fold): tear down the answered
+                    -- caller↔Reply link atomically with the delivery
+                    -- (single-use, seL4-MCS).  The caller was woken `.ready`
+                    -- above, so clearing its `replyObject` preserves the
+                    -- `blockedOnReply ⇒ replyObject` clause.
+                    match tcb.replyObject with
+                    | some rid =>
+                        SystemState.consumeCallerReply target rid (ensureRunnable st' target)
+                    | none => .ok ((), ensureRunnable st' target)
               else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
 /-- WS-H12a: endpointReplyRecv now uses endpointReceiveDual instead of legacy
 endpointAwaitReceive. After completing the reply, the receiver enters the
 dual-queue receive path: if a sender is already waiting, an immediate
-rendezvous occurs; otherwise the receiver enqueues on receiveQ. -/
+rendezvous occurs; otherwise the receiver enqueues on receiveQ.
+
+WS-SM SM6.D (PR #827 review #3 fold): the reply leg consumes the answered
+caller↔Reply link atomically (see `endpointReply`), so the prior Reply object is
+freed *before* the receive leg runs — a server-supplied `replyId` naming the
+same object re-links it to the next caller (one-object reuse). -/
 def endpointReplyRecv
     (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId)
@@ -2188,12 +2212,23 @@ def endpointReplyRecv
                 | .error e => .error e
                 | .ok st' =>
                     let st'' := ensureRunnable st' replyTarget
-                    -- WS-H12a: Full dual-queue receive path after reply
-                    -- WS-SM SM6.D (#7.1 fold): the receive leg threads the
-                    -- server-supplied reply object for the next caller.
-                    match endpointReceiveDual endpointId receiver replyId st'' with
+                    -- WS-SM SM6.D (PR #827 #3 fold): the reply leg tears down the
+                    -- answered caller↔Reply link atomically (single-use), keyed on
+                    -- the caller's own `replyObject` (no-op when unlinked) —
+                    -- freeing the prior Reply *before* the receive leg so a
+                    -- server-supplied `replyId` naming the same object passes the
+                    -- stash/link admission (faithful seL4-MCS one-object reuse).
+                    match (match tcb.replyObject with
+                        | some rid => SystemState.consumeCallerReply replyTarget rid st''
+                        | none => .ok ((), st'')) with
                     | .error e => .error e
-                    | .ok (_, st''') => .ok ((), st''')
+                    | .ok ((), st3) =>
+                        -- WS-H12a: Full dual-queue receive path after reply
+                        -- WS-SM SM6.D (#7.1 fold): the receive leg threads the
+                        -- server-supplied reply object for the next caller.
+                        match endpointReceiveDual endpointId receiver replyId st3 with
+                        | .error e => .error e
+                        | .ok (_, st4) => .ok ((), st4)
               else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 

@@ -8,6 +8,9 @@
 > Item #7 (the D6 transition fold) closed across v0.31.152–154 (#7.0–#7.5); the
 > rights-less reply-cap residual closed at v0.31.155. The sections below are retained
 > as completion records (with cites and per-slice landing notes).
+> **Post-completion review pass:** the Codex review of the landing PR (#827)
+> surfaced numbered findings against the landed surface; **all closed by
+> v0.32.57** — see the "PR #827 review pass" section at the end of this document.
 
 ## Context & status
 
@@ -474,3 +477,43 @@ in `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`.
 
 Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md (SM6.C/SM6.D Reply objects)
 Refs: CHANGELOG.md v0.31.140–v0.31.149 (#2/#1 landing record; #7 design validation)
+
+---
+
+## PR #827 review pass — in-transition single-use consume (✅ v0.32.51–57)
+
+The Codex review of PR #827 (the plan's landing PR) surfaced numbered findings
+against the landed surface: #4 (usable `.write` mint rights) closed at v0.32.52,
+#1/#2 (lock-set reply threading — 2PL coverage of the folded reply-object writes)
+at v0.32.53, #6/#7 (receive-stash admission hardening) at v0.32.54–55.
+**#3 (P2) — the deepest — closed across v0.32.56–57**: the direct `endpointReply` /
+`endpointReplyRecv` primitives delivered but never consumed the answered
+caller↔Reply link, so a below-API operation chain using them directly left the
+Reply in-use forever (`reply.caller` set, the `.ready` caller's `replyObject`
+stale) — single-use held only at the *dispatch* boundary, mirroring exactly the
+#7 D6 gap on the link side.
+
+**The fold (v0.32.57, same shape as #7.1–#7.3b).**  `consumeCallerReply` is folded
+into the reply primitives — `endpointReply`, `endpointReplyRecv` (reply leg, ahead
+of the receive leg so one-object reuse admits the same `rid`), and
+`endpointReplyOnCore` (hence `endpointReplyRecvOnCore` + both cross-core dispatch
+wrappers) — keyed on the woken caller's own `tcb.replyObject` (no-op when
+unlinked).  The three separate dispatch-layer consume steps in `API.lean` are
+deleted (`replyRecvBody` + both `.reply` arms).  `consumeCallerReply` is total
+(`consumeCallerReply_isOk`), so no new failure mode.  Foundation slice (v0.32.56)
++ completion slice (v0.32.57): the per-conjunct `consumeCallerReply_preserves_*`
+frame family over new `Model/State.lean` transport drivers; ~60
+preservation-theorem re-bases (single-core + cross-core + staged NI);
+`endpointReply_preserves_ipcInvariantFull` **de-threads `hRCLRecip'`** via the new
+`endpointReply_preserves_replyCallerLinkageReciprocal` (a direct reply now
+establishes reciprocity internally — the transition-boundary dual of #7.4's
+link-side clause).  Boundary tests:
+`ModelIntegritySuite` `direct_reply_consumes_caller_link_single_use`,
+`SmpCrossCoreReplySuite` §3.8.  Trace byte-identical.
+
+With this fold the Reply object is **single-use end-to-end at every layer**:
+linked atomically at `Call`/receive rendezvous (#7.1–#7.3b), answerable always
+(#7.4), and consumed atomically at delivery (PR #827 #3) — no layer can observe
+or construct a delivered-but-unconsumed Reply.
+
+Refs: CHANGELOG.md v0.32.51–v0.32.57 (per-finding landing record)
