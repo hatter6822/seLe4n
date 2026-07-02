@@ -13444,6 +13444,351 @@ theorem consumeCallerReply_preserves_ipcInvariantCore
         caller.toObjId tcb none hCore1 hObjInv1
         ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
 
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `ipcInvariant` — it reads
+`.notification` objects only, which the consume's two writes (a `.reply` slot and
+a `.tcb` slot) never touch. -/
+theorem consumeCallerReply_preserves_ipcInvariant
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariant st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcInvariant st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  intro oid ntfn hObj
+  exact hInv oid ntfn ((hNT oid (.notification ntfn)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj)
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `allPendingMessagesBounded` —
+`pendingMessage` is among the TCB fields the consume's `replyObject := none`
+write leaves unchanged. -/
+theorem consumeCallerReply_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    allPendingMessagesBounded st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb msg hObj hMsg
+  obtain ⟨ty, hSt, _, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  exact hInv tid ty msg hSt (hPM ▸ hMsg)
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `badgeWellFormed` — both
+clauses read `.notification` / `.cnode` objects only. -/
+theorem consumeCallerReply_preserves_badgeWellFormed
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : badgeWellFormed st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    badgeWellFormed st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  obtain ⟨hNB, hCB⟩ := hInv
+  refine ⟨?_, ?_⟩
+  · intro oid ntfn badge hObj hBadge
+    exact hNB oid ntfn badge ((hNT oid (.notification ntfn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
+  · intro oid cn slot cap badge hObj hLook hBadge
+    exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves
+`waitingThreadsPendingMessageNone` — `ipcState` and `pendingMessage` are both
+preserved TCB fields. -/
+theorem consumeCallerReply_preserves_waitingThreadsPendingMessageNone
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : waitingThreadsPendingMessageNone st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    waitingThreadsPendingMessageNone st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hSt, hIS, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hSt
+  rw [hIS, hPM]
+  exact hbase
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `endpointQueueNoDup` —
+endpoints are untouched and every TCB's `queueNext` is a preserved field. -/
+theorem consumeCallerReply_preserves_endpointQueueNoDup
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    endpointQueueNoDup st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro oid ep hObj
+  have hEp := (hNT oid (.endpoint ep)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj
+  obtain ⟨hSelf, hDisj⟩ := hInv oid ep hEp
+  refine ⟨?_, hDisj⟩
+  intro tid tcb hTcb
+  obtain ⟨ty, hSt, _, _, hQN, _⟩ := hFwd tid.toObjId tcb hTcb
+  rw [hQN]
+  exact hSelf tid ty hSt
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `ipcStateQueueConsistent` —
+every blocked TCB's `ipcState` is preserved and the endpoint witnesses transport
+forward unchanged. -/
+theorem consumeCallerReply_preserves_ipcStateQueueConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueConsistent st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcStateQueueConsistent st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hStObj
+  rw [hIS]
+  cases hq : ty.ipcState with
+  | ready => exact True.intro
+  | blockedOnNotification _ => exact True.intro
+  | blockedOnReply _ _ => exact True.intro
+  | blockedOnSend epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEp⟩ := hbase
+      exact ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEp⟩
+  | blockedOnReceive epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEp⟩ := hbase
+      exact ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEp⟩
+  | blockedOnCall epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEp⟩ := hbase
+      exact ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEp⟩
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves
+`ipcStateQueueMembershipConsistent` — `ipcState`/`queueNext` are preserved TCB
+fields and endpoints are untouched, so both the head and the queue-predecessor
+membership witnesses transport. -/
+theorem consumeCallerReply_preserves_ipcStateQueueMembershipConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : ipcStateQueueMembershipConsistent st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcStateQueueMembershipConsistent st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  have hBwd := consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  intro tid tcb hObj
+  obtain ⟨ty, hStObj, hIS, _⟩ := hFwd tid.toObjId tcb hObj
+  have hbase := hInv tid ty hStObj
+  rw [hIS]
+  cases hq : ty.ipcState with
+  | ready => exact True.intro
+  | blockedOnNotification _ => exact True.intro
+  | blockedOnReply _ _ => exact True.intro
+  | blockedOnSend epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEpSt, hcond⟩ := hbase
+      refine ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+      cases hcond with
+      | inl h => exact Or.inl h
+      | inr h =>
+          obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
+          obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
+          exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+  | blockedOnReceive epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEpSt, hcond⟩ := hbase
+      refine ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+      cases hcond with
+      | inl h => exact Or.inl h
+      | inr h =>
+          obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
+          obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
+          exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+  | blockedOnCall epId =>
+      rw [hq] at hbase
+      obtain ⟨ep, hEpSt, hcond⟩ := hbase
+      refine ⟨ep, (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun rr => by exact KernelObject.noConfusion)).mpr hEpSt, ?_⟩
+      cases hcond with
+      | inl h => exact Or.inl h
+      | inr h =>
+          obtain ⟨prev, prevTcb, hPrevSt, hQN⟩ := h
+          obtain ⟨xx, hStX, _, _, hQNeq, _⟩ := hBwd prev.toObjId prevTcb hPrevSt
+          exact Or.inr ⟨prev, xx, hStX, hQNeq.trans hQN⟩
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `blockedThreadTimeoutConsistent`
+— `timeoutBudget`/`ipcState` are preserved TCB fields and the `.schedContext`
+witness transports forward. -/
+theorem consumeCallerReply_preserves_blockedThreadTimeoutConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : blockedThreadTimeoutConsistent st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    blockedThreadTimeoutConsistent st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb scId hObj hBudget
+  obtain ⟨ty, hStObj, hIS, _, _, _, _, _, hTB⟩ := hFwd tid.toObjId tcb hObj
+  obtain ⟨⟨sc, hSc⟩, hState⟩ := hInv tid ty scId hStObj (hTB ▸ hBudget)
+  refine ⟨⟨sc, (hNT scId.toObjId (.schedContext sc)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mpr hSc⟩, ?_⟩
+  rw [hIS]; exact hState
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `donationChainAcyclic` —
+`schedContextBinding` is a preserved TCB field. -/
+theorem consumeCallerReply_preserves_donationChainAcyclic
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : donationChainAcyclic st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    donationChainAcyclic st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  obtain ⟨ty1, hSt1, _, _, _, _, _, hSCB1, _⟩ := hFwd tid1.toObjId tcb1 h1
+  obtain ⟨ty2, hSt2, _, _, _, _, _, hSCB2, _⟩ := hFwd tid2.toObjId tcb2 h2
+  exact hInv tid1 tid2 ty1 ty2 scId1 scId2 hSt1 hSt2 (hSCB1 ▸ hB1) (hSCB2 ▸ hB2)
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `donationOwnerValid` —
+`schedContextBinding`/`ipcState` are preserved TCB fields; the `.schedContext`
+and owner-TCB witnesses transport forward. -/
+theorem consumeCallerReply_preserves_donationOwnerValid
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : donationOwnerValid st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    donationOwnerValid st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  have hBwd := consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  intro tid tcb scId owner hObj hBind
+  obtain ⟨ty, hStObj, _, _, _, _, _, hSCB, _⟩ := hFwd tid.toObjId tcb hObj
+  obtain ⟨⟨sc, hSc, hBound⟩, ⟨ownerTcb, hOwner, hOwnerBind, hOwnerIpc⟩⟩ :=
+    hInv tid ty scId owner hStObj (hSCB ▸ hBind)
+  obtain ⟨ownerTx, hOwnerSt, hOwnerIS, _, _, _, _, hOwnerSCB, _⟩ :=
+    hBwd owner.toObjId ownerTcb hOwner
+  refine ⟨⟨sc, (hNT scId.toObjId (.schedContext sc)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mpr hSc, hBound⟩,
+    ⟨ownerTx, hOwnerSt, ?_, ?_⟩⟩
+  · rw [hOwnerSCB]; exact hOwnerBind
+  · rw [hOwnerIS]; exact hOwnerIpc
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `passiveServerIdle` — the
+scheduler is untouched and `schedContextBinding`/`ipcState` are preserved TCB
+fields. -/
+theorem consumeCallerReply_preserves_passiveServerIdle
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : passiveServerIdle st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    passiveServerIdle st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  have hSched := consumeCallerReply_scheduler_eq st st' caller rid hStep
+  intro tid tcb hObj hUnbound hNotInQ hNotCur
+  obtain ⟨ty, hStObj, hIS, _, _, _, _, hSCB, _⟩ := hFwd tid.toObjId tcb hObj
+  rw [hSched] at hNotInQ hNotCur
+  have := hInv tid ty hStObj (hSCB ▸ hUnbound) hNotInQ hNotCur
+  rw [hIS]; exact this
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: the `consumeCallerReply` timeout-budget frame —
+`timeoutBudget` is a preserved TCB field.  Composes with a transition's own
+`timeoutBudgetFrame` via `timeoutBudgetFrame.trans` in the folded reply peels. -/
+theorem consumeCallerReply_timeoutBudgetFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    timeoutBudgetFrame st st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb' hT
+  obtain ⟨tcb, hSt, _, _, _, _, _, _, hTB⟩ := hFwd tid.toObjId tcb' hT
+  exact ⟨tcb, hSt, hTB.symm⟩
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: the `consumeCallerReply` passive-server frame — the
+scheduler is untouched and `schedContextBinding`/`ipcState` are preserved TCB
+fields, so every unbound descheduled non-allowed thread pulls back unchanged.
+Composes via `passiveServerIdleFrame.trans` in the folded reply peels. -/
+theorem consumeCallerReply_passiveServerIdleFrame
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    passiveServerIdleFrame st st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  have hSched := consumeCallerReply_scheduler_eq st st' caller rid hStep
+  refine ⟨fun tid tcb' h hU hQ hC _ => ?_⟩
+  obtain ⟨tcb, hSt, hIS, _, _, _, _, hSCB, _⟩ := hFwd tid.toObjId tcb' h
+  rw [hSched] at hQ hC
+  exact ⟨tcb, hSt, hSCB.symm.trans hU, hQ, hC, hIS.symm⟩
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `blockedOnReplyHasReplyObject`
+when the answered caller is **no longer** `.blockedOnReply` — exactly the fold's
+composition order, where the fused reply transition wakes the caller `.ready`
+*before* tearing down its link.  Every other TCB keeps its `replyObject`
+untouched, and the consumed caller no longer constrains the clause. -/
+theorem consumeCallerReply_preserves_blockedOnReplyHasReplyObject
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hInv : blockedOnReplyHasReplyObject st)
+    (hCallerNotBlocked : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+      ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    blockedOnReplyHasReplyObject st' := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    -- Reply-leg: the `.reply` write is TCB-invisible, so both the conjunct and
+    -- the caller-side ipcState exclusion transport into `st1`.
+    have hFrame1 : ∀ (x : SeLe4n.ObjId) (t : TCB),
+        st1.objects[x]? = some (.tcb t) → st.objects[x]? = some (.tcb t) := by
+      intro x t hT
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hT
+      | some r =>
+        rw [hGet] at hCons
+        by_cases hx : x = rid.toObjId
+        · subst hx
+          rw [storeObject_objects_eq st st1 rid.toObjId _ hObjInv hCons] at hT
+          cases hT
+        · rw [storeObject_objects_ne st st1 rid.toObjId x _ hx hObjInv hCons] at hT
+          exact hT
+    have hInv1 : blockedOnReplyHasReplyObject st1 := by
+      intro tid tcb ep rt hObj hIpc
+      exact hInv tid tcb ep rt (hFrame1 tid.toObjId tcb hObj) hIpc
+    -- TCB-leg: the caller's `replyObject := none` write is excluded by its
+    -- (preserved) non-`.blockedOnReply` ipcState; every other TCB is framed.
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hInv1
+    | some tcb0 =>
+      simp only [hT] at hStep
+      intro tid tcb ep rt hObj hIpc
+      by_cases hx : tid.toObjId = caller.toObjId
+      · rw [hx, storeObject_objects_eq st1 st' caller.toObjId _ hObjInv1 hStep] at hObj
+        cases hObj
+        exact absurd hIpc (hCallerNotBlocked tcb0
+          (hFrame1 caller.toObjId tcb0 ((getTcb?_eq_some_iff st1 caller tcb0).mp hT)) ep rt)
+      · rw [storeObject_objects_ne st1 st' caller.toObjId tid.toObjId _ hx hObjInv1 hStep] at hObj
+        exact hInv1 tid tcb ep rt hObj hIpc
+
 -- ============================================================================
 -- IPC de-threading D2 — de-threaded `ipcInvariantFull` bundle theorems
 --

@@ -1699,6 +1699,24 @@ theorem endpointReply_preserves_badgeWellFormed
 -- R3-C.2/M-19: Endpoint operation notificationWaiterConsistent preservation
 -- ============================================================================
 
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `notificationWaiterConsistent`
+— notifications are untouched by the consume's two writes and every waiter TCB's
+`ipcState` is a preserved field. -/
+theorem consumeCallerReply_preserves_notificationWaiterConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    notificationWaiterConsistent st' := by
+  have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hBwd := SystemState.consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  intro oid ntfn tid hObj hMem
+  obtain ⟨tcb, hT, hIS⟩ := hConsist oid ntfn tid ((hNT oid (.notification ntfn)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj) hMem
+  obtain ⟨tx, hTx, hIS2, _⟩ := hBwd tid.toObjId tcb hT
+  exact ⟨tx, hTx, hIS2.trans hIS⟩
+
 /-- R3-C.2/M-19: endpointReply preserves notificationWaiterConsistent.
 The target thread has `ipcState = .blockedOnReply`, so by
 `notificationWaiterConsistent` it is not in any notification wait list.

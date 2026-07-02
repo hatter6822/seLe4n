@@ -36,6 +36,29 @@ open SeLe4n.Kernel.Concurrency (bootCoreId)
 -- WS-E4/M-12: Preservation theorems for endpointReply
 -- ============================================================================
 
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `schedulerInvariantBundle` —
+the scheduler is untouched (both legs are object-store writes) and the current
+thread's TCB survives the consume (only its `replyObject` field can change). -/
+theorem consumeCallerReply_preserves_schedulerInvariantBundle
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : schedulerInvariantBundle st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    schedulerInvariantBundle st' := by
+  obtain ⟨hQCC, hRQU, hCTV⟩ := hInv
+  have hSched := SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep
+  have hBwd := SystemState.consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  refine ⟨by rw [hSched]; exact hQCC, by rw [hSched]; exact hRQU, ?_⟩
+  unfold currentThreadValid at hCTV ⊢
+  rw [hSched]
+  cases hCur : st.scheduler.currentOnCore bootCoreId with
+  | none => exact True.intro
+  | some tid =>
+    rw [hCur] at hCTV
+    obtain ⟨tcb, hT⟩ := hCTV
+    obtain ⟨tx, hTx, _⟩ := hBwd tid.toObjId tcb hT
+    exact ⟨tx, hTx⟩
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves schedulerInvariantBundle.
 Reply stores a TCB (with message) and calls ensureRunnable, similar to
 endpointReceive unblocking. Updated for WS-H1 reply-target scoping. -/

@@ -1981,6 +1981,17 @@ theorem storeObject_cdt_eq
   unfold storeObject at hStore; cases hStore
   rfl
 
+/-- PR #827 #3 fold: `storeObject` preserves the CDT node→slot mapping (it only
+touches objects/lifecycle/index). -/
+theorem storeObject_cdtNodeSlot_eq
+    (st st' : SystemState)
+    (id : SeLe4n.ObjId)
+    (obj : KernelObject)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold storeObject at hStore; cases hStore
+  rfl
+
 -- ============================================================================
 -- WS-G3/F-P06: storeObject ASID table maintenance lemmas
 -- ============================================================================
@@ -2719,6 +2730,425 @@ theorem consumeCallerReply_getReply?_caller_none (st : SystemState) (caller : Se
         storeObject_objects_ne st1 result caller.toObjId rid.toObjId _ hNe.symm hInv1 hRun
       rw [getReply?_eq_some_iff] at hR1 ⊢
       rw [hFrame]; exact hR1
+
+/-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` is **total** — its only effect
+is a plain `storeObject` (which always succeeds) behind a no-op guard. -/
+theorem consumeReply_isOk (st : SystemState) (rid : SeLe4n.ReplyId) :
+    ∃ st', consumeReply rid st = .ok ((), st') := by
+  unfold consumeReply
+  cases hGet : st.getReply? rid with
+  | none => exact ⟨st, rfl⟩
+  | some r => exact ⟨_, rfl⟩
+
+/-- WS-SM SM6.D (PR #827 #3 fold): `consumeCallerReply` is **total** — both legs
+are plain `storeObject`s (which always succeed) behind no-op guards.  Folding the
+consume into the reply primitives therefore cannot introduce a new failure mode:
+the folded transition's error surface is exactly the delivery leg's. -/
+theorem consumeCallerReply_isOk (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    ∃ st', consumeCallerReply caller rid st = .ok ((), st') := by
+  unfold consumeCallerReply
+  obtain ⟨st1, hCons⟩ := consumeReply_isOk st rid
+  simp only [hCons]
+  cases hT : st1.getTcb? caller with
+  | none => exact ⟨st1, rfl⟩
+  | some tcb => exact ⟨_, rfl⟩
+
+/-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` leaves the scheduler untouched
+(object-store writes only). -/
+theorem consumeReply_scheduler_eq (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hStep : consumeReply rid st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold consumeReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; cases hStep; rfl
+  | some r =>
+    rw [hGet] at hStep
+    exact storeObject_scheduler_eq st st' rid.toObjId _ hStep
+
+/-- WS-SM SM6.D (PR #827 #3 fold): `consumeCallerReply` leaves the scheduler
+untouched — both legs are object-store writes.  Lets the folded reply primitives'
+scheduler-side conclusions (run queues, current, SGI derivation) frame past the
+consume unchanged. -/
+theorem consumeCallerReply_scheduler_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.scheduler = st.scheduler := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 := consumeReply_scheduler_eq st st1 rid hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_scheduler_eq st1 st' caller.toObjId _ hStep]; exact h1
+
+/-- WS-SM SM6.D (PR #827 #3 fold): `consumeCallerReply` leaves the machine state
+untouched — both legs are object-store writes. -/
+theorem consumeCallerReply_machine_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.machine = st.machine := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 : st1.machine = st.machine := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; rfl
+      | some r =>
+        rw [hGet] at hCons
+        exact storeObject_machine_eq st st1 rid.toObjId _ hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_machine_eq st1 st' caller.toObjId _ hStep]; exact h1
+
+/-- WS-SM SM6.D (PR #827 #3 fold): `consumeCallerReply` preserves the object-store
+extensional invariant (each leg is a `storeObject` or a no-op). -/
+theorem consumeCallerReply_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 := consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ h1 hStep
+
+/-- WS-SM SM6.D (PR #827 #3 fold), transport (a): the lookup of any object that is
+neither a `.tcb` nor a `.reply` agrees across `consumeCallerReply` — its two writes
+land on a slot holding a `.reply` (the consumed Reply) and a slot holding a `.tcb`
+(the answered caller), so every endpoint / notification / cnode / schedContext
+dereference in an invariant conjunct is unchanged.  The uniform driver behind the
+per-conjunct `consumeCallerReply_preserves_*` frame family. -/
+theorem consumeCallerReply_nonTcbNonReply_agree
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (k : KernelObject),
+      (∀ tt, k ≠ .tcb tt) → (∀ rr, k ≠ .reply rr) →
+      (st'.objects[s]? = some k ↔ st.objects[s]? = some k) := by
+  intro s k hkT hkR
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have hLeg1 : st1.objects[s]? = some k ↔ st.objects[s]? = some k := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact Iff.rfl
+      | some r =>
+        rw [hGet] at hCons
+        by_cases hs : s = rid.toObjId
+        · subst hs
+          constructor
+          · intro h
+            rw [storeObject_objects_eq st st1 rid.toObjId _ hObjInv hCons] at h
+            cases h; exact absurd rfl (hkR _)
+          · intro h
+            rw [(getReply?_eq_some_iff st rid r).mp hGet] at h
+            cases h; exact absurd rfl (hkR _)
+        · rw [storeObject_objects_ne st st1 rid.toObjId s _ hs hObjInv hCons]
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hLeg1
+    | some tcb =>
+      simp only [hT] at hStep
+      by_cases hs : s = caller.toObjId
+      · subst hs
+        constructor
+        · intro h
+          rw [storeObject_objects_eq st1 st' caller.toObjId _ hObjInv1 hStep] at h
+          cases h; exact absurd rfl (hkT _)
+        · intro h
+          have h1 := hLeg1.mpr h
+          rw [(getTcb?_eq_some_iff st1 caller tcb).mp hT] at h1
+          cases h1; exact absurd rfl (hkT _)
+      · rw [storeObject_objects_ne st1 st' caller.toObjId s _ hs hObjInv1 hStep]
+        exact hLeg1
+
+/-- WS-SM SM6.D (PR #827 #3 fold), transport (b, forward): a post-`consumeCallerReply`
+`.tcb` lookup transports back to a pre-state `.tcb` lookup agreeing on every field
+any `ipcInvariantFull` conjunct reads (ipcState, pendingMessage,
+queueNext/Prev/PPrev, schedContextBinding, timeoutBudget).  The consume's only TCB
+write is the caller's `replyObject := none`, whose other projections are
+definitionally unchanged; every other slot is untouched. -/
+theorem consumeCallerReply_tcb_forward
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s tx hObj
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    -- Transport the `.tcb` witness back through the caller-TCB leg into `st1`.
+    have hLeg2 : ∃ t1, st1.objects[s]? = some (.tcb t1) ∧
+        tx.ipcState = t1.ipcState ∧ tx.pendingMessage = t1.pendingMessage ∧
+        tx.queueNext = t1.queueNext ∧ tx.queuePrev = t1.queuePrev ∧
+        tx.queuePPrev = t1.queuePPrev ∧ tx.schedContextBinding = t1.schedContextBinding ∧
+        tx.timeoutBudget = t1.timeoutBudget := by
+      cases hT : st1.getTcb? caller with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        rw [hStep]
+        exact ⟨tx, hObj, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      | some tcb =>
+        simp only [hT] at hStep
+        by_cases hs : s = caller.toObjId
+        · subst hs
+          rw [storeObject_objects_eq st1 st' caller.toObjId _ hObjInv1 hStep] at hObj
+          cases hObj
+          exact ⟨tcb, (getTcb?_eq_some_iff st1 caller tcb).mp hT,
+            rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        · rw [storeObject_objects_ne st1 st' caller.toObjId s _ hs hObjInv1 hStep] at hObj
+          exact ⟨tx, hObj, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    -- Transport through the `consumeReply` leg (a `.reply` write, TCB-invisible).
+    obtain ⟨t1, hT1, hEqs⟩ := hLeg2
+    have hLeg1 : st.objects[s]? = some (.tcb t1) := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hT1
+      | some r =>
+        rw [hGet] at hCons
+        by_cases hs : s = rid.toObjId
+        · subst hs
+          rw [storeObject_objects_eq st st1 rid.toObjId _ hObjInv hCons] at hT1
+          cases hT1
+        · rw [storeObject_objects_ne st st1 rid.toObjId s _ hs hObjInv hCons] at hT1
+          exact hT1
+    exact ⟨t1, hLeg1, hEqs⟩
+
+/-- WS-SM SM6.D (PR #827 #3 fold), transport (b, backward): a pre-state `.tcb`
+lookup transports forward across `consumeCallerReply`, agreeing on every read
+field.  Symmetric counterpart of `consumeCallerReply_tcb_forward`; pushes object
+witnesses that appear in conjunct *goals* forward to the post-state. -/
+theorem consumeCallerReply_tcb_backward
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ∀ (s : SeLe4n.ObjId) (ty : TCB), st.objects[s]? = some (.tcb ty) →
+      ∃ tx, st'.objects[s]? = some (.tcb tx) ∧
+        tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+        tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
+        tx.queuePPrev = ty.queuePPrev ∧ tx.schedContextBinding = ty.schedContextBinding ∧
+        tx.timeoutBudget = ty.timeoutBudget := by
+  intro s ty hObj
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    -- Push the `.tcb` witness forward through the `consumeReply` leg.
+    have hLeg1 : st1.objects[s]? = some (.tcb ty) := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hObj
+      | some r =>
+        rw [hGet] at hCons
+        by_cases hs : s = rid.toObjId
+        · subst hs
+          rw [(getReply?_eq_some_iff st rid r).mp hGet] at hObj
+          cases hObj
+        · rw [storeObject_objects_ne st st1 rid.toObjId s _ hs hObjInv hCons]
+          exact hObj
+    -- Push forward through the caller-TCB leg.
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]
+      exact ⟨ty, hLeg1, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    | some tcb =>
+      simp only [hT] at hStep
+      by_cases hs : s = caller.toObjId
+      · subst hs
+        have hEq : ty = tcb := by
+          rw [(getTcb?_eq_some_iff st1 caller tcb).mp hT] at hLeg1
+          injection hLeg1 with h; injection h with h2; exact h2.symm
+        subst hEq
+        exact ⟨{ ty with replyObject := none },
+          storeObject_objects_eq st1 st' caller.toObjId _ hObjInv1 hStep,
+          rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      · refine ⟨ty, ?_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rw [storeObject_objects_ne st1 st' caller.toObjId s _ hs hObjInv1 hStep]
+        exact hLeg1
+
+/-- PR #827 #3 fold: `consumeCallerReply` preserves the CDT (both legs are
+object stores). -/
+theorem consumeCallerReply_cdt_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 : st1.cdt = st.cdt := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; rfl
+      | some r => rw [hGet] at hCons; exact storeObject_cdt_eq st st1 rid.toObjId _ hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_cdt_eq st1 st' caller.toObjId _ hStep]; exact h1
+
+/-- PR #827 #3 fold: `consumeCallerReply` preserves the CDT node→slot mapping. -/
+theorem consumeCallerReply_cdtNodeSlot_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 : st1.cdtNodeSlot = st.cdtNodeSlot := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; rfl
+      | some r => rw [hGet] at hCons; exact storeObject_cdtNodeSlot_eq st st1 rid.toObjId _ hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_cdtNodeSlot_eq st1 st' caller.toObjId _ hStep]; exact h1
+
+/-- PR #827 #3 fold: `consumeCallerReply` never removes an object — both legs
+overwrite existing slots, so object presence is preserved. -/
+theorem consumeCallerReply_objects_isSome (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ∀ (x : SeLe4n.ObjId), st.objects[x]? ≠ none → st'.objects[x]? ≠ none := by
+  intro x hSome
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have hLeg1 : st1.objects[x]? ≠ none := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hSome
+      | some r =>
+        rw [hGet] at hCons
+        by_cases hx : x = rid.toObjId
+        · subst hx
+          rw [storeObject_objects_eq st st1 rid.toObjId _ hObjInv hCons]
+          exact Option.some_ne_none _
+        · rw [storeObject_objects_ne st st1 rid.toObjId x _ hx hObjInv hCons]
+          exact hSome
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hLeg1
+    | some tcb =>
+      simp only [hT] at hStep
+      by_cases hx : x = caller.toObjId
+      · subst hx
+        rw [storeObject_objects_eq st1 st' caller.toObjId _ hObjInv1 hStep]
+        exact Option.some_ne_none _
+      · rw [storeObject_objects_ne st1 st' caller.toObjId x _ hx hObjInv1 hStep]
+        exact hLeg1
+
+/-- PR #827 #3 fold: `consumeCallerReply` keeps every present Reply object
+present — the consumed Reply's `caller` is cleared but the object itself
+survives, so reply capabilities stay backed (`replyCapPointsToValidReply`). -/
+theorem consumeCallerReply_getReply?_isSome (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    ∀ (rid' : SeLe4n.ReplyId) (r' : SeLe4n.Kernel.Reply), st.getReply? rid' = some r' →
+      ∃ r'', st'.getReply? rid' = some r'' := by
+  intro rid' r' hGet'
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have hLeg1 : ∃ r1, st1.getReply? rid' = some r1 := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact ⟨r', hGet'⟩
+      | some r =>
+        rw [hGet] at hCons
+        by_cases hEq : rid'.toObjId = rid.toObjId
+        · refine ⟨{ r with caller := none }, ?_⟩
+          rw [getReply?_eq_some_iff, hEq]
+          exact storeObject_objects_eq st st1 rid.toObjId _ hObjInv hCons
+        · refine ⟨r', ?_⟩
+          rw [getReply?_eq_some_iff] at hGet' ⊢
+          rw [storeObject_objects_ne st st1 rid.toObjId rid'.toObjId _ hEq hObjInv hCons]
+          exact hGet'
+    obtain ⟨r1, hGet1⟩ := hLeg1
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact ⟨r1, hGet1⟩
+    | some tcb =>
+      simp only [hT] at hStep
+      have hNe : caller.toObjId ≠ rid'.toObjId :=
+        getTcb?_getReply?_slot_ne st1 caller rid' tcb r1 hT hGet1
+      refine ⟨r1, ?_⟩
+      rw [getReply?_eq_some_iff] at hGet1 ⊢
+      rw [storeObject_objects_ne st1 st' caller.toObjId rid'.toObjId _ hNe.symm hObjInv1 hStep]
+      exact hGet1
 
 /-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
 `some ep` iff the store holds exactly `KernelObject.endpoint ep` at

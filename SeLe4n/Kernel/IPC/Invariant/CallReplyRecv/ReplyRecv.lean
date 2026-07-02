@@ -315,6 +315,45 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
         have : stR = (stR.1, stR.2) := Prod.ext rfl rfl
         rw [this] at hRecv; exact hRecv)
 
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `ipcSchedulerContractPredicates`
+— the runnable set is untouched (scheduler frame) and every TCB's `ipcState` is a
+preserved field, so all six coherence clauses transport. -/
+theorem consumeCallerReply_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hContract : ipcSchedulerContractPredicates st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    ipcSchedulerContractPredicates st' := by
+  obtain ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩ := hContract
+  have hSched := SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep
+  have hFwd := SystemState.consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro tid tcb hT hMem
+    obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
+    rw [hSched] at hMem
+    rw [hIS]
+    exact hReady tid ty hSt hMem
+  · intro tid tcb epId hT hIpc
+    obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
+    rw [hSched]
+    exact hBlockSend tid ty epId hSt (hIS ▸ hIpc)
+  · intro tid tcb epId hT hIpc
+    obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
+    rw [hSched]
+    exact hBlockRecv tid ty epId hSt (hIS ▸ hIpc)
+  · intro tid tcb epId hT hIpc
+    obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
+    rw [hSched]
+    exact hBlockCall tid ty epId hSt (hIS ▸ hIpc)
+  · intro tid tcb epId rt hT hIpc
+    obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
+    rw [hSched]
+    exact hBlockReply tid ty epId rt hSt (hIS ▸ hIpc)
+  · intro tid tcb nid hT hIpc
+    obtain ⟨ty, hSt, hIS, _⟩ := hFwd tid.toObjId tcb hT
+    rw [hSched]
+    exact hBlockNotif tid ty nid hSt (hIS ▸ hIpc)
+
 /-- WS-F1/TPI-D09: endpointReply preserves ipcSchedulerContractPredicates.
 endpointReply only stores a TCB and calls ensureRunnable; the contract
 predicate preservation follows the handshake_path_preserves_contracts pattern
