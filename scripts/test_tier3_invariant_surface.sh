@@ -678,6 +678,33 @@ run_check "INVARIANT" rg -n '^def tcbQueueLinkIntegrity' SeLe4n/Kernel/IPC/Invar
 run_check "INVARIANT" rg -n '^def dualQueueEndpointWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^def dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^def ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# WS-SM SM6.D per-core IPC invariant bundle anchors — the four named per-core
+# conjuncts (D.3-D.6), the twenty-field aggregate (D.1) + SMP form + exact
+# decomposition, the home-core restriction, and the six per-operation
+# preservation theorems (D.2) + the cross-core call flagship (staged).
+run_check "INVARIANT" rg -n '^def threadHomeCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def ipcStateQueueMembershipConsistent_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def endpointQueueNoDup_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def queueNextBlockingConsistent_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def queueHeadBlockedConsistent_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^structure ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def ipcInvariantFull_smp' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_smp_iff_full_and_passive_smp' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem ipcStateQueueMembershipConsistent_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueNoDup_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem queueNextBlockingConsistent_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem queueHeadBlockedConsistent_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem default_ipcInvariantFull_smp' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^structure passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem determineTargetCore_eq_threadHomeCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean
 run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
 run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe' SeLe4n/Kernel/IPC/Invariant/Structural/

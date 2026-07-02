@@ -13,6 +13,8 @@
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReply
 import SeLe4n.Kernel.IPC.Invariant
+import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
+import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation
 import SeLe4n.Kernel.Concurrency.Locks.Serializability
 
 /-!
@@ -42,6 +44,14 @@ run queue; `removeRunnableOnCore` frames the boot-core queue/current by per-core
 locality whether or not `executingCore` is the boot core), carrying the
 dischargeable `hCallerNotUnbound` exactly as the single-core
 `endpointCall_preserves_ipcInvariantFull` does.
+
+**WS-SM SM6.D** (final section): the per-core bundle flagship —
+`endpointCallOnCore_preserves_ipcInvariantFull_perCore` proves the cross-core
+call preserves **every core's** view of the twenty-conjunct bundle
+(`ipcInvariantFull_perCore`, `IPC/Invariant/PerCoreBundle.lean`), riding this
+file's whole-bundle theorem through the SM6.D exact-decomposition bridges
+plus the core-parameterised `passiveServerIdleFrameOnCore` mirrors of the
+wake/deschedule/op frames (no idle-core assumption).
 -/
 
 namespace SeLe4n.Kernel
@@ -2714,5 +2724,228 @@ theorem endpointCallOnCore_preserves_ipcInvariantFull
     endpointCallOnCore_preserves_queueNextTargetBlocked endpointId caller msg executingCore st
       hInv.queueNextTargetBlocked hInv.2.1 hInv.endpointQueueTailBlockedConsistent hObjInv hCallerReady
       hFreshCaller hSendTailFresh⟩
+
+-- ============================================================================
+-- WS-SM SM6.D: per-core IPC bundle preservation for the cross-core call
+-- ============================================================================
+--
+-- The SMP flagship of SM6.D.2: the live cross-core `.call` transition
+-- preserves EVERY core's view of the IPC invariant bundle
+-- (`ipcInvariantFull_perCore`, SM6.D.1).  Nineteen conjuncts ride the
+-- SM6.A whole-bundle theorem (`endpointCallOnCore_preserves_ipcInvariantFull`)
+-- through the SM6.D.1 exact-decomposition bridges; the per-core
+-- `passiveServerIdle` slice rides the frame below — the
+-- core-parameterised mirror of `endpointCallOnCore_passiveServerIdleFrame`,
+-- built from the SM6.D.2 micro-frames plus the two cross-core scheduler
+-- primitives' per-core frames.  No idle-core assumption anywhere.
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 micro-frame (cross-core): `wakeThread` of an already-`.ready`
+thread frames every core's slice — the object map is element-wise
+unchanged, every core's `current` is untouched, and the wake only *adds*
+the woken thread to its home core's run queue. -/
+theorem wakeThread_passiveServerIdleFrameOnCore_of_ready
+    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB) {c : CoreId}
+    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt) :
+    passiveServerIdleFrameOnCore st (wakeThread st wtid ec).1 c := by
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' _ => ?_⟩
+  have hGetEq : (wakeThread st wtid ec).1.getTcb? tid = st.getTcb? tid := by
+    unfold SystemState.getTcb?
+    rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid.toObjId]
+  rw [hGetEq] at hTcb'
+  refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+  · intro hIn
+    exact hNotInQ' (enqueueRunnableOnCore_mem_old st (determineTargetCore st wtid) c wtid tid hIn)
+  · rwa [show (wakeThread st wtid ec).1 = enqueueRunnableOnCore st (determineTargetCore st wtid) wtid from rfl,
+      enqueueRunnableOnCore_currentOnCore st (determineTargetCore st wtid) wtid c] at hNotCurrent'
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 micro-frame (cross-core): `removeRunnableOnCore` on core `oc`
+frames every core `c`'s slice given the removed thread is bound or
+already in an allowed state. -/
+theorem removeRunnableOnCore_passiveServerIdleFrameOnCore
+    (st : SystemState) (removed : SeLe4n.ThreadId) (oc : CoreId) {c : CoreId}
+    (hRemoved : ∀ tcb, st.getTcb? removed = some tcb →
+      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
+    passiveServerIdleFrameOnCore st (removeRunnableOnCore st removed oc) c := by
+  refine ⟨fun tid tcb' hTcb' hUnbound' hNotInQ' hNotCurrent' hNA => ?_⟩
+  rw [getTcb?_congr_objects (removeRunnableOnCore_preserves_objects st removed oc) tid] at hTcb'
+  by_cases hEq : tid = removed
+  · subst hEq
+    rcases hRemoved tcb' hTcb' with hB | hA
+    · exact absurd hUnbound' hB
+    · exact absurd hA hNA
+  · refine ⟨tcb', hTcb', hUnbound', ?_, ?_, rfl⟩
+    · intro hIn
+      apply hNotInQ'
+      by_cases hoc : oc = c
+      · subst hoc
+        rw [removeRunnableOnCore_runQueueOnCore_self]
+        exact (RunQueue.mem_remove _ _ _).mpr ⟨hIn, hEq⟩
+      · rw [removeRunnableOnCore_runQueueOnCore_ne st removed oc c hoc]; exact hIn
+    · intro hCur
+      apply hNotCurrent'
+      by_cases hoc : oc = c
+      · subst hoc
+        rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
+      · rw [removeRunnableOnCore_currentOnCore_ne st removed oc c hoc]; exact hCur
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2: `endpointCallOnCore` frames every core's slice — the
+core-parameterised mirror of `endpointCallOnCore_passiveServerIdleFrame`.
+Rendezvous: pop + complete the receiver `.ready` + `wakeThread` it onto
+its home core + set the caller `.blockedOnReply` (allowed) + stash the
+reply + `removeRunnableOnCore` the caller on its executing core.  Block:
+enqueue the caller + set it `.blockedOnCall` (non-allowed — the caller
+holds a SchedContext, `hCallerNotUnbound`) + deschedule. -/
+theorem endpointCallOnCore_passiveServerIdleFrameOnCore
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound) :
+    passiveServerIdleFrameOnCore st (endpointCallOnCore endpointId caller msg executingCore st).1 c := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact passiveServerIdleFrameOnCore.refl st
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact passiveServerIdleFrameOnCore.refl st
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact passiveServerIdleFrameOnCore.refl st
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+      | ok st' =>
+        simp only
+        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
+        have hF1 := endpointQueueEnqueue_passiveServerIdleFrameOnCore (c := c) endpointId false caller st st' hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+        | ok st'' =>
+          simp only
+          show passiveServerIdleFrameOnCore st (removeRunnableOnCore st'' caller executingCore) c
+          refine (hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore st' st'' caller
+            (.blockedOnCall endpointId) (some msg) (Or.inr (fun tcb hTcb => ?_)) hObj1 hMsg)).trans
+            (removeRunnableOnCore_passiveServerIdleFrameOnCore st'' caller executingCore (fun tcb hTcb => Or.inl ?_))
+          · obtain ⟨tcb0, hTcb0, hBindEq⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq caller tcb
+              ((getTcb?_eq_some_iff st' caller tcb).mp hTcb)
+            exact hBindEq ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)
+          · obtain ⟨tcb1, hTcb1, hBindEq1⟩ := storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg caller tcb
+              ((getTcb?_eq_some_iff st'' caller tcb).mp hTcb)
+            obtain ⟨tcb0, hTcb0, hBindEq0⟩ := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq caller tcb1 hTcb1
+            exact hBindEq1 ▸ hBindEq0 ▸ hCallerNotUnbound tcb0 ((getTcb?_eq_some_iff st caller tcb0).mpr hTcb0)
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+      | ok pair =>
+        simp only
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        have hF1 := endpointQueuePopHead_passiveServerIdleFrameOnCore (c := c) endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+        | ok st2 =>
+          simp only
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObj1 hMsg
+          have hF2 := hF1.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore pair.2.2 st2 pair.1
+            .ready (some msg) (Or.inl (Or.inl rfl)) hObj1 hMsg)
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+          have hF3 := hF2.trans (wakeThread_passiveServerIdleFrameOnCore_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2)
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+          | ok st4 =>
+            simp only
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            have hF4 := hF3.trans (storeTcbIpcStateAndMessage_passiveServerIdleFrameOnCore
+              (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1)) none
+              (Or.inl (Or.inr (Or.inr ⟨endpointId, some pair.1, rfl⟩))) hObjW hCS)
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              show passiveServerIdleFrameOnCore st (removeRunnableOnCore st5 caller executingCore) c
+              have hF5 := hF4.trans (linkServerStashedReply_passiveServerIdleFrameOnCore st4 st5 caller pair.1 hObjInv4 hLink)
+              refine hF5.trans (removeRunnableOnCore_passiveServerIdleFrameOnCore st5 caller executingCore (fun tcb hTcb => Or.inr ?_))
+              obtain ⟨tcb4, hTcb4, hIpc4⟩ := linkServerStashedReply_tcb_ipcState_backward st4 st5 caller pair.1 caller tcb hObjInv4 hLink
+                ((getTcb?_eq_some_iff st5 caller tcb).mp hTcb)
+              have hRep := storeTcbIpcStateAndMessage_ipcState_eq (wakeThread st2 pair.1 executingCore).1 st4 caller _ none hObjW hCS tcb4 hTcb4
+              rw [← hIpc4, hRep]; exact Or.inr (Or.inr ⟨endpointId, some pair.1, rfl⟩)
+
+open SeLe4n.Model.SystemState in
+/-- SM6.D.2 (cross-core call): `endpointCallOnCore` preserves core `c`'s
+`passiveServerIdle_perCore` slice, for every core — including the remote
+home core the receiver is woken onto and the executing core the caller is
+descheduled from. -/
+theorem endpointCallOnCore_preserves_passiveServerIdle_perCore
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (hInv : passiveServerIdle_perCore st c) :
+    passiveServerIdle_perCore (endpointCallOnCore endpointId caller msg executingCore st).1 c :=
+  passiveServerIdle_perCore_of_frameOnCore
+    (endpointCallOnCore_passiveServerIdleFrameOnCore endpointId caller msg executingCore st c
+      hObjInv hCallerNotUnbound) hInv
+
+open SeLe4n.Model.SystemState in
+/-- WS-SM SM6.D.2 (cross-core call, the SMP flagship): the live cross-core
+`.call` transition preserves EVERY core's view of the IPC invariant
+bundle.  From the ∀-core pre-state bundle, the post-state satisfies
+`ipcInvariantFull_perCore` on the executing core, the receiver's home
+core, and every bystander core alike. -/
+theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st st' : SystemState)
+    (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
+    (hFreshCaller : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) →
+      ep.sendQ.head ≠ some caller ∧ ep.sendQ.tail ≠ some caller ∧
+      ep.receiveQ.head ≠ some caller ∧ ep.receiveQ.tail ≠ some caller)
+    (hSendTailFresh : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+      st.objects[endpointId]? = some (.endpoint ep) →
+      ep.sendQ.tail = some tailTid →
+      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+        st.objects[epId']? = some (.endpoint ep') →
+        (epId' ≠ endpointId →
+          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+        (epId' = endpointId →
+          ep'.receiveQ.tail ≠ some tailTid))
+    (hStep : (endpointCallOnCore endpointId caller msg executingCore st).1 = st')
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hCallerNotRecv : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep, tcb.ipcState ≠ .blockedOnReceive ep)
+    (hCallerReady : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.ipcState = .ready)
+    (hCallerNotReply : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hCallerNotUnbound : ∀ (tcb : TCB), st.getTcb? caller = some tcb →
+        tcb.schedContextBinding ≠ .unbound)
+    (c : CoreId) :
+    ipcInvariantFull_perCore st' c :=
+  ipcInvariantFull_perCore_of_full
+    (endpointCallOnCore_preserves_ipcInvariantFull endpointId caller msg executingCore st st'
+      (ipcInvariantFull_of_smp hInv) hObjInv hFreshCaller hSendTailFresh hStep hWtpmn'
+      hAllBudgetsNone hRCLRecip' hCallerNotRecv
+      (fun tcb hRaw => hCallerReady tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
+      (fun tcb hRaw => hCallerNotReply tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw))
+      (fun tcb hRaw => hCallerNotUnbound tcb ((getTcb?_eq_some_iff st caller tcb).mpr hRaw)))
+    (passiveServerIdle_perCore_of_frameOnCore
+      (hStep ▸ endpointCallOnCore_passiveServerIdleFrameOnCore endpointId caller msg executingCore st c
+        hObjInv hCallerNotUnbound)
+      (hInv c).passiveServerIdle)
 
 end SeLe4n.Kernel

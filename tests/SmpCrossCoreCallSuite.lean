@@ -390,6 +390,106 @@ private def runRendezvousChecks : IO Unit := do
         (match res with | .error _ => true | _ => false)
   | none => assertBool "rendezvous setup (no-reply receiver) succeeded" false
 
+-- ============================================================================
+-- §SM6.D  Per-core IPC invariant bundle (surface anchors + witnesses)
+-- ============================================================================
+--
+-- WS-SM SM6.D coverage: the per-core bundle definitions (SM6.D.1, D.3–D.6),
+-- the exact-decomposition bridges, the six per-operation preservation
+-- theorems (SM6.D.2) plus the cross-core call flagship, and the home-core /
+-- wake-target coherence.  Elaboration-time: every symbol resolves and every
+-- headline theorem applies to typed inputs.  Runtime: `threadHomeCore`
+-- agrees with the operational `determineTargetCore` on the suite fixtures.
+
+-- SM6.D.1 bundle + SMP aggregate + bridges:
+#check @ipcInvariantFull_perCore
+#check @ipcInvariantFull_smp
+#check @ipcInvariantFull_smp_at
+#check @ipcInvariantFull_perCore_of_full
+#check @ipcInvariantFull_of_smp
+#check @ipcInvariantCore_of_smp
+#check @ipcInvariantFull_smp_iff_full_and_passive_smp
+#check @default_ipcInvariantFull_perCore
+#check @default_ipcInvariantFull_smp
+#check @threadHomeCore
+#check @determineTargetCore_eq_threadHomeCore
+-- SM6.D.3–D.6 named per-core conjuncts + exactness:
+#check @ipcStateQueueMembershipConsistent_perCore
+#check @endpointQueueNoDup_perCore
+#check @queueNextBlockingConsistent_perCore
+#check @queueHeadBlockedConsistent_perCore
+#check @ipcStateQueueMembershipConsistent_smp_iff
+#check @endpointQueueNoDup_smp_iff
+#check @queueNextBlockingConsistent_smp_iff
+#check @queueHeadBlockedConsistent_smp_iff
+-- SM6.D.2 per-operation preservation (the six operations + companions):
+#check @endpointSendDual_preserves_ipcInvariantFull_perCore
+#check @endpointReceiveDual_preserves_ipcInvariantFull_perCore
+#check @endpointCall_preserves_ipcInvariantFull_perCore
+#check @endpointReply_preserves_ipcInvariantFull_perCore
+#check @endpointReplyRecv_preserves_ipcInvariantFull_perCore
+#check @notificationSignal_preserves_ipcInvariantFull_perCore
+#check @notificationWait_preserves_ipcInvariantFull_perCore
+#check @endpointCallOnCore_preserves_ipcInvariantFull_perCore
+#check @endpointCallOnCore_preserves_passiveServerIdle_perCore
+-- SM6.D.2 per-core passive-server frame machinery:
+#check @passiveServerIdleFrameOnCore
+#check @passiveServerIdle_perCore_of_frameOnCore
+#check @endpointCallOnCore_passiveServerIdleFrameOnCore
+
+/-- SM6.D.1 exact decomposition: the ∀-core bundle is equivalent to the global
+bundle plus the per-core passive-idle slices — nothing is weakened. -/
+example (st : SystemState) :
+    ipcInvariantFull_smp st ↔ ipcInvariantFull st ∧ passiveServerIdle_smp st :=
+  ipcInvariantFull_smp_iff_full_and_passive_smp st
+
+/-- SM6.D.3 exactness: the ∀-core queue-membership slices recover exactly the
+global conjunct. -/
+example (st : SystemState) :
+    (∀ c, ipcStateQueueMembershipConsistent_perCore st c) ↔
+      ipcStateQueueMembershipConsistent st :=
+  ipcStateQueueMembershipConsistent_smp_iff st
+
+/-- SM6.D: the bundle's thread-domain restriction is the operational wake
+target — the slices partition threads by the core the wake path delivers to. -/
+example (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb) :
+    determineTargetCore st tid = threadHomeCore tcb :=
+  determineTargetCore_eq_threadHomeCore hTcb
+
+/-- SM6.D.2 (representative): `notificationSignal` preserves every core's
+bundle view. -/
+example (st st' : SystemState) (ntfnId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (hInv : ipcInvariantFull_smp st) (hObjInv : st.objects.invExt)
+    (hWtpmn' : waitingThreadsPendingMessageNone st')
+    (hRCLRecip' : replyCallerLinkageReciprocal st')
+    (hNWC : notificationWaiterConsistent st)
+    (hAllBudgetsNone : allTimeoutBudgetsNone st)
+    (hStep : notificationSignal ntfnId badge st = .ok ((), st'))
+    (c : CoreId) :
+    ipcInvariantFull_perCore st' c :=
+  notificationSignal_preserves_ipcInvariantFull_perCore st st' ntfnId badge hInv hObjInv
+    hWtpmn' hRCLRecip' hNWC hAllBudgetsNone hStep c
+
+/-- SM6.D: the freshly-booted system satisfies every core's bundle view. -/
+example (c : CoreId) : ipcInvariantFull_perCore (default : SystemState) c :=
+  default_ipcInvariantFull_perCore c
+
+/-- SM6.D runtime: `threadHomeCore` and `determineTargetCore` agree on the
+suite fixtures (pinned → home core, unpinned → boot core). -/
+private def runPerCoreBundleChecks : IO Unit := do
+  IO.println "--- §SM6.D per-core bundle home-core coherence ---"
+  assertBool "unpinned thread is homed on the boot core"
+    (decide (threadHomeCore (mkTcb 401 40 none) = bootCoreId))
+  assertBool "core1-pinned thread is homed on core 1"
+    (decide (threadHomeCore (mkTcb 403 30 (some core1)) = core1))
+  assertBool "determineTargetCore agrees with threadHomeCore (unpinned caller)"
+    (decide (determineTargetCore stBase callerTid = threadHomeCore (mkTcb 401 40 none)))
+  assertBool "determineTargetCore agrees with threadHomeCore (core1-pinned receiver)"
+    (decide (determineTargetCore stBase recvRemoteTid = threadHomeCore (mkTcb 403 30 (some core1))))
+  assertBool "determineTargetCore routes the remote receiver's wake to core 1"
+    (decide (determineTargetCore stBase recvRemoteTid = core1))
+
 def runSmpCrossCoreCallChecks : IO Unit := do
   IO.println "WS-SM SM6.A — Cross-core endpoint call suite"
   IO.println "===================================="
@@ -397,6 +497,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runBlockingChecks
   runNoReceiverChecks
   runRendezvousChecks
+  runPerCoreBundleChecks
   IO.println "===================================="
   IO.println "All SM6.A cross-core call checks PASS."
 

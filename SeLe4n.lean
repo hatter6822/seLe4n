@@ -36,3 +36,13 @@ import SeLe4n.Platform.RPi5.Contract
 -- `Scheduler.PriorityInheritance.PerCore`) into the production library so the
 -- `@[export]` symbol is emitted into the kernel image.
 import SeLe4n.Kernel.SyscallDispatchEntry
+-- WS-SM SM6.D: the per-core IPC invariant bundle (`ipcInvariantFull_perCore`,
+-- the four named per-core conjuncts, exact-decomposition bridges) and its
+-- per-operation preservation layer (send/receive/call/reply/replyRecv/
+-- signal/wait preserve every core's bundle view; per-core
+-- `passiveServerIdle` frame family with no idle-core assumption).  Pulled
+-- into the production library so the SM6.D theorem surface is
+-- production-reachable (the cross-core `endpointCallOnCore` mirror lives in
+-- the staged `IPC.CrossCore.EndpointCallInvariant`).
+import SeLe4n.Kernel.IPC.Invariant.PerCoreBundle
+import SeLe4n.Kernel.IPC.Invariant.PerCoreBundlePreservation

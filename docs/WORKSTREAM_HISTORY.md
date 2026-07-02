@@ -24,7 +24,44 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**Current sub-phase: SM6.C reply path across cores LANDED (v0.31.77).**  The reply
+**Current sub-phase: SM6.D IPC across-core invariant bundle LANDED (v0.32.58).**
+The full IPC invariant bundle is restricted to per-core views and proven
+preserved by every IPC operation.  `ipcInvariantFull_perCore`
+([`SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean`](../SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean),
+production) mirrors the twenty-conjunct `ipcInvariantFull` (the plan's
+fifteen R4-era conjuncts plus the five SM6.D reply-object-hardening
+conjuncts), one named field per conjunct: thread-subject conjuncts restrict
+to the threads homed on core `c` (`threadHomeCore` = `cpuAffinity` defaulting
+to `bootCoreId`, provably the operational wake target —
+`determineTargetCore_eq_threadHomeCore`); shared-object clauses are carried
+whole in every core's view; the scheduler-reading `passiveServerIdle` uses
+the SM4.D per-core form.  The decomposition is **exact**
+(`ipcInvariantFull_smp_iff_full_and_passive_smp`: the ∀-core aggregate ↔ the
+global bundle + the per-core passive slices), with the four plan-named
+conjuncts (SM6.D.3–D.6) additionally shipping per-conjunct exactness iffs
+(`ipcStateQueueMembershipConsistent/endpointQueueNoDup/
+queueNextBlockingConsistent/queueHeadBlockedConsistent_smp_iff`) and a boot
+witness (`default_ipcInvariantFull_smp`).  Preservation (SM6.D.2,
+[`PerCoreBundlePreservation.lean`](../SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean),
+production): all six IPC operations — send, receive, call, reply (+
+replyRecv), signal, wait — preserve every core's bundle view
+(`…_preserves_ipcInvariantFull_perCore` × 7), plus the cross-core call
+flagship `endpointCallOnCore_preserves_ipcInvariantFull_perCore` (staged,
+with SM6.A): nineteen conjuncts ride the existing single-core whole-bundle
+theorems through the exact-decomposition bridges, and the per-core
+`passiveServerIdle` slice rides a new core-parameterised pullback-frame
+family (`passiveServerIdleFrameOnCore` + per-store micro-frames + per-op
+compositions) built on the SM4.B independence algebra with **no idle-core
+assumption** — the theorems hold with all four cores actively scheduling.
+All axiom-clean.  Tests: `tests/SmpCrossCoreCallSuite.lean` §SM6.D (surface
+anchors, theorem witnesses, runtime home-core coherence; suite now 35
+runtime assertions) + Tier-3 invariant-surface anchors.  Recorded scope
+note: whole-bundle preservation for the remaining OnCore transitions
+(signal/wait/reply/receive/replyRecv OnCore, at `ipcInvariant` depth per
+their SM6.B/SM6.C landing bars) is tracked SM6.B/SM6.C proof-depth debt —
+the bundle and bridges are transition-agnostic.
+
+**Prior sub-phase: SM6.C reply path across cores LANDED (v0.31.77).**  The reply
 syscalls are lifted to SMP and wired **live** into the kernel's `.reply` /
 `.replyRecv` dispatch.  `endpointReplyOnCore`
 ([`SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean`](../SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean))
