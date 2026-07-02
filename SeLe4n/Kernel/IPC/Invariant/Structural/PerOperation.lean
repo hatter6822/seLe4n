@@ -1931,12 +1931,23 @@ theorem endpointReply_preserves_waitingThreadsPendingMessageNone
           simp only at hStep
           split at hStep
           · -- authorized = true
-            revert hStep
             cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
-            | error e => simp
+            | error e => simp [hMsg] at hStep
             | ok st1 =>
-              intro hEq; cases hEq
-              exact this st1 hMsg
+              simp only [hMsg] at hStep
+              have hMid := this st1 hMsg
+              have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                rw [ensureRunnable_preserves_objects]
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target .ready (some msg) hObjInv hMsg
+              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+              cases hRO : tcb.replyObject with
+              | none =>
+                simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                rw [← hStep]; exact hMid
+              | some rid =>
+                simp only [hRO] at hStep
+                exact consumeCallerReply_preserves_waitingThreadsPendingMessageNone _ _ target rid
+                  hObjInvMid hMid hStep
           · simp_all
       intro st1 hMsg
       exact ensureRunnable_preserves_waitingThreadsPendingMessageNone _ _
@@ -1984,8 +1995,10 @@ theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
         | blockedOnReply _ expectedReplier =>
           simp only [hIpc] at hStep
           -- Use suffices to factor out authorization check handling
-          suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-              (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
+          -- (PR #827 #3 fold: the receive leg's input is the post-consume state).
+          suffices ∀ st3, st3.objects.invExt → waitingThreadsPendingMessageNone st3 →
+              (∀ tcb', lookupTcb st3 receiver = some tcb' → tcb'.pendingMessage = none) →
+              (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
                 waitingThreadsPendingMessageNone stR.2) by
             -- AK1-B (I-H02): Fail-closed on expectedReplier = none
             cases expectedReplier with
@@ -1998,47 +2011,85 @@ theorem endpointReplyRecv_preserves_waitingThreadsPendingMessageNone
                 | error e => simp
                 | ok st1 =>
                   simp only []
-                  cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
-                  | error e => simp
-                  | ok result =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hEq⟩; subst hEq
-                    exact this st1 hStore result hRecv
+                  have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                    st st1 replyTarget _ _ hObjInv hStore
+                  have hInv1 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+                    st st1 replyTarget .ready (some msg) hObjInv hStore hInv trivial
+                  have hInvEns := ensureRunnable_preserves_waitingThreadsPendingMessageNone
+                    st1 replyTarget hInv1
+                  have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
+                    rwa [ensureRunnable_preserves_objects]
+                  -- Frame: receiver's TCB unchanged through reply phase (receiver ≠ replyTarget)
+                  have hReceiverFrame : ∀ tcb', lookupTcb (ensureRunnable st1 replyTarget) receiver = some tcb' →
+                      lookupTcb st receiver = some tcb' := by
+                    intro tcb' hLk'
+                    have hLk1 : lookupTcb st1 receiver = some tcb' := by
+                      unfold lookupTcb at hLk' ⊢; rw [ensureRunnable_preserves_objects] at hLk'; exact hLk'
+                    have hNotRes : ¬receiver.isReserved = true := by
+                      intro hRes; simp [lookupTcb, hRes] at hLk'
+                    have hObjLk1 : st1.objects[receiver.toObjId]? = some (.tcb tcb') := by
+                      unfold lookupTcb at hLk1; split at hLk1
+                      · simp at hLk1
+                      · split at hLk1
+                        next t hObj => exact Option.some.inj hLk1 ▸ hObj
+                        all_goals simp at hLk1
+                    have hFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
+                      st st1 replyTarget _ _ receiver.toObjId hNeq hObjInv hStore
+                    rw [hFrame] at hObjLk1
+                    unfold lookupTcb; simp [hNotRes]; split
+                    next t hObj => rw [hObjLk1] at hObj; cases hObj; rfl
+                    next hNone => rw [hObjLk1] at hNone; simp at hNone
+                  have hRecvMsgEns : ∀ tcb', lookupTcb (ensureRunnable st1 replyTarget) receiver = some tcb' →
+                      tcb'.pendingMessage = none :=
+                    fun tcb' hLk' => hReceiverMsg tcb' (hReceiverFrame tcb' hLk')
+                  -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                  cases hRO : tcb.replyObject with
+                  | none =>
+                    simp only []
+                    cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                    | error e => simp
+                    | ok result =>
+                      simp only [Except.ok.injEq, Prod.mk.injEq]
+                      intro ⟨_, hEq⟩; subst hEq
+                      exact this _ hObjInvEns hInvEns hRecvMsgEns result hRecv
+                  | some rid =>
+                    cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                    | error e => simp [hCons]
+                    | ok p3 =>
+                      obtain ⟨⟨⟩, st3⟩ := p3
+                      simp only [hCons]
+                      have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns hCons
+                      have hInv3 := consumeCallerReply_preserves_waitingThreadsPendingMessageNone _ _ replyTarget rid hObjInvEns hInvEns hCons
+                      have hFwd := SystemState.consumeCallerReply_tcb_forward _ _ replyTarget rid hObjInvEns hCons
+                      have hRecvMsg3 : ∀ tcb', lookupTcb st3 receiver = some tcb' →
+                          tcb'.pendingMessage = none := by
+                        intro tcb' hLk'
+                        have hNotRes : ¬receiver.isReserved = true := by
+                          intro hRes; simp [lookupTcb, hRes] at hLk'
+                        have hObjLk3 : st3.objects[receiver.toObjId]? = some (.tcb tcb') := by
+                          unfold lookupTcb at hLk'; split at hLk'
+                          · simp at hLk'
+                          · split at hLk'
+                            next t hObj => exact Option.some.inj hLk' ▸ hObj
+                            all_goals simp at hLk'
+                        obtain ⟨ty, hTy, _, hPM, _⟩ := hFwd receiver.toObjId tcb' hObjLk3
+                        have hLkEns : lookupTcb (ensureRunnable st1 replyTarget) receiver = some ty := by
+                          unfold lookupTcb; simp [hNotRes]; split
+                          next t hObj => rw [hTy] at hObj; cases hObj; rfl
+                          next hNone => rw [hTy] at hNone; simp at hNone
+                        rw [hPM]
+                        exact hRecvMsgEns ty hLkEns
+                      cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                      | error e => simp
+                      | ok result =>
+                        simp only [Except.ok.injEq, Prod.mk.injEq]
+                        intro ⟨_, hEq⟩; subst hEq
+                        exact this st3 hObjInv3 hInv3 hRecvMsg3 result hRecv
               · simp_all
           -- Prove the core invariant preservation
-          intro st1 hStore stR hRecv
-          have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-            st st1 replyTarget _ _ hObjInv hStore
-          have hInv1 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
-            st st1 replyTarget .ready (some msg) hObjInv hStore hInv trivial
-          have hInvEns := ensureRunnable_preserves_waitingThreadsPendingMessageNone
-            st1 replyTarget hInv1
-          have hObjInvEns : (ensureRunnable st1 replyTarget).objects.invExt := by
-            rwa [ensureRunnable_preserves_objects]
-          -- Frame: receiver's TCB unchanged through reply phase (receiver ≠ replyTarget)
-          have hReceiverFrame : ∀ tcb', lookupTcb (ensureRunnable st1 replyTarget) receiver = some tcb' →
-              lookupTcb st receiver = some tcb' := by
-            intro tcb' hLk'
-            have hLk1 : lookupTcb st1 receiver = some tcb' := by
-              unfold lookupTcb at hLk' ⊢; rw [ensureRunnable_preserves_objects] at hLk'; exact hLk'
-            have hNotRes : ¬receiver.isReserved = true := by
-              intro hRes; simp [lookupTcb, hRes] at hLk'
-            have hObjLk1 : st1.objects[receiver.toObjId]? = some (.tcb tcb') := by
-              unfold lookupTcb at hLk1; split at hLk1
-              · simp at hLk1
-              · split at hLk1
-                next t hObj => exact Option.some.inj hLk1 ▸ hObj
-                all_goals simp at hLk1
-            have hFrame := storeTcbIpcStateAndMessage_preserves_objects_ne
-              st st1 replyTarget _ _ receiver.toObjId hNeq hObjInv hStore
-            rw [hFrame] at hObjLk1
-            unfold lookupTcb; simp [hNotRes]; split
-            next t hObj => rw [hObjLk1] at hObj; cases hObj; rfl
-            next hNone => rw [hObjLk1] at hNone; simp at hNone
-          -- AK1-D: hReceiverNotBlocked dropped from endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
+          intro st3 hObjInv3 hInv3 hRecvMsg3 stR hRecv
           exact endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
-            _ stR.2 endpointId receiver stR.1 replyId hObjInvEns hInvEns
-            (fun tcb' hLk' => hReceiverMsg tcb' (hReceiverFrame tcb' hLk'))
+            _ stR.2 endpointId receiver stR.1 replyId hObjInv3 hInv3 hRecvMsg3
             (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
 
 

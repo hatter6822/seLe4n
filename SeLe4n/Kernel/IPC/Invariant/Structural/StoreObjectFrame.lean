@@ -598,8 +598,24 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
       simp [hIpc] at hStep
     | blockedOnReply _ expectedReplier =>
       simp only [hIpc] at hStep
-      suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
-          (∀ stR, endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) = .ok stR →
+      -- Helper: any receive-leg input state carrying the invariant + freshness
+      -- facts proves the goal (PR #827 #3 fold: the leg's input is now the
+      -- post-consume state).
+      suffices ∀ st3, st3.objects.invExt → dualQueueSystemInvariant st3 →
+          (∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+            st3.objects[epId]? = some (.endpoint ep) →
+            ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+            ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver) →
+          (∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+            st3.objects[endpointId]? = some (.endpoint ep) →
+            ep.receiveQ.tail = some tailTid →
+            ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+              st3.objects[epId']? = some (.endpoint ep') →
+              (epId' ≠ endpointId →
+                ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+              (epId' = endpointId →
+                ep'.sendQ.tail ≠ some tailTid)) →
+          (∀ stR, endpointReceiveDual endpointId receiver replyId st3 = .ok stR →
             dualQueueSystemInvariant stR.2) by
         -- AK1-B (I-H02): Fail-closed on expectedReplier = none
         cases expectedReplier with
@@ -612,52 +628,95 @@ theorem endpointReplyRecv_preserves_dualQueueSystemInvariant
             | error e => simp
             | ok st1 =>
               simp only []
-              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
-              | error e => simp
-              | ok result =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
-                exact this st1 hMsg result hRecv
+              have hInv1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant _ _ _ _ _ hObjInv hMsg hInv
+              have hInv2 := ensureRunnable_preserves_dualQueueSystemInvariant st1 replyTarget hInv1
+              -- Transport freshness: storeTcbIpcStateAndMessage + ensureRunnable don't modify endpoint objects
+              -- Transport freshness through storeTcbIpcStateAndMessage + ensureRunnable
+              -- Both operations preserve endpoint objects (only modify TCBs/scheduler)
+              have hFreshReceiver' : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+                  (ensureRunnable st1 replyTarget).objects[epId]? = some (.endpoint ep) →
+                  ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+                  ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver := by
+                intro epId ep hEp
+                rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
+                  ensureRunnable_preserves_objects st1 replyTarget] at hEp
+                exact hFreshReceiver epId ep
+                  (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId ep hObjInv hMsg hEp)
+              have hRecvTailFresh' : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+                  (ensureRunnable st1 replyTarget).objects[endpointId]? = some (.endpoint ep) →
+                  ep.receiveQ.tail = some tailTid →
+                  ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+                    (ensureRunnable st1 replyTarget).objects[epId']? = some (.endpoint ep') →
+                    (epId' ≠ endpointId →
+                      ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+                    (epId' = endpointId →
+                      ep'.sendQ.tail ≠ some tailTid) := by
+                intro ep tailTid hEp hTail epId' ep' hEp'
+                rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
+                  ensureRunnable_preserves_objects st1 replyTarget] at hEp hEp'
+                exact hRecvTailFresh ep tailTid
+                  (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) endpointId ep hObjInv hMsg hEp)
+                  hTail epId' ep'
+                  (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId' ep' hObjInv hMsg hEp')
+              have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+                st st1 replyTarget .ready (some msg) hObjInv hMsg
+              have hObjInvEns1 : (ensureRunnable st1 replyTarget).objects.invExt :=
+                ensureRunnable_preserves_objects st1 replyTarget ▸ hObjInv1
+              -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+              cases hRO : tcb.replyObject with
+              | none =>
+                simp only []
+                cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+                | error e => simp
+                | ok result =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  exact this _ hObjInvEns1 hInv2 hFreshReceiver' hRecvTailFresh' result hRecv
+              | some rid =>
+                cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+                | error e => simp [hCons]
+                | ok p3 =>
+                  obtain ⟨⟨⟩, st3⟩ := p3
+                  simp only [hCons]
+                  have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInvEns1 hCons
+                  have hInv3 := consumeCallerReply_preserves_dualQueueSystemInvariant _ _ replyTarget rid hObjInvEns1 hInv2 hCons
+                  have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree _ _ replyTarget rid hObjInvEns1 hCons
+                  have hFresh3 : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+                      st3.objects[epId]? = some (.endpoint ep) →
+                      ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+                      ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver := by
+                    intro epId ep hEp
+                    exact hFreshReceiver' epId ep ((hNT epId (.endpoint ep)
+                      (fun tt => by exact KernelObject.noConfusion)
+                      (fun rr => by exact KernelObject.noConfusion)).mp hEp)
+                  have hTailFresh3 : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+                      st3.objects[endpointId]? = some (.endpoint ep) →
+                      ep.receiveQ.tail = some tailTid →
+                      ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+                        st3.objects[epId']? = some (.endpoint ep') →
+                        (epId' ≠ endpointId →
+                          ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+                        (epId' = endpointId →
+                          ep'.sendQ.tail ≠ some tailTid) := by
+                    intro ep tailTid hEp hTail epId' ep' hEp'
+                    exact hRecvTailFresh' ep tailTid ((hNT endpointId (.endpoint ep)
+                        (fun tt => by exact KernelObject.noConfusion)
+                        (fun rr => by exact KernelObject.noConfusion)).mp hEp)
+                      hTail epId' ep' ((hNT epId' (.endpoint ep')
+                        (fun tt => by exact KernelObject.noConfusion)
+                        (fun rr => by exact KernelObject.noConfusion)).mp hEp')
+                  cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                  | error e => simp
+                  | ok result =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, hEq⟩; subst hEq
+                    exact this st3 hObjInv3 hInv3 hFresh3 hTailFresh3 result hRecv
           · simp_all
-      intro st1 hMsg stR hRecv
-      have hInv1 := storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant _ _ _ _ _ hObjInv hMsg hInv
-      have hInv2 := ensureRunnable_preserves_dualQueueSystemInvariant st1 replyTarget hInv1
-      -- Transport freshness: storeTcbIpcStateAndMessage + ensureRunnable don't modify endpoint objects
-      -- Transport freshness through storeTcbIpcStateAndMessage + ensureRunnable
-      -- Both operations preserve endpoint objects (only modify TCBs/scheduler)
-      have hFreshReceiver' : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
-          (ensureRunnable st1 replyTarget).objects[epId]? = some (.endpoint ep) →
-          ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
-          ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver := by
-        intro epId ep hEp
-        rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
-          ensureRunnable_preserves_objects st1 replyTarget] at hEp
-        exact hFreshReceiver epId ep
-          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId ep hObjInv hMsg hEp)
-      have hRecvTailFresh' : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
-          (ensureRunnable st1 replyTarget).objects[endpointId]? = some (.endpoint ep) →
-          ep.receiveQ.tail = some tailTid →
-          ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
-            (ensureRunnable st1 replyTarget).objects[epId']? = some (.endpoint ep') →
-            (epId' ≠ endpointId →
-              ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
-            (epId' = endpointId →
-              ep'.sendQ.tail ≠ some tailTid) := by
-        intro ep tailTid hEp hTail epId' ep' hEp'
-        rw [show (ensureRunnable st1 replyTarget).objects = st1.objects from
-          ensureRunnable_preserves_objects st1 replyTarget] at hEp hEp'
-        exact hRecvTailFresh ep tailTid
-          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) endpointId ep hObjInv hMsg hEp)
-          hTail epId' ep'
-          (storeTcbIpcStateAndMessage_endpoint_backward st st1 replyTarget .ready (some msg) epId' ep' hObjInv hMsg hEp')
-      have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-        st st1 replyTarget .ready (some msg) hObjInv hMsg
-      have hObjInvEns1 : (ensureRunnable st1 replyTarget).objects.invExt :=
-        ensureRunnable_preserves_objects st1 replyTarget ▸ hObjInv1
+      intro st3 hObjInv3 hInv3 hFresh3 hTailFresh3 stR hRecv
       exact endpointReceiveDual_preserves_dualQueueSystemInvariant _ _ _ _ stR.2 stR.1
-        hObjInvEns1
+        hObjInv3
         (by have : stR = (stR.1, stR.2) := Prod.ext rfl rfl; rw [this] at hRecv; exact hRecv)
-        hInv2 hFreshReceiver' hRecvTailFresh'
+        hInv3 hFresh3 hTailFresh3
 
 /-- WS-H5: endpointCall preserves dualQueueSystemInvariant.
 Requires freshness preconditions for the enqueue path. -/
@@ -1483,6 +1542,42 @@ theorem notificationWait_preserves_allPendingMessagesBounded
                           pair.2 st'' waiter _ hObjInvPairN hIpc hInv1
                         exact removeRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
 
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `allPendingMessagesBounded` —
+`pendingMessage` is among the TCB fields the consume's `replyObject := none`
+write leaves unchanged. -/
+theorem consumeCallerReply_preserves_allPendingMessagesBounded
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : allPendingMessagesBounded st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    allPendingMessagesBounded st' := by
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro tid tcb msg hObj hMsg
+  obtain ⟨ty, hSt, _, hPM, _⟩ := hFwd tid.toObjId tcb hObj
+  exact hInv tid ty msg hSt (hPM ▸ hMsg)
+
+
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `badgeWellFormed` — both
+clauses read `.notification` / `.cnode` objects only. -/
+theorem consumeCallerReply_preserves_badgeWellFormed
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : badgeWellFormed st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    badgeWellFormed st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  obtain ⟨hNB, hCB⟩ := hInv
+  refine ⟨?_, ?_⟩
+  · intro oid ntfn badge hObj hBadge
+    exact hNB oid ntfn badge ((hNT oid (.notification ntfn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hBadge
+  · intro oid cn slot cap badge hObj hLook hBadge
+    exact hCB oid cn slot cap badge ((hNT oid (.cnode cn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hObj) hLook hBadge
+
+
 /-- WS-H12e: endpointReply preserves allPendingMessagesBounded.
 endpointReply bounds-checks the message at entry, then stores it in the target
 TCB via storeTcbIpcStateAndMessage with (some msg) where msg.bounded follows
@@ -1522,16 +1617,28 @@ theorem endpointReply_preserves_allPendingMessagesBounded
             simp only at hStep
             split at hStep
             · -- authorized = true
-              revert hStep
               cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
-              | error e => simp
+              | error e => simp [hStore] at hStep
               | ok st1 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]
-                  intro ⟨_, hStEq⟩; subst hStEq
-                  exact ensureRunnable_preserves_allPendingMessagesBounded st1 target
-                    (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
-                      st st1 target _ _ (by intro m hm; cases hm; exact hMsgBounded)
-                      hObjInv hStore hInv)
+                  simp only [hStore] at hStep
+                  have hMid : allPendingMessagesBounded (ensureRunnable st1 target) :=
+                    ensureRunnable_preserves_allPendingMessagesBounded st1 target
+                      (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                        st st1 target _ _ (by intro m hm; cases hm; exact hMsgBounded)
+                        hObjInv hStore hInv)
+                  have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                    rw [ensureRunnable_preserves_objects]
+                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                      st st1 target .ready (some msg) hObjInv hStore
+                  -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                  cases hRO : tcb.replyObject with
+                  | none =>
+                    simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                    rw [← hStep]; exact hMid
+                  | some rid =>
+                    simp only [hRO] at hStep
+                    exact consumeCallerReply_preserves_allPendingMessagesBounded _ _ target rid
+                      hObjInvMid hMid hStep
             · -- authorized = false
               simp_all
 
@@ -1689,15 +1796,46 @@ theorem endpointReply_preserves_badgeWellFormed
               | error e => simp [hStore] at hStep
               | ok st1 =>
                 simp only [hStore] at hStep
-                simp at hStep; subst hStep
                 have hInv1 := storeTcbIpcStateAndMessage_preserves_badgeWellFormed
                   st st1 target .ready (some msg) hInv hObjInv hStore
-                exact ensureRunnable_preserves_badgeWellFormed st1 target hInv1
+                have hMid : badgeWellFormed (ensureRunnable st1 target) :=
+                  ensureRunnable_preserves_badgeWellFormed st1 target hInv1
+                have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                  rw [ensureRunnable_preserves_objects]
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                    st st1 target .ready (some msg) hObjInv hStore
+                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                cases hRO : tcb.replyObject with
+                | none =>
+                  simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                  rw [← hStep]; exact hMid
+                | some rid =>
+                  simp only [hRO] at hStep
+                  exact consumeCallerReply_preserves_badgeWellFormed _ _ target rid
+                    hObjInvMid hMid hStep
             · simp at hStep
 
 -- ============================================================================
 -- R3-C.2/M-19: Endpoint operation notificationWaiterConsistent preservation
 -- ============================================================================
+
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `notificationWaiterConsistent`
+— notifications are untouched by the consume's two writes and every waiter TCB's
+`ipcState` is a preserved field. -/
+theorem consumeCallerReply_preserves_notificationWaiterConsistent
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hConsist : notificationWaiterConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    notificationWaiterConsistent st' := by
+  have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hBwd := SystemState.consumeCallerReply_tcb_backward st st' caller rid hObjInv hStep
+  intro oid ntfn tid hObj hMem
+  obtain ⟨tcb, hT, hIS⟩ := hConsist oid ntfn tid ((hNT oid (.notification ntfn)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj) hMem
+  obtain ⟨tx, hTx, hIS2, _⟩ := hBwd tid.toObjId tcb hT
+  exact ⟨tx, hTx, hIS2.trans hIS⟩
 
 /-- R3-C.2/M-19: endpointReply preserves notificationWaiterConsistent.
 The target thread has `ipcState = .blockedOnReply`, so by
@@ -1747,12 +1885,25 @@ theorem endpointReply_preserves_notificationWaiterConsistent
               rw [hTcb_w] at hTcbTarget; cases hTcbTarget; rw [hIpc_w] at hIpc; cases hIpc
             have hConsist1 := storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent
               st st1 target .ready (some msg) hConsist hObjInv hStore hTargetNotInWaitList
-            simp at hStep; subst hStep
-            intro noid ntfn tid hNtfnPost hMem
-            have hNtfnSt1 : st1.objects[noid]? = some (.notification ntfn) := by
-              rwa [ensureRunnable_preserves_objects] at hNtfnPost
-            obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist1 noid ntfn tid hNtfnSt1 hMem
-            exact ⟨tcb', by rw [ensureRunnable_preserves_objects]; exact hTcb', hIpc'⟩
+            have hMid : notificationWaiterConsistent (ensureRunnable st1 target) := by
+              intro noid ntfn tid hNtfnPost hMem
+              have hNtfnSt1 : st1.objects[noid]? = some (.notification ntfn) := by
+                rwa [ensureRunnable_preserves_objects] at hNtfnPost
+              obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist1 noid ntfn tid hNtfnSt1 hMem
+              exact ⟨tcb', by rw [ensureRunnable_preserves_objects]; exact hTcb', hIpc'⟩
+            have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+              rw [ensureRunnable_preserves_objects]
+              exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                st st1 target .ready (some msg) hObjInv hStore
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+              rw [← hStep]; exact hMid
+            | some rid =>
+              simp only [hRO] at hStep
+              exact consumeCallerReply_preserves_notificationWaiterConsistent _ _ target rid
+                hMid hObjInvMid hStep
         · simp at hStep
 
 -- ============================================================================
@@ -2375,13 +2526,33 @@ theorem endpointReplyRecv_preserves_allPendingMessagesBounded
             have hInv2 := ensureRunnable_preserves_allPendingMessagesBounded st1 replyTarget hInv1
             have hObjInv2 : (ensureRunnable st1 replyTarget).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv1
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
-            | error e => simp [hRecv] at hStep
-            | ok pair =>
-              simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
-              exact endpointReceiveDual_preserves_allPendingMessagesBounded
-                endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO] at hStep
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp [hRecv] at hStep
+              | ok pair =>
+                simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact endpointReceiveDual_preserves_allPendingMessagesBounded
+                  endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
+            | some rid =>
+              simp only [hRO] at hStep
+              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+              | error e => simp [hCons] at hStep
+              | ok p3 =>
+                obtain ⟨⟨⟩, st3⟩ := p3
+                simp only [hCons] at hStep
+                have hInv3 := consumeCallerReply_preserves_allPendingMessagesBounded _ _ replyTarget rid hObjInv2 hInv2 hCons
+                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
+                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                | error e => simp [hRecv] at hStep
+                | ok pair =>
+                  simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  exact endpointReceiveDual_preserves_allPendingMessagesBounded
+                    endpointId receiver pair.1 replyId _ _ hInv3 hObjInv3 hRecv
         · simp at hStep
 
 /-- U4-K: endpointReplyRecv preserves badgeWellFormed. -/
@@ -2424,13 +2595,33 @@ theorem endpointReplyRecv_preserves_badgeWellFormed
             have hInv2 := ensureRunnable_preserves_badgeWellFormed st1 replyTarget hInv1
             have hObjInv2 : (ensureRunnable st1 replyTarget).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv1
-            cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
-            | error e => simp [hRecv] at hStep
-            | ok pair =>
-              simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
-              obtain ⟨_, hEq⟩ := hStep; subst hEq
-              exact endpointReceiveDual_preserves_badgeWellFormed
-                endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
+            -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+            cases hRO : tcb.replyObject with
+            | none =>
+              simp only [hRO] at hStep
+              cases hRecv : endpointReceiveDual endpointId receiver replyId (ensureRunnable st1 replyTarget) with
+              | error e => simp [hRecv] at hStep
+              | ok pair =>
+                simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
+                obtain ⟨_, hEq⟩ := hStep; subst hEq
+                exact endpointReceiveDual_preserves_badgeWellFormed
+                  endpointId receiver pair.1 replyId _ _ hInv2 hObjInv2 hRecv
+            | some rid =>
+              simp only [hRO] at hStep
+              cases hCons : SystemState.consumeCallerReply replyTarget rid (ensureRunnable st1 replyTarget) with
+              | error e => simp [hCons] at hStep
+              | ok p3 =>
+                obtain ⟨⟨⟩, st3⟩ := p3
+                simp only [hCons] at hStep
+                have hInv3 := consumeCallerReply_preserves_badgeWellFormed _ _ replyTarget rid hObjInv2 hInv2 hCons
+                have hObjInv3 := SystemState.consumeCallerReply_preserves_objects_invExt _ _ replyTarget rid hObjInv2 hCons
+                cases hRecv : endpointReceiveDual endpointId receiver replyId st3 with
+                | error e => simp [hRecv] at hStep
+                | ok pair =>
+                  simp only [hRecv, Except.ok.injEq, Prod.mk.injEq] at hStep
+                  obtain ⟨_, hEq⟩ := hStep; subst hEq
+                  exact endpointReceiveDual_preserves_badgeWellFormed
+                    endpointId receiver pair.1 replyId _ _ hInv3 hObjInv3 hRecv
         · simp at hStep
 
 end SeLe4n.Kernel

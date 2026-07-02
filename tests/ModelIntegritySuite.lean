@@ -901,6 +901,51 @@ def replyCallerLinkage_holds_at_call_rendezvous_boundary : IO Unit := do
       expect "the reply object names the caller back (reciprocity)"
         ((st'.getReply? rid).any (fun r => decide (r.caller = some caller)))
 
+/-- WS-SM SM6.D (PR #827 review #3): a **direct** below-API `endpointReply` consumes
+the answered caller↔Reply link atomically with the delivery — the Reply object is
+single-use end-to-end at the *transition* boundary, not merely at the dispatch
+boundary.  Extends the rendezvous-boundary scenario: after the linked Call
+rendezvous, the server answers via the raw primitive; both halves of the link are
+torn down (`reply.caller = none`, `caller.replyObject = none`) — re-establishing
+`replyCallerLinkageReciprocal` internally — the freed Reply is reusable, and a
+replay of the same reply fails closed. -/
+def direct_reply_consumes_caller_link_single_use : IO Unit := do
+  let server : SeLe4n.ThreadId := ⟨1⟩
+  let caller : SeLe4n.ThreadId := ⟨2⟩
+  let epId   : SeLe4n.ObjId := ⟨10⟩
+  let rid    : SeLe4n.ReplyId := ⟨707⟩
+  let mkReadyTcb (n : Nat) : TCB :=
+    { tid := ⟨n⟩, priority := ⟨0⟩, domain := ⟨0⟩, cspaceRoot := ⟨0⟩,
+      vspaceRoot := ⟨0⟩, ipcBuffer := SeLe4n.VAddr.ofNat 0, ipcState := .ready }
+  let st0 : SystemState :=
+    (SeLe4n.Testing.BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject server.toObjId (.tcb (mkReadyTcb 1))
+      |>.withObject caller.toObjId (.tcb (mkReadyTcb 2))
+      |>.withObject rid.toObjId (.reply { replyId := rid })
+      |>.withRunnable [server, caller]
+      |>.build)
+  match SeLe4n.Kernel.endpointReceiveDual epId server (some rid) st0 with
+  | .error _ => throw <| IO.userError "server-first receive (stash) setup should succeed"
+  | .ok (_, stRecv) =>
+    match SeLe4n.Kernel.endpointCall epId caller IpcMessage.empty stRecv with
+    | .error _ => throw <| IO.userError "call rendezvous should succeed and link the caller"
+    | .ok ((), stCalled) =>
+      match SeLe4n.Kernel.endpointReply server caller IpcMessage.empty stCalled with
+      | .error _ => throw <| IO.userError "the authorized direct reply should succeed"
+      | .ok ((), stReplied) =>
+        expect "direct reply delivers: the caller is woken .ready"
+          ((stReplied.getTcb? caller).any (fun t => decide (t.ipcState = .ready)))
+        expect "folded consume clears the Reply's caller (single-use barrier)"
+          ((stReplied.getReply? rid).any (fun r => decide (r.caller = none)))
+        expect "folded consume clears the answered caller's replyObject"
+          ((stReplied.getTcb? caller).any (fun t => decide (t.replyObject = none)))
+        -- replay: the caller is `.ready` and the link is gone — fails closed.
+        expect "a replayed direct reply fails closed after the consume"
+          (match SeLe4n.Kernel.endpointReply server caller IpcMessage.empty stReplied with
+           | .error .replyCapInvalid => true
+           | _ => false)
+
 /-- WS-SM SM6.D (#7.4 / #7.5): a Call that rendezvouses with a server holding **no**
 reply object fails closed (`.replyCapInvalid`) and leaves **no** unanswerable
 `.blockedOnReply` caller — the fold makes the whole `endpointCall` atomic, so the
@@ -2352,6 +2397,7 @@ def main : IO Unit := do
   mintReplyCap_derives_backed_reply_cap
   -- WS-SM SM6.D (#7.4/#7.5): transition-boundary `blockedOnReply ⇒ replyObject`
   replyCallerLinkage_holds_at_call_rendezvous_boundary
+  direct_reply_consumes_caller_link_single_use
   call_without_reply_object_fails_closed_no_unanswerable_block
   replyCapPointsToValidReply_distinguishes_backed_and_dangling
   reply_cap_end_to_end_retype_mint_link

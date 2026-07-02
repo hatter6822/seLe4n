@@ -59,6 +59,11 @@ theorem endpointReplyOnCore_reply_path_NI
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
+    -- PR #827 review #3 (reply-fold): structural completeness for the folded
+    -- consume's `.reply` re-store projection-invisibility (mirrors the SM6.A
+    -- `endpointCallOnCore_call_path_NI` hypotheses).
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : objectIndexSetComplete st)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false) :
     projectState ctx observer (endpointReplyOnCore replier target msg executingCore st).1
@@ -67,14 +72,36 @@ theorem endpointReplyOnCore_reply_path_NI
     rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
   have hInv' : st'.objects.invExt :=
     storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg) hObjInv hStore'
-  rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hStore]
-  show projectState ctx observer (wakeThread st' target executingCore).1
-    = projectState ctx observer st
-  rw [wakeThread_preserves_projection ctx observer st' target executingCore
-        hTargetHigh hTargetObjHigh hInv',
-      storeTcbIpcStateAndMessage_preserves_projection ctx observer st st' target _ _
-        hTargetObjHigh hObjInv hStore']
+  have hChain : projectState ctx observer (wakeThread st' target executingCore).1
+      = projectState ctx observer st := by
+    rw [wakeThread_preserves_projection ctx observer st' target executingCore
+          hTargetHigh hTargetObjHigh hInv',
+        storeTcbIpcStateAndMessage_preserves_projection ctx observer st st' target _ _
+          hTargetObjHigh hObjInv hStore']
+  -- PR #827 #3 fold: case on the woken caller's reply link.
+  cases hRO : tcb.replyObject with
+  | none =>
+    rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+          hSz1 hSz2 hLk hIpc hStore hRO]
+    exact hChain
+  | some rid =>
+    obtain ⟨stC, hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
+      executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+    rw [hEq]
+    show projectState ctx observer stC = projectState ctx observer st
+    have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt st' target executingCore hInv'
+    have hComplete' : objectIndexSetComplete st' :=
+      storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st st' target .ready (some msg)
+        hObjInv hObjSetInv hIdxComplete hStore'
+    obtain ⟨tr, hGet, hReady⟩ :=
+      storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
+    have hCompleteWake : objectIndexSetComplete (wakeThread st' target executingCore).1 :=
+      wakeThread_preserves_objectIndexSetComplete_of_ready st' target executingCore tr hGet hReady
+        hInv' hComplete'
+    rw [consumeCallerReply_preserves_projection ctx observer _ stC target rid
+          hTargetObjHigh hCompleteWake hInvWake hCons]
+    exact hChain
 
 -- ============================================================================
 -- §2  SM6.C.8 — per-core / ∀-core non-interference (`lowEquivalent_smp`)
@@ -99,6 +126,11 @@ theorem endpointReplyOnCore_reply_path_NI_smp
     (hIpc : tcb.ipcState = .blockedOnReply ep (some expected))
     (hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st')
     (hObjInv : st.objects.invExt)
+    -- PR #827 review #3 (reply-fold): structural completeness for the folded
+    -- consume's `.reply` re-store projection-invisibility (mirrors the SM6.A
+    -- `endpointCallOnCore_call_path_NI_smp` hypotheses).
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : objectIndexSetComplete st)
     (hTargetHigh : threadObservable ctx observer target = false)
     (hTargetObjHigh : objectObservable ctx observer target.toObjId = false) :
     lowEquivalent_smp ctx observer
@@ -111,13 +143,35 @@ theorem endpointReplyOnCore_reply_path_NI_smp
   show projectStateOnCore ctx observer
       (endpointReplyOnCore replier target msg executingCore st).1 c
     = projectStateOnCore ctx observer st c
-  rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
-        hSz1 hSz2 hLk hIpc hStore]
-  show projectStateOnCore ctx observer (wakeThread st' target executingCore).1 c
-    = projectStateOnCore ctx observer st c
-  rw [wakeThread_preserves_projectionOnCore ctx observer st' target executingCore c
-        hTargetHigh hTargetObjHigh hInv',
-      storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer st st' target _ _ c
-        hTargetObjHigh hObjInv hStore']
+  have hChain : projectStateOnCore ctx observer (wakeThread st' target executingCore).1 c
+      = projectStateOnCore ctx observer st c := by
+    rw [wakeThread_preserves_projectionOnCore ctx observer st' target executingCore c
+          hTargetHigh hTargetObjHigh hInv',
+        storeTcbIpcStateAndMessage_preserves_projectionOnCore ctx observer st st' target _ _ c
+          hTargetObjHigh hObjInv hStore']
+  -- PR #827 #3 fold: case on the woken caller's reply link.
+  cases hRO : tcb.replyObject with
+  | none =>
+    rw [endpointReplyOnCore_reply_eq replier target msg executingCore st st' tcb ep expected
+          hSz1 hSz2 hLk hIpc hStore hRO]
+    exact hChain
+  | some rid =>
+    obtain ⟨stC, hCons, hEq⟩ := endpointReplyOnCore_reply_eq_linked replier target msg
+      executingCore st st' tcb ep expected rid hSz1 hSz2 hLk hIpc hStore hRO
+    rw [hEq]
+    show projectStateOnCore ctx observer stC c = projectStateOnCore ctx observer st c
+    have hInvWake : (wakeThread st' target executingCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt st' target executingCore hInv'
+    have hComplete' : objectIndexSetComplete st' :=
+      storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete st st' target .ready (some msg)
+        hObjInv hObjSetInv hIdxComplete hStore'
+    obtain ⟨tr, hGet, hReady⟩ :=
+      storeTcbIpcStateAndMessage_getTcb?_ipcState st st' target .ready (some msg) hObjInv hStore'
+    have hCompleteWake : objectIndexSetComplete (wakeThread st' target executingCore).1 :=
+      wakeThread_preserves_objectIndexSetComplete_of_ready st' target executingCore tr hGet hReady
+        hInv' hComplete'
+    rw [consumeCallerReply_preserves_projectionOnCore ctx observer _ stC target rid c
+          hTargetObjHigh hCompleteWake hInvWake hCons]
+    exact hChain
 
 end SeLe4n.Kernel

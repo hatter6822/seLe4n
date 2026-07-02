@@ -116,6 +116,46 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
       (storeTcbIpcStateAndMessage_preserves_replyCapPointsToValidReply
         st st1 target ipc msg tcb hRCPV hObjInv hTcb hLookup)⟩
 
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `capabilityInvariantBundle` —
+neither leg touches a CNode, the CDT, or the CDT node→slot mapping;
+`objects.invExt` is preserved; no object is removed (both legs overwrite
+existing slots); and the consumed Reply object *remains present* (only its
+`caller` is cleared), so every reply cap stays backed. -/
+theorem consumeCallerReply_preserves_capabilityInvariantBundle
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hInv : capabilityInvariantBundle st)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    capabilityInvariantBundle st' := by
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
+  have hNT := SystemState.consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hCnodeBwd : ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[cnodeId]? = some (.cnode cn) → st.objects[cnodeId]? = some (.cnode cn) :=
+    fun cnodeId cn hCn => (hNT cnodeId (.cnode cn)
+      (fun tt => by exact KernelObject.noConfusion)
+      (fun rr => by exact KernelObject.noConfusion)).mp hCn
+  refine ⟨cspaceLookupSound_holds _, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro cnodeId cn hCn
+    exact hBounded cnodeId cn (hCnodeBwd cnodeId cn hCn)
+  · intro nodeId ref hRef
+    rw [SystemState.consumeCallerReply_cdtNodeSlot_eq st st' caller rid hStep] at hRef
+    exact SystemState.consumeCallerReply_objects_isSome st st' caller rid hObjInv hStep
+      ref.cnode (hComp nodeId ref hRef)
+  · unfold cdtAcyclicity
+    rw [SystemState.consumeCallerReply_cdt_eq st st' caller rid hStep]
+    exact hAcyclic
+  · intro cnodeId cn hCn
+    exact hDepthPre cnodeId cn (hCnodeBwd cnodeId cn hCn)
+  · exact SystemState.consumeCallerReply_preserves_objects_invExt st st' caller rid hObjInv hStep
+  · intro oid cn slot cap rid' hObj hLook hTgt
+    have hPre := hRCPV oid cn slot cap rid' (hCnodeBwd oid cn hObj) hLook hTgt
+    cases hGet : st.getReply? rid' with
+    | none => exact absurd hGet hPre
+    | some r' =>
+      obtain ⟨r'', hGet''⟩ :=
+        SystemState.consumeCallerReply_getReply?_isSome st st' caller rid hObjInv hStep rid' r' hGet
+      rw [hGet'']
+      exact Option.some_ne_none _
+
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
 Reply stores a TCB with message (not a CNode), so CSpace invariants are preserved.
 Updated for WS-H1 reply-target scoping (replier parameter + replyTarget validation).
@@ -156,13 +196,20 @@ theorem endpointReply_preserves_capabilityInvariantBundle
               simp only at hStep
               split at hStep
               · -- authorized = true
-                revert hStep
                 cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
-                | error e => simp
+                | error e => simp [hTcb] at hStep
                 | ok st1 =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, hStEq⟩; subst hStEq
-                    exact this st1 hTcb
+                    simp only [hTcb] at hStep
+                    have hMid := this st1 hTcb
+                    -- PR #827 #3 fold: peel the atomic caller↔Reply consume.
+                    cases hRO : tcb.replyObject with
+                    | none =>
+                      simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                      rw [← hStep]; exact hMid
+                    | some rid =>
+                      simp only [hRO] at hStep
+                      exact consumeCallerReply_preserves_capabilityInvariantBundle
+                        _ _ target rid hMid hStep
               · -- authorized = false
                 simp_all
           -- Dispatch to extracted lemma

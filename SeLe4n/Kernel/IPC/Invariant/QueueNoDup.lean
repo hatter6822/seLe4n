@@ -425,6 +425,28 @@ theorem notificationWait_preserves_endpointQueueNoDup
                 exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
                   storeTcbIpcState_preserves_endpointQueueNoDup _ _ _ _ hInv1 hObjInv1 hIpc
 
+open SeLe4n.Model.SystemState in
+/-- PR #827 #3 fold: `consumeCallerReply` preserves `endpointQueueNoDup` —
+endpoints are untouched and every TCB's `queueNext` is a preserved field. -/
+theorem consumeCallerReply_preserves_endpointQueueNoDup
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    endpointQueueNoDup st' := by
+  have hNT := consumeCallerReply_nonTcbNonReply_agree st st' caller rid hObjInv hStep
+  have hFwd := consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep
+  intro oid ep hObj
+  have hEp := (hNT oid (.endpoint ep)
+    (fun tt => by exact KernelObject.noConfusion)
+    (fun rr => by exact KernelObject.noConfusion)).mp hObj
+  obtain ⟨hSelf, hDisj⟩ := hInv oid ep hEp
+  refine ⟨?_, hDisj⟩
+  intro tid tcb hTcb
+  obtain ⟨ty, hSt, _, _, hQN, _⟩ := hFwd tid.toObjId tcb hTcb
+  rw [hQN]
+  exact hSelf tid ty hSt
+
+
 /-- V3-K-op-7: endpointReply preserves endpointQueueNoDup.
 Reply only modifies a single TCB and scheduler. -/
 theorem endpointReply_preserves_endpointQueueNoDup
@@ -453,14 +475,29 @@ theorem endpointReply_preserves_endpointQueueNoDup
             simp only at hStep
             split at hStep
             · -- authorized path
-              generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
-              cases rMsg with
-              | error e => simp at hStep
+              cases hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+              | error e => simp [hMsg] at hStep
               | ok st1 =>
-                simp at hStep; obtain ⟨_, rfl⟩ := hStep
-                exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
-                  storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
-                    st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
+                simp only [hMsg] at hStep
+                have hMid : endpointQueueNoDup (ensureRunnable st1 target) :=
+                  ensureRunnable_preserves_endpointQueueNoDup _ _ <|
+                    storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
+                      st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
+                -- PR #827 #3 fold: peel the atomic consume (no-op when unlinked).
+                have hObjInvMid : (ensureRunnable st1 target).objects.invExt := by
+                  rw [ensureRunnable_preserves_objects]
+                  have hMsg' := hMsg
+                  rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hMsg'
+                  exact storeTcbIpcStateAndMessage_preserves_objects_invExt
+                    st st1 target .ready (some msg) hObjInv hMsg'
+                cases hRO : tcb.replyObject with
+                | none =>
+                  simp only [hRO, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                  rw [← hStep]; exact hMid
+                | some rid =>
+                  simp only [hRO] at hStep
+                  exact consumeCallerReply_preserves_endpointQueueNoDup _ _ target rid
+                    hObjInvMid hMid hStep
             · simp at hStep
         | _ => simp [hIpc] at hStep
 

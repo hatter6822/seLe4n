@@ -632,6 +632,50 @@ theorem linkCallerReply_preserves_projection
               hCallerObjHigh hObjInv1 hStep, hProj1]
       · simp at hStep
 
+/-- PR #827 #3 fold: `consumeCallerReply` (the fold's atomic reply-link teardown)
+preserves `projectState` whenever the answered **caller** is high
+(`hCallerObjHigh`) — its two writes are both invisible to any observer: the
+`.reply` `caller := none` write is projection-stripped
+(`storeObject_reply_caller_preserves_projection` — `projectKernelObject` erases
+`Reply.caller` structurally), and the caller-TCB `replyObject := none` write is
+on a high TCB (`storeObject_preserves_projection`).  `hIdxComplete` supplies the
+`objectIndex` membership of the (already-present) Reply.  The non-interference
+building block for the reply primitives' in-transition consume. -/
+theorem consumeCallerReply_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.consumeCallerReply caller rid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SystemState.consumeCallerReply at hStep
+  cases hCons : SystemState.consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hObjInv1 := SystemState.consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have hProj1 : projectState ctx observer st1 = projectState ctx observer st := by
+      unfold SystemState.consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; rfl
+      | some r =>
+        rw [hGet] at hCons
+        have hRidPrev : st.objects[rid.toObjId]? = some (.reply r) :=
+          (SystemState.getReply?_eq_some_iff st rid r).mp hGet
+        exact storeObject_reply_caller_preserves_projection ctx observer st st1
+          rid.toObjId r none hRidPrev
+          (hIdxComplete rid.toObjId (by rw [hRidPrev]; exact Option.some_ne_none _)) hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact hProj1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_preserves_projection ctx observer st1 st' caller.toObjId _
+            hCallerObjHigh hObjInv1 hStep, hProj1]
+
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer
 projection when both the caller and server objects are non-observable (high).  It
 composes `linkCallerReply` (caller-side, projection-preserving at a high caller) with

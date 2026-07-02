@@ -1,3 +1,70 @@
+## v0.32.57 — PR #827 review #3 (the fold): reply primitives consume the caller↔Reply link atomically
+
+Completes the PR #827 #3 reply-fold (the remaining SM6.D reply-object completion item, plan-of-record
+in v0.32.56).  The direct `endpointReply` / `endpointReplyRecv` primitives — and the cross-core
+`endpointReplyOnCore` (hence `endpointReplyRecvOnCore` and both cross-core dispatch wrappers) — now
+tear down the answered caller↔Reply link **atomically with the delivery**: after the `.ready` wake,
+the transition runs `consumeCallerReply` keyed on the woken caller's own `tcb.replyObject` (a no-op
+when unlinked), clearing `reply.caller` and the caller's `replyObject` in the same transition.  A
+below-API operation chain using the primitives directly can no longer strand a Reply object in-use;
+the Reply is single-use end-to-end at the **transition** boundary, and `replyCallerLinkageReciprocal`
+is established internally.  `consumeCallerReply` is total (`consumeCallerReply_isOk` — both legs are
+plain `storeObject`s), so the folded transitions' error surfaces are exactly the delivery legs'.
+
+**Fold** (`IPC/DualQueue/Transport.lean`, `IPC/CrossCore/EndpointReply.lean`): `endpointReply`,
+`endpointReplyRecv` (reply leg, before the receive leg — so a server-supplied `replyId` naming the
+same object passes the stash/link admission: faithful seL4-MCS one-object reuse), and
+`endpointReplyOnCore` (after the cross-core wake; the surfaced SGI is unchanged).
+
+**Dispatch de-duplication** (`API.lean`): the three separate `consumeCallerReply` dispatch steps are
+gone — `replyRecvBody` step 2 and both `.reply` arms (`dispatchWithCap{,Checked}`) now rely on the
+folded consume (a separate step would re-consume).  `dispatchWithCap_reply_populates_msg` and the
+`checkedDispatch_reply_*` equivalences re-pinned to the consume-free arm bodies; the stale
+"`endpointReplyChecked` wrapper" header note replaced with the live cross-core checked-dispatch
+routing.  `EndpointReplyDispatch.lean`'s "delivery-only" contract note superseded: a direct caller of
+`endpointReplyOnCore` now gets full single-use reply semantics by construction.
+
+**Proof re-base (~60 single-core + cross-core theorems).**  The per-conjunct
+`consumeCallerReply_preserves_*` frame family is completed — 31 lemmas total spanning the IPC
+structural conjuncts (queue no-dup/membership/next/head/tail, pending-message bounds, badges,
+timeouts, donation, passive-server idle, reply linkage — `blockedOnReplyHasReplyObject` guarded on
+the already-woken caller, exactly the fold's composition order), the scheduler + contract bundles,
+`capabilityInvariantBundle`, `notificationWaiterConsistent`, `replyIdEstablishFresh`, and the NI
+projections (`consumeCallerReply_preserves_projection{,OnCore}`) — over new `Model/State.lean`
+transport drivers (non-TCB/non-Reply lookup agreement, TCB forward/backward field agreement,
+scheduler/machine/cdt/cdtNodeSlot frames, object-presence + reply-presence monotonicity, totality).
+Every `endpointReply{,Recv}_preserves_*` theorem peels the consume via its frame; the
+`endpointReplyRecv` suffices-plumbings generalized over the receive leg's (now post-consume) input
+state.
+
+**De-threading (the fold's payoff)**: `endpointReply_preserves_ipcInvariantFull` no longer threads
+`hRCLRecip'` — the new `endpointReply_preserves_replyCallerLinkageReciprocal` derives the 16th
+conjunct's reciprocal half from the *pre*-state (the fold consumes exactly the woken caller's unique
+mutual edge; an unlinked caller has no Reply naming it).  (`endpointReplyRecv` keeps threading: its
+receive leg links a *new* caller, whose reciprocity needs the leg's freshness facts — unchanged.)
+
+**Cross-core surface**: `endpointReplyOnCore_reply_eq` gains the unlinked-caller hypothesis + new
+`endpointReplyOnCore_reply_eq_linked` companion (delivery + consume, with the totality witness);
+`_state_eq` factors the consume tail; SGI/delivery/replay/per-core-consistency theorems re-based
+(conclusions unchanged — the consume is scheduler-invisible).  Staged NI
+(`endpointReplyOnCore_reply_path_NI{,_smp}`) re-proved with the consume peeled through
+`consumeCallerReply_preserves_projection{,OnCore}` (the `.reply` write is projection-stripped;
+`Reply.caller` / `TCB.replyObject` are structurally erased), gaining the SM6.A-style
+`hObjSetInv`/`hIdxComplete` structural hypotheses; `endpointReply_preserves_projection` (+ its
+`_lowEquivalent` wrapper and the composition call site) gains the same pair.
+
+**Tests**: `ModelIntegritySuite.direct_reply_consumes_caller_link_single_use` (direct-primitive
+single-use: both halves cleared, replay fails closed) + `SmpCrossCoreReplySuite` §3.8 consume block
+(linked delivery consumes, unlinked delivery unchanged, replay barrier) + stale anchor comments
+updated.  Trace byte-identical (`main_trace_smoke.expected` — no golden line reads reply-object
+post-state).
+
+Full build green + `Platform.Staged` green, `test_full` green, zero `sorry`/`axiom`.
+`RAW_LOOKUP_TID` re-anchored 1277 → 1290 (the reciprocity lemma + consume frames state raw-form
+object lookups — the predicates they preserve are raw-form; no operational code adds a raw lookup).
+Version 0.32.57.
+
+Refs: #827
 ## v0.32.56 — PR #827 review #3 (foundation): consumeCallerReply preservation lemmas
 
 First slice of the PR #827 #3 reply-fold — the remaining SM6.D reply-fold completion. #3 (P2) reports that

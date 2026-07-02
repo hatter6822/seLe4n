@@ -463,7 +463,8 @@ theorem step_preserves_projection
   | cspaceDeleteSlot addr hAH hOp =>
     exact cspaceDeleteSlot_preserves_projection ctx observer addr st st' hAH hObjInv hOp
   | endpointReply replier target msg hTH hTOH hOp =>
-    exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv hOp
+    exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv
+      hIdxComplete hObjSetInv hOp
   | endpointReceiveDualHigh eid recv send replyId hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH =>
     exact endpointReceiveDual_preserves_projection ctx observer eid recv replyId st st' send
       hEH hRH hROH hCo hSQHH hSQNH hRQTH hObjInv
